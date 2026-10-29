@@ -1,6 +1,7 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
+import { HIGH_RISK_SCORE_MIN, openRiskStatusFilter } from '../domain/risk-status';
 import { URGENCY_MS } from '@/lib/urgency';
 import {
     evidenceExpiryScopeWhere,
@@ -27,6 +28,20 @@ function finitePercent(numerator: number, denominator: number): number {
     return Math.min(100, Math.max(0, Math.round(ratio * 1000) / 10));
 }
 
+/**
+ * The evidence review windows: due within 7 days, and within 30.
+ *
+ * The boundaries come from the shared urgency scale so "due soon" means the
+ * same number of days here and on the calendar. Both evidence readers below
+ * take them from here, so they cannot drift apart from each other either.
+ */
+function evidenceReviewWindows(now: Date): { in7d: Date; in30d: Date } {
+    return {
+        in7d: new Date(now.getTime() + URGENCY_MS.URGENT),
+        in30d: new Date(now.getTime() + URGENCY_MS.UPCOMING),
+    };
+}
+
 // ─── Executive Dashboard DTO Types ─────────────────────────────────
 
 /**
@@ -51,14 +66,22 @@ export interface DashboardStats {
     openFindings: number;
 
     // ── Alert indicators ──
+    /**
+     * OPEN risks (not closed, not accepted) with an inherent score of 10 or
+     * more — the High and Critical bands of `RiskBySeverity`, so the Risks
+     * card's "N high/critical" equals the Risk Distribution card's High +
+     * Critical. See `app-layer/domain/risk-status`.
+     */
     highRisks: number;
     pendingEvidence: number;
     overdueEvidence: number;
 }
 
 /**
- * Risk breakdown by severity tier.
+ * OPEN-risk breakdown by severity tier.
  * Severity is derived from the `inherentScore` field (likelihood × impact, 1–25).
+ * Closed and accepted risks are in no tier: a risk nobody still owns is not a
+ * severity anybody has to act on.
  */
 export interface RiskBySeverity {
     /** Score 1–4 */
@@ -118,6 +141,29 @@ export interface EvidenceExpiry {
 }
 
 /**
+ * Evidence review timeliness as a PARTITION — every row in at most one bucket.
+ *
+ * `EvidenceExpiry` is not one: its `dueSoon*` windows count evidence of any
+ * status while `current` counts approved evidence whose review date is null or
+ * in the future, so an approved item due in three weeks is in both. That is
+ * harmless where the two are read separately and wrong wherever they are
+ * summed, which is what the dashboard's "Evidence status" metric does.
+ *
+ * Here the review window wins, as it does on the Evidence page's freshness
+ * filter (an approved row due soon is "expiring" there, not "current"):
+ *   - overdue     review date past, not approved (same as `EvidenceExpiry`)
+ *   - dueWithin7d review date in [now, now+7d], any status
+ *   - due8to30d   review date in (now+7d, now+30d], any status
+ *   - current     approved, review date null or after now+30d
+ */
+export interface EvidenceReviewBreakdown {
+    overdue: number;
+    dueWithin7d: number;
+    due8to30d: number;
+    current: number;
+}
+
+/**
  * Policy status summary.
  */
 export interface PolicySummary {
@@ -136,9 +182,13 @@ export interface PolicySummary {
  */
 export interface TaskSummary {
     total: number;
+    /** OPEN + TRIAGED */
     open: number;
     inProgress: number;
+    /** IN_REVIEW — waiting on a reviewer's sign-off; still open work. */
+    inReview: number;
     blocked: number;
+    /** Every terminal status (RESOLVED, CLOSED, CANCELED). */
     resolved: number;
     /** Tasks where dueAt is past and status is not terminal */
     overdue: number;
@@ -348,7 +398,14 @@ export class DashboardRepository {
             db.evidence.count({ where: { tenantId } }),
             db.task.count({ where: { tenantId, status: { notIn: [...TERMINAL_TASK_STATUSES] } } }),
             db.finding.count({ where: { tenantId, status: { not: 'CLOSED' } } }),
-            db.risk.count({ where: { tenantId, inherentScore: { gte: 15 } } }),
+            db.risk.count({
+                where: {
+                    tenantId,
+                    deletedAt: null,
+                    status: openRiskStatusFilter(),
+                    inherentScore: { gte: HIGH_RISK_SCORE_MIN },
+                },
+            }),
             db.evidence.count({ where: { tenantId, status: 'SUBMITTED' } }),
             db.evidence.count({
                 where: { tenantId, nextReviewDate: { lt: new Date() }, status: { not: 'APPROVED' } },
@@ -438,7 +495,7 @@ export class DashboardRepository {
     }
 
     /**
-     * Risk counts by severity tier.
+     * OPEN-risk counts by severity tier.
      *
      * Severity tiers are derived from inherentScore (1–25):
      *   - Low: 1–4
@@ -446,11 +503,16 @@ export class DashboardRepository {
      *   - High: 10–14
      *   - Critical: 15–25
      *
+     * Closed and accepted risks are excluded from every tier, so a closed
+     * critical risk no longer holds the next-step card on "review
+     * high-severity risks" or pulls down the posture radar's Risk axis,
+     * which rates "the share of open risks".
+     *
      * Uses 4 parallel count queries with range filters on an indexed column.
      */
     static async getRiskBySeverity(db: PrismaTx, ctx: RequestContext): Promise<RiskBySeverity> {
         const tenantId = ctx.tenantId;
-        const base = { tenantId, deletedAt: null };
+        const base = { tenantId, deletedAt: null, status: openRiskStatusFilter() };
 
         const [low, medium, high, critical] = await Promise.all([
             db.risk.count({ where: { ...base, inherentScore: { gte: 1, lte: 4 } } }),
@@ -502,10 +564,7 @@ export class DashboardRepository {
     static async getEvidenceExpiry(db: PrismaTx, ctx: RequestContext): Promise<EvidenceExpiry> {
         const tenantId = ctx.tenantId;
         const now = new Date();
-        // Bucket boundaries come from the shared urgency scale so "due
-        // soon" means the same number of days here and on the calendar.
-        const in7d = new Date(now.getTime() + URGENCY_MS.URGENT);
-        const in30d = new Date(now.getTime() + URGENCY_MS.UPCOMING);
+        const { in7d, in30d } = evidenceReviewWindows(now);
         // Shared expiry scope — the same predicate the compliance calendar
         // uses, so both agree on which evidence rows exist at all.
         // See app-layer/domain/evidence-expiry.
@@ -546,6 +605,48 @@ export class DashboardRepository {
         ]);
 
         return { overdue, dueSoon7d, dueSoon30d, noReviewDate, current };
+    }
+
+    /**
+     * Evidence review timeliness as four DISJOINT buckets — see
+     * `EvidenceReviewBreakdown`. Backs the dashboard's "Evidence status"
+     * custom metric, whose headline is the sum of the four.
+     *
+     * Uses 4 parallel count queries on the same scope and clock as
+     * `getEvidenceExpiry`.
+     */
+    static async getEvidenceReviewBreakdown(
+        db: PrismaTx,
+        ctx: RequestContext,
+    ): Promise<EvidenceReviewBreakdown> {
+        const now = new Date();
+        const { in7d, in30d } = evidenceReviewWindows(now);
+        const base = evidenceExpiryScopeWhere(ctx.tenantId);
+
+        const [overdue, dueWithin7d, due8to30d, current] = await Promise.all([
+            db.evidence.count({
+                where: {
+                    ...base,
+                    nextReviewDate: { lt: now },
+                    status: EVIDENCE_OUTSTANDING_STATUS_FILTER,
+                },
+            }),
+            db.evidence.count({
+                where: { ...base, nextReviewDate: { gte: now, lte: in7d } },
+            }),
+            db.evidence.count({
+                where: { ...base, nextReviewDate: { gt: in7d, lte: in30d } },
+            }),
+            db.evidence.count({
+                where: {
+                    ...base,
+                    status: EVIDENCE_REVIEWED_STATUS,
+                    OR: [{ nextReviewDate: null }, { nextReviewDate: { gt: in30d } }],
+                },
+            }),
+        ]);
+
+        return { overdue, dueWithin7d, due8to30d, current };
     }
 
     /**
@@ -620,6 +721,7 @@ export class DashboardRepository {
             total,
             open: (counts['OPEN'] ?? 0) + (counts['TRIAGED'] ?? 0),
             inProgress: counts['IN_PROGRESS'] ?? 0,
+            inReview: counts['IN_REVIEW'] ?? 0,
             blocked: counts['BLOCKED'] ?? 0,
             // Sum all terminal statuses using the shared constant
             resolved: TERMINAL_TASK_STATUSES.reduce(

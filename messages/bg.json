@@ -414,6 +414,9 @@
     "evidence": "Доказателства",
     "openTasks": "Отворени задачи",
     "openFindings": "Отворени констат.",
+    "implementedOfApplicable": "{implemented} от {applicable} внедрени",
+    "overdueCount": "{count} просрочени",
+    "publishedCount": "{count} публикувани",
     "highCritical": "{count} високи/критични",
     "pendingReview": "{count} чакащи преглед",
     "clauseProgress": "Напредък по клаузи (4–10)",
@@ -436,10 +439,36 @@
     "exportReports": "Експорт на отчети",
     "recentActivity": "Скорошна активност",
     "noRecentActivity": "Няма скорошна активност",
+    "nextAction": {
+      "quickAdd": "Бързо добавяне:",
+      "overdueEvidence": {
+        "label": "Обновете просрочените доказателства",
+        "description": "{count, plural, one {# доказателство е с изтекла дата за преглед.} other {# доказателства са с изтекла дата за преглед.}}"
+      },
+      "overdueTasks": {
+        "label": "Решете просрочените задачи",
+        "description": "{count, plural, one {# задача е просрочена.} other {# задачи са просрочени.}} Решете ги преди следващия одит."
+      },
+      "highRisks": {
+        "label": "Прегледайте рисковете с висока тежест",
+        "description": "{count, plural, one {# отворен риск} other {# отворени риска}} с присъща оценка 10 или повече. Прегледайте плановете за третиране."
+      },
+      "lowCoverage": {
+        "label": "Подобрете покритието на контролите",
+        "description": "Покритието е {count}%. Достигнете 80%, за да изпълните базовото ниво на готовност."
+      },
+      "readinessCheck": {
+        "label": "Проверете готовността",
+        "description": "Всичко изглежда добре. Генерирайте отчет за готовност, за да потвърдите."
+      }
+    },
     "hero": {
       "eyebrow": "Състояние на съответствието",
+      "coverageDescription": "{implemented} от {applicable} контроли са внедрени",
+      "vsPrevious": "спрямо предходния",
       "regenerate": "Регенерирай",
       "regenerating": "Регенериране…",
+      "regenerateFailed": "Обобщението не можа да бъде регенерирано. Предишното обобщение остава; опитайте отново по-късно.",
       "radarAria": "Профил на съответствието — шест оси, по-високо е по-добре",
       "radarAxes": {
         "controls": "Контроли",
@@ -461,22 +490,61 @@
         "optimising": "Оптимизиращо"
       },
       "levelOfSuffix": "/ 5 по стълбицата на зрелост",
+      "postureLabel": {
+        "STRONG": "Силно",
+        "ESTABLISHED": "Утвърдено",
+        "DEVELOPING": "Развиващо се",
+        "AT_RISK": "В риск"
+      },
       "nextAxisTitle": "След това {axis}",
       "nextAxisDetail": "{measured} от {total} в добро състояние — ниво {level}. Следващият лъч за повдигане."
     },
     "controlCoverage": "Покритие на контролите",
+    "coverageSegments": {
+      "implemented": "Внедрени",
+      "inProgress": "В процес",
+      "notStarted": "Незапочнати"
+    },
+    "coverageTrend": "Покритие (тенденция)",
     "taskStatus": "Статус на задачите",
+    "taskSegments": {
+      "open": "Отворени",
+      "inProgress": "В процес",
+      "inReview": "В преглед",
+      "blocked": "Блокирани",
+      "resolved": "Разрешени"
+    },
     "policyStatus": "Статус на политиките",
+    "policySegments": {
+      "draft": "Чернови",
+      "inReview": "В преглед",
+      "approved": "Одобрени",
+      "published": "Публикувани",
+      "archived": "Архивирани"
+    },
     "policies": "Политики",
     "riskDistribution": "Разпределение на риска",
+    "severity": {
+      "critical": "Критичен",
+      "high": "Висок",
+      "medium": "Среден",
+      "low": "Нисък"
+    },
+    "donut": {
+      "total": "Общо",
+      "tasks": "Задачи",
+      "policies": "Политики"
+    },
+    "legendRowAria": "{label}: {value} — отвори филтрирания списък",
     "openMitigating": "Отворени / Смекчаване",
     "evidenceStatus": "Статус на доказателствата",
     "overdueTrend": "Просрочени (тенденция)",
     "complianceTrends": "Тенденции на съответствие",
+    "daysOfData": "{count, plural, one {# ден данни} other {# дни данни}}",
     "coverage": "Покритие",
     "openRisks": "Отворени рискове",
     "overdueEvidenceLabel": "Просрочени доказателства",
-    "trendsEmpty": "Графиките на тенденциите ще се появят тук след като дневната снимка на съответствието бъде изпълнена. Снимките се генерират автоматично в 05:00 UTC.",
+    "trendsEmpty": "Графиките на тенденциите ще се появят тук, след като дневната снимка на съответствието е направена в два дни. Снимка се прави автоматично всеки ден в 05:00 UTC.",
     "openList": "Отвори списъка с {label}",
     "customKpi": {
       "title": "Персонализиран показател",
@@ -490,7 +558,36 @@
       "treatmentPlans": "Планове за третиране",
       "total": "Общо",
       "noData": "Все още няма данни за този показател",
-      "trendComing": "Историята на тенденциите за този показател все още се събира."
+      "segments": {
+        "active": "Активни",
+        "retired": "Извадени от употреба",
+        "other": "Други",
+        "planning": "Планиране",
+        "inProgress": "В процес",
+        "ready": "Готови",
+        "complete": "Завършени",
+        "pass": "Успешни",
+        "fail": "Неуспешни",
+        "inconclusive": "Неубедителни",
+        "pending": "Чакащи",
+        "overdue": "Просрочени",
+        "dueWithin7d": "Краен срок ≤7д",
+        "due8to30d": "Краен срок 8–30д",
+        "current": "Актуални",
+        "expiringWithin7d": "Изтичат ≤7д",
+        "expiring8to30d": "Изтичат 8–30д",
+        "expired": "Изтекли",
+        "onTrack": "По график",
+        "completed": "Завършени"
+      },
+      "subtitles": {
+        "highCritical": "{count} високи/критични",
+        "complete": "{count} завършени",
+        "passed": "{count} успешни",
+        "currentPercent": "{count}% актуални",
+        "active": "{count} активни",
+        "dueWithin7d": "{count} с краен срок ≤7д"
+      }
     },
     "exceptions": {
       "title": "Инвентар на изключенията",

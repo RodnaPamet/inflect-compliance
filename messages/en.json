@@ -414,6 +414,9 @@
     "evidence": "Evidence",
     "openTasks": "Open Tasks",
     "openFindings": "Open Findings",
+    "implementedOfApplicable": "{implemented} of {applicable} implemented",
+    "overdueCount": "{count} overdue",
+    "publishedCount": "{count} published",
     "highCritical": "{count} high/critical",
     "pendingReview": "{count} pending review",
     "clauseProgress": "Clause Progress (4–10)",
@@ -436,10 +439,36 @@
     "exportReports": "Export Reports",
     "recentActivity": "Recent Activity",
     "noRecentActivity": "No recent activity",
+    "nextAction": {
+      "quickAdd": "Quick add:",
+      "overdueEvidence": {
+        "label": "Refresh overdue evidence",
+        "description": "{count, plural, one {# evidence record past review date.} other {# evidence records past review date.}}"
+      },
+      "overdueTasks": {
+        "label": "Resolve overdue tasks",
+        "description": "{count, plural, one {# task past due.} other {# tasks past due.}} Address them before the next audit."
+      },
+      "highRisks": {
+        "label": "Review high-severity risks",
+        "description": "{count, plural, one {# open risk} other {# open risks}} with an inherent score of 10 or more. Review treatment plans."
+      },
+      "lowCoverage": {
+        "label": "Improve control coverage",
+        "description": "Coverage is {count}%. Reach 80% to meet the readiness baseline."
+      },
+      "readinessCheck": {
+        "label": "Run a readiness check",
+        "description": "Everything looks good. Generate a readiness report to confirm."
+      }
+    },
     "hero": {
       "eyebrow": "Compliance posture",
+      "coverageDescription": "{implemented} of {applicable} controls implemented",
+      "vsPrevious": "vs prev",
       "regenerate": "Regenerate",
       "regenerating": "Regenerating…",
+      "regenerateFailed": "The summary could not be regenerated. The previous summary is still shown; try again later.",
       "radarAria": "Compliance posture profile — six axes, higher is better",
       "radarAxes": {
         "controls": "Controls",
@@ -461,22 +490,61 @@
         "optimising": "Optimising"
       },
       "levelOfSuffix": "/ 5 on the maturity ladder",
+      "postureLabel": {
+        "STRONG": "Strong",
+        "ESTABLISHED": "Established",
+        "DEVELOPING": "Developing",
+        "AT_RISK": "At risk"
+      },
       "nextAxisTitle": "Then {axis}",
       "nextAxisDetail": "{measured} of {total} healthy — level {level}. The next spoke to lift."
     },
     "controlCoverage": "Control Coverage",
+    "coverageSegments": {
+      "implemented": "Implemented",
+      "inProgress": "In Progress",
+      "notStarted": "Not Started"
+    },
+    "coverageTrend": "Coverage (trend)",
     "taskStatus": "Task Status",
+    "taskSegments": {
+      "open": "Open",
+      "inProgress": "In Progress",
+      "inReview": "In Review",
+      "blocked": "Blocked",
+      "resolved": "Resolved"
+    },
     "policyStatus": "Policy Status",
+    "policySegments": {
+      "draft": "Draft",
+      "inReview": "In Review",
+      "approved": "Approved",
+      "published": "Published",
+      "archived": "Archived"
+    },
     "policies": "Policies",
     "riskDistribution": "Risk Distribution",
+    "severity": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "donut": {
+      "total": "Total",
+      "tasks": "Tasks",
+      "policies": "Policies"
+    },
+    "legendRowAria": "{label}: {value} — open filtered list",
     "openMitigating": "Open / Mitigating",
     "evidenceStatus": "Evidence Status",
     "overdueTrend": "Overdue (trend)",
     "complianceTrends": "Compliance Trends",
+    "daysOfData": "{count, plural, one {# day of data} other {# days of data}}",
     "coverage": "Coverage",
     "openRisks": "Open Risks",
     "overdueEvidenceLabel": "Overdue Evidence",
-    "trendsEmpty": "Trend charts will appear here after the daily compliance snapshot runs. Snapshots are generated automatically at 05:00 UTC.",
+    "trendsEmpty": "Trend charts will appear here once the daily compliance snapshot has run on two days. A snapshot is taken automatically each day at 05:00 UTC.",
     "openList": "Open {label} list",
     "customKpi": {
       "title": "Custom KPI",
@@ -490,7 +558,36 @@
       "treatmentPlans": "Treatment plans",
       "total": "Total",
       "noData": "No data for this metric yet",
-      "trendComing": "Trend history is still being collected for this metric."
+      "segments": {
+        "active": "Active",
+        "retired": "Retired",
+        "other": "Other",
+        "planning": "Planning",
+        "inProgress": "In Progress",
+        "ready": "Ready",
+        "complete": "Complete",
+        "pass": "Pass",
+        "fail": "Fail",
+        "inconclusive": "Inconclusive",
+        "pending": "Pending",
+        "overdue": "Overdue",
+        "dueWithin7d": "Due ≤7d",
+        "due8to30d": "Due 8–30d",
+        "current": "Current",
+        "expiringWithin7d": "Expiring ≤7d",
+        "expiring8to30d": "Expiring 8–30d",
+        "expired": "Expired",
+        "onTrack": "On track",
+        "completed": "Completed"
+      },
+      "subtitles": {
+        "highCritical": "{count} high/critical",
+        "complete": "{count} complete",
+        "passed": "{count} passed",
+        "currentPercent": "{count}% current",
+        "active": "{count} active",
+        "dueWithin7d": "{count} due ≤7d"
+      }
     },
     "exceptions": {
       "title": "Exception Inventory",
