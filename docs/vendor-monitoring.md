@@ -56,7 +56,9 @@ vendor-doc pre-fill stance: nothing scored silently. Findings are idempotent by
 **Schedule.** The `vendor-monitoring` job runs daily at 02:00 UTC (after the
 NVD sync, before the morning digest). It sweeps every enabled `VendorMonitor`
 with a per-tenant system context, then runs the vendor reassessment-reminder
-cadence in the same pass.
+cadence in the same pass. The reminder notifies an overdue vendor's owner once
+per review date and does not move `nextReviewAt`: a vendor stays overdue until
+a completed assessment review rolls the date forward, or someone edits it.
 
 **On-demand.** `POST /api/t/:slug/vendors/:vendorId/monitor/run` runs the
 monitor for one vendor immediately (creates the monitor row on first run).

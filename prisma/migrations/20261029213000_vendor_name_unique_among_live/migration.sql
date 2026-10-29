@@ -1,0 +1,35 @@
+-- #4462: a vendor name is unique among LIVE vendors only.
+--
+-- Vendor is soft-deleted (src/lib/soft-delete.ts), but its name index was the
+-- full UNIQUE ("tenantId", "name") from 20260309132815_vendor_management. A
+-- deleted vendor therefore kept its name taken until the data-lifecycle purge
+-- 90 days later, and a create reusing it failed as a bare P2002. Asset and
+-- Policy made the same swap in 20260312210616_partial_unique_soft_delete.
+--
+-- Order: the partial index is built FIRST, then the full one is dropped, so
+-- there is no moment with no uniqueness on live rows. The build cannot fail:
+-- the full index already holds on every row, so it holds on the live subset.
+-- The new index has its own name because both exist for a moment.
+--
+-- CONCURRENTLY is not used: Prisma runs a migration in a transaction, and
+-- CREATE INDEX CONCURRENTLY cannot run inside one. Vendor is a small
+-- per-tenant register, so the brief write lock a plain build takes is
+-- acceptable.
+--
+-- Rolling deploy: safe in both directions. The partial index refuses a
+-- subset of what the full one refused, so a container still running the old
+-- code sees no new refusal; it can now create a vendor under a deleted
+-- vendor's name, which is the intended change.
+--
+-- prisma/schema cannot express a filtered index, so the schema declares none
+-- for this pair (see the comment on the Vendor model). `prisma migrate diff`
+-- does not read partial indexes, so the fresh-DB drift gate sees no residue.
+--
+-- Rollback: recreate the full index, then drop this one —
+--   CREATE UNIQUE INDEX "Vendor_tenantId_name_key" ON "Vendor"("tenantId", "name");
+--   DROP INDEX "Vendor_tenantId_name_live_key";
+-- The CREATE fails (and nothing is dropped) if a tenant has since reused a
+-- deleted vendor's name; rename or purge one of each such pair first.
+CREATE UNIQUE INDEX "Vendor_tenantId_name_live_key" ON "Vendor"("tenantId", "name") WHERE "deletedAt" IS NULL;
+
+DROP INDEX IF EXISTS "Vendor_tenantId_name_key";

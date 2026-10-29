@@ -7621,7 +7621,8 @@
       "risk": "Risk",
       "nextReview": "Next Review",
       "contractRenewal": "Contract Renewal",
-      "owner": "Owner"
+      "owner": "Owner",
+      "subprocessor": "Sub-processor"
     },
     "badge": {
       "overdue": "Overdue",
@@ -7634,6 +7635,7 @@
       "ownerPlaceholder": "Owner (blank = unassign)",
       "delete": "Delete",
       "failed": "Bulk action failed.",
+      "tooMany": "Select at most {max} vendors at a time.",
       "appliedReconciled": "Applied to {count, plural, one {# vendor} other {# vendors}} · {skipped, plural, one {# was already gone} other {# were already gone}}",
       "appliedBlocked": "Applied to {count, plural, one {# vendor} other {# vendors}} · {blocked} skipped: {names}",
       "applied": "Applied to {count} vendors"
@@ -7695,10 +7697,13 @@
     },
     "form": {
       "name": "Vendor Name",
+      "nameTaken": "Another vendor already has this name. Choose a different name.",
       "legalName": "Legal Name",
       "domain": "Domain",
       "domainPlaceholder": "e.g. aws.amazon.com",
       "websiteUrl": "Website URL",
+      "websiteUrlPlaceholder": "https://example.com",
+      "websiteUrlInvalid": "Enter a full web address, starting with https:// (for example https://acme.com).",
       "country": "Country",
       "description": "Description",
       "status": "Status",
@@ -7712,6 +7717,7 @@
       "isSubprocessor": "This vendor is a sub-processor",
       "statusActive": "Active",
       "statusOnboarding": "Onboarding",
+      "statusOnCreateHint": "A new vendor starts as Onboarding. It can be made Active from its page once an assessment of it has been reviewed.",
       "critLow": "Low",
       "critMedium": "Medium",
       "critHigh": "High",
@@ -8059,7 +8065,8 @@
       "HIGH": "High",
       "CRITICAL": "Critical"
     },
-    "createFailed": "Could not create the vendor."
+    "createFailed": "Could not create the vendor.",
+    "loadError": "Couldn't load vendors. Reload the page to try again."
   },
   "frameworks": {
     "crumb": {

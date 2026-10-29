@@ -228,8 +228,8 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         why: 'Undo of a policy soft-delete — admin.manage alone, for the same reason as its purge sibling.',
     },
     {
-        relPath: 'src/app/api/t/[tenantSlug]/vendors/bulk/delete',
-        why: 'Bulk delete of the vendor register — admin.manage, matching the assertCanAdmin bulkDeleteVendor was raised to. Narrow leaf root: the recoverable bulk/status + bulk/assign siblings stay at vendors.edit and are NOT in scope.',
+        relPath: 'src/app/api/t/[tenantSlug]/vendors/bulk',
+        why: 'Vendor bulk mutations. delete = admin.manage, matching the assertCanAdmin bulkDeleteVendor was raised to; status + assign = vendors.edit, the flag assertCanManageVendors reads. The two recoverable verbs had no route gate until #4462, so their refusals wrote no AUTHZ_DENIED row.',
     },
     {
         relPath: 'src/app/api/t/[tenantSlug]/tests/plans/bulk/delete',

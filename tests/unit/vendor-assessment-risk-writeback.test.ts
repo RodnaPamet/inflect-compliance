@@ -209,3 +209,34 @@ describe('auto-Risk writeback — failure domains are separate', () => {
         expect(mockCreateRisk).not.toHaveBeenCalled();
     });
 });
+
+describe('a completed review with no risk rating still counts as a review (#4462)', () => {
+    it('rolls the next review date and stamps the review, without writing a tier or a risk', async () => {
+        seedCriticalAssessment();
+        mockVendorFindFirst.mockResolvedValue({ nextReviewAt: new Date('2020-01-01T00:00:00Z') });
+
+        const before = Date.now();
+        const res = await reviewAssessment(makeCtx(), 'assess-1', { finalRiskRating: null });
+
+        expect(res.autoCreatedRiskId).toBeNull();
+        expect(mockCreateRisk).not.toHaveBeenCalled();
+        expect(mockVendorUpdateMany).toHaveBeenCalledTimes(1);
+        const data = mockVendorUpdateMany.mock.calls[0][0].data;
+        expect(data).not.toHaveProperty('inherentRisk');
+        expect(data.lastAssessmentReviewedAt).toBeInstanceOf(Date);
+        const next = (data.nextReviewAt as Date).getTime();
+        expect(next).toBeGreaterThanOrEqual(before + 364 * 86_400_000);
+    });
+
+    it('keeps a review date already set in the future', async () => {
+        seedCriticalAssessment();
+        const future = new Date(Date.now() + 30 * 86_400_000);
+        mockVendorFindFirst.mockResolvedValue({ nextReviewAt: future });
+
+        await reviewAssessment(makeCtx(), 'assess-1', { finalRiskRating: null });
+
+        const data = mockVendorUpdateMany.mock.calls[0][0].data;
+        expect(data).not.toHaveProperty('nextReviewAt');
+        expect(data.lastAssessmentReviewedAt).toBeInstanceOf(Date);
+    });
+});

@@ -207,7 +207,7 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 140;
 //   `oi-3-runbook-and-slos.test.ts`'s severity assertion (CRITICAL…PagerDuty,
 //   WARNING…Slack), retired with the EKS-era runbook text they pinned. Both
 //   were bounded, so the unbounded baseline does not move.
-const INTERIOR_SPAN_BASELINE = 305;
+const INTERIOR_SPAN_BASELINE = 303;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

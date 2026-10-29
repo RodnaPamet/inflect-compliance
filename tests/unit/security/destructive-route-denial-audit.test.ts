@@ -140,10 +140,14 @@ jest.mock('@/app-layer/usecases/policy', () => ({
 }));
 
 const mockBulkDeleteVendor = jest.fn();
+const mockBulkSetVendorStatus = jest.fn();
+const mockBulkAssignVendor = jest.fn();
 const mockRemoveVendorDocument = jest.fn();
 const mockRemoveVendorLink = jest.fn();
 jest.mock('@/app-layer/usecases/vendor', () => ({
     bulkDeleteVendor: (...a: unknown[]) => mockBulkDeleteVendor(...a),
+    bulkSetVendorStatus: (...a: unknown[]) => mockBulkSetVendorStatus(...a),
+    bulkAssignVendor: (...a: unknown[]) => mockBulkAssignVendor(...a),
     removeVendorDocument: (...a: unknown[]) => mockRemoveVendorDocument(...a),
     removeVendorLink: (...a: unknown[]) => mockRemoveVendorLink(...a),
 }));
@@ -269,6 +273,8 @@ import { POST as policiesBulkArchive } from '@/app/api/t/[tenantSlug]/policies/b
 import { POST as policyPurge } from '@/app/api/t/[tenantSlug]/policies/[id]/purge/route';
 import { POST as policyRestore } from '@/app/api/t/[tenantSlug]/policies/[id]/restore/route';
 import { POST as vendorsBulkDelete } from '@/app/api/t/[tenantSlug]/vendors/bulk/delete/route';
+import { POST as vendorsBulkStatus } from '@/app/api/t/[tenantSlug]/vendors/bulk/status/route';
+import { POST as vendorsBulkAssign } from '@/app/api/t/[tenantSlug]/vendors/bulk/assign/route';
 import { POST as testPlansBulkDelete } from '@/app/api/t/[tenantSlug]/tests/plans/bulk/delete/route';
 import { POST as testPlansBulkRestore } from '@/app/api/t/[tenantSlug]/tests/plans/bulk/restore/route';
 import { POST as tasksBulkDelete } from '@/app/api/t/[tenantSlug]/tasks/bulk/delete/route';
@@ -641,6 +647,36 @@ const ROUTES: ReadonlyArray<{
         usecase: mockBulkDeleteVendor,
         forwards: [['v-1']],
         result: { deleted: 1 },
+    },
+    // #4462 — the delete's two recoverable siblings. They ran bare
+    // `getTenantCtx`, so the refusal was the usecase's and wrote nothing.
+    // EDITOR-allowed / READER-refused: `vendors.edit` is the flag
+    // `assertCanManageVendors` reads.
+    {
+        name: 'POST /vendors/bulk/status',
+        handler: asHandler(vendorsBulkStatus),
+        path: '/api/t/acme/vendors/bulk/status',
+        params: { tenantSlug: 'acme' },
+        body: { vendorIds: ['v-1'], status: 'OFFBOARDING' },
+        key: 'vendors.edit',
+        usecase: mockBulkSetVendorStatus,
+        forwards: [['v-1'], 'OFFBOARDING'],
+        result: { updated: 1, blocked: [] },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'POST /vendors/bulk/assign',
+        handler: asHandler(vendorsBulkAssign),
+        path: '/api/t/acme/vendors/bulk/assign',
+        params: { tenantSlug: 'acme' },
+        body: { vendorIds: ['v-1'], ownerUserId: 'user-2' },
+        key: 'vendors.edit',
+        usecase: mockBulkAssignVendor,
+        forwards: [['v-1'], 'user-2'],
+        result: { updated: 1 },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
     },
     {
         name: 'POST /tests/plans/bulk/delete',
@@ -1475,6 +1511,31 @@ describe('the body-reading gated handlers authorize BEFORE they parse', () => {
             key: 'vendors.edit',
             usecase: mockAddBundleItem,
             invalidBody: { entityType: 'NOT_A_KIND', entityId: 'x' },
+            deniedRole: 'READER',
+            allowedRole: 'EDITOR',
+        },
+        {
+            name: 'POST /vendors/bulk/status',
+            handler: asHandler(vendorsBulkStatus),
+            path: '/api/t/acme/vendors/bulk/status',
+            params: { tenantSlug: 'acme' },
+            method: 'POST',
+            key: 'vendors.edit',
+            usecase: mockBulkSetVendorStatus,
+            invalidBody: { vendorIds: ['v-1'], status: 'NOT_A_STATUS' },
+            deniedRole: 'READER',
+            allowedRole: 'EDITOR',
+        },
+        {
+            name: 'POST /vendors/bulk/assign',
+            handler: asHandler(vendorsBulkAssign),
+            path: '/api/t/acme/vendors/bulk/assign',
+            params: { tenantSlug: 'acme' },
+            method: 'POST',
+            key: 'vendors.edit',
+            usecase: mockBulkAssignVendor,
+            // Over the 100-row batch cap the schema enforces.
+            invalidBody: { vendorIds: Array.from({ length: 101 }, (_, i) => `v-${i}`), ownerUserId: null },
             deniedRole: 'READER',
             allowedRole: 'EDITOR',
         },

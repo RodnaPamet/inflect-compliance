@@ -59,10 +59,6 @@ describe('Audit S6 — Vendor / Third-Party Risk', () => {
             );
         });
 
-        it('default cadence is 365 days', () => {
-            expect(src).toMatch(/DEFAULT_CADENCE_DAYS\s*=\s*365/);
-        });
-
         it('queries past-due vendors (nextReviewAt < now)', () => {
             expect(src).toMatch(
                 /nextReviewAt:\s*\{[\s\S]{0,80}lt:\s*now/,
@@ -77,15 +73,20 @@ describe('Audit S6 — Vendor / Third-Party Risk', () => {
             expect(src).toMatch(/deletedAt:\s*null/);
         });
 
-        it('fires VENDOR_REVIEW_DUE notification routed to ownerUserId', () => {
-            expect(src).toMatch(/notification\.create/);
+        it('fires VENDOR_REVIEW_DUE notification routed to ownerUserId, deduped', () => {
+            expect(src).toMatch(/notification\.createMany/);
             expect(src).toMatch(/['"]VENDOR_REVIEW_DUE['"]/);
+            expect(src).toMatch(/dedupeKey:\s*vendorReviewDueDedupeKey\(/);
         });
 
-        it('bumps nextReviewAt forward by the cadence', () => {
-            expect(src).toMatch(
-                /vendor\.update\([\s\S]{0,300}nextReviewAt:/,
-            );
+        it('never writes the vendor row — an overdue date stays overdue (#4462)', () => {
+            // It used to set nextReviewAt = now + 365d for every overdue
+            // vendor, unaudited, so the overdue KPI, badge and digest saw a
+            // vendor for at most a day. A completed review moves the date
+            // (vendor-assessment-review.ts), not this sweep. The behaviour is
+            // held by tests/unit/usecases/vendor-reassessment-reminder.test.ts;
+            // this keeps the write itself from coming back.
+            expect(src).not.toMatch(/\bvendor\.(update|updateMany|upsert)\(/);
         });
 
         it('per-vendor try/catch keeps the sweep going on per-row failure', () => {

@@ -357,6 +357,30 @@ export class VendorRepository {
         return db.vendor.update({ where: { id }, data: { status: status as VendorStatus } });
     }
 
+    /**
+     * The LIVE vendor holding `name`, other than `excludeId`, if any. Mirrors
+     * the partial unique index `Vendor_tenantId_name_live_key` (`WHERE
+     * "deletedAt" IS NULL`): exact, case-sensitive, deleted vendors excluded —
+     * so it refuses exactly what the index would (#4462). `excludeId` lets a
+     * save that keeps the vendor's own name through.
+     */
+    static async findLiveByName(
+        db: PrismaTx,
+        ctx: RequestContext,
+        name: string,
+        excludeId?: string,
+    ) {
+        return db.vendor.findFirst({
+            where: {
+                tenantId: ctx.tenantId,
+                name,
+                deletedAt: null,
+                ...(excludeId ? { id: { not: excludeId } } : {}),
+            },
+            select: { id: true },
+        });
+    }
+
     /** Fetch the tenant's vendors for the given ids (bulk-action audit source). */
     static async listByIds(db: PrismaTx, ctx: RequestContext, ids: string[]) {
         // Bounded by the `in: ids` set (bulk schemas cap at 100 ids); a `take:`

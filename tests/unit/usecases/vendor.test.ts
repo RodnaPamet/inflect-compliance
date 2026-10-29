@@ -37,6 +37,8 @@ jest.mock('@/app-layer/repositories/VendorRepository', () => ({
         getById: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        // The live-name check (#4462). Unset ⇒ undefined ⇒ the name is free.
+        findLiveByName: jest.fn(),
     },
     VendorDocumentRepository: {
         listByVendor: jest.fn(),
@@ -124,6 +126,38 @@ describe('createVendor — RBAC + sanitisation', () => {
             createVendor(makeRequestContext('AUDITOR'), { name: 'x' }),
         ).rejects.toThrow();
     });
+
+    // #4462 — creation applies the activation gate every other route to
+    // ACTIVE applies. A new vendor has no assessment, so ACTIVE is refused,
+    // by name, before anything is written. It used to be inserted as asked.
+    it('refuses status ACTIVE with VENDOR_ACTIVATION_NEEDS_REVIEW, before any write', async () => {
+        // A working transaction, so "nothing was written" is a real claim:
+        // without the gate the insert below would run.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+
+        await expect(
+            createVendor(makeRequestContext('ADMIN'), { name: 'Acme', status: 'ACTIVE' }),
+        ).rejects.toMatchObject({
+            status: 400,
+            message: expect.stringMatching(/completed assessment review/),
+            details: { reason: 'VENDOR_ACTIVATION_NEEDS_REVIEW' },
+        });
+        expect(mockVendorCreate).not.toHaveBeenCalled();
+        expect(mockLog).not.toHaveBeenCalled();
+        // The gate refused before the transaction opened, so the queued
+        // implementation is still pending — drop it rather than hand it to
+        // the next test.
+        mockRunInTx.mockReset();
+    });
+
+    it.each(['ONBOARDING', 'OFFBOARDING', undefined] as const)(
+        'still creates a vendor at status %s (the gate fires on ACTIVE only)',
+        async (status) => {
+            mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+            await createVendor(makeRequestContext('ADMIN'), { name: 'Acme', ...(status ? { status } : {}) });
+            expect(mockVendorCreate).toHaveBeenCalledTimes(1);
+        },
+    );
 
     it('sanitises name + legalName + country + domain + websiteUrl + description + tags', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
@@ -297,5 +331,73 @@ describe('updateVendor — completed-review activation gate (PR-T: single gate i
         await expect(
             updateVendor(makeRequestContext('ADMIN'), 'v1', { status: 'OFFBOARDING' }),
         ).resolves.toBeDefined();
+    });
+});
+
+describe('vendor names are unique among LIVE vendors, refused by name (#4462)', () => {
+    // The partial unique index `Vendor_tenantId_name_live_key` would refuse a
+    // clash anyway, as a bare P2002 the API answers with "A resource with
+    // that unique constraint already exists". These hold the named 409 the
+    // usecases give first, and that they ask the index's question.
+    const mockFindLive = VendorRepository.findLiveByName as jest.MockedFunction<
+        typeof VendorRepository.findLiveByName
+    >;
+    const db = {};
+
+    it('createVendor refuses a name a live vendor holds — 409 VENDOR_NAME_TAKEN, nothing written', async () => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+        mockFindLive.mockResolvedValueOnce({ id: 'v-other' } as never);
+
+        await expect(
+            createVendor(makeRequestContext('EDITOR'), { name: 'Acme' }),
+        ).rejects.toMatchObject({
+            status: 409,
+            message: 'Another vendor already has this name. Choose a different name.',
+            details: { reason: 'VENDOR_NAME_TAKEN' },
+        });
+        expect(mockVendorCreate).not.toHaveBeenCalled();
+        expect(mockLog).not.toHaveBeenCalled();
+    });
+
+    it('createVendor asks about the name as it will be WRITTEN (sanitised), excluding nobody', async () => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+        const ctx = makeRequestContext('EDITOR');
+
+        await createVendor(ctx, { name: 'Acme' });
+
+        expect(mockFindLive).toHaveBeenCalledWith(db, ctx, 'SANITISED(Acme)', undefined);
+        expect(mockVendorCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('a rename onto a name a live vendor holds is refused the same way', async () => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+        mockFindLive.mockResolvedValueOnce({ id: 'v-other' } as never);
+
+        await expect(
+            updateVendor(makeRequestContext('ADMIN'), 'v1', { name: 'Taken' }),
+        ).rejects.toMatchObject({ status: 409, details: { reason: 'VENDOR_NAME_TAKEN' } });
+        expect(mockVendorUpdate).not.toHaveBeenCalled();
+    });
+
+    it('a save that keeps the vendor\'s own name excludes the vendor itself from the check', async () => {
+        // The edit form sends `name` on every save. The vendor's own row
+        // must not count as "another vendor".
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+        mockVendorUpdate.mockResolvedValueOnce({ id: 'v1', name: 'SANITISED(Same)' } as never);
+        const ctx = makeRequestContext('ADMIN');
+
+        await updateVendor(ctx, 'v1', { name: 'Same' });
+
+        expect(mockFindLive).toHaveBeenCalledWith(db, ctx, 'SANITISED(Same)', 'v1');
+        expect(mockVendorUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('a patch without a name does not run the check', async () => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+        mockVendorUpdate.mockResolvedValueOnce({ id: 'v1', name: 'X' } as never);
+
+        await updateVendor(makeRequestContext('ADMIN'), 'v1', { description: 'd' });
+
+        expect(mockFindLive).not.toHaveBeenCalled();
     });
 });

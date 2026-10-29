@@ -1,5 +1,5 @@
 import { getTenantCtx } from '@/app-layer/context';
-import { listVendors } from '@/app-layer/usecases/vendor';
+import { listVendors, listVendorKpiCounts } from '@/app-layer/usecases/vendor';
 import { VendorsClient } from './VendorsClient';
 
 export const dynamic = 'force-dynamic';
@@ -37,11 +37,14 @@ export default async function VendorRegisterPage({
         if (typeof val === 'string' && val) filters[key] = val;
     }
 
-    const vendors = await listVendors(
-        ctx,
-        Object.keys(filters).length > 0 ? filters : undefined,
-        { take: SSR_PAGE_LIMIT },
-    );
+    const activeFilters = Object.keys(filters).length > 0 ? filters : undefined;
+    // The KPI counts are rendered with the rows. They used to arrive only with
+    // the browser's first fetch, so every card read 0 until it landed — and
+    // went on reading 0 if it failed (#4462). Aggregates, uncapped.
+    const [vendors, kpiCounts] = await Promise.all([
+        listVendors(ctx, activeFilters, { take: SSR_PAGE_LIMIT }),
+        listVendorKpiCounts(ctx, activeFilters),
+    ]);
 
     // Render the client directly (no wrapping <div>): the plain-block
     // wrapper severed ListPageShell's `md:flex-1 md:min-h-0` flex chain,
@@ -50,10 +53,21 @@ export default async function VendorRegisterPage({
     return (
         <VendorsClient
             initialVendors={JSON.parse(JSON.stringify(vendors))}
+            initialKpiCounts={kpiCounts}
             initialFilters={filters}
             tenantSlug={tenantSlug}
+            // Each flag is what the server checks for that verb: the key the
+            // route's `requirePermission` names AND what its usecase asserts.
+            // `vendors.create` alone was the create button's gate while
+            // `createVendor` asserts `vendors.edit`, and the bulk bar had no
+            // gate at all (#4462).
             permissions={{
-                canCreate: ctx.appPermissions.vendors.create,
+                // POST /vendors: vendors.create, then assertCanManageVendors.
+                canCreate: ctx.appPermissions.vendors.create && ctx.appPermissions.vendors.edit,
+                // bulk/status + bulk/assign: vendors.edit, route and usecase.
+                canEdit: ctx.appPermissions.vendors.edit,
+                // bulk/delete: admin.manage, then assertCanAdmin (coarse tier).
+                canDelete: ctx.permissions.canAdmin && ctx.appPermissions.admin.manage,
             }}
         />
     );

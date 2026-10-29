@@ -65,6 +65,10 @@ const GATED: Record<string, string> = {
     // assertCanAdmin.
     'evidence/bulk/delete/route.ts': 'admin.manage',
     'vendors/bulk/delete/route.ts': 'admin.manage',
+    // assertCanManageVendors, which reads appPermissions.vendors.edit — the
+    // same predicate. Both routes ran bare getTenantCtx until #4462.
+    'vendors/bulk/status/route.ts': 'vendors.edit',
+    'vendors/bulk/assign/route.ts': 'vendors.edit',
     // assertCanAdmin via purgeEntity / restoreEntity. The policy pair is
     // admin.manage ALONE — purgePolicy/restorePolicy delegate straight to
     // soft-delete-operations and never reach assertCanAdminPolicies, so

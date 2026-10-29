@@ -9,22 +9,17 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import {
     parseYMD,
     startOfUtcDay,
     toYMD,
 } from '@/components/ui/date-picker/date-utils';
+import { VENDOR_FIELD_MAX } from '@/lib/schemas/vendor-form';
 import type { NewVendorFormFields, NewVendorFormReturn } from './useNewVendorForm';
 
 export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
     const t = useTranslations('vendors');
-    const STATUS_OPTIONS = [
-        { value: 'ACTIVE', label: t('form.statusActive') },
-        { value: 'ONBOARDING', label: t('form.statusOnboarding') },
-    ];
     const CRIT_OPTIONS: ComboboxOption[] = [
         { value: 'LOW', label: t('form.critLow') },
         { value: 'MEDIUM', label: t('form.critMedium') },
@@ -44,6 +39,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                     id="vendor-name-input"
                     value={form.fields.name}
                     onChange={(e) => form.setField('name', e.target.value)}
+                    maxLength={VENDOR_FIELD_MAX.name}
                     required
                 />
             </FormField>
@@ -54,6 +50,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                         id="vendor-legal-name"
                         value={form.fields.legalName}
                         onChange={(e) => form.setField('legalName', e.target.value)}
+                        maxLength={VENDOR_FIELD_MAX.legalName}
                     />
                 </FormField>
                 <FormField label={t('form.domain')}>
@@ -62,17 +59,28 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                         value={form.fields.domain}
                         onChange={(e) => form.setField('domain', e.target.value)}
                         placeholder={t('form.domainPlaceholder')}
+                        maxLength={VENDOR_FIELD_MAX.domain}
                     />
                 </FormField>
             </div>
 
             <div className="grid grid-cols-2 gap-default">
-                <FormField label={t('form.websiteUrl')}>
+                {/* A value that is not a full URL (`acme.com`) fails the
+                    schema, which disables Create Vendor. The field used to
+                    render no error, so the button greyed out with nothing to
+                    say why (#4462). The error shows once the field is left. */}
+                <FormField
+                    label={t('form.websiteUrl')}
+                    error={form.fieldError('websiteUrl') ? t('form.websiteUrlInvalid') : undefined}
+                >
                     <Input
                         id="vendor-website"
                         type="url"
                         value={form.fields.websiteUrl}
                         onChange={(e) => form.setField('websiteUrl', e.target.value)}
+                        onBlur={() => form.touchField('websiteUrl')}
+                        placeholder={t('form.websiteUrlPlaceholder')}
+                        maxLength={VENDOR_FIELD_MAX.websiteUrl}
                     />
                 </FormField>
                 <FormField label={t('form.country')}>
@@ -80,6 +88,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                         id="vendor-country"
                         value={form.fields.country}
                         onChange={(e) => form.setField('country', e.target.value)}
+                        maxLength={VENDOR_FIELD_MAX.country}
                     />
                 </FormField>
             </div>
@@ -90,40 +99,25 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                     className="h-20"
                     value={form.fields.description}
                     onChange={(e) => form.setField('description', e.target.value)}
+                    maxLength={VENDOR_FIELD_MAX.description}
                 />
             </FormField>
 
             <div className="grid grid-cols-3 gap-default">
+                {/* Not a choice (#4462). A new vendor starts Onboarding: Active
+                    needs a completed assessment review, and a vendor that does
+                    not exist yet has none, so the server refuses it. The form
+                    used to offer Active here. */}
                 <div>
-                    <label className="block text-sm font-medium text-content-default mb-1">
+                    <span className="block text-sm font-medium text-content-default mb-1">
                         {t('form.status')}
-                    </label>
-                    <RadioGroup
-                        id="vendor-status-select"
-                        value={form.fields.status}
-                        onValueChange={(v) =>
-                            form.setField('status', v as NewVendorFormFields['status'])
-                        }
-                        className="flex gap-default pt-1"
-                    >
-                        {STATUS_OPTIONS.map((o) => {
-                            const itemId = `vendor-status-${o.value.toLowerCase()}`;
-                            return (
-                                <div
-                                    key={o.value}
-                                    className="flex items-center gap-tight"
-                                >
-                                    <RadioGroupItem value={o.value} id={itemId} />
-                                    <Label
-                                        htmlFor={itemId}
-                                        className="cursor-pointer"
-                                    >
-                                        {o.label}
-                                    </Label>
-                                </div>
-                            );
-                        })}
-                    </RadioGroup>
+                    </span>
+                    <p id="vendor-status-on-create" className="pt-1 text-sm text-content-default">
+                        {t('form.statusOnboarding')}
+                    </p>
+                    <p className="mt-1 text-xs text-content-muted">
+                        {t('form.statusOnCreateHint')}
+                    </p>
                 </div>
                 <FormField label={t('form.criticality')}>
                     <Combobox

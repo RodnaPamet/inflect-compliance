@@ -1559,6 +1559,15 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'policies.edit here would out-strict the usecase.',
     },
     {
+        path: new RegExp(`^${T}\\/vendors\\/bulk\\/(status|assign)$`),
+        methods: ['POST'],
+        permission: 'vendors.edit',
+        note:
+            'Bulk vendor status change / owner assign — recoverable vendor ' +
+            'mutations. vendors.edit IS the predicate assertCanManageVendors ' +
+            'reads, so the route gate only moves where a refusal is recorded.',
+    },
+    {
         path: new RegExp(`^${T}\\/vendors\\/bulk\\/delete$`),
         methods: ['POST'],
         permission: 'admin.manage',

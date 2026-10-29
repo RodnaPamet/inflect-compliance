@@ -7621,7 +7621,8 @@
       "risk": "Риск",
       "nextReview": "Следващ преглед",
       "contractRenewal": "Подновяване на договор",
-      "owner": "Отговорник"
+      "owner": "Отговорник",
+      "subprocessor": "Подизпълнител"
     },
     "badge": {
       "overdue": "Просрочено",
@@ -7634,6 +7635,7 @@
       "ownerPlaceholder": "Отговорник (празно = премахване)",
       "delete": "Изтрий",
       "failed": "Груповото действие е неуспешно.",
+      "tooMany": "Изберете най-много {max} доставчици наведнъж.",
       "appliedReconciled": "Приложено за {count, plural, one {# доставчик} other {# доставчика}} · {skipped, plural, one {# вече липсваше} other {# вече липсваха}}",
       "appliedBlocked": "Приложено за {count, plural, one {# доставчик} other {# доставчика}} · {blocked} пропуснати: {names}",
       "applied": "Приложено за {count} доставчика"
@@ -7695,10 +7697,13 @@
     },
     "form": {
       "name": "Име на доставчик",
+      "nameTaken": "Друг доставчик вече има това име. Изберете друго име.",
       "legalName": "Юридическо име",
       "domain": "Домейн",
       "domainPlaceholder": "напр. aws.amazon.com",
       "websiteUrl": "Уеб адрес",
+      "websiteUrlPlaceholder": "https://example.com",
+      "websiteUrlInvalid": "Въведете пълен уеб адрес, започващ с https:// (например https://acme.com).",
       "country": "Държава",
       "description": "Описание",
       "status": "Статус",
@@ -7712,6 +7717,7 @@
       "isSubprocessor": "Този доставчик е подизпълнител",
       "statusActive": "Активен",
       "statusOnboarding": "Включване",
+      "statusOnCreateHint": "Новият доставчик започва като „Включване“. Може да бъде направен активен от страницата му, след като негова оценка бъде прегледана.",
       "critLow": "Ниска",
       "critMedium": "Средна",
       "critHigh": "Висока",
@@ -8059,7 +8065,8 @@
       "HIGH": "Висок",
       "CRITICAL": "Критичен"
     },
-    "createFailed": "Доставчикът не можа да бъде създаден."
+    "createFailed": "Доставчикът не можа да бъде създаден.",
+    "loadError": "Доставчиците не можаха да бъдат заредени. Презаредете страницата, за да опитате отново."
   },
   "frameworks": {
     "crumb": {
