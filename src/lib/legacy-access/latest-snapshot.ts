@@ -9,17 +9,28 @@
  * different snapshot, an administrator could match one snapshot and then be
  * refused `NOT_RECONCILED` by a campaign that read another.
  *
- * `completedAt` DESC puts a NULL first in Postgres, so a snapshot that has not
- * finished (PENDING) is the latest one. Both readers then report it as not
- * complete, which is the truth about a read still in progress.
+ * "Latest" is the newest read STARTED (`pulledAt`), not the newest finished.
+ * A read still in progress is therefore the latest one, and both readers report
+ * it as not complete, which is the truth about it. A read that crashed stays
+ * the latest only until somebody starts another, which then takes over whether
+ * it completes or refuses. Ordering by `completedAt` DESC instead sorted an
+ * unfinished row's NULL first in Postgres, so one crashed pull blocked every
+ * campaign for the application until the 30-day unconsumed-snapshot purge
+ * removed it, and reading again changed nothing (owner decision, 2026-10-29).
+ * `id` breaks a tie, so two readers can never disagree on equal timestamps.
  *
- * No server imports, so a client component can hold it.
+ * Only a type is imported, so a client component can still hold it.
  *
  * @module lib/legacy-access/latest-snapshot
  */
 
+import type { Prisma } from '@prisma/client';
+
 /** `orderBy` for the latest `LegacyAccessSnapshot` of a connection. */
-export const LATEST_SNAPSHOT_ORDER = { completedAt: 'desc' } as const;
+export const LATEST_SNAPSHOT_ORDER: Prisma.LegacyAccessSnapshotOrderByWithRelationInput[] = [
+    { pulledAt: 'desc' },
+    { id: 'desc' },
+];
 
 /**
  * `orderBy` for the latest `LegacyAccountResolution` of a snapshot. Resolutions

@@ -76,6 +76,7 @@ async function seedSnapshot(opts: {
     tenantId?: string;
     connection?: string;
     status?: 'COMPLETE' | 'PARTIAL' | 'PENDING';
+    pulledAt?: Date;
     completedAt?: Date | null;
     accountKeys?: string[];
     refusalReason?: 'TORN_SNAPSHOT' | null;
@@ -97,6 +98,7 @@ async function seedSnapshot(opts: {
             status: opts.status ?? 'COMPLETE',
             refusalReason: opts.refusalReason ?? null,
             refusalDetail: opts.refusalDetail ?? null,
+            ...(opts.pulledAt ? { pulledAt: opts.pulledAt } : {}),
             completedAt: opts.completedAt === undefined ? new Date() : opts.completedAt,
         },
     });
@@ -269,6 +271,45 @@ describeFn('GET /admin/legacy-access/snapshot (real route, real usecase, real DB
         await expect(createLegacyAccessReview(admin, {
             name: `Legacy ${SUITE}`, connectionId, reviewerUserId: REVIEWER,
         })).rejects.toThrow(/^SNAPSHOT_INCOMPLETE: /);
+    });
+
+    it('a read that crashed is no longer the latest once a newer read has started and completed', async () => {
+        // A pull that dies mid-write leaves PENDING with no completedAt. Ordered by
+        // completedAt it sorted first for good and blocked every campaign until the
+        // purge; ordered by when the read STARTED, reading again supersedes it.
+        const crashed = await seedSnapshot({
+            status: 'PENDING', completedAt: null, pulledAt: new Date(Date.now() - 3_600_000),
+        });
+        const retried = await seedSnapshot({ accountKeys: ['kpatel', 'jsmith'] });
+        await seedRun(retried.id, { kpatel: 'UNMATCHED', jsmith: 'LINKED' }, new Date());
+
+        const admin = ctxFor(ADMIN, 'ADMIN');
+        const { snapshot } = await getLegacySnapshotStanding(admin, connectionId);
+        expect(snapshot).toMatchObject({ id: retried.id, status: 'COMPLETE', rowCount: 2 });
+        expect(snapshot?.id).not.toBe(crashed.id);
+
+        const created = await createLegacyAccessReview(admin, {
+            name: `Legacy ${SUITE}`, connectionId, reviewerUserId: REVIEWER,
+        });
+        expect(created.snapshotId).toBe(retried.id);
+        expect(created.subjectCount).toBe(2);
+    });
+
+    it('the read started last is the latest, even when one started earlier finished after it', async () => {
+        // Started earlier, finished later: the order is by start, so the read
+        // started second is the latest even though it completed first.
+        const startedFirst = await seedSnapshot({
+            accountKeys: ['kpatel'], pulledAt: new Date(Date.now() - 600_000), completedAt: new Date(),
+        });
+        const startedSecond = await seedSnapshot({
+            accountKeys: ['kpatel', 'jsmith'], pulledAt: new Date(Date.now() - 300_000),
+            completedAt: new Date(Date.now() - 120_000),
+        });
+
+        const admin = ctxFor(ADMIN, 'ADMIN');
+        const { snapshot } = await getLegacySnapshotStanding(admin, connectionId);
+        expect(snapshot?.id).toBe(startedSecond.id);
+        expect(snapshot?.id).not.toBe(startedFirst.id);
     });
 
     it('another tenant\'s snapshot is not readable through its connection id', async () => {
