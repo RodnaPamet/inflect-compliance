@@ -608,7 +608,10 @@ describe('listCustomRoles — permissionsJson normalisation', () => {
         const roles = await listCustomRoles(makeCtx('ADMIN'));
         const perms = roles[0].permissionsJson;
 
-        // EDITOR grants assets view/create/edit; personnel + incidents view only.
+        // EDITOR grants assets view/create/edit and incidents view only. Its
+        // personnel domain is all-false (OWNER/ADMIN only since 2026-10-29),
+        // so the personnel line can no longer tell a fill from an invented
+        // `false`; the assets and incidents lines still can.
         expect(perms.assets).toEqual(getPermissionsForRole('EDITOR').assets);
         expect(perms.personnel).toEqual(getPermissionsForRole('EDITOR').personnel);
         expect(perms.incidents).toEqual(getPermissionsForRole('EDITOR').incidents);
