@@ -58,6 +58,14 @@ const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'neutral'>
 const CRIT_VARIANT: Record<string, 'neutral' | 'warning' | 'error'> = {
     LOW: 'neutral', MEDIUM: 'warning', HIGH: 'error', CRITICAL: 'error',
 };
+/**
+ * Criticality and risk sort by LEVEL, not by name. The accessors returned the
+ * enum string, which `sortRowsByDisplay` compares alphabetically: Critical,
+ * High, Low, Medium (#4462). An unknown value sorts with the empties.
+ */
+const LEVEL_RANK: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+const levelRank = (level: string | null | undefined): number | null =>
+    (level && LEVEL_RANK[level]) || null;
 
 /**
  * The batch cap every vendor bulk route's schema enforces
@@ -258,13 +266,15 @@ function VendorsPageInner({ initialVendors, initialKpiCounts, initialFilters, te
     // same-displayed-value rows contiguously and can never drift from the
     // rendered cell. `risk` + `owner` point their column `accessorFn` at the
     // SAME function below (see the column defs) to keep the key and the
-    // rendered value in lockstep.
+    // rendered value in lockstep. Criticality and risk display a LEVEL, so
+    // they sort on its rank (`levelRank`); a vendor with no risk stays at
+    // one end, with the empties (`sortRowsByDisplay`'s nullish rule).
     const sortAccessors = useMemo<SortAccessors<VendorRow>>(
         () => ({
             name: (v) => v.name || '',
             status: (v) => v.status || '',
-            criticality: (v) => v.criticality || '',
-            risk: (v) => v.inherentRisk || '',
+            criticality: (v) => levelRank(v.criticality),
+            risk: (v) => levelRank(v.inherentRisk),
             // Cells render the relative form of these timestamps, which is a
             // monotonic transform of the ISO value — sorting on the raw ISO
             // preserves the displayed order and grouping.
@@ -593,6 +603,10 @@ function VendorsPageInner({ initialVendors, initialKpiCounts, initialFilters, te
             { id: 'nextReviewAt', label: t('columns.nextReview') },
             { id: 'contractRenewalAt', label: t('columns.contractRenewal'), defaultVisible: false },
             { id: 'owner', label: t('columns.owner') },
+            // The badge R13-PR1 moved out of the title cell. The comment on
+            // the name column said it had its own column here; it had none,
+            // so the flag was fetched and shown nowhere (#4462).
+            { id: 'subprocessor', label: t('columns.subprocessor'), defaultVisible: false },
         ],
         [t],
     );
@@ -673,6 +687,16 @@ function VendorsPageInner({ initialVendors, initialKpiCounts, initialFilters, te
             header: t('columns.owner'),
             accessorFn: (v) => v.owner?.name || '—',
             cell: ({ getValue }) => <span className="text-content-muted">{getValue()}</span>,
+        },
+        {
+            id: 'subprocessor',
+            header: t('columns.subprocessor'),
+            cell: ({ row }) =>
+                row.original.isSubprocessor ? (
+                    <StatusBadge variant="info" icon={null}>{t('detail.subprocessor')}</StatusBadge>
+                ) : (
+                    <span className="text-content-muted">—</span>
+                ),
         },
     ])), [tenantHref, hydratedNow, orderColumns, sortAccessors, t]);
 

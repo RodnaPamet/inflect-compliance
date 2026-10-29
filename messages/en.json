@@ -7300,7 +7300,8 @@
       "risk": "Risk",
       "nextReview": "Next Review",
       "contractRenewal": "Contract Renewal",
-      "owner": "Owner"
+      "owner": "Owner",
+      "subprocessor": "Sub-processor"
     },
     "badge": {
       "overdue": "Overdue",

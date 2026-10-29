@@ -19,7 +19,9 @@
  *   4. a refused bulk action shows the server's reason, and a selection over
  *      the routes' 100-row cap is refused before the request, by name;
  *   5. a failed load reads as an error — not as an empty register, not as the
- *      previous filter's rows — and the KPI cards are right on first paint.
+ *      previous filter's rows — and the KPI cards are right on first paint;
+ *   6. Criticality and Risk sort by level, and the sub-processor flag has the
+ *      column the code said it had.
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -531,5 +533,74 @@ describe('Vendors list — a failed load reads as a failure', () => {
         expect(kpiValue(V.kpi.active)).toBe('3');
         expect(kpiValue(V.kpi.critical)).toBe('2');
         expect(kpiValue(V.kpi.reviewOverdue)).toBe('1');
+    });
+});
+
+// ─── 6. Sorting by level, and the sub-processor column ──────────────
+
+const LEVEL_ROWS = [
+    row({ id: 'v-low', name: 'Low Co', criticality: 'LOW', inherentRisk: 'HIGH' }),
+    row({ id: 'v-crit', name: 'Crit Co', criticality: 'CRITICAL', inherentRisk: null }),
+    row({ id: 'v-med', name: 'Med Co', criticality: 'MEDIUM', inherentRisk: 'LOW', isSubprocessor: true }),
+    row({ id: 'v-high', name: 'High Co', criticality: 'HIGH', inherentRisk: 'CRITICAL' }),
+];
+
+const shownOrder = () =>
+    Array.from(document.querySelectorAll('[id^="vendor-link-"]')).map((el) => el.textContent);
+
+async function clickHeader(columnId: string) {
+    const button = document.querySelector(`th[data-column-id="${columnId}"] button`) as HTMLElement;
+    expect(button).not.toBeNull();
+    await act(async () => {
+        fireEvent.click(button);
+    });
+}
+
+describe('Vendors list — Criticality and Risk sort by level', () => {
+    beforeEach(() => {
+        listRows = LEVEL_ROWS;
+        mockListVendors.mockResolvedValue(LEVEL_ROWS);
+    });
+
+    it('Criticality orders Critical, High, Medium, Low — not alphabetically', async () => {
+        await mountAs('READER');
+        await clickHeader('criticality');
+        // Descending first. Alphabetical was Medium, Low, High, Critical.
+        await waitFor(() => expect(shownOrder()).toEqual(['Crit Co', 'High Co', 'Med Co', 'Low Co']));
+        await clickHeader('criticality');
+        await waitFor(() => expect(shownOrder()).toEqual(['Low Co', 'Med Co', 'High Co', 'Crit Co']));
+    });
+
+    it('Risk orders by level too, and a vendor with no risk stays at one end', async () => {
+        await mountAs('READER');
+        await clickHeader('risk');
+        await waitFor(() => expect(shownOrder()).toEqual(['Crit Co', 'High Co', 'Low Co', 'Med Co']));
+        await clickHeader('risk');
+        await waitFor(() => expect(shownOrder()).toEqual(['Med Co', 'Low Co', 'High Co', 'Crit Co']));
+    });
+});
+
+describe('Vendors list — the sub-processor column', () => {
+    it('shows the flag in its own column, once the gear turns it on', async () => {
+        listRows = LEVEL_ROWS;
+        mockListVendors.mockResolvedValue(LEVEL_ROWS);
+        // What the gear persists: the visible columns, in order.
+        window.localStorage.setItem(
+            'inflect:col-vis:vendors',
+            JSON.stringify(['name', 'status', 'criticality', 'risk', 'nextReviewAt', 'owner', 'subprocessor']),
+        );
+        await mountAs('READER');
+        const header = await waitFor(() => {
+            const th = document.querySelector('th[data-column-id="subprocessor"]');
+            expect(th).not.toBeNull();
+            return th as HTMLElement;
+        });
+        expect(header.textContent).toContain(V.columns.subprocessor);
+        // Cells carry no column id; the header's position is the cell's.
+        const at = Array.from((header.parentElement as HTMLElement).children).indexOf(header);
+        const cellOf = (name: string) =>
+            (screen.getByText(name).closest('tr') as HTMLElement).children[at]?.textContent;
+        expect(cellOf('Med Co')).toBe(V.detail.subprocessor);
+        expect(cellOf('Low Co')).toBe('—');
     });
 });
