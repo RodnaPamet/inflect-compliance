@@ -437,6 +437,134 @@ describe('an acceptance is the owner’s, and it lapses', () => {
     });
 });
 
+describe('an acceptance is one-way at the database (#4435)', () => {
+    /**
+     * The trigger, not the usecase. The app layer already refuses a non-owner
+     * and caps the term at 365 days — `acceptHarnessShortfall` is tested for
+     * both above — and this asks the question those cannot: what happens when
+     * something reaches the row WITHOUT going through that seam. A future seam
+     * change, a migration or a direct connection all do.
+     *
+     * Rows are created directly here for the same reason, and because it makes
+     * these cases independent of the order the acceptance tests above run in.
+     *
+     * OWNER DECISION, 2026-10-29: invalidate only, never extend. So `expiresAt`
+     * is immutable, and a longer acceptance is a NEW row with its own approver
+     * — which `renewedFromId` already models.
+     */
+    /** A write-capable agent at H2 falls short of the H3 bar, as above. */
+    const writingAgent = (b: HarnessReportBody) => {
+        b.agents = [{ ...b.agents[0], tools: [{ ...b.agents[0].tools[0], readOnlyHint: false }] }];
+    };
+    let agentId = '';
+    const live = async () => {
+        const row = await prisma.agentHarnessAcceptance.create({
+            data: {
+                tenantId: T2,
+                discoveredAgentId: agentId,
+                acceptedLevel: 'H2',
+                justification: 'Compensating review by the operations lead until the manifests are pinned.',
+                acceptedByUserId: seeded[T2].ownerUserId,
+                expiresAt: new Date(Date.now() + 30 * 86_400_000),
+            },
+            select: { id: true },
+        });
+        return row.id;
+    };
+
+    beforeAll(async () => {
+        // Its OWN ingest, not the sibling describe's. Reading a fixture another
+        // describe's `beforeAll` created makes this block depend on run order
+        // and silently break under `-t` — measured: all six failed on a missing
+        // DiscoveredAgent when run with a name filter.
+        await ingest(T2, bodyFor(T2, 'scan_oneway', writingAgent));
+        const row = await prisma.discoveredAgent.findFirstOrThrow({
+            where: { tenantId: T2, discoveredId: 'entra:sp:registered-1' },
+            select: { id: true },
+        });
+        agentId = row.id;
+    });
+
+    it('refuses to EXTEND the expiry — the decision this table records', async () => {
+        const id = await live();
+        await expect(
+            prisma.agentHarnessAcceptance.update({
+                where: { id },
+                data: { expiresAt: new Date(Date.now() + 400 * 86_400_000) },
+            }),
+        ).rejects.toThrow(/AGENT_HARNESS_ACCEPTANCE_ONE_WAY/);
+    });
+
+    it('refuses to rewrite the justification, the approver or the agent', async () => {
+        const id = await live();
+        for (const data of [
+            { justification: 'a different reason entirely, written later' },
+            { acceptedByUserId: seeded[T2].otherOwnerUserId },
+            { acceptedLevel: 'H0' as const },
+        ]) {
+            await expect(prisma.agentHarnessAcceptance.update({ where: { id }, data })).rejects.toThrow(
+                /AGENT_HARNESS_ACCEPTANCE_ONE_WAY/,
+            );
+        }
+    });
+
+    it('allows a revocation that names its actor, and refuses one that does not', async () => {
+        const id = await live();
+        // Without this, `revokedAt` could be set alone and the trail would say
+        // the acceptance was revoked by nobody.
+        await expect(
+            prisma.agentHarnessAcceptance.update({ where: { id }, data: { revokedAt: new Date() } }),
+        ).rejects.toThrow(/AGENT_HARNESS_ACCEPTANCE_ONE_WAY/);
+
+        const revoked = await prisma.agentHarnessAcceptance.update({
+            where: { id },
+            data: { revokedAt: new Date(), revokedByUserId: seeded[T2].ownerUserId },
+            select: { revokedAt: true },
+        });
+        expect(revoked.revokedAt).not.toBeNull();
+    });
+
+    it('a revoked acceptance stays revoked, and cannot change hands', async () => {
+        const id = await live();
+        await prisma.agentHarnessAcceptance.update({
+            where: { id },
+            data: { revokedAt: new Date(), revokedByUserId: seeded[T2].ownerUserId },
+        });
+        // Reinstating it would suppress the shortfall again under the original
+        // approver's name, with nothing in the row saying so.
+        await expect(
+            prisma.agentHarnessAcceptance.update({ where: { id }, data: { revokedAt: null, revokedByUserId: null } }),
+        ).rejects.toThrow(/AGENT_HARNESS_ACCEPTANCE_ONE_WAY/);
+        await expect(
+            prisma.agentHarnessAcceptance.update({ where: { id }, data: { revokedByUserId: 'someone-else' } }),
+        ).rejects.toThrow(/AGENT_HARNESS_ACCEPTANCE_ONE_WAY/);
+    });
+
+    it('still lets the expiry monitor stamp its own bookkeeping', async () => {
+        // The control for all of the above: a trigger that refused every
+        // UPDATE would pass every refusal test and break the expiry job.
+        const id = await live();
+        const stamped = await prisma.agentHarnessAcceptance.update({
+            where: { id },
+            data: { expiryProcessedAt: new Date() },
+            select: { expiryProcessedAt: true },
+        });
+        expect(stamped.expiryProcessedAt).not.toBeNull();
+    });
+
+    it('app_user holds no DELETE on the table', async () => {
+        const [row] = await prisma.$queryRawUnsafe<{ ok: boolean }[]>(
+            `SELECT has_table_privilege('app_user', '"AgentHarnessAcceptance"', 'DELETE') AS ok`,
+        );
+        expect(row.ok).toBe(false);
+        // And UPDATE is still granted, or revocation could not happen at all.
+        const [upd] = await prisma.$queryRawUnsafe<{ ok: boolean }[]>(
+            `SELECT has_table_privilege('app_user', '"AgentHarnessAcceptance"', 'UPDATE') AS ok`,
+        );
+        expect(upd.ok).toBe(true);
+    });
+});
+
 describe('deleting a discovered agent cannot take its record with it', () => {
     // The DPIA's retention rule: scan items and acceptances are kept with the
     // scan, so neither may disappear because their agent row did. Each foreign
