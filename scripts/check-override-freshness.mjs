@@ -110,6 +110,62 @@ function satisfiesCaret(version, range) {
 }
 
 /**
+ * Does `version` satisfy `spec`, for every range shape an override uses?
+ *
+ * Three shapes, and the third is why this exists (#4428):
+ *
+ *   `^X.Y.Z`              caret — delegated to `satisfiesCaret`
+ *   `X.Y.Z`               an exact pin: only that version satisfies
+ *   `>=A.B.C <D.E.F`      a space-separated conjunction of comparators
+ *
+ * Returns `null` — never `false` — for a shape it cannot read, because the
+ * caller filters on `=== true` and a `false` would silently mean "no version
+ * in range" rather than "I could not tell". Unknown must not masquerade as
+ * empty; that distinction is the whole point of the `unanalysable` level.
+ *
+ * These are the semantics `tests/guards/override-freshness-population.test.ts`
+ * has had all along. That guard asserts its own `unanalysable` list is EMPTY
+ * across every literal override, so it was already reading exact pins and the
+ * `nwsapi` conjunction while THIS script — the one that decides and reports —
+ * could read neither. Two comparators, and the weaker one was in the tool.
+ * Keep them in step: if a shape is added here, add it there.
+ */
+function satisfiesRange(version, spec) {
+    const v = parse(version);
+    if (!v) return null;
+    const r = String(spec).trim();
+
+    if (r.startsWith('^')) return satisfiesCaret(version, r);
+
+    const parts = r.split(/\s+/).filter(Boolean);
+    if (!parts.length) return null;
+
+    for (const part of parts) {
+        const m = /^(>=|<=|>|<|=)?(.+)$/.exec(part);
+        if (!m) return null;
+        const bound = parse(m[2]);
+        if (!bound) return null; // `~1.2.3`, a prerelease, a tag → unknown
+        const c = cmp(v, bound);
+        const ok =
+            m[1] === '>=' ? c >= 0
+            : m[1] === '<=' ? c <= 0
+            : m[1] === '>' ? c > 0
+            : m[1] === '<' ? c < 0
+            : c === 0; // bare comparator, i.e. an exact pin
+        if (!ok) return false;
+    }
+    return true;
+}
+
+/** Which of the three shapes a spec is, for wording a finding. */
+function rangeShape(spec) {
+    const r = String(spec).trim();
+    if (r.startsWith('^')) return 'caret';
+    if (parse(r)) return 'pin';
+    return 'bounded';
+}
+
+/**
  * Can the freshness half reason about this range AT ALL?
  *
  * `satisfiesCaret` understands `^X.Y.Z` and nothing else — every other
@@ -135,7 +191,12 @@ function satisfiesCaret(version, range) {
  * indistinguishable from a clean bill of health — the whole defect
  * class this script was written for, one level down.
  */
-const analysableRange = (spec) => spec.startsWith('^') && parse(spec.slice(1)) !== null;
+// Delegated rather than reimplemented, on purpose: two predicates that must
+// agree about which shapes are readable are two predicates that will one day
+// disagree. `satisfiesRange` returns `null` only for a shape it cannot read —
+// never for a version-specific reason — so any parseable probe answers the
+// question about the SPEC. `0.0.0` is that probe, and it is arbitrary.
+const analysableRange = (spec) => satisfiesRange('0.0.0', spec) !== null;
 
 // ── inputs ─────────────────────────────────────────────────────────
 
@@ -418,10 +479,46 @@ if (process.argv.includes('--self-test')) {
         // An `analysableRange` that answered `true` for everything
         // would put exact pins and conjunctions back on the silent-drop
         // path, which is what it was added to end.
+        // #4428 INVERTED the middle two. Exact pins and conjunctions used to
+        // be unreadable, which put four overrides plus `nwsapi` on the
+        // "not evaluated" list permanently. They are read now; the shapes that
+        // remain unreadable are the ones with no total order this script can
+        // compute, and those must still answer `false` or the entries go back
+        // on the silent-drop path `analysableRange` exists to end.
         ['caret is analysable', analysableRange('^1.14.4'), true],
-        ['exact pin is not analysable', analysableRange('0.35.4'), false],
-        ['conjunction is not analysable', analysableRange('>=2.2.16 <2.2.25'), false],
+        ['exact pin IS analysable (#4428)', analysableRange('0.35.5'), true],
+        ['conjunction IS analysable (#4428)', analysableRange('>=2.2.16 <2.2.25'), true],
         ['malformed caret is not analysable', analysableRange('^not.a.version'), false],
+        ['tilde is not analysable', analysableRange('~1.2.3'), false],
+        ['prerelease bound is not analysable', analysableRange('>=1.0.0-beta.1'), false],
+        ['empty spec is not analysable', analysableRange(''), false],
+        ['dist-tag is not analysable', analysableRange('latest'), false],
+
+        // An exact pin admits exactly one version. Getting this wrong in the
+        // permissive direction would report the pin as satisfied by whatever
+        // the registry published last, which is the opposite of a pin.
+        ['pin admits only itself', satisfiesRange('0.35.5', '0.35.5'), true],
+        ['pin excludes a later patch', satisfiesRange('0.35.6', '0.35.5'), false],
+        ['pin excludes an earlier patch', satisfiesRange('0.35.4', '0.35.5'), false],
+
+        // `nwsapi`'s real range. The upper bound is deliberate — the 2.2.25
+        // `:focus-visible` regression — so the ceiling must EXCLUDE 2.2.25
+        // itself, and a checker that admitted it would be recommending the
+        // bug the bound was added to avoid.
+        ['conjunction admits inside', satisfiesRange('2.2.24', '>=2.2.16 <2.2.25'), true],
+        ['conjunction admits the floor', satisfiesRange('2.2.16', '>=2.2.16 <2.2.25'), true],
+        ['conjunction excludes the ceiling', satisfiesRange('2.2.25', '>=2.2.16 <2.2.25'), false],
+        ['conjunction excludes below the floor', satisfiesRange('2.2.15', '>=2.2.16 <2.2.25'), false],
+
+        // Unknown must read as unknown, never as "no version in range": the
+        // caller filters on `=== true`, so a `false` here would turn an
+        // unreadable range into a silently empty one.
+        ['unreadable shape is null, not false', satisfiesRange('1.2.3', '~1.2.3'), null],
+        ['caret still delegates', satisfiesRange('4.12.31', '^4.12.27'), true],
+
+        ['shape of a caret', rangeShape('^1.2.3'), 'caret'],
+        ['shape of a pin', rangeShape('0.35.5'), 'pin'],
+        ['shape of a conjunction', rangeShape('>=2.2.16 <2.2.25'), 'bounded'],
     ];
     const failed = checks.filter(([, actual, expected]) => actual !== expected);
     for (const [label, actual, expected] of failed) {
@@ -492,10 +589,35 @@ for (const o of FRESHNESS_POPULATION) {
         continue;
     }
 
-    const inRange = available.filter((v) => satisfiesCaret(v, o.spec) === true);
+    const inRange = available.filter((v) => satisfiesRange(v, o.spec) === true);
     const newestInRange = inRange.sort((a, b) => cmp(parse(a), parse(b))).at(-1);
     const newestOverall = available.sort((a, b) => cmp(parse(a), parse(b))).at(-1);
     const newestLocked = locked.sort((a, b) => cmp(parse(a), parse(b))).at(-1);
+
+    // A readable range that matches NOTHING published. Both branches below
+    // need `newestInRange`, so without this the entry falls through the
+    // whole loop and emits no finding — indistinguishable from a clean pass,
+    // which is the defect this script was written for.
+    //
+    // It was unreachable in practice while only carets were read (a `^4.x`
+    // matches something whenever 4.x exists at all) and #4428 made it
+    // reachable: an exact pin matches one version, so a typo'd or unpublished
+    // pin lands here. A registry that could not be reached is already a
+    // separate `skip`, so this means the range really admits nothing.
+    if (!newestInRange) {
+        findings.push({
+            level: 'empty-range',
+            name: o.name,
+            spec: o.spec,
+            key: o.key,
+            locked: newestLocked,
+            newestOverall,
+            note:
+                'the override range matches NO published version, so it cannot be taking effect — ' +
+                'check the spec for a typo or a version that was never published',
+        });
+        continue;
+    }
 
     if (newestInRange && newestLocked && cmp(parse(newestLocked), parse(newestInRange)) < 0) {
         findings.push({
@@ -514,7 +636,12 @@ for (const o of FRESHNESS_POPULATION) {
             locked: newestLocked,
             newestInRange,
             newestOverall,
-            note: 'a newer release exists outside the override range — check whether the fix moved past the pinned major',
+            note:
+                rangeShape(o.spec) === 'pin'
+                    ? 'the override pins ONE version and a newer release exists — check whether the fix moved past the pinned version'
+                    : rangeShape(o.spec) === 'bounded'
+                        ? "a release exists above the range's deliberate ceiling — check whether the constraint that set the ceiling still holds"
+                        : 'a newer release exists outside the override range — check whether the fix moved past the pinned major',
         });
     }
 }
@@ -630,13 +757,15 @@ if (AS_JSON) {
     const outside = findings.filter((f) => f.level === 'outside');
     const skipped = findings.filter((f) => f.level === 'skip');
     const unanalysable = findings.filter((f) => f.level === 'unanalysable');
+    const emptyRange = findings.filter((f) => f.level === 'empty-range');
     const advisoryIssues = findings.filter((f) => f.level === 'advisory');
     const floorIssues = findings.filter((f) => f.level === 'floor');
 
-    // The headline names its own scope. `unanalysable` entries are
-    // always present (three today), so an unqualified "all overrides
-    // are current" would be a claim about a population this run did
-    // not examine in full.
+    // The headline names its own scope: an unqualified "all overrides are
+    // current" would be a claim about a population this run did not examine
+    // in full. How many that is, this run counts for itself — the number used
+    // to be written here as "(three today)" and was wrong by the time anyone
+    // read it, which is what #4428 was filed about.
     if (!findings.some((f) => f.level !== 'unanalysable')) {
         console.log(
             `Every override with an analysable range is at the newest release that range permits, and every recorded advisory checks out — ${unanalysable.length} of ${FRESHNESS_POPULATION.length} entries were NOT analysed (listed below).`,
@@ -653,6 +782,11 @@ if (AS_JSON) {
     }
     for (const f of lagging) {
         console.log(`::warning title=Override lagging::${f.name} ${f.spec}: locked ${f.locked}, ${f.newestInRange} available in range — ${f.note}`);
+    }
+    // Before the notices: an override that cannot take effect is a stronger
+    // statement than one that is merely behind.
+    for (const f of emptyRange) {
+        console.log(`::error title=Override matches no published version::${f.name} ${f.spec}: locked ${f.locked ?? 'nothing'}, newest published ${f.newestOverall} — ${f.note}`);
     }
     for (const f of outside) {
         console.log(`::notice title=Override floor may be stale::${f.name} ${f.spec}: newest in range ${f.newestInRange}, newest overall ${f.newestOverall} — ${f.note}`);
@@ -711,5 +845,9 @@ if (AS_JSON) {
 // and a registry entry that misstates its advisory are all
 // escalation-worthy — but escalation stays opt-in via `--strict`, so
 // the scheduled run reports rather than blocks.
-const ESCALATES = new Set(['lagging', 'advisory', 'floor']);
+// `empty-range` escalates (#4428): a range matching nothing published means
+// the override is inert, so whatever floor it was added to enforce is not
+// being enforced. A registry that could not be reached is a separate `skip`,
+// so this is not the flaky case.
+const ESCALATES = new Set(['lagging', 'advisory', 'floor', 'empty-range']);
 process.exit(STRICT && findings.some((f) => ESCALATES.has(f.level)) ? 1 : 0);
