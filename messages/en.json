@@ -3444,6 +3444,8 @@
       "cyclePickerAll": "All fieldwork audits",
       "emptyTitle": "No audits yet",
       "emptyDesc": "Create your first audit to start tracking checklist results and findings.",
+      "emptyDescReadOnly": "Owners, Admins and Editors can create audits.",
+      "truncatedHint": "Pick a cycle in the Cycle picker to list only that cycle's audits.",
       "workpaperReviews": "Workpaper reviews"
     },
     "readinessLegend": {
@@ -3458,7 +3460,7 @@
       "resultFor": "Result for {prompt}"
     },
     "newModal": {
-      "description": "Plan a new internal audit. The default checklist is generated automatically; you can edit it after creation.",
+      "description": "Plan a new internal audit. Its checklist is generated from the chosen framework's requirements, or from your controls if you choose none. You record a result against each item; the items themselves are fixed once the audit is created.",
       "creating": "Creating…",
       "discardConfirm": "Discard audit? Any details you entered will be lost.",
       "framework": "Framework",
@@ -3470,7 +3472,7 @@
     "editModal": {
       "trigger": "Edit",
       "title": "Edit audit",
-      "description": "Update the audit's scope, schedule, framework and cycle. Checklist results and findings are unaffected.",
+      "description": "Update the audit's scope, schedule, auditors, framework and cycle. Checklist results and findings are unaffected.",
       "labelTitle": "Title",
       "labelSchedule": "Scheduled date",
       "schedulePlaceholder": "Not scheduled",
@@ -4061,7 +4063,16 @@
       "checklistError": "Could not update the checklist item.",
       "checklistSaved": "Checklist item updated.",
       "statusError": "Failed to update audit status.",
-      "statusChanged": "Audit status changed to {status}."
+      "statusChanged": "Audit status changed to {status}.",
+      "backToPlanned": "Back to Planned",
+      "backToInProgress": "Back to In Progress",
+      "cancelAudit": "Cancel audit",
+      "cancelConfirm": {
+        "title": "Cancel this audit?",
+        "description": "The audit is marked Cancelled. Its checklist results and findings are kept, but this page cannot reopen it.",
+        "confirm": "Cancel audit",
+        "keep": "Keep audit"
+      }
     },
     "packStatus": {
       "DRAFT": "Draft",
@@ -7751,7 +7762,6 @@
     "list": {
       "heading": "Compliance Frameworks",
       "description": "Browse standards, install control packs, and track requirement coverage",
-      "createFramework": "Create framework",
       "importFramework": "Import framework",
       "installed": "In use",
       "inUseHint": "At least one of this framework's requirements has a mapped control",
@@ -7764,15 +7774,20 @@
       "status": "Status",
       "source": "Source: {provider}",
       "referenceIndexNote": "links to canonical requirement text",
-      "empty": "No frameworks available. Run the seed to populate.",
+      "empty": "No frameworks are available in this installation of Inflect. Ask whoever runs it to load them.",
       "ariaLabel": "Frameworks",
-      "customTitle": "Custom frameworks",
-      "customDescription": "Where customisation lives today, and what's coming.",
-      "customToday": "<b>Today</b> — the canonical path is to import a catalogue framework (ISO27001, NIS2, …) and then customise per requirement on the framework's <em>Customize</em> tab. Reorder requirements, link controls, and add per-tenant metadata — every change is tenant-scoped.",
-      "customComingSoon": "<b>Coming soon</b> — tenant-scoped frameworks built from scratch. The current Framework model is global (one Framework row shared across every tenant); fully bespoke frameworks need a tenantId column + matching RLS policies. Queued behind the larger framework-lifecycle epic so the migration lands with the rest of the customisation surface.",
-      "close": "Close",
       "coverageError": "Coverage couldn't be computed for this framework",
-      "coverageUnknownShort": "—"
+      "coverageUnknownShort": "—",
+      "coverageBelowOnePercent": "<1%"
+    },
+    "kinds": {
+      "isoStandard": "ISO standard",
+      "nistFramework": "NIST framework",
+      "socCriteria": "SOC criteria",
+      "euDirective": "EU directive",
+      "regulation": "Regulation",
+      "industryStandard": "Industry standard",
+      "custom": "Custom"
     },
     "detail": {
       "notFound": "Framework not found",
@@ -10811,6 +10826,8 @@
     "crumbList": "Access Reviews",
     "title": "Access Reviews",
     "campaignsCount": "{count, plural, one {# campaign} other {# campaigns}}",
+    "resourcePlural": "access reviews",
+    "resourceSingular": "access review",
     "colCampaign": "Campaign",
     "colStatus": "Status",
     "colScope": "Scope",

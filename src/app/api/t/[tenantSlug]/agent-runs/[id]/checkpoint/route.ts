@@ -18,12 +18,8 @@ import { jsonResponse } from '@/lib/api-response';
  *
  * ## Why `requirePermission` on `admin.view` and not the usecase's assertCanRead
  *
- * Its sibling `GET /agent-runs/:id/steps` takes the lighter route — the
- * usecase's `assertCanRead` reached through `getTenantCtx` — and that is right
- * there, because it serves the same step rows the run detail page already
- * hands out to the same readers.
- *
- * This route is different in what it reaches. A proposal diff carries the
+ * Every `/agent-runs` route now takes this same gate (#3710). This one took it
+ * first, because of what it reaches. A proposal diff carries the
  * CURRENT VALUES of a risk, control, policy or finding beside what an agent
  * proposes to change them to, and the only surface that has ever shown those
  * is `/agents/proposals`, whose page gates on `admin.view` OR, since #3710,

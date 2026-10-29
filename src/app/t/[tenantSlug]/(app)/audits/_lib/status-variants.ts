@@ -48,3 +48,32 @@ export const CHECKLIST_RESULT_VARIANT: Record<string, StatusBadgeVariant> = {
 
 /** Fallback for an unrecognised status value. */
 export const DEFAULT_STATUS_VARIANT: StatusBadgeVariant = 'neutral';
+
+/**
+ * The status moves the audit pane offers, by current status: one step
+ * forward, one step back, and Cancel while the audit is not yet done.
+ *
+ * The server accepts any `AuditStatus` from any other (`UpdateAuditSchema`
+ * is the enum and `updateAudit` has no transition rules), so this table is
+ * the whole lifecycle the page presents. The step back exists so an audit
+ * moved forward by mistake can be corrected without the API.
+ *
+ * CANCELLED offers nothing: reopening a cancelled audit is not a step back
+ * along PLANNED → IN_PROGRESS → COMPLETED (the status it was cancelled from
+ * is not recorded), and the Cancel confirmation says the page cannot undo it.
+ */
+export interface AuditStatusMoves {
+    forward?: 'IN_PROGRESS' | 'COMPLETED';
+    back?: 'PLANNED' | 'IN_PROGRESS';
+    cancellable: boolean;
+}
+
+export const AUDIT_STATUS_MOVES: Record<string, AuditStatusMoves> = {
+    PLANNED: { forward: 'IN_PROGRESS', cancellable: true },
+    IN_PROGRESS: { forward: 'COMPLETED', back: 'PLANNED', cancellable: true },
+    COMPLETED: { back: 'IN_PROGRESS', cancellable: false },
+    CANCELLED: { cancellable: false },
+};
+
+/** An unrecognised status offers no move rather than guessing one. */
+export const NO_STATUS_MOVES: AuditStatusMoves = { cancellable: false };

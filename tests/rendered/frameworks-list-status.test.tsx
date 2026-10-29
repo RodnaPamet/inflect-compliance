@@ -12,9 +12,20 @@
  *   - A failed coverage calculation shows the same "couldn't compute" state
  *     in the CARDS view as in the table: never "0%" and never "Available",
  *     which read exactly like a framework nobody has started.
+ *
+ * And (#4459):
+ *
+ *   - There is no "Create framework" button. It created nothing and opened an
+ *     explanation naming a tab the framework page does not have.
+ *   - The empty state speaks to the person reading it, not to an operator.
+ *   - A framework's kind is a translated label, not the stored enum value.
+ *   - The Requirements figure counts the requirements the coverage beside it
+ *     is worked out over, not every requirement row of every pack.
+ *   - A framework "In use" never reads "0%" coverage.
+ *   - The table view has no row selection: nothing acts on ticked rows.
  */
 import * as React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 
 jest.mock('@/components/ui/tooltip', () => ({
     __esModule: true,
@@ -61,10 +72,18 @@ jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
 }));
 
+import { FrameworkKind } from '@prisma/client';
 import { FrameworksClient } from '@/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient';
 import { viewModeStorageKey } from '@/components/ui/hooks';
 
 const en = require('../../messages/en.json');
+const bg = require('../../messages/bg.json');
+
+function renderTable(ui: React.ReactElement) {
+    window.localStorage.setItem(viewModeStorageKey('frameworks'), '"table"');
+    render(ui);
+    return screen.findByRole('table');
+}
 
 const FRAMEWORKS = [
     { id: 'fw1', key: 'ISO27001', name: 'ISO 27001', kind: 'ISO_STANDARD', version: '2022', description: null, _count: { requirements: 93, packs: 1 } },
@@ -89,12 +108,6 @@ describe('Import framework is offered only to a member who can install', () => {
         expect(btn!.closest('a')!.getAttribute('href')).toBe('/t/acme/frameworks/ISO27001/install');
     });
 
-    it('is absent from the custom-framework explainer too, without the permission', () => {
-        render(<FrameworksClient frameworks={FRAMEWORKS} coverages={{}} tenantSlug="acme" />);
-        fireEvent.click(document.getElementById('create-framework-btn')!);
-        const dialog = screen.getByRole('dialog');
-        expect(within(dialog).queryByText(en.frameworks.list.importFramework)).toBeNull();
-    });
 });
 
 describe('the In use badge', () => {
@@ -148,5 +161,150 @@ describe('a failed coverage calculation in the cards view', () => {
             expect(within(row).queryByText(en.frameworks.list.available)).toBeNull();
             expect(within(row).getAllByText(en.frameworks.list.coverageError).length).toBe(2);
         });
+    });
+});
+
+describe('no Create framework button (#4459)', () => {
+    it('renders neither the button nor its explanation, for any viewer', () => {
+        render(<FrameworksClient frameworks={FRAMEWORKS} coverages={{}} tenantSlug="acme" canInstall />);
+        expect(document.getElementById('create-framework-btn')).toBeNull();
+        expect(screen.queryByRole('button', { name: /create framework/i })).toBeNull();
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(document.body.textContent).not.toMatch(/Customize|Coming soon/);
+        // The Import entry point is unaffected.
+        expect(document.getElementById('import-framework-btn')).not.toBeNull();
+    });
+
+    it('leaves no message key behind for it', () => {
+        for (const messages of [en, bg]) {
+            for (const key of ['createFramework', 'customTitle', 'customDescription', 'customToday', 'customComingSoon', 'close']) {
+                expect(messages.frameworks.list[key]).toBeUndefined();
+            }
+        }
+    });
+});
+
+describe('the empty state (#4459)', () => {
+    it('tells the reader to ask whoever runs the installation, not to run a seed', () => {
+        render(<FrameworksClient frameworks={[]} coverages={{}} tenantSlug="acme" />);
+        expect(screen.getByText(en.frameworks.list.empty)).toBeTruthy();
+        for (const messages of [en, bg]) {
+            expect(messages.frameworks.list.empty).not.toMatch(/seed/i);
+        }
+    });
+});
+
+describe("a framework's kind (#4459)", () => {
+    it('reads as a label on the card, never the enum value', () => {
+        render(<FrameworksClient frameworks={FRAMEWORKS} coverages={{}} tenantSlug="acme" />);
+        expect(within(screen.getByTestId('fw-card-ISO27001')).getByText(en.frameworks.kinds.isoStandard)).toBeTruthy();
+        expect(within(screen.getByTestId('fw-card-NIS2')).getByText(en.frameworks.kinds.euDirective)).toBeTruthy();
+        expect(document.body.textContent).not.toMatch(/ISO STANDARD|EU DIRECTIVE|ISO_STANDARD|EU_DIRECTIVE/);
+    });
+
+    it('reads as a label in the Domain column too', async () => {
+        await renderTable(<FrameworksClient frameworks={FRAMEWORKS} coverages={{}} tenantSlug="acme" />);
+        const row = screen.getByText('NIS 2').closest('tr')!;
+        expect(within(row).getByText(en.frameworks.kinds.euDirective)).toBeTruthy();
+        expect(row.textContent).not.toMatch(/EU DIRECTIVE/);
+    });
+
+    it('has a label for every stored kind', () => {
+        const kinds = Object.values(FrameworkKind);
+        expect(kinds.length).toBeGreaterThan(0);
+        const frameworks = kinds.map((kind, i) => ({
+            id: `k${i}`, key: `K${i}`, name: `Framework ${i}`, kind, version: null, description: null,
+            _count: { requirements: 1, packs: 1 },
+        }));
+        render(<FrameworksClient frameworks={frameworks} coverages={{}} tenantSlug="acme" />);
+        for (let i = 0; i < kinds.length; i++) {
+            const card = screen.getByTestId(`fw-card-K${i}`);
+            expect(card.textContent).not.toContain(kinds[i].replace('_', ' '));
+            expect(card.textContent).not.toContain(kinds[i]);
+        }
+        for (const messages of [en, bg]) {
+            expect(Object.keys(messages.frameworks.kinds)).toHaveLength(kinds.length);
+        }
+    });
+});
+
+describe('the Requirements figure (#4459)', () => {
+    // A multi-pack framework the workspace scoped to some packs, with
+    // deprecated requirements: the catalogue holds 120 rows, coverage is
+    // worked out over 40.
+    const SCOPED = [
+        { id: 'fw3', key: 'EUDRONE', name: 'EU drones', kind: 'REGULATION', version: null, description: null, _count: { requirements: 120, packs: 7 } },
+    ];
+
+    it('is the population the coverage beside it is worked out over', () => {
+        render(
+            <FrameworksClient
+                frameworks={SCOPED}
+                coverages={{ EUDRONE: { coveragePercent: 25, mapped: 10, total: 40 } }}
+                tenantSlug="acme"
+            />,
+        );
+        const card = screen.getByTestId('fw-card-EUDRONE');
+        expect(card.textContent).toContain('40');
+        expect(card.textContent).not.toContain('120');
+        expect(card.textContent).toContain('25%');
+    });
+
+    it('is the same figure in the table', async () => {
+        await renderTable(
+            <FrameworksClient
+                frameworks={SCOPED}
+                coverages={{ EUDRONE: { coveragePercent: 25, mapped: 10, total: 40 } }}
+                tenantSlug="acme"
+            />,
+        );
+        const row = screen.getByText('EU drones').closest('tr')!;
+        expect(row.textContent).toContain('40');
+        expect(row.textContent).not.toContain('120');
+    });
+
+    it("falls back to the catalogue's count only where coverage is unknown", () => {
+        render(<FrameworksClient frameworks={SCOPED} coverages={{}} coverageErrors={['EUDRONE']} tenantSlug="acme" />);
+        expect(screen.getByTestId('fw-card-EUDRONE').textContent).toContain('120');
+    });
+});
+
+describe('an In use framework never reads 0% (#4459)', () => {
+    // One mapped requirement of 250 rounds to 0 on the server.
+    const COVERAGE = { ISO27001: { coveragePercent: 0, mapped: 1, total: 250 } };
+
+    it('reads <1% on the card', () => {
+        render(<FrameworksClient frameworks={FRAMEWORKS} coverages={COVERAGE} tenantSlug="acme" />);
+        const card = screen.getByTestId('fw-card-ISO27001');
+        expect(within(card).getByText(en.frameworks.list.installed)).toBeTruthy();
+        expect(within(card).getByText(en.frameworks.list.coverageBelowOnePercent)).toBeTruthy();
+        expect(card.textContent).not.toMatch(/(^|[^<\d])0%/);
+    });
+
+    it('reads <1% in the table', async () => {
+        await renderTable(<FrameworksClient frameworks={FRAMEWORKS} coverages={COVERAGE} tenantSlug="acme" />);
+        const row = screen.getByText('ISO 27001').closest('tr')!;
+        expect(within(row).getByText(en.frameworks.list.coverageBelowOnePercent)).toBeTruthy();
+        expect(row.textContent).not.toMatch(/(^|[^<\d])0%/);
+    });
+
+    it('a framework with nothing mapped still reads 0%', () => {
+        render(
+            <FrameworksClient
+                frameworks={FRAMEWORKS}
+                coverages={{ ISO27001: { coveragePercent: 0, mapped: 0, total: 250 } }}
+                tenantSlug="acme"
+            />,
+        );
+        const card = screen.getByTestId('fw-card-ISO27001');
+        expect(card.textContent).toContain('0%');
+        expect(within(card).queryByText(en.frameworks.list.coverageBelowOnePercent)).toBeNull();
+    });
+});
+
+describe('the table view has no row selection (#4459)', () => {
+    it('renders no checkboxes', async () => {
+        await renderTable(<FrameworksClient frameworks={FRAMEWORKS} coverages={{}} tenantSlug="acme" />);
+        expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
     });
 });
