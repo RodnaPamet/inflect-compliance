@@ -3444,6 +3444,7 @@
       "cyclePickerAll": "All fieldwork audits",
       "emptyTitle": "No audits yet",
       "emptyDesc": "Create your first audit to start tracking checklist results and findings.",
+      "emptyDescReadOnly": "Owners, Admins and Editors can create audits.",
       "workpaperReviews": "Workpaper reviews"
     },
     "readinessLegend": {

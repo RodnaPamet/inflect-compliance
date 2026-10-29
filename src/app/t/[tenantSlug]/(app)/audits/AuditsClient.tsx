@@ -51,7 +51,13 @@ interface AuditsClientProps {
     /** True when NIS2 is an installed framework — gates the NIS2 Gap Assessment
      *  entry button (absent, not disabled, when false). */
     hasNis2: boolean;
-    /** Gates the "New finding" affordance on the audit detail pane. */
+    /**
+     * `ctx.permissions.canWrite` — the coarse tier `createAudit` and
+     * `updateAudit` assert (`assertCanWrite`), and the only gate either route
+     * has. Every write control on this page follows it: the create button (and
+     * `?create=1`), the status buttons, the checklist result pickers, Edit and
+     * Finding. A role without it sees the audit read-only.
+     */
     canWrite: boolean;
     translations: {
         title: string;
@@ -131,7 +137,12 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const searchParams = useSearchParams();
     const router = useRouter();
-    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/audits`);
+    // Only for a viewer who may create — otherwise an old `/audits/new`
+    // bookmark opened a form whose submit the server refuses. The param is
+    // stripped either way.
+    useCreateQueryParam(() => {
+        if (canWrite) setIsCreateOpen(true);
+    }, `/t/${tenantSlug}/audits`);
 
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
 
@@ -360,7 +371,9 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                             {tx('nav.incidents')}
                         </Link>
 
-                        <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-audit-btn">{t.newAudit}</Button>
+                        {canWrite && (
+                            <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-audit-btn">{t.newAudit}</Button>
+                        )}
                     </div>
                 }
             />
@@ -483,8 +496,8 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                         <EmptyState
                             size="sm"
                             title={tx('hub.emptyTitle')}
-                            description={tx('hub.emptyDesc')}
-                            primaryAction={{ label: t.newAudit, onClick: () => setIsCreateOpen(true) }}
+                            description={canWrite ? tx('hub.emptyDesc') : tx('hub.emptyDescReadOnly')}
+                            primaryAction={canWrite ? { label: t.newAudit, onClick: () => setIsCreateOpen(true) } : undefined}
                         />
                     ) : (
                         audits.map((a) => (
@@ -506,8 +519,8 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-compact">
                                 <Heading level={2}>{selected.title}</Heading>
                                 <div className="flex flex-wrap gap-tight">
-                                    {selected.status === 'PLANNED' && <Button variant="secondary" size="sm" onClick={() => updateAuditStatus('IN_PROGRESS')}>{t.inProgress}</Button>}
-                                    {selected.status === 'IN_PROGRESS' && <Button variant="secondary" size="sm" onClick={() => updateAuditStatus('COMPLETED')}>{t.completed}</Button>}
+                                    {canWrite && selected.status === 'PLANNED' && <Button variant="secondary" size="sm" onClick={() => updateAuditStatus('IN_PROGRESS')}>{t.inProgress}</Button>}
+                                    {canWrite && selected.status === 'IN_PROGRESS' && <Button variant="secondary" size="sm" onClick={() => updateAuditStatus('COMPLETED')}>{t.completed}</Button>}
                                     {canWrite && (
                                         <Button variant="ghost" size="sm" id="edit-audit-btn" onClick={() => setIsEditOpen(true)}>
                                             {tx('editModal.trigger')}
@@ -522,16 +535,20 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 <div className="space-y-tight">
                                     {selected.checklist?.map((item) => (
                                         <div key={item.id} className="flex flex-col sm:flex-row items-start gap-compact p-3 border border-border-default/50 rounded-lg">
-                                            <Combobox
-                                                hideSearch
-                                                options={resultOptions}
-                                                selected={resultOptions.find(o => o.value === item.result) ?? null}
-                                                setSelected={(opt) => opt && updateChecklist(item.id, opt.value)}
-                                                matchTriggerWidth
-                                                buttonProps={{ className: 'w-full sm:w-auto text-xs' }}
-                                                aria-label={tx('list.resultFor', { prompt: item.prompt })}
-                                                caret
-                                            />
+                                            {/* A read-only viewer gets no picker: the badge at the
+                                                row's end already states the result. */}
+                                            {canWrite && (
+                                                <Combobox
+                                                    hideSearch
+                                                    options={resultOptions}
+                                                    selected={resultOptions.find(o => o.value === item.result) ?? null}
+                                                    setSelected={(opt) => opt && updateChecklist(item.id, opt.value)}
+                                                    matchTriggerWidth
+                                                    buttonProps={{ className: 'w-full sm:w-auto text-xs' }}
+                                                    aria-label={tx('list.resultFor', { prompt: item.prompt })}
+                                                    caret
+                                                />
+                                            )}
                                             <div className="flex-1">
                                                 <p className="text-sm text-content-default">{item.prompt}</p>
                                                 {item.notes && <p className="text-xs text-content-subtle mt-1">{item.notes}</p>}
