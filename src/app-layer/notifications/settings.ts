@@ -163,6 +163,56 @@ export async function isInAppTypeEnabled(
 }
 
 /**
+ * The envelope a workspace's own email goes out under: its sender identity and
+ * its compliance-mailbox BCC.
+ *
+ * ONE definition, read by every sender of workspace email — the outbox
+ * (`processOutbox`), the weekly compliance digest and scheduled risk-report
+ * delivery. Only the outbox applied these until #4469; the other two called
+ * `sendEmail` bare, so they went out from the deployment sender with no BCC
+ * while the settings page said "all outbound emails" were copied.
+ *
+ * NOT for invitations or account email (password reset, email verification):
+ * those are the platform's own messages, they always send, and they keep the
+ * deployment sender. A workspace whose email is switched off must still be
+ * able to invite somebody and to let a member reset a password.
+ */
+export interface TenantEmailEnvelope {
+    from: string;
+    /** The compliance mailbox, or `undefined` when none is set. */
+    bcc: string | undefined;
+}
+
+export function tenantEmailEnvelope(
+    settings: Pick<TenantNotificationSettingsData, 'defaultFromName' | 'defaultFromEmail' | 'complianceMailbox'>,
+): TenantEmailEnvelope {
+    return {
+        from: `${settings.defaultFromName} <${settings.defaultFromEmail}>`,
+        bcc: settings.complianceMailbox || undefined,
+    };
+}
+
+/**
+ * May this workspace send its own email now, and under what envelope?
+ *
+ * `null` when the workspace has switched email notifications off — the caller
+ * sends nothing. Otherwise the envelope to spread into `sendEmail`. Reading
+ * the switch and the envelope from one row in one call means a sender cannot
+ * apply one without the other.
+ *
+ * A failed read THROWS rather than falling back to "enabled, deployment
+ * sender": the caller's own error handling then skips the send, which is the
+ * safe direction for a workspace that may have switched email off.
+ */
+export async function resolveTenantEmailEnvelope(
+    db: PrismaTx,
+    tenantId: string,
+): Promise<TenantEmailEnvelope | null> {
+    const settings = await getTenantNotificationSettings(db, tenantId);
+    return settings.enabled ? tenantEmailEnvelope(settings) : null;
+}
+
+/**
  * Check if notifications are enabled for a tenant.
  * Fast path — avoids fetching full settings when only the toggle is needed.
  */

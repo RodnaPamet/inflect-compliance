@@ -126,6 +126,11 @@ function freshDb() {
         tenantSecuritySettings: {
             findUnique: jest.fn().mockResolvedValue({ reportRecipientAllowlistJson: null }),
         },
+        // deliverReportByEmail reads the workspace's email switch and envelope
+        // (#4469). No row = defaults: email on, deployment sender, no BCC.
+        tenantNotificationSettings: {
+            findUnique: jest.fn().mockResolvedValue(null),
+        },
         reportSchedule: {
             create: jest.fn().mockResolvedValue({ id: 'sch-1' }),
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -441,6 +446,43 @@ describe('deliverReportByEmail', () => {
     it('uses CSV meta for a CSV run', async () => {
         await deliverReportByEmail(ctx, { ...completed, format: 'CSV' }, ['a@b.com'], 'L');
         expect(sendEmail.mock.calls[0][0].attachments[0].contentType).toBe('text/csv');
+    });
+
+    // Owner decision of 2026-10-29 (#4469): scheduled reports follow the
+    // workspace's email settings, as outbox email does.
+    it('sends nothing, and reads no artefact, when the workspace has switched email off', async () => {
+        mockDbHolder.db.tenantNotificationSettings.findUnique.mockResolvedValue({
+            enabled: false,
+            defaultFromName: 'Acme GRC',
+            defaultFromEmail: 'grc@acme.test',
+            complianceMailbox: 'archive@acme.test',
+            mutedInAppTypes: [],
+        });
+        const readSpy = jest.spyOn(jest.requireMock('@/lib/storage'), 'getStorageProvider');
+
+        expect(await deliverReportByEmail(ctx, completed, ['a@b.com'], 'L')).toBe(0);
+        expect(sendEmail).not.toHaveBeenCalled();
+        expect(readSpy).not.toHaveBeenCalled();
+        // The switch is THIS tenant's.
+        expect(mockDbHolder.db.tenantNotificationSettings.findUnique.mock.calls[0][0].where)
+            .toEqual({ tenantId: ctx.tenantId });
+        readSpy.mockRestore();
+    });
+
+    it('sends from the workspace sender with its compliance BCC when email is on', async () => {
+        mockDbHolder.db.tenantNotificationSettings.findUnique.mockResolvedValue({
+            enabled: true,
+            defaultFromName: 'Acme GRC',
+            defaultFromEmail: 'grc@acme.test',
+            complianceMailbox: 'archive@acme.test',
+            mutedInAppTypes: [],
+        });
+
+        expect(await deliverReportByEmail(ctx, completed, ['a@b.com'], 'L')).toBe(1);
+        expect(sendEmail.mock.calls[0][0]).toMatchObject({
+            from: 'Acme GRC <grc@acme.test>',
+            bcc: 'archive@acme.test',
+        });
     });
 });
 
