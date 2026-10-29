@@ -1,6 +1,6 @@
 # 2026-10-29 — Stored custom roles stop granting the people layer to non-admins
 
-**Commit:** `<sha> fix(permissions): switch personnel.view off on stored non-admin custom roles`
+**Commit:** `499816212 fix(permissions): switch personnel.view off on stored non-admin custom roles`
 
 Owner decision, 2026-10-29: only Owners and Admins read the people layer, and
 custom roles built from the Reader, Editor or Auditor preset lose the grant
@@ -17,6 +17,13 @@ create and update. So every role saved since the people layer existed states
 `personnel.view`, and one built from a non-admin preset before #4503 states it
 as `true`. Its members would have kept reading the roster, devices, training
 and background checks.
+
+**Correction to #4503's note.** Under Decisions, that note says "No migration
+rewrites stored roles: a stored grant was an Admin's decision, and it stays
+visible and editable on the Roles page." That stopped being true on the same
+day. The owner decided to switch the stored grant off on READER-, EDITOR- and
+AUDITOR-based roles, and this migration does it. Stored grants on ADMIN-based
+roles stay as they are, and every role stays editable on the Roles page.
 
 The migration `20261029220000_personnel_view_off_for_non_admin_custom_roles`
 is one statement:
