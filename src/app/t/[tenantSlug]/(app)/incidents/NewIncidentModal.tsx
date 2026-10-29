@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { apiErrorMessage } from '@/lib/api-error';
+import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import {
     combineDetectedAt,
     isDetectedAtInFuture,
@@ -64,9 +65,17 @@ export function NewIncidentModal({ open, onClose, tenantSlug, onCreated }: NewIn
     // day-level by design) and the time from a time field, both defaulting to
     // the moment the form opened, in the person's own time zone. It drives
     // every Article 23 deadline, so midnight of the chosen day would not do.
-    const [openedAt] = useState(() => new Date());
-    const [detectedDay, setDetectedDay] = useState<Date | null>(() => pickerDayOf(openedAt));
-    const [detectedTime, setDetectedTime] = useState(() => localTimeOf(openedAt));
+    // The clock is read once the client has painted, never during render
+    // (`useHydratedNow`), and seeds both fields that one time.
+    const openedAt = useHydratedNow();
+    const [detectedDay, setDetectedDay] = useState<Date | null>(null);
+    const [detectedTime, setDetectedTime] = useState('');
+    const [seededFrom, setSeededFrom] = useState<Date | null>(null);
+    if (openedAt && seededFrom !== openedAt) {
+        setSeededFrom(openedAt);
+        setDetectedDay(pickerDayOf(openedAt));
+        setDetectedTime(localTimeOf(openedAt));
+    }
     const [detectedError, setDetectedError] = useState<string | null>(null);
     const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
@@ -226,7 +235,7 @@ export function NewIncidentModal({ open, onClose, tenantSlug, onCreated }: NewIn
                                     }}
                                     // No later day than today; the time field
                                     // and the submit check refuse a later time today.
-                                    disabledDays={{ after: new Date() }}
+                                    disabledDays={openedAt ? { after: openedAt } : undefined}
                                     placeholder={t('new.placeholders.detectedAt')}
                                 />
                             </FormField>
