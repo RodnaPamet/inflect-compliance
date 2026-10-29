@@ -4,7 +4,8 @@ import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { Tooltip } from '@/components/ui/tooltip';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useSWRConfig } from 'swr';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
@@ -88,6 +89,8 @@ interface VendorRow {
 
 interface VendorsClientProps {
     initialVendors: VendorRow[];
+    /** The KPI card counts for the SSR filters, so the first paint is right. */
+    initialKpiCounts: VendorKpiCounts;
     initialFilters: Record<string, string>;
     tenantSlug: string;
     /**
@@ -137,7 +140,7 @@ export function VendorsClient(props: VendorsClientProps) {
     );
 }
 
-function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissions }: VendorsClientProps) {
+function VendorsPageInner({ initialVendors, initialKpiCounts, initialFilters, tenantSlug, permissions }: VendorsClientProps) {
     const t = useTranslations('vendors');
     // Bulk-action status options (canonical BulkActionBar), localized.
     const vendorStatusOptions = [
@@ -214,16 +217,30 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
             : CACHE_KEYS.vendors.list();
     }, [fetchParams]);
 
-    // PR-5 — API returns `{ rows, truncated }`. SSR initial wraps
+    // PR-5 — API returns `{ rows, truncated, kpiCounts }`. SSR initial wraps
     // with `truncated: false` (the SSR cap is below the backfill cap).
     const vendorsQuery = useTenantSWR<VendorListResponse>(vendorsKey, {
         fallbackData: filtersMatchInitial
-            ? { rows: initialVendors, truncated: false }
+            ? { rows: initialVendors, truncated: false, kpiCounts: initialKpiCounts }
             : undefined,
     });
 
     const vendors = vendorsQuery.data?.rows ?? [];
     const truncated = vendorsQuery.data?.truncated ?? false;
+    // A failed load reads as a failure (#4462) — not as "No vendors match
+    // your filters", and not as the previous query's rows under the new
+    // filter's pills. `useTenantSWR` keeps the PREVIOUS key's data on screen
+    // (`keepPreviousData`), so after a failed filter change `data` is another
+    // query's answer and `!data` alone never fires. The list is unreachable
+    // when the CURRENT key has no rows of its own: nothing cached for it and
+    // no SSR fallback. A failed background refresh of a key that did load
+    // keeps its readable table. Same rule as the Assets list.
+    const { cache: swrCache } = useSWRConfig();
+    const buildApiUrl = useTenantApiUrl();
+    const currentKeyHasRows =
+        filtersMatchInitial || swrCache.get(buildApiUrl(vendorsKey))?.data !== undefined;
+    const listError =
+        vendorsQuery.error && !currentKeyHasRows ? t('loadError') : undefined;
 
     // ─── Sortable headers (per-column asc/desc, parity with Controls) ───
     const [sortBy, setSortBy] = useState<string | undefined>(undefined);
@@ -505,11 +522,14 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     //
     // metrics is still read for the dashboard tiles below, which genuinely
     // need the latest assessment per vendor.
-    const kpi = vendorsQuery.data?.kpiCounts;
-    const totalVendors = kpi?.total ?? 0;
-    const activeVendors = kpi?.active ?? 0;
-    const criticalVendors = kpi?.critical ?? 0;
-    const reviewOverdueVendors = kpi?.reviewOverdue ?? 0;
+    //
+    // With the list unreachable the cards show "—", not the previous filter's
+    // numbers or a 0 nobody counted.
+    const kpi = listError ? undefined : vendorsQuery.data?.kpiCounts;
+    const totalVendors = kpi?.total ?? null;
+    const activeVendors = kpi?.active ?? null;
+    const criticalVendors = kpi?.critical ?? null;
+    const reviewOverdueVendors = kpi?.reviewOverdue ?? null;
 
     // Canonical KPI-card sparklines (shared hook). total + reviewOverdue are
     // always-present series; active + critical are forward-only nullable
@@ -686,7 +706,7 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                         const cfg: Record<
                             string,
                             {
-                                value: number;
+                                value: number | null;
                                 tone?: 'success' | 'critical' | 'default';
                                 sparkline: typeof vendorTrends.total;
                                 sparklineVariant: typeof sparkColors.total;
@@ -705,13 +725,13 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                             },
                             critical: {
                                 value: criticalVendors,
-                                tone: criticalVendors > 0 ? 'critical' : 'default',
+                                tone: (criticalVendors ?? 0) > 0 ? 'critical' : 'default',
                                 sparkline: vendorTrends.critical,
                                 sparklineVariant: sparkColors.critical,
                             },
                             reviewOverdue: {
                                 value: reviewOverdueVendors,
-                                tone: reviewOverdueVendors > 0 ? 'critical' : 'default',
+                                tone: (reviewOverdueVendors ?? 0) > 0 ? 'critical' : 'default',
                                 sparkline: vendorTrends.reviewOverdue,
                                 sparklineVariant: sparkColors.reviewOverdue,
                             },
@@ -722,7 +742,7 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                             <KpiFilterCard
                                 key={card.id}
                                 label={card.label}
-                                value={c.value}
+                                value={c.value ?? '—'}
                                 tone={c.tone}
                                 sparkline={c.sparkline}
                                 sparklineVariant={c.sparklineVariant}
@@ -787,6 +807,7 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                         onColumnVisibilityChange={setColumnVisibility}
                         onRowClick={handleVendorRowClick}
                         onRowPrefetch={handleVendorRowPrefetch}
+                        error={listError}
                         selectionEnabled={canBulk}
                         selectedRows={Object.fromEntries(
                             Array.from(selected).map((id) => [id, true]),

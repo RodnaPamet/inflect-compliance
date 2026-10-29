@@ -17,7 +17,9 @@
  *      `?create=1` deep link follow the rule the server applies to them, for
  *      built-in and custom roles;
  *   4. a refused bulk action shows the server's reason, and a selection over
- *      the routes' 100-row cap is refused before the request, by name.
+ *      the routes' 100-row cap is refused before the request, by name;
+ *   5. a failed load reads as an error — not as an empty register, not as the
+ *      previous filter's rows — and the KPI cards are right on first paint.
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -121,8 +123,10 @@ jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (...a: unknown[]) => mockGetTenantCtx(...a),
 }));
 const mockListVendors = jest.fn();
+const mockListVendorKpiCounts = jest.fn();
 jest.mock('@/app-layer/usecases/vendor', () => ({
     listVendors: (...a: unknown[]) => mockListVendors(...a),
+    listVendorKpiCounts: (...a: unknown[]) => mockListVendorKpiCounts(...a),
 }));
 
 // ─── Imports (after mocks) ──────────────────────────────────────────
@@ -158,6 +162,8 @@ const KPI = { total: 2, active: 0, critical: 0, reviewOverdue: 0 };
 /** What the list endpoint (and the SSR read) returns; tests may widen it. */
 let listRows: ReturnType<typeof row>[] = ROWS;
 
+/** Decides, per request, whether the list GET fails. */
+let failList: (url: URL) => boolean = () => false;
 /** Per test: the answer to a POST, or null for the default 200 `{}`. */
 let answerPost: (url: URL) => { status: number; body: unknown } | null = () => null;
 /** Every POST the page made, with its parsed body. */
@@ -174,7 +180,12 @@ function installFetch() {
             const answered = answerPost(url);
             if (answered) ({ status, body } = answered);
         } else if (url.pathname === '/api/t/acme/vendors') {
-            body = { rows: listRows, truncated: false, kpiCounts: KPI };
+            if (failList(url)) {
+                status = 500;
+                body = { error: { code: 'INTERNAL', message: 'An error occurred' } };
+            } else {
+                body = { rows: listRows, truncated: false, kpiCounts: KPI };
+            }
         } else if (url.pathname.includes('/members')) {
             body = [];
         }
@@ -262,7 +273,10 @@ beforeEach(() => {
     window.localStorage.clear();
     answerPost = () => null;
     listRows = ROWS;
+    failList = () => false;
     mockRowWindow.all = false;
+    mockListVendorKpiCounts.mockReset();
+    mockListVendorKpiCounts.mockResolvedValue(KPI);
     mockToastError.mockReset();
     mockListVendors.mockReset();
     mockListVendors.mockResolvedValue(ROWS);
@@ -278,6 +292,7 @@ describe('Vendors list — the create dialog offers no Active', () => {
     beforeAll(async () => {
         installFetch();
         mockListVendors.mockResolvedValue(ROWS);
+        mockListVendorKpiCounts.mockResolvedValue(KPI);
         try {
             const view = await mountAs('OWNER');
             view.unmount();
@@ -467,5 +482,54 @@ describe('Vendors list — a refused bulk action says why', () => {
         expect(mockToastError.mock.calls[0][0]).toBe(V.bulk.tooMany.replace('{max}', '100'));
         // The route would have answered "Invalid request payload".
         expect(posts.filter((p) => p.path.startsWith('/api/t/acme/vendors/bulk'))).toEqual([]);
+    });
+});
+
+// ─── 5. A failed load, and the KPI cards ────────────────────────────
+
+/** The headline value of the KPI card labelled `label`. */
+function kpiValue(label: string): string {
+    const card = screen.getByText(label).closest('[role="button"]') as HTMLElement;
+    expect(card).not.toBeNull();
+    return (card.textContent ?? '').replace(label, '').trim();
+}
+
+describe('Vendors list — a failed load reads as a failure', () => {
+    it('a failed filtered load shows the error, not the previous rows or "No vendors match"', async () => {
+        failList = (url) => url.searchParams.get('criticality') === 'CRITICAL';
+        await mountAs('READER');
+        await act(async () => {
+            fireEvent.click(screen.getByText(V.kpi.critical).closest('[role="button"]') as HTMLElement);
+        });
+        await screen.findByText(V.loadError);
+        expect(screen.queryByText(V.empty.noResultsTitle)).toBeNull();
+        // SWR keeps the previous key's data (`keepPreviousData`); the
+        // unfiltered rows must not be presented as the filter's answer.
+        expect(screen.queryByText(ALPHA.name)).toBeNull();
+        // Nor its counts.
+        expect(kpiValue(V.kpi.total)).toBe('—');
+    });
+
+    it('a failed refresh of the list the server already rendered keeps its rows (positive companion)', async () => {
+        failList = () => true;
+        await mountAs('READER');
+        await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+        await act(async () => {
+            await new Promise((r) => setTimeout(r, 50));
+        });
+        expect(screen.getByText(ALPHA.name)).toBeInTheDocument();
+        expect(screen.queryByText(V.loadError)).toBeNull();
+    });
+
+    it('the KPI cards carry the server-rendered counts, even when the browser fetch fails', async () => {
+        // They used to arrive only with the browser's first fetch, and read 0
+        // until it landed — for good, when it failed.
+        failList = () => true;
+        mockListVendorKpiCounts.mockResolvedValue({ total: 7, active: 3, critical: 2, reviewOverdue: 1 });
+        await mountAs('READER');
+        expect(kpiValue(V.kpi.total)).toBe('7');
+        expect(kpiValue(V.kpi.active)).toBe('3');
+        expect(kpiValue(V.kpi.critical)).toBe('2');
+        expect(kpiValue(V.kpi.reviewOverdue)).toBe('1');
     });
 });

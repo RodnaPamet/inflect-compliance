@@ -7741,7 +7741,8 @@
       "HIGH": "High",
       "CRITICAL": "Critical"
     },
-    "createFailed": "Could not create the vendor."
+    "createFailed": "Could not create the vendor.",
+    "loadError": "Couldn't load vendors. Reload the page to try again."
   },
   "frameworks": {
     "crumb": {
