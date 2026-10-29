@@ -349,3 +349,63 @@ describe('UNSCORED is a filter member, not an absence', () => {
         );
     });
 });
+
+describe('the search box narrows the register (#4471)', () => {
+    // `?q=` is what `FilterProvider` writes when somebody types in "Search
+    // agents…". Nothing read it, so typing changed no row. Driven through the
+    // page's own parser, as the cards above are.
+
+    it('narrows the list to the agents whose NAME contains the text, case-insensitively', async () => {
+        const rows = await listRegisteredAgents(ctx(), {
+            filters: parseAgentListFilters({ q: 'SUSP-EGRESS' }),
+            take: UNCAPPED,
+        });
+        expect(rows.length).toBe(SEEDED.suspendedEgress);
+        expect(rows.every((r) => r.name.startsWith('susp-egress-'))).toBe(true);
+    });
+
+    it('intersects with the tier filter rather than replacing its OR', async () => {
+        // The tier filter owns `where.OR` (UNSCORED is `riskTier IS NULL`). A
+        // search written as a second `OR` would overwrite it, and this pair —
+        // a search matching only unscored rows, under a tier filter that
+        // excludes them — is where the two implementations disagree.
+        const unscoredByName = await listRegisteredAgents(ctx(), {
+            filters: parseAgentListFilters({ q: 'draft-unscored', riskTier: 'MODERATE' }),
+            take: UNCAPPED,
+        });
+        expect(unscoredByName).toHaveLength(0);
+
+        const both = await listRegisteredAgents(ctx(), {
+            filters: parseAgentListFilters({ q: 'draft-unscored', riskTier: 'UNSCORED,MODERATE' }),
+            take: UNCAPPED,
+        });
+        expect(both.length).toBe(SEEDED.draftUnscoredEgress);
+    });
+
+    it('a blank search is no search', async () => {
+        expect(parseAgentListFilters({ q: '   ' }).q).toBeUndefined();
+        const rows = await listRegisteredAgents(ctx(), {
+            filters: parseAgentListFilters({ q: '' }),
+            take: UNCAPPED,
+        });
+        expect(rows.length).toBe(TOTAL);
+    });
+
+    it('the narrow cards count under the search, and Total still ignores it', async () => {
+        // A card's click keeps the search (it sets one filter key), so its
+        // number must be counted under the search. Total's click clears the
+        // search with everything else.
+        const filters = parseAgentListFilters({ q: 'active-' });
+        const counts = await listAgentKpiCounts(ctx(), filters);
+        expect(counts.total).toBe(TOTAL);
+        expect(counts.active).toBe(SEEDED.activeScored + SEEDED.activeUnscored);
+        expect(counts.unscored).toBe(SEEDED.activeUnscored);
+        expect(counts.egress).toBe(0);
+
+        const unscoredClick = await listRegisteredAgents(ctx(), {
+            filters: { ...filters, riskTier: ['UNSCORED'] },
+            take: UNCAPPED,
+        });
+        expect(unscoredClick.length).toBe(counts.unscored);
+    });
+});

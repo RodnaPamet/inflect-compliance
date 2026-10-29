@@ -44,6 +44,7 @@ import { getSampleAuditDisagreementRate } from '@/app-layer/usecases/agent-propo
 import type { PrismaTx } from '@/lib/db-context';
 import { badRequest, conflict, ConflictError, forbidden, notFound } from '@/lib/errors/types';
 import { isClassifiedTier } from '@/lib/eu-ai-act/classification';
+import { normalizeQ } from '@/lib/filters/query-helpers';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import {
@@ -249,6 +250,11 @@ export function parseAgentListFilters(
         'agent authority tier',
     );
     if (tier.length > 0) filters.riskTier = tier;
+    // The search box (#4471). `FilterProvider` writes it as `?q=`; the page
+    // re-renders on every keystroke's debounce and nothing read it, so typing
+    // changed no row.
+    const q = normalizeQ(Array.isArray(raw.q) ? raw.q[0] : raw.q);
+    if (q) filters.q = q;
     return filters;
 }
 

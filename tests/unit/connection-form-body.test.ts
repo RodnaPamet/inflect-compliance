@@ -96,6 +96,27 @@ describe('decision 2 — declared booleans go out as booleans', () => {
     });
 });
 
+describe('decision 3 — an edit carries the connection\'s current isEnabled (#4466)', () => {
+    it('sends isEnabled: false when editing a DISABLED connection', () => {
+        // The case with teeth. The server reads an absent `isEnabled` as true on
+        // the update path, so without this an edit of a disabled connection —
+        // correcting its name, say — silently turns its syncs back on.
+        const body = buildConnectionBody({ ...base, editingId: 'conn-1', editingIsEnabled: false });
+        expect(body.isEnabled).toBe(false);
+    });
+
+    it('sends isEnabled: true when editing an enabled connection', () => {
+        const body = buildConnectionBody({ ...base, editingId: 'conn-1', editingIsEnabled: true });
+        expect(body.isEnabled).toBe(true);
+    });
+
+    it('sends no isEnabled when creating, whatever it is handed', () => {
+        // A create takes the server's default; the edit-time state is not a
+        // create-time choice.
+        expect(buildConnectionBody({ ...base, editingIsEnabled: false })).not.toHaveProperty('isEnabled');
+    });
+});
+
 describe('the id', () => {
     it('is present when editing and absent when creating', () => {
         expect(buildConnectionBody({ ...base, editingId: 'conn-1' }).id).toBe('conn-1');

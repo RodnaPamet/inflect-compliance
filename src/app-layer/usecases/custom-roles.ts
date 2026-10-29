@@ -29,6 +29,7 @@ import {
     mayCarryCustomRole,
     ownerTierClearMessage,
 } from '@/lib/roles';
+import { CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER } from '@/lib/custom-role-grant-refusal';
 import type { Role } from '@prisma/client';
 
 /**
@@ -40,6 +41,34 @@ import type { Role } from '@prisma/client';
  * (`mayCarryCustomRole`, below; OWNER joined that rule in #3720).
  */
 const VALID_BASE_ROLES: Role[] = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
+
+/**
+ * The LIVE custom role holding `name` in the tenant, other than `exceptId`.
+ *
+ * Mirrors the partial unique index `TenantCustomRole_tenantId_name_key`
+ * (`WHERE "isActive"`, migration
+ * 20261029190000_custom_role_name_unique_among_live): exact, case-sensitive,
+ * deleted roles excluded. So it refuses exactly what the index would, and
+ * nothing it would let through. A deleted role frees its name (#4467; owner
+ * decision, 2026-10-29): the check used to match deleted rows too, and a name
+ * stayed taken by a role nobody could see.
+ */
+async function findLiveCustomRoleByName(
+    db: PrismaTx,
+    tenantId: string,
+    name: string,
+    exceptId?: string,
+) {
+    return db.tenantCustomRole.findFirst({
+        where: {
+            tenantId,
+            name,
+            isActive: true,
+            ...(exceptId ? { id: { not: exceptId } } : {}),
+        },
+        select: { id: true },
+    });
+}
 
 // ─── List Custom Roles ───
 
@@ -121,10 +150,8 @@ export async function createCustomRole(ctx: RequestContext, input: CreateCustomR
     assertGrantWithinOwnAuthority(ctx, input.permissionsJson, input.baseRole);
 
     return runInTenantContext(ctx, async (db) => {
-        // Check for duplicate name within tenant
-        const existing = await db.tenantCustomRole.findFirst({
-            where: { tenantId: ctx.tenantId, name },
-        });
+        // Check for a duplicate name among the tenant's LIVE roles.
+        const existing = await findLiveCustomRoleByName(db, ctx.tenantId, name);
         if (existing) {
             throw badRequest(`A custom role named "${name}" already exists in this tenant.`);
         }
@@ -191,11 +218,9 @@ export async function updateCustomRole(
             if (!name || name.length > 100) {
                 throw badRequest('Role name is required and must be 100 characters or fewer.');
             }
-            // Check for duplicate name
+            // Check for a duplicate name among the tenant's LIVE roles.
             if (name !== existing.name) {
-                const dup = await db.tenantCustomRole.findFirst({
-                    where: { tenantId: ctx.tenantId, name, id: { not: roleId } },
-                });
+                const dup = await findLiveCustomRoleByName(db, ctx.tenantId, name, roleId);
                 if (dup) {
                     throw badRequest(`A custom role named "${name}" already exists.`);
                 }
@@ -335,8 +360,11 @@ function assertGrantWithinOwnAuthority(
     const granted = parsePermissionsJson(permissionsJson, baseRole);
     const exceeded = permissionsExceeding(granted, ctx.appPermissions);
     if (exceeded.length > 0) {
+        // The keys also travel in `details`, under a reason, so the roles
+        // page can name them by their labels rather than show the keys (#4467).
         throw forbidden(
             `Cannot grant permissions you do not hold: ${exceeded.join(', ')}.`,
+            { reason: CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER, exceeded },
         );
     }
 }

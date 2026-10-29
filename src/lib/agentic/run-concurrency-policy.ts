@@ -40,7 +40,7 @@
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { runInTenantContext, type PrismaTx } from '@/lib/db/rls-middleware';
-import { forbidden } from '@/lib/errors/types';
+import { badRequest, forbidden } from '@/lib/errors/types';
 import { assertAgentGovernanceAdmin } from '@/app-layer/policies/agent-governance.policies';
 import { appendAuditEntry } from '@/lib/audit';
 import type { RequestContext } from '@/app-layer/types';
@@ -48,6 +48,8 @@ import type { RequestContext } from '@/app-layer/types';
 import {
     evaluateConcurrency,
     concurrencyRefusalMessage,
+    CONCURRENCY_CAP_SETTING_MESSAGE,
+    isSettableConcurrencyCap,
     normaliseCap,
     LIVE_RUN_STATUSES,
     type ConcurrencyVerdict,
@@ -213,6 +215,11 @@ export async function setConcurrencyCap(
     cap: number | null,
 ): Promise<{ cap: number | null }> {
     assertAgentGovernanceAdmin(ctx, 'agent_registry');
+    // Refused with the rule and its limit as the MESSAGE, as the budget's
+    // setter does, so whoever sent it reads the reason rather than a generic
+    // validation failure (#4471). Before `normaliseCap`, which would floor a
+    // fractional cap silently.
+    if (!isSettableConcurrencyCap(cap)) throw badRequest(CONCURRENCY_CAP_SETTING_MESSAGE);
     const next = normaliseCap(cap);
     const previous = await readCap(ctx);
 

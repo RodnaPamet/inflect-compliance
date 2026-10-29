@@ -60,8 +60,13 @@ describe('custom roles are judged by their own keys', () => {
         });
     }
 
-    test('admin.view on a READER base reaches the roster, which every role may read', () => {
+    test('admin.view on a READER base does not reach the roster: a READER base no longer holds personnel.view', () => {
         const ctx = custom('READER', { admin: { view: true } });
+        expect(admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS['/admin/personnel'])).toBe(false);
+    });
+
+    test('admin.view and personnel.view on a READER base reach the roster', () => {
+        const ctx = custom('READER', { admin: { view: true }, personnel: { view: true } });
         expect(admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS['/admin/personnel'])).toBe(true);
     });
 

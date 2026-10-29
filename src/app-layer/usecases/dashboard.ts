@@ -11,8 +11,9 @@ import { RequestContext } from '../types';
 import {
     DashboardRepository,
     type ExecutiveDashboardPayload,
+    type RecentActivityEntry,
 } from '../repositories/DashboardRepository';
-import { assertCanRead } from '../policies/common';
+import { assertCanAudit, assertCanRead } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { cachedDashboardRead } from '@/lib/cache/list-cache';
 import { badRequest } from '@/lib/errors/types';
@@ -44,8 +45,51 @@ export function isSwappableKpiKey(v: string): v is SwappableKpiKey {
     return (SWAPPABLE_KPI_KEYS as readonly string[]).includes(v);
 }
 
+/**
+ * A pie segment's CODE, not its label.
+ *
+ * The usecase names the slice; the client renders it in the reader's language
+ * (`dashboard.customKpi.segments.<key>`). Returning English from here made
+ * every slice untranslatable, and translating on the server would tie the DTO
+ * to one request's locale.
+ */
+export const DASHBOARD_KPI_SEGMENT_KEYS = [
+    'active',
+    'retired',
+    'other',
+    'planning',
+    'inProgress',
+    'ready',
+    'complete',
+    'pass',
+    'fail',
+    'inconclusive',
+    'pending',
+    'overdue',
+    'dueWithin7d',
+    'due8to30d',
+    'current',
+    'expiringWithin7d',
+    'expiring8to30d',
+    'expired',
+    'onTrack',
+    'completed',
+] as const;
+export type DashboardKpiSegmentKey = (typeof DASHBOARD_KPI_SEGMENT_KEYS)[number];
+
+/** The tile's secondary readout, as a message code (`dashboard.customKpi.subtitles.<key>`). */
+export const DASHBOARD_KPI_SUBTITLE_KEYS = [
+    'highCritical',
+    'complete',
+    'passed',
+    'currentPercent',
+    'active',
+    'dueWithin7d',
+] as const;
+export type DashboardKpiSubtitleKey = (typeof DASHBOARD_KPI_SUBTITLE_KEYS)[number];
+
 export interface DashboardKpiSegment {
-    label: string;
+    key: DashboardKpiSegmentKey;
     value: number;
     /** Hex used for both the pie arc and the legend dot. */
     color: string;
@@ -55,17 +99,18 @@ export interface DashboardKpiCardDto {
     key: SwappableKpiKey;
     /** Headline count (the big number on the tile). */
     headline: number;
-    /** One-line secondary readout under the value. */
-    subtitle: string;
+    /** One-line secondary readout under the value: a code and its one number. */
+    subtitle: { key: DashboardKpiSubtitleKey; count: number };
     /** Pie/donut segments — the "different pie chart" this KPI renders. */
     segments: DashboardKpiSegment[];
 }
 
 /**
  * On-demand data for one swappable KPI card + its pie. Authorized on
- * every call; scoped to the tenant via `runInTenantContext`. Trends are
- * intentionally omitted for now ("pie now, trends later") — the daily
- * snapshot series doesn't yet carry these entities.
+ * every call; scoped to the tenant via `runInTenantContext`. No trend
+ * series here: where the daily snapshot already stores a metric's
+ * history (assets), the client draws it from the trends payload it
+ * already holds.
  */
 export async function getDashboardKpi(
     ctx: RequestContext,
@@ -82,12 +127,12 @@ export async function getDashboardKpi(
                 return {
                     key,
                     headline: s.total,
-                    subtitle: `${s.highCriticality} high/critical`,
+                    subtitle: { key: 'highCritical', count: s.highCriticality },
                     segments: [
-                        { label: 'Active', value: s.active, color: '#22c55e' },
-                        { label: 'Retired', value: s.retired, color: '#94a3b8' },
+                        { key: 'active', value: s.active, color: '#22c55e' },
+                        { key: 'retired', value: s.retired, color: '#94a3b8' },
                         ...(other > 0
-                            ? [{ label: 'Other', value: other, color: '#64748b' }]
+                            ? [{ key: 'other' as const, value: other, color: '#64748b' }]
                             : []),
                     ],
                 };
@@ -97,12 +142,12 @@ export async function getDashboardKpi(
                 return {
                     key,
                     headline: s.total,
-                    subtitle: `${s.complete} complete`,
+                    subtitle: { key: 'complete', count: s.complete },
                     segments: [
-                        { label: 'Planning', value: s.planning, color: '#94a3b8' },
-                        { label: 'In Progress', value: s.inProgress, color: '#f59e0b' },
-                        { label: 'Ready', value: s.ready, color: '#3b82f6' },
-                        { label: 'Complete', value: s.complete, color: '#22c55e' },
+                        { key: 'planning', value: s.planning, color: '#94a3b8' },
+                        { key: 'inProgress', value: s.inProgress, color: '#f59e0b' },
+                        { key: 'ready', value: s.ready, color: '#3b82f6' },
+                        { key: 'complete', value: s.complete, color: '#22c55e' },
                     ],
                 };
             }
@@ -111,33 +156,35 @@ export async function getDashboardKpi(
                 return {
                     key,
                     headline: s.total,
-                    subtitle: `${s.pass} passed`,
+                    subtitle: { key: 'passed', count: s.pass },
                     segments: [
-                        { label: 'Pass', value: s.pass, color: '#22c55e' },
-                        { label: 'Fail', value: s.fail, color: '#dc2626' },
-                        { label: 'Inconclusive', value: s.inconclusive, color: '#f59e0b' },
-                        { label: 'Pending', value: s.pending, color: '#94a3b8' },
+                        { key: 'pass', value: s.pass, color: '#22c55e' },
+                        { key: 'fail', value: s.fail, color: '#dc2626' },
+                        { key: 'inconclusive', value: s.inconclusive, color: '#f59e0b' },
+                        { key: 'pending', value: s.pending, color: '#94a3b8' },
                     ],
                 };
             }
             case 'evidence': {
-                // Review-timeliness partition. getEvidenceExpiry's dueSoon30d
-                // INCLUDES dueSoon7d, so the pie carves a disjoint 8–30d slice
-                // (max-0 guarded) rather than double-counting the urgent rows.
-                const s = await DashboardRepository.getEvidenceExpiry(db, ctx);
-                const due8to30 = Math.max(0, s.dueSoon30d - s.dueSoon7d);
-                const headline = s.overdue + s.dueSoon7d + due8to30 + s.current;
+                // Review-timeliness PARTITION. This used to be summed from
+                // getEvidenceExpiry, whose due-soon windows and `current`
+                // overlap (an approved item due in three weeks is in both), so
+                // the headline counted that item twice. The breakdown's four
+                // buckets are disjoint by construction, so their sum is a
+                // count of rows.
+                const s = await DashboardRepository.getEvidenceReviewBreakdown(db, ctx);
+                const headline = s.overdue + s.dueWithin7d + s.due8to30d + s.current;
                 const currentPct =
                     headline > 0 ? Math.round((s.current / headline) * 100) : 0;
                 return {
                     key,
                     headline,
-                    subtitle: `${currentPct}% current`,
+                    subtitle: { key: 'currentPercent', count: currentPct },
                     segments: [
-                        { label: 'Overdue', value: s.overdue, color: '#dc2626' },
-                        { label: 'Due ≤7d', value: s.dueSoon7d, color: '#f97316' },
-                        { label: 'Due 8–30d', value: due8to30, color: '#f59e0b' },
-                        { label: 'Current', value: s.current, color: '#22c55e' },
+                        { key: 'overdue', value: s.overdue, color: '#dc2626' },
+                        { key: 'dueWithin7d', value: s.dueWithin7d, color: '#f97316' },
+                        { key: 'due8to30d', value: s.due8to30d, color: '#f59e0b' },
+                        { key: 'current', value: s.current, color: '#22c55e' },
                     ],
                 };
             }
@@ -159,13 +206,13 @@ export async function getDashboardKpi(
                 return {
                     key,
                     headline,
-                    subtitle: `${s.activeApproved} active`,
+                    subtitle: { key: 'active', count: s.activeApproved },
                     segments: [
-                        { label: 'Active', value: healthyActive, color: '#22c55e' },
-                        { label: 'Expiring ≤7d', value: s.expiringWithin7, color: '#f97316' },
-                        { label: 'Expiring 8–30d', value: expiring8to30, color: '#f59e0b' },
-                        { label: 'Pending', value: s.pendingRequest, color: '#3b82f6' },
-                        { label: 'Expired', value: s.expired, color: '#dc2626' },
+                        { key: 'active', value: healthyActive, color: '#22c55e' },
+                        { key: 'expiringWithin7d', value: s.expiringWithin7, color: '#f97316' },
+                        { key: 'expiring8to30d', value: expiring8to30, color: '#f59e0b' },
+                        { key: 'pending', value: s.pendingRequest, color: '#3b82f6' },
+                        { key: 'expired', value: s.expired, color: '#dc2626' },
                     ],
                 };
             }
@@ -179,16 +226,36 @@ export async function getDashboardKpi(
                 return {
                     key,
                     headline,
-                    subtitle: `${s.dueWithin7} due ≤7d`,
+                    subtitle: { key: 'dueWithin7d', count: s.dueWithin7 },
                     segments: [
-                        { label: 'On track', value: s.activeOnTrack, color: '#22c55e' },
-                        { label: 'Overdue', value: s.overdue, color: '#dc2626' },
-                        { label: 'Completed', value: s.completed, color: '#3b82f6' },
+                        { key: 'onTrack', value: s.activeOnTrack, color: '#22c55e' },
+                        { key: 'overdue', value: s.overdue, color: '#dc2626' },
+                        { key: 'completed', value: s.completed, color: '#3b82f6' },
                     ],
                 };
             }
         }
     });
+}
+
+/**
+ * The dashboard's Recent Activity feed: the ten latest audit-log entries,
+ * humanised and titled.
+ *
+ * Gated exactly as the audit log itself (`listAuditLogs`): `assertCanAudit`,
+ * which OWNER, ADMIN and AUDITOR hold. The feed IS the audit log's head, so a
+ * role the audit-log route refuses must not read it here either (owner
+ * decision, 2026-10-29). The dashboard page asks the same question before it
+ * renders the card, so other roles neither fetch the rows nor see an empty
+ * card; this assertion is what holds if a caller forgets to ask.
+ */
+export async function getDashboardRecentActivity(
+    ctx: RequestContext,
+): Promise<RecentActivityEntry[]> {
+    assertCanAudit(ctx);
+    return runInTenantContext(ctx, (db) =>
+        DashboardRepository.getRecentActivityDetailed(db, ctx),
+    );
 }
 
 /**

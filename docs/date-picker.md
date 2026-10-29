@@ -207,7 +207,13 @@ const period = parseRangeToken(filters.period ?? '|');
   DatePicker combo, not a new primitive.
 - **Time-of-day precision** — the platform is day-level. Needing a
   time picker is a signal to re-examine the workflow (most GRC
-  date fields are day-level by design).
+  date fields are day-level by design). The one field that genuinely
+  needs the time is an incident's "Detected at": the NIS2 Article 23
+  deadlines run in hours from it. It pairs `<DatePicker>` with a
+  native `<Input type="time">` (a time input is not a date input, so
+  the date-input ban does not apply), and
+  `src/lib/incidents/detected-at.ts` combines the two into one local
+  instant. Reuse that pairing before building a time-aware picker.
 
 ---
 

@@ -40,6 +40,14 @@ export interface AgentListFilters {
      * `riskTier: null`, never to a tier, and never to "no filter".
      */
     riskTier?: readonly AgentTierFilterValue[];
+    /**
+     * The toolbar's search box (`?q=`), matched case-insensitively against the
+     * agent's NAME (#4471). Only the name: the description is encrypted at
+     * rest (`ENCRYPTED_FIELDS.RegisteredAgent`) and the owner's name and email
+     * are stored encrypted too (`pii-middleware`), so a `contains` over any of
+     * them would compare against ciphertext and match nothing.
+     */
+    q?: string;
 }
 
 /** `UNSCORED` is not an `AgentRiskTier` — see `AgentListFilters.riskTier`. */
@@ -182,6 +190,11 @@ export class RegisteredAgentRepository {
             // `arms` is never empty here — the enclosing `if` guarantees at
             // least one member, and every member is either UNSCORED or a tier.
             where.OR = arms;
+        }
+        if (filters.q) {
+            // A term of its own rather than a second `OR`: the tier filter
+            // above already owns `where.OR`, and the two must intersect.
+            where.name = { contains: filters.q, mode: 'insensitive' };
         }
         return where;
     }

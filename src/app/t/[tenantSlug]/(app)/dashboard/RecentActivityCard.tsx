@@ -3,8 +3,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { getTenantCtx } from '@/app-layer/context';
-import { runInTenantContext } from '@/lib/db-context';
-import { DashboardRepository } from '@/app-layer/repositories/DashboardRepository';
+import { getDashboardRecentActivity } from '@/app-layer/usecases/dashboard';
 import {
     activityEntityMeta,
     activityVerbToken,
@@ -28,6 +27,10 @@ interface RecentActivityCardProps {
  * Each row is humanised (localized verb + entity noun instead of raw
  * lowercased enums), identified (the changed entity's resolved title),
  * and linked to the changed item when it has a navigable surface.
+ *
+ * The rows are the audit log's head, so they are read through
+ * `getDashboardRecentActivity`, which asserts the audit log's own gate. The
+ * page renders this card only for a viewer that gate admits.
  */
 export default async function RecentActivityCard({
     tenantSlug,
@@ -37,9 +40,7 @@ export default async function RecentActivityCard({
     const ctx = await getTenantCtx({ tenantSlug });
     const t = await getTranslations('dashboard.activity');
 
-    const recentActivity = await runInTenantContext(ctx, async (db) => {
-        return DashboardRepository.getRecentActivityDetailed(db, ctx);
-    });
+    const recentActivity = await getDashboardRecentActivity(ctx);
 
     return (
         <Card>

@@ -391,10 +391,65 @@ it, so moving the pin reddens the build until each one is re-established (5.3,
 [ ]          0.1b above all: is `enforcement` unset still AUDIT mode?
 [ ] [test] vendored skills re-pinned, VENDORED.md Tag matches the pin
 [ ]       the NOTICE commit updated, and THE NEW SKILL TEXT READ before merging
-[ ]       policy prover re-run
-[ ]       `npm run skills:evaluate` re-run (needs the owner's key)
-[ ]       scanner contract tests re-run
+[ ]       policy prover re-run — SEE BELOW, this is not possible as written
+[ ]       `npm run skills:evaluate` re-run — SEE BELOW, usually a no-op
+[ ] [test] scanner contract tests re-run
 ```
+
+### Two of those three items were wrong, and the measurements are here
+
+**The policy prover re-run cannot be done against a gateway policy.** Measured
+on 2026-10-29 with the checksum-verified `openshell-prover 0.1.6`
+(sha256 `dafef6f1…`):
+
+```
+$ openshell-prover check --boundary p.json p.json      # p.json = {"version":2}
+openshell-prover: invalid candidate policy: invalid policy:
+  unsupported policy version 2; expected version 1
+```
+
+The gateway's policy schema is **version 2** — that is 0.1a's established fact,
+and `[openshell] version = 2` is what `gateway.toml` sets. The prover accepts
+**version 1 only**. They are different formats, not different revisions of one:
+in the prover's format `network_policies` is a **mapping**, while the gateway's
+(and `collectorSandboxPolicy`'s) is a **sequence**, so even the one field name
+they share disagrees on type:
+
+```
+network_policies: type mismatch: expected mapping, found sequence
+```
+
+**This is long-standing, not a 0.1.6 regression** — the 0.1.5 prover rejects
+version 2 with the identical message, so the two components have never agreed.
+There is no translation layer in this repository and none is published
+upstream, so the item is **unsatisfiable as written** rather than pending. It
+should be read as "write a v2→v1 translation, or drop the item", and that is a
+piece of work, not a checklist tick.
+
+The prover does run and does discriminate on its own schema — a `version 1`
+policy returns `result: within_boundary` with
+`coverage: domains=filesystem,network_l4,network_rest,process,landlock`. So the
+finding is a schema divergence, not a broken tool.
+
+One asymmetry worth carrying forward: **the prover rejects unknown fields and
+the gateway's parser does not.** The prover answers `unknown field
+'process.allow_root' in authored policy`, while
+`agent-sandbox-policy-review/SKILL.md` records — about the gateway — that "the
+policy parser does not reject unknown keys… a field it does not recognise is
+discarded without error". Both are true of their own component, which means
+agreement between prover and gateway can never be assumed from either one
+passing.
+
+**`npm run skills:evaluate` does not need the owner's key, and usually has
+nothing to do.** The key is on the production VM at `/opt/inflect/.env.prod`,
+which is the same credential the Flue runtime's provider already uses. More to
+the point, a record goes stale only when a skill's **evaluation set** changes —
+`checkEvaluationRecord` fails on `MALFORMED`, `SET_MISMATCH`, an unknown,
+duplicate or unanswered answer, or `BELOW_THRESHOLD`, and it does **not** hash
+the instructions. All eleven skills carry a passing record today, so an upgrade
+that changes no evaluation set needs no re-run; running one anyway spends
+credits to rewrite eleven files and risks a record that scores worse. Re-run it
+when a set changes, not when a release does.
 
 **Why 0.1b is called out.** #3927 calls it "the most consequential fact in the
 roadmap". An endpoint with `enforcement` unset runs in audit mode:

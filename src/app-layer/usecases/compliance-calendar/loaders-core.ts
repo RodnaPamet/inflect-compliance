@@ -10,6 +10,7 @@ import { logger } from '@/lib/observability';
 import { internal } from '@/lib/errors/types';
 import { assertCanRead } from '../../policies/common';
 import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
+import { isSettledRiskStatus } from '../../domain/risk-status';
 import {
     evidenceExpiryScopeWhere,
     EVIDENCE_REVIEWED_STATUS,
@@ -630,7 +631,7 @@ export async function loadRiskEvents(
     );
     const events: CalendarEvent[] = [];
     for (const r of rows) {
-        const isClosed = r.status === 'CLOSED' || r.status === 'ACCEPTED';
+        const isClosed = isSettledRiskStatus(r.status);
         if (
             r.nextReviewAt &&
             r.nextReviewAt >= range.from &&
