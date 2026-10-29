@@ -230,7 +230,12 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // (docs/claude-agent-sdk-design.md, docs/claude-managed-agents-design.md,
         // docs/claude-tool-runner-design.md), one contiguous textual insert
         // between `docs/ci-local.md` and `docs/cloud-storage.md`: +9/-0.
-        keyOrderSha: '89576449fd9001551aa131d753dab3fe4e14291ba391d22e32cc59675315fe40',
+        // Moved 2026-10-29 by ONE sorted addition, the SAP MCP connection runbook
+        // (docs/runbooks/wiring-an-sap-mcp-connection.md, #3872), inserted after
+        // `docs/runbooks/joule-byoa.md` because 'w' > 'j' within that folder and
+        // before `docs/sap-agent-integration-roadmap.md`: +3/-0. No existing
+        // entry moved, which is the distinction this digest draws.
+        keyOrderSha: '2ff88255cfcc69fd2bc5786af941fa91ea95d8a9d59f7a9930a16966b313e2ca',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
