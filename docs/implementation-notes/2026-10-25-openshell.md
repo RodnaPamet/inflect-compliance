@@ -284,6 +284,107 @@ rather than a side effect of a spike answer. It is registered in
 `KNOWN_NEWER_RELEASES` so the discovery is recorded without the pin moving —
 that register exists because this finding could not otherwise be written down.
 
+## 0.1e — telemetry CAN be turned off completely, and 4.3 was wrong about it
+
+Measured on the lab VM against a DNS sinkhole: `events.telemetry.data.nvidia.com`
+mapped to `127.0.0.1` with a listener on 443, a positive control connection
+before every arm, and the gateway's `readyz` gated at the START AND END of each
+300-second window — a window whose subject died partway measures nothing, which
+is how the first attempt failed.
+
+| setting | activity in the window | bytes to the telemetry host |
+|---|---|---|
+| default (variable unset) | create + list + delete | **3013** |
+| default (variable unset) | create + list + delete (repeat) | **3013** |
+| default (variable unset) | list only | **0** |
+| `OPENSHELL_TELEMETRY_ENABLED=false` | create + list + delete | **0** |
+
+Three findings, in order of how much they change:
+
+1. **Telemetry is ON by default** and sends real bytes to NVIDIA.
+2. **The variable turns it off completely** — zero bytes with identical activity.
+3. **It is EVENT-DRIVEN, not periodic.** Five minutes of a running gateway with
+   only `sandbox list` produced nothing; the sends follow sandbox lifecycle
+   activity. The byte count was identical across two independent runs, which
+   suggests a deterministic payload per unit of activity.
+
+### This corrects 4.3 (#4416)
+
+4.3 recorded that the setting "is not self-verifying" and that three traced
+18-second runs — unset, `false`, `notabool` — were indistinguishable, concluding
+that the setting is a request and the egress rule is the enforcement.
+
+**The first half of that is wrong.** The setting is effective and its effect is
+observable. The 18-second window was too short, and worse, those runs had no
+sandbox lifecycle activity at all — so the probe was watching for an
+event-driven send while generating no events. It was a probe with no
+discriminating power, and it read as evidence of absence.
+
+What survives: the egress rule is still worth having, as defence that does not
+depend on a third party honouring its own flag. What does not survive is the
+implication that the flag might not work. It works.
+
+## 0.1g — what the audit log records, per decision kind
+
+Measured on the pinned release with the OCSF writer configured and demonstrably
+live: it wrote a record to exactly the configured path and registered eight
+`*ocsf*` metric series, so the zeros below are observations rather than an inert
+probe. `--config` is read and strictly validated — a bogus `compute_driver` is
+rejected as a `configuration error`, and a bogus key or table fails to parse —
+so `[openshell.gateway.ocsf_log] path` is an accepted setting.
+
+| decision kind | in the OCSF log | queryable through the API |
+|---|---|---|
+| created | **no** | yes — `sandbox get`: id, phase, resource version, main process instance, restart count |
+| policy changed | **no** | yes — `policy list`: version, hash, status, created |
+| execution refused | not established | — |
+| network denied | **no** | **no** |
+| deleted | **no** | **no** — `sandbox get` answers "sandbox not found" |
+
+The whole log held ONE record across the session: `class_uid 3002`,
+`Authentication: Logon`, status `Failure`. An attribution test settles the
+lifecycle rows — a create (sandbox confirmed present) followed by a delete
+(confirmed absent) added **zero** records.
+
+The network-denied row is a confirmed denial, not an assumption: an egress
+attempt from inside a sandbox returned `connect: Permission denied`, and the
+gateway's own stdout logged nothing about it either. The denial happens in the
+sandbox's kernel enforcement and the gateway never sees it — which is the
+third-party v0.1.2 finding this issue cites, holding on the pinned release.
+
+### What this decides for 5.1
+
+Not merely "OpenShell's logs are inputs". Of the five decision kinds, **none is
+bridgeable from the OCSF log**. Two are bridgeable by POLLING the API, and
+**deletion is bridgeable from neither after the fact** — the sandbox record is
+gone and the log never held it.
+
+So a deletion must be recorded by US at the moment we make it, because nothing
+on the gateway side retains a trace we can read later. That is what 5.4's drill
+arm already does: it confirms absence itself rather than trusting a record.
+
+## 0.1d — the dropped-tool MCP rule defect is NOT established as fixed
+
+| | |
+|---|---|
+| Upstream NVIDIA/OpenShell#4679 | **open**, label `state:triage-needed`, no milestone, never closed |
+| The defect's own flow on the pinned release | **unreachable** — the CLI exposes no proposal or approval verb |
+| Observing a dropped field directly | **not possible** — `policy get -o json` returns metadata only (version, hash, source, status) and no policy body |
+
+So the honest answer is "not fixed, and not reproducible from our surface
+either", with the reasons recorded rather than a verdict asserted. No release
+claims the fix, and nothing in the pinned release lets us watch an approval drop
+a field.
+
+What makes that tolerable internally is D4: Inflect's own policies carry no MCP
+rules, and `agent-action-receipt`'s D4 block enforces it, so the defect is
+sidestepped here by construction rather than by upstream's fix.
+
+**The phase 3 instruction therefore stands as written:** the audit skill must
+treat advisor-approved MCP rules in a client estate as UNVERIFIED. That
+instruction was correct only if the defect is live, and this is the measurement
+that says it is — or more precisely, that nothing shows it is not.
+
 ## Retention classification
 
 **No new model.** `prisma/schema.prisma` declares no sandbox- or

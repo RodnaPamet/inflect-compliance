@@ -219,6 +219,24 @@ const VERIFIED_FACTS = [
         fact: 'enforcement unset runs in AUDIT mode — UNSPECIFIED is zero on the wire and logs-and-allows',
     },
     {
+        id: '0.1d',
+        issue: 3929,
+        verifiedAgainst: '0.1.5',
+        fact: 'the dropped-tool MCP rule defect is NOT established as fixed: upstream #4679 is open, and the release exposes no proposal flow and no policy-body read to observe it',
+    },
+    {
+        id: '0.1e',
+        issue: 3930,
+        verifiedAgainst: '0.1.5',
+        fact: 'telemetry is ON by default and event-driven; OPENSHELL_TELEMETRY_ENABLED=false turns it off completely (3013 bytes vs 0, reproduced, same activity)',
+    },
+    {
+        id: '0.1g',
+        issue: 3932,
+        verifiedAgainst: '0.1.5',
+        fact: 'the OCSF log records no sandbox lifecycle decision — created, policy changed, network denied and deleted all produce zero records; deletion is recoverable from neither the log nor the API afterwards',
+    },
+    {
         id: '0.1f',
         issue: 3931,
         verifiedAgainst: '0.1.5',
@@ -241,10 +259,16 @@ const VERIFIED_FACTS = [
  * "can telemetry be turned off completely" is not merely unanswered, there is
  * evidence that answering it from outside the process may not be possible.
  */
-const OPEN_QUESTIONS = [
-    { id: '0.1d', issue: 3929, question: 'is the dropped-tool MCP rule defect fixed on the pinned release' },
-    { id: '0.1e', issue: 3930, question: 'can telemetry be turned off completely' },
-    { id: '0.1g', issue: 3932, question: 'audit-log coverage on the pinned release' },
+const OPEN_QUESTIONS: ReadonlyArray<{
+    readonly id: string;
+    readonly issue: number;
+    readonly question: string;
+}> = [
+    // EMPTY, and that is the point: every phase 0.1 question is answered, each
+    // against the pinned release. The list stays rather than being deleted
+    // because the exhaustiveness check below reads both halves, and because an
+    // upgrade can reopen a question — moving an entry back here is how that is
+    // recorded.
 ] as const;
 
 describe('an upgrade fails a test rather than an audit (#3973)', () => {

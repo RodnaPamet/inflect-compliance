@@ -103,12 +103,21 @@ gone false while nothing failed is worse than no argument.
 `OPENSHELL_TELEMETRY_ENABLED=false` is set in the unit, and anonymous telemetry
 is **default on** in this build, which is why the line exists.
 
-**That setting is not self-verifying.** The variable is present in the 0.1.5
-binary but absent from `--help`, so it is read from the environment without
-appearing in the flag surface; an invalid value is accepted silently rather
-than rejected; and a 18-second traced run with the variable unset, `false` and
-`notabool` produced no observable difference — no telemetry egress in any of
-the three, and nothing in the logs at debug level.
+**And it works — measured, after an earlier claim here that it could not be
+verified.** 0.1e (#3930) ran the gateway against a DNS sinkhole for 300 seconds
+per arm, with a positive control and `readyz` gated at both ends of each window:
+
+```
+default (unset),  create+list+delete   3013 bytes   (reproduced exactly)
+default (unset),  list only               0 bytes
+=false,           create+list+delete      0 bytes
+```
+
+So telemetry is on by default, this line turns it off completely, and the sends
+are EVENT-DRIVEN rather than periodic. The earlier text here said the setting
+was not self-verifying, on the strength of three 18-second traced runs that were
+indistinguishable — too short, and generating no sandbox lifecycle at all, so it
+was watching for an event-driven send while producing no events.
 
 So the endpoint must be denied by the VM's egress policy, independently of the
 setting:
