@@ -365,6 +365,7 @@ describe('E2E test isolation — no cross-test `let` cascade', () => {
 const SHARED_SEED_ALLOWLIST: ReadonlyArray<{ file: string; reason: string }> = [
     // ── Read-only: navigate + assert chrome/role-gates, no DB writes ──
     { file: 'a11y.spec.ts', reason: 'read-only accessibility scan over seeded pages' },
+    { file: 'synthetic-cwv-baseline.spec.ts', reason: 'read-only: navigates to the three routes #3547 observed in production (dashboard, processes, admin/integrations) and reads LCP / FCP / TTFB / CLS out of the browser\'s own performance APIs. Measures and writes a JSON artifact; no DB writes. Needs the shared seed rather than an empty tenant — an empty dashboard paints almost nothing, so the baseline would be of three empty pages and would read as the app being fast. It asserts no budget, only that each route PAINTED, because a page that never rendered reports no LCP and absence is indistinguishable from speed in a file of numbers' },
     { file: 'csp-nonce-coverage.spec.ts', reason: 'read-only: loads dashboard + controls and asserts every executable <script> carries a nonce; no DB writes. Replaced tests/guards/csp-nonce-component-scripts-patch.test.ts, a source-scanning ratchet that passed against a stock npm bundle.' },
     { file: 'assets-create-modal.spec.ts', reason: 'read-only: navigates to /assets/new and asserts the create modal opens; never submits the form' },
     { file: 'admin-members.spec.ts', reason: 'read-only: opens the invite form + asserts its fields; never clicks #send-invite-btn' },
