@@ -14,6 +14,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, forbidden, notFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { PERSONNEL_ROSTER_CAP } from '@/lib/personnel-roster';
 import type { Prisma } from '@prisma/client';
 
 const EMPLOYEE_STATUSES = ['ACTIVE', 'ONBOARDING', 'OFFBOARDING', 'TERMINATED', 'LEAVE'] as const;
@@ -40,34 +41,74 @@ export interface EmployeeListRow {
 }
 
 /**
+ * One roster read: the people it returns, and whether that is all of them.
+ *
+ * The read takes one row past the cap, so `truncated` is something the read
+ * observed rather than a guess from a full page. `total` is exact either way:
+ * the row count when the read was not cut, a `count` of the same filter when
+ * it was. Before #4470 the roster stopped at 500 with no sign, and the page's
+ * "N people" header stopped with it.
+ */
+export interface EmployeeRoster {
+    employees: EmployeeListRow[];
+    truncated: boolean;
+    total: number;
+}
+
+type EmployeeStatus = (typeof EMPLOYEE_STATUSES)[number];
+
+/** The known statuses among `status`; unknown values are dropped, as before. */
+function statusFilter(status: string | readonly string[] | undefined): EmployeeStatus[] {
+    const given = typeof status === 'string' ? [status] : (status ?? []);
+    return EMPLOYEE_STATUSES.filter((s) => given.includes(s));
+}
+
+/**
  * The roster read. Asserts `personnel.view` itself — the key its route
  * (`GET /personnel`) holds — so a caller that skips the route gate (the admin
  * personnel page renders it server-side) cannot read the roster without it.
+ *
+ * `status` takes one status or several (the page's filter is multi-select),
+ * and `search` matches name or work email. Both run here, in the query, so a
+ * filtered view reaches people past the cap; filtering the capped rows in the
+ * browser could only hide some of them.
  */
 export async function listEmployees(
     ctx: RequestContext,
-    filters: { status?: string; search?: string } = {},
-): Promise<EmployeeListRow[]> {
+    filters: { status?: string | readonly string[]; search?: string } = {},
+): Promise<EmployeeRoster> {
     if (!ctx.appPermissions?.personnel?.view) {
         throw forbidden('You do not have permission to view personnel.');
     }
-    return runInTenantContext(ctx, (db) => {
+    return runInTenantContext(ctx, async (db) => {
         const where: Prisma.EmployeeWhereInput = { tenantId: ctx.tenantId };
-        if (filters.status && EMPLOYEE_STATUSES.includes(filters.status as (typeof EMPLOYEE_STATUSES)[number])) {
-            where.status = filters.status as (typeof EMPLOYEE_STATUSES)[number];
+        const statuses = statusFilter(filters.status);
+        if (statuses.length > 0) {
+            where.status = { in: statuses };
         }
-        if (filters.search) {
+        const search = filters.search?.trim();
+        if (search) {
             where.OR = [
-                { fullName: { contains: filters.search, mode: 'insensitive' } },
-                { workEmail: { contains: filters.search, mode: 'insensitive' } },
+                { fullName: { contains: search, mode: 'insensitive' } },
+                { workEmail: { contains: search, mode: 'insensitive' } },
             ];
         }
-        return db.employee.findMany({
+        const rows = await db.employee.findMany({
             where,
             select: { id: true, fullName: true, workEmail: true, status: true, department: true, jobTitle: true, managerEmployeeId: true, source: true, startDate: true },
             orderBy: [{ status: 'asc' }, { fullName: 'asc' }],
-            take: 500,
+            take: PERSONNEL_ROSTER_CAP + 1,
         });
+        if (rows.length <= PERSONNEL_ROSTER_CAP) {
+            return { employees: rows, truncated: false, total: rows.length };
+        }
+        const counted = await db.employee.count({ where });
+        return {
+            employees: rows.slice(0, PERSONNEL_ROSTER_CAP),
+            truncated: true,
+            // A count is never below what the read itself saw.
+            total: Math.max(counted, rows.length),
+        };
     });
 }
 

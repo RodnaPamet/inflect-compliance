@@ -73,7 +73,7 @@ jest.mock('next-intl/server', () => {
 
 /** Every data read the gated pages make. */
 const reads = {
-    listEmployees: jest.fn(async () => []),
+    listEmployees: jest.fn(async () => ({ employees: [], truncated: false, total: 0 })),
     listDevices: jest.fn(async () => []),
     listTrainingAssignments: jest.fn(async () => []),
     listAuditLogs: jest.fn(async () => []),
@@ -159,7 +159,10 @@ import VendorTemplatePage from '@/app/t/[tenantSlug]/(app)/admin/vendor-template
 import { ADMIN_PAGE_REQUIREMENTS } from '@/app/t/[tenantSlug]/(app)/admin/_lib/admin-page-requirements';
 
 type Element = { type: unknown; props: Record<string, unknown> };
-type PageFn = (args: { params: Promise<Record<string, string>> }) => Promise<Element>;
+type PageFn = (args: {
+    params: Promise<Record<string, string>>;
+    searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) => Promise<Element>;
 
 /** Every gated page, keyed by its route; the last test pins it to the table. */
 const PAGES: Record<string, unknown> = {
@@ -185,7 +188,8 @@ const PAGES: Record<string, unknown> = {
 async function render(route: string, role: string): Promise<Element> {
     currentCtx = makeRequestContext(role, { tenantSlug: 'acme' });
     const params = Promise.resolve({ tenantSlug: 'acme', assessmentId: 'a-1', templateId: 't-1' });
-    return (PAGES[route] as PageFn)({ params });
+    // Next hands every page `searchParams` too; the personnel page reads it.
+    return (PAGES[route] as PageFn)({ params, searchParams: Promise.resolve({}) });
 }
 
 function readsStarted(): string[] {

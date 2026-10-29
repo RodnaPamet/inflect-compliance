@@ -1,6 +1,6 @@
 /**
  * Filter configuration for the Personnel roster (PR-4). A static employment-
- * status enum filter applied client-side to the SSR rows.
+ * status enum filter, sent to `GET /personnel` with the search (#4470).
  */
 import { createTypedFilterDefs, optionsFromEnum } from '@/components/ui/filter/filter-definitions';
 // FilterDefInput.icon is typed LucideIcon; allowlisted like every *filter-defs.ts.
