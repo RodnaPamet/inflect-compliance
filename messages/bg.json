@@ -11049,6 +11049,10 @@
     "colSeverity": "Сериозност",
     "colCvss": "CVSS",
     "colMatched": "Съпоставено",
+    "matchedViaLabels": {
+        "CPE": "Автоматично",
+        "MANUAL": "Ръчно"
+    },
     "colStatus": "Статус",
     "colOwner": "Отговорник",
     "colDue": "Краен срок",

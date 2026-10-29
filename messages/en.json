@@ -11049,6 +11049,10 @@
     "colSeverity": "Severity",
     "colCvss": "CVSS",
     "colMatched": "Matched",
+    "matchedViaLabels": {
+        "CPE": "Automatic",
+        "MANUAL": "Manual"
+    },
     "colStatus": "Status",
     "colOwner": "Owner",
     "colDue": "Due",

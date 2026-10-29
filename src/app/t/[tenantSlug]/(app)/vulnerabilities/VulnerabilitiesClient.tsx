@@ -38,7 +38,13 @@ import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { apiErrorMessage } from '@/lib/api-error';
 import { vulnerabilityRefusal, type VulnerabilityRefusal } from '@/lib/vulnerability-refusals';
 import { formatDate } from '@inflect/ui/lib/format-date';
-import { buildVulnFilters, VULN_FILTER_KEYS, buildVulnStatusLabels } from './filter-defs';
+import {
+    buildVulnFilters,
+    VULN_FILTER_KEYS,
+    buildVulnStatusLabels,
+    buildVulnSeverityLabels,
+    buildVulnMatchedViaLabels,
+} from './filter-defs';
 
 /** CVE-sync freshness + reach, lazy-fetched from /vulnerabilities/status. */
 interface CveSyncStatus {
@@ -141,6 +147,9 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
     const tAdapt = (k: string, v?: Record<string, unknown>) =>
         t(k as Parameters<typeof t>[0], v as Parameters<typeof t>[1]);
     const statusLabels = useMemo(() => buildVulnStatusLabels(tAdapt), [t]);
+    // Stored codes render as labels (#4465); an unknown code shows as itself.
+    const severityLabels = useMemo(() => buildVulnSeverityLabels(tAdapt), [t]);
+    const matchedViaLabels = useMemo(() => buildVulnMatchedViaLabels(tAdapt), [t]);
     const filterDefs = useMemo(
         () => buildVulnFilters(tAdapt, (k) => tGroup(k as Parameters<typeof tGroup>[0])),
         [t, tGroup],
@@ -403,7 +412,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
             cell: ({ row }) => {
                 const sev = (row.original.cve.cvssSeverity ?? '').toUpperCase();
                 if (!sev) return <span className="text-content-muted">—</span>;
-                return <StatusBadge variant={SEVERITY_VARIANT[sev] ?? 'neutral'}>{sev}</StatusBadge>;
+                return <StatusBadge variant={SEVERITY_VARIANT[sev] ?? 'neutral'}>{severityLabels[sev] ?? sev}</StatusBadge>;
             },
         },
         {
@@ -420,7 +429,11 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
             id: 'matchedVia',
             header: t('colMatched'),
             accessorFn: (r) => r.matchedVia,
-            cell: ({ row }) => <span className="text-content-muted">{row.original.matchedVia}</span>,
+            cell: ({ row }) => (
+                <span className="text-content-muted">
+                    {matchedViaLabels[row.original.matchedVia] ?? row.original.matchedVia}
+                </span>
+            ),
         },
         {
             id: 'status',
@@ -586,6 +599,8 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
         pendingId,
         statusOptions,
         statusLabels,
+        severityLabels,
+        matchedViaLabels,
         tenantSlug,
         t,
     ]);

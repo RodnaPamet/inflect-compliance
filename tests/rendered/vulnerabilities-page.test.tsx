@@ -12,7 +12,8 @@
  *      gave it, and a custom role sees only the controls its keys can use;
  *   2. a refused action shows the server's reason — in the page's own words
  *      when it is a refusal the page can name — and the generic fallbacks
- *      carry no English interpolated into a translated sentence.
+ *      carry no English interpolated into a translated sentence;
+ *   3. the Severity and Matched columns show labels, not stored codes.
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -316,5 +317,30 @@ describe('Vulnerabilities — a refused action shows its reason', () => {
         });
         await waitFor(() => expect(mockToastError).toHaveBeenCalled());
         expect(mockToastError.mock.calls[0][0]).toBe('Owner must be an active member of this tenant');
+    });
+});
+
+// ─── 3. Codes render as labels ──────────────────────────────────────
+
+describe('Vulnerabilities — stored codes render as labels', () => {
+    it('Severity shows the localised label and Matched says how the match was made', async () => {
+        await mount(makeRequestContext('READER'), [
+            vuln(),
+            vuln({
+                id: 'v-2',
+                matchedVia: 'MANUAL',
+                cveId: 'CVE-2026-0002',
+                cve: { id: 'CVE-2026-0002', cvssScore: 5.0, cvssSeverity: 'MEDIUM', summary: 's', references: [] },
+            }),
+        ]);
+        const first = screen.getByText('CVE-2026-0001').closest('tr') as HTMLElement;
+        const second = screen.getByText('CVE-2026-0002').closest('tr') as HTMLElement;
+        expect(within(first).getByText(V.filterEnums.severity.CRITICAL)).toBeTruthy();
+        expect(within(first).getByText(V.matchedViaLabels.CPE)).toBeTruthy();
+        expect(within(second).getByText(V.filterEnums.severity.MEDIUM)).toBeTruthy();
+        expect(within(second).getByText(V.matchedViaLabels.MANUAL)).toBeTruthy();
+        for (const code of ['CRITICAL', 'MEDIUM', 'CPE', 'MANUAL']) {
+            expect(within(first.parentElement as HTMLElement).queryByText(code)).toBeNull();
+        }
     });
 });
