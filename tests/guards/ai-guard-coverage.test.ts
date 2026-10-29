@@ -379,7 +379,6 @@ function loadDeclaredEnforcement(symbol: string): (outcome: GuardOutcome) => unk
             + (modules.map(repoRelative).join(', ') || 'none'),
         );
     }
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- the module is found at run time
     const fn = require(modules[0])[symbol] as unknown;
     if (typeof fn !== 'function') throw new Error(`${repoRelative(modules[0])} does not export ${symbol} as a function`);
     return fn as (outcome: GuardOutcome) => unknown;
