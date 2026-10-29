@@ -9488,6 +9488,32 @@
         "ABORTED": "Aborted",
         "FAILED": "Failed",
         "EMPTY_CATALOGUE": "Failed: no tools"
+      },
+      "notHere": {
+        "ASK_PAGE": "Ask questions on the Ask a question page, which sends them to the agent your workspace designated. A run started here would have no agent to answer it.",
+        "ACCESS_REVIEW_PREPARATION": "Started for you when an agent access review prepares its reviewer packs. A run started here would prepare nothing.",
+        "HOST_SYSTEM_FACTS": "Started by a connected host system, which supplies the SAP document facts this workflow reviews. This page cannot collect them.",
+        "NO_PICKER": "Reviews one discovered agent, and this page has no list of discovered agents to choose one from.",
+        "UNCLASSIFIED_INPUT": "Needs input this page does not know how to collect, so it cannot be started here."
+      },
+      "startForm": {
+        "title": "Start {workflow}",
+        "submit": "Start run",
+        "required": "This is required.",
+        "frameworkPlaceholder": "Choose a framework",
+        "noFrameworks": "No frameworks available",
+        "frameworksFailed": "The list of frameworks could not be loaded.",
+        "field": {
+          "frameworkKey": {
+            "label": "Framework",
+            "hint": "The framework the run reads and reports on."
+          },
+          "periodLabel": {
+            "label": "Period",
+            "hint": "A month as YYYY-MM or a quarter as YYYY-Qn, for example 2026-09 or 2026-Q3.",
+            "invalid": "Enter a month as YYYY-MM or a quarter as YYYY-Qn, for example 2026-09 or 2026-Q3."
+          }
+        }
       }
     },
     "quarantine": {

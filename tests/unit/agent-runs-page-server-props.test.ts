@@ -5,6 +5,8 @@
  *     the usecase's default 50 with nothing on screen to say more existed.
  *   - Each row carries the workflow's NAME, as the run's own page does, rather
  *     than only its key.
+ *   - Each workflow carries its `requiredInput`, so the client can build the
+ *     start form from the definition's declaration.
  */
 import * as React from 'react';
 
@@ -30,6 +32,7 @@ import { makeRequestContext } from '../helpers/make-context';
 type ClientProps = {
     runs: Array<{ id: string; workflowKey: string; workflowName: string; pendingProposals: number }>;
     truncated: boolean;
+    workflows: Array<{ key: string; name: string; requiredInput?: readonly string[] }>;
 };
 
 async function render(): Promise<ClientProps> {
@@ -82,5 +85,16 @@ describe('the run list', () => {
         listWorkflowRunsMock.mockResolvedValue([run(2)]);
         const props = await render();
         expect(props.runs[0].pendingProposals).toBe(2);
+    });
+});
+
+describe('the workflows offered', () => {
+    it('carry their declared requiredInput', async () => {
+        listWorkflowRunsMock.mockResolvedValue([]);
+        const props = await render();
+        const byKey = Object.fromEntries(props.workflows.map((w) => [w.key, w.requiredInput]));
+        expect(byKey['audit-prep']).toEqual(['frameworkKey']);
+        expect(byKey['audit-narrative']).toEqual(['periodLabel']);
+        expect(byKey['diagnostic']).toEqual([]);
     });
 });

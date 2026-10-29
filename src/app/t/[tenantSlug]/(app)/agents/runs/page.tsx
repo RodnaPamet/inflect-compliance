@@ -85,7 +85,14 @@ export default async function AgentRunsPage({
         pendingProposals: r._count.proposals,
     }));
 
-    const workflows = listWorkflowDefinitions().map((w) => ({ key: w.key, name: w.name, description: w.description }));
+    // `requiredInput` travels with each workflow so the client can build its
+    // start form from the definition's own declaration (`startPlanFor`).
+    const workflows = listWorkflowDefinitions().map((w) => ({
+        key: w.key,
+        name: w.name,
+        description: w.description,
+        requiredInput: [...(w.requiredInput ?? [])],
+    }));
 
     return (
         <AgentRunsClient

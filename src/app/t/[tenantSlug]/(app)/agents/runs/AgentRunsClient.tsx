@@ -15,9 +15,12 @@ import { cardVariants } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@inflect/ui/lib/cn';
 import type { RecordedRunDriver } from '@/lib/agentic/agent-driver';
+import { startPlanFor, type StartField } from '@/lib/agentic/workflow-start-plan';
 import { apiErrorMessage } from '@/lib/api-error';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+
+import { WorkflowStartModal } from './WorkflowStartModal';
 
 export interface RunRow {
     id: string;
@@ -56,6 +59,13 @@ interface WorkflowOption {
     key: string;
     name: string;
     description: string;
+    /**
+     * The definition's `requiredInput`, as declared. Absent or empty means the
+     * workflow needs nothing and starts in one click — the definition's own
+     * meaning of absent. `startPlanFor` turns the rest into a start form, or
+     * into a disabled button saying where the workflow IS started.
+     */
+    requiredInput?: readonly string[];
 }
 
 /**
@@ -108,8 +118,9 @@ const RESUMABLE = new Set(['AWAITING_APPROVAL', 'PAUSED']);
 
 /**
  * The agent-runs client. Lists runs with live status + cost, lets an operator
- * start a workflow, resume an AWAITING_APPROVAL or PAUSED run (after acting on
- * its proposals in the agent-proposals queue), or abort an in-flight run.
+ * start a workflow (through a start form when it declares required input),
+ * resume an AWAITING_APPROVAL or PAUSED run (after acting on its proposals in
+ * the agent-proposals queue), or abort an in-flight run.
  *
  * The rows are the SERVER's (`page.tsx`), always. After an action the page is
  * re-rendered with `router.refresh()` rather than re-fetched here: the client
@@ -167,29 +178,54 @@ export function AgentRunsClient({
     /** The run awaiting an abort confirmation — aborting stops a LIVE execution. */
     const [confirmAbort, setConfirmAbort] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    /** The workflow whose start form is open, and the server's refusal of its last submit. */
+    const [starting, setStarting] = useState<{ workflow: WorkflowOption; fields: readonly StartField[] } | null>(null);
+    const [startError, setStartError] = useState<string | null>(null);
 
     /** Re-render the server page, so the rows come from its one projection. */
     const refresh = () => startRefresh(() => router.refresh());
 
-    async function start(workflowKey: string) {
+    /**
+     * POST the run. `input` is sent only by the start form; a one-click
+     * workflow declares none. Returns whether the server admitted it, and
+     * reports a refusal through `report` in the server's own words.
+     */
+    async function postStart(
+        workflowKey: string,
+        input: Record<string, string> | undefined,
+        report: (message: string) => void,
+    ): Promise<boolean> {
         setBusy('start');
-        setError(null);
         try {
             const res = await fetch(apiUrl('/agent-runs'), {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ workflowKey }),
+                body: JSON.stringify(input ? { workflowKey, input } : { workflowKey }),
             });
             if (!res.ok) {
-                setError(apiErrorMessage(await res.json().catch(() => null), t('runs.startFailed')));
-                return;
+                report(apiErrorMessage(await res.json().catch(() => null), t('runs.startFailed')));
+                return false;
             }
             refresh();
+            return true;
         } catch {
-            setError(t('runs.startFailed'));
+            report(t('runs.startFailed'));
+            return false;
         } finally {
             setBusy(null);
         }
+    }
+
+    async function startOneClick(workflowKey: string) {
+        setError(null);
+        await postStart(workflowKey, undefined, setError);
+    }
+
+    async function startWithInput(input: Record<string, string>) {
+        if (!starting) return;
+        setStartError(null);
+        const ok = await postStart(starting.workflow.key, input, setStartError);
+        if (ok) setStarting(null);
     }
 
     async function act(id: string, action: 'resume' | 'abort') {
@@ -221,6 +257,19 @@ export function AgentRunsClient({
 
     return (
         <div className="space-y-section animate-fadeIn">
+            {starting && (
+                <WorkflowStartModal
+                    workflow={starting.workflow}
+                    fields={starting.fields}
+                    busy={busy === 'start'}
+                    error={startError}
+                    onCancel={() => {
+                        setStarting(null);
+                        setStartError(null);
+                    }}
+                    onStart={(input) => void startWithInput(input)}
+                />
+            )}
             <ConfirmDialog
                 showModal={confirmAbort !== null}
                 setShowModal={(open) => { if (!open) setConfirmAbort(null); }}
@@ -262,19 +311,47 @@ export function AgentRunsClient({
                 <div className={cn(cardVariants({ density: 'comfortable' }), 'space-y-default')}>
                     <p className="text-sm font-medium text-content-emphasis">{t('runs.startWorkflow')}</p>
                     <div className="flex flex-wrap gap-tight">
-                        {workflows.map((w) => (
-                            <PermissionGated key={w.key} allowed={canOperate} reason={t('runs.needsWrite')}>
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                disabled={!canOperate || startBusy}
-                                onClick={() => start(w.key)}
-                                title={w.description}
-                            >
-                                {w.name}
-                            </Button>
-                            </PermissionGated>
-                        ))}
+                        {workflows.map((w) => {
+                            // ONE CLICK, A FORM, OR NOT HERE — from the
+                            // definition's `requiredInput` (#4472). A workflow
+                            // this page cannot collect input for stays on the
+                            // page, disabled with the reason, like a control the
+                            // operator's role cannot use: enabled, it could only
+                            // be refused.
+                            const plan = startPlanFor(w);
+                            const notHere = plan.mode === 'NOT_HERE';
+                            return (
+                                <PermissionGated
+                                    key={w.key}
+                                    allowed={canOperate && !notHere}
+                                    reason={
+                                        !canOperate
+                                            ? t('runs.needsWrite')
+                                            : notHere
+                                              ? t(`runs.notHere.${plan.reason}`)
+                                              : ''
+                                    }
+                                >
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={!canOperate || notHere || startBusy}
+                                        data-testid={`workflow-start-${w.key}`}
+                                        onClick={() => {
+                                            if (plan.mode === 'FORM') {
+                                                setStartError(null);
+                                                setStarting({ workflow: w, fields: plan.fields });
+                                            } else if (plan.mode === 'ONE_CLICK') {
+                                                void startOneClick(w.key);
+                                            }
+                                        }}
+                                        title={w.description}
+                                    >
+                                        {w.name}
+                                    </Button>
+                                </PermissionGated>
+                            );
+                        })}
                     </div>
                 </div>
             )}
