@@ -382,12 +382,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Shallow: only the script is needed from the tree. The CHANGED FILES
+      # come from the API below rather than a local diff, which is why there is
+      # no `fetch-depth: 0` here — a full clone of this repo to compute a list
+      # GitHub already holds is minutes of IO for nothing.
       - uses: actions/checkout@v7
-        with:
-          # The diff needs both endpoints, so no shallow clone.
-          fetch-depth: 0
-      - name: Setup Node + Prisma client
-        uses: ./.github/actions/setup-node-prisma
+      # Plain `setup-node`, NOT `setup-node-prisma`. The script imports only
+      # `node:fs` — proved by running its self-test 15/15 in a directory with
+      # no `package.json` and no `node_modules` — so `npm ci` plus a
+      # `prisma generate` would be minutes of work per PR for nothing, and
+      # would put this job's failure behind two unrelated retry loops
+      # (registry ECONNRESET, the Roadmap-27 prisma SIGILL). A gate that can
+      # fail for reasons unconnected to what it gates is a flaky required
+      # check, which is worse than no check.
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
       # Before trusting it: a classifier that answered "not significant" for
@@ -402,9 +410,10 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_TITLE: ${{ github.event.pull_request.title }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$EVENT" != "pull_request" ]; then
             echo "Event is $EVENT, which carries no PR description."
@@ -412,7 +421,11 @@ jobs:
             exit 0
           fi
           printf '%s' "$PR_BODY" > pr-body.txt
-          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > pr-files.txt
+          # `--paginate` is load-bearing: this endpoint returns 30 files a page,
+          # so without it a PR touching more than 30 files silently reports a
+          # TRUNCATED list — and a truncated list is how `prisma/` goes missing
+          # from a big change and the gate passes it.
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > pr-files.txt
           node scripts/check-significant-change-analysis.mjs pr-body.txt pr-files.txt --title "$PR_TITLE"
 
   lint:
