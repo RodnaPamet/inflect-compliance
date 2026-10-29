@@ -13,6 +13,7 @@
  * client.
  */
 import * as React from 'react';
+import { render, screen } from '@testing-library/react';
 
 import type { RequestContext } from '@/app-layer/types';
 import { makeRequestContext } from '../helpers/make-context';
@@ -87,12 +88,19 @@ describe('Recent Activity is shown only to roles that can read the audit log', (
 
         // Evaluate the card as the server would: it reads through the
         // audit-gated usecase, with the viewer's own context.
-        await (RecentActivityCard as unknown as (p: unknown) => Promise<unknown>)(
+        const card = await (RecentActivityCard as unknown as (p: unknown) => Promise<React.ReactElement>)(
             cards[0].props,
         );
         expect(mockRecentActivity).toHaveBeenCalledTimes(1);
         expect(mockRecentActivity).toHaveBeenCalledWith(
             expect.objectContaining({ role: 'AUDITOR' }),
+        );
+
+        // The card is an Auditor's way to the full log: the sidebar gear and
+        // the Admin landing page both need `admin.view`, which they lack.
+        render(card);
+        expect(screen.getByRole('link', { name: 'viewAuditLog' }).getAttribute('href')).toBe(
+            `/t/${cards[0].props.tenantSlug as string}/admin/audit-log`,
         );
     });
 
