@@ -197,8 +197,10 @@ export async function haltRunAtKill(
     kill: { scope: string; switchId: string; engagedAt: Date },
     reason: string,
     alsoCapped: CapBesideKill | null = null,
+    /** The engine's name in the message, so a run's error names the engine that walked it. */
+    enginePrefix: 'flue' | 'tool_runner' = 'flue',
 ): Promise<string> {
-    const message = `flue_run_agent_killed: ${reason}`;
+    const message = `${enginePrefix}_run_agent_killed: ${reason}`;
     if (alsoCapped) {
         recordAgentRunCapHalt({ cap: alsoCapped.halt.kind, source: alsoCapped.halt.source });
     }

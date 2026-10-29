@@ -53,9 +53,10 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 }));
 
 import { AgentRunsClient, type RunRow } from '@/app/t/[tenantSlug]/(app)/agents/runs/AgentRunsClient';
+import type { RecordedRunDriver } from '@/lib/agentic/agent-driver';
 
 const EN = jest.requireActual('../../messages/en.json') as {
-    agents: { runs: { driver: { STATIC: string; FLUE: string; UNRECOGNISED: string } } };
+    agents: { runs: { driver: Record<RecordedRunDriver, string> } };
 };
 const LABEL = EN.agents.runs.driver;
 
@@ -91,6 +92,16 @@ describe('the run list says which engine walked each run', () => {
         renderRuns([{ ...RUN, id: 'run-2', driver: 'FLUE' }]);
         const row = document.getElementById('run-run-2');
         expect(within(row as HTMLElement).getByText(LABEL.FLUE)).toBeInTheDocument();
+    });
+
+    it('labels a TOOL_RUNNER run as itself, although no writer records one yet (#4149)', () => {
+        // Deploy 1 of the value teaches every reader (#4241). Only a rollback
+        // from a build that ran the engine can put one in the list, and the
+        // chip must still name it rather than show a raw key.
+        renderRuns([{ ...RUN, id: 'run-3', driver: 'TOOL_RUNNER' }]);
+        const row = document.getElementById('run-run-3') as HTMLElement;
+        expect(LABEL.TOOL_RUNNER).toBe('Tool Runner engine');
+        expect(within(row).getByText(LABEL.TOOL_RUNNER)).toBeInTheDocument();
     });
 
     it('labels each row with ITS OWN engine, not the first one', () => {

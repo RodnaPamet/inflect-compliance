@@ -219,9 +219,9 @@ describe('3. the engine only shapes', () => {
 });
 
 describe('4. isReasoningEngine is pinned for every driver', () => {
-    it('answers for each driver there is, and only Flue reasons today', () => {
+    it('answers for each driver there is: Flue and the Tool Runner reason, the static walk does not', () => {
         const answers = Object.fromEntries(AGENT_DRIVERS.map((d) => [d, isReasoningEngine(d)]));
-        expect(answers).toEqual({ static: false, flue: true });
+        expect(answers).toEqual({ static: false, flue: true, 'tool-runner': true });
     });
 });
 

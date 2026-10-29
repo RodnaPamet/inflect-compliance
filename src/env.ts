@@ -338,6 +338,12 @@ export const env = createEnv({
         // outage. The strictness belongs at the read, where the answer is
         // "off", not at boot, where the answer is "nothing starts".
         AGENT_DRIVER_FLUE: z.string().optional(),
+        // The Tool Runner engine's own switch (Step 2b of
+        // docs/claude-tool-runner-design.md), opt-in and read exactly as
+        // AGENT_DRIVER_FLUE is, for the same reasons. It answers for this engine
+        // only. In this build it selects nothing on its own:
+        // DRIVER_IMPLEMENTED['tool-runner'] is false until Step 2c.
+        AGENT_DRIVER_TOOL_RUNNER: z.string().optional(),
         // RUNS STARTED BY A PERSON IN A BROWSER (#3868 step 2) — opt-in.
         //
         // Every Flue run today is started by a job, a credential or an
@@ -685,6 +691,7 @@ export const env = createEnv({
         A2A_HOST_CONSUMERS: process.env.A2A_HOST_CONSUMERS,
         A2A_HOST_CONSUMER_TOKEN_SECRET: process.env.A2A_HOST_CONSUMER_TOKEN_SECRET,
         AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
+        AGENT_DRIVER_TOOL_RUNNER: process.env.AGENT_DRIVER_TOOL_RUNNER,
         AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
         AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,

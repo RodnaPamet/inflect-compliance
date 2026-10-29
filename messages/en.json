@@ -6857,6 +6857,10 @@
         "FLUE": {
           "name": "Flue engine",
           "description": "A model chooses which of the agent's tools to call, in workflows that ask for this engine. Every call still goes through the agent's grants and controls."
+        },
+        "TOOL_RUNNER": {
+          "name": "Tool Runner engine",
+          "description": "A model chooses which of the agent's tools to call, through Anthropic's API. This version reads the choice but cannot run the engine yet."
         }
       },
       "gateHeading": "What decides the engine",
@@ -9405,6 +9409,7 @@
       "driver": {
         "STATIC": "Static engine",
         "FLUE": "Flue engine",
+        "TOOL_RUNNER": "Tool Runner engine",
         "UNRECOGNISED": "Unrecognised engine"
       },
       "detail": {

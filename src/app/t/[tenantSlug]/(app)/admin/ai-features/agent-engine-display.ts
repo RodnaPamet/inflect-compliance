@@ -21,11 +21,13 @@ import {
     AGENT_DRIVER_MODES,
     type AgentDriverMode,
     type StaticDriverReason,
+    type StoredDriverMode,
 } from '@/lib/agentic/agent-driver';
 
 /** The response of `GET /api/t/{slug}/admin/agent-driver`. */
 export interface AgentDriverSettingPayload {
-    mode: AgentDriverMode;
+    /** Any stored value, a READ_ONLY one included; only AGENT_DRIVER_MODES can be chosen. */
+    mode: StoredDriverMode;
     effective: { driver: string; reason: string | null };
     envEnabled: boolean;
     implemented: boolean;

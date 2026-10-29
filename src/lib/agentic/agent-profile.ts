@@ -115,6 +115,11 @@ export function parseProfileRunKey(key: string): { profileId: string; version: n
 const RUNS_PROFILES: Readonly<Record<AgentDriver, boolean>> = {
     static: false,
     flue: false,
+    // FALSE in Step 2b, although the driver already renders the pinned
+    // instructions and passes `profileTools`. Step 2c sets it true with the
+    // engine, in the diff that records the data category on the sub-processor
+    // row.
+    'tool-runner': false,
 };
 
 export function runsProfiles(driver: AgentDriver): boolean {

@@ -45,13 +45,15 @@ import { listWorkflowDefinitions } from './workflow-registry';
  */
 export async function resolveDriverForTenant(tenantId: string): Promise<AgentDriverDecision> {
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
+    const toolRunnerEnvEnabled = flueEnvEnabled(env.AGENT_DRIVER_TOOL_RUNNER);
 
-    // Short-circuit BEFORE the query. When the operator's switch is off the
+    // Short-circuit BEFORE the query. When every engine's switch is off the
     // tenant's value cannot change the answer, so reading it would be a
     // per-run database round trip that is guaranteed not to matter — on the
     // hot path of every agentic run, for every tenant, in every deployment
-    // that has not enabled this.
-    if (!envEnabled) {
+    // that has not enabled this. BOTH switches: with either on, the stored
+    // value decides which one is asked.
+    if (!envEnabled && !toolRunnerEnvEnabled) {
         return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };
     }
 
@@ -74,7 +76,7 @@ export async function resolveDriverForTenant(tenantId: string): Promise<AgentDri
         return { driver: STATIC_DRIVER, reason: 'TENANT_NOT_OPTED_IN' };
     }
 
-    const decision = resolveAgentDriver({ envEnabled, tenantSetting: stored });
+    const decision = resolveAgentDriver({ envEnabled, toolRunnerEnvEnabled, tenantSetting: stored });
     if (decision.driver !== 'flue') return decision;
 
     return narrowToWhatAWorkflowAsksFor(decision);

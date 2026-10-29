@@ -49,6 +49,9 @@ type Stage = 'READ_ONLY' | 'WRITTEN';
 const ROLLOUT: Readonly<Record<string, Stage>> = {
     STATIC: 'WRITTEN',
     FLUE: 'WRITTEN',
+    // Step 2b (#4149). Becomes WRITTEN in Step 2c, once production runs an
+    // image that carries this value as READ_ONLY.
+    TOOL_RUNNER: 'READ_ONLY',
 };
 
 const upsert = jest.fn(async (_args: unknown): Promise<unknown> => ({}));
