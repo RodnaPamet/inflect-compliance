@@ -12,11 +12,11 @@
  *     a plain `button` inside it and the language row a `[role=radiogroup]`.
  *     The theme row alone was enough, so EVERY UserMenu had this.
  *
- *   aria-dialog-name  SERIOUS, best-practice — DID NOT REPRODUCE HERE
+ *   aria-dialog-name  SERIOUS, best-practice — reproduces on the DESKTOP path
  *     #3254 reports it from projectZ, which vendors these files byte-identical.
- *     Measured here: removing `contentLabel` leaves axe green, because Radix
- *     already names its content — and jsdom (no `matchMedia`) mounts the MOBILE
- *     SHEET, not the desktop popover. See the third test for both figures.
+ *     This suite first recorded it as "did not reproduce", on two measurements
+ *     that were taken on the wrong element. Both are corrected below and the
+ *     last test now covers it.
  *
  * ── WHY THE ROLE STAYS AND THE ROWS MOVE ───────────────────────────────────
  *
@@ -42,6 +42,22 @@ jest.mock('next/navigation', () => ({
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), prefetch: jest.fn() }),
 }));
 jest.mock('@/components/layout/notifications-bell', () => ({ NotificationsBell: () => null }));
+
+// Mutable so the tests measured on the MOBILE sheet keep that environment and
+// only the desktop test flips it. `popover.tsx` swaps its whole implementation
+// on `isMobile` — Vaul drawer vs Radix popover — so this is the switch between
+// two different elements, which is the whole point of the last test.
+let mockDevice: 'mobile' | 'tablet' | 'desktop' = 'mobile';
+jest.mock('@inflect/ui/components/ui/hooks/use-media-query', () => ({
+    useMediaQuery: () => ({
+        device: mockDevice,
+        width: mockDevice === 'mobile' ? 375 : 1440,
+        height: 800,
+        isMobile: mockDevice === 'mobile',
+        isTablet: mockDevice === 'tablet',
+        isDesktop: mockDevice === 'desktop',
+    }),
+}));
 
 import { TopChrome } from '@/components/layout/TopChrome';
 import { TenantProvider } from '@/lib/tenant-context-provider';
@@ -82,6 +98,7 @@ function renderOpenMenu() {
 describe('the OPEN account menu is accessible (#3254)', () => {
     afterEach(() => {
         mockParams = { tenantSlug: 'acme' };
+        mockDevice = 'mobile';
     });
 
     it('renders its content, so the axe check below is not over an empty subtree', () => {
@@ -119,22 +136,50 @@ describe('the OPEN account menu is accessible (#3254)', () => {
         // out must not mean dropping them.
         expect(document.querySelector('#user-menu-theme-toggle')).not.toBeNull();
 
-        // NO ASSERTION ABOUT THE DIALOG'S NAME HERE, and that is a finding
-        // rather than an omission. Two measurements, both of which this suite
-        // can make and neither of which supports #3254's second violation:
+        // THE DIALOG'S NAME IS COVERED BY THE NEXT TEST, not here, because
+        // `popover.tsx` renders a different element on each path and this one
+        // runs on the mobile sheet. The two measurements that used to justify
+        // skipping it were both taken on that sheet:
         //
-        //   1. axe `aria-dialog-name` does NOT reproduce. Removing
-        //      `contentLabel` from UserMenu leaves the axe check above green,
-        //      because Radix already names what it renders.
-        //   2. jsdom has no `matchMedia`, so this harness renders the MOBILE
-        //      SHEET, not the desktop popover content. The sheet carries its
-        //      own `aria-labelledby`; `contentLabel` lands on the desktop
-        //      `PopoverPrimitive.Content`, which never mounts here.
+        //   1. "removing `contentLabel` leaves axe green, because Radix
+        //      already names its content" — true, and about the SHEET, which
+        //      Vaul names with a generated `aria-labelledby`. `contentLabel`
+        //      never reaches that element, so the mutation could not have
+        //      changed anything and the green was not evidence about it.
+        //   2. "jsdom has no `matchMedia`" — it does: `tests/rendered/setup.ts`
+        //      polyfills it answering `matches: false` to every query, and
+        //      `useMediaQuery` falls back to `mobile` when neither its
+        //      `min-width` query matches. So the sheet mounts by DEFAULT rather
+        //      than by impossibility, and overriding the hook reaches the
+        //      desktop path — which 17 sibling suites in this directory already
+        //      do.
         //
-        // So an assertion about it would either pass for the wrong reason (the
-        // first draft accepted `aria-label ?? aria-labelledby` and could not
-        // fail) or fail for the wrong one. `contentLabel` is kept as a
-        // deliberate improvement on the desktop path — an explicit translated
-        // name beats a generated id — and is explicitly NOT covered here.
+        // Measured on the two paths, which is what makes them distinguishable:
+        //   mobile  `data-vaul-drawer`, `aria-labelledby=radix-_r_4_`
+        //   desktop `[data-radix-popper-content-wrapper]`, `aria-label=Account menu`
+    });
+
+    it('names the desktop popover content, where `contentLabel` actually lands', async () => {
+        mockDevice = 'desktop';
+        renderOpenMenu();
+
+        // POSITIVE CONTROL first: without it this test would silently assert
+        // against the mobile sheet if the device mock ever stopped taking
+        // effect, and the sheet is named too — so it would pass for the wrong
+        // reason, which is exactly how this rule got recorded as "did not
+        // reproduce".
+        expect(document.querySelector('[data-radix-popper-content-wrapper]')).not.toBeNull();
+        expect(document.querySelector('[data-vaul-drawer]')).toBeNull();
+
+        const dialog = document.querySelector('[role=dialog]');
+        expect(dialog).not.toBeNull();
+
+        // The SPECIFIC translated name, not merely "has a name". An earlier
+        // draft of this file accepted `aria-label ?? aria-labelledby` and
+        // could not fail: Radix always supplies one of the two.
+        expect(dialog).toHaveAttribute('aria-label', 'Account menu');
+
+        const results = await axe(dialog as HTMLElement);
+        expect(results).toHaveNoViolations();
     });
 });
