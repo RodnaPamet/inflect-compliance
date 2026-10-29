@@ -3025,7 +3025,7 @@
   },
   "personnel": {
     "title": "Personnel",
-    "description": "{total} people in the roster — synced from your HRIS or added manually.",
+    "description": "{total} people in the roster, synced from your HRIS.",
     "resourceSingular": "person",
     "resourcePlural": "people",
     "colName": "Name",
@@ -3034,9 +3034,11 @@
     "colTitle": "Job title",
     "colSource": "Source",
     "emptyTitle": "No personnel yet",
-    "emptyDesc": "Connect an HRIS (BambooHR) or add a person to build the roster.",
+    "emptyDesc": "Connect your HRIS on the Integrations page. People appear here after its first sync.",
     "emptyMatchingTitle": "No matching people",
-    "emptyMatchingDesc": "No personnel match the current filters.",
+    "emptyMatchingDesc": "No personnel match the current filters or search.",
+    "searchPlaceholder": "Search people…",
+    "loadError": "Couldn't load the roster. Reload the page to try again.",
     "fieldStartDate": "Start date",
     "fieldEndDate": "End date",
     "fieldExternalId": "HRIS id",
@@ -3052,6 +3054,10 @@
         "TERMINATED": "Terminated",
         "LEAVE": "Leave"
       }
+    },
+    "sourceLabels": {
+      "HRIS": "HRIS",
+      "MANUAL": "Manual"
     }
   },
   "devices": {
