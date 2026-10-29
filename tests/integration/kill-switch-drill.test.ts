@@ -204,6 +204,103 @@ describeFn('the kill-switch drill runs, records, and raises (real DB)', () => {
         expect(await prisma.finding.count({ where: { tenantId: TENANT_A } })).toBe(0);
     });
 
+    /**
+     * 5.4 (#3974) — the SANDBOX arm's three states, through the real drill.
+     *
+     * The unit suite proves `drillSandboxDeletion` itself. What these prove is
+     * the MAPPING, which is the part with a trap in it: the arm is three-valued
+     * where every other arm is a boolean, and an unreachable runtime must land
+     * in neither scope array. Getting that wrong in the safe-looking direction
+     * — counting it as honoured — is how a control nobody can run acquires a
+     * passing record, and the drill's whole purpose is to refuse that.
+     */
+    const sandboxFake = (opts: { absent: boolean }) =>
+        ({
+            createSandbox: async () => ({ id: 'sbx-int-1', phase: 'SANDBOX_PHASE_READY' }),
+            execSandbox: async () => {
+                throw new Error('the drill never execs');
+            },
+            deleteSandbox: async () => ({ outcome: 'DELETION_OUTCOME_COMPLETED' }),
+            awaitDeleted: async ({ signal }: { signal: AbortSignal }) => {
+                if (opts.absent) return;
+                await new Promise<void>((_r, reject) =>
+                    signal.addEventListener('abort', () => reject(new Error('still present')), {
+                        once: true,
+                    }),
+                );
+            },
+        }) as never;
+
+    it('with no runtime, the SANDBOX arm records that it ran nothing — and that is not a pass', async () => {
+        // The production path today: this build ships `unconfiguredTransport`,
+        // and nothing invokes the sandbox executor at all.
+        const result = await runKillSwitchDrill(TENANT_A, `job-${SUITE}-sbx-none`);
+
+        expect(result.scopesNotExercised).toEqual(['SANDBOX']);
+        // NEITHER array. Honoured would be a lie; failed would raise a Finding
+        // every night about a gateway that was never deployed.
+        expect(result.scopesHonoured).not.toContain('SANDBOX');
+        expect(result.scopesFailed).not.toContain('SANDBOX');
+        // And the drill as a whole still PASSES, because the arms that could run
+        // all did.
+        expect(result.outcome).toBe('PASSED');
+
+        const row = await prisma.agentKillSwitchDrill.findFirstOrThrow({
+            where: { id: result.drillId ?? '' },
+        });
+        const evidence = await prisma.evidence.findFirstOrThrow({
+            where: { id: row.evidenceId ?? '' },
+        });
+        // The auditor is TOLD, rather than left to notice an absence.
+        expect(evidence.content).toContain('not_exercised_unreachable');
+        expect(await prisma.finding.count({ where: { tenantId: TENANT_A } })).toBe(0);
+    });
+
+    it('a gateway that reports a deletion and keeps the sandbox FAILS the drill', async () => {
+        // The regression #3974 names, driven through the whole drill. The fake
+        // returns DELETION_OUTCOME_COMPLETED — a settled outcome — so an arm
+        // that trusted the reported value scores this a pass.
+        const result = await runKillSwitchDrill(
+            TENANT_A,
+            `job-${SUITE}-sbx-lies`,
+            sandboxFake({ absent: false }),
+        );
+
+        expect(result.outcome).toBe('FAILED');
+        expect(result.scopesFailed).toContain('SANDBOX');
+        expect(result.scopesNotExercised).toEqual([]);
+        // The other arms are unaffected — a failing sandbox arm must not be
+        // reported as the boundary failing.
+        expect([...result.scopesHonoured].sort()).toEqual(['AGENT', 'PEER', 'PLATFORM', 'TENANT']);
+        expect(result.boundaryRefusalReason).toBe('agent_killed');
+
+        const row = await prisma.agentKillSwitchDrill.findFirstOrThrow({
+            where: { id: result.drillId ?? '' },
+        });
+        // A FAILED drill raises, and names what it caught.
+        expect(row.findingId).not.toBeNull();
+        const evidence = await prisma.evidence.findFirstOrThrow({
+            where: { id: row.evidenceId ?? '' },
+        });
+        expect(evidence.content).toContain('delete_returned_but_sandbox_present');
+        expect(evidence.content).toContain('DELETION_OUTCOME_COMPLETED');
+    });
+
+    it('an honest gateway puts SANDBOX among the honoured scopes', async () => {
+        // The positive control for the two above: the same fake, differing only
+        // in whether the sandbox actually goes absent.
+        const result = await runKillSwitchDrill(
+            TENANT_B,
+            `job-${SUITE}-sbx-honest`,
+            sandboxFake({ absent: true }),
+        );
+
+        expect(result.outcome).toBe('PASSED');
+        expect(result.scopesHonoured).toContain('SANDBOX');
+        expect(result.scopesFailed).toEqual([]);
+        expect(result.scopesNotExercised).toEqual([]);
+    });
+
     it('leaves nothing in force, and never targets a real agent', async () => {
         await runKillSwitchDrill(TENANT_A, `job-${SUITE}-2`);
 

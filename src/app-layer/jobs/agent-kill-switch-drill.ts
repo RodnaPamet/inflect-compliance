@@ -96,6 +96,8 @@ import {
 import { buildDelegatedJobContext } from '../context-system';
 import { probePeerKillPredicate } from '../usecases/a2a-peer-kill';
 import { drainPages } from './drain-pages';
+import { drillSandboxDeletion } from '@/lib/agentic/openshell/kill-drill';
+import { unconfiguredTransport, type SandboxTransport } from '@/lib/agentic/openshell/transport';
 
 /**
  * The actor recorded on the canary kill row. Not a `User.id` and not pretending
@@ -121,12 +123,29 @@ type RefusalReason =
  * per-peer kill of A2A traffic (#3679), which is a separate table with its own
  * predicate and is drilled beside them, never as one of them.
  */
-export type DrillScope = KillScope | 'PEER';
+export type DrillScope = KillScope | 'PEER' | 'SANDBOX';
 
 export interface KillSwitchDrillResult {
     outcome: 'PASSED' | 'FAILED' | 'ERROR';
     scopesHonoured: DrillScope[];
     scopesFailed: DrillScope[];
+    /**
+     * Scopes that could not be exercised at all — in NEITHER of the two arrays
+     * above, and deliberately not persisted as a third column.
+     *
+     * `AgentKillSwitchDrill` records the honoured and failed arrays because "the
+     * scope vocabulary is code, not schema — a fourth scope must not need a
+     * migration to be drillable", and that reasoning holds here: a scope that
+     * ran nothing belongs in the `detail` an auditor reads, which is already
+     * where this drill records which arm proved what. It is on the result object
+     * so a test can assert the state structurally instead of matching prose.
+     *
+     * It is NOT `scopesFailed`. A drill that could not run has proved nothing,
+     * and reporting an absent sandbox runtime as a broken stop control would
+     * raise a Finding about the wrong thing every night — which is the same
+     * reason `ERROR` is not `FAILED` here.
+     */
+    scopesNotExercised: DrillScope[];
     toolCallsAfterKill: number;
     boundaryRefusalReason: RefusalReason | null;
     detail: string;
@@ -186,6 +205,39 @@ async function probeBoundaryDecision(
  * re-throws anything that is not it, so a genuine database error is never
  * mistaken for a successful rollback.
  */
+/**
+ * THE SANDBOX ARM (5.4, #3974) — does a kill actually delete a sandbox?
+ *
+ * Fourth in depth, and the shallowest for a reason that is not about this code:
+ * nothing in `src/` invokes `openShellToolExecutor` yet, so the set of "agents
+ * running in a sandbox" is EMPTY, and there is no gateway for it to run against
+ * (4.3 records that the VM is an owner cost decision). An arm that enumerated a
+ * killed agent's sandboxes would therefore be dead code wearing the appearance
+ * of a control, which is worse than an absence somebody can read.
+ *
+ * So this arm drills the MECHANISM against a sandbox it creates itself, the way
+ * the AGENT arm drills against a canary target that resolves to no registered
+ * agent. What it proves is the thing #3974 asks for — that deletion is
+ * confirmed ABSENT rather than reported — and what it does not prove is the
+ * wiring from a kill to a real agent's sandboxes, because that wiring has no
+ * subject yet.
+ *
+ * With no runtime configured, which is production today, it records
+ * `not_exercised_unreachable` and lands in NEITHER scope array.
+ */
+const SANDBOX_ABSENCE_TIMEOUT_MS = 10_000;
+
+type SandboxArm = { honoured: boolean; exercised: boolean; detail: string };
+
+async function probeSandboxDeletion(transport: SandboxTransport): Promise<SandboxArm> {
+    const report = await drillSandboxDeletion(transport, SANDBOX_ABSENCE_TIMEOUT_MS);
+    return {
+        honoured: report.outcome === 'deleted_and_absent',
+        exercised: report.outcome !== 'not_exercised_unreachable',
+        detail: `SANDBOX: ${report.outcome} — ${report.detail}`,
+    };
+}
+
 const ROLLBACK = Symbol('kill-switch-drill-rollback');
 
 async function probeUncommittableScopes(
@@ -247,6 +299,16 @@ async function probeUncommittableScopes(
 export async function runKillSwitchDrill(
     tenantId: string,
     jobRunId: string,
+    /**
+     * The sandbox transport, injected so the arm can be driven in CI against a
+     * gateway that LIES — reports a deletion and keeps the sandbox. That is the
+     * regression #3974 names, and it cannot be produced by the real transport.
+     *
+     * Defaults to `unconfiguredTransport`, which is what this build ships: the
+     * arm then records `not_exercised_unreachable` rather than a pass. A real
+     * transport arrives with the gateway (4.3), not with this change.
+     */
+    transport: SandboxTransport = unconfiguredTransport,
 ): Promise<KillSwitchDrillResult> {
     const startedAt = new Date();
     let canaryId: string | null = null;
@@ -262,6 +324,11 @@ export async function runKillSwitchDrill(
                 outcome: 'ERROR',
                 scopesHonoured: [],
                 scopesFailed: [],
+                // EMPTY, not every scope. An `ERROR` drill proved nothing about
+                // any of them, which the outcome and the two empty arrays above
+                // already say; enumerating them here would read as a per-scope
+                // distinction this path never made.
+                scopesNotExercised: [],
                 toolCallsAfterKill: 0,
                 boundaryRefusalReason: null,
                 detail:
@@ -306,17 +373,25 @@ export async function runKillSwitchDrill(
         // the inbound endpoint and the outbound send CALL the predicate is proved
         // in CI by tests/integration/a2a-peer-messaging.test.ts.
         const peerHonoured = await probePeerKillPredicate(tenantId, actor);
+        // THE SANDBOX ARM (5.4, #3974). Three-valued, unlike the others: a
+        // sandbox runtime that does not answer is neither honoured nor failed.
+        const sandbox = await probeSandboxDeletion(transport);
 
         const scopesHonoured: DrillScope[] = [
             ...(refusal === 'agent_killed' ? (['AGENT'] as DrillScope[]) : []),
             ...uncommittable.honoured,
             ...(peerHonoured ? (['PEER'] as DrillScope[]) : []),
+            ...(sandbox.exercised && sandbox.honoured ? (['SANDBOX'] as DrillScope[]) : []),
         ];
         const scopesFailed: DrillScope[] = [
             ...(refusal === 'agent_killed' ? [] : (['AGENT'] as DrillScope[])),
             ...uncommittable.failed,
             ...(peerHonoured ? [] : (['PEER'] as DrillScope[])),
+            ...(sandbox.exercised && !sandbox.honoured ? (['SANDBOX'] as DrillScope[]) : []),
         ];
+        const scopesNotExercised: DrillScope[] = sandbox.exercised
+            ? []
+            : (['SANDBOX'] as DrillScope[]);
 
         const outcome = scopesFailed.length === 0 ? 'PASSED' : 'FAILED';
         // AWAITED, not returned. A bare `return recordDrill(...)` inside a `try`
@@ -332,9 +407,10 @@ export async function runKillSwitchDrill(
             outcome,
             scopesHonoured,
             scopesFailed,
+            scopesNotExercised,
             toolCallsAfterKill: refusal === 'not_refused' ? 1 : 0,
             boundaryRefusalReason: refusal,
-            detail: describeDrill(outcome, refusal, scopesHonoured, scopesFailed),
+            detail: describeDrill(outcome, refusal, scopesHonoured, scopesFailed, sandbox.detail),
             drillId: null,
             findingId: null,
         });
@@ -356,6 +432,11 @@ export async function runKillSwitchDrill(
                 outcome: 'ERROR',
                 scopesHonoured: [],
                 scopesFailed: [],
+                // EMPTY, not every scope. An `ERROR` drill proved nothing about
+                // any of them, which the outcome and the two empty arrays above
+                // already say; enumerating them here would read as a per-scope
+                // distinction this path never made.
+                scopesNotExercised: [],
                 toolCallsAfterKill: 0,
                 boundaryRefusalReason: null,
                 detail:
@@ -374,6 +455,11 @@ export async function runKillSwitchDrill(
                 outcome: 'ERROR' as const,
                 scopesHonoured: [],
                 scopesFailed: [],
+                // EMPTY, not every scope. An `ERROR` drill proved nothing about
+                // any of them, which the outcome and the two empty arrays above
+                // already say; enumerating them here would read as a per-scope
+                // distinction this path never made.
+                scopesNotExercised: [],
                 toolCallsAfterKill: 0,
                 boundaryRefusalReason: null,
                 detail:
@@ -416,6 +502,7 @@ function describeDrill(
     refusal: RefusalReason,
     honoured: DrillScope[],
     failed: DrillScope[],
+    sandboxDetail: string,
 ): string {
     const arms =
         "The boundary's own decision function (resolveKillState, which step 0 of " +
@@ -429,7 +516,13 @@ function describeDrill(
         'tests/integration/agent-kill-switch.test.ts and not here: loading the gate ' +
         'inside the worker would pull a module tree the worker cannot evaluate. ' +
         'The per-peer A2A kill (PEER) was exercised against its own predicate, in ' +
-        'a transaction that was ROLLED BACK, against a canary peer id no peer can have.';
+        'a transaction that was ROLLED BACK, against a canary peer id no peer can have. ' +
+        'The SANDBOX arm created a sandbox of its own, deleted it, and then asked ' +
+        'whether it was ABSENT rather than trusting what the delete call reported — ' +
+        'a gateway that returns COMPLETED and leaks the sandbox is the failure this ' +
+        'arm exists to catch. It proves the deletion MECHANISM; it does not prove a ' +
+        'kill reaching a real agent\'s sandboxes, because nothing invokes the sandbox ' +
+        'executor yet and that set is empty.';
     const verdict =
         outcome === 'PASSED'
             ? `All ${honoured.length} scopes honoured. No tool call cleared the boundary ` +
@@ -444,7 +537,10 @@ function describeDrill(
                       'switch. Something else refused it first, which means the kill ' +
                       'check is no longer reached — every status code still looks right.'
                     : '');
-    return `${verdict} ${arms}`;
+    // The sandbox arm's own line, last, because it is the one whose depth varies
+    // from night to night: with no gateway configured it reports that it ran
+    // nothing, and an auditor must not have to infer that from an absence.
+    return `${verdict} ${arms} ${sandboxDetail}`;
 }
 
 /**
