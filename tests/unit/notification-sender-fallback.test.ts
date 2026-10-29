@@ -19,6 +19,10 @@
  * so that is what is asserted, plus the negative that a configured deployment
  * never emits the hardcoded product domain.
  */
+// `updateTenantNotificationSettings` audits a change (#4469); its row must not
+// reach a DB in this file, which is about the sender it resolves.
+jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn(async () => undefined) }));
+
 import { getTenantNotificationSettings, updateTenantNotificationSettings } from '@/app-layer/notifications/settings';
 import { UpdateNotificationSettingsSchema } from '@/app-layer/schemas/notification-settings.schemas';
 import { makeRequestContext } from '../helpers/make-context';
@@ -159,13 +163,12 @@ describe('deploymentSenderAddress (the single owner)', () => {
             (f) => !f.startsWith('prisma/migrations/'),
         );
 
-        const offenders = scanned
-            // The notification-settings page shows the address as an input
-            // `placeholder` — greyed-out example text for an operator typing
-            // their own sender. It is rendered, never read: nothing resolves a
-            // from-address through it, so it cannot disagree with the module.
-            .filter((f) => f !== 'src/app/t/[tenantSlug]/(app)/admin/notifications/page.tsx')
-            .filter((f) => writesPlaceholderSender(f));
+        // No carve-out for the notification-settings page any more (#4469).
+        // It used to offer this address as the sender field's `placeholder`,
+        // which suggested to an operator the one address a configured
+        // deployment's relay refuses. Its placeholder is a translated example
+        // now, so the page is held to the same rule as every other file.
+        const offenders = scanned.filter((f) => writesPlaceholderSender(f));
 
         expect(offenders).toEqual(['src/lib/email/sender-identity.ts']);
     });
@@ -210,6 +213,8 @@ describe('a partial update cannot un-resolve the sender', () => {
         const calls: { create: Record<string, unknown>; update: Record<string, unknown> }[] = [];
         const db = {
             tenantNotificationSettings: {
+                // The pre-write read the audit row's "before" comes from (#4469).
+                findUnique: async () => null,
                 upsert: async (args: { create: Record<string, unknown>; update: Record<string, unknown> }) => {
                     calls.push(args);
                     return {

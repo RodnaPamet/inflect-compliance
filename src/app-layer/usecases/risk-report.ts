@@ -19,6 +19,8 @@ import { getAppetiteStatus } from './risk-appetite';
 import { renderCsv, renderPdf, renderPptx, type ReportData } from '../reports/risk-report-render';
 import { getStorageProvider, generatePathKey, assertTenantKey } from '@/lib/storage';
 import { sendEmail } from '@/lib/mailer';
+import { logger } from '@/lib/observability/logger';
+import { resolveTenantEmailEnvelope } from '../notifications/settings';
 import { getSharePointClient, listSharePointConnections } from '../integrations/providers/sharepoint';
 import {
     resolveScheduleRecipients,
@@ -214,8 +216,15 @@ export async function readReportArtefact(ctx: RequestContext, outputPath: string
 
 /**
  * RQ-10 delivery — email a generated report to its schedule recipients as an
- * attachment. No-op if the run isn't COMPLETED or there are no recipients.
- * Returns the number of recipients the email was addressed to.
+ * attachment. No-op if the run isn't COMPLETED, there are no recipients, or the
+ * workspace has switched email notifications off. Returns the number of
+ * recipients the email was addressed to.
+ *
+ * Sent from the workspace's sender identity with its compliance-mailbox BCC,
+ * the envelope the outbox uses (#4469). It used to go out from the deployment
+ * sender with no BCC, and regardless of the email switch. Only the EMAIL is
+ * governed by the switch: the run is still generated, and the SharePoint push
+ * beside this is not email.
  */
 export async function deliverReportByEmail(
     ctx: RequestContext,
@@ -224,6 +233,16 @@ export async function deliverReportByEmail(
     label: string,
 ): Promise<number> {
     if (run.status !== 'COMPLETED' || !run.outputPath || recipients.length === 0) return 0;
+    // Before the artefact is read: a switched-off workspace costs no storage read.
+    const envelope = await runInTenantContext(ctx, (db) => resolveTenantEmailEnvelope(db, ctx.tenantId));
+    if (!envelope) {
+        logger.info('report-delivery: email skipped — email notifications are switched off', {
+            component: 'report-delivery',
+            tenantId: ctx.tenantId,
+            runId: run.id,
+        });
+        return 0;
+    }
     const meta = FORMAT_META[run.format as ReportFormat] ?? FORMAT_META.PDF;
     const content = await readReportArtefact(ctx, run.outputPath);
     // mailer.ts has no size logic, so without this an oversized artefact was
@@ -242,6 +261,7 @@ export async function deliverReportByEmail(
         subject: `Scheduled risk report — ${label}`,
         text: `Your scheduled risk report "${label}" is attached (report-${run.id}.${meta.ext}).`,
         attachments: [{ filename: `risk-report-${run.id}.${meta.ext}`, content, contentType: meta.mime }],
+        ...envelope,
     });
     return recipients.length;
 }

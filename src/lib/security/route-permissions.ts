@@ -1857,6 +1857,29 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'exactly the one that can already add the person. `status` is ' +
             'unreachable from this route by construction.',
     },
+    // ── Workspace notification settings (#4469) ─────────────────────
+    // Outside `/admin/`, so the edge admin gate never applied and nothing
+    // wrote AUTHZ_DENIED on a refusal. `admin.manage` beside the
+    // `assertCanAdmin` already in each handler: for every built-in role the
+    // two admit the same OWNER + ADMIN set.
+    {
+        path: new RegExp(`^${T}\\/notification-settings$`),
+        methods: ['GET', 'PUT'],
+        permission: 'admin.manage',
+        note:
+            'The workspace\'s email sender, compliance-mailbox BCC and email '
+            + 'switch, and its in-app mute list — read and written only by the '
+            + 'OWNER + ADMIN set the handlers\' assertCanAdmin admits.',
+    },
+    {
+        path: new RegExp(`^${T}\\/notification-settings\\/run-job$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Runs the outbox flush or the daily evidence sweep now, scoped to '
+            + 'this workspace. OWNER + ADMIN, the population of the role check '
+            + 'it carried by hand.',
+    },
     {
         path: new RegExp(`^${T}\\/processes\\/[^/]+\\/snapshots\\/[^/]+\\/restore$`),
         methods: ['POST'],

@@ -361,6 +361,12 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/personnel/[employeeId]/manager',
         why: 'Setting or clearing one employee\'s manager — personnel.manage, the same key createEmployee gates on, so a denial writes an AUTHZ_DENIED row rather than the silent usecase-layer forbidden(). In scope because this is the second writer of an Employee row and the org chart it edits decides who is told about a colleague\'s offboarding. Narrow leaf root: the /personnel collection route is not in scope and keeps its unregistered requirePermission.',
     },
+    // #4469 — taken WHOLE: both routes under it are admin-only, and it sits
+    // outside `/admin/`, which is how it arrived with no route gate at all.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/notification-settings',
+        why: 'The workspace notification settings (sender, compliance BCC, email switch, in-app mutes) and the run-job trigger — admin.manage on every verb, matching the assertCanAdmin in each handler.',
+    },
 ];
 
 /**
