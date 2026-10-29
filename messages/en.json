@@ -9390,7 +9390,7 @@
       "accessMessage": "You do not have permission to view agent runs. Contact your workspace administrator to request access.",
       "crumb": "Agent runs",
       "title": "Agent runs",
-      "description": "Multi-step agentic workflows. Every write a run makes is a proposal a human approves — the engine commits nothing directly.",
+      "description": "Multi-step agentic workflows. A change a run makes to this workspace is a proposal a person approves before it is applied. A write to a connected external system follows that connection's write mode, and at Automatic it is sent without a per-write approval.",
       "startWorkflow": "Start a workflow",
       "startFailed": "Failed to start",
       "resumeFailed": "Failed to resume",
