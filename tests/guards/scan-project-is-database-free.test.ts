@@ -33,6 +33,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+interface JestProject {
+    displayName?: string;
+    testMatch?: string[];
+    testPathIgnorePatterns?: string[];
+}
+const jestProjects = (
+    require('../../jest.config.js') as { projects: JestProject[] }
+).projects;
+
 const ROOT = path.resolve(__dirname, '../..');
 
 /** The directories the `scan` project owns, mirroring its `testMatch`. */
@@ -159,5 +168,63 @@ describe('the scan project opens no database connection', () => {
             // audit-immutability-guardrails:350.
             expect(matches('const BUILDS_REAL_CLIENT = /\\bnew\\s+PrismaClient\\s*\\(|\\bprismaTestClient\\s*\\(/;')).toBe(false);
         });
+    });
+});
+
+/**
+ * ── A PIN BELONGS OUTSIDE THE LIST IT PINS (#4426) ──────────────────────
+ *
+ * `tests/guardrails/coverage-gate-population.test.ts` pins `scan`'s
+ * `testPathIgnorePatterns` by exact equality. Right mechanism, one blind spot
+ * it cannot cover from where it sits: a pattern excluding `tests/guardrails/`
+ * removes that suite along with everything else in the directory, so the
+ * assertion never runs. Measured by mutation while writing this — adding
+ * `'tests/guardrails/.*'` to the list below took `scan` from 810 files to 585,
+ * jest reported `0 matches` for the pinning suite, and the job stayed green.
+ *
+ * That is the same shape the docblock in that file records for the CLI flag
+ * this list replaced; #4395 moved the lever, not the property.
+ *
+ * Excluding ALL THREE of scan's directories is caught for free: jest finds no
+ * tests and exits 1. So the exposure is PARTIAL exclusion, and a second pin in
+ * a different one of the three directories closes it — any single-directory
+ * exclusion leaves at least one pin running. The residual case (a deliberate
+ * two-directory exclusion) needs a check outside jest entirely, which is what
+ * #4426 tracks; nothing here can reach it, because every pin lives inside the
+ * population it protects.
+ */
+describe('the scan project does not exclude its own population', () => {
+    const scanProject = jestProjects.find((p) => p.displayName === 'scan');
+
+    it('excludes none of the directories it exists to run', () => {
+        // The structural half, which needs no baseline to maintain and no
+        // update when a directory is added: a pattern may name a FILE — today
+        // `rls-coverage`, the one suite that connects — but never one of the
+        // directories in `testMatch`.
+        expect(scanProject).toBeDefined();
+        const dirs = (scanProject!.testMatch ?? [])
+            .map((m) => /tests\/[A-Za-z0-9_-]+/.exec(m)?.[0])
+            .filter((d): d is string => typeof d === 'string');
+        // Vacuity: testMatch really did yield the three directories.
+        expect(dirs).toEqual(['tests/guards', 'tests/guardrails', 'tests/contracts']);
+
+        const offenders = (scanProject!.testPathIgnorePatterns ?? []).filter((pat) =>
+            dirs.some((d) => pat.includes(d)),
+        );
+        expect(offenders).toEqual([]);
+    });
+
+    it('carries exactly the allowlisted ignore patterns', () => {
+        // The exact-equality half, duplicated here deliberately: this file is
+        // in `tests/guards/`, so it still runs when a pattern excludes
+        // `tests/guardrails/` and silences the primary pin. Keep the two in
+        // step — a change to one that is not mirrored fails the other.
+        expect([...(scanProject!.testPathIgnorePatterns ?? [])].sort()).toEqual(
+            [
+                '<rootDir>/.claude/',
+                '<rootDir>/node_modules/',
+                'rls-coverage\\.test\\.ts',
+            ].sort(),
+        );
     });
 });
