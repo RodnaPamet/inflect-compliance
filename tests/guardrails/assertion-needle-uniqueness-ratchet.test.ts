@@ -615,7 +615,13 @@ const HIGH_MULTIPLICITY = 5;
 // CALL (`await parseJsonBody(req, ApproveExceptionSchema)`), and the
 // five-route `getTenantCtx` loop became one assertion naming its call. Eight
 // ambiguous needles fewer. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1139;
+//
+// 1139 -> 1138 on 2026-10-29. The evidence retention notifications stopped
+// borrowing the tenant's OWNER as the reminder's author (#4400), which removed
+// the `tenantMembership.findFirst` that looked them up. `retention-hardening`'s
+// `toContain('findFirst')` now has one position, the duplicate-task check it
+// names. No test changed. Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1138;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

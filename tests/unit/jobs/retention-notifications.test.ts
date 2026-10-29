@@ -13,11 +13,13 @@
  * Branches exercised:
  *   - empty batch (no expiring evidence) → scanned 0.
  *   - found row with an evidence owner (ownerUserId) → Task + link +
- *     audit + EVIDENCE_EXPIRING_SOON; daysLeft<=7 → P1 priority.
- *   - actor fallback to the tenant's first ACTIVE OWNER when the
- *     evidence has no ownerUserId.
- *   - skip-no-actor branch: no ownerUserId AND no tenant OWNER → the
- *     row is skipped (skippedNoActor) and no task is created.
+ *     audit + EVIDENCE_EXPIRING_SOON; daysLeft<=7 → P1 priority. The task
+ *     is written as the tenant's SYSTEM user (#4400) and assigned to the
+ *     owner.
+ *   - no ownerUserId → still written as the SYSTEM user, never as the
+ *     tenant's OWNER, and assigned to nobody.
+ *   - no ownerUserId AND no tenant OWNER → the reminder is still raised.
+ *     It used to be skipped, because there was nobody to borrow.
  *   - idempotency: an existing non-terminal EVIDENCE_EXPIRY-source task
  *     linked to the evidence → skippedDuplicate, no second task.
  *   - notifications disabled → outbox suppressed (still creates task).
@@ -29,6 +31,7 @@ import { DB_AVAILABLE } from '../../integration/db-helper';
 import { prismaTestClient } from '../../helpers/db';
 import { hashForLookup } from '@/lib/security/encryption';
 import { runEvidenceRetentionNotifications } from '@/app-layer/jobs/retention-notifications';
+import { tenantSystemUserId } from '@/lib/tenant-system-user';
 import { deleteAuditRowsForTenants } from '../../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -85,6 +88,7 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
             await tx.$executeRawUnsafe(`DELETE FROM "TenantNotificationSettings" WHERE "tenantId" = $1`, tenantId);
         });
         await prisma.tenant.deleteMany({ where: { id: tenantId } });
+        await prisma.user.deleteMany({ where: { id: tenantSystemUserId(tenantId) } });
     }
 
     it('returns scanned=0 when no evidence is expiring', async () => {
@@ -125,9 +129,15 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
             expect(task?.type).toBe('TASK');
             expect(task?.source).toBe('EVIDENCE_EXPIRY');
             expect(task?.priority).toBe('P1');
-            expect(task?.createdByUserId).toBe(ownerId);
+            // #4400 — written as the tenant's SYSTEM user, not the owner.
+            expect(task?.createdByUserId).toBe(tenantSystemUserId(tenantId));
             // TP-5 — assigned to the evidence owner when present.
             expect(task?.assigneeUserId).toBe(ownerId);
+            const created = await prisma.auditLog.findFirstOrThrow({
+                where: { tenantId, action: 'TASK_CREATED', entityId: task!.id },
+            });
+            expect(created.userId).toBe(tenantSystemUserId(tenantId));
+            expect(created.actorType).toBe('JOB');
 
             const link = await prisma.taskLink.findFirst({
                 where: { tenantId, entityType: 'EVIDENCE', entityId: ev.id },
@@ -148,7 +158,7 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
         }
     });
 
-    it('falls back to the first ACTIVE OWNER when evidence has no ownerUserId', async () => {
+    it('writes as the SYSTEM user, not the tenant OWNER, when evidence has no ownerUserId', async () => {
         const tenantId = await freshTenant();
         try {
             const ownerId = await makeUser('tenantowner');
@@ -166,17 +176,18 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
             const res = await runEvidenceRetentionNotifications({ tenantId });
             expect(res.tasksCreated).toBe(1);
             const task = await prisma.task.findFirst({ where: { tenantId, source: 'EVIDENCE_EXPIRY' } });
-            expect(task?.createdByUserId).toBe(ownerId);
+            // #4400 — this used to borrow the tenant's OWNER as the author.
+            expect(task?.createdByUserId).toBe(tenantSystemUserId(tenantId));
+            expect(await prisma.task.count({ where: { tenantId, createdByUserId: ownerId } })).toBe(0);
             expect(task?.priority).toBe('P2');
-            // No evidence owner → nothing to assign (created-by still the
-            // fallback tenant OWNER).
+            // No evidence owner → nothing to assign.
             expect(task?.assigneeUserId).toBeNull();
         } finally {
             await cleanup(tenantId);
         }
     });
 
-    it('skips the row when there is neither an evidence owner nor a tenant OWNER', async () => {
+    it('raises the reminder when there is neither an evidence owner nor a tenant OWNER', async () => {
         const tenantId = await freshTenant();
         try {
             await prisma.evidence.create({
@@ -187,9 +198,12 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
             });
             const res = await runEvidenceRetentionNotifications({ tenantId });
             expect(res.scanned).toBe(1);
-            expect(res.tasksCreated).toBe(0);
+            // #4400 — this row used to be skipped: with no owner and no OWNER
+            // member there was nobody to borrow as the task's author.
+            expect(res.tasksCreated).toBe(1);
             const tasks = await prisma.task.findMany({ where: { tenantId } });
-            expect(tasks).toHaveLength(0);
+            expect(tasks).toHaveLength(1);
+            expect(tasks[0].createdByUserId).toBe(tenantSystemUserId(tenantId));
         } finally {
             await cleanup(tenantId);
         }
@@ -324,6 +338,9 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
             // Not merely uncounted — nothing was created.
             expect(await prisma.task.count({ where: { tenantId } })).toBe(0);
             expect(await prisma.notificationOutbox.count({ where: { tenantId } })).toBe(0);
+            // Nor a SYSTEM user for the removed tenant: it is created lazily,
+            // only for a row the sweep acts on.
+            expect(await prisma.user.count({ where: { id: tenantSystemUserId(tenantId) } })).toBe(0);
         } finally {
             await cleanup(tenantId);
         }
