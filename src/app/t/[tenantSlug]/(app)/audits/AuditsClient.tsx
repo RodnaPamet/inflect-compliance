@@ -32,6 +32,7 @@ import {
     DEFAULT_STATUS_VARIANT,
 } from './_lib/status-variants';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+import { auditWriteErrorFrom, auditWriteFailureMessage } from './_lib/audit-write-error';
 
 // listAudits → AuditRepository.list (auditListSelect). The lighter LIST row
 // (distinct from the detail AuditDetail). List map callback stays untyped.
@@ -243,7 +244,9 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error('audit_write_failed');
+            // The refusal's reason rides the error, so each caller can show it
+            // instead of its own generic sentence.
+            if (!res.ok) throw await auditWriteErrorFrom(res);
             return res.json().catch(() => null);
         },
     });
@@ -259,8 +262,8 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
             });
             toast.success(tx('detail.checklistSaved'));
             loadAudit(selected.id);
-        } catch {
-            toast.error(tx('detail.checklistError'));
+        } catch (err) {
+            toast.error(auditWriteFailureMessage(err, tx('detail.checklistError')));
         }
     };
 
@@ -273,9 +276,9 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
         try {
             await auditWrite.trigger({ auditId: selected.id, body: { status } });
             toast.success(tx('detail.statusChanged', { status: statusLabel(status) }));
-        } catch {
+        } catch (err) {
             setSelected((s) => (s ? { ...s, status: prevStatus } : s));
-            toast.error(tx('detail.statusError'));
+            toast.error(auditWriteFailureMessage(err, tx('detail.statusError')));
         }
     };
 

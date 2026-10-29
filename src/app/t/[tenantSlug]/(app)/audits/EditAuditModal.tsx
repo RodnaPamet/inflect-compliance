@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/hooks';
+import { auditWriteFailureMessage } from './_lib/audit-write-error';
 
 export interface EditableAudit {
     id: string;
@@ -52,7 +53,8 @@ export interface EditAuditModalProps {
      * drift apart on error handling and cache invalidation.
      *
      * Must REJECT on failure — the modal renders its error toast from the
-     * rejection and deliberately stays open with the form intact.
+     * rejection and deliberately stays open with the form intact. A rejection
+     * that is an `AuditWriteError` with a reason shows that reason.
      */
     save: (body: Record<string, unknown>) => Promise<unknown>;
     /** Called after a successful save so the caller can refresh its panes. */
@@ -152,13 +154,14 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
             toast.success(tx('editModal.saved'));
             setOpen(false);
             onSaved();
-        } catch {
+        } catch (err) {
             // One catch for both failure shapes now. `save` rejects on a non-2xx
             // AND on a request that never landed, where the old code had a
             // `return` for the former and this `catch` for the latter — two
             // paths to the same toast. The modal stays open with the form
-            // intact either way, so the user can retry without retyping.
-            toast.error(tx('editModal.saveFailed'));
+            // intact either way, so the user can retry without retyping. A
+            // refusal shows the server's reason; anything else, the fallback.
+            toast.error(auditWriteFailureMessage(err, tx('editModal.saveFailed')));
         } finally {
             setSaving(false);
         }

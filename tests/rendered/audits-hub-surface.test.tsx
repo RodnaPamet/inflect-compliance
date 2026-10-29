@@ -82,6 +82,7 @@ jest.mock('next/navigation', () => ({
 }));
 
 import { SWRConfig } from 'swr';
+import { toast } from 'sonner';
 import { AuditsClient } from '@/app/t/[tenantSlug]/(app)/audits/AuditsClient';
 import { TenantProvider } from '@/lib/tenant-context-provider';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -138,16 +139,24 @@ const fetchMock = jest.fn();
 let listResponse: { rows: unknown[]; truncated: boolean };
 /** The audit-cycle list — the page's only narrowing control is its picker. */
 let cyclesResponse: unknown[];
+/** Set by a test to make every PUT answer with this status and body. */
+let putRefusal: { status: number; body: unknown } | null;
 
 beforeEach(() => {
     currentSearch = new URLSearchParams();
     detail = freshDetail();
     listResponse = { rows: [LIST_ROW], truncated: false };
     cyclesResponse = [];
+    putRefusal = null;
+    (toast.error as jest.Mock).mockClear();
     fetchMock.mockReset();
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
         const u = String(url);
         if (init?.method === 'PUT') {
+            if (putRefusal) {
+                const { status, body } = putRefusal;
+                return Promise.resolve({ ok: false, status, json: async () => body } as Response);
+            }
             return Promise.resolve({ ok: true, json: async () => ({ success: true }) } as Response);
         }
         if (/\/audits\/audit-1$/.test(u)) return Promise.resolve({ ok: true, json: async () => detail } as Response);
@@ -248,5 +257,59 @@ describe('write controls follow the write tier the server asserts', () => {
         currentSearch = new URLSearchParams('create=1');
         await renderHub('EDITOR');
         expect(document.querySelector('#new-audit-form')).not.toBeNull();
+    });
+});
+
+/** The sentence `assertCanWrite` refuses with, in the API's error envelope. */
+const FORBIDDEN = {
+    status: 403,
+    body: { error: { code: 'FORBIDDEN', message: 'You do not have permission to modify records in this context.' } },
+};
+
+function errorToasts(): string[] {
+    return (toast.error as jest.Mock).mock.calls.map(([m]) => String(m));
+}
+
+describe('a refused write says why', () => {
+    it('a refused status change shows the server\'s reason, not the generic sentence', async () => {
+        await openAudit('EDITOR');
+        putRefusal = FORBIDDEN;
+        await act(async () => {
+            fireEvent.click(within(pane()).getByRole('button', { name: 'In progress' }));
+        });
+        await flush();
+        expect(errorToasts()).toEqual([FORBIDDEN.body.error.message]);
+    });
+
+    it('a refused checklist result shows the server\'s reason', async () => {
+        await openAudit('EDITOR');
+        putRefusal = FORBIDDEN;
+        await act(async () => { fireEvent.click(within(pane()).getByRole('combobox')); });
+        const option = await screen.findByRole('option', { name: /^pass$/i });
+        await act(async () => { fireEvent.click(option); });
+        await flush();
+        expect(errorToasts()).toEqual([FORBIDDEN.body.error.message]);
+    });
+
+    it('a refused edit shows the server\'s reason', async () => {
+        await openAudit('EDITOR');
+        putRefusal = FORBIDDEN;
+        await act(async () => { fireEvent.click(document.querySelector('#edit-audit-btn')!); });
+        await flush();
+        await act(async () => {
+            fireEvent.submit(document.querySelector('#edit-audit-form') as HTMLFormElement);
+        });
+        await flush();
+        expect(errorToasts()).toEqual([FORBIDDEN.body.error.message]);
+    });
+
+    it('a refusal with no reason in the body falls back to the caller\'s own sentence', async () => {
+        await openAudit('EDITOR');
+        putRefusal = { status: 500, body: {} };
+        await act(async () => {
+            fireEvent.click(within(pane()).getByRole('button', { name: 'In progress' }));
+        });
+        await flush();
+        expect(errorToasts()).toEqual(['Failed to update audit status.']);
     });
 });
