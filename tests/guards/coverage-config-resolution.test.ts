@@ -345,13 +345,19 @@ describe('jest coverage config — resolved bucket placement', () => {
         real = await resolveJestConfig(REAL_CONFIG_PATH, REPO_ROOT);
     }, 60_000);
 
-    it('resolves all three projects from the repo config', () => {
+    it('resolves all four projects from the repo config', () => {
         // Named and COUNTED. `arrayContaining(['node', 'jsdom'])` was the old
         // assertion, and it kept passing when `flue` was added — which is how a
         // per-project fix could miss a project without any test noticing. A
-        // fourth project must now be added here deliberately.
+        // fifth project must now be added here deliberately.
+        //
+        // `scan` arrived with #4395: the architectural guards, guardrails and
+        // contracts, which are source scans, run without the `globalSetup` that
+        // refuses when the shared test database is behind. This assertion is
+        // what made that addition declare itself — it failed on the new project
+        // before anything else did, which is exactly what it is for.
         const names = real.configs.map((c) => c.displayName?.name).sort();
-        expect(names).toEqual(['flue', 'jsdom', 'node']);
+        expect(names).toEqual(['flue', 'jsdom', 'node', 'scan']);
     });
 
     it('puts collectCoverageFrom in globalConfig, holding the declared scope', () => {
