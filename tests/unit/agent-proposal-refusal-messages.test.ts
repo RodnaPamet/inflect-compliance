@@ -19,6 +19,8 @@
  * the wire envelope the page reads (`{ error: { message } }`), not only on the
  * thrown error.
  */
+import { strictMock } from '../helpers/strict-mock';
+
 const db = {
     agentProposal: { findFirst: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
     agentProposalApproval: {
@@ -41,10 +43,12 @@ jest.mock('@/app-layer/usecases/risk', () => ({ createRisk: jest.fn(), updateRis
 jest.mock('@/app-layer/usecases/control/mutations', () => ({ createControl: jest.fn(), updateControl: jest.fn() }));
 jest.mock('@/app-layer/usecases/policy', () => ({ createPolicy: jest.fn() }));
 jest.mock('@/app-layer/usecases/finding', () => ({ createFinding: jest.fn(), updateFinding: jest.fn() }));
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntry: (...a: unknown[]) => appendAuditEntry(a[0] as AuditEntry),
-    appendAuditEntryOrQueue: (...a: unknown[]) => appendAuditEntry(a[0] as AuditEntry),
-}));
+jest.mock('@/lib/audit', () =>
+    strictMock('@/lib/audit', jest.requireActual('@/lib/audit'), {
+        appendAuditEntry: (...a: unknown[]) => appendAuditEntry(a[0] as AuditEntry),
+        appendAuditEntryOrQueue: (...a: unknown[]) => appendAuditEntry(a[0] as AuditEntry),
+    }),
+);
 jest.mock('@/app-layer/ai/decision-log', () => ({
     logAiDecision: jest.fn(async () => 'decision-1'),
     recordDecisionOutcomeForDigest: jest.fn(async () => undefined),

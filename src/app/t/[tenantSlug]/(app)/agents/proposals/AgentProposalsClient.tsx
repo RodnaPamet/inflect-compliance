@@ -170,6 +170,23 @@ function guardRuleText(
         : t('guard.noRules');
 }
 
+/**
+ * Where a row's decision stands, when it is anything but "open, unsigned". A
+ * closed window outranks a recorded signature: nothing can complete the
+ * proposal now. Read from the row's data, so a reload shows what a click did.
+ */
+function decisionBadgeFor(
+    p: Pick<ProposalRow, 'windowClosed' | 'approvalsRecorded'>,
+): { variant: 'warning' | 'info'; key: string; testid: string } | null {
+    if (p.windowClosed) {
+        return { variant: 'warning', key: 'proposals.window.closed', testid: 'proposal-window-closed-badge' };
+    }
+    if (p.approvalsRecorded > 0) {
+        return { variant: 'info', key: 'proposals.awaitingSecond', testid: 'proposal-awaiting-second-badge' };
+    }
+    return null;
+}
+
 /** The sentence each bulk-reject skip reason is reported with. */
 type SkipCause = 'decided' | 'expired' | 'quarantined' | 'ownDissent' | 'unknownDissent';
 
@@ -578,6 +595,7 @@ export function AgentProposalsClient({
                     {proposals.map((p) => {
                         const guardState = resolveProposalGuardState(p);
                         const guardBadge = GUARD_BADGE[guardState];
+                        const decisionBadge = decisionBadgeFor(p);
                         return (
                         <li
                             key={p.id}
@@ -630,25 +648,19 @@ export function AgentProposalsClient({
                                         {t(guardBadge.key)}
                                     </StatusBadge>
                                     {/*
-                                      WHERE THE DECISION STANDS, from the data. A
-                                      closed window outranks a recorded signature:
-                                      nothing can complete it now.
+                                      WHERE THE DECISION STANDS, from the data —
+                                      one badge, subtle, beside the guard's: the
+                                      guard verdict stays the loud one on the row.
                                     */}
-                                    {p.windowClosed ? (
+                                    {decisionBadge && (
                                         <StatusBadge
-                                            variant="warning"
-                                            data-testid={`proposal-window-closed-badge-${p.id}`}
+                                            variant={decisionBadge.variant}
+                                            tone="subtle"
+                                            data-testid={`${decisionBadge.testid}-${p.id}`}
                                         >
-                                            {t('proposals.window.closed')}
+                                            {t(decisionBadge.key)}
                                         </StatusBadge>
-                                    ) : p.approvalsRecorded > 0 ? (
-                                        <StatusBadge
-                                            variant="info"
-                                            data-testid={`proposal-awaiting-second-badge-${p.id}`}
-                                        >
-                                            {t('proposals.awaitingSecond')}
-                                        </StatusBadge>
-                                    ) : null}
+                                    )}
                                     <span
                                         className="text-xs text-content-subtle"
                                         data-testid={`proposal-meta-${p.id}`}
