@@ -11,8 +11,10 @@
  *   auditors       — free text.
  *   scope          — textarea.
  *
- * The `generateChecklist` toggle stays true by default — auditors
- * who want a blank audit can clear the checklist after creation.
+ * `generateChecklist` is always true (the form has no toggle): the
+ * checklist is derived from the framework's requirements, or from the
+ * tenant's controls when there is none. Its items cannot be changed after
+ * creation — only each item's result.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';

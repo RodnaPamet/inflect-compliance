@@ -3445,6 +3445,7 @@
       "emptyTitle": "No audits yet",
       "emptyDesc": "Create your first audit to start tracking checklist results and findings.",
       "emptyDescReadOnly": "Owners, Admins and Editors can create audits.",
+      "truncatedHint": "Pick a cycle in the Cycle picker to list only that cycle's audits.",
       "workpaperReviews": "Workpaper reviews"
     },
     "readinessLegend": {
@@ -3459,7 +3460,7 @@
       "resultFor": "Result for {prompt}"
     },
     "newModal": {
-      "description": "Plan a new internal audit. The default checklist is generated automatically; you can edit it after creation.",
+      "description": "Plan a new internal audit. Its checklist is generated from the chosen framework's requirements, or from your controls if you choose none. You record a result against each item; the items themselves are fixed once the audit is created.",
       "creating": "Creating…",
       "discardConfirm": "Discard audit? Any details you entered will be lost.",
       "framework": "Framework",

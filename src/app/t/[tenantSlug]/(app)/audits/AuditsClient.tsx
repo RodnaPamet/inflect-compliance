@@ -404,7 +404,13 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                 }
             />
 
-            <TruncationBanner truncated={truncated} />
+            {/* The page has no filters, so the banner's default "refine your
+                filters" would point at nothing. Its one narrowing control is
+                the cycle picker: name it while it is shown and not yet used. */}
+            <TruncationBanner
+                truncated={truncated}
+                hint={cycles.length > 0 && !cycleId ? tx('hub.truncatedHint') : false}
+            />
 
             {/* Audit lifecycle — the PRIMARY path into the cycle → pack →
                 readiness → share → findings → remediate flow. The header's

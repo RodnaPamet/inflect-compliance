@@ -13,7 +13,7 @@
  */
 
 import * as React from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 jest.mock('sonner', () => ({
     Toaster: () => null,
@@ -176,7 +176,7 @@ async function flush() {
     });
 }
 
-async function renderHub(role: Role, initialAudits: unknown[] = [LIST_ROW]) {
+async function renderHub(role: Role, initialAudits: unknown[] = [LIST_ROW], cycleId?: string) {
     // A fresh SWR cache per render: the list key is the same in every test,
     // and a cache shared across tests would hand one test the last one's rows.
     render(
@@ -186,6 +186,7 @@ async function renderHub(role: Role, initialAudits: unknown[] = [LIST_ROW]) {
                     initialAudits={initialAudits as never}
                     tenantSlug="acme"
                     hasNis2={false}
+                    cycleId={cycleId}
                     canWrite={role === 'EDITOR'}
                     translations={TRANSLATIONS}
                 />
@@ -374,5 +375,57 @@ describe('labels, not stored codes', () => {
         expect(await screen.findByRole('option', { name: 'FY26 recert · ISO/IEC 27001' })).toBeTruthy();
         expect(screen.queryByRole('option', { name: 'FY26 recert · ISO27001' })).toBeNull();
         expect(screen.getByRole('option', { name: 'Pilot · CUSTOM-X' })).toBeTruthy();
+    });
+});
+
+describe('what the page says', () => {
+    const en = jest.requireActual('../../messages/en.json');
+    const bg = jest.requireActual('../../messages/bg.json');
+    const CYCLE = { id: 'cyc-1', name: 'FY26 recert', frameworkKey: 'ISO27001', status: 'PLANNING' };
+
+    /** The banner appears once the list read lands, so wait for it. */
+    async function bannerText(): Promise<string> {
+        return (await screen.findByTestId('list-truncation-banner')).textContent ?? '';
+    }
+
+    it('past the cap, the banner points at the cycle picker, not at filters the page lacks', async () => {
+        listResponse = { rows: [LIST_ROW], truncated: true };
+        cyclesResponse = [CYCLE];
+        await renderHub('READER');
+        // The hint waits on the cycle list too — the picker is what it names.
+        await waitFor(async () => expect(await bannerText()).toContain(en.audits.hub.truncatedHint));
+        expect(await bannerText()).not.toContain(en.common.truncationBanner.refine);
+    });
+
+    it('with no cycle to pick, the banner states the cap and offers no hint', async () => {
+        listResponse = { rows: [LIST_ROW], truncated: true };
+        cyclesResponse = [];
+        await renderHub('READER');
+        const text = await bannerText();
+        expect(text).toContain('Showing the first');
+        expect(text).not.toContain(en.common.truncationBanner.refine);
+        expect(text).not.toContain(en.audits.hub.truncatedHint);
+    });
+
+    it('already scoped to a cycle, the banner does not tell you to pick one', async () => {
+        listResponse = { rows: [LIST_ROW], truncated: true };
+        cyclesResponse = [CYCLE];
+        await renderHub('READER', [LIST_ROW], 'cyc-1');
+        // Wait for the cycle list as well, so the absence is not a race.
+        await screen.findByTestId('audits-cycle-filter-banner');
+        const text = await bannerText();
+        expect(text).not.toContain(en.audits.hub.truncatedHint);
+        expect(text).not.toContain(en.common.truncationBanner.refine);
+    });
+
+    it('the new-audit dialog no longer says the checklist can be edited after creation', async () => {
+        // Nothing on the page — and no API — adds, rewords or removes a
+        // checklist item; only each item's result can be recorded.
+        currentSearch = new URLSearchParams('create=1');
+        await renderHub('EDITOR');
+        const dialog = screen.getByRole('dialog');
+        expect(dialog.textContent).toContain(en.audits.newModal.description);
+        expect(en.audits.newModal.description).not.toMatch(/edit it after creation/i);
+        expect(bg.audits.newModal.description).not.toMatch(/можете да го редактирате/);
     });
 });
