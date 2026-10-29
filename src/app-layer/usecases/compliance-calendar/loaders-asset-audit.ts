@@ -10,6 +10,7 @@ import { logger } from '@/lib/observability';
 import { internal } from '@/lib/errors/types';
 import { assertCanRead } from '../../policies/common';
 import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
+import { REMEDIATION_CLOSED_VULN_STATUSES } from '../../domain/vulnerability-status';
 import {
     evidenceExpiryScopeWhere,
     EVIDENCE_REVIEWED_STATUS,
@@ -80,12 +81,14 @@ export async function loadAssetVulnerabilityEvents(
                 entityName: r.cveId,
                 detail: r.asset.name,
                 date: date.toISOString(),
-                // RESOLVED/ACCEPTED extinguish the remediation obligation the
-                // date encodes — unlike a control's status, which does not.
+                // MITIGATED / ACCEPTED / FALSE_POSITIVE extinguish the
+                // remediation obligation the date encodes — unlike a control's
+                // status, which does not. (This read `RESOLVED`, which is not a
+                // vulnerability status, until #4465.)
                 status: classifyStatus(
                     date,
                     now,
-                    r.status === 'RESOLVED' || r.status === 'ACCEPTED',
+                    REMEDIATION_CLOSED_VULN_STATUSES.has(r.status),
                 ),
                 entityType: 'ASSET_VULNERABILITY',
                 entityId: r.id,

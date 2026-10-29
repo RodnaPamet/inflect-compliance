@@ -136,6 +136,10 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         why: 'Asset bulk mutations (status/assign/delete = assets.edit, import = assets.create) — gated so denials audit at the C.1 layer, matching the usecase asserts.',
     },
     {
+        relPath: 'src/app/api/t/[tenantSlug]/vulnerabilities',
+        why: 'Asset vulnerabilities (#4465) — reads on assets.view; triage, manual CVE link, the two conversions and the remediation task on assets.edit plus the create key of what they create. In scope as a WHOLE root: all six routes shipped with no route gate, so their refusals wrote no AUTHZ_DENIED row.',
+    },
+    {
         relPath: 'src/app/api/t/[tenantSlug]/assets/[id]/purge',
         why: 'Irreversible asset hard-delete — admin.manage, matching the usecase assertCanAdmin. Narrow leaf root so only the purge handler is in scope (its assets/[id] siblings are not).',
     },

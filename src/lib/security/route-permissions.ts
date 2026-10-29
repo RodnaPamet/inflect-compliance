@@ -1361,6 +1361,41 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             '(OWNER/ADMIN), not the assets.edit an EDITOR holds.',
     },
 
+    // ── Asset vulnerabilities (#4465) ───────────────────────────────
+    // A matched CVE is an asset-domain row, so it reads under assets.view and
+    // writes under assets.edit; a conversion also needs the create key of what
+    // it creates. Every built-in role holds each set entirely or not at all.
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities(\\/status)?$`),
+        methods: ['GET'],
+        permission: 'assets.view',
+        note: 'Vulnerability list and CVE-sync status reads — asset visibility, held by every role.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities(\\/[^/]+)?$`),
+        methods: ['POST', 'PATCH'],
+        permission: 'assets.edit',
+        note: 'Manually linking a CVE to an asset (POST) and triaging one (PATCH) edit an asset-domain record.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/convert-to-risk$`),
+        methods: ['POST'],
+        permission: ['assets.edit', 'risks.create'],
+        note: 'Converting a vulnerability into a risk writes onto the vulnerability and creates a risk.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/convert-to-finding$`),
+        methods: ['POST'],
+        permission: 'assets.edit',
+        note: 'Converting a vulnerability into a finding writes onto the vulnerability; findings have no key of their own.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/remediation-task$`),
+        methods: ['POST'],
+        permission: ['assets.edit', 'tasks.create', 'tasks.edit'],
+        note: 'Creates a task and links it to the asset — both task keys are asked before the task exists.',
+    },
+
     // ── Tenant security settings ────────────────────────────────────
     // Admin-only on BOTH verbs, unlike the sibling MFA-policy route whose
     // GET is member-visible: this payload carries the session cap and
