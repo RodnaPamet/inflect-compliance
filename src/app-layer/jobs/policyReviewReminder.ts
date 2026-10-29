@@ -29,30 +29,7 @@ import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { createTask, addTaskLink } from '../usecases/task';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
-import { buildDelegatedJobContext } from '../context-system';
-
-/**
- * Context for a policy-review reminder task.
- *
- * This used to borrow the POLICY OWNER's `userId` and pin `role: 'ADMIN'`
- * with the docblock saying so plainly: "ADMIN permissions clear
- * `assertCanWriteTasks`". The owner's id has to stay — `Task.createdByUserId`
- * is NOT NULL with a foreign key to `User`, so a synthetic principal makes
- * the insert die on `Task_createdByUserId_fkey`.
- *
- * What changes is that the row now says `actorType: 'JOB'`, so the trail
- * reads "a job raised this, attributed to the owner" rather than claiming
- * the owner raised a reminder for themselves. The ADMIN role is a known
- * remaining gap — see `buildDelegatedJobContext` for why closing it needs
- * a real SYSTEM user row rather than dropping reminders for READER owners.
- */
-function buildReminderCtx(tenantId: string, ownerUserId: string): RequestContext {
-    return buildDelegatedJobContext({
-        tenantId,
-        job: 'policy-review-reminder',
-        onBehalfOf: ownerUserId,
-    });
-}
+import { buildTenantSystemJobContext } from '../context-system';
 
 export interface OverduePolicy {
     id: string;
@@ -304,7 +281,13 @@ export async function processOverdueReminders(
             // task carries a TSK-N key + TASK_CREATED audit/automation event
             // + owner bell/email, same as every other task (was a raw
             // db.task.create that produced a keyless, unaudited task).
-            const ctx = buildReminderCtx(policy.tenantId, policy.ownerUserId);
+            // Written as the tenant's SYSTEM user (#4400). It used to borrow
+            // the owner's id because `Task.createdByUserId` is a NOT NULL
+            // foreign key to `User`, which named the owner as the author of a
+            // reminder they did not raise, under an ADMIN-shaped context. The
+            // owner is still the assignee, resolved against an ACTIVE
+            // membership by `createTask`.
+            const ctx = await buildTenantSystemJobContext({ tenantId: policy.tenantId, job: 'policy-review-reminder' });
             const task = await createTask(ctx, {
                 source: 'POLICY_REVIEW',
                 type: 'TASK',

@@ -27,11 +27,13 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/hooks';
+import { auditWriteFailureMessage } from './_lib/audit-write-error';
 
 export interface EditableAudit {
     id: string;
     title: string;
     auditScope: string | null;
+    auditors?: string | null;
     criteria?: string | null;
     schedule?: string | null;
     departments?: string | null;
@@ -52,7 +54,8 @@ export interface EditAuditModalProps {
      * drift apart on error handling and cache invalidation.
      *
      * Must REJECT on failure — the modal renders its error toast from the
-     * rejection and deliberately stays open with the form intact.
+     * rejection and deliberately stays open with the form intact. A rejection
+     * that is an `AuditWriteError` with a reason shows that reason.
      */
     save: (body: Record<string, unknown>) => Promise<unknown>;
     /** Called after a successful save so the caller can refresh its panes. */
@@ -73,6 +76,7 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
     const [scope, setScope] = useState(audit.auditScope ?? '');
     const [criteria, setCriteria] = useState(audit.criteria ?? '');
     const [departments, setDepartments] = useState(audit.departments ?? '');
+    const [auditors, setAuditors] = useState(audit.auditors ?? '');
     const [schedule, setSchedule] = useState<Date | null>(
         audit.schedule ? new Date(audit.schedule) : null,
     );
@@ -87,6 +91,7 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
         setScope(audit.auditScope ?? '');
         setCriteria(audit.criteria ?? '');
         setDepartments(audit.departments ?? '');
+        setAuditors(audit.auditors ?? '');
         setSchedule(audit.schedule ? new Date(audit.schedule) : null);
         setFrameworkKey(audit.frameworkKey ?? '');
         setAuditCycleId(audit.auditCycleId ?? '');
@@ -125,13 +130,19 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
         open ? CACHE_KEYS.audits.cycles() : null,
     );
     const cycleRows = cyclesQuery.data;
+    // A cycle reads "<cycle> · <framework name>". The cycle carries only its
+    // framework's KEY ("ISO27001"), so the name comes from the framework
+    // catalogue read above; the key stands in only when that read failed or
+    // does not list the framework.
     const cycles = useMemo<ComboboxOption[]>(() => {
         if (!Array.isArray(cycleRows)) return [noCycle];
+        const nameOf = (key: string) =>
+            (Array.isArray(frameworkRows) ? frameworkRows.find((f) => f.key === key)?.name : undefined) ?? key;
         return [
             noCycle,
-            ...cycleRows.map((c) => ({ value: c.id, label: `${c.name} · ${c.frameworkKey}` })),
+            ...cycleRows.map((c) => ({ value: c.id, label: `${c.name} · ${nameOf(c.frameworkKey)}` })),
         ];
-    }, [cycleRows, noCycle]);
+    }, [cycleRows, frameworkRows, noCycle]);
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -143,6 +154,7 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
                 scope,
                 criteria: criteria.trim() || null,
                 departments: departments.trim() || null,
+                auditors: auditors.trim() || null,
                 // `null` clears the column; a date sends the `YYYY-MM-DD`
                 // wire format the schema accepts.
                 schedule: schedule ? toYMD(schedule) : null,
@@ -152,13 +164,14 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
             toast.success(tx('editModal.saved'));
             setOpen(false);
             onSaved();
-        } catch {
+        } catch (err) {
             // One catch for both failure shapes now. `save` rejects on a non-2xx
             // AND on a request that never landed, where the old code had a
             // `return` for the former and this `catch` for the latter — two
             // paths to the same toast. The modal stays open with the form
-            // intact either way, so the user can retry without retyping.
-            toast.error(tx('editModal.saveFailed'));
+            // intact either way, so the user can retry without retyping. A
+            // refusal shows the server's reason; anything else, the fallback.
+            toast.error(auditWriteFailureMessage(err, tx('editModal.saveFailed')));
         } finally {
             setSaving(false);
         }
@@ -220,14 +233,23 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
                             </FormField>
                         </div>
 
-                        <FormField label={tx('editModal.labelDepartments')}>
-                            <Input
-                                id="edit-audit-departments"
-                                value={departments}
-                                onChange={(e) => setDepartments(e.target.value)}
-                                placeholder={tx('editModal.departmentsPlaceholder')}
-                            />
-                        </FormField>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-default">
+                            <FormField label={tx('auditors')}>
+                                <Input
+                                    id="edit-audit-auditors"
+                                    value={auditors}
+                                    onChange={(e) => setAuditors(e.target.value)}
+                                />
+                            </FormField>
+                            <FormField label={tx('editModal.labelDepartments')}>
+                                <Input
+                                    id="edit-audit-departments"
+                                    value={departments}
+                                    onChange={(e) => setDepartments(e.target.value)}
+                                    placeholder={tx('editModal.departmentsPlaceholder')}
+                                />
+                            </FormField>
+                        </div>
 
                         <FormField label={tx('editModal.labelScope')}>
                             <Textarea
