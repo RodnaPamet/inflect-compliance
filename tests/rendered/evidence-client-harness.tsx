@@ -41,9 +41,11 @@ export const COARSE = {
 
 /** The appPermissions grants the page reads, as the built-in roles hold them. */
 export const GRANTS = {
-    ADMIN: { evidenceEdit: true, evidenceUpload: true, adminManage: true, controlsEdit: true },
-    EDITOR: { evidenceEdit: true, evidenceUpload: true, adminManage: false, controlsEdit: true },
-    READER: { evidenceEdit: false, evidenceUpload: false, adminManage: false, controlsEdit: false },
+    // `tasksCreate` / `tasksEdit` since #4415 — the detail sheet's linked-tasks
+    // panel asks them separately. Set as the built-in roles hold them.
+    ADMIN: { evidenceEdit: true, evidenceUpload: true, adminManage: true, controlsEdit: true, tasksCreate: true, tasksEdit: true },
+    EDITOR: { evidenceEdit: true, evidenceUpload: true, adminManage: false, controlsEdit: true, tasksCreate: true, tasksEdit: true },
+    READER: { evidenceEdit: false, evidenceUpload: false, adminManage: false, controlsEdit: false, tasksCreate: false, tasksEdit: false },
 } as const;
 
 export function evidenceRow(overrides: Partial<EvidenceRowFixture> = {}): EvidenceRowFixture {
