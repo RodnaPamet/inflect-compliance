@@ -265,14 +265,10 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // a listed 1 is indistinguishable from not being listed.
     // "src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx": 1,
 
-    // B8 — Frameworks list now carries an "Import framework" CTA in
-    // the page header AND a primary "Import framework" jump inside
-    // the Custom-framework explainer modal. Two genuinely separate
-    // visual regions: the header CTA targets the first uninstalled
-    // framework directly; the modal CTA is the "after you read this
-    // explanation" follow-through. Modal only mounts when the user
-    // clicks the Create-framework secondary trigger.
-    "src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx": 2,
+    // ENTRY REMOVED 2026-10-29 (#4459): the Create-framework explainer modal
+    // and its "Import framework" primary were deleted, leaving the header's
+    // Import CTA as the file's one primary, which is DEFAULT_BUDGET.
+    // "src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx": 2,
     // ── 2026-10-04: NINE FILES THE OLD COUNTER NEVER SAW ────────────────────
     //
     // Every primary below is a `<Button>` with NO variant prop — `button.tsx`

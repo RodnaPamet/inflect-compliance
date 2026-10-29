@@ -49,7 +49,7 @@ function payload(overrides: Partial<ExecutiveDashboardPayload> = {}): ExecutiveD
             archived: 0,
             overdueReview: 0,
         },
-        taskSummary: { total: 0, open: 0, inProgress: 0, blocked: 0, resolved: 0, overdue: 0 },
+        taskSummary: { total: 0, open: 0, inProgress: 0, inReview: 0, blocked: 0, resolved: 0, overdue: 0 },
         vendorSummary: { total: 0, overdueReview: 0 },
         computedAt: '2026-08-01T00:00:00.000Z',
         ...overrides,

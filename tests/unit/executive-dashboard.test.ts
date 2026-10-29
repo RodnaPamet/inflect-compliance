@@ -327,6 +327,7 @@ describe('Dashboard — Task Summary', () => {
                 { status: 'OPEN', _count: 5 },
                 { status: 'TRIAGED', _count: 2 },
                 { status: 'IN_PROGRESS', _count: 3 },
+                { status: 'IN_REVIEW', _count: 6 },
                 { status: 'BLOCKED', _count: 1 },
                 { status: 'RESOLVED', _count: 4 },
             ]),
@@ -335,12 +336,18 @@ describe('Dashboard — Task Summary', () => {
 
         const result = await DashboardRepository.getTaskSummary(mockTx as never, makeCtx());
 
-        expect(result.total).toBe(15);
+        expect(result.total).toBe(21);
         expect(result.open).toBe(7); // OPEN (5) + TRIAGED (2)
         expect(result.inProgress).toBe(3);
+        expect(result.inReview).toBe(6);
         expect(result.blocked).toBe(1);
         expect(result.resolved).toBe(4); // RESOLVED
         expect(result.overdue).toBe(2);
+        // Every status is in exactly one slice, so the Task Status pie adds
+        // up to the task count. IN_REVIEW was in none.
+        expect(
+            result.open + result.inProgress + result.inReview + result.blocked + result.resolved,
+        ).toBe(result.total);
     });
 });
 

@@ -1,0 +1,149 @@
+# Operator-owned boundary policy for the Powerpipe collector sandboxes.
+#
+# ═══ WHAT THIS FILE IS, AND WHY IT IS NOT GENERATED ═══
+#
+# `openshell-prover check` asks one question: is a candidate policy contained
+# within a BOUNDARY the operator owns. The candidate is composed by
+# `collectorSandboxPolicy()`; this file is the boundary, and it is committed and
+# hand-maintained ON PURPOSE.
+#
+# Deriving it from the same code that composes the candidate would make the
+# proof almost vacuous — a policy is trivially contained within itself, so a
+# widened allowlist would widen the boundary in the same commit and nothing
+# would ever fail. Keeping it separate is what gives the check teeth: widening
+# the code's allowlist without a deliberate edit here fails
+# `openshell-prover-boundary-covers-the-policy`, and the edit is the moment a
+# human decides the wider access is acceptable.
+#
+# ═══ SCHEMA: VERSION 1, WHICH IS NOT THE GATEWAY'S ═══
+#
+# The gateway's policy schema is version 2. The prover accepts version 1 only
+# and rejects version 2 outright. `src/lib/agentic/openshell/prover-policy.ts`
+# translates between them and records what cannot cross: `enforcement` has no
+# version 1 field at all, so NOTHING PROVEN HERE SAYS THE POLICY ENFORCES
+# RATHER THAN AUDITS. That is 0.1b, and it is outside this file's reach.
+#
+# ═══ THE PATHS ARE EXACT, NOT ANCESTORS ═══
+#
+# The prover does not reason about path prefixes: a candidate reading
+# `/usr/bin` against a `/usr` boundary answers `unsupported`, not
+# `within_boundary`. So these repeat the candidate's paths exactly. Stating a
+# broader ancestor would make every check undecidable rather than more
+# permissive.
+version: 1
+
+filesystem_policy:
+  # `rootReadOnly: true` in the composed policy.
+  read_only:
+    - /
+  # The single writable path — Powerpipe's mod cache. `COLLECTOR_SCRATCH_DIR`.
+  read_write:
+    - /var/tmp/powerpipe
+
+process:
+  # `COLLECTOR_RUN_AS_USER`, a numeric non-root uid. This is how
+  # `allowRoot: false` is expressed: the prover has no boolean for it, and a
+  # boundary naming this uid refuses both `root` and `0` — measured.
+  #
+  # `run_as_group` is deliberately absent, here and in the candidate. The
+  # comparison is decidable only when both sides agree on the field's presence;
+  # with a group on one side only, the prover answers `unsupported`. We set no
+  # group, so neither side names one.
+  run_as_user: '65532'
+
+landlock:
+  # Anything weaker is refused: a `best_effort` candidate against this
+  # boundary answers `exceeds_boundary` — measured.
+  compatibility: hard_requirement
+
+network_policies:
+  # The key is NOT load-bearing. The prover compares endpoint SETS and ignores
+  # the name, measured by renaming it and getting the same verdict.
+  operator-boundary:
+    endpoints:
+    # ── aws ──
+    # OMITTED (unprovable wildcard): *.amazonaws.com
+    - host: sts.amazonaws.com
+      port: 443
+    # ── azure ──
+    - host: management.azure.com
+      port: 443
+    - host: login.microsoftonline.com
+      port: 443
+    # ── gcp ──
+    - host: accessapproval.googleapis.com
+      port: 443
+    - host: alloydb.googleapis.com
+      port: 443
+    - host: apikeys.googleapis.com
+      port: 443
+    - host: appengine.googleapis.com
+      port: 443
+    - host: artifactregistry.googleapis.com
+      port: 443
+    - host: bigquery.googleapis.com
+      port: 443
+    - host: bigtableadmin.googleapis.com
+      port: 443
+    - host: billingbudgets.googleapis.com
+      port: 443
+    - host: cloudasset.googleapis.com
+      port: 443
+    - host: cloudbilling.googleapis.com
+      port: 443
+    - host: cloudfunctions.googleapis.com
+      port: 443
+    - host: cloudidentity.googleapis.com
+      port: 443
+    - host: cloudkms.googleapis.com
+      port: 443
+    - host: cloudresourcemanager.googleapis.com
+      port: 443
+    - host: composer.googleapis.com
+      port: 443
+    - host: compute.googleapis.com
+      port: 443
+    - host: container.googleapis.com
+      port: 443
+    - host: dataplex.googleapis.com
+      port: 443
+    - host: dataproc.googleapis.com
+      port: 443
+    - host: dns.googleapis.com
+      port: 443
+    - host: essentialcontacts.googleapis.com
+      port: 443
+    - host: firestore.googleapis.com
+      port: 443
+    - host: iam.googleapis.com
+      port: 443
+    - host: logging.googleapis.com
+      port: 443
+    - host: metastore.googleapis.com
+      port: 443
+    - host: monitoring.googleapis.com
+      port: 443
+    - host: pubsub.googleapis.com
+      port: 443
+    - host: run.googleapis.com
+      port: 443
+    - host: secretmanager.googleapis.com
+      port: 443
+    - host: serviceusage.googleapis.com
+      port: 443
+    - host: sqladmin.googleapis.com
+      port: 443
+    - host: storage.googleapis.com
+      port: 443
+    - host: tpu.googleapis.com
+      port: 443
+    - host: vpcaccess.googleapis.com
+      port: 443
+    - host: workstations.googleapis.com
+      port: 443
+    - host: aiplatform.googleapis.com
+      port: 443
+    - host: redis.googleapis.com
+      port: 443
+    - host: oauth2.googleapis.com
+      port: 443

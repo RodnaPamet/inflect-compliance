@@ -36,6 +36,13 @@ import {
     resolveNextBestAction,
     type NextBestActionInput,
 } from "@/components/ui/next-best-action-logic";
+import { EVIDENCE_FILTER_KEYS } from "@/app/t/[tenantSlug]/(app)/evidence/filter-defs";
+import { TASK_FILTER_KEYS } from "@/app/t/[tenantSlug]/(app)/tasks/filter-defs";
+import { RISK_FILTER_KEYS } from "@/app/t/[tenantSlug]/(app)/risks/filter-defs";
+import {
+    HIGH_RISK_SCORE_MIN,
+    OPEN_RISK_STATUSES,
+} from "@/app-layer/domain/risk-status";
 
 // #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
 // no longer be satisfied by a COMMENT naming the thing its assertion is about.
@@ -76,7 +83,13 @@ describe("v2-PR-11 NextBestAction priority chain (resolveNextBestAction)", () =>
         );
         // High-risks beats low-coverage (3 > 4 priority order).
         expect(a.id).toBe("high-risks");
-        expect(a.href).toBe("/t/acme/risks?filter=high");
+        // The Risks list's own filter keys: score range + the open statuses,
+        // the population `highRisks` counts. `?filter=` is read by no page.
+        // Built from the domain module, so the literal the logic spells out
+        // cannot drift from the population the count is of.
+        expect(a.href).toBe(
+            `/t/acme/risks?score=${HIGH_RISK_SCORE_MIN}|25&status=${OPEN_RISK_STATUSES.join(",")}`,
+        );
     });
 
     it("returns `overdue-tasks` when there are overdue tasks (beats high-risks)", () => {
@@ -85,7 +98,8 @@ describe("v2-PR-11 NextBestAction priority chain (resolveNextBestAction)", () =>
             tenantHref,
         );
         expect(a.id).toBe("overdue-tasks");
-        expect(a.href).toBe("/t/acme/tasks?filter=overdue");
+        // The Tasks list's `due` chip — past dueAt, not terminal.
+        expect(a.href).toBe("/t/acme/tasks?due=overdue");
     });
 
     it("returns `overdue-evidence` (highest priority) when evidence is overdue", () => {
@@ -100,23 +114,64 @@ describe("v2-PR-11 NextBestAction priority chain (resolveNextBestAction)", () =>
             tenantHref,
         );
         expect(a.id).toBe("overdue-evidence");
-        expect(a.href).toBe("/t/acme/evidence?filter=expiring");
+        // The Evidence list's freshness bucket for a row past its review date.
+        expect(a.href).toBe("/t/acme/evidence?freshness=expired");
     });
 
-    it("singularises copy when the count is exactly 1", () => {
-        const a = resolveNextBestAction(
-            { ...allClean, overdueEvidence: 1 },
-            tenantHref,
-        );
-        expect(a.description).toContain("1 evidence record past");
-    });
-
-    it("pluralises copy when the count is > 1", () => {
+    it("carries the count its description quotes, and returns no English", () => {
         const a = resolveNextBestAction(
             { ...allClean, overdueEvidence: 4 },
             tenantHref,
         );
-        expect(a.description).toContain("4 evidence records past");
+        expect(a.messageKey).toBe("overdueEvidence");
+        expect(a.count).toBe(4);
+        expect(Object.keys(a).sort()).toEqual(["count", "href", "id", "messageKey"]);
+    });
+
+    it("every href names only filter keys its target page reads", () => {
+        // Each target's filter-defs is the authority on what the page reads.
+        const cases: Array<[NextBestActionInput, readonly string[]]> = [
+            [{ ...allClean, overdueEvidence: 1 }, EVIDENCE_FILTER_KEYS],
+            [{ ...allClean, overdueTasks: 1 }, TASK_FILTER_KEYS],
+            [{ ...allClean, highRisks: 1 }, RISK_FILTER_KEYS],
+        ];
+        for (const [input, pageKeys] of cases) {
+            const { href } = resolveNextBestAction(input, tenantHref);
+            const names = [...new URLSearchParams(href.split("?")[1] ?? "").keys()];
+            expect(names.length).toBeGreaterThan(0);
+            expect(names.filter((n) => !pageKeys.includes(n))).toEqual([]);
+        }
+    });
+});
+
+describe("v2-PR-11 copy lives in the message catalogue", () => {
+    const catalogue = (loc: string) =>
+        JSON.parse(
+            fs.readFileSync(path.join(ROOT, `messages/${loc}.json`), "utf8"),
+        ).dashboard.nextAction as Record<string, { label: string; description: string } | string>;
+
+    it.each(["en", "bg"])("%s has a label and description for every action", (loc) => {
+        const msgs = catalogue(loc);
+        for (const key of [
+            "overdueEvidence",
+            "overdueTasks",
+            "highRisks",
+            "lowCoverage",
+            "readinessCheck",
+        ]) {
+            const m = msgs[key] as { label: string; description: string };
+            expect(m.label.length).toBeGreaterThan(0);
+            expect(m.description.length).toBeGreaterThan(0);
+        }
+        expect(typeof msgs.quickAdd).toBe("string");
+    });
+
+    it("en singularises and pluralises the counted descriptions", () => {
+        const msgs = catalogue("en") as Record<string, { description: string }>;
+        expect(msgs.overdueEvidence.description).toContain("one {# evidence record past");
+        expect(msgs.overdueEvidence.description).toContain("other {# evidence records past");
+        // The high-risk floor the copy states is the floor the count uses.
+        expect(msgs.highRisks.description).toContain("10 or more");
     });
 });
 

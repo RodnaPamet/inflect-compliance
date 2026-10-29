@@ -821,7 +821,23 @@ const SINK_FLOOR = 30;
 // 212 -> 215: THE REST GATE FOR AN AGENT-BOUND KEY (#4481). Three holes, all in
 // its denial row: the refusal reason, the agent's status, and the surface it was
 // refused at, each a parameter. None is prompt-derived.
-const MEASURED_HOLES = 215;
+
+// COMPOSED, not picked: 215 -> 216, with MEASURED_SINKS 124 -> 125 in the
+// same diff. #4481 and #3744 each raised 212/122 on their own branch, so
+// neither side's own figure is right on the combined tree — this is main's
+// current value plus this diff's own delta, the arithmetic that stays correct
+// whichever lands first.
+//
+// #3744 contributes ONE hole and ONE sink: a reply-claim `logger.warn` in
+// `flue/execute.ts`, a file already registered `identifier bound elsewhere`,
+// carrying a component literal, `ctx.tenantId`, `runId` and the error's NAME.
+// Not its message — that catch covers `guardUntrustedInput`, which is handed
+// the peer's reply body, so a throw from its own write could have carried the
+// scanned text into a log line.
+//
+// Still TIGHTENS `HOLES_PER_SINK_CEILING`: (215+6)/124 = 1.7823 becomes
+// (216+6)/125 = 1.7760, because the sink is counted alongside the hole.
+const MEASURED_HOLES = 216;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -879,7 +895,9 @@ const MEASURED_HOLES = 215;
 // `HOLES_PER_SINK_CEILING`: (209+6)/114 = 1.886 becomes (212+6)/122 = 1.787.
 // 122 -> 124: the REST gate's two sinks (#4481), its denial row and its
 // audit-failure warn. TIGHTENS the ratio: (215+6)/124 = 1.782.
-const MEASURED_SINKS = 124;
+//
+// 124 -> 125: the reply-claim sink of #3744, recorded beside its hole above.
+const MEASURED_SINKS = 125;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

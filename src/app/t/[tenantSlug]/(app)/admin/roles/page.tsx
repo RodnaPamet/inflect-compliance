@@ -29,9 +29,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage } from '@/lib/api-error';
+import { grantExceedingKeys } from '@/lib/custom-role-grant-refusal';
 import { Card, cardVariants } from '@/components/ui/card';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
-import { getPermissionsForRole, PERMISSION_SCHEMA, type PermissionSet } from '@/lib/permissions';
+import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
+import {
+    getPermissionsForRole,
+    permissionsExceeding,
+    PERMISSION_SCHEMA,
+    type PermissionSet,
+} from '@/lib/permissions';
 import {
     Shield, Pencil, Trash2, Check,
     ChevronDown, ChevronUp, Users,
@@ -41,6 +47,8 @@ import { Button } from '@/components/ui/button';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { Tooltip } from '@/components/ui/tooltip';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { ErrorState } from '@/components/ui/error-state';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { ListPageShell } from '@/components/layout/ListPageShell';
@@ -64,7 +72,7 @@ interface CustomRole {
     _count: { memberships: number };
 }
 
-// ─── Resource labels ───
+// ─── Labels ───
 //
 // The domain list and its actions come from `PERMISSION_SCHEMA` in
 // `@/lib/permissions` — the single source of truth. This file used to
@@ -77,41 +85,58 @@ interface CustomRole {
 // two flags that separate OWNER from ADMIN, which therefore rendered
 // no toggle at all.
 //
-// The label lookup falls back to the raw domain key when the catalog
-// has no string for it, so a domain added to `PERMISSION_SCHEMA`
-// before its translation lands renders `assets` rather than an empty
-// cell. That is a legible placeholder, not a silent hole.
+// Every domain is labelled from `admin.resourceLabels.*` and every action
+// from `admin.roles.actions.*` (#4467: two domains and every column heading
+// used to show the raw key). A lookup with no catalogue string falls back to
+// the raw domain key, or the action key with its underscores replaced, so a
+// permission added to `PERMISSION_SCHEMA` before its translation lands
+// renders legibly rather than as an empty cell.
+// `tests/rendered/custom-roles-page.test.tsx` fails while any domain or action
+// lacks a catalogue string.
 
 type Translator = ((key: string) => string) & { has?: (key: string) => boolean };
 
-/**
- * Action keys render as column headers, so an underscore reaches the user.
- *
- * Deriving the grid from `PERMISSION_SCHEMA` is what made this visible: the
- * hand-written mirror listed only single-word actions, so `capitalize` alone
- * was enough. The full schema adds `schedule_external`, `tenant_lifecycle`,
- * `owner_management` and the two `compliance_dsar_*` flags, which rendered as
- * "Schedule_external" in a localised admin UI.
- *
- * Underscores become spaces; `capitalize` then title-cases each word. These
- * headers are NOT translated — they were not before this change either, and
- * fixing that means a key per action across every domain, which is its own
- * piece of work rather than a rider on this one.
- */
 const humanizeAction = (action: string): string => action.replace(/_/g, ' ');
 
-const buildResourceLabels = (t: Translator): Record<string, string> =>
-    Object.fromEntries(
-        Object.keys(PERMISSION_SCHEMA).map((k) => {
-            const key = `resourceLabels.${k}`;
-            if (typeof t.has === 'function' && !t.has(key)) return [k, k];
-            const label = t(key);
-            // A `t` without `.has` (or one configured to echo the key)
-            // returns the key path for a missing message — treat that as
-            // missing too rather than painting a dotted path into a cell.
-            return [k, label && !label.includes('resourceLabels.') ? label : k];
-        }),
-    );
+function catalogueLabel(t: Translator, key: string, fallback: string): string {
+    if (typeof t.has === 'function' && !t.has(key)) return fallback;
+    const label = t(key);
+    // A `t` without `.has` (or one configured to echo the key) returns the
+    // key path for a missing message — treat that as missing too rather than
+    // painting a dotted path into a cell.
+    return label && !label.includes(key) ? label : fallback;
+}
+
+/**
+ * The page's translator and its label lookups: a permission's domain, its
+ * action, the two together, and a built-in role.
+ *
+ * Every component in this file takes `t` from here rather than binding its
+ * own. `tests/guards/i18n-keys-resolve.test.ts` reads translator bindings
+ * with a regex, which has no scopes: a file binding `t` more than once beside
+ * a second namespace cannot be resolved, and drops out of its coverage.
+ */
+function useRolesPageText() {
+    const t = useTranslations('admin');
+    const tRoles = useTranslations('roles');
+    return useMemo(() => {
+        const resource = (domain: string) =>
+            catalogueLabel(t as Translator, `resourceLabels.${domain}`, domain);
+        const action = (key: string) =>
+            catalogueLabel(t as Translator, `roles.actions.${key}`, humanizeAction(key));
+        /** `domain.action`, as the server names a permission, to its label. */
+        const permission = (key: string) => {
+            const dot = key.indexOf('.');
+            const domain = dot < 0 ? key : key.slice(0, dot);
+            const act = dot < 0 ? '' : key.slice(dot + 1);
+            return t('roles.permissionLabel', { resource: resource(domain), action: action(act) });
+        };
+        /** A built-in role's display label (`roles.*`), falling back to the code. */
+        const roleLabel = (role: string) =>
+            typeof tRoles.has === 'function' && tRoles.has(role) ? tRoles(role) : role;
+        return { t, resource, action, permission, roleLabel };
+    }, [t, tRoles]);
+}
 
 const BASE_ROLES: Role[] = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
 const ROLE_COLORS: Record<string, StatusBadgeVariant> = {
@@ -120,24 +145,53 @@ const ROLE_COLORS: Record<string, StatusBadgeVariant> = {
     AUDITOR: 'warning',
     READER: 'neutral',
 };
-const BASE_ROLE_OPTIONS: ComboboxOption[] = BASE_ROLES.map(r => ({ value: r, label: r }));
+
+const holdsPermission = (held: PermissionSet, domain: keyof PermissionSet, action: string): boolean =>
+    (held[domain] as Record<string, boolean> | undefined)?.[action] === true;
+
+/**
+ * `perms` with every permission the editor does not hold turned off.
+ *
+ * The server refuses a role holding more than its author does
+ * (`assertGrantWithinOwnAuthority`), so a preset or a base role's defaults
+ * that carried one would only fail on save. Starting the grid inside what
+ * the editor holds is the same rule, applied where they can see it (#4467).
+ */
+function withinHeld(perms: PermissionSet, held: PermissionSet): PermissionSet {
+    const out: Record<string, Record<string, boolean>> = {};
+    for (const domain of Object.keys(PERMISSION_SCHEMA) as (keyof PermissionSet)[]) {
+        const source = { ...(perms[domain] as Record<string, boolean>) };
+        for (const action of PERMISSION_SCHEMA[domain]) {
+            if (source[action] === true && !holdsPermission(held, domain, action)) source[action] = false;
+        }
+        out[domain] = source;
+    }
+    return out as unknown as PermissionSet;
+}
 
 // ─── Permission Grid Component ───
 
+/**
+ * One toggle per permission. A permission the EDITOR does not hold cannot be
+ * turned on (#4467): the server refuses a role holding more than its author
+ * does, and used to say so only on save, naming the permissions by their keys.
+ * One the role already grants can still be turned off — the server accepts a
+ * role narrowed to within the editor's own permissions, so the grid does too.
+ */
 function PermissionGrid({
     permissions,
     onChange,
-    readonly = false,
+    held,
 }: {
     permissions: PermissionSet;
     onChange: (p: PermissionSet) => void;
-    readonly?: boolean;
+    held: PermissionSet;
 }) {
-    const t = useTranslations('admin');
-    const RESOURCE_LABELS = buildResourceLabels(t);
+    const labels = useRolesPageText();
+    const { t } = labels;
     const toggle = (resource: keyof PermissionSet, action: string) => {
-        if (readonly) return;
-        const current = (permissions[resource] as Record<string, boolean>)[action];
+        const current = (permissions[resource] as Record<string, boolean>)[action] ?? false;
+        if (!current && !holdsPermission(held, resource, action)) return;
         const updated = {
             ...permissions,
             [resource]: {
@@ -159,8 +213,8 @@ function PermissionGrid({
                     <tr>
                         <th className="sticky left-0 bg-bg-default/90 z-10 text-left">{t('roles.gridResource')}</th>
                         {allActions.map((action) => (
-                            <th key={action} className="text-center capitalize px-2">
-                                {humanizeAction(action)}
+                            <th key={action} className="text-center px-2 align-bottom min-w-[4.5rem]">
+                                {labels.action(action)}
                             </th>
                         ))}
                     </tr>
@@ -171,7 +225,7 @@ function PermissionGrid({
                         return (
                             <tr key={resource} className="group/row">
                                 <td className="sticky left-0 bg-bg-default/50 text-xs font-medium text-content-default group-hover/row:bg-bg-muted">
-                                    {RESOURCE_LABELS[resource]}
+                                    {labels.resource(resource)}
                                 </td>
                                 {allActions.map((action) => {
                                     const hasAction = resourceActions.includes(action);
@@ -179,25 +233,39 @@ function PermissionGrid({
                                         return <td key={action} className="text-center"><span className="text-content-subtle">—</span></td>;
                                     }
                                     const granted = (permissions[resource] as Record<string, boolean>)[action] ?? false;
+                                    const holds = holdsPermission(held, resource, action);
+                                    const locked = !granted && !holds;
+                                    const permission = labels.permission(`${resource}.${action}`);
+                                    const hint = granted
+                                        ? t(holds ? 'roles.cellGranted' : 'roles.cellGrantedNotHeld', { permission })
+                                        : t(holds ? 'roles.cellNotGranted' : 'roles.cellNotHeld', { permission });
                                     return (
                                         <td key={action} className="text-center">
-                                            <button
-                                                type="button"
-                                                onClick={() => toggle(resource, action)}
-                                                disabled={readonly}
-                                                className={`
-                                                    inline-flex items-center justify-center w-5 h-5 rounded transition
-                                                    ${granted
-                                                        ? 'bg-bg-success text-content-success hover:bg-bg-success'
-                                                        : 'bg-bg-elevated/50 text-content-subtle hover:bg-bg-muted'
-                                                    }
-                                                    ${readonly ? 'cursor-default' : 'cursor-pointer'}
-                                                `}
-                                                title={`${resource}.${action}: ${granted ? 'granted' : 'denied'}`}
-                                                id={`perm-${resource}-${action}`}
-                                            >
-                                                {granted ? <Check size={10} /> : null}
-                                            </button>
+                                            <Tooltip content={hint}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggle(resource, action)}
+                                                    // aria-disabled, not disabled: a disabled
+                                                    // button takes no pointer or focus, so its
+                                                    // tooltip could never say why it is off.
+                                                    aria-disabled={locked || undefined}
+                                                    aria-pressed={granted}
+                                                    aria-label={permission}
+                                                    className={cn(
+                                                        'inline-flex items-center justify-center w-5 h-5 rounded transition',
+                                                        granted
+                                                            ? 'bg-bg-success text-content-success hover:bg-bg-success'
+                                                            : 'bg-bg-elevated/50 text-content-subtle',
+                                                        locked
+                                                            ? 'opacity-40 cursor-not-allowed'
+                                                            : 'cursor-pointer',
+                                                        !granted && !locked && 'hover:bg-bg-muted',
+                                                    )}
+                                                    id={`perm-${resource}-${action}`}
+                                                >
+                                                    {granted ? <Check size={10} /> : null}
+                                                </button>
+                                            </Tooltip>
                                         </td>
                                     );
                                 })}
@@ -225,19 +293,39 @@ function RoleForm({
     submitting: boolean;
     submitLabel: string;
 }) {
-    const t = useTranslations('admin');
+    const labels = useRolesPageText();
+    const { t, roleLabel } = labels;
+    // The editor's own permissions, as the server resolved them for this
+    // request's tenant (custom-role aware). The server refuses a role that
+    // grants more than these (`assertGrantWithinOwnAuthority`).
+    const held = usePermissions();
+    const baseRoleOptions: ComboboxOption[] = useMemo(
+        () => BASE_ROLES.map((r) => ({ value: r, label: roleLabel(r) })),
+        [roleLabel],
+    );
     const [name, setName] = useState(initial?.name ?? '');
     const [description, setDescription] = useState(initial?.description ?? '');
     const [baseRole, setBaseRole] = useState<Role>(initial?.baseRole ?? 'READER');
     const [permissions, setPermissions] = useState<PermissionSet>(
-        initial?.permissionsJson ?? getPermissionsForRole('READER'),
+        () => initial?.permissionsJson ?? withinHeld(getPermissionsForRole('READER'), held),
     );
     const [showGrid, setShowGrid] = useState(!!initial);
+
+    // Permissions this role grants that the editor does not hold. Only an
+    // existing role can have any (one an Owner built, say): the grid lets the
+    // editor turn them off but not on, and the server refuses the save while
+    // any remain, so the form says so and holds the button.
+    const exceeding = permissionsExceeding(permissions, held);
+    // Whether the grid will grey anything out for this editor at all.
+    const holdsLessThanAll = useMemo(
+        () => permissionsExceeding(getPermissionsForRole('OWNER'), held).length > 0,
+        [held],
+    );
 
     const handleBaseRoleChange = (role: Role) => {
         setBaseRole(role);
         if (!initial) {
-            setPermissions(getPermissionsForRole(role));
+            setPermissions(withinHeld(getPermissionsForRole(role), held));
         }
     };
 
@@ -265,9 +353,9 @@ function RoleForm({
                     <Combobox
                         hideSearch
                         id="role-base-select"
-                        selected={BASE_ROLE_OPTIONS.find(o => o.value === baseRole) ?? null}
+                        selected={baseRoleOptions.find(o => o.value === baseRole) ?? null}
                         setSelected={(opt) => { if (opt) handleBaseRoleChange(opt.value as Role); }}
-                        options={BASE_ROLE_OPTIONS}
+                        options={baseRoleOptions}
                         matchTriggerWidth
                     />
                     <p className="text-[10px] text-content-subtle mt-1">
@@ -291,6 +379,14 @@ function RoleForm({
                 />
             </div>
 
+            {exceeding.length > 0 && (
+                <InlineNotice variant="warning" id="role-exceeds-held">
+                    {t('roles.exceedsHeldNotice', {
+                        permissions: exceeding.map(labels.permission).join(', '),
+                    })}
+                </InlineNotice>
+            )}
+
             {/* Permission Grid */}
             <div>
                 <button
@@ -312,16 +408,21 @@ function RoleForm({
                                     <button
                                         key={r}
                                         type="button"
-                                        onClick={() => setPermissions(getPermissionsForRole(r))}
+                                        onClick={() => setPermissions(withinHeld(getPermissionsForRole(r), held))}
                                         className="text-[10px] px-2 py-0.5 rounded bg-bg-elevated/50 text-content-default hover:bg-bg-muted/50 transition"
                                         id={`preset-${r}`}
                                     >
-                                        {r}
+                                        {roleLabel(r)}
                                     </button>
                                 ))}
                             </div>
                         </div>
-                        <PermissionGrid permissions={permissions} onChange={setPermissions} />
+                        {holdsLessThanAll && (
+                            <p className="text-xs text-content-muted mb-3" id="roles-not-held-hint">
+                                {t('roles.notHeldHint')}
+                            </p>
+                        )}
+                        <PermissionGrid permissions={permissions} onChange={setPermissions} held={held} />
                     </div>
                 )}
             </div>
@@ -331,7 +432,7 @@ function RoleForm({
                     variant="primary"
                     type="button"
                     onClick={() => onSubmit({ name: name.trim(), description: description.trim(), baseRole, permissionsJson: permissions })}
-                    disabled={submitting || !name.trim()}
+                    disabled={submitting || !name.trim() || exceeding.length > 0}
                     loading={submitting}
                     id="role-submit-btn"
                 >
@@ -348,12 +449,17 @@ function RoleForm({
 // ─── Main Page ───
 
 export default function CustomRolesPage() {
-    const t = useTranslations('admin');
+    const labels = useRolesPageText();
+    const { t, roleLabel } = labels;
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
 
     const [roles, setRoles] = useState<CustomRole[]>([]);
     const [loading, setLoading] = useState(true);
+    // The role list did not load: the server's reason, shown IN PLACE of the
+    // table. Kept apart from `error` (an action's refusal) because an empty
+    // table under a failed load reads as "this workspace has no custom roles".
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
@@ -362,16 +468,24 @@ export default function CustomRolesPage() {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
+    // Delete confirmation
+    const [deleteTarget, setDeleteTarget] = useState<CustomRole | null>(null);
+    const [deleteOpen, setDeleteOpen] = useState(false);
+
     // ─── Data Fetching ───
     const fetchRoles = useCallback(async () => {
         try {
             const res = await fetch(apiUrl('/admin/roles'));
             if (res.ok) {
                 const data = await res.json();
-                setRoles(data.filter((r: CustomRole) => r.isActive));
+                setRoles(Array.isArray(data) ? data.filter((r: CustomRole) => r.isActive) : []);
+                setLoadError(null);
+            } else {
+                const body = await res.json().catch(() => null);
+                setLoadError(apiErrorMessage(body, t('roles.loadFailed')));
             }
         } catch {
-            setError(t('roles.loadFailed'));
+            setLoadError(t('roles.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -379,6 +493,20 @@ export default function CustomRolesPage() {
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { fetchRoles(); }, [fetchRoles]);
+
+    /**
+     * A refused create or update, in the user's language. The "you cannot
+     * grant what you do not hold" refusal names permissions by their keys,
+     * so it is re-said with the grid's labels; any other refusal is the
+     * server's own sentence.
+     */
+    const refusalMessage = (body: unknown, fallback: string): string => {
+        const exceeded = grantExceedingKeys(body);
+        if (exceeded && exceeded.length > 0) {
+            return t('roles.grantRefused', { permissions: exceeded.map(labels.permission).join(', ') });
+        }
+        return apiErrorMessage(body, fallback);
+    };
 
     // ─── Handlers ───
     async function handleCreate(data: { name: string; description: string; baseRole: Role; permissionsJson: PermissionSet }) {
@@ -392,8 +520,8 @@ export default function CustomRolesPage() {
                 body: JSON.stringify(data),
             });
             if (!res.ok) {
-                const err = await res.json().catch(() => ({ error: t('roles.createFailed') }));
-                setError(apiErrorMessage(err, t('roles.createFailed')));
+                const body = await res.json().catch(() => null);
+                setError(refusalMessage(body, t('roles.createFailed')));
                 return;
             }
             setSuccess(t('roles.createdSuccess', { name: data.name }));
@@ -417,8 +545,8 @@ export default function CustomRolesPage() {
                 body: JSON.stringify(data),
             });
             if (!res.ok) {
-                const err = await res.json().catch(() => ({ error: t('roles.updateFailed') }));
-                setError(apiErrorMessage(err, t('roles.updateFailed')));
+                const body = await res.json().catch(() => null);
+                setError(refusalMessage(body, t('roles.updateFailed')));
                 return;
             }
             setSuccess(t('roles.updatedSuccess', { name: data.name }));
@@ -431,19 +559,27 @@ export default function CustomRolesPage() {
         }
     }
 
-    async function handleDelete(role: CustomRole) {
-        const memberWarning = role._count.memberships > 0
-            ? t('roles.deleteMemberWarning', { count: role._count.memberships })
-            : '';
-        if (!confirm(t('roles.deleteConfirm', { name: role.name }) + memberWarning)) return;
-
+    /**
+     * Delete goes through a ConfirmDialog, not the Epic 67 undo toast. A
+     * custom role is access configuration, and deleting one changes what
+     * OTHER people may do: every member carrying it goes back to the role on
+     * their own membership, which can allow more than the custom role did.
+     * That has to be read before the commit, which a toast shown after the
+     * click cannot do, and once committed re-creating the role does not give
+     * it back to anyone (docs/destructive-actions.md, "When NOT to use this
+     * pattern"). The dialog's verb is "Delete", the destructive vocabulary for
+     * erasing a configuration.
+     */
+    async function performDelete() {
+        const role = deleteTarget;
+        if (!role) return;
         setError(null);
         setSuccess(null);
         try {
             const res = await fetch(apiUrl(`/admin/roles/${role.id}`), { method: 'DELETE' });
             if (!res.ok) {
-                const err = await res.json().catch(() => ({ error: t('roles.deleteFailed') }));
-                setError(apiErrorMessage(err, t('roles.deleteFailed')));
+                const body = await res.json().catch(() => null);
+                setError(apiErrorMessage(body, t('roles.deleteFailed')));
                 return;
             }
             const result = await res.json();
@@ -496,7 +632,7 @@ export default function CustomRolesPage() {
                 accessorKey: 'baseRole',
                 cell: ({ row }) => (
                     <StatusBadge variant={ROLE_COLORS[row.original.baseRole] || 'neutral'}>
-                        {row.original.baseRole}
+                        {roleLabel(row.original.baseRole)}
                     </StatusBadge>
                 ),
             },
@@ -556,7 +692,10 @@ export default function CustomRolesPage() {
                                 <Button
                                     variant="destructive"
                                     size="xs"
-                                    onClick={() => handleDelete(role)}
+                                    onClick={() => {
+                                        setDeleteTarget(role);
+                                        setDeleteOpen(true);
+                                    }}
                                     aria-label={t('roles.deleteRole')}
                                     id={`delete-role-${role.id}`}
                                 >
@@ -568,23 +707,30 @@ export default function CustomRolesPage() {
                 },
             },
         ]),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [t],
+        [t, roleLabel],
+    );
+
+    // The back link and breadcrumb, in every state — they rendered only while
+    // the page was loading (#4467).
+    const pageNav = (
+        <>
+            <BackAffordance />
+            <PageBreadcrumbs
+                items={[
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('roles.crumbSelf') },
+                ]}
+                className="mb-1"
+            />
+        </>
     );
 
     // ─── Loading ───
     if (loading) {
         return (
             <div className="space-y-section animate-fadeIn">
-                <BackAffordance />
-                <PageBreadcrumbs
-                    items={[
-                        { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
-                        { label: t('crumb.admin'), href: tenantHref('/admin') },
-                        { label: t('roles.crumbSelf') },
-                    ]}
-                    className="mb-1"
-                />
+                {pageNav}
                 <Heading level={2} className="flex items-center gap-tight">
                     <Shield className="w-6 h-6 text-[var(--brand-default)]" />
                     {t('roles.loading')}
@@ -600,16 +746,21 @@ export default function CustomRolesPage() {
 
     return (
         <ListPageShell>
-            <ListPageShell.Header>
+            <ListPageShell.Header className="space-y-default">
+                {pageNav}
                 <div className="flex items-center justify-between flex-wrap gap-default">
                     <div>
                         <Heading level={1} className="flex items-center gap-tight">
                             <Shield className="w-6 h-6 text-[var(--brand-default)]" />
                             {t('roles.title')}
                         </Heading>
-                        <p className="text-sm text-content-muted mt-1">
-                            {t('roles.headerDesc', { count: roles.length })}
-                        </p>
+                        {/* No count over a list that did not load: "0 custom
+                            roles" would be a claim the page cannot make. */}
+                        {!loadError && (
+                            <p className="text-sm text-content-muted mt-1">
+                                {t('roles.headerDesc', { count: roles.length })}
+                            </p>
+                        )}
                     </div>
                     {!showCreate && !editingId && (
                         <Button
@@ -684,17 +835,44 @@ export default function CustomRolesPage() {
                     for the E2E + analytics selectors that depend on
                     it. */}
                 <div id="roles-table-card">
-                    <DataTable
-                        fillBody
-                        data={visibleRoles}
-                        columns={roleColumns}
-                        getRowId={(r) => r.id}
-                        emptyState={t('roles.emptyState')}
-                        resourceName={(p) => (p ? t('roles.rolesPlural') : t('roles.roleSingular'))}
-                        data-testid="roles-table"
-                    />
+                    {loadError ? (
+                        // A failed load is never "No custom roles defined
+                        // yet": the list is unknown, and the server's reason
+                        // says why.
+                        <ErrorState
+                            title={t('roles.loadFailed')}
+                            description={loadError !== t('roles.loadFailed') ? loadError : undefined}
+                            onRetry={() => { void fetchRoles(); }}
+                            data-testid="roles-load-error"
+                        />
+                    ) : (
+                        <DataTable
+                            fillBody
+                            data={visibleRoles}
+                            columns={roleColumns}
+                            getRowId={(r) => r.id}
+                            emptyState={t('roles.emptyState', { button: t('roles.addRole') })}
+                            resourceName={(p) => (p ? t('roles.rolesPlural') : t('roles.roleSingular'))}
+                            selectionEnabled={false}
+                            data-testid="roles-table"
+                        />
+                    )}
                 </div>
             </ListPageShell.Body>
+
+            <ConfirmDialog
+                showModal={deleteOpen}
+                setShowModal={setDeleteOpen}
+                tone="danger"
+                title={deleteTarget ? t('roles.deleteTitle', { name: deleteTarget.name }) : ''}
+                description={
+                    deleteTarget && deleteTarget._count.memberships > 0
+                        ? `${t('roles.deleteDesc')} ${t('roles.deleteMemberWarning', { count: deleteTarget._count.memberships })}`
+                        : t('roles.deleteDesc')
+                }
+                confirmLabel={t('roles.deleteConfirmLabel')}
+                onConfirm={performDelete}
+            />
         </ListPageShell>
     );
 }

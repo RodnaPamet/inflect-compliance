@@ -818,10 +818,21 @@ export async function syncConnection(
     if (!connection) throw notFound('Connection not found or disabled');
 
     // Identity providers: run the directory sync (populates ConnectedIdentityAccount).
-    let identity: { status: string; upserted: number; deprovisioned: number } | null = null;
+    //
+    // `errorMessage` rides along when the sync recorded one (#4466). An ERROR or
+    // PARTIAL sync returns normally rather than throwing, so without it the page
+    // that pressed "Sync now" could say the directory read failed but not why —
+    // and the reason is only otherwise on the execution row. It is the same
+    // sentence the sync wrote there, served to the same admin.manage holder.
+    let identity: { status: string; upserted: number; deprovisioned: number; errorMessage?: string } | null = null;
     if (IDENTITY_SYNC_PROVIDERS.has(connection.provider)) {
         const res = await runIdentitySync({ tenantId: ctx.tenantId, connectionId: connection.id });
-        identity = { status: res.status, upserted: res.upserted, deprovisioned: res.deprovisioned };
+        identity = {
+            status: res.status,
+            upserted: res.upserted,
+            deprovisioned: res.deprovisioned,
+            ...(res.errorMessage ? { errorMessage: res.errorMessage } : {}),
+        };
     }
 
     /**
@@ -853,10 +864,16 @@ export async function syncConnection(
      * A contended click therefore returns SKIPPED rather than queueing or
      * racing, which is the honest answer: another run is already doing this.
      */
-    let hris: { status: string; upserted: number; managersLinked: number } | null = null;
+    let hris: { status: string; upserted: number; managersLinked: number; errorMessage?: string } | null = null;
     if (isHrisProviderId(connection.provider)) {
         const res = await runHrisSyncJob({ tenantId: ctx.tenantId, connectionId: connection.id });
-        hris = { status: res.status, upserted: res.upserted, managersLinked: res.managersLinked };
+        hris = {
+            status: res.status,
+            upserted: res.upserted,
+            managersLinked: res.managersLinked,
+            // Same reason as the identity arm above.
+            ...(res.errorMessage ? { errorMessage: res.errorMessage } : {}),
+        };
     }
 
     // Run every control wired to this provider's automation keys (`provider.check`).

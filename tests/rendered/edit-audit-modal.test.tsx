@@ -18,7 +18,7 @@
  */
 
 import React from 'react';
-import { render, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, fireEvent, act, waitFor, screen } from '@testing-library/react';
 
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme-corp' }),
@@ -93,6 +93,7 @@ const AUDIT = {
     criteria: 'ISO 27001:2022',
     schedule: null as string | null,
     departments: 'Engineering',
+    auditors: 'Jane Auditor',
     frameworkKey: 'ISO27001',
     auditCycleId: null as string | null,
 };
@@ -254,6 +255,49 @@ describe('EditAuditModal — what reaches the wire', () => {
         await submit();
 
         expect(save).not.toHaveBeenCalled();
+    });
+});
+
+describe('EditAuditModal — the auditors', () => {
+    // Collected by the create form and then never shown or editable: once
+    // saved, the auditors could only be read or changed through the API.
+    it('is seeded with the audit\'s auditors and sends an edit, trimmed', async () => {
+        const { save } = mount();
+        await waitFor(() => expect(document.querySelector('#edit-audit-auditors')).toBeTruthy());
+        const input = document.querySelector('#edit-audit-auditors') as HTMLInputElement;
+        expect(input.value).toBe('Jane Auditor');
+
+        await act(async () => {
+            fireEvent.change(input, { target: { value: '  Jane Auditor, Raj Reviewer  ' } });
+        });
+        await submit();
+
+        expect(save.mock.calls[0][0].auditors).toBe('Jane Auditor, Raj Reviewer');
+    });
+
+    it('an emptied auditors field clears the column with null', async () => {
+        const { save } = mount();
+        await waitFor(() => expect(document.querySelector('#edit-audit-auditors')).toBeTruthy());
+        await act(async () => {
+            fireEvent.change(document.querySelector('#edit-audit-auditors')!, { target: { value: '  ' } });
+        });
+        await submit();
+
+        expect(save.mock.calls[0][0].auditors).toBeNull();
+    });
+});
+
+describe('EditAuditModal — the cycle picker', () => {
+    it('names each cycle\'s framework, not its key', async () => {
+        mount();
+        await waitFor(() =>
+            expect(requestedUrls.some((u) => u.endsWith('/frameworks'))).toBe(true),
+        );
+        await act(async () => {
+            fireEvent.click(document.querySelector('#edit-audit-cycle')!);
+        });
+        expect(await screen.findByRole('option', { name: 'Surveillance 2026 · ISO/IEC 27001' })).toBeTruthy();
+        expect(screen.queryByRole('option', { name: 'Surveillance 2026 · ISO27001' })).toBeNull();
     });
 });
 
