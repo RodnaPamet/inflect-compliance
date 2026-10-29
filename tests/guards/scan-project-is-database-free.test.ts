@@ -81,11 +81,11 @@ function walk(dir: string): string[] {
     const abs = path.join(ROOT, dir);
     if (!fs.existsSync(abs)) return [];
     const out: string[] = [];
-    for (const e of fs.readdirSync(abs, { withFileTypes: true, recursive: true } as never) as fs.Dirent[]) {
+    for (const e of fs.readdirSync(abs, { withFileTypes: true, recursive: true })) {
         if (!e.isFile() || !e.name.endsWith('.test.ts')) continue;
-        const parent = (e as unknown as { parentPath?: string; path?: string }).parentPath
-            ?? (e as unknown as { path: string }).path;
-        out.push(path.join(parent, e.name));
+        // `parentPath` replaced the deprecated `path` in Node 20.12/21.4, and
+        // this @types/node no longer declares the alias — so no fallback.
+        out.push(path.join(e.parentPath, e.name));
     }
     return out;
 }
