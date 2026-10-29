@@ -172,8 +172,14 @@ function VulnerabilitiesInner({ initialRows, truncated, cap, scope, tenantSlug, 
         t(k as Parameters<typeof t>[0], v as Parameters<typeof t>[1]);
     const statusLabels = useMemo(() => buildVulnStatusLabels(tAdapt), [t]);
     // Stored codes render as labels (#4465); an unknown code shows as itself.
-    const severityLabels = useMemo(() => buildVulnSeverityLabels(tAdapt), [t]);
-    const matchedViaLabels = useMemo(() => buildVulnMatchedViaLabels(tAdapt), [t]);
+    const severityLabels = useMemo(
+        () => buildVulnSeverityLabels((k) => t(k as Parameters<typeof t>[0])),
+        [t],
+    );
+    const matchedViaLabels = useMemo(
+        () => buildVulnMatchedViaLabels((k) => t(k as Parameters<typeof t>[0])),
+        [t],
+    );
     const filterDefs = useMemo(
         () => buildVulnFilters(tAdapt, (k) => tGroup(k as Parameters<typeof tGroup>[0])),
         [t, tGroup],
