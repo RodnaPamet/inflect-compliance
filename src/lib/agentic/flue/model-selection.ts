@@ -59,6 +59,27 @@ export const FLUE_PROVIDER_IDS = {
     local: 'inflect-local',
 } as const;
 
+/**
+ * The provider id a specifier routes to — the one definition (#3872).
+ *
+ * A specifier is `<providerId>/<model>`, built in `resolveFlueModel` below and
+ * nowhere else. The external-residency gate has to know whether a run's model
+ * calls leave the deployment, and `modelSpecifier.split('/')[0]` at its call
+ * site would be a second opinion about the shape — which is the kind of
+ * duplication the `RESIDENCY_SELECT` note below records as the one that
+ * actually bites.
+ *
+ * A specifier with no `/` yields the whole string, which matches no registered
+ * provider id, so an unparseable specifier is treated as "not the external
+ * provider" by the gate and as unregistered by `flueModelIsRegistered` — the
+ * run does not start at all, which is the right outcome and not this
+ * function's to make.
+ */
+export function providerIdOf(specifier: string): string {
+    const slash = specifier.indexOf('/');
+    return slash === -1 ? specifier : specifier.slice(0, slash);
+}
+
 /** The per-tenant terms, mirroring `ProviderSelection` in `ai/risk-assessment`. */
 export interface FlueModelSelection {
     residency?: 'EXTERNAL' | 'LOCAL_ONLY' | null;
