@@ -21,7 +21,10 @@
  *   5. a failed load reads as an error — not as an empty register, not as the
  *      previous filter's rows — and the KPI cards are right on first paint;
  *   6. Criticality and Risk sort by level, and the sub-processor flag has the
- *      column the code said it had.
+ *      column the code said it had;
+ *   7. a Website URL that is not a full address says so, instead of Create
+ *      Vendor greying out with no reason, and no field accepts more than the
+ *      server will.
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -602,5 +605,40 @@ describe('Vendors list — the sub-processor column', () => {
             (screen.getByText(name).closest('tr') as HTMLElement).children[at]?.textContent;
         expect(cellOf('Med Co')).toBe(V.detail.subprocessor);
         expect(cellOf('Low Co')).toBe('—');
+    });
+});
+
+// ─── 7. The create form says why it cannot submit ───────────────────
+
+describe('Vendors list — the create form explains a bad Website URL', () => {
+    it('`acme.com` shows the URL error once the field is left, and Create Vendor stays off', async () => {
+        await mountAs('EDITOR');
+        const name = await openCreateDialog();
+        fireEvent.change(name, { target: { value: 'Acme' } });
+        const website = document.getElementById('vendor-website') as HTMLInputElement;
+        fireEvent.change(website, { target: { value: 'acme.com' } });
+        // Not while typing — a half-typed https:// is not a mistake yet.
+        expect(screen.queryByText(V.form.websiteUrlInvalid)).toBeNull();
+        fireEvent.blur(website);
+        expect(await screen.findByText(V.form.websiteUrlInvalid)).toBeInTheDocument();
+        expect(website).toHaveAttribute('aria-invalid', 'true');
+        expect(document.getElementById('create-vendor-submit')).toBeDisabled();
+
+        // A full address clears it and lets the form submit.
+        fireEvent.change(website, { target: { value: 'https://acme.com' } });
+        await waitFor(() => expect(screen.queryByText(V.form.websiteUrlInvalid)).toBeNull());
+        expect(document.getElementById('create-vendor-submit')).not.toBeDisabled();
+    });
+
+    it('caps each text field at the server\'s length', async () => {
+        await mountAs('EDITOR');
+        await openCreateDialog();
+        const max = (id: string) => document.getElementById(id)?.getAttribute('maxlength');
+        expect(max('vendor-name-input')).toBe('200');
+        expect(max('vendor-legal-name')).toBe('300');
+        expect(max('vendor-website')).toBe('500');
+        expect(max('vendor-domain')).toBe('200');
+        expect(max('vendor-country')).toBe('100');
+        expect(max('vendor-description')).toBe('5000');
     });
 });

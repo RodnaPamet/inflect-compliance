@@ -6,7 +6,8 @@
  * the YYYY-MM-DD `.refine()`, the data-access `.refine()`, the two
  * required enums, and the required `name` min/max branches.
  */
-import { NewVendorFormSchema } from '@/lib/schemas/vendor-form';
+import { NewVendorFormSchema, VENDOR_FIELD_MAX } from '@/lib/schemas/vendor-form';
+import { CreateVendorSchema } from '@/lib/schemas';
 
 describe('NewVendorFormSchema', () => {
     const minimalValid = {
@@ -67,11 +68,33 @@ describe('NewVendorFormSchema', () => {
         );
     });
 
-    // name max(255)
+    // name max — the server's 200, not the 255 the form used to allow
     it('rejects an over-long name', () => {
         expect(
-            NewVendorFormSchema.safeParse({ ...minimalValid, name: 'a'.repeat(256) }).success,
+            NewVendorFormSchema.safeParse({ ...minimalValid, name: 'a'.repeat(201) }).success,
         ).toBe(false);
+    });
+
+    // #4462 — the form and the server agree on every length limit. The form
+    // allowed more (name 255, website 1024, …), and a value between the two
+    // limits came back from the server as "Invalid request payload".
+    describe('length limits are the server\'s (CreateVendorSchema)', () => {
+        const valueOf = (field: keyof typeof VENDOR_FIELD_MAX, length: number) =>
+            field === 'websiteUrl'
+                ? 'https://e.com/' + 'a'.repeat(length - 'https://e.com/'.length)
+                : 'a'.repeat(length);
+
+        it.each(Object.entries(VENDOR_FIELD_MAX) as Array<[keyof typeof VENDOR_FIELD_MAX, number]>)(
+            '%s: both accept %i characters and both refuse one more',
+            (field, max) => {
+                const atMax = valueOf(field, max);
+                const over = valueOf(field, max + 1);
+                expect(NewVendorFormSchema.safeParse({ ...minimalValid, [field]: atMax }).success).toBe(true);
+                expect(CreateVendorSchema.safeParse({ name: 'Acme', [field]: atMax }).success).toBe(true);
+                expect(NewVendorFormSchema.safeParse({ ...minimalValid, [field]: over }).success).toBe(false);
+                expect(CreateVendorSchema.safeParse({ name: 'Acme', [field]: over }).success).toBe(false);
+            },
+        );
     });
 
     // criticality enum branch
@@ -106,12 +129,12 @@ describe('NewVendorFormSchema', () => {
         ).toBe(false);
     });
 
-    // optionalUrl max(1024)
+    // optionalUrl max — the server's 500
     it('rejects an over-long websiteUrl', () => {
         expect(
             NewVendorFormSchema.safeParse({
                 ...minimalValid,
-                websiteUrl: 'https://e.com/' + 'a'.repeat(1024),
+                websiteUrl: 'https://e.com/' + 'a'.repeat(500),
             }).success,
         ).toBe(false);
     });

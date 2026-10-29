@@ -28,12 +28,29 @@
  */
 import { z } from 'zod';
 
+/**
+ * The server's length limits (`CreateVendorSchema` in `src/lib/schemas`),
+ * restated here because that module is backend-only. The form used larger
+ * ones (name 255, website 1024, …), so a value inside the form's limit and
+ * outside the server's came back as "Invalid request payload" (#4462). The
+ * fields also pass these as `maxLength`, so the limit cannot be typed past.
+ * `tests/unit/schemas/vendor-form-schema.test.ts` holds the two in step.
+ */
+export const VENDOR_FIELD_MAX = {
+    name: 200,
+    legalName: 300,
+    websiteUrl: 500,
+    domain: 200,
+    country: 100,
+    description: 5000,
+} as const;
+
 // Empty-string-tolerant URL — pre-B6 the hand-rolled validator only
 // inserted the field when non-empty; that semantic is preserved.
 const optionalUrl = z
     .string()
     .trim()
-    .max(1024)
+    .max(VENDOR_FIELD_MAX.websiteUrl)
     .refine(
         (v) => {
             if (!v) return true;
@@ -55,12 +72,12 @@ const optionalYmd = z
     });
 
 export const NewVendorFormSchema = z.object({
-    name: z.string().trim().min(1, 'Vendor name is required').max(255),
-    legalName: z.string().trim().max(255).default(''),
+    name: z.string().trim().min(1, 'Vendor name is required').max(VENDOR_FIELD_MAX.name),
+    legalName: z.string().trim().max(VENDOR_FIELD_MAX.legalName).default(''),
     websiteUrl: optionalUrl.default(''),
-    domain: z.string().trim().max(255).default(''),
-    country: z.string().trim().max(255).default(''),
-    description: z.string().trim().max(4000).default(''),
+    domain: z.string().trim().max(VENDOR_FIELD_MAX.domain).default(''),
+    country: z.string().trim().max(VENDOR_FIELD_MAX.country).default(''),
+    description: z.string().trim().max(VENDOR_FIELD_MAX.description).default(''),
     criticality: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
     dataAccess: z
         .string()

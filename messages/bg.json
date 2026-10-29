@@ -7381,6 +7381,8 @@
       "domain": "Домейн",
       "domainPlaceholder": "напр. aws.amazon.com",
       "websiteUrl": "Уеб адрес",
+      "websiteUrlPlaceholder": "https://example.com",
+      "websiteUrlInvalid": "Въведете пълен уеб адрес, започващ с https:// (например https://acme.com).",
       "country": "Държава",
       "description": "Описание",
       "status": "Статус",

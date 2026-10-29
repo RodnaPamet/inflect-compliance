@@ -7381,6 +7381,8 @@
       "domain": "Domain",
       "domainPlaceholder": "e.g. aws.amazon.com",
       "websiteUrl": "Website URL",
+      "websiteUrlPlaceholder": "https://example.com",
+      "websiteUrlInvalid": "Enter a full web address, starting with https:// (for example https://acme.com).",
       "country": "Country",
       "description": "Description",
       "status": "Status",

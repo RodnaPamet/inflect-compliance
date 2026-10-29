@@ -15,6 +15,7 @@ import {
     startOfUtcDay,
     toYMD,
 } from '@/components/ui/date-picker/date-utils';
+import { VENDOR_FIELD_MAX } from '@/lib/schemas/vendor-form';
 import type { NewVendorFormFields, NewVendorFormReturn } from './useNewVendorForm';
 
 export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
@@ -38,6 +39,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                     id="vendor-name-input"
                     value={form.fields.name}
                     onChange={(e) => form.setField('name', e.target.value)}
+                    maxLength={VENDOR_FIELD_MAX.name}
                     required
                 />
             </FormField>
@@ -48,6 +50,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                         id="vendor-legal-name"
                         value={form.fields.legalName}
                         onChange={(e) => form.setField('legalName', e.target.value)}
+                        maxLength={VENDOR_FIELD_MAX.legalName}
                     />
                 </FormField>
                 <FormField label={t('form.domain')}>
@@ -56,17 +59,28 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                         value={form.fields.domain}
                         onChange={(e) => form.setField('domain', e.target.value)}
                         placeholder={t('form.domainPlaceholder')}
+                        maxLength={VENDOR_FIELD_MAX.domain}
                     />
                 </FormField>
             </div>
 
             <div className="grid grid-cols-2 gap-default">
-                <FormField label={t('form.websiteUrl')}>
+                {/* A value that is not a full URL (`acme.com`) fails the
+                    schema, which disables Create Vendor. The field used to
+                    render no error, so the button greyed out with nothing to
+                    say why (#4462). The error shows once the field is left. */}
+                <FormField
+                    label={t('form.websiteUrl')}
+                    error={form.fieldError('websiteUrl') ? t('form.websiteUrlInvalid') : undefined}
+                >
                     <Input
                         id="vendor-website"
                         type="url"
                         value={form.fields.websiteUrl}
                         onChange={(e) => form.setField('websiteUrl', e.target.value)}
+                        onBlur={() => form.touchField('websiteUrl')}
+                        placeholder={t('form.websiteUrlPlaceholder')}
+                        maxLength={VENDOR_FIELD_MAX.websiteUrl}
                     />
                 </FormField>
                 <FormField label={t('form.country')}>
@@ -74,6 +88,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                         id="vendor-country"
                         value={form.fields.country}
                         onChange={(e) => form.setField('country', e.target.value)}
+                        maxLength={VENDOR_FIELD_MAX.country}
                     />
                 </FormField>
             </div>
@@ -84,6 +99,7 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
                     className="h-20"
                     value={form.fields.description}
                     onChange={(e) => form.setField('description', e.target.value)}
+                    maxLength={VENDOR_FIELD_MAX.description}
                 />
             </FormField>
 
