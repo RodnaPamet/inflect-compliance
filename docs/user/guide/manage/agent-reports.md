@@ -21,7 +21,7 @@ Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choo
 | Register a shadow agent | Owner, Admin, AI admin |
 | Accept or renew an agent's harness shortfall | The agent's accountable owner, when they are an Owner, Admin or AI admin |
 
-Editors and Readers see **{{ui:agents.register.accessTitle}}** instead of the page. Auditors read both tabs without any of their buttons. The approvals report links to the review-quality page, which Auditors cannot open.
+Editors and Readers see **{{ui:agents.register.accessTitle}}** instead of the page. Auditors read both tabs without any of their buttons, and without the approvals report's link to the review-quality page, which they cannot open.
 
 If your workspace uses custom roles, what you can do depends on the permissions your role was given. Filing the pack also needs permission to edit evidence.
 
@@ -41,7 +41,7 @@ Use the pack when an auditor or assessor asks how your agents are governed: what
 - **The stamp**: {{ui:agents.reports.stampTenant}}, {{ui:agents.reports.stampGenerated}} and {{ui:agents.reports.stampPopulation}}, so a screenshot carries its own context.
 - **{{ui:agents.reports.inventoryHeading}}.** Counts over the registered agents.
 - **{{ui:agents.reports.asiHeading}}.** How far this workspace's own controls cover the OWASP risks for agents, and for each agent the risks **not covered** and those **claimed but unverified**. A note explains that this is not the product's own coverage figure. Without the OWASP agentic framework installed, a warning says nothing could be measured.
-- **{{ui:agents.reports.approvalsHeading}}.** How agent proposals were decided and how often a second reviewer disagreed, with a list of what this report cannot see and the link **{{ui:agents.reports.approvalsDetailLink}}**.
+- **{{ui:agents.reports.approvalsHeading}}.** How agent proposals were decided and how often a second reviewer disagreed, with a list of what this report cannot see and, for roles that can open the review-quality page, the link **{{ui:agents.reports.approvalsDetailLink}}**.
 - **{{ui:agents.reports.incidentsHeading}}.** Kill-switch drills and engagements, then each kill switch engaged in the window: the agent, or **{{ui:agents.reports.killScopeTenant}}**, when it was engaged, the reason given, and **{{ui:agents.reports.killStillInForce}}** where it applies.
 - **{{ui:agents.reports.thirdPartyHeading}}.** Each third-party agent with its supplier, linked to the vendor, and the date of the supplier's last completed assessment, or **{{ui:agents.reports.thirdPartyUnassessed}}**. An agent with no supplier is flagged in red.
 - **{{ui:agents.reports.workpaperReviewHeading}}.** How often internal audit agreed with the auditor agent's workpapers it re-performed. Only concluded reviews count.
@@ -58,7 +58,7 @@ A note at the top says the levels are reported, never enforced: an agent below i
 - **{{ui:agents.harness.scansHeading}}**, every recent scan with its scanner, completeness and sources.
 - **{{ui:agents.harness.keys.heading}}**, for roles that can manage the register. Only a report signed by a key listed here counts.
 
-Source names on this tab appear as short codes, such as entra-sp or okta-app.
+Sources on this tab are named as the estate form names them, such as **{{ui:agents.harness.estates.form.kind.entra-sp}}** or **{{ui:agents.harness.estates.form.kind.okta-app}}**.
 
 ## What you can do
 

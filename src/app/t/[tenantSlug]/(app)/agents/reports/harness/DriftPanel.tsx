@@ -16,6 +16,8 @@ import { Heading } from '@/components/ui/typography';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import type { HarnessScannerSection } from '@/lib/agentic/harness-read-model';
 
+import { sourceKindLabel } from './source-kind-label';
+
 /** Entries shown per list before "+N more". */
 const LIST_LIMIT = 50;
 
@@ -72,9 +74,12 @@ export function DriftPanel({ section, scanWindow }: { section: HarnessScannerSec
     const sourceLines: Line[] = [
         ...drift.sourcesGoneIncomplete.map((s) => ({
             key: `gone:${s.kind}`,
-            text: t('harness.sourceGoneIncompleteLine', { kind: s.kind, reason: reasonOf(s.reason) }),
+            text: t('harness.sourceGoneIncompleteLine', { kind: sourceKindLabel(t, s.kind), reason: reasonOf(s.reason) }),
         })),
-        ...drift.sourcesDropped.map((kind) => ({ key: `dropped:${kind}`, text: t('harness.sourceDropped', { kind }) })),
+        ...drift.sourcesDropped.map((kind) => ({
+            key: `dropped:${kind}`,
+            text: t('harness.sourceDropped', { kind: sourceKindLabel(t, kind) }),
+        })),
     ];
 
     return (
