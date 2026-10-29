@@ -1007,6 +1007,54 @@ describe('control test deadlines vs implementation status', () => {
     });
 });
 
+describe('vulnerability remediation dates vs vulnerability status (#4465)', () => {
+    const PAST = new Date('2026-05-15T00:00:00Z'); // inside [FROM, TO], before NOW
+
+    const row = (id: string, status: string) => ({
+        id,
+        cveId: `CVE-${id}`,
+        status,
+        remediationDueAt: PAST,
+        ownerUserId: null,
+        assetId: 'a-1',
+        asset: { name: 'Web server' },
+    });
+
+    it('a MITIGATED, ACCEPTED or FALSE_POSITIVE vulnerability is done; OPEN and MITIGATING are overdue', async () => {
+        mockAssetVulnerabilityFindMany.mockResolvedValue([
+            row('open', 'OPEN'),
+            row('mitigating', 'MITIGATING'),
+            row('mitigated', 'MITIGATED'),
+            row('accepted', 'ACCEPTED'),
+            row('fp', 'FALSE_POSITIVE'),
+        ]);
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        const res = await getComplianceCalendarEvents(makeCtx() as never, { from: FROM, to: TO, now: NOW });
+        const byId = Object.fromEntries(
+            res.events.filter((e) => e.entityType === 'ASSET_VULNERABILITY').map((e) => [e.entityId, e.status]),
+        );
+        expect(byId).toEqual({
+            open: 'overdue',
+            mitigating: 'overdue',
+            mitigated: 'done',
+            accepted: 'done',
+            fp: 'done',
+        });
+    });
+
+    it('the closing set names only real vulnerability statuses', async () => {
+        const { REMEDIATION_CLOSED_VULN_STATUSES, VULN_STATUSES } = await import(
+            '@/app-layer/domain/vulnerability-status'
+        );
+        // It counted `RESOLVED`, which no vulnerability can hold.
+        for (const s of REMEDIATION_CLOSED_VULN_STATUSES) {
+            expect(VULN_STATUSES as readonly string[]).toContain(s);
+        }
+    });
+});
+
 // ─── Second-order correctness ────────────────────────────────────────
 //
 // Each of these is a place the calendar reported confidently and was wrong.
