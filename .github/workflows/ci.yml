@@ -359,6 +359,75 @@ jobs:
   #  Job 1: Lint — ESLint + Next.js lint rules
   #  Fast, no DB needed. Fails immediately on lint errors.
   # ═══════════════════════════════════════════════════════════════
+  change-class:
+    name: Change class
+    # THE POLICY'S OWN FOLLOW-UP, BUILT (#4437).
+    #
+    # `docs/change-management-policy.md` required a rollback plan and a risk
+    # assessment on a SIGNIFICANT change and said enforcement was human review,
+    # because the gate "needs PR-metadata access that the current structural
+    # ratchets (file scanners) do not have". True of the ratchets; a workflow
+    # step has it, and `branch-freshness.yml` already reads the same context.
+    #
+    # It requires the ANALYSIS, never a `Sign-off:` line. The owner waiver of
+    # 2026-08-18 made the countersignature optional for assistant-driven PRs
+    # while keeping the analysis mandatory, so gating on `Sign-off:` would block
+    # exactly the PRs that waiver exists to unblock.
+    #
+    # RUNS ON merge_group TOO, and exits 0 there. A required check that simply
+    # does not run in the queue is ABSENT, and an absent check scores as zero
+    # failures — so it would silently stop gating at the point of merge. The
+    # queue ref carries no `pull_request` context to read, so the PR-level run
+    # is the gate and this reports rather than vanishing.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Shallow: only the script is needed from the tree. The CHANGED FILES
+      # come from the API below rather than a local diff, which is why there is
+      # no `fetch-depth: 0` here — a full clone of this repo to compute a list
+      # GitHub already holds is minutes of IO for nothing.
+      - uses: actions/checkout@v7
+      # Plain `setup-node`, NOT `setup-node-prisma`. The script imports only
+      # `node:fs` — proved by running its self-test 15/15 in a directory with
+      # no `package.json` and no `node_modules` — so `npm ci` plus a
+      # `prisma generate` would be minutes of work per PR for nothing, and
+      # would put this job's failure behind two unrelated retry loops
+      # (registry ECONNRESET, the Roadmap-27 prisma SIGILL). A gate that can
+      # fail for reasons unconnected to what it gates is a flaky required
+      # check, which is worse than no check.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Before trusting it: a classifier that answered "not significant" for
+      # everything would pass every PR and gate nothing. Its self-test pins both
+      # directions, and this step is deliberately blocking.
+      - name: Self-test the change classifier
+        run: node scripts/check-significant-change-analysis.mjs --self-test
+      - name: Require the rollback plan and risk assessment
+        # The body and title go through `env`, never into `run` via `${{ }}`:
+        # a PR description is attacker-controlled text, and interpolating it
+        # into a shell would execute whatever it contains.
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "Event is $EVENT, which carries no PR description."
+            echo "The gate runs on the pull request; this reports so the check is never ABSENT."
+            exit 0
+          fi
+          printf '%s' "$PR_BODY" > pr-body.txt
+          # `--paginate` is load-bearing: this endpoint returns 30 files a page,
+          # so without it a PR touching more than 30 files silently reports a
+          # TRUNCATED list — and a truncated list is how `prisma/` goes missing
+          # from a big change and the gate passes it.
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > pr-files.txt
+          node scripts/check-significant-change-analysis.mjs pr-body.txt pr-files.txt --title "$PR_TITLE"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

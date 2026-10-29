@@ -157,12 +157,30 @@ The durable record an auditor can request, all retained for the life of the repo
   semantic-release, with the PR and commit linked). A release can batch several
   merges, so every merged PR is listed within a day of merging.
 - **SIGNIFICANT+ sign-off** = the second approver's PR review, OR a PR comment /
-  description line of the form `Sign-off: <name> (<reason>)`. Enforcement today is
-  human PR review; a CI gate that blocks a SIGNIFICANT+ PR (conventional-commit
-  `feat!:`, or any diff touching `prisma/schema/`) lacking a `Sign-off:` line is a
-  documented follow-up — it needs PR-metadata access that the current structural
-  ratchets (file scanners) do not have, so it is intentionally not retrofitted
-  here.
+  description line of the form `Sign-off: <name> (<reason>)`. The countersignature
+  is still human PR review.
+- **The analysis is gated in CI** (#4437). The `Change class` job in `ci.yml`
+  classifies a PR from its diff and title and fails it when a SIGNIFICANT change
+  carries no rollback plan and no risk assessment, via
+  `scripts/check-significant-change-analysis.mjs`.
+
+  This paragraph used to describe such a gate as a follow-up, on the grounds that
+  it needed PR metadata the structural ratchets (file scanners) could not reach.
+  That was true of the ratchets and not of a workflow step —
+  `branch-freshness.yml` had been reading `github.event.pull_request` all along.
+  What prompted building it was #4436: a migration that shipped with neither
+  section while every check stayed green.
+
+  Two deliberate differences from the gate originally described here:
+
+  - It requires the **analysis**, never a `Sign-off:` line. The owner waiver
+    below made the countersignature optional for assistant-driven PRs while
+    keeping the analysis mandatory, so a gate on `Sign-off:` would block exactly
+    the PRs that waiver exists to unblock.
+  - It triggers on `prisma/`, not `prisma/schema/`. #4436 touched only
+    `prisma/migrations/` and was squarely SIGNIFICANT by the table above — and a
+    migration is the irreversible case, so the directory holding them cannot be
+    the one left out.
 - **Owner waiver for assistant-driven PRs** (2026-08-18). The repo owner has
   instructed Claude Code sessions not to hold a green PR waiting on the owner's
   `Sign-off:`, including SIGNIFICANT ones. Those PRs are merged once every

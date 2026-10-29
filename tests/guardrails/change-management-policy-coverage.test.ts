@@ -69,4 +69,45 @@ describe('change-management-policy doc', () => {
         const bullets = body.match(/^- \*\*/gm) ?? [];
         expect(bullets.length).toBeGreaterThanOrEqual(3);
     });
+
+    // ── THE DOC AND ITS GATE CANNOT DRIFT APART (#4437) ──────────────────
+    //
+    // The policy described a CI gate on SIGNIFICANT changes as an unbuildable
+    // follow-up for months, on a reason that was true of file scanners and not
+    // of a workflow step. The gate exists now, and the risk flips: the prose
+    // could outlive it, or the gate could be deleted while the prose still
+    // promises it. These three assertions pin them to each other.
+
+    it('names the SIGNIFICANT gate it relies on, and that gate exists', () => {
+        expect(doc).toMatch(/scripts\/check-significant-change-analysis\.mjs/);
+        expect(fs.existsSync(path.join(ROOT, 'scripts/check-significant-change-analysis.mjs'))).toBe(true);
+    });
+
+    it('the gate is a real job in ci.yml, self-tested before it is trusted', () => {
+        const ci = fs.readFileSync(path.join(ROOT, '.github/workflows/ci.yml'), 'utf-8');
+        expect(ci).toMatch(/^ {2}change-class:$/m);
+        // Its classifier decides whether any PR is gated at all, so a broken
+        // one gates nothing silently. The self-test runs first, and blocking.
+        expect(ci).toMatch(/check-significant-change-analysis\.mjs --self-test/);
+        // It must still REPORT in the queue: a required check that does not run
+        // under `merge_group` is ABSENT, and absence scores as zero failures.
+        const job = /^ {2}change-class:$/m.exec(ci)?.index ?? -1;
+        expect(job).toBeGreaterThan(-1);
+        const block = ci.slice(job, job + 3000);
+        expect(block).toMatch(/merge_group|pull_request/);
+    });
+
+    it('presents the gate as built, not as a follow-up', () => {
+        // Tested as an ACTIVE CLAIM rather than as the absence of a phrase.
+        // The first draft of this test forbade the old justification outright
+        // and failed on the policy's own history note, which QUOTES it — the
+        // quote is the useful part, so the assertion was wrong, not the doc.
+        //
+        // So: the doc must state the gate exists (positive), and must not
+        // describe it as pending (the active claim). A paragraph explaining
+        // what it used to say stays legal.
+        expect(doc).toMatch(/fails it when a SIGNIFICANT change/);
+        expect(doc).not.toMatch(/is a\s+documented follow-up/);
+        expect(doc).not.toMatch(/intentionally not retrofitted/);
+    });
 });
