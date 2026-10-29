@@ -25,7 +25,7 @@ Only Owners and Admins see **{{ui:accessReviews.newCampaign}}**. Nobody records 
 
 Every role sees every campaign in the list. Inside a campaign that reviews registered agents, the agents themselves are shown only to the campaign's reviewer and to members who can read the agent register.
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given. The **{{ui:accessReviews.newCampaign}}** button appears only when both those permissions and the built-in role your custom role is based on allow you to start a campaign.
+If your workspace uses custom roles, what you can do depends on the permissions your role was given. A custom role without permission to view access reviews sees **{{ui:panels.forbidden.title}}** instead of the list and instead of any campaign. The **{{ui:accessReviews.newCampaign}}** button appears only when both those permissions and the built-in role your custom role is based on allow you to start a campaign.
 
 ## What it is for
 
@@ -92,6 +92,7 @@ The {{ui:accessReviews.colStatus}} and {{ui:accessReviews.colProgress}} columns 
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
+| **{{ui:panels.forbidden.title}}** | Your custom role cannot view access reviews | Ask an Owner or Admin to change your role |
 | **{{ui:accessReviews.emptyListReadOnly}}** | The workspace has no campaigns. Owners and Admins see the same message with a prompt to click **{{ui:accessReviews.newCampaign}}** | An Owner or Admin starts one |
 | **{{ui:accessReviews.nameReviewerRequired}}** | The form has no name or no reviewer | Fill in both, then try again |
 | **{{ui:accessReviews.legacyConnectionRequired}}** | You chose {{ui:accessReviews.scopeLegacyApp}} without choosing the application | Choose it |
