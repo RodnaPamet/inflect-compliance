@@ -756,7 +756,7 @@ describe('applyAssessmentRiskWriteback — nextReviewAt', () => {
         seedReview();
         await reviewAssessment(makeCtx(), 'a-1', { finalRiskRating: null });
         expect(mockPrisma.vendor.updateMany).toHaveBeenCalledTimes(1);
-        const data = mockPrisma.vendor.updateMany.mock.calls[0][0].data;
+        const { data } = vendorUpdateData();
         expect(data).not.toHaveProperty('inherentRisk');
         expect(data.lastAssessmentReviewedAt).toBeInstanceOf(Date);
     });
