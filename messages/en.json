@@ -9505,10 +9505,10 @@
         "EMPTY_CATALOGUE": "Failed: no tools"
       },
       "notHere": {
-        "ASK_PAGE": "Ask questions on the Ask a question page, which sends them to the agent your workspace designated. A run started here would have no agent to answer it.",
         "ACCESS_REVIEW_PREPARATION": "Started for you when an agent access review prepares its reviewer packs. A run started here would prepare nothing.",
         "HOST_SYSTEM_FACTS": "Started by a connected host system, which supplies the SAP document facts this workflow reviews. This page cannot collect them.",
-        "NO_PICKER": "Reviews one discovered agent, and this page has no list of discovered agents to choose one from.",
+        "NEEDS_AGENT_INVENTORY": "Reviews one discovered agent, chosen from the agent inventory, which your role cannot read. An administrator can grant read access to the agent inventory.",
+        "NEEDS_ASK_ACCESS": "Questions are asked on the Ask a question page, which needs read access to this workspace's controls.",
         "UNCLASSIFIED_INPUT": "Needs input this page does not know how to collect, so it cannot be started here."
       },
       "startForm": {
@@ -9518,6 +9518,12 @@
         "frameworkPlaceholder": "Choose a framework",
         "noFrameworks": "No frameworks available",
         "frameworksFailed": "The list of frameworks could not be loaded.",
+        "discoveredPlaceholder": "Choose a discovered agent",
+        "noDiscoveredAgents": "No discovered agents yet",
+        "discoveredFailed": "The list of discovered agents could not be loaded.",
+        "discoveredTruncated": "Showing the {shown} most recently seen discovered agents. Older ones are not listed.",
+        "discoveredSeen": "Seen {date} · {sources}",
+        "discoveredRegistered": "registered as {name}",
         "field": {
           "frameworkKey": {
             "label": "Framework",
@@ -9527,6 +9533,10 @@
             "label": "Period",
             "hint": "A month as YYYY-MM or a quarter as YYYY-Qn, for example 2026-09 or 2026-Q3.",
             "invalid": "Enter a month as YYYY-MM or a quarter as YYYY-Qn, for example 2026-09 or 2026-Q3."
+          },
+          "discoveredAgentId": {
+            "label": "Discovered agent",
+            "hint": "The agent a harness scan found, newest seen first. The run reviews what the scans observed about it."
           }
         }
       }

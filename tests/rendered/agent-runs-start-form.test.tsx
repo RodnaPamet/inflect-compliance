@@ -60,6 +60,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 
 import { AgentRunsClient, type RunRow } from '@/app/t/[tenantSlug]/(app)/agents/runs/AgentRunsClient';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import type { StartAbilities } from '@/lib/agentic/workflow-start-plan';
 
 type Catalogue = Record<string, unknown>;
 const EN = jest.requireActual('../../messages/en.json') as Catalogue;
@@ -88,7 +89,23 @@ const RUN: RunRow = {
 const ONE_CLICK = { key: 'diagnostic', name: 'Posture diagnostic', description: 'Reads posture', requiredInput: [] };
 const PERIOD_FORM = { key: 'audit-narrative', name: 'Audit workpaper narrative', description: 'Narrates', requiredInput: ['periodLabel'] };
 const FRAMEWORK_FORM = { key: 'audit-prep', name: 'Audit prep', description: 'Preps', requiredInput: ['frameworkKey'] };
-const NOT_HERE = { key: 'ad-hoc-question', name: 'Ad-hoc question', description: 'Answers', requiredInput: ['question'] };
+const NOT_HERE = { key: 'sap-transaction-review', name: 'SAP transaction review', description: 'Reviews', requiredInput: ['question', 'facts'] };
+const ASK = { key: 'ad-hoc-question', name: 'Ad-hoc question', description: 'Answers', requiredInput: ['question'] };
+const PICKER_FORM = { key: 'discovered-agent-review', name: 'Discovered agent review', description: 'Reviews one', requiredInput: ['discoveredAgentId'] };
+
+/** A caller who may list discovered agents and open the Ask page. */
+const ALL: StartAbilities = { discoveredAgents: true, askPage: true };
+const NONE: StartAbilities = { discoveredAgents: false, askPage: false };
+
+const DISCOVERED_LIST = '/api/t/acme/admin/agents/discovered';
+const discoveredRow = (id: string, discoveredId: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    discoveredId,
+    discoveredVia: ['entra-sp'],
+    lastSeenAt: '2026-10-28T09:00:00.000Z',
+    registeredAgentName: null,
+    ...extra,
+});
 
 type Answer = { status: number; body: unknown };
 let answers: Record<string, Answer>;
@@ -109,25 +126,47 @@ beforeEach(() => {
                 { key: 'SOC2', name: 'SOC 2' },
             ],
         },
+        [`GET ${DISCOVERED_LIST}`]: {
+            status: 200,
+            body: {
+                rows: [
+                    discoveredRow('da-1', 'okta:app:payroll-bot', { discoveredVia: ['okta-app'] }),
+                    discoveredRow('da-2', 'entra:sp:reconciler', { registeredAgentName: 'Reconciler' }),
+                ],
+                truncated: false,
+            },
+        },
     };
     global.fetch = fetchMock as unknown as typeof fetch;
 });
 
 function renderRuns({
     runs = [RUN],
-    workflows = [ONE_CLICK, PERIOD_FORM, FRAMEWORK_FORM, NOT_HERE],
+    workflows = [ONE_CLICK, PERIOD_FORM, FRAMEWORK_FORM, NOT_HERE, ASK, PICKER_FORM],
     canOperate = true,
     truncated,
+    startAbilities = ALL,
 }: {
     runs?: RunRow[];
     workflows?: Array<{ key: string; name: string; description: string; requiredInput?: readonly string[] }>;
     canOperate?: boolean;
     truncated?: boolean;
+    startAbilities?: StartAbilities;
 } = {}) {
     return render(
-        <AgentRunsClient tenantSlug="acme" runs={runs} truncated={truncated} workflows={workflows} canOperate={canOperate} />,
+        <AgentRunsClient
+            tenantSlug="acme"
+            runs={runs}
+            truncated={truncated}
+            workflows={workflows}
+            canOperate={canOperate}
+            startAbilities={startAbilities}
+        />,
     );
 }
+
+const gateLabelOf = (key: string) =>
+    screen.getByTestId(`workflow-start-${key}`).closest('[data-testid="permission-gated"]')?.getAttribute('aria-label') ?? null;
 
 const postsTo = (url: string) =>
     fetchMock.mock.calls.filter(([u, init]) => u === url && init?.method === 'POST');
@@ -230,22 +269,26 @@ describe('starting a workflow', () => {
         expect(await screen.findByText('flue_requires_registered_agent: refused.')).toBeInTheDocument();
     });
 
-    it('a workflow whose input is collected elsewhere is present, disabled, and says where', () => {
-        renderRuns();
-        const button = screen.getByTestId('workflow-start-ad-hoc-question');
-        expect(button).toBeDisabled();
-        const gate = button.closest('[data-testid="permission-gated"]');
-        expect(gate).not.toBeNull();
-        expect(gate!.getAttribute('aria-label')).toContain(en('agents.runs.notHere.ASK_PAGE'));
+    it.each([
+        ['sap-transaction-review', 'HOST_SYSTEM_FACTS'],
+        ['agent-recertification-pack', 'ACCESS_REVIEW_PREPARATION'],
+    ] as const)('%s is present, disabled, and says why (%s)', (key, reason) => {
+        const recert = { key: 'agent-recertification-pack', name: 'Agent recertification pack', description: 'Packs', requiredInput: ['accessReviewId', 'page', 'subject'] };
+        renderRuns({ workflows: [NOT_HERE, recert] });
+        expect(screen.getByTestId(`workflow-start-${key}`)).toBeDisabled();
+        expect(gateLabelOf(key)).toContain(en(`agents.runs.notHere.${reason}`));
     });
 
-    it('a reader is told the write tier first, whatever the workflow', () => {
+    it('a reader is told the write tier first for a run start', () => {
         renderRuns({ canOperate: false });
-        const gate = screen.getByTestId('workflow-start-ad-hoc-question').closest('[data-testid="permission-gated"]');
-        expect(gate!.getAttribute('aria-label')).toContain(en('agents.runs.needsWrite'));
+        expect(gateLabelOf('sap-transaction-review')).toContain(en('agents.runs.needsWrite'));
+        expect(gateLabelOf('discovered-agent-review')).toContain(en('agents.runs.needsWrite'));
     });
 
-    it('over the REAL registry, no enabled button posts a run without the input it declares', async () => {
+    it.each([
+        ['every ability', ALL],
+        ['no ability', NONE],
+    ] as const)('over the REAL registry, with %s, no enabled button posts a run without the input it declares', async (_label, startAbilities) => {
         // The defect, measured over every workflow the page actually lists.
         const workflows = listWorkflowDefinitions().map((w) => ({
             key: w.key,
@@ -253,9 +296,11 @@ describe('starting a workflow', () => {
             description: w.description,
             requiredInput: [...(w.requiredInput ?? [])],
         }));
-        const view = renderRuns({ runs: [], workflows });
+        const view = renderRuns({ runs: [], workflows, startAbilities });
         for (const w of workflows.filter((x) => x.requiredInput.length > 0)) {
             const button = screen.getByTestId(`workflow-start-${w.key}`);
+            // A link starts nothing here — the Ask page is where it is asked.
+            if (button.tagName === 'A') continue;
             if (!(button as HTMLButtonElement).disabled) {
                 fireEvent.click(button);
                 // Opened the form — close it again for the next one.
@@ -266,5 +311,112 @@ describe('starting a workflow', () => {
         }
         expect(postsTo('/api/t/acme/agent-runs')).toHaveLength(0);
         view.unmount();
+    });
+});
+
+describe('the ad-hoc question is a link to the Ask page, not a run start', () => {
+    it('links to the Ask page, and is not a Start button', () => {
+        // Asserted as markup, not clicked: a real anchor navigates, which jsdom
+        // does not implement — and that it is a real anchor is the point.
+        renderRuns();
+        const link = screen.getByRole('link', { name: 'Ad-hoc question' });
+        expect(link).toBe(screen.getByTestId('workflow-start-ad-hoc-question'));
+        expect(link.getAttribute('href')).toBe('/t/acme/agents/ask');
+        expect(screen.queryByRole('button', { name: 'Ad-hoc question' })).toBeNull();
+    });
+
+    it('is a link for a reader too: following it starts nothing, and the Ask page is reader-level', () => {
+        renderRuns({ canOperate: false });
+        expect(screen.getByTestId('workflow-start-ad-hoc-question').getAttribute('href')).toBe('/t/acme/agents/ask');
+    });
+
+    it('is not a link for a person the Ask page refuses, and says why — to a reader as well', () => {
+        for (const canOperate of [true, false]) {
+            const view = renderRuns({ canOperate, startAbilities: { ...ALL, askPage: false } });
+            const control = screen.getByTestId('workflow-start-ad-hoc-question');
+            expect(control.tagName).toBe('BUTTON');
+            expect(control).toBeDisabled();
+            expect(gateLabelOf('ad-hoc-question')).toContain(en('agents.runs.notHere.NEEDS_ASK_ACCESS'));
+            view.unmount();
+        }
+    });
+});
+
+describe('the discovered-agent review picks its agent from the inventory', () => {
+    it('lists the discovered agents and starts the run with the chosen one', async () => {
+        const user = userEvent.setup();
+        renderRuns();
+        fireEvent.click(screen.getByTestId('workflow-start-discovered-agent-review'));
+        await user.click(document.getElementById('workflow-start-discoveredAgentId')!);
+        const listbox = await screen.findByRole('listbox');
+        expect(fetchMock.mock.calls.some(([u, init]) => u === DISCOVERED_LIST && !init?.method)).toBe(true);
+        expect(within(listbox).getAllByRole('option').map((o) => o.textContent)).toEqual([
+            expect.stringContaining('okta:app:payroll-bot'),
+            expect.stringContaining('entra:sp:reconciler'),
+        ]);
+        await user.click(within(listbox).getByRole('option', { name: /entra:sp:reconciler/ }));
+        fireEvent.click(screen.getByTestId('workflow-start-submit'));
+        await waitFor(() => expect(postsTo('/api/t/acme/agent-runs')).toHaveLength(1));
+        expect(bodyOf(postsTo('/api/t/acme/agent-runs')[0])).toEqual({
+            workflowKey: 'discovered-agent-review',
+            input: { discoveredAgentId: 'da-2' },
+        });
+    });
+
+    it('names a linked register row beside the agent', async () => {
+        const user = userEvent.setup();
+        renderRuns();
+        fireEvent.click(screen.getByTestId('workflow-start-discovered-agent-review'));
+        await user.click(document.getElementById('workflow-start-discoveredAgentId')!);
+        const listbox = await screen.findByRole('listbox');
+        const option = within(listbox).getByRole('option', { name: /entra:sp:reconciler/ });
+        expect(option.textContent).toContain(en('agents.runs.startForm.discoveredRegistered').replace('{name}', 'Reconciler'));
+    });
+
+    it('says when the list is cut', async () => {
+        answers[`GET ${DISCOVERED_LIST}`] = {
+            status: 200,
+            body: { rows: [discoveredRow('da-1', 'okta:app:payroll-bot')], truncated: true },
+        };
+        renderRuns();
+        fireEvent.click(screen.getByTestId('workflow-start-discovered-agent-review'));
+        expect((await screen.findByTestId('workflow-start-discovered-truncated')).textContent).toContain(
+            en('agents.runs.startForm.discoveredTruncated').replace('{shown}', '1'),
+        );
+    });
+
+    it('says nothing about a cut when the list is whole', async () => {
+        renderRuns();
+        fireEvent.click(screen.getByTestId('workflow-start-discovered-agent-review'));
+        await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => u === DISCOVERED_LIST)).toBe(true));
+        expect(screen.queryByTestId('workflow-start-discovered-truncated')).toBeNull();
+    });
+
+    it('shows the list’s refusal in the server’s words', async () => {
+        answers[`GET ${DISCOVERED_LIST}`] = {
+            status: 403,
+            body: { error: { code: 'FORBIDDEN', message: 'Permission denied: agent inventory.' } },
+        };
+        renderRuns();
+        fireEvent.click(screen.getByTestId('workflow-start-discovered-agent-review'));
+        expect(await within(screen.getByRole('dialog')).findByText('Permission denied: agent inventory.')).toBeInTheDocument();
+    });
+
+    it('is not offered to a caller who cannot list discovered agents — no picker, no request, and the reason', () => {
+        renderRuns({ startAbilities: { ...ALL, discoveredAgents: false } });
+        const button = screen.getByTestId('workflow-start-discovered-agent-review');
+        expect(button).toBeDisabled();
+        expect(gateLabelOf('discovered-agent-review')).toContain(en('agents.runs.notHere.NEEDS_AGENT_INVENTORY'));
+        fireEvent.click(button);
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(fetchMock.mock.calls.some(([u]) => u === DISCOVERED_LIST)).toBe(false);
+    });
+
+    it('a page that passes no abilities offers neither the picker nor the link', () => {
+        render(
+            <AgentRunsClient tenantSlug="acme" runs={[]} workflows={[ASK, PICKER_FORM]} canOperate />,
+        );
+        expect(screen.getByTestId('workflow-start-discovered-agent-review')).toBeDisabled();
+        expect(screen.getByTestId('workflow-start-ad-hoc-question').tagName).toBe('BUTTON');
     });
 });

@@ -6,7 +6,12 @@
  * ONE form for every such workflow, built from the definition's declaration
  * through `startPlanFor` — never a hand-made form per workflow. Each field is a
  * required input, in the order the definition declares them, collected as its
- * `StartFieldSpec` says: a framework from the catalogue, or typed text.
+ * `StartFieldSpec` says: a framework from the catalogue, a discovered agent
+ * from the agent inventory, or typed text.
+ *
+ * A picker is only ever rendered for a caller the plan has already found may
+ * read its list (`StartAbilities`), so its load failing is a fault to report,
+ * not a permission to discover.
  *
  * The form refuses only what admission would refuse anyway (a blank value) and
  * a format the run's first step validates. The server is still the authority:
@@ -28,41 +33,88 @@ import {
     type StartField,
     type StartFieldSpec,
 } from '@/lib/agentic/workflow-start-plan';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
-/** The framework catalogue, loaded once when the form opens and only if a field needs it. */
-function useFrameworkOptions(needed: boolean) {
-    // Its own name, not `t`: the component below binds `t` too, and a translator
-    // bound twice in one file is one `i18n-keys-resolve` cannot read.
-    const tRuns = useTranslations('agents');
+import { sourceKindLabel } from '../reports/harness/source-kind-label';
+
+/** What a discovered-agent option carries besides its id and label. */
+interface DiscoveredMeta {
+    readonly discoveredVia: readonly string[];
+    readonly lastSeenAt: string;
+    readonly registeredAgentName: string | null;
+}
+
+interface Loaded<TMeta> {
+    readonly options: ComboboxOption<TMeta>[] | null;
+    readonly truncated: boolean;
+    readonly error: string | null;
+}
+
+type ReadOptions<TMeta> = (body: unknown) => { options: ComboboxOption<TMeta>[]; truncated: boolean };
+
+/** `GET /frameworks` — the catalogue, every row; the value is the framework's key. */
+const readFrameworks: ReadOptions<undefined> = (body) => ({
+    options: (Array.isArray(body) ? (body as Array<{ key: string; name: string }>) : []).map((fw) => ({
+        value: fw.key,
+        label: fw.name,
+    })),
+    truncated: false,
+});
+
+/** `GET …/admin/agents/discovered` — newest seen first, with the route's own `truncated`. */
+const readDiscoveredAgents: ReadOptions<DiscoveredMeta> = (body) => {
+    const b = (body ?? {}) as {
+        rows?: Array<{ id: string; discoveredId: string } & DiscoveredMeta>;
+        truncated?: boolean;
+    };
+    return {
+        options: (b.rows ?? []).map((a) => ({
+            value: a.id,
+            label: a.discoveredId,
+            meta: {
+                discoveredVia: a.discoveredVia,
+                lastSeenAt: a.lastSeenAt,
+                registeredAgentName: a.registeredAgentName,
+            },
+        })),
+        truncated: b.truncated === true,
+    };
+};
+
+/** One list, loaded once when the form opens and only if a field needs it. */
+function useLoadedOptions<TMeta>(
+    needed: boolean,
+    path: string,
+    read: ReadOptions<TMeta>,
+    failed: string,
+): Loaded<TMeta> {
     const apiUrl = useTenantApiUrl();
-    const [options, setOptions] = useState<ComboboxOption[] | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const [loaded, setLoaded] = useState<Loaded<TMeta>>({ options: null, truncated: false, error: null });
 
     useEffect(() => {
         if (!needed) return;
         let cancelled = false;
         void (async () => {
             try {
-                const res = await fetch(apiUrl('/frameworks'));
+                const res = await fetch(apiUrl(path));
                 const body: unknown = await res.json().catch(() => null);
                 if (cancelled) return;
                 if (!res.ok) {
-                    setError(apiErrorMessage(body, tRuns('runs.startForm.frameworksFailed')));
+                    setLoaded({ options: null, truncated: false, error: apiErrorMessage(body, failed) });
                     return;
                 }
-                const rows = Array.isArray(body) ? (body as Array<{ key: string; name: string }>) : [];
-                setOptions(rows.map((fw) => ({ value: fw.key, label: fw.name })));
+                setLoaded({ ...read(body), error: null });
             } catch {
-                if (!cancelled) setError(tRuns('runs.startForm.frameworksFailed'));
+                if (!cancelled) setLoaded({ options: null, truncated: false, error: failed });
             }
         })();
         return () => {
             cancelled = true;
         };
-    }, [needed, apiUrl, tRuns]);
+    }, [needed, path, read, failed, apiUrl]);
 
-    return { options, error };
+    return loaded;
 }
 
 export function WorkflowStartModal({
@@ -86,8 +138,18 @@ export function WorkflowStartModal({
     /** Problems are shown after the first submit, not while the person is still typing. */
     const [submitted, setSubmitted] = useState(false);
 
-    const needsFrameworks = fields.some((f) => f.spec.kind === 'framework');
-    const frameworks = useFrameworkOptions(needsFrameworks);
+    const frameworks = useLoadedOptions(
+        fields.some((f) => f.spec.kind === 'framework'),
+        '/frameworks',
+        readFrameworks,
+        t('runs.startForm.frameworksFailed'),
+    );
+    const discovered = useLoadedOptions(
+        fields.some((f) => f.spec.kind === 'discoveredAgent'),
+        '/admin/agents/discovered',
+        readDiscoveredAgents,
+        t('runs.startForm.discoveredFailed'),
+    );
 
     const problems = useMemo(
         () => Object.fromEntries(fields.map((f) => [f.key, startFieldProblem(f.spec, values[f.key])])),
@@ -106,6 +168,18 @@ export function WorkflowStartModal({
         return undefined;
     }
 
+    /** The line under a discovered agent: when it was last seen, by which sources, and its register row. */
+    function describeDiscovered(meta: DiscoveredMeta | undefined) {
+        if (!meta) return null;
+        const seen = t('runs.startForm.discoveredSeen', {
+            date: formatDateTime(meta.lastSeenAt),
+            sources: meta.discoveredVia.map((kind) => sourceKindLabel(t, kind)).join(', '),
+        });
+        return meta.registeredAgentName
+            ? `${seen} · ${t('runs.startForm.discoveredRegistered', { name: meta.registeredAgentName })}`
+            : seen;
+    }
+
     function control(field: StartField, spec: StartFieldSpec, id: string) {
         if (spec.kind === 'framework') {
             const options = frameworks.options ?? [];
@@ -118,6 +192,23 @@ export function WorkflowStartModal({
                     setSelected={(opt) => set(field.key, opt?.value ?? '')}
                     placeholder={t('runs.startForm.frameworkPlaceholder')}
                     emptyState={t('runs.startForm.noFrameworks')}
+                    disabled={busy}
+                    matchTriggerWidth
+                />
+            );
+        }
+        if (spec.kind === 'discoveredAgent') {
+            const options = discovered.options ?? [];
+            return (
+                <Combobox<false, DiscoveredMeta>
+                    id={id}
+                    options={options}
+                    loading={discovered.options === null && discovered.error === null}
+                    selected={options.find((o) => o.value === values[field.key]) ?? null}
+                    setSelected={(opt) => set(field.key, opt?.value ?? '')}
+                    optionDescription={(opt) => describeDiscovered(opt.meta)}
+                    placeholder={t('runs.startForm.discoveredPlaceholder')}
+                    emptyState={t('runs.startForm.noDiscoveredAgents')}
                     disabled={busy}
                     matchTriggerWidth
                 />
@@ -156,20 +247,37 @@ export function WorkflowStartModal({
                     <div className="space-y-default">
                         {fields.map((field) => {
                             const id = `workflow-start-${field.key}`;
-                            // A framework catalogue that would not load is the
-                            // field's own error until a submit has something
-                            // more specific to say.
-                            const loadError = field.spec.kind === 'framework' ? frameworks.error : null;
+                            // A list that would not load is the field's own
+                            // error until a submit has something more specific
+                            // to say.
+                            const list =
+                                field.spec.kind === 'framework'
+                                    ? frameworks
+                                    : field.spec.kind === 'discoveredAgent'
+                                      ? discovered
+                                      : null;
                             return (
-                                <FormField
-                                    key={field.key}
-                                    label={t(`runs.startForm.field.${field.key}.label`)}
-                                    description={t(`runs.startForm.field.${field.key}.hint`)}
-                                    error={problemText(field) ?? loadError ?? undefined}
-                                    required
-                                >
-                                    {control(field, field.spec, id)}
-                                </FormField>
+                                <div key={field.key} className="space-y-tight">
+                                    <FormField
+                                        label={t(`runs.startForm.field.${field.key}.label`)}
+                                        description={t(`runs.startForm.field.${field.key}.hint`)}
+                                        error={problemText(field) ?? list?.error ?? undefined}
+                                        required
+                                    >
+                                        {control(field, field.spec, id)}
+                                    </FormField>
+                                    {/* A CUT LIST SAYS SO. The route reads one
+                                        past its cap, so this is a fact rather
+                                        than a guess from a list that happens
+                                        to stop where the cap is. */}
+                                    {field.spec.kind === 'discoveredAgent' && discovered.truncated && (
+                                        <InlineNotice variant="warning" data-testid="workflow-start-discovered-truncated">
+                                            {t('runs.startForm.discoveredTruncated', {
+                                                shown: discovered.options?.length ?? 0,
+                                            })}
+                                        </InlineNotice>
+                                    )}
+                                </div>
                             );
                         })}
                         {error && <InlineNotice variant="error">{error}</InlineNotice>}

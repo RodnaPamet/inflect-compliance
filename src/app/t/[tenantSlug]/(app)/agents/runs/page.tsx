@@ -1,9 +1,12 @@
+import { getServerSession } from 'next-auth';
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { authOptions } from '@/auth';
 import { listWorkflowRuns } from '@/app-layer/usecases/workflow-runs';
 import { getWorkflowDefinition, listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { checkAdminAccess } from '@/lib/auth/guard';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 
 import { AgentRunsClient, type RunRow } from './AgentRunsClient';
@@ -94,12 +97,40 @@ export default async function AgentRunsPage({
         requiredInput: [...(w.requiredInput ?? [])],
     }));
 
+    // MAY THIS CALLER LIST DISCOVERED AGENTS — the discovered-agent review's
+    // picker reads `GET …/admin/agents/discovered`, and the page must not offer
+    // a picker its caller cannot load (#4472). Both of that request's gates,
+    // asked through the functions that apply them rather than a copy:
+    //
+    //   · the EDGE's admin gate, `checkAdminAccess`, fed what the middleware
+    //     feeds it — the session's primary role and `memberships[]` claim.
+    //     Not `ctx.role`: that is a custom role's BASE role, and the edge reads
+    //     the membership's own. The middleware refuses only `'deny'`, so a
+    //     `'defer'` (a claim capped at sign-in) is admitted here as there;
+    //   · the inventory key the route's `requirePermission` takes.
+    //
+    // No session at all offers nothing.
+    const session = await getServerSession(authOptions);
+    const discoveredAgentsPath = `/api/t/${tenantSlug}/admin/agents/discovered`;
+    const startAbilities = {
+        discoveredAgents:
+            session?.user != null
+            && checkAdminAccess(discoveredAgentsPath, session.user.role, session.user.memberships, 'GET') !== 'deny'
+            && mayReadAgentInventory(ctx.appPermissions.admin),
+        // The Ask page's own gate (`controls.view`, which its sidebar entry and
+        // both its routes take), for the link that replaces the ad-hoc
+        // question's Start button. Reader-level, and not `canOperate`:
+        // following a link starts nothing here.
+        askPage: Boolean(ctx.appPermissions.controls?.view),
+    };
+
     return (
         <AgentRunsClient
             tenantSlug={tenantSlug}
             runs={rows}
             truncated={truncated}
             workflows={workflows}
+            startAbilities={startAbilities}
             // The ROLE-TIER write, resolved on the server. Every mutating
             // workflow-run usecase opens with `assertCanWrite(ctx)`, which reads
             // this rather than the permissions blob — so the page's own

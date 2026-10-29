@@ -1,6 +1,7 @@
 /**
  * How the runs page starts each workflow (#4472) — one click, a start form
- * built from the definition's `requiredInput`, or not here, with the reason.
+ * built from the definition's `requiredInput`, a link to the page that starts
+ * it, or not here, with the reason.
  *
  * Seven of the ten Start buttons on `/agents/runs` could never start a run:
  * the page posted `{ workflowKey }` alone and those definitions declare
@@ -9,14 +10,20 @@
  * census over the REAL registry is the assertion with teeth: a workflow that
  * declares input this page neither collects nor explains fails here.
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { PERIOD_LABEL } from '@/lib/agentic/audit-workpaper';
 import {
     NOT_STARTED_HERE,
     NOT_STARTED_HERE_REASONS,
+    OTHER_PAGE_REASONS,
     START_FIELDS,
+    STARTED_ON_ANOTHER_PAGE,
     startFieldProblem,
     startPlanFor,
+    type StartAbilities,
 } from '@/lib/agentic/workflow-start-plan';
 
 const EN = jest.requireActual('../../../messages/en.json') as Record<string, unknown>;
@@ -28,15 +35,26 @@ const at = (catalogue: Record<string, unknown>, dotted: string): unknown =>
         catalogue,
     );
 
+const ALL: StartAbilities = { discoveredAgents: true, askPage: true };
+const NONE: StartAbilities = { discoveredAgents: false, askPage: false };
+
 const DEFS = listWorkflowDefinitions();
-const plans = Object.fromEntries(DEFS.map((d) => [d.key, startPlanFor(d)]));
+const plansFor = (abilities: StartAbilities) =>
+    Object.fromEntries(DEFS.map((d) => [d.key, startPlanFor(d, abilities)]));
+const plans = plansFor(ALL);
+const byMode = (p: ReturnType<typeof plansFor>, mode: string) =>
+    DEFS.filter((d) => p[d.key].mode === mode).map((d) => d.key).sort();
 
 describe('every registered workflow has a start the server will admit, or an explanation', () => {
-    it('no workflow that declares input is offered a one-click start', () => {
+    it.each([
+        ['every ability', ALL],
+        ['no ability', NONE],
+    ] as const)('no workflow that declares input is offered a one-click start, with %s', (_label, abilities) => {
         // The defect itself: a one-click start sends no input, and every
         // definition with `requiredInput` refuses that at admission.
+        const p = plansFor(abilities);
         const oneClickWithInput = DEFS.filter(
-            (d) => (d.requiredInput ?? []).length > 0 && plans[d.key].mode === 'ONE_CLICK',
+            (d) => (d.requiredInput ?? []).length > 0 && p[d.key].mode === 'ONE_CLICK',
         ).map((d) => d.key);
         expect(oneClickWithInput).toEqual([]);
     });
@@ -62,13 +80,26 @@ describe('every registered workflow has a start the server will admit, or an exp
         expect(unclassified).toEqual([]);
     });
 
-    it('classifies today’s registry as the owner’s decision describes', () => {
-        const byMode = (mode: string) => DEFS.filter((d) => plans[d.key].mode === mode).map((d) => d.key).sort();
-        expect(byMode('ONE_CLICK')).toEqual(['access-posture', 'diagnostic', 'posture-review']);
-        expect(byMode('FORM')).toEqual(['audit-narrative', 'audit-prep', 'framework-onboarding']);
-        expect(byMode('NOT_HERE')).toEqual(
-            ['ad-hoc-question', 'agent-recertification-pack', 'discovered-agent-review', 'sap-transaction-review'],
+    it('classifies today’s registry as the owner’s decisions describe, for a caller who may read everything', () => {
+        expect(byMode(plans, 'ONE_CLICK')).toEqual(['access-posture', 'diagnostic', 'posture-review']);
+        expect(byMode(plans, 'FORM')).toEqual(
+            ['audit-narrative', 'audit-prep', 'discovered-agent-review', 'framework-onboarding'],
         );
+        expect(byMode(plans, 'ON_ANOTHER_PAGE')).toEqual(['ad-hoc-question']);
+        expect(byMode(plans, 'NOT_HERE')).toEqual(['agent-recertification-pack', 'sap-transaction-review']);
+    });
+
+    it('the two workflows this page never starts keep their own reasons', () => {
+        for (const abilities of [ALL, NONE]) {
+            expect(startPlanFor(DEFS.find((d) => d.key === 'agent-recertification-pack')!, abilities)).toEqual({
+                mode: 'NOT_HERE',
+                reason: 'ACCESS_REVIEW_PREPARATION',
+            });
+            expect(startPlanFor(DEFS.find((d) => d.key === 'sap-transaction-review')!, abilities)).toEqual({
+                mode: 'NOT_HERE',
+                reason: 'HOST_SYSTEM_FACTS',
+            });
+        }
     });
 
     it('a framework input is a framework picker wherever it appears', () => {
@@ -79,11 +110,13 @@ describe('every registered workflow has a start the server will admit, or an exp
         }
     });
 
-    it('NOT_STARTED_HERE names only registered workflows that declare input', () => {
+    it('NOT_STARTED_HERE and STARTED_ON_ANOTHER_PAGE name only registered workflows that declare input, once each', () => {
         // No stale entries: a workflow that stopped needing input, or was
         // removed, must leave the list rather than stay explained away.
         const byKey = new Map(DEFS.map((d) => [d.key, d]));
-        for (const key of Object.keys(NOT_STARTED_HERE)) {
+        const listed = [...Object.keys(NOT_STARTED_HERE), ...Object.keys(STARTED_ON_ANOTHER_PAGE)];
+        expect(new Set(listed).size).toBe(listed.length);
+        for (const key of listed) {
             expect({ key, declaresInput: (byKey.get(key)?.requiredInput ?? []).length > 0 }).toEqual({
                 key,
                 declaresInput: true,
@@ -92,24 +125,61 @@ describe('every registered workflow has a start the server will admit, or an exp
     });
 });
 
+describe('a picker or a link is offered only to a caller who may use it', () => {
+    const review = () => DEFS.find((d) => d.key === 'discovered-agent-review')!;
+    const ask = () => DEFS.find((d) => d.key === 'ad-hoc-question')!;
+
+    it('the discovered-agent review is a picker form for a caller who may list discovered agents', () => {
+        expect(startPlanFor(review(), { ...NONE, discoveredAgents: true })).toEqual({
+            mode: 'FORM',
+            fields: [{ key: 'discoveredAgentId', spec: { kind: 'discoveredAgent' } }],
+        });
+    });
+
+    it('and NOT_HERE, with the reason, for one who may not', () => {
+        expect(startPlanFor(review(), { ...ALL, discoveredAgents: false })).toEqual({
+            mode: 'NOT_HERE',
+            reason: 'NEEDS_AGENT_INVENTORY',
+        });
+    });
+
+    it('the ad-hoc question links to the Ask page for a person it admits, and only them', () => {
+        expect(startPlanFor(ask(), { ...NONE, askPage: true })).toEqual({ mode: 'ON_ANOTHER_PAGE', path: '/agents/ask' });
+        expect(startPlanFor(ask(), { ...ALL, askPage: false })).toEqual({ mode: 'NOT_HERE', reason: 'NEEDS_ASK_ACCESS' });
+    });
+
+    it('the Ask page’s reason is told to everyone as is: it is not a run start', () => {
+        expect([...OTHER_PAGE_REASONS]).toEqual(['NEEDS_ASK_ACCESS']);
+    });
+
+    it('every other page a workflow is started from is a real page', () => {
+        // A link to a route with no page is a 404 the runs page would offer.
+        const appDir = path.resolve(__dirname, '../../../src/app/t/[tenantSlug]/(app)');
+        for (const { path: route } of Object.values(STARTED_ON_ANOTHER_PAGE)) {
+            expect({ route, page: fs.existsSync(path.join(appDir, route, 'page.tsx')) }).toEqual({ route, page: true });
+        }
+    });
+});
+
 describe('the planner fails closed', () => {
     it('an input nobody classified is NOT_HERE, never a guessed text box', () => {
-        expect(startPlanFor({ key: 'x', requiredInput: ['frameworkKey', 'someInternalId'] })).toEqual({
+        expect(startPlanFor({ key: 'x', requiredInput: ['frameworkKey', 'someInternalId'] }, ALL)).toEqual({
             mode: 'NOT_HERE',
             reason: 'UNCLASSIFIED_INPUT',
         });
     });
 
     it('does not resolve an input name off the prototype', () => {
-        expect(startPlanFor({ key: 'x', requiredInput: ['toString'] })).toEqual({
+        expect(startPlanFor({ key: 'x', requiredInput: ['toString'] }, ALL)).toEqual({
             mode: 'NOT_HERE',
             reason: 'UNCLASSIFIED_INPUT',
         });
+        expect(startPlanFor({ key: 'constructor', requiredInput: ['frameworkKey'] }, ALL).mode).toBe('FORM');
     });
 
     it('absent and empty requiredInput are both one click', () => {
-        expect(startPlanFor({ key: 'x' })).toEqual({ mode: 'ONE_CLICK' });
-        expect(startPlanFor({ key: 'x', requiredInput: [] })).toEqual({ mode: 'ONE_CLICK' });
+        expect(startPlanFor({ key: 'x' }, NONE)).toEqual({ mode: 'ONE_CLICK' });
+        expect(startPlanFor({ key: 'x', requiredInput: [] }, NONE)).toEqual({ mode: 'ONE_CLICK' });
     });
 });
 

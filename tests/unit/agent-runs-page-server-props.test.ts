@@ -12,6 +12,12 @@ import * as React from 'react';
 
 const getTenantCtxMock = jest.fn();
 const listWorkflowRunsMock = jest.fn();
+const getServerSessionMock = jest.fn();
+
+// The session the EDGE reads — its primary role and `memberships[]` claim —
+// as `getServerSession` hands it to the page.
+jest.mock('next-auth', () => ({ getServerSession: (...a: unknown[]) => getServerSessionMock(...a) }));
+jest.mock('@/auth', () => ({ authOptions: {} }));
 
 jest.mock('next-intl/server', () => ({
     getTranslations: async () => (key: string) => key,
@@ -30,6 +36,7 @@ import AgentRunsPage from '@/app/t/[tenantSlug]/(app)/agents/runs/page';
 import { makeRequestContext } from '../helpers/make-context';
 
 type ClientProps = {
+    startAbilities: { discoveredAgents: boolean; askPage: boolean };
     runs: Array<{ id: string; workflowKey: string; workflowName: string; pendingProposals: number }>;
     truncated: boolean;
     workflows: Array<{ key: string; name: string; requiredInput?: readonly string[] }>;
@@ -54,9 +61,13 @@ const run = (i: number, workflowKey = 'audit-prep') => ({
     _count: { proposals: i % 3 },
 });
 
+/** A session whose claim says `role` in this tenant. */
+const sessionAs = (role: string) => ({ user: { id: 'user-1', role, memberships: [{ slug: 'acme', role, tenantId: 't-1' }] } });
+
 beforeEach(() => {
     jest.clearAllMocks();
     getTenantCtxMock.mockResolvedValue(makeRequestContext('ADMIN'));
+    getServerSessionMock.mockResolvedValue(sessionAs('ADMIN'));
 });
 
 describe('the run list', () => {
@@ -96,5 +107,64 @@ describe('the workflows offered', () => {
         expect(byKey['audit-prep']).toEqual(['frameworkKey']);
         expect(byKey['audit-narrative']).toEqual(['periodLabel']);
         expect(byKey['diagnostic']).toEqual([]);
+    });
+});
+
+describe('what the start forms may offer this caller (#4472)', () => {
+    const asRole = async (role: 'OWNER' | 'ADMIN' | 'AI_ADMIN' | 'AUDITOR') => {
+        getTenantCtxMock.mockResolvedValue(makeRequestContext(role));
+        getServerSessionMock.mockResolvedValue(sessionAs(role));
+        listWorkflowRunsMock.mockResolvedValue([]);
+        return (await render()).startAbilities;
+    };
+
+    it.each(['OWNER', 'ADMIN', 'AI_ADMIN'] as const)('offers %s the discovered-agent picker: the edge admits it and it holds the key', async (role) => {
+        expect((await asRole(role)).discoveredAgents).toBe(true);
+    });
+
+    it('does not offer it to an AUDITOR: the key is held, but the edge refuses the route', async () => {
+        expect((await asRole('AUDITOR')).discoveredAgents).toBe(false);
+    });
+
+    it('reads the MEMBERSHIP role the edge reads, not a custom role’s base', async () => {
+        // A READER membership with a custom role built on ADMIN: `ctx.role` is
+        // the base, ADMIN, but the edge reads READER and refuses the route.
+        const admin = makeRequestContext('ADMIN');
+        getTenantCtxMock.mockResolvedValue(admin);
+        getServerSessionMock.mockResolvedValue(sessionAs('READER'));
+        listWorkflowRunsMock.mockResolvedValue([]);
+        expect((await render()).startAbilities.discoveredAgents).toBe(false);
+    });
+
+    it('does not offer it to an ADMIN membership whose custom role holds neither inventory key', async () => {
+        const base = makeRequestContext('ADMIN');
+        getTenantCtxMock.mockResolvedValue(
+            makeRequestContext('ADMIN', {
+                appPermissions: {
+                    ...base.appPermissions,
+                    admin: { ...base.appPermissions.admin, agent_registry: false, agent_registry_view: false },
+                },
+            }),
+        );
+        listWorkflowRunsMock.mockResolvedValue([]);
+        expect((await render()).startAbilities.discoveredAgents).toBe(false);
+    });
+
+    it('offers nothing without a session', async () => {
+        getServerSessionMock.mockResolvedValue(null);
+        listWorkflowRunsMock.mockResolvedValue([]);
+        expect((await render()).startAbilities.discoveredAgents).toBe(false);
+    });
+
+    it('links to the Ask page exactly when its own gate, controls.view, is held', async () => {
+        listWorkflowRunsMock.mockResolvedValue([]);
+        expect((await render()).startAbilities.askPage).toBe(true);
+        const base = makeRequestContext('ADMIN');
+        getTenantCtxMock.mockResolvedValue(
+            makeRequestContext('ADMIN', {
+                appPermissions: { ...base.appPermissions, controls: { ...base.appPermissions.controls, view: false } },
+            }),
+        );
+        expect((await render()).startAbilities.askPage).toBe(false);
     });
 });

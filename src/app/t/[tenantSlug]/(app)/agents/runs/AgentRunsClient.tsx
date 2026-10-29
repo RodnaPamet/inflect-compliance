@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PermissionGated } from '../PermissionGated';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -15,7 +16,12 @@ import { cardVariants } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@inflect/ui/lib/cn';
 import type { RecordedRunDriver } from '@/lib/agentic/agent-driver';
-import { startPlanFor, type StartField } from '@/lib/agentic/workflow-start-plan';
+import {
+    OTHER_PAGE_REASONS,
+    startPlanFor,
+    type StartAbilities,
+    type StartField,
+} from '@/lib/agentic/workflow-start-plan';
 import { apiErrorMessage } from '@/lib/api-error';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -113,6 +119,9 @@ export const LABELLED_RUN_STATUSES: ReadonlySet<string> = new Set([
     'EMPTY_CATALOGUE',
 ]);
 
+/** No picker and no other-page link — what a caller is offered when the page passes no abilities. */
+const NO_START_ABILITIES: StartAbilities = { discoveredAgents: false, askPage: false };
+
 /** The statuses a run can be resumed from — the two `resumeWorkflowRun` accepts. */
 const RESUMABLE = new Set(['AWAITING_APPROVAL', 'PAUSED']);
 
@@ -136,6 +145,7 @@ export function AgentRunsClient({
     canCompose = false,
     canInvestigate = false,
     canReadReports = false,
+    startAbilities = NO_START_ABILITIES,
 }: {
     tenantSlug: string;
     /** The newest runs, at most the page's cap, projected by `page.tsx`. */
@@ -168,6 +178,13 @@ export function AgentRunsClient({
     canCompose?: boolean;
     canInvestigate?: boolean;
     canReadReports?: boolean;
+    /**
+     * What this caller may read for the start forms' pickers, and whether the
+     * Ask page admits them — resolved by `page.tsx` from the same gates those
+     * routes apply. ABSENT is none of it: a picker offered to a caller who
+     * cannot load it, or a link to a page that refuses them, is the defect.
+     */
+    startAbilities?: StartAbilities;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
@@ -312,25 +329,44 @@ export function AgentRunsClient({
                     <p className="text-sm font-medium text-content-emphasis">{t('runs.startWorkflow')}</p>
                     <div className="flex flex-wrap gap-tight">
                         {workflows.map((w) => {
-                            // ONE CLICK, A FORM, OR NOT HERE — from the
-                            // definition's `requiredInput` (#4472). A workflow
-                            // this page cannot collect input for stays on the
-                            // page, disabled with the reason, like a control the
-                            // operator's role cannot use: enabled, it could only
-                            // be refused.
-                            const plan = startPlanFor(w);
+                            // ONE CLICK, A FORM, A LINK, OR NOT HERE — from the
+                            // definition's `requiredInput` and what this caller
+                            // may read (#4472). A workflow this page cannot
+                            // start stays on the page, disabled with the
+                            // reason, like a control the operator's role cannot
+                            // use: enabled, it could only be refused.
+                            const plan = startPlanFor(w, startAbilities);
+                            if (plan.mode === 'ON_ANOTHER_PAGE') {
+                                // A LINK, and not gated on `canOperate`: it
+                                // starts nothing here, and the page it opens
+                                // has its own gate, which the plan has already
+                                // asked. `Link` + `buttonVariants`, the repo's
+                                // idiom for a navigating control.
+                                return (
+                                    <Link
+                                        key={w.key}
+                                        href={tenantHref(plan.path)}
+                                        className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                                        data-testid={`workflow-start-${w.key}`}
+                                    >
+                                        {w.name}
+                                    </Link>
+                                );
+                            }
                             const notHere = plan.mode === 'NOT_HERE';
+                            // The write tier first for a run start. A reason
+                            // about another page's gate (`OTHER_PAGE_REASONS`)
+                            // is shown as it is: no run starts here, so write
+                            // access would not change it.
+                            const reason =
+                                notHere && (canOperate || OTHER_PAGE_REASONS.has(plan.reason))
+                                    ? t(`runs.notHere.${plan.reason}`)
+                                    : t('runs.needsWrite');
                             return (
                                 <PermissionGated
                                     key={w.key}
                                     allowed={canOperate && !notHere}
-                                    reason={
-                                        !canOperate
-                                            ? t('runs.needsWrite')
-                                            : notHere
-                                              ? t(`runs.notHere.${plan.reason}`)
-                                              : ''
-                                    }
+                                    reason={reason}
                                 >
                                     <Button
                                         variant="secondary"
