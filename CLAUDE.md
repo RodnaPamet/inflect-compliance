@@ -1771,7 +1771,8 @@ through their own routes. Rules that are easy to undo:
 **The reference scanner** (`packages/agent-harness-scanner`, #3678) runs in a
 client's estate and posts what the ingest above verifies. Okta, Azure Key Vault,
 LangSmith (the `runtime` source, #3738) and the `code` source (LangChain and
-LangGraph, #3737) today; Entra, MCP, the register and the container are #3686.
+LangGraph, #3737; the Claude Agent SDK, #4156) today; Entra, MCP, the register
+and the container are #3686.
 
 - **Read-only is the wire's shape.** A source holds `ReadOnlyHttp`, whose only
   verb is GET — do not give `getJson` a method parameter. The OAuth token
@@ -1803,8 +1804,11 @@ LangGraph, #3737) today; Entra, MCP, the register and the container are #3686.
   beside the signing key. `eslint.config.mjs` refuses `child_process`, `vm`, a
   module loader, `require()`, `import()` and `eval` there, and the side-effect
   test proves it. An agent counts only when its names resolve through the
-  file's imports to a `langchain`/`langgraph` module, and anything that does not
-  resolve is `UNPARSEABLE` — never dropped, and never guessed into a value.
+  file's imports to a `langchain`/`langgraph` or Claude Agent SDK module, and
+  anything that does not resolve is `UNPARSEABLE` — never dropped, and never
+  guessed into a value. A file that names none of those modules is not parsed
+  (`FRAMEWORK_MARKERS` in `sources/code/files.ts`): a framework recognised
+  without its marker there finds nothing, silently.
 
 **Client estates** (`usecases/agent-harness-estates.ts`, the only writer of
 `AgentHarnessEstate` and `AgentHarnessEstateSource`; health in the pure
@@ -2772,6 +2776,23 @@ a run RECORDS — `WorkflowRun.driver` and the run metrics' `driver` label — i
 `recordedModeOf(driver)`, a `Record<AgentDriver, AgentDriverMode>`, never a
 `'flue' ? 'FLUE' : 'STATIC'` ternary: with a third engine that ternary records
 every run it walks as STATIC (#4270).
+
+**The scanner finds Agent SDK agents customers run, and code only ever counts
+against them** (Step 3b, #4156). The `code` source recognises `query` /
+`ClaudeSDKClient` from the SDK, and its options become ladder verdicts through
+`agentSdkOptionVerdicts` (`src/lib/agentic/harness-findings.ts`). Three rules
+that are each one careless edit from being undone:
+
+  - **The mapping is the owner's.** `AGENT_SDK_OPTION_CRITERIA` records the
+    decisions of 2026-10-29 on #4156. A new option, or a new criterion for an
+    old one, is put to the owner first: the step's rule is to ask, not invent.
+  - **NOT MET only.** Code can show a control is missing, never that one works:
+    a hook's body, a sandbox and a gateway are out of its sight. So nothing the
+    `code` source reports is `met: true`, and a present hook evidences nothing.
+  - **An option the reader could not resolve concludes nothing.** Options
+    passed in, spread or computed are `null` facts, never the SDK's defaults,
+    and make the source `UNPARSEABLE`. Reading an unseen option as its default
+    would raise a finding the code does not support, or hide one it does.
 
 **An agent profile is what the agent should DO, never what it may reach**
 (Step 1a, #4143; `usecases/agent-profiles.ts` is the only writer,

@@ -22,9 +22,8 @@
  * The draft guard in #2552 was dropped because it cost shared, zero-allowance
  * budget: `RAW_ASSERTING_FILE_BASELINE` (Class A) and
  * `UNANALYSABLE_READ_BASELINE` (Class D), both `DRIFT_ALLOWANCE 0` and both
- * contended with other sessions' open PRs. Living in `tests/unit/` dodges the
- * guard-file CEILING and nothing else — Class A scans `testFilesUnder(['tests'])`,
- * the whole tree.
+ * contended with other sessions' open PRs. Living in `tests/unit/` dodges
+ * neither — Class A scans `testFilesUnder(['tests'])`, the whole tree.
  *
  * Both populations collect exactly one shape: an `expect()` whose MATCHER is
  * `toMatch`/`toContain` and whose SUBJECT resolves to the whole text of a file
