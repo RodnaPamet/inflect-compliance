@@ -17,6 +17,7 @@ import type {
     EvidencePayload,
 } from '../types';
 import { runPowerpipeBenchmark, type RunBenchmarkInput } from '../cloud-posture/powerpipe-core';
+import { collectorExecForDeploy } from '../cloud-posture/sandboxed-collector-exec';
 
 export interface AzurePostureSecrets {
     clientId?: string;
@@ -117,7 +118,11 @@ export class AzurePostureProvider implements ScheduledCheckProvider {
     /** Test seam — inject the Powerpipe runner instead of shelling out. */
     private readonly exec?: RunBenchmarkInput['exec'];
     constructor(deps: { exec?: RunBenchmarkInput['exec'] } = {}) {
-        this.exec = deps.exec;
+        // An explicitly injected runner always wins, so every existing test
+        // double behaves exactly as before. Otherwise the deploy decides, and
+        // with the platform switch off — its default — this stays `undefined`
+        // and the on-host `execFile` path is untouched (4.1, #3961).
+        this.exec = deps.exec ?? collectorExecForDeploy() ?? undefined;
     }
 
     static benchmarkId(shorthand: string | undefined): string {

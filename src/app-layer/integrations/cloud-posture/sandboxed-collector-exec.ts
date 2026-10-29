@@ -1,0 +1,201 @@
+/**
+ * RUN THE POWERPIPE COLLECTORS IN A SANDBOX — 4.1 (#3961).
+ *
+ * The collectors `execFile` a third-party binary while holding cloud
+ * credentials. This is the bridge that moves that execution into an OpenShell
+ * sandbox, and it is deliberately thin: every piece it needs already exists,
+ * and reusing them rather than reimplementing is the point.
+ *
+ *   `runBoundedTool`            the 15-minute deadline and the 64 MB cap, which
+ *                               are already its defaults — so "the bounds move
+ *                               with the call" is satisfied by using it rather
+ *                               than by copying two constants
+ *   `openShellToolExecutor`     the sandbox lifecycle, and it already shapes its
+ *                               result for `describeChildExit`
+ *   `collectorSandboxPolicy`    4.1's policy: every endpoint enforcing, landlock
+ *                               hard_requirement, read-only root, non-root user
+ *   `childExitFromCliResult`    the collectors' existing fail-closed classifier
+ *
+ * ═══ WHY THIS RETURNS A `PowerpipeCliResult` AND NOTHING SMARTER ═══
+ *
+ * Because the fail-closed semantics are already correct and already tested, and
+ * a second copy of them would be the thing that drifts. `runPowerpipeBenchmark`
+ * refuses a run that did not complete, a parse failure, zero controls and an
+ * exit-2 run, and `powerpipeVerdict` will not call any of them PASSED. So this
+ * bridge's whole job is to land a sandbox failure in the SAME shape an
+ * `execFile` failure lands in — a `ChildExit` whose `signal` or `failure` is
+ * non-null — and let the existing ladder reach ERROR on its own.
+ *
+ * Every sandbox failure mode therefore maps to `failure`, which
+ * `classifyPowerpipeExit` reads as `did-not-complete`:
+ *
+ *   gateway unreachable / not configured   SANDBOX_UNREACHABLE
+ *   stream closed with no exit event       SANDBOX_EXEC_INCOMPLETE
+ *   deadline or output cap                 SANDBOX_BOUND_<name>
+ *   creation or provider attach refused    SANDBOX_SETUP_REFUSED
+ *
+ * The second of those is the issue's own requirement — "treat that throw as a
+ * failed collection, never a partial success" — and it is why this catches
+ * rather than lets the throw escape: an escaping throw is an unhandled
+ * rejection in a scheduled job, which is a different and worse failure than a
+ * recorded ERROR.
+ *
+ * ═══ CREDENTIALS DO NOT PASS THROUGH HERE ═══
+ *
+ * No `env` is forwarded to the sandbox. The gateway holds the credential as a
+ * named provider and injects it, which is the bullet's distinction: an env var
+ * is readable by the binary we are confining, by anything it spawns, and by
+ * `/proc/<pid>/environ`. The provider is attached and WAITED FOR before the
+ * exec, because the gateway applies an attachment asynchronously and a
+ * collector that ran before its credential arrived would fail in a way that
+ * looks like a revoked key.
+ */
+import {
+    runBoundedTool,
+    ToolExecutionBoundError,
+    TOOL_EXEC_MAX_OUTPUT_BYTES,
+    TOOL_EXEC_TIMEOUT_MS,
+} from '@/lib/agentic/bounded-exec';
+import { openShellToolExecutor } from '@/lib/agentic/openshell/executor';
+import {
+    SandboxExecIncompleteError,
+    SandboxUnreachableError,
+    unconfiguredTransport,
+    type SandboxTransport,
+} from '@/lib/agentic/openshell/transport';
+import { readSandboxExecutionPlatformEnabled } from '@/app-layer/usecases/sandbox-runtime-config';
+import { scrubSecrets } from './powerpipe-core';
+import type { PowerpipeCliResult } from './powerpipe-exit';
+
+/** Exit status a shell gives for a binary that is not there. */
+const EXIT_COMMAND_NOT_FOUND = 127;
+
+/** The collectors' runner shape, which this bridge has to satisfy exactly. */
+export type CollectorExec = (
+    file: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    secretValues: string[],
+    patterns: RegExp[],
+) => Promise<PowerpipeCliResult>;
+
+export interface SandboxedCollectorDeps {
+    readonly transport?: SandboxTransport;
+    /** The gateway-side provider holding this collector's cloud credential. */
+    readonly providerName: string;
+    readonly timeoutMs?: number;
+    readonly maxOutputBytes?: number;
+}
+
+/** A failed result in the one shape the collectors' classifier reads. */
+function didNotComplete(failure: string, stderr: string): PowerpipeCliResult {
+    return { ok: false, stdout: '', stderr, missing: false, code: null, signal: null, failure };
+}
+
+/**
+ * Build a collector runner that executes in a sandbox.
+ *
+ * `transport` defaults to the refusing stub, and that default is load-bearing
+ * rather than a convenience: a deploy that has turned sandboxed execution ON
+ * without a gateway to run it gets `SANDBOX_UNREACHABLE` on every collection,
+ * which the ladder reports as ERROR. That is the correct direction — the deploy
+ * has declared a capability it cannot provide — and it is why the switch is off
+ * by default.
+ */
+export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorExec {
+    const transport = deps.transport ?? unconfiguredTransport;
+    const timeoutMs = deps.timeoutMs ?? TOOL_EXEC_TIMEOUT_MS;
+    const maxOutputBytes = deps.maxOutputBytes ?? TOOL_EXEC_MAX_OUTPUT_BYTES;
+
+    return async (file, args, _env, secretValues, patterns) => {
+        // One scrubber for all three clouds, because the per-cloud difference is
+        // the PATTERN LIST and that already rides on the call. An injectable
+        // scrubber was the first shape here and it was redundant: this is the
+        // value loop plus those patterns, which is exactly what each cloud's
+        // own scrubber is.
+        const scrub = (t: string) => scrubSecrets(t, secretValues, patterns);
+
+        // The provider attach needs its own abort signal: it happens before
+        // `runBoundedTool` owns one, and an attach that hangs must not hang the
+        // collection. Bounded by the same deadline the run gets.
+        const setup = new AbortController();
+        const setupTimer = setTimeout(() => setup.abort(), timeoutMs);
+
+        try {
+            // The provider is attached through the executor's own hook, which
+            // runs after the sandbox exists and before the tool does. Attaching
+            // from out here is not possible and should not be: the executor owns
+            // one sandbox per execution and never hands the id out.
+            const exec = openShellToolExecutor(transport, {
+                onSandboxReady: async ({ sandboxId, signal }) => {
+                    await transport.attachProvider({
+                        sandboxId,
+                        providerName: deps.providerName,
+                        signal,
+                    });
+                },
+            });
+            // NOTE the absent `env`: credentials reach the sandbox through the
+            // attached provider and through nothing else.
+            const result = await runBoundedTool({
+                tool: 'powerpipe',
+                file,
+                args,
+                timeoutMs,
+                maxOutputBytes,
+                deps: { exec: async (f, a, options) => exec(f, a, { ...options, env: undefined }) },
+            });
+            clearTimeout(setupTimer);
+
+            const missing = result.exit.code === EXIT_COMMAND_NOT_FOUND;
+            return {
+                ok: result.exit.code === 0 && result.exit.signal === null && result.exit.failure === null,
+                stdout: scrub(result.stdout),
+                stderr: scrub(result.stderr),
+                missing,
+                ...result.exit,
+            };
+        } catch (err) {
+            clearTimeout(setupTimer);
+            // ORDER MATTERS: the specific sandbox errors first, then the bound
+            // errors, then anything else. A bound error carries a name worth
+            // keeping (`ToolExecutionOutputCapError` vs a timeout), and an
+            // unknown throw must still become a recorded ERROR rather than an
+            // unhandled rejection in a scheduled job.
+            if (err instanceof SandboxUnreachableError) {
+                return didNotComplete('SANDBOX_UNREACHABLE', scrub(err.message));
+            }
+            if (err instanceof SandboxExecIncompleteError) {
+                // The issue's own words: never a partial success.
+                return didNotComplete('SANDBOX_EXEC_INCOMPLETE', scrub(err.message));
+            }
+            if (err instanceof ToolExecutionBoundError) {
+                return didNotComplete(`SANDBOX_BOUND_${err.name}`, scrub(err.message));
+            }
+            return didNotComplete(
+                'SANDBOX_SETUP_REFUSED',
+                scrub(err instanceof Error ? err.message : String(err)),
+            );
+        }
+    };
+}
+
+/**
+ * The runner this deploy should use, or `null` to leave the caller's default.
+ *
+ * `null` is the answer whenever the platform switch is off, which is its
+ * default, so an unconfigured deploy keeps the on-host `execFile` path exactly
+ * as it was. Returning `undefined`-by-omission rather than a no-op runner is
+ * deliberate: the providers' on-disk credential handling keys off whether a
+ * runner was supplied, and a no-op runner would suppress the key write while
+ * still running on the host.
+ */
+export function collectorExecForDeploy(
+    deps: Omit<SandboxedCollectorDeps, 'providerName'> & { providerName?: string } = {},
+): CollectorExec | null {
+    if (!readSandboxExecutionPlatformEnabled()) return null;
+    return sandboxedCollectorExec({
+        ...deps,
+        providerName: deps.providerName ?? 'inflect-collector',
+    });
+}
