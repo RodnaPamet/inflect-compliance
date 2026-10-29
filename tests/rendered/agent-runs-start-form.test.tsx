@@ -45,6 +45,13 @@ jest.mock('next-intl', () => {
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };
 });
 
+// The DESKTOP dialog, which carries the close button the form relies on for
+// dismissal (it has no Cancel of its own); jsdom would otherwise get the
+// mobile drawer, which is dismissed by dragging.
+jest.mock('@inflect/ui/components/ui/hooks/use-media-query', () => ({
+    useMediaQuery: () => ({ device: 'desktop', width: 1280, height: 851, isMobile: false, isTablet: false, isDesktop: true }),
+}));
+
 jest.mock('@/lib/tenant-context-provider', () => ({
     ...jest.requireActual('@/lib/tenant-context-provider'),
     useTenantApiUrl: () => (path: string) => `/api/t/acme${path}`,
@@ -141,6 +148,15 @@ describe('starting a workflow', () => {
         const dialog = screen.getByRole('dialog');
         expect(within(dialog).getAllByText('Start Audit workpaper narrative').length).toBeGreaterThan(0);
         expect(within(dialog).getByLabelText(new RegExp(en('agents.runs.startForm.field.periodLabel.label')))).toBeInTheDocument();
+        expect(postsTo('/api/t/acme/agent-runs')).toHaveLength(0);
+    });
+
+    it('can be dismissed without starting anything', async () => {
+        renderRuns();
+        fireEvent.click(screen.getByTestId('workflow-start-audit-narrative'));
+        // The dialog's own close button — the form has no Cancel of its own.
+        fireEvent.click(screen.getByRole('dialog').querySelector('[data-modal-close]')!);
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
         expect(postsTo('/api/t/acme/agent-runs')).toHaveLength(0);
     });
 
@@ -244,7 +260,7 @@ describe('starting a workflow', () => {
                 fireEvent.click(button);
                 // Opened the form — close it again for the next one.
                 expect(screen.getByRole('dialog')).toBeInTheDocument();
-                fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: en('common.cancel') }));
+                fireEvent.click(screen.getByRole('dialog').querySelector('[data-modal-close]')!);
                 await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
             }
         }

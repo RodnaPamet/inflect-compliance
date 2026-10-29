@@ -82,7 +82,6 @@ export function WorkflowStartModal({
     onStart: (input: Record<string, string>) => void;
 }) {
     const t = useTranslations('agents');
-    const tCommon = useTranslations('common');
     const [values, setValues] = useState<Record<string, string>>({});
     /** Problems are shown after the first submit, not while the person is still typing. */
     const [submitted, setSubmitted] = useState(false);
@@ -177,13 +176,14 @@ export function WorkflowStartModal({
                     </div>
                 </Modal.Body>
                 <Modal.Footer>
-                    {/* Secondary, with a ghost Cancel beside it: the product's
-                        primary budget is a ceiling (`primary-secondary-ratio`),
-                        and starting one run is an everyday action here, not
-                        the page's one emphasis. */}
-                    <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
-                        {tCommon('cancel')}
-                    </Button>
+                    {/* ONE action, secondary. Starting a run is an everyday act
+                        on this page rather than its one emphasis, and the
+                        product's primary count is a ceiling with nothing on
+                        this page to pay for a new one (`primary-secondary-ratio`).
+                        A Cancel beside a secondary submit would end the footer
+                        on the less affirmative action (`modal-action-order`),
+                        so dismissing is the dialog's own close button, Escape
+                        or the backdrop — all of which `onCancel` handles. */}
                     <Button type="submit" variant="secondary" disabled={busy} data-testid="workflow-start-submit">
                         {t('runs.startForm.submit')}
                     </Button>

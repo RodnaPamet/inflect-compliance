@@ -75,5 +75,14 @@ Alongside, the list itself:
   reads.
 - **A page-specific truncation notice, not `TruncationBanner`.** The banner tells
   the reader to refine their filters, and this page has none.
-- **The form's submit is secondary, with a ghost Cancel.** The product-wide
-  primary count is a ceiling (`primary-secondary-ratio`).
+- **The form has ONE footer action, a secondary "Start run", and no Cancel.**
+  Two ratchets meet here:
+  - `primary-secondary-ratio` caps the product's primary count, and this page
+    has no primary to demote to pay for one.
+  - `modal-action-order` requires a footer with two buttons to end on a primary
+    or destructive one.
+
+  So dismissal is the dialog's own close button, Escape or the backdrop on
+  desktop, and drag or backdrop on the mobile drawer. The alternative is a
+  primary submit paid for by demoting another page's primary, which is the
+  ledger's usual route but outside this page.
