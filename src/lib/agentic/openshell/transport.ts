@@ -17,7 +17,7 @@
  *
  * ═══ THE VOCABULARY IS THE GATEWAY'S, READ FROM THE BINARY ═══
  *
- * Every constant below was read out of `openshell-gateway` v0.1.5 rather than
+ * Every constant below was read out of `openshell-gateway` v0.1.6 rather than
  * taken from documentation, because this phase has already been wrong twice
  * about names that documentation gave (`ocsf_log`'s TOML table does nothing;
  * `sandbox:read` is not what gates an mTLS identity).

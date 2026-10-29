@@ -115,7 +115,7 @@ describe('the Flue provider is never set per run (#3650)', () => {
  * ═══ WHAT "OPENSHELL ROUTES INFERENCE" WOULD ACTUALLY LOOK LIKE ═══
  *
  * Not a `setProvider` call — OpenShell is a different process and cannot make
- * one. Measured against the pinned v0.1.5 gateway for #4258, it compiles in no
+ * one. Measured against the pinned v0.1.6 gateway for #4258, it compiles in no
  * inference invocation path at all: no `api.anthropic.com`, `api.openai.com`,
  * `openrouter.ai` or `generativelanguage` host, and no `InvokeModel`-shaped
  * route. Its only matches are `bedrock`/`bedrock-runtime` in CONFIGURATION HELP

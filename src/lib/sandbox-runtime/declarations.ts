@@ -16,7 +16,7 @@
  * WHY A DECLARATION IS NEVER AN OBSERVATION HERE.
  *
  * #3995. The distinction in that sentence is the whole module, and it comes
- * from a measurement rather than a preference: a running OpenShell v0.1.5
+ * from a measurement rather than a preference: a running OpenShell v0.1.6
  * gateway exposes NO configuration read API. `healthz` and `readyz` are the
  * only routes on its health port; `config`, `configz`, `version` and
  * `/api/v1/config` all answer 404; none of its 39 metric lines names a
@@ -32,7 +32,7 @@
  * ── THE FOUR CHANNELS ARE FOUR, NOT ONE ─────────────────────────────────
  *
  * The roadmap named `server.telemetryEnabled` and read as though it governed
- * outbound reporting. Verified against the v0.1.5 Helm chart and the gateway
+ * outbound reporting. Verified against the v0.1.6 Helm chart and the gateway
  * binary, it governs one of four:
  *
  *   • anonymous telemetry — DEFAULT ON, gateway and the sandbox supervisors it

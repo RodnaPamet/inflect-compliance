@@ -7,7 +7,7 @@ basename other than `docker-compose.prod.yml`.
 
 | | |
 |---|---|
-| Release | **v0.1.5**, binary, verified to its published checksum |
+| Release | **v0.1.6**, binary, verified to its published checksum |
 | Config | `gateway.toml` → `/etc/openshell/gateway.toml` |
 | Unit | `openshell-gateway.service` → `/etc/systemd/system/` |
 | Driver images | digest-pinned in `gateway.toml` |
@@ -20,12 +20,12 @@ basename other than `docker-compose.prod.yml`.
 Upstream publishes no gateway image for this release. `ghcr.io/nvidia/openshell/gateway`
 carries 4000 tags whose highest semantic version is **0.0.91**, built
 **2026-07-24**; `docker run … --version` on it reports `openshell-gateway 0.0.91`,
-against our binary's `0.1.5`.
+against our binary's `0.1.6`.
 
-It is not merely older. It is missing nine flags the 0.1.5 binary has, three of
+It is not merely older. It is missing nine flags the 0.1.6 binary has, three of
 which this phase depends on — `--compute-driver`, `--enable-operator-auth` and
 `--oidc-jwks-allowed-origins`. Using it would also break the pre-1.0 rule that
-the SDK and the gateway move together: a 0.1.5 SDK against a 0.0.91 gateway,
+the SDK and the gateway move together: a 0.1.6 SDK against a 0.0.91 gateway,
 reverting three months of fixes including the ones found on 0.1.2.
 
 ## Why its own VM
@@ -50,7 +50,7 @@ chain has four links and all four are checked:
 published SHA256SUMS → tarball → extracted binary → host-to-VM transfer
 ```
 
-`openshell-gateway --version` on the VM must print `openshell-gateway 0.1.5`
+`openshell-gateway --version` on the VM must print `openshell-gateway 0.1.6`
 before the unit is enabled. That is the pin; there is no digest for a binary.
 
 ## Digest pinning, and why the tag is not trusted
@@ -59,8 +59,8 @@ With no configuration the gateway resolves its driver images **by mutable tag**.
 Observed in its own Docker socket traffic:
 
 ```
-GET /images/ghcr.io/nvidia/openshell/sandbox:0.1.5/json
-GET /images/ghcr.io/nvidia/openshell/supervisor:0.1.5/json
+GET /images/ghcr.io/nvidia/openshell/sandbox:0.1.6/json
+GET /images/ghcr.io/nvidia/openshell/supervisor:0.1.6/json
 ```
 
 And that tag moves. The digests in `gateway.toml` are the images this phase ran
@@ -71,6 +71,10 @@ later** — `:0.1.5` pointed at different content in both repositories:
 sandbox:0.1.5     -> sha256:e9adf9ec…    recorded: sha256:d60222e1…
 supervisor:0.1.5  -> sha256:fabcd01f…    recorded: sha256:07cc8b62…
 ```
+
+Those were the v0.1.5 pins and the movement that proved the point. The pins in
+`gateway.toml` are v0.1.6's, resolved 2026-10-29 and **verified in use** — a
+0.1.6 gateway running that config created a sandbox on them.
 
 Both recorded digests still exist and still pull, so this is not a mistaken
 record: a **release** tag was re-pushed within 72 hours. Anyone who pinned
@@ -134,7 +138,15 @@ thing to check on the host.
 
 ## Inbound authentication
 
-The gateway warns, in plain words, when it has none:
+**Since v0.1.6 it refuses to start without any**, which is the hardening this
+section used to have to argue for: OIDC, mTLS user or operator authentication,
+or gateway JWTs. `gateway.toml`'s `gateway_jwt` table is what satisfies it here.
+
+Upstream documents an escape hatch, `allow_unauthenticated_users = true` under
+`[openshell.gateway.auth]`, for "trusted local development only". It must never
+appear in this deployment's config, and a guard asserts that — on a host whose
+Docker socket is root-equivalent, it would turn the refusal back into the 0.1.5
+behaviour, which was to start anyway and warn:
 
 ```
 WARN Neither mTLS user auth nor OIDC nor sandbox JWT auth is configured
@@ -167,12 +179,12 @@ absent from both VMs and is presented out of band by a person.
 [ ] A VM exists, with Docker from Docker's apt repository — NOT snap.
 [ ] Linux 6.2+ with Landlock. Under hard_requirement the gateway REFUSES to
     start without it, which is the behaviour to want rather than work around.
-[ ] openshell-gateway 0.1.5 at /usr/local/bin, checksum chain checked.
+[ ] openshell-gateway 0.1.6 at /usr/local/bin, checksum chain checked.
 [ ] /etc/openshell/pki/jwt/signing.pem exists, root-owned, mode 0400.
     The unit ASSERTS this and FAILS without it — it does not skip.
 [ ] /etc/openshell/env written with the four variables above.
 [ ] Egress policy denies events.telemetry.data.nvidia.com.
-[ ] `openshell-gateway --version` prints 0.1.5 on the VM.
+[ ] `openshell-gateway --version` prints 0.1.6 on the VM.
 ```
 
 ## The VM is not provisioned, and that is an owner decision

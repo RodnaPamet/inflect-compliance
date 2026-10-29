@@ -8,7 +8,7 @@
 # why for both, with the measurements.
 #
 [Unit]
-Description=OpenShell gateway (v0.1.5, pinned)
+Description=OpenShell gateway (v0.1.6, pinned)
 Documentation=file:/etc/openshell/README.md
 After=network-online.target docker.service
 Wants=network-online.target
@@ -51,7 +51,7 @@ Environment=OPENSHELL_LOG_LEVEL=info
 
 # ── TELEMETRY OFF ─────────────────────────────────────────────────────
 # Anonymous telemetry is DEFAULT ON in this build, which is why the phase
-# requires this line. The variable is present in the 0.1.5 binary but is NOT
+# requires this line. The variable is present in the 0.1.6 binary but is NOT
 # listed in `--help`, so it is read from the environment without appearing in
 # the flag surface — and setting it to an invalid value is accepted silently
 # rather than rejected.

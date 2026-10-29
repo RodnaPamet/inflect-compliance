@@ -653,7 +653,7 @@ including its 30-day notice window, before that data moves.
 gateway's proto.
 
 The blocker recorded here — "needs a gateway with JWT signing configured, which
-needs PKI and a client identity" — has been removed. A v0.1.5 gateway now runs
+needs PKI and a client identity" — has been removed. A v0.1.6 gateway now runs
 on mTLS with its four `gateway_jwt` keys, and the measurement was taken against
 it. Three things came out of it, and the third is why this gap stays open.
 

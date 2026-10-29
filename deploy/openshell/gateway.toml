@@ -1,5 +1,5 @@
 #
-# OpenShell gateway configuration — 4.3 (#3964), release v0.1.5.
+# OpenShell gateway configuration — 4.3 (#3964), release v0.1.6.
 #
 # Installed at /etc/openshell/gateway.toml on the GATEWAY VM and nowhere else.
 # Read by openshell-gateway.service via OPENSHELL_GATEWAY_CONFIG. Every key
@@ -13,10 +13,10 @@
 # Because upstream publishes no container image for this release. Measured:
 # ghcr.io/nvidia/openshell/gateway carries 4000 tags whose highest semantic
 # version is 0.0.91, built 2026-07-24, and `docker run … --version` on it
-# reports `openshell-gateway 0.0.91`. Our pinned binary reports 0.1.5.
+# reports `openshell-gateway 0.0.91`. Our pinned binary reports 0.1.6.
 #
 # That image is not merely older, it cannot be configured the way this phase
-# requires. It is missing nine flags the 0.1.5 binary has, and three of them
+# requires. It is missing nine flags the 0.1.6 binary has, and three of them
 # are the ones 4.3 depends on:
 #
 #   --compute-driver              selects the Docker driver
@@ -24,7 +24,7 @@
 #   --oidc-jwks-allowed-origins   the inbound OIDC path
 #
 # Using it would also break this phase's own rule that, pre-1.0, the SDK and
-# the gateway move together: it would pair a 0.1.5 SDK with a 0.0.91 gateway
+# the gateway move together: it would pair a 0.1.6 SDK with a 0.0.91 gateway
 # and revert three months of fixes, including the ones found on 0.1.2.
 #
 # So the gateway runs from the release binary, verified to its published
@@ -40,6 +40,18 @@ compute_driver = "docker"
 # CA the gateway presents to sandbox guests.
 guest_tls_ca = "/etc/openshell/pki/ca.crt"
 
+# ═══ 0.1.6 REFUSES TO START WITHOUT AUTHENTICATION ═══
+#
+# New in v0.1.6: a gateway refuses to start unless OIDC, mTLS user or operator
+# authentication, or gateway JWTs are configured. This table is what satisfies
+# it here, and that is a hardening rather than a cost — the 0.1.5 gateway would
+# start with no authentication at all and only warn.
+#
+# The escape hatch is `allow_unauthenticated_users = true` under
+# `[openshell.gateway.auth]`, documented upstream for "trusted local
+# development only". IT MUST NEVER APPEAR IN THIS FILE, and a guard asserts so:
+# it would turn the refusal above back into the 0.1.5 warning, on the one host
+# whose Docker socket is root-equivalent.
 [openshell.gateway.gateway_jwt]
 # Sandbox-facing JWT identity. The PRIVATE half never leaves this VM, and is
 # not in this repository: the unit refuses to start if it is absent (see
@@ -62,8 +74,8 @@ path = "/var/log/openshell/gateway-ocsf.jsonl"
 # With no configuration the gateway resolves these by MUTABLE TAG. Observed
 # directly, in its own Docker socket traffic:
 #
-#   GET /images/ghcr.io/nvidia/openshell/sandbox:0.1.5/json
-#   GET /images/ghcr.io/nvidia/openshell/supervisor:0.1.5/json
+#   GET /images/ghcr.io/nvidia/openshell/sandbox:0.1.6/json
+#   GET /images/ghcr.io/nvidia/openshell/supervisor:0.1.6/json
 #
 # And that tag moves. The digests below are the images this phase actually ran
 # and verified, recorded 2026-10-24. Re-resolved on 2026-10-27, three days
@@ -71,6 +83,10 @@ path = "/var/log/openshell/gateway-ocsf.jsonl"
 #
 #   sandbox:0.1.5     -> sha256:e9adf9ec…   (recorded: sha256:d60222e1…)
 #   supervisor:0.1.5  -> sha256:fabcd01f…   (recorded: sha256:07cc8b62…)
+#
+# Those were the v0.1.5 pins and the movement that proved the point. The pins
+# below are v0.1.6's, resolved 2026-10-29, and VERIFIED in use: a gateway 0.1.6
+# running this config created a sandbox on them.
 #
 # Both recorded digests still exist and still pull, so this is not a mistaken
 # record: a RELEASE tag was re-pushed within 72 hours. Anyone who pinned
@@ -81,12 +97,12 @@ path = "/var/log/openshell/gateway-ocsf.jsonl"
 # in `key = "value"` shape on purpose: it is bait for the pinning guard, which
 # must not count a commented assignment as a live one.
 #
-#   sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:0.1.5"
-#   supervisor_image = "ghcr.io/nvidia/openshell/supervisor:0.1.5"
+#   sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:0.1.6"
+#   supervisor_image = "ghcr.io/nvidia/openshell/supervisor:0.1.6"
 #
 # These are single-platform manifests (`…image.manifest.v1+json`), not manifest
 # lists, so unlike the pipelock pin there is no amd64/arm64 list digest to
 # prefer — the gateway VM is amd64 and that is what these are.
 #
-sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox@sha256:d60222e1183ad3212436507c4b9035c0aeda1c1bba4a00a02ec7949fb0a0d7b2"
-supervisor_image = "ghcr.io/nvidia/openshell/supervisor@sha256:07cc8b62b34a0b54a3ebeb485cebe9f223cffe10dad819af550849cf0699816f"
+sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox@sha256:1038eb5c1f191fa3c34684fd7041b891c78ec570979d487f36e06e08f91bfb63"
+supervisor_image = "ghcr.io/nvidia/openshell/supervisor@sha256:ce859a7d77ee515d3fe0b3c7dc61286516f402eb1d25c761d806d9ae5ed96c0b"
