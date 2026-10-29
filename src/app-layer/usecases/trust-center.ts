@@ -65,9 +65,18 @@ function sanitizeDocuments(
         .filter((d): d is { label: string; url: string } => Boolean(d.label && d.url));
 }
 
-/** Read the tenant's trust center (compose view). Null if not created yet. */
+/**
+ * Read the tenant's trust center (compose view). Null if not created yet.
+ *
+ * Asserts `admin.manage`, the key its only route (`GET /admin/trust-center`)
+ * holds, and not merely `assertCanRead`: the compose row includes unpublished
+ * drafts, and its only other caller is the admin trust-center page.
+ */
 export async function getTrustCenter(ctx: RequestContext) {
     assertCanRead(ctx);
+    if (!ctx.appPermissions?.admin?.manage) {
+        throw forbidden('You do not have permission to compose the trust center.');
+    }
     return runInTenantContext(ctx, (db) =>
         db.trustCenter.findUnique({ where: { tenantId: ctx.tenantId } }),
     );

@@ -5,8 +5,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
-import { getTenantCtx } from '@/app-layer/context';
 import { listAgentCredentials } from '@/app-layer/usecases/api-keys';
+import { gateAdminPage } from '../_lib/admin-page-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,17 +44,21 @@ export const dynamic = 'force-dynamic';
  * computed by the same function the tool funnel uses — rather than the key's own
  * number, because reading the key's number as the answer is the exact
  * misunderstanding the ceiling exists to prevent.
+ *
+ * Gated here, before the read (`admin.view` + `canAdmin`, which
+ * `listAgentCredentials` asserts), so a refused caller gets the forbidden page
+ * rather than the read's error. See `../_lib/admin-page-requirements.ts`.
  */
 export default async function McpAdminPage({
     params,
 }: {
     params: Promise<{ tenantSlug: string }>;
 }) {
-    const resolved = await params;
-    const { tenantSlug } = resolved;
+    const gate = await gateAdminPage('/admin/mcp', params);
+    if (!gate.allowed) return gate.forbidden;
+    const { ctx, tenantSlug } = gate;
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
     const t = await getTranslations('admin');
-    const ctx = await getTenantCtx(resolved);
     const credentials = await listAgentCredentials(ctx);
 
     const stateVariant = {
