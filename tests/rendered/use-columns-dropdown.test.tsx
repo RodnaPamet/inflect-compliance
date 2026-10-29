@@ -10,9 +10,12 @@
  *   4. The returned `dropdown` ReactNode renders the gear button
  *      and the popover opens on click — locks the "gear actually
  *      works" guarantee the round was anchored around.
+ *   5. A `defaultVisible: false` column CAN be turned on (#4462). The
+ *      order used to be reconciled against the default-visible columns
+ *      only, so the gear stored the id and the table dropped it.
  */
 import * as React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
 import { useColumnsDropdown } from '@/components/ui/table/use-columns-dropdown';
 
@@ -53,6 +56,40 @@ describe('useColumnsDropdown', () => {
             a: true,
             b: false,
         });
+    });
+
+    test('a `defaultVisible: false` column can be turned on, and off again', () => {
+        const { result } = renderHook(() =>
+            useColumnsDropdown({
+                storageKey: 'test:col-vis:show-hidden',
+                columns: [
+                    { id: 'a', label: 'A' },
+                    { id: 'b', label: 'B', defaultVisible: false },
+                ],
+            }),
+        );
+        act(() => result.current.setColumnVisibility({ a: true, b: true }));
+        expect(result.current.columnVisibility).toEqual({ a: true, b: true });
+        // …and it takes a slot in the order, after the columns already shown.
+        expect(
+            result.current.orderColumns([{ id: 'b' }, { id: 'a' }]).map((c) => c.id),
+        ).toEqual(['a', 'b']);
+        act(() => result.current.setColumnVisibility({ a: true, b: false }));
+        expect(result.current.columnVisibility).toEqual({ a: true, b: false });
+    });
+
+    test('a column that was turned on and persisted is shown on the next mount', () => {
+        window.localStorage.setItem('test:col-vis:persisted', JSON.stringify(['a', 'b']));
+        const { result } = renderHook(() =>
+            useColumnsDropdown({
+                storageKey: 'test:col-vis:persisted',
+                columns: [
+                    { id: 'a', label: 'A' },
+                    { id: 'b', label: 'B', defaultVisible: false },
+                ],
+            }),
+        );
+        expect(result.current.columnVisibility).toEqual({ a: true, b: true });
     });
 
     test('the dropdown gear is mounted with the canonical data-testid', () => {
