@@ -20,17 +20,17 @@ Click **{{ui:nav.admin}}**, the gear icon at the bottom of the sidebar. The {{ui
 
 Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page.
 
-If your workspace uses custom roles, this page follows the custom role's base role. An Admin whose custom role is built on Editor, Auditor or Reader sees the page stay on its loading placeholder, and cannot save or run anything.
+An Admin whose membership carries a custom role can use the page only if the custom role is built on Admin and can manage the workspace's settings. Any other custom role sees **{{ui:admin.forbidden.title}}**, or **{{ui:admin.notifications.loadFailed}}** in place of the settings.
 
 ## What it is for
 
 Inflect emails people when something needs them: a task assigned, evidence about to expire, a policy waiting for approval, a leaver found. Those emails wait in a queue, the outbox, which Inflect sends every 10 minutes. This page decides whether they are sent at all, under which name and address, and whether a compliance mailbox gets a blind copy of each. Its last section decides which agent events notify everyone in the workspace through the bell.
 
-Not every email goes through these settings. Invitations, the weekly compliance digest, scheduled risk reports and sign-in emails, such as a password reset, are sent directly: they do not use the sender set here, are not copied to the compliance mailbox, and are sent even while email notifications are off.
+The settings cover the outbox emails, the weekly compliance digest and the emails that deliver scheduled risk reports. Invitations to join the workspace and account emails, such as a password reset or email verification, are different: they come from the platform's own address, are not copied to the compliance mailbox, and are sent even while email notifications are off.
 
 ## What you see
 
-**The header.** The page title, a badge reading **{{ui:admin.notifications.enabled}}** or **{{ui:admin.notifications.disabled}}**, and two buttons, **{{ui:admin.notifications.processOutbox}}** and **{{ui:admin.notifications.dailySweep}}**. The badge follows the switch below as soon as you change it, before you save.
+**The header.** The page title, a badge reading **{{ui:admin.notifications.enabled}}** or **{{ui:admin.notifications.disabled}}**, and two buttons, **{{ui:admin.notifications.processOutbox}}** and **{{ui:admin.notifications.dailySweep}}**. The badge shows the saved setting, so it changes only after you save.
 
 **{{ui:admin.notifications.tabSettings}} and {{ui:admin.notifications.tabStats}}.** Two views, one at a time.
 
@@ -38,10 +38,10 @@ Not every email goes through these settings. Invitations, the weekly compliance 
 
 | Setting | What it does |
 | --- | --- |
-| {{ui:admin.notifications.enableToggle}} | Whether the workspace sends the emails that go through the outbox. On by default |
-| {{ui:admin.notifications.senderName}} | The name emails come from. Required |
-| {{ui:admin.notifications.senderEmail}} | The address emails come from. Inflect fills in a default |
-| {{ui:admin.notifications.complianceMailbox}} | An optional address that receives a blind copy of every outbox email |
+| {{ui:admin.notifications.enableToggle}} | Whether the workspace sends notification emails, the weekly compliance digest and scheduled risk report emails. On by default |
+| {{ui:admin.notifications.senderName}} | The name those emails come from. Required, up to 200 characters |
+| {{ui:admin.notifications.senderEmail}} | The address those emails come from. Inflect fills in a default |
+| {{ui:admin.notifications.complianceMailbox}} | An optional address that receives a blind copy of each of those emails |
 | {{ui:admin.notifications.inAppTitle}} | {{ui:admin.notifications.inAppDescription}} |
 
 Under {{ui:admin.notifications.inAppTitle}}, one switch per agent event: an agent's kill switch engaged, an agent proposal quarantined, an agent's circuit breaker tripped, a tool definition approved for the workspace, an agent's risk assessment out of date, and an agent's owner leaving the workspace. Each is on by default. The event names are shown in English whatever your language, because the notifications themselves are written in English.
@@ -61,25 +61,25 @@ Under {{ui:admin.notifications.inAppTitle}}, one switch per agent event: an agen
 
 Change any setting on **{{ui:admin.notifications.tabSettings}}**, then click **{{ui:admin.notifications.saveSettings}}**. Everything on the view is saved together. **{{ui:admin.notifications.savedSuccess}}** shows for two seconds.
 
-- **Sender.** Change the address only to one Inflect's mail service is allowed to send from. Any other address makes every outbox email fail, and the failures show under {{ui:admin.notifications.colFailed}}.
-- **Compliance mailbox.** Enter an address to copy every outbox email to it. Clear the field to stop.
-- **Email off.** Switch off {{ui:admin.notifications.enableToggle}}. No new outbox emails are queued while it is off. Emails already queued wait, and are sent once you switch it back on.
+- **Sender.** Change the address only to one Inflect's mail service is allowed to send from. Any other address makes every outbox email fail, and the failures show under {{ui:admin.notifications.colFailed}}. The weekly digest and scheduled report emails fail too, and those failures are not counted here.
+- **Compliance mailbox.** Enter an address to copy every notification email, every weekly digest and every scheduled report email, attachment included, to it. The digest is copied once for each person it is sent to. Clear the field to stop.
+- **Email off.** Switch off {{ui:admin.notifications.enableToggle}}. No new outbox emails are queued while it is off. Emails already queued wait, and are sent once you switch it back on. The weekly digest is not sent, and scheduled risk reports are still produced but not emailed; neither is sent later when you switch email back on.
 - **The bell.** Switch off an agent event to stop it notifying anyone. Inflect stops creating that notification, so it never reaches the bell, its list or the unread count. It affects everyone in the workspace.
 
-Fill in every field correctly before you save. If the sender name is empty or an address is not a valid email address, the save is refused and the page stops with an error instead of saying which field is wrong. Nothing is saved. Reload the page to see the settings as they were.
+If the sender name is empty or an address is not a valid email address, the save is refused and nothing is saved. The page keeps what you typed, shows **{{ui:admin.notifications.saveFailed}}** beside the button, and marks the field that was refused. Correct it and save again.
 
 ### Send queued email now
 
-Click **{{ui:admin.notifications.processOutbox}}** and confirm in your browser. Inflect sends up to 100 of this workspace's queued emails straight away, instead of at the next 10-minute run. A browser message then gives the counts sent, failed and skipped. The button reads **{{ui:admin.notifications.sending}}** while it works.
+Click **{{ui:admin.notifications.processOutbox}}**. A dialog titled **{{ui:admin.notifications.runOutboxConfirmTitle}}** opens; click **{{ui:admin.notifications.runOutboxConfirm}}**. Inflect sends up to 100 of this workspace's queued emails straight away, instead of at the next 10-minute run. The button reads **{{ui:admin.notifications.sending}}** while it works. A message, **{{ui:admin.notifications.outboxResultTitle}}**, then gives the counts sent, failed and skipped, and the {{ui:admin.notifications.tabStats}} view is refreshed. Settings you have changed but not saved are kept.
 
 ### Run the daily evidence sweep now
 
-Click **{{ui:admin.notifications.dailySweep}}** and confirm in your browser. Inflect runs this workspace's daily evidence check, which normally runs at 06:00 UTC: it creates reminder tasks for evidence that expires within 30, 7 or 1 days, skipping any it has reminded about already. It then sends queued email. A browser message gives the counts.
+Click **{{ui:admin.notifications.dailySweep}}**. A dialog titled **{{ui:admin.notifications.runSweepConfirmTitle}}** opens; click **{{ui:admin.notifications.runSweepConfirm}}**. Inflect runs this workspace's daily evidence check, which normally runs at 06:00 UTC: it creates reminder tasks for evidence that expires within 30, 7 or 1 days, skipping any it has reminded about already. It then sends this workspace's queued email. A message, **{{ui:admin.notifications.sweepResultTitle}}**, gives the reminder tasks created, those already reminded about, and the emails sent, failed and skipped.
 
 ## What happens next
 
 - Saved settings apply to the next email the outbox sends.
-- Changes on this page are not recorded in the workspace's audit log.
+- Each save that changes a setting is recorded in the workspace's audit log, with the settings changed and their values before and after. A save that changes nothing records nothing.
 - A failed email is tried up to three times in all. After the third failure it counts under {{ui:admin.notifications.colFailed}} and is not tried again.
 
 ## Empty and error states
@@ -87,9 +87,9 @@ Click **{{ui:admin.notifications.dailySweep}}** and confirm in your browser. Inf
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
-| A grey placeholder that never goes away | The settings did not load, for example because your custom role cannot read them | Reload the page. If it persists, ask an Owner to check your role |
-| A browser message starting **Error:** after a button | The job did not run | Reload the page and try again |
-| The page stops with an error after **{{ui:admin.notifications.saveSettings}}** | A field was empty or not a valid address, and the save was refused | Reload the page, correct the field and save again |
+| **{{ui:admin.notifications.loadFailed}}** | The settings did not load. The reason the server gave, if any, is shown below it. A custom role that cannot manage the workspace's settings also sees this | Click **{{ui:common.error.tryAgain}}**. If it persists, ask an Owner to check your role |
+| **{{ui:admin.notifications.saveFailed}}** beside the button | The save was refused and nothing was saved. A refused field is marked {{ui:admin.notifications.senderNameInvalid}} or {{ui:admin.notifications.emailInvalid}} | Correct the field and save again |
+| **{{ui:admin.notifications.triggerFailed}}**, or the reason the server gave, after a button | The job did not run | Try again |
 
 ## Related
 
