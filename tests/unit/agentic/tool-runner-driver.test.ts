@@ -68,7 +68,7 @@ function mockKilled(): boolean {
 jest.mock('@/env', () => ({
     env: {
         NODE_ENV: 'test',
-        ANTHROPIC_API_KEY: 'sk-ant-conformance',
+        ANTHROPIC_API_KEY: 'sk-ant-conformance', // pragma: allowlist secret -- a placeholder; the faux fetch answers every request
     },
 }));
 
