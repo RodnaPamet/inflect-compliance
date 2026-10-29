@@ -33,6 +33,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { codeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
 
@@ -125,11 +126,11 @@ const DETAIL_PAGES: DetailPageEntry[] = [
  * the next author to delete the explanation instead of the usage, which is
  * exactly backwards.
  */
-function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^[ \t]*\/\/.*$/gm, '');
-}
+// Was a file-local `stripComments` (#4356). It only removed `//` comments
+// that STARTED a line — `^[ \t]*\/\/` — so a trailing `// <MetaStrip>` on a
+// line of real code survived it. `codeOf` is the repo's shared answer and
+// handles the regex-literal/JSX lexing ambiguity a hand-rolled pass does not.
+const stripComments = codeOf;
 
 describe("MetaStrip detail-page coverage", () => {
     it("every registered detail page exists in the codebase", () => {
@@ -153,7 +154,10 @@ describe("MetaStrip detail-page coverage", () => {
         for (const entry of DETAIL_PAGES) {
             if (!entry.adopted) continue;
             const full = path.join(ROOT, entry.file);
-            const content = fs.readFileSync(full, "utf8");
+            // Comment-masked: this is the ESCAPE half — matching is what
+            // lets an `adopted: true` entry pass — so prose about
+            // `<MetaStrip>` must not satisfy it (#4356).
+            const content = stripComments(fs.readFileSync(full, "utf8"));
             if (!/<MetaStrip\b/.test(content)) {
                 violations.push(entry.file);
             }
