@@ -5140,6 +5140,63 @@
         "scopeTenantWarning": "This stops every registered agent in the workspace, not just this one. It is checked at the tool boundary on every call, so a run already under way stops at its next tool call rather than continuing to the end. It is reversible, and lifting it is a separate deliberate act.",
         "scopeTypeToConfirm": "Type {slug} to confirm a workspace-wide stop"
       },
+      "connect": {
+        "action": "Connect an agent you run",
+        "title": "Connect {name}",
+        "description": "Create a key for this agent and point the agent you run at Inflect. The key reaches only the tools this agent is granted.",
+        "defaultKeyName": "{name} connector",
+        "keyName": "Key name",
+        "ceiling": "Autonomy ceiling",
+        "ceilingHint": "The highest rung this key may drive the agent to. It starts at the agent's own level, L{level}, and can only be lowered.",
+        "scopes": "Scopes",
+        "scopesHint": "Exactly what the agent's granted tools need. A tool the agent is not granted is refused, whatever the key carries.",
+        "unscoped": "This version of Inflect does not know these granted tools, so the key carries no scope for them and cannot call them: {tools}",
+        "cancel": "Cancel",
+        "mint": "Create key",
+        "minting": "Creating…",
+        "mintFailed": "Could not create the key.",
+        "grantsFailedTitle": "Could not read this agent's tools",
+        "grantsFailedBody": "The key's scopes come from the agent's granted tools, so no key can be created until they load.",
+        "keyOnce": "Copy this key now. It is shown once, and it is gone when you close this panel.",
+        "copyKey": "Copy key",
+        "keyEnv": "Store it where your agent runs, as the environment variable {env}. The configuration below reads it from there.",
+        "copy": "Copy",
+        "tabSdk": "Agent SDK",
+        "tabConsole": "Managed Agent",
+        "sdkIntro": "For an agent you wrote with Anthropic's Agent SDK. Add these options to your code.",
+        "typescript": "TypeScript",
+        "python": "Python",
+        "line": {
+          "mcpServers": "points the agent at Inflect and sends the key from the environment.",
+          "allowedTools": "lists exactly the tools this agent is granted, so the agent does not ask for others.",
+          "tools": "turns off the built-in tools, such as the shell and file editing. Add only the ones your agent needs.",
+          "settingSources": "stops settings files on the machine from adding tools, hooks or permissions.",
+          "strictMcpConfig": "uses only the servers listed here and ignores any configured elsewhere.",
+          "permissionMode": "refuses any tool that allowedTools does not list, instead of asking."
+        },
+        "consoleIntro": "For an agent built in Anthropic's Console. Paste each part into the agent's configuration.",
+        "console": {
+          "server": {
+            "title": "Inflect server",
+            "explain": "Add this to the servers the agent connects to for its tools."
+          },
+          "vault": {
+            "title": "Vault credential",
+            "explain": "Create this credential in a vault and replace the placeholder with the key above. The key is kept in the vault, not in the agent."
+          },
+          "toolset": {
+            "title": "Toolset",
+            "explain": "Add this to the agent's tools. Every tool is off unless it is listed. Reads run on their own, and proposals ask before each call."
+          }
+        },
+        "done": "Done",
+        "blocked": {
+          "permission": "Connecting an agent creates an API key, which needs the permission to manage API keys. Ask an owner or an admin.",
+          "grantsUnreadable": "The key's scopes come from this agent's granted tools, and you cannot read them. Ask an owner or an admin.",
+          "inactive": "Only an active agent can be connected. Activate the agent first.",
+          "grantsEmpty": "This agent is granted no tools, so a key for it could call nothing. Grant tools on the Tools tab first."
+        }
+      },
       "amend": {
         "action": "Amend",
         "title": "Amend {name}",

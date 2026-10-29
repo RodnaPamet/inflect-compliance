@@ -176,6 +176,11 @@ export default async function AgentDetailPage({
                 // The Runs tab's read, `GET /agent-runs`, takes the runs page's
                 // gate rather than this page's inventory read.
                 canReadRuns: mayReadAgentActivity(ctx.appPermissions.admin),
+                // The connect wizard's mint (#4155) is the api-keys route:
+                // `requirePermission('admin.manage')`, then `createApiKey`'s
+                // role-tier `assertCanAdmin`. Both halves, for the reason
+                // `canCloseBreaker` gives above.
+                canMintKeys: ctx.appPermissions.admin.manage && ctx.permissions.canAdmin,
             }}
             viewerUserId={ctx.userId}
             // The Behaviour tab exists only where agent profiles are on: the

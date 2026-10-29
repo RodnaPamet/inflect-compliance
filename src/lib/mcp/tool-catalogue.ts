@@ -73,3 +73,44 @@ export function mcpToolCapabilityClass(name: string): 'read' | 'propose' {
         ? 'read'
         : 'propose';
 }
+
+/**
+ * The API-key scope each tool checks at `/api/mcp`, IN ADDITION to `mcp:read`
+ * or `mcp:propose` (the tool's `resourceScope`, written `<resource>:<action>`).
+ *
+ * Here, as a copy, for the same reason the names are: the connect wizard on an
+ * agent's page (#4155) mints a key carrying exactly the scopes its agent's
+ * grants need, and a client component cannot import the registries.
+ * `tests/unit/mcp-tool-key-scopes.test.ts` asserts this map equals every
+ * registry definition's `resourceScope`, so the copy cannot drift: a key
+ * minted from a stale map would be refused the tool it was minted for.
+ */
+export const MCP_TOOL_KEY_SCOPE: Readonly<
+    Record<(typeof MCP_READ_TOOL_NAMES)[number] | (typeof MCP_PROPOSE_TOOL_NAMES)[number], string>
+> = {
+    get_compliance_posture: 'controls:read',
+    get_tenant_context: 'controls:read',
+    list_risks: 'risks:read',
+    list_controls: 'controls:read',
+    search_controls: 'controls:read',
+    find_coverage_gaps: 'frameworks:read',
+    get_framework_status: 'frameworks:read',
+    list_evidence_expiring: 'evidence:read',
+    list_findings: 'audits:read',
+    list_tasks: 'tasks:read',
+    get_discovered_agent: 'admin:agent_registry_view',
+    get_harness_register: 'admin:harness_ingest',
+    get_agent_recertification_evidence: 'access_reviews:read',
+    list_audit_workpapers: 'audits:workpaper_view',
+    propose_risks: 'risks:read',
+    propose_controls: 'controls:read',
+    draft_policy: 'policies:read',
+    propose_finding: 'audits:read',
+};
+
+/**
+ * The scope every granted external tool (`mcp__<connection>__<tool>`) checks:
+ * `admin:external_tools`, which also carries the permission the call needs
+ * (#4485). A copy of `EXTERNAL_TOOL_RESOURCE_SCOPE`, held equal by the same test.
+ */
+export const EXTERNAL_TOOL_KEY_SCOPE = 'admin:external_tools';
