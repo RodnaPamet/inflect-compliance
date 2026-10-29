@@ -344,9 +344,11 @@ async function applyAssessmentRiskWriteback(
     vendorName: string,
     riskRating: VendorCriticality | null,
 ): Promise<{ createdRiskId: string | null; linkFailed?: boolean }> {
-    if (!riskRating) return { createdRiskId: null };
-
-    // 1. Writeback inherent tier + review timestamp + next-review roll.
+    // 1. Writeback review timestamp + next-review roll, and the inherent tier
+    //    when the review produced one. Runs for EVERY completed review (owner
+    //    decision, 2026-10-29): a review without a risk rating is still a
+    //    review, so it moves the vendor out of "overdue" like any other. Only
+    //    `inherentRisk` needs a rating to write.
     try {
         const now = new Date();
         // PR-S — only roll nextReviewAt when nothing is already scheduled in the
@@ -359,7 +361,7 @@ async function applyAssessmentRiskWriteback(
         await prisma.vendor.updateMany({
             where: { id: vendorId, tenantId: ctx.tenantId },
             data: {
-                inherentRisk: riskRating,
+                ...(riskRating ? { inherentRisk: riskRating } : {}),
                 lastAssessmentReviewedAt: now,
                 ...(rollNextReview
                     ? { nextReviewAt: new Date(now.getTime() + REASSESSMENT_CADENCE_DAYS * 86_400_000) }
@@ -377,7 +379,8 @@ async function applyAssessmentRiskWriteback(
         );
     }
 
-    // 2. Auto-create a register Risk on high-risk ratings (idempotent).
+    // 2. Auto-create a register Risk on high-risk ratings (idempotent). A
+    //    review with no rating stops here.
     if (riskRating !== 'HIGH' && riskRating !== 'CRITICAL') return { createdRiskId: null };
     // Declared outside the try so the link step below — a SEPARATE failure
     // domain — can still report the id of an already-committed Risk.

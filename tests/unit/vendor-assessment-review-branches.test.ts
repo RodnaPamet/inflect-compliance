@@ -749,11 +749,16 @@ describe('applyAssessmentRiskWriteback — nextReviewAt', () => {
         expect(err.message).toBe('vendor read exploded');
     });
 
-    it('does not touch the vendor row at all when the review landed no rating', async () => {
+    it('a review that landed no rating still records the review, but writes no tier (#4462)', async () => {
+        // Owner decision, 2026-10-29: any completed review counts. It stamps the
+        // review and rolls the next date like a rated one; only the inherent
+        // tier needs a rating.
         seedReview();
         await reviewAssessment(makeCtx(), 'a-1', { finalRiskRating: null });
-        expect(mockPrisma.vendor.findFirst).not.toHaveBeenCalled();
-        expect(mockPrisma.vendor.updateMany).not.toHaveBeenCalled();
+        expect(mockPrisma.vendor.updateMany).toHaveBeenCalledTimes(1);
+        const data = mockPrisma.vendor.updateMany.mock.calls[0][0].data;
+        expect(data).not.toHaveProperty('inherentRisk');
+        expect(data.lastAssessmentReviewedAt).toBeInstanceOf(Date);
     });
 });
 
