@@ -443,3 +443,74 @@ describe('the register filters by status', () => {
         expect(calls.some((c) => /status=/.test(c.url))).toBe(false);
     });
 });
+
+describe('the status filter, driven from the toolbar', () => {
+    afterEach(() => window.history.replaceState({}, '', '/'));
+
+    // A server that remembers a status change, and answers a filtered read
+    // with what matches now.
+    function statefulServer(rows: Row[]): FetchHandler {
+        const db = new Map(rows.map((r) => [r.id, { ...r }]));
+        return (url, init) => {
+            const method = init?.method ?? 'GET';
+            const put = url.match(/\/findings\/([^/?]+)$/);
+            if (method === 'PUT' && put) {
+                const row = db.get(put[1]);
+                if (row) row.status = (JSON.parse(String(init?.body)) as { status: string }).status;
+                return { status: 200, body: { success: true, finding: row } };
+            }
+            if (method === 'GET' && /\/findings(\?|$)/.test(url)) {
+                const status = new URL(url, 'http://localhost').searchParams.get('status');
+                const out = [...db.values()].filter((r) => !status || status.split(',').includes(r.status));
+                return { status: 200, body: { rows: out, truncated: false } };
+            }
+            return undefined;
+        };
+    }
+
+    async function pickStatus(label: string) {
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: en.common.ui.filter }));
+        });
+        await act(async () => {
+            fireEvent.click(await screen.findByRole('option', { name: new RegExp(`^${F.status}`) }));
+        });
+        await act(async () => {
+            fireEvent.click(await screen.findByRole('option', { name: new RegExp(`^${label}`) }));
+        });
+    }
+
+    it('picking a status asks the API for it', async () => {
+        const CLOSED_ROW: Row = { ...ROW, id: 'finding-2', title: 'Closed out last quarter', status: 'CLOSED' };
+        handler = statefulServer([ROW, CLOSED_ROW]);
+        mount('READER', [ROW, CLOSED_ROW]);
+        await screen.findByText(CLOSED_ROW.title);
+        await pickStatus(F.open);
+        await waitFor(() =>
+            expect(calls.some((c) => new URL(c.url, 'http://localhost').searchParams.get('status') === 'OPEN')).toBe(true),
+        );
+        await waitFor(() => expect(screen.queryByText(CLOSED_ROW.title)).toBeNull());
+        expect(screen.getByText(ROW.title)).toBeInTheDocument();
+    });
+
+    it('a status change after filtering refreshes the filtered view', async () => {
+        handler = statefulServer([ROW]);
+        mount('EDITOR');
+        await screen.findByText(ROW.title);
+        await pickStatus(F.open);
+        await waitFor(() =>
+            expect(calls.some((c) => new URL(c.url, 'http://localhost').searchParams.get('status') === 'OPEN')).toBe(true),
+        );
+        // The picker is still open over the page (`hidden: true` reaches the
+        // table behind it); what matters is which list the change refreshes.
+        const action = await within(table()).findByRole('button', { name: F.inProgress, hidden: true });
+        await act(async () => {
+            fireEvent.click(action);
+        });
+        // The finding is IN_PROGRESS now, so the Open view no longer holds it.
+        // The status action used to capture the list key of the first render
+        // and refresh the unfiltered list instead, leaving this row in place.
+        await waitFor(() => expect(within(table()).queryByText(ROW.title)).toBeNull());
+        expect(calls.some((c) => c.method === 'PUT')).toBe(true);
+    });
+});

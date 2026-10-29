@@ -421,8 +421,12 @@ function FindingsPageInner({
             },
         },
     ]) : []),
+    // `findingsKey` is listed because the status actions' `updateStatus` is
+    // captured here, and it targets the CURRENT list key: without it, a
+    // status change after the filter moved painted, and refetched, the list
+    // the page was no longer showing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    ], [t, canWrite]);
+    ], [t, canWrite, findingsKey]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call. Calling it inline in JSX would hand DataTable a fresh
