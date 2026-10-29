@@ -10812,6 +10812,8 @@
     "crumbList": "Access Reviews",
     "title": "Access Reviews",
     "campaignsCount": "{count, plural, one {# campaign} other {# campaigns}}",
+    "resourcePlural": "access reviews",
+    "resourceSingular": "access review",
     "colCampaign": "Campaign",
     "colStatus": "Status",
     "colScope": "Scope",
