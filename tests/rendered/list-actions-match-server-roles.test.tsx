@@ -258,8 +258,7 @@ describe('bulk Delete is offered only to the roles the server lets delete', () =
                     evidenceEdit: getPermissionsForRole(role).evidence.edit,
                     evidenceUpload: getPermissionsForRole(role).evidence.upload,
                     adminManage: getPermissionsForRole(role).admin.manage,
-                    controlsEdit: getPermissionsForRole(role).controls.edit,
-                }}
+                    controlsEdit: getPermissionsForRole(role).controls.edit, tasksCreate: true, tasksEdit: true }}
                 translations={{}}
             />,
         );

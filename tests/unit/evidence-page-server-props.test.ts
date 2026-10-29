@@ -43,7 +43,15 @@ type ClientProps = {
     initialControls: unknown[];
     controlsComplete: boolean;
     canViewControls: boolean;
-    grants: { evidenceEdit: boolean; evidenceUpload: boolean; adminManage: boolean; controlsEdit: boolean };
+    grants: {
+        evidenceEdit: boolean;
+        evidenceUpload: boolean;
+        adminManage: boolean;
+        controlsEdit: boolean;
+        // #4415 — the detail sheet's linked-tasks panel asks these separately.
+        tasksCreate: boolean;
+        tasksEdit: boolean;
+    };
 };
 
 async function render(): Promise<ClientProps> {
@@ -106,13 +114,36 @@ describe('the evidence grants reach the client', () => {
         getTenantCtxMock.mockResolvedValue(ctx);
 
         const props = await render();
-        expect(props.grants).toEqual({ evidenceEdit: false, evidenceUpload: true, adminManage: false, controlsEdit: true });
+        expect(props.grants).toEqual({
+            evidenceEdit: false, evidenceUpload: true, adminManage: false, controlsEdit: true,
+            tasksCreate: true, tasksEdit: true,
+        });
     });
 
     it('an ADMIN holds admin.manage', async () => {
         getTenantCtxMock.mockResolvedValue(makeRequestContext('ADMIN'));
         const props = await render();
-        expect(props.grants).toEqual({ evidenceEdit: true, evidenceUpload: true, adminManage: true, controlsEdit: true });
+        expect(props.grants).toEqual({
+            evidenceEdit: true, evidenceUpload: true, adminManage: true, controlsEdit: true,
+            tasksCreate: true, tasksEdit: true,
+        });
+    });
+
+    // #4415 — the detail sheet's linked-tasks panel asks `tasks.create` and
+    // `tasks.edit` separately, so the page carries them separately and a custom
+    // role withholding one keeps the other.
+    it('the two task keys, independently, as the custom role holds them', async () => {
+        const ctx = makeRequestContext('EDITOR');
+        ctx.appPermissions = {
+            ...ctx.appPermissions,
+            tasks: { ...ctx.appPermissions.tasks, create: false },
+        };
+        getTenantCtxMock.mockResolvedValue(ctx);
+
+        const props = await render();
+        expect(props.grants.tasksCreate).toBe(false);
+        // The point of carrying two: withholding one does not withhold the other.
+        expect(props.grants.tasksEdit).toBe(true);
     });
 
     // #4326 — the details panel's unlink route requires `controls.edit`.

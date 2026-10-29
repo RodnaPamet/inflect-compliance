@@ -110,6 +110,15 @@ interface EvidenceGrants {
     adminManage: boolean;
     /** `controls.edit` — the details panel's link and unlink-a-control routes' gate. */
     controlsEdit: boolean;
+    /**
+     * `tasks.create` / `tasks.edit` — the detail sheet's linked-tasks panel
+     * offers a task CREATE and the bulk actions behind row selection, and the
+     * server gates those on different keys (#4415). They arrive as grants
+     * rather than being derived here for the reason every field above does:
+     * this component never sees `appPermissions`.
+     */
+    tasksCreate: boolean;
+    tasksEdit: boolean;
 }
 
 // The Freshness column and the gallery badge show the row's freshness
@@ -295,6 +304,9 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     // them (`assertMayChangeEvidenceControlLinks`), so their control pickers
     // follow it too.
     const canEditControlLinks = permissions.canWrite && grants.controlsEdit;
+    // The sheet's linked-tasks panel asks these two separately (#4415).
+    const canCreateTasks = permissions.canWrite && grants.tasksCreate;
+    const canEditTasks = permissions.canWrite && grants.tasksEdit;
     // `downloadEvidenceFile`'s record gates, asked of a list row.
     const mayDownload = useCallback(
         (ev: EvidenceRow) =>
@@ -1670,6 +1682,8 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                 canWrite={permissions.canWrite}
                 canEditControlLinks={canEditControlLinks}
                 canEdit={canEditEvidence}
+                canCreateTasks={canCreateTasks}
+                canEditTasks={canEditTasks}
                 canAdmin={permissions.canAdmin}
                 onEdit={(ev) => {
                     setEditInitial(ev);

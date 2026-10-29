@@ -79,6 +79,18 @@ export interface EvidenceDetailSheetProps {
      * base can lack. Defaults to `canWrite`.
      */
     canEdit?: boolean;
+    /**
+     * The linked-tasks panel's CREATE affordance — `tasks.create`, which is
+     * what its POST is gated on. Separate from the key below because the two
+     * are separately grantable and the panel offered both on the coarse tier
+     * alone (#4415). Defaults to `canWrite`.
+     */
+    canCreateTasks?: boolean;
+    /**
+     * The linked-tasks panel's row selection, which is what reveals the bulk
+     * actions — `tasks.edit`. Defaults to `canWrite`.
+     */
+    canEditTasks?: boolean;
     canAdmin: boolean;
     /** Open the edit modal for the loaded evidence. */
     onEdit: (evidence: EditEvidenceInitial) => void;
@@ -191,6 +203,8 @@ export function EvidenceDetailSheet({
     canWrite,
     canEditControlLinks = canWrite,
     canEdit = canWrite,
+    canCreateTasks = canWrite,
+    canEditTasks = canWrite,
     canAdmin,
     onEdit,
     onReview,
@@ -739,6 +753,11 @@ export function EvidenceDetailSheet({
                                     entityId={evidenceId}
                                     tenantHref={(p) => `/t/${tenantSlug}${p}`}
                                     canWrite={canWrite}
+                                    // `tasks.create` and `tasks.edit`, which
+                                    // the panel's two affordances ask
+                                    // separately (#4415).
+                                    canCreateTasks={canCreateTasks}
+                                    canEditTasks={canEditTasks}
                                 />
                             )}
                         </div>

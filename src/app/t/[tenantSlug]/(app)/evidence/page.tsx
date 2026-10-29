@@ -73,6 +73,8 @@ export default async function EvidencePage({
                 evidenceUpload: ctx.appPermissions.evidence.upload,
                 adminManage: ctx.appPermissions.admin.manage,
                 controlsEdit: ctx.appPermissions.controls.edit,
+                tasksCreate: ctx.appPermissions.tasks.create,
+                tasksEdit: ctx.appPermissions.tasks.edit,
             }}
             translations={{
                 title: t('title'),

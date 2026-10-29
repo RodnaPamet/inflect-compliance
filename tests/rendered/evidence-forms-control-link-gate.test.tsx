@@ -107,7 +107,7 @@ beforeEach(() => {
 const CONTROLS = [{ id: 'c1', name: 'Access control', code: null, annexId: 'A.5.15' }];
 
 /** An EDITOR-based custom role with `controls.edit` switched off. */
-const withoutControlsEdit = { permissions: COARSE.EDITOR, grants: { ...GRANTS.EDITOR, controlsEdit: false } };
+const withoutControlsEdit = { permissions: COARSE.EDITOR, grants: { ...GRANTS.EDITOR, controlsEdit: false, tasksCreate: true, tasksEdit: true } };
 const builtInEditor = { role: 'EDITOR' as const };
 
 /** Each add form: the menu item that opens it, a field it always has, and its control picker. */
