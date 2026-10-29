@@ -341,6 +341,11 @@ describe('D4 — OpenShell carries no MCP rules, pipelock stays the only mediato
         // earning its place: each PR was green alone, and the fourth module
         // only became uncovered once both were on main.
         'src/lib/agentic/openshell/policy-drift.ts',
+        // 5.1 (#3971). Pure data — the lifecycle decision union and the list of
+        // decisions the vendor's log cannot show. It mediates nothing and
+        // imports nothing, so it carries no MCP rule; the completeness test
+        // below is what made somebody say so.
+        'src/lib/agentic/openshell/sandbox-decisions.ts',
         'src/lib/agentic/openshell/transport.ts',
     ] as const;
 
