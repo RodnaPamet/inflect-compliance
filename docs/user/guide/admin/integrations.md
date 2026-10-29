@@ -55,7 +55,7 @@ A connection lets Inflect collect from another system without anyone copying dat
 | {{ui:admin.integrations.colLastTest}} | The date someone last clicked **{{ui:admin.integrations.testConnection}}**, with a tick or a cross for the result, or a dash |
 | {{ui:admin.integrations.colLastCollected}} | The date the connection last collected successfully. **{{ui:admin.integrations.neverCollected}}**, in amber, means an enabled connection that has never collected |
 | {{ui:admin.integrations.colExecutions}} | How many runs the connection has recorded, whatever their result |
-| {{ui:admin.integrations.colActions}} | **{{ui:admin.integrations.syncNow}}**, **{{ui:admin.integrations.viewOutcomes}}**, **{{ui:admin.integrations.testConnection}}**, **{{ui:admin.integrations.editConnection}}** and **{{ui:admin.integrations.disableIntegration}}**. A disabled connection has **{{ui:admin.integrations.enableIntegration}}** in place of **{{ui:admin.integrations.disableIntegration}}**, and no **{{ui:admin.integrations.syncNow}}**. An MCP server connection also has **{{ui:admin.integrations.authorizeEntra}}** |
+| {{ui:admin.integrations.colActions}} | **{{ui:admin.integrations.syncNow}}**, **{{ui:admin.integrations.viewOutcomes}}**, **{{ui:admin.integrations.testConnection}}**, **{{ui:admin.integrations.editConnection}}** and **{{ui:admin.integrations.disableIntegration}}**. A disabled connection has **{{ui:admin.integrations.enableIntegration}}** in place of **{{ui:admin.integrations.disableIntegration}}**, and no **{{ui:admin.integrations.syncNow}}**. An **{{ui:admin.integrations.providerLabels.mcp-server}}** connection also has **{{ui:admin.integrations.authorizeEntra}}** |
 
 **{{ui:admin.integrations.health.title}}.** A second table, shown while at least one connection is enabled. It lists each enabled connection's **{{ui:admin.integrations.health.colLastSuccess}}** date, or **{{ui:admin.integrations.health.testedOk}}** or **{{ui:admin.integrations.health.neverSucceeded}}**; its **{{ui:admin.integrations.health.colFreshness}}**, the time since its last run or successful test, such as 3h or 2d; and a status:
 
@@ -105,9 +105,9 @@ On a disabled connection, click **{{ui:admin.integrations.enableIntegration}}**.
 
 Click **{{ui:admin.integrations.enableInternal}}**. Inflect adds the Personnel, Device Posture and Training & Background checks, which need no credentials: they check data already in the workspace, such as the personnel roster. If one of them was disabled, the button turns it back on.
 
-### Authorize an MCP server
+### Authorize an external tool server
 
-An MCP server connection that signs in through Microsoft Entra needs consent once. Fill in its Entra tenant ID, client ID and client secret first, then click **{{ui:admin.integrations.authorizeEntra}}** on its row. Microsoft asks you to sign in and consent, then returns you here, and a notice at the top of the page says whether the authorization completed, was declined or did not complete. A successful authorization also adds an entry to the workspace's audit log. If any of those three values is missing, the page says what to set instead of sending you to Microsoft.
+An **{{ui:admin.integrations.providerLabels.mcp-server}}** connection that signs in through Microsoft Entra needs consent once. Fill in its Entra tenant ID, client ID and client secret first, then click **{{ui:admin.integrations.authorizeEntra}}** on its row. Microsoft asks you to sign in and consent, then returns you here, and a notice at the top of the page says whether the authorization completed, was declined or did not complete. A successful authorization also adds an entry to the workspace's audit log. If any of those three values is missing, the page says what to set instead of sending you to Microsoft.
 
 ### Connect and manage SharePoint
 
@@ -121,7 +121,7 @@ The SharePoint connection is managed on its card only, and is not listed in {{ui
 
 ## What happens next
 
-- Creating, editing and disabling a connection, authorizing an MCP server, connecting or disconnecting SharePoint and changing its sites add an entry to the workspace's audit log, naming who did it. Open it from **{{ui:admin.auditLog}}** on the {{ui:admin.title}} page.
+- Creating, editing and disabling a connection, authorizing an external tool server, connecting or disconnecting SharePoint and changing its sites add an entry to the workspace's audit log, naming who did it. Open it from **{{ui:admin.auditLog}}** on the {{ui:admin.title}} page.
 - Enabled directory connections sync every night at 03:00 UTC, and the HR connection at 04:00 UTC. A person who disappears from the HR system is marked as terminated on the {{ui:admin.nav.personnel}} page.
 - Check results appear on the controls each check is wired to. **{{ui:admin.integrations.viewOutcomes}}** opens the connection's own page: its check runs, its accountable owner and, for a legacy application, its column mapping and account reads.
 - When a scheduled sync has no active Owner or Admin to run as, the connection shows **{{ui:admin.integrations.health.blocked}}** with the reason until one is available.

@@ -13,6 +13,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { apiErrorMessage } from '@/lib/api-error';
 import { summariseSync, type SyncConnectionResponse, type SyncTone } from '@/lib/integrations/sync-outcome';
+import { LABELLED_PROVIDERS } from '@/lib/integrations/provider-labels';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
@@ -109,7 +110,12 @@ export default function ConnectionOutcomePage() {
         }
     };
 
-    const provider = rows[0]?.provider ?? null;
+    const providerId = rows[0]?.provider ?? null;
+    // The provider's translated name, as the Integrations page shows it — not
+    // the id (`mcp-server`) in the page title (#4466).
+    const provider = providerId && LABELLED_PROVIDERS.has(providerId)
+        ? t(`integrations.providerLabels.${providerId}` as Parameters<typeof t>[0])
+        : providerId;
     const cols = createColumns<ExecutionRow>([
         { accessorKey: 'automationKey', header: t('integrations.outcome.colCheck'), cell: ({ getValue }) => <span className="font-mono">{getValue()}</span> },
         { id: 'status', accessorKey: 'status', header: t('integrations.colStatus'), cell: ({ row }) => <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'}>{row.original.status}</StatusBadge> },

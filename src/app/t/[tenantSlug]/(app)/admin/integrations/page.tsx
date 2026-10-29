@@ -7,6 +7,7 @@
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { buildConnectionBody } from '@/lib/integrations/config-form-values';
 import { LABELLED_CHECKS } from '@/lib/integrations/check-labels';
+import { LABELLED_PROVIDERS } from '@/lib/integrations/provider-labels';
 import { summariseSync, type SyncConnectionResponse } from '@/lib/integrations/sync-outcome';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -222,17 +223,24 @@ export default function AdminIntegrationsPage() {
     );
 
     /**
-     * A provider's name as the catalogue shows it, for the tables that used to
-     * print its id (`aws-posture`, `mcp-server`) though `displayName` came in
-     * the same response (#4466). SharePoint is not in the generic registry, so
-     * it takes its card's title; anything else unknown falls back to the id.
+     * A provider's name, translated, everywhere this page shows one: both
+     * tables (which used to print the id — `aws-posture`, `mcp-server`), the
+     * catalogue cards and the form's provider picker (#4466). The server's
+     * `displayName` is English and two of them name the protocol, so it is only
+     * the fallback for an id this build has no label for; the id is the last
+     * resort.
      */
-    const providerNames = useMemo(() => {
-        const names = new Map(providers.map((p) => [p.id, p.displayName] as const));
-        names.set('sharepoint', t('sharepoint.title'));
-        return names;
-    }, [providers, t]);
-    const providerLabel = useCallback((id: string) => providerNames.get(id) ?? id, [providerNames]);
+    const serverNames = useMemo(
+        () => new Map(providers.map((p) => [p.id, p.displayName] as const)),
+        [providers],
+    );
+    const providerLabel = useCallback(
+        (id: string) =>
+            LABELLED_PROVIDERS.has(id)
+                ? t(`integrations.providerLabels.${id}` as Parameters<typeof t>[0])
+                : serverNames.get(id) ?? id,
+        [serverNames, t],
+    );
 
     /** A check's label when the catalogues carry one, its id otherwise. */
     const checkLabel = (check: string) =>
@@ -637,7 +645,7 @@ export default function AdminIntegrationsPage() {
                                 {inCat.map((p) => (
                                 <div key={p.id} className={cn(cardVariants(), 'flex flex-col gap-compact')}>
                                     <div>
-                                        <Heading level={3}>{p.displayName}</Heading>
+                                        <Heading level={3}>{providerLabel(p.id)}</Heading>
                                         <p className="text-xs text-content-subtle mt-0.5 line-clamp-2">{p.description}</p>
                                     </div>
                                     {p.supportedChecks.length > 0 && (
@@ -879,12 +887,13 @@ export default function AdminIntegrationsPage() {
                             <label className="block text-sm text-content-muted mb-1">{t('integrations.provider')}</label>
                             <Combobox
                                 id="integration-provider-select"
-                                selected={connectableProviders.map(p => ({ value: p.id, label: p.displayName })).find(o => o.value === formProvider) ?? null}
+                                selected={connectableProviders.map(p => ({ value: p.id, label: providerLabel(p.id) })).find(o => o.value === formProvider) ?? null}
                                 setSelected={(opt) => { setFormProvider(opt?.value ?? ''); setFormConfig({}); setFormSecrets({}); }}
                                 // P2 — only credential-taking providers are selectable here; the
                                 // internal (personnel/device/training) check providers are enabled
                                 // via the "Enable internal checks" button, not this free-form form.
-                                options={connectableProviders.map(p => ({ value: p.id, label: p.displayName }))}
+                                // The picker names providers as the catalogue does (#4466).
+                                options={connectableProviders.map(p => ({ value: p.id, label: providerLabel(p.id) }))}
                                 placeholder={t('integrations.selectProvider')}
                                 disabled={!!editingId}
                                 matchTriggerWidth

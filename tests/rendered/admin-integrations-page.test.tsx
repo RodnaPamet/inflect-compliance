@@ -72,7 +72,11 @@ jest.mock('@/app/t/[tenantSlug]/(app)/admin/integrations/SharePointCard', () => 
     SharePointCard: () => <div data-testid="sharepoint-card-stub" />,
 }));
 jest.mock('@/app/t/[tenantSlug]/(app)/admin/integrations/ConnectionHealthPanel', () => ({
-    ConnectionHealthPanel: () => null,
+    // Renders what the page hands it to name a provider, so the health
+    // table's naming is asserted without mounting the panel.
+    ConnectionHealthPanel: ({ providerLabel }: { providerLabel?: (id: string) => string }) => (
+        <div data-testid="health-panel-stub">{providerLabel?.('mcp-server')}</div>
+    ),
 }));
 jest.mock('@/components/admin/IdentityCrossLinks', () => ({ IdentityCrossLinks: () => null }));
 jest.mock('@/components/nav/BackAffordance', () => ({ BackAffordance: () => null }));
@@ -96,8 +100,12 @@ const provider = (over: Record<string, unknown>) => ({
 
 const PROVIDERS = [
     provider({ id: 'okta', displayName: 'Okta', supportedChecks: ['mfa_enforced', 'sso_enforced'] }),
-    provider({ id: 'mcp-server', displayName: 'Tool server', category: 'other' }),
-    provider({ id: 'aws-posture', displayName: 'AWS Cloud Posture', category: 'cloud' }),
+    // The server's own English names, as the registry sends them. The page
+    // must show the catalogue's translated names instead — never these.
+    provider({ id: 'mcp-server', displayName: 'MCP server (external)', category: 'other' }),
+    provider({ id: 'aws-posture', displayName: 'AWS Cloud Posture (server name)', category: 'cloud' }),
+    // An id this build has no label for: the server's name is the fallback.
+    provider({ id: 'brand-new', displayName: 'Brand New Provider', category: 'other' }),
     provider({
         id: 'personnel',
         displayName: 'Personnel',
@@ -369,6 +377,36 @@ describe('Configured Connections', () => {
         // The catalogue card for Okta.
         expect(screen.getByText('MFA enforced')).toBeInTheDocument();
         expect(screen.queryByText('mfa_enforced')).not.toBeInTheDocument();
+    });
+
+    it('names a tool server in the catalogue\'s words, never "MCP", in every place it appears', async () => {
+        serve([conn({ id: 'c-mcp', provider: 'mcp-server', name: 'SAP tools' })]);
+        await renderPage();
+        const table = screen.getByTestId('integrations-table');
+        // The Provider column.
+        expect(within(table).getByText('External tool server')).toBeInTheDocument();
+        // The health panel is handed the same names.
+        expect(screen.getByTestId('health-panel-stub')).toHaveTextContent('External tool server');
+        // The catalogue card.
+        expect(screen.getByRole('heading', { level: 3, name: 'External tool server' })).toBeInTheDocument();
+        // Nowhere on the page.
+        expect(document.body.textContent).not.toMatch(/MCP/);
+
+        // The form's provider picker, which shows the selected provider.
+        fireEvent.click(screen.getByRole('button', { name: 'Edit connection' }));
+        const picker = await waitFor(() => {
+            const el = document.getElementById('integration-provider-select');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        expect(picker).toHaveTextContent('External tool server');
+        expect(document.body.textContent).not.toMatch(/MCP/);
+    });
+
+    it('falls back to the server\'s name for a provider the build has no label for', async () => {
+        serve([conn({ id: 'c-new', provider: 'brand-new', name: 'Something new' })]);
+        await renderPage();
+        expect(within(screen.getByTestId('integrations-table')).getByText('Brand New Provider')).toBeInTheDocument();
     });
 
     it('has no Secrets column of identical dots', async () => {
