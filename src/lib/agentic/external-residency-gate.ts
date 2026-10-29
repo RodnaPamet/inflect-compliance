@@ -62,6 +62,41 @@ export interface ExternalAiAcknowledgement {
     readonly byUserId: string | null;
 }
 
+/**
+ * The two columns this gate reads, as a select clause.
+ *
+ * SEPARATE from `RESIDENCY_SELECT` on purpose. That constant is shared by six
+ * sites and its own docstring warns that "a fourth column, or a rename, is a
+ * silent partial update" — five of those six have no interest in this
+ * acknowledgement, and widening a shared select so one caller can reach two
+ * extra columns is how that warning comes true. The driver spreads both into
+ * one query, so there is still only one read.
+ */
+export const EXTERNAL_AI_ACK_SELECT = {
+    externalAiBusinessDataAckAt: true,
+    externalAiBusinessDataAckByUserId: true,
+} as const;
+
+/**
+ * Map a settings row to the acknowledgement. An ABSENT row is unacknowledged,
+ * which refuses — the same direction a NULL column takes, and the right one: a
+ * workspace with no settings row has accepted nothing.
+ */
+export function acknowledgementFrom(
+    row:
+        | {
+              readonly externalAiBusinessDataAckAt?: Date | null;
+              readonly externalAiBusinessDataAckByUserId?: string | null;
+          }
+        | null
+        | undefined,
+): ExternalAiAcknowledgement {
+    return {
+        at: row?.externalAiBusinessDataAckAt ?? null,
+        byUserId: row?.externalAiBusinessDataAckByUserId ?? null,
+    };
+}
+
 export interface ResidencyGateInput {
     /** The provider id this run's model calls will go to. */
     readonly providerId: string;

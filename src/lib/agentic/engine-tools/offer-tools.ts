@@ -24,7 +24,7 @@ import {
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import { loadableReadTools } from '@/lib/mcp/tools/registry';
 import { loadableProposeTools } from '@/lib/mcp/tools/propose-tools';
-import type { McpReadTool } from '@/lib/mcp/tools/types';
+import type { ExternalConnectionFacts, McpReadTool } from '@/lib/mcp/tools/types';
 
 import { ReviewLatch, type GuardObserver } from './review-latch';
 import { runGuardedTool } from './run-guarded-tool';
@@ -112,6 +112,19 @@ export interface OfferedToolSet<T> {
      */
     omitted: Array<{ name: string; reason: ToolOmissionReason }>;
     /**
+     * The connection facts of every EXTERNAL tool that survived the narrowing
+     * (#3872), in offer order.
+     *
+     * Returned because a gate above the engine has to reason about what the
+     * model can actually reach, and the engine's own tool shape does not carry
+     * these through its `build` mapping. The OFFERED set is the right
+     * population: a tool withheld above transfers nothing, because the model
+     * never sees it and cannot call it.
+     *
+     * Empty for an invocation with no external tools, which is most of them.
+     */
+    externalConnections: ExternalConnectionFacts[];
+    /**
      * ONE latch for the whole tool set, shared by every `run` closure below.
      *
      * Per-tool latches would let a flagged `list_risks` be followed by a clean
@@ -183,9 +196,10 @@ function offerTools<T>(
     build: ToolBuilder<T>,
     sourcePrefix: string,
     originFor?: OriginResolver,
-): Pick<OfferedToolSet<T>, 'tools' | 'omitted'> {
+): Pick<OfferedToolSet<T>, 'tools' | 'omitted' | 'externalConnections'> {
     const tools: T[] = [];
     const omitted: OfferedToolSet<T>['omitted'] = [];
+    const externalConnections: ExternalConnectionFacts[] = [];
 
     for (const tool of candidates) {
         if (!holdsScope(inv.ctx, tool)) {
@@ -241,9 +255,13 @@ function offerTools<T>(
             continue;
         }
         tools.push(built);
+        // AFTER the build, so a tool dropped for an unconvertible schema does
+        // not count as offered. The gate above reasons about what the model can
+        // reach, and a tool that was never handed over cannot be reached.
+        if (tool.externalConnection) externalConnections.push(tool.externalConnection);
     }
 
-    return { tools, omitted };
+    return { tools, omitted, externalConnections };
 }
 
 /**
@@ -297,10 +315,13 @@ export function offerToolSet<T>(
     // The origin resolver reaches only the propose surface, because only a
     // propose call writes a row that can carry one. Passing it to both would
     // read as though a read were being attributed somewhere.
-    const propose: Pick<OfferedToolSet<T>, 'tools' | 'omitted'> = opts.readOnly
+    const propose: Pick<OfferedToolSet<T>, 'tools' | 'omitted' | 'externalConnections'> = opts.readOnly
         ? {
               tools: [],
               omitted: proposeCandidates.filter(inProfile).map((t) => ({ name: t.name, reason: 'READ_ONLY_WORKFLOW' as const })),
+              // Nothing was offered on this surface, so none of its connections
+              // is reachable. Deliberately NOT the withheld candidates' facts.
+              externalConnections: [],
           }
         : offerTools(
               inv,
@@ -327,6 +348,11 @@ export function offerToolSet<T>(
     return {
         tools: [...read.tools, ...propose.tools],
         omitted: [...read.omitted, ...propose.omitted, ...lost],
+        // External tools ride the READ surface (`allReadTools` appends
+        // `inv.externalTools` to the internal set), so in practice this comes
+        // from `read`. Both are concatenated anyway rather than assuming that:
+        // if a future surface offers an external tool, the gate must see it.
+        externalConnections: [...read.externalConnections, ...propose.externalConnections],
         review,
     };
 }
