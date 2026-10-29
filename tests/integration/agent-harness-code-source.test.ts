@@ -16,6 +16,10 @@
  *      answer on #3754, 2026-10-19): a complete read whose definition has no
  *      unpinned write tool left closes it with no `mcp` source in the scan,
  *      and an incomplete one closes nothing.
+ *   6. An Agent SDK agent (#4156) is a discovered agent like any other: SHADOW
+ *      until the register links it, with its option verdicts stored as
+ *      reported and standing in its HARNESS_SHORTFALL; the register's own
+ *      intake record links it on the next complete scan.
  */
 import { generateKeyPairSync } from 'crypto';
 import { rmSync } from 'fs';
@@ -26,6 +30,8 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import {
+    AGENT_SDK_PY,
+    AGENT_SDK_TS,
     LANGCHAIN_JS,
     LANGCHAIN_PYTHON,
     LANGGRAPH,
@@ -39,7 +45,12 @@ import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { ingestHarnessReport } from '@/app-layer/usecases/agent-harness-scans';
 import { addHarnessScannerKey } from '@/app-layer/usecases/agent-harness-scanner-keys';
 import { createHarnessEstate, getHarnessEstateHealth } from '@/app-layer/usecases/agent-harness-estates';
-import { parseStoredHarnessModels, parseStoredHarnessSources, parseStoredHarnessTools } from '@/lib/agentic/harness-contract';
+import {
+    parseStoredHarnessModels,
+    parseStoredHarnessSources,
+    parseStoredHarnessTools,
+    parseStoredHarnessVerdicts,
+} from '@/lib/agentic/harness-contract';
 import { runInTenantContext } from '@/lib/db-context';
 import { parseScannerConfig } from '../../packages/agent-harness-scanner/src/config';
 import { jsonLineLog } from '../../packages/agent-harness-scanner/src/log';
@@ -279,5 +290,70 @@ describe('5. a coded agent\'s UNPINNED_WRITE_TOOL is judged by the code read (ow
         const scan = await prisma.agentHarnessScan.findUniqueOrThrow({ where: { id: full.scanId }, select: { sourcesJson: true } });
         expect(parseStoredHarnessSources(scan.sourcesJson)?.map((x) => x.kind)).toEqual(['code']);
         expect(await status(`UNPINNED_WRITE_TOOL:${SUPPORT}`)).toBe('CLOSED');
+    });
+});
+
+describe('6. an Agent SDK agent is discovered, shadowed, and linked by the existing rules (#4156)', () => {
+    const OPS = 'code:acme/ops-bot/agent.ts#opsRun';
+    const SUPPORT = 'code:acme/support-bot/agent.ts#options';
+
+    it('records the SDK agents, with their option verdicts, and raises SHADOW and HARNESS_SHORTFALL on them', async () => {
+        const result = await scanAndIngest(NOW - 90_000, AGENT_SDK_TS, AGENT_SDK_PY);
+        expect(result).toMatchObject({ complete: true, agentCount: 5 });
+        const agents = await prisma.discoveredAgent.findMany({
+            where: { tenantId: T, discoveredId: { in: [OPS, SUPPORT] } },
+            select: { discoveredId: true, discoveredVia: true, registeredAgentId: true, lastLevel: true },
+            orderBy: { discoveredId: 'asc' },
+        });
+        expect(agents).toEqual([
+            { discoveredId: OPS, discoveredVia: ['code'], registeredAgentId: null, lastLevel: 'H0' },
+            { discoveredId: SUPPORT, discoveredVia: ['code'], registeredAgentId: null, lastLevel: 'H0' },
+        ]);
+
+        const item = await prisma.agentHarnessScanItem.findFirstOrThrow({
+            where: { tenantId: T, scanId: result.scanId, discoveredAgent: { discoveredId: OPS } },
+            select: { verdictsJson: true, blockingNextRung: true },
+        });
+        expect(parseStoredHarnessVerdicts(item.verdictsJson)).toEqual([
+            { criterion: 'H2.tools_allowlisted', met: false, evidence: 'code://acme/ops-bot/agent.ts#L3' },
+            { criterion: 'H3.propose_not_commit', met: false, evidence: 'code://acme/ops-bot/agent.ts#L8' },
+            { criterion: 'H3.skills_declared', met: false, evidence: 'code://acme/ops-bot/agent.ts#L3' },
+        ]);
+        // The hardened agent reports no option verdict at all.
+        const hardened = await prisma.agentHarnessScanItem.findFirstOrThrow({
+            where: { tenantId: T, scanId: result.scanId, discoveredAgent: { discoveredId: SUPPORT } },
+            select: { verdictsJson: true },
+        });
+        expect(parseStoredHarnessVerdicts(hardened.verdictsJson)).toEqual([]);
+
+        const refs = await openRefs();
+        for (const id of [OPS, SUPPORT]) {
+            expect(refs).toContain(`SHADOW_AGENT:${id}`);
+            expect(refs).toContain(`HARNESS_SHORTFALL:${id}`);
+        }
+    });
+
+    it('the register\'s intake record links it on the next complete scan, which closes SHADOW_AGENT', async () => {
+        const opsAgent = await prisma.discoveredAgent.findFirstOrThrow({ where: { tenantId: T, discoveredId: OPS }, select: { id: true } });
+        // An AI system holds one register row; the scanner's holds the scanner.
+        const aiSystem = await prisma.aiSystem.create({ data: { tenantId: T, name: 'Ops bot host', ownerUserId } });
+        const registered = await createRegisteredAgent(ctx(), {
+            aiSystemId: aiSystem.id,
+            name: 'Ops bot',
+            autonomyLevel: 1,
+            dataAccessScope: 'READ_TENANT_DATA',
+            reversibility: 'COMPENSABLE',
+            provenance: 'FIRST_PARTY',
+            ownerUserId,
+        });
+        // What the registration intake writes when it registers a discovered agent.
+        await prisma.registeredAgent.update({ where: { id: registered.id }, data: { intakeDiscoveredAgentId: opsAgent.id } });
+
+        await scanAndIngest(NOW - 60_000, AGENT_SDK_TS, AGENT_SDK_PY);
+        const linked = await prisma.discoveredAgent.findFirstOrThrow({ where: { tenantId: T, discoveredId: OPS }, select: { registeredAgentId: true } });
+        expect(linked.registeredAgentId).toBe(registered.id);
+        const refs = await openRefs();
+        expect(refs).not.toContain(`SHADOW_AGENT:${OPS}`);
+        expect(refs).toContain(`SHADOW_AGENT:${SUPPORT}`);
     });
 });

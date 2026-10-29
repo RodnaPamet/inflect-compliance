@@ -48,6 +48,14 @@ export const SKIPPED_DIRECTORIES: readonly string[] = [
     '.pytest_cache', '.ruff_cache', '.next', 'dist', 'build', 'coverage',
 ];
 
+/**
+ * The text a file must contain to be parsed at all: a framework's module name,
+ * which every import of it spells out. `claude-agent-sdk` and
+ * `claude_agent_sdk` are the Claude Agent SDK's, in TypeScript and Python
+ * (#4156).
+ */
+export const FRAMEWORK_MARKERS: readonly string[] = ['langchain', 'langgraph', 'claude-agent-sdk', 'claude_agent_sdk'];
+
 export interface ReadableFile {
     readonly label: string;
     /** Below the root, `/`-separated. */
@@ -162,8 +170,8 @@ export async function readCodeFiles(
             }
             bytes += buf.length;
             const text = buf.toString('utf8');
-            // Only a file that names the framework can define one of its agents.
-            if (text.includes('langchain') || text.includes('langgraph')) onFile({ label: root.label, path: childRel, text });
+            // Only a file that names a framework's module can define one of its agents.
+            if (FRAMEWORK_MARKERS.some((m) => text.includes(m))) onFile({ label: root.label, path: childRel, text });
         }
     };
 

@@ -99,6 +99,19 @@ export function isLangChainModule(module: string): boolean {
     );
 }
 
+/**
+ * The Claude Agent SDK's modules: `@anthropic-ai/claude-agent-sdk` in
+ * JavaScript and TypeScript, `claude_agent_sdk` in Python (#4156).
+ */
+export function isClaudeAgentSdkModule(module: string): boolean {
+    return (
+        module === '@anthropic-ai/claude-agent-sdk'
+        || module.startsWith('@anthropic-ai/claude-agent-sdk/')
+        || module === 'claude_agent_sdk'
+        || module.startsWith('claude_agent_sdk.')
+    );
+}
+
 /** The `line` every IR node carries. */
 export function lineOf(e: Expr): number {
     return e.line;
