@@ -444,7 +444,12 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // on both ladder pages — left its sight. The ceiling follows the measurement
 // down rather than leaving a slot that was never paid for: the next primary
 // still pays with a demotion.
-const MAX_PRIMARY_COUNT = 174;
+//
+// 2026-10-29 — #4459 Frameworks list: 174 -> 173, A DELETION. The
+// Create-framework explainer modal was removed, and with it the "Import
+// framework" primary in its footer. The ceiling follows the measurement down;
+// the freed slot is not banked.
+const MAX_PRIMARY_COUNT = 173;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));
 

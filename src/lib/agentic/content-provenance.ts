@@ -141,6 +141,14 @@ export const CONTENT_SOURCE_PROVENANCE = {
     // that what it asks for is benign. It enters a run's input inside an
     // envelope carrying this label, and it is never the instruction.
     'a2a.peer-task': 'THIRD_PARTY_INGESTED',
+    // A peer's REPLY to a task WE sent (#3744). Distinct from `a2a.peer-task`
+    // above, and the distinction is not cosmetic: a task is the peer opening a
+    // conversation, a reply is the peer answering one we opened. The reply is
+    // the MORE tempting one to trust — we chose the peer, we sent the task, and
+    // the receipt verifies against the key we pinned — and none of that says
+    // the answer's CONTENT is benign. A signature identifies an author; it
+    // makes no claim about what the author wrote.
+    'a2a.peer-reply': 'THIRD_PARTY_INGESTED',
 } as const satisfies Readonly<Record<string, ContentProvenance>>;
 
 /**

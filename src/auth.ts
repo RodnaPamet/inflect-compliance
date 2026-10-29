@@ -54,6 +54,7 @@ import {
     workspacesStillAskingForCode,
 } from '@/lib/auth/workspace-mfa';
 import { SessionRevokedError } from '@/lib/auth/session-revoked';
+import { isTenantSystemUserId } from '@/lib/tenant-system-user';
 
 // ─── Type augmentation ──────────────────────────────────────────────
 //
@@ -801,6 +802,13 @@ export const authOptions: NextAuthOptions = {
         async jwt({ token, user, account, profile, trigger }) {
             // Initial sign in.
             if (account && user) {
+                // A tenant's SYSTEM user is a foreign-key target for job
+                // writes, never a person (#4400). The database already refuses
+                // every row a sign-in would need for it; this is the second
+                // line, ahead of every claim.
+                if (isTenantSystemUserId(user.id)) {
+                    throw new Error('A tenant system user cannot sign in');
+                }
                 // Before the claims, which it scopes. Fail closed: a hand-off
                 // that somehow named no tenant opens no session.
                 if (account.provider === SSO_HANDOFF_PROVIDER_ID) {

@@ -359,23 +359,95 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Read or set this tenant\'s monthly token budget for agentic runs. ' +
             'Inbound A2A refuses until it and the concurrency cap are both set.',
     },
-    // ── Agent RUN replay (#3472, plan point 08) ─────────────────────
+    // ── Agent RUNS and agent PROPOSALS (#3472, #3710) ───────────────
     //
+    // Every route under `/agent-runs` and the four proposal routes behind the
+    // review queue. They sit outside `/admin/` and every one of them is gated
+    // in its route file by `requirePermission` on the SAME pair of keys:
+    // `admin.view` OR `admin.agent_registry_view`. That is the gate the runs,
+    // run detail and proposals PAGES apply before they load anything
+    // (`mayReadAgentActivity`), so the API refuses exactly whom the pages do.
+    // `api-permission-coverage.test.ts` takes these directories as privileged
+    // roots, so a route added beside them arrives ungated only by failing CI.
+    //
+    // Until these entries, the list, the run detail, the step feed, resume,
+    // abort and the four proposal routes had only their usecase's
+    // `assertCanRead` / `assertCanWrite`: every member of a workspace could
+    // read every run's step input and output and every proposal's content, and
+    // an EDITOR could start, resume and abort runs and approve and reject
+    // proposals, through the API, while the pages refused both.
+    //
+    // THE WRITES ARE TWO LAYERS, and neither alone is the page's gate. The
+    // pages render for the pair below and enable Start, Resume, Abort, Approve
+    // and Reject on the role-tier write (`canWrite`), which each usecase
+    // asserts itself. So the view key is the reach, never the write: an
+    // AUDITOR or AI_ADMIN passes the route and is refused by the usecase, as
+    // the page refuses it by disabling the button.
+    //
+    // Deliberately NOT `admin.agent_registry`, unlike the inventory reads
+    // below: `mayReadAgentActivity` does not admit the register key, and
+    // `tests/unit/agent-registry-view-key.test.ts` pins that.
+    {
+        path: new RegExp(`^${T}\\/agent-runs$`),
+        methods: ['GET'],
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
+        note:
+            "List the tenant's agentic workflow runs (optionally one agent's). " +
+            'The runs page\'s gate (`mayReadAgentActivity`). Each row carries ' +
+            "the run's summary and context, so it is the same authority as " +
+            'the page that lists them.',
+    },
+    {
+        path: new RegExp(`^${T}\\/agent-runs$`),
+        methods: ['POST'],
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
+        note:
+            'Start a workflow run. For a PERSON: the runs page\'s gate, then ' +
+            'the role-tier write `startWorkflowRun` asserts — what the page ' +
+            'enables Start on. A bearer API KEY is held instead to the ' +
+            '`mcp:orchestrate` capability scope the usecase enforces for every ' +
+            'key (and the registered-agent requirement for a Flue run): that ' +
+            'is how a registered agent starts a run, and its key holds no ' +
+            'admin-console scope. The route applies the person\'s gate to every ' +
+            'context that did not authenticate as a key.',
+    },
+    {
+        path: new RegExp(`^${T}\\/agent-runs\\/[^/]+$`),
+        methods: ['GET'],
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
+        note:
+            'One run with every step, each step\'s decrypted input and output ' +
+            'included. The run detail page\'s gate. Tenant scope is the usecase ' +
+            'predicate, so a run in another tenant is not-found rather than ' +
+            'forbidden.',
+    },
+    {
+        path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/steps$`),
+        methods: ['GET'],
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
+        note:
+            "One bounded page of a run's step ledger. The same rows as the " +
+            'unpaged run read, so the same gate — a different one would gate ' +
+            'the paged view of data the unpaged view hands out.',
+    },
+    {
+        path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/(resume|abort)$`),
+        methods: ['POST'],
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
+        note:
+            'Resume a paused run, or abort one. The runs page\'s gate here and ' +
+            'the role-tier write the usecase asserts — the two the page enables ' +
+            'Resume and Abort on. The view key opens the surface and writes ' +
+            'nothing: an AUDITOR or AI_ADMIN is refused by the usecase.',
+    },
     // The live tail of one run's step ledger. The only `text/event-stream`
-    // route under `/api/t/:slug` and the only one here outside `/admin/`, so
-    // read what this entry is and is not: this map is a DECLARATIVE POLICY
-    // RECORD (see the long note below) checked by
-    // `api-permission-coverage.test.ts` against `PRIVILEGED_ROOTS`, which is
-    // `/admin/` only — so this rule is checked by nothing today. It is here
-    // because the LIVE gate is the `requirePermission('admin.view')` wrapper
-    // in the route file, and a reader asking "what authority streams a run?"
-    // should find the answer in the policy record rather than only in the
-    // handler.
-    //
-    // `admin.view` and not one of the three agent keys: this is the gate the
-    // run detail PAGE already applies (`ctx.appPermissions.admin.view`), and
-    // the stream serves the same rows to the same readers. A narrower key
-    // would gate the LIVE view of data the page hands out on a page load.
+    // route under `/api/t/:slug`. The same authority as the run detail page it
+    // drives; the stream adds latency, not reach.
     {
         path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/stream$`),
         // #3710 — `admin.view` OR the inventory view key, because the run
@@ -389,18 +461,12 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             "run in another tenant is not-found rather than forbidden.",
     },
     //
-    // The CHECKPOINT read beside it — and the one `/agent-runs` route whose
-    // gate is load-bearing rather than documentary.
-    //
-    // Its sibling `/steps` is gated only by the usecase's `assertCanRead`,
-    // which is right: it serves the step rows the run detail page already
-    // hands out to the same readers. A proposal DIFF is not that. It carries
-    // the current values of a risk, control, policy or finding beside what an
-    // agent proposes to change them to, and the only surface that has ever
-    // shown those is `/agents/proposals`, whose page gates on `admin.view`
-    // before it loads anything. The canvas that consumes this is NOT an admin
-    // surface, so serving the review queue from it under a weaker gate would
-    // be a permissions change wearing a UI feature's clothes.
+    // The CHECKPOINT read beside it. A proposal DIFF carries the current values
+    // of a risk, control, policy or finding beside what an agent proposes to
+    // change them to, and the surface that shows those is `/agents/proposals`.
+    // The canvas that consumes this is NOT an admin surface, so serving the
+    // review queue from it under a weaker gate would be a permissions change
+    // wearing a UI feature's clothes.
     {
         path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/checkpoint$`),
         // #3710 — the proposals page's gate, both keys (`mayReadAgentActivity`).
@@ -417,6 +483,28 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'the decision itself posts to the proposals routes, so this adds ' +
             'reach to no write. Tenant scope is the usecase predicate, so a ' +
             "run in another tenant is not-found rather than forbidden.",
+    },
+    {
+        path: new RegExp(`^${T}\\/agent-proposals$`),
+        methods: ['GET'],
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
+        note:
+            'The agent-proposal review queue as data. The proposals page\'s ' +
+            'gate. Each row is returned WITHOUT `payloadJson`, the raw payload ' +
+            'the page sends to no browser (it sends a server-computed diff).',
+    },
+    {
+        path: new RegExp(`^${T}\\/agent-proposals\\/([^/]+\\/(approve|reject)|bulk\\/reject)$`),
+        methods: ['POST'],
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
+        note:
+            'Approve or reject one proposal, or reject a batch. The proposals ' +
+            'page\'s gate here and the role-tier write the usecase asserts — ' +
+            'the two the page enables Approve and Reject on. Approval also ' +
+            'refuses every API key in the usecase: a machine cannot be one of ' +
+            'the humans a proposal needs.',
     },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/policy-card$`),

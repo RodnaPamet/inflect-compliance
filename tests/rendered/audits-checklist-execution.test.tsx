@@ -22,7 +22,7 @@
  */
 
 import * as React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 jest.mock('sonner', () => ({
     Toaster: () => null,
@@ -122,7 +122,7 @@ function freshDetail() {
         auditScope: 'Access management',
         checklist: [
             { id: 'item-1', prompt: 'Verify A.5.1 — policies exist', result: 'NOT_TESTED', notes: null },
-            { id: 'item-2', prompt: 'Verify A.5.2 — roles assigned', result: 'NOT_TESTED', notes: null },
+            { id: 'item-2', prompt: 'Verify A.5.2 — roles assigned', result: 'NOT_TESTED', notes: 'Sampled 5 of 40 role assignments' },
         ],
         findings: [],
     };
@@ -151,11 +151,18 @@ beforeEach(() => {
                 return Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response);
             }
             // Model the server: apply the patch so the re-read reflects it.
+            // Notes follow `updateAudit` + `AuditRepository.updateChecklistItem`
+            // exactly: an absent `notes` leaves the column alone, and ANY string
+            // — the empty one included — overwrites it. (This mock used to keep
+            // the old note on `''`, which is how it hid the erasure.)
             const body = JSON.parse(String(init.body));
             if (body.status) detail.status = body.status;
             for (const up of body.checklistUpdates ?? []) {
                 const row = (detail.checklist as Array<Record<string, unknown>>).find((c) => c.id === up.id);
-                if (row) { row.result = up.result; row.notes = up.notes ?? row.notes; }
+                if (row) {
+                    row.result = up.result;
+                    if (up.notes !== undefined) row.notes = up.notes;
+                }
             }
             return Promise.resolve({ ok: true, json: async () => detail } as Response);
         }
@@ -229,6 +236,28 @@ describe('recording a checklist result', () => {
         ]);
     });
 
+    it('changing a result leaves the item\'s note alone', async () => {
+        // The page cannot write a note, so a note on a row came from the API —
+        // and the first result change on the page used to send `notes: ''`,
+        // which the server stores as given.
+        await openAudit();
+        expect(screen.getByText('Sampled 5 of 40 role assignments')).toBeTruthy();
+
+        const triggers = screen.getAllByRole('combobox');
+        const rowTwo = screen.getByText('Verify A.5.2 — roles assigned').closest('div.rounded-lg') as HTMLElement;
+        const trigger = triggers.find((t) => rowTwo.contains(t))!;
+        await act(async () => { fireEvent.click(trigger); });
+        const option = await screen.findByRole('option', { name: /^pass$/i });
+        await act(async () => { fireEvent.click(option); });
+        await flush();
+
+        await waitFor(() => expect(puts().length).toBeGreaterThan(0));
+        const [update] = puts()[0].checklistUpdates as Array<Record<string, unknown>>;
+        expect(update).toEqual({ id: 'item-2', result: 'PASS' });
+        expect((detail.checklist as Array<Record<string, unknown>>)[1].notes).toBe('Sampled 5 of 40 role assignments');
+        await waitFor(() => expect(screen.getByText('Sampled 5 of 40 role assignments')).toBeTruthy());
+    });
+
     it('re-reads the audit after a successful write, so the pane shows the saved value', async () => {
         // The write returns the row, but the pane refreshes from the detail GET
         // — asserting the re-read is what proves the pane cannot show a stale
@@ -265,16 +294,45 @@ describe('recording a checklist result', () => {
 });
 
 describe('moving the audit through its status transitions', () => {
-    it('offers exactly the transitions valid from the current status', async () => {
-        // PLANNED offers only "In progress" — the page deliberately renders one
-        // forward step at a time rather than a free status picker.
-        // Scoped to the detail pane, not the page: the hub's nav rail also
-        // carries links whose labels would match a bare page-level query.
+    /** The status-move buttons the pane offers, in order. */
+    function statusButtons(): string[] {
+        return ['#audit-status-forward-btn', '#audit-status-back-btn', '#cancel-audit-btn']
+            .map((sel) => document.querySelector(sel)?.textContent?.trim())
+            .filter((t): t is string => Boolean(t));
+    }
+
+    it.each([
+        // One step forward, one step back, and Cancel while the audit is not
+        // yet done — never a free status picker.
+        ['PLANNED', ['In progress', 'Cancel audit']],
+        ['IN_PROGRESS', ['Completed', 'Back to Planned', 'Cancel audit']],
+        ['COMPLETED', ['Back to In Progress']],
+        ['CANCELLED', []],
+    ])('from %s the pane offers %j', async (status, expected) => {
+        detail.status = status;
         await openAudit();
-        const buttons = Array.from(document.querySelectorAll('button'))
-            .map((b) => b.textContent?.trim() ?? '');
-        expect(buttons).toContain('In progress');
-        expect(buttons).not.toContain('Completed');
+        expect(statusButtons()).toEqual(expected);
+    });
+
+    it('IN_PROGRESS → back to PLANNED sends the status and the server takes it', async () => {
+        detail.status = 'IN_PROGRESS';
+        await openAudit();
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Back to Planned' }));
+        });
+        await waitFor(() => expect(puts().some((b) => b.status === 'PLANNED')).toBe(true));
+        expect(detail.status).toBe('PLANNED');
+        expect(statusButtons()).toEqual(['In progress', 'Cancel audit']);
+    });
+
+    it('COMPLETED → back to IN_PROGRESS sends the status and the server takes it', async () => {
+        detail.status = 'COMPLETED';
+        await openAudit();
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Back to In Progress' }));
+        });
+        await waitFor(() => expect(puts().some((b) => b.status === 'IN_PROGRESS')).toBe(true));
+        expect(detail.status).toBe('IN_PROGRESS');
     });
 
     it('PLANNED → IN_PROGRESS sends the status and the server takes it', async () => {
@@ -312,5 +370,50 @@ describe('moving the audit through its status transitions', () => {
         expect(detail.status).toBe('PLANNED');
         // The forward button is still offered, i.e. the pane went back to PLANNED.
         expect(screen.getByRole('button', { name: /in progress/i })).toBeTruthy();
+    });
+});
+
+describe('cancelling an audit', () => {
+    async function openCancelDialog() {
+        await openAudit();
+        await act(async () => {
+            fireEvent.click(document.querySelector('#cancel-audit-btn')!);
+        });
+        await flush();
+        return screen.getByRole('dialog');
+    }
+
+    it('asks first, and keeping the audit sends nothing', async () => {
+        const dialog = await openCancelDialog();
+        expect(dialog.textContent).toContain('Cancel this audit?');
+        await act(async () => {
+            fireEvent.click(within(dialog).getByRole('button', { name: 'Keep audit' }));
+        });
+        await flush();
+        expect(puts()).toHaveLength(0);
+        expect(detail.status).toBe('PLANNED');
+    });
+
+    it('confirming sends CANCELLED, and a cancelled audit offers no further move', async () => {
+        const dialog = await openCancelDialog();
+        await act(async () => {
+            fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel audit' }));
+        });
+        await waitFor(() => expect(puts().some((b) => b.status === 'CANCELLED')).toBe(true));
+        expect(detail.status).toBe('CANCELLED');
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(document.querySelector('#audit-status-forward-btn')).toBeNull();
+        expect(document.querySelector('#cancel-audit-btn')).toBeNull();
+    });
+
+    it('a refused cancel keeps the dialog open and the audit where it was', async () => {
+        const dialog = await openCancelDialog();
+        failNextPut = true;
+        await act(async () => {
+            fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel audit' }));
+        });
+        await flush();
+        expect(detail.status).toBe('PLANNED');
+        expect(screen.getByRole('dialog')).toBeTruthy();
     });
 });

@@ -7,7 +7,7 @@ import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';
 import { NotFoundError } from '@/lib/errors/types';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
-import { mayReadAgentInventory } from '@/lib/permissions';
+import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 import { AgentDetailClient } from './AgentDetailClient';
 
 /**
@@ -164,6 +164,9 @@ export default async function AgentDetailPage({
                 // recipient — would be hidden by it.
                 canTransferOwnership:
                     ctx.appPermissions.admin.agent_ownership === true && ctx.permissions.canRead,
+                // The Runs tab's read, `GET /agent-runs`, takes the runs page's
+                // gate rather than this page's inventory read.
+                canReadRuns: mayReadAgentActivity(ctx.appPermissions.admin),
             }}
             viewerUserId={ctx.userId}
             // The Behaviour tab exists only where agent profiles are on: the

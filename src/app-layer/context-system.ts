@@ -61,6 +61,12 @@ import {
     intersectPermissions,
     lowerRole,
 } from '@/lib/agentic/agent-authority';
+import {
+    TENANT_SYSTEM_USER_NAME,
+    tenantSystemUserEmail,
+    tenantSystemUserEmailHash,
+    tenantSystemUserId,
+} from '@/lib/tenant-system-user';
 import { RequestContext } from './types';
 
 /**
@@ -186,11 +192,13 @@ export function buildSystemContext(input: {
  * **The ADMIN role stays, and that is a known remaining gap.** Resolving
  * the owner's real role instead (see `resolveMemberContext`) would mean a
  * READER-owned policy silently gets no review reminder — compliance work
- * disappearing quietly, which is worse than the escalation. Closing it
- * properly needs a real per-tenant SYSTEM `User` row so the FK can be
- * satisfied without borrowing anyone; that is a migration and belongs in
- * its own change. Until then this is the honest halfway point, and it is
- * documented rather than disguised.
+ * disappearing quietly, which is worse than the escalation.
+ *
+ * **Where the id is borrowed ONLY for the foreign key, use
+ * `buildTenantSystemJobContext` instead** (#4400): it writes as the
+ * tenant's SYSTEM user, so the row names no person. The policy review
+ * reminder moved first; the other callers move one per pull request, each
+ * with a test that the row no longer names a person.
  */
 export function buildDelegatedJobContext(input: {
     tenantId: string;
@@ -224,6 +232,57 @@ export function buildDelegatedJobContext(input: {
         },
         appPermissions: input.appPermissions ?? getPermissionsForRole('ADMIN'),
     };
+}
+
+/**
+ * Make sure the tenant's SYSTEM user exists, and return its id (#4400).
+ *
+ * Created lazily, the first time a job needs it, rather than at tenant
+ * creation: that covers every tenant-creation path, including ones written
+ * later, with no backfill. Idempotent and race-free, because `ON CONFLICT DO
+ * NOTHING` covers both the id and the unique `emailHash`.
+ *
+ * Raw SQL on purpose. `prisma.user.create` goes through the PII middleware,
+ * which would derive `emailHash` from the email as an HMAC, the one value
+ * this row's hash must never be. The email and name are stored as
+ * plaintext: the PII read path passes through a value with no `v1:`/`v2:`
+ * envelope, and neither is personal data.
+ *
+ * No foreign key to `Tenant`. Production never hard-deletes a tenant; a test
+ * that does leaves an inert row behind, rather than a cascade into the rows
+ * this user authored. The row's shape, and its inability to sign in or hold
+ * standing anywhere, are CHECK constraints (migration
+ * `20261029200000_tenant_system_user`).
+ */
+export async function ensureTenantSystemUser(tenantId: string): Promise<string> {
+    const id = tenantSystemUserId(tenantId);
+    await prisma.$executeRaw`
+        INSERT INTO "User" ("id", "emailEncrypted", "emailHash", "nameEncrypted", "emailVerified", "updatedAt")
+        VALUES (${id}, ${tenantSystemUserEmail(tenantId)}, ${tenantSystemUserEmailHash(tenantId)},
+                ${TENANT_SYSTEM_USER_NAME}, now(), now())
+        ON CONFLICT DO NOTHING`;
+    return id;
+}
+
+/**
+ * Context for a job that writes as the tenant's SYSTEM user (#4400).
+ *
+ * The replacement for `buildDelegatedJobContext` wherever a member was
+ * borrowed only because a row's `User` foreign key is NOT NULL. The row now
+ * names no person, the audit trail reads `actorType: 'JOB'` with the system
+ * user's id, and the authority is the job's own, exactly what
+ * `buildSystemContext` grants.
+ *
+ * Not for work a named person is accountable for. That still resolves their
+ * membership (`resolveMemberContext`).
+ */
+export async function buildTenantSystemJobContext(input: {
+    tenantId: string;
+    job: string;
+    tenantSlug?: string;
+    discriminator?: string;
+}): Promise<RequestContext> {
+    return buildSystemContext({ ...input, principal: await ensureTenantSystemUser(input.tenantId) });
 }
 
 /**

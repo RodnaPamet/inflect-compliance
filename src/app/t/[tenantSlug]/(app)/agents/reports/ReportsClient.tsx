@@ -238,14 +238,34 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps) {
                     canRegisterShadow={props.canRegisterShadow === true}
                 />
             ) : (
-                <PackReports tenantSlug={tenantSlug} pack={props.pack} enforcing={props.enforcing} />
+                <PackReports
+                    tenantSlug={tenantSlug}
+                    pack={props.pack}
+                    enforcing={props.enforcing}
+                    // `/agents/review-quality` refuses anybody without
+                    // `admin.agent_registry` — the key `canInvestigate` is — so
+                    // the link is offered on that key, as the Views menu's
+                    // entry for the same page already is (#4474).
+                    canOpenReviewQuality={canInvestigate}
+                />
             )}
         </DashboardLayout>
     );
 }
 
 /** The six reports of the assessor pack, unchanged by the tab that now sits above them. */
-function PackReports({ tenantSlug, pack, enforcing }: { tenantSlug: string; pack: PackView; enforcing: boolean }) {
+function PackReports({
+    tenantSlug,
+    pack,
+    enforcing,
+    canOpenReviewQuality,
+}: {
+    tenantSlug: string;
+    pack: PackView;
+    enforcing: boolean;
+    /** `admin.agent_registry`, the review-quality page's own gate. */
+    canOpenReviewQuality: boolean;
+}) {
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
     const agents = pack.inventory.body.agents;
@@ -399,9 +419,15 @@ function PackReports({ tenantSlug, pack, enforcing }: { tenantSlug: string; pack
                         })}
                     </InlineNotice>
                 )}
-                <Link className="text-sm underline" href={tenantHref('/agents/review-quality')}>
-                    {t('reports.approvalsDetailLink')}
-                </Link>
+                {canOpenReviewQuality && (
+                    <Link
+                        className="text-sm underline"
+                        href={tenantHref('/agents/review-quality')}
+                        data-testid="reports-approvals-detail-link"
+                    >
+                        {t('reports.approvalsDetailLink')}
+                    </Link>
+                )}
             </Card>
 
             {/* ── REPORT 4 — INCIDENTS AND THE STOP CONTROL ───────────── */}
