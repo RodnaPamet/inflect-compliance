@@ -117,7 +117,6 @@ function renderRuns({
 
 const postsTo = (url: string) =>
     fetchMock.mock.calls.filter(([u, init]) => u === url && init?.method === 'POST');
-const bodyOf = (call: unknown[]) => JSON.parse(String((call[1] as RequestInit).body));
 
 describe('after an action the rows are still the server’s', () => {
     /** A run with proposals waiting, and the RAW list row the API would answer with. */
