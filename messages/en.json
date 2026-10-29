@@ -4219,6 +4219,7 @@
     "critical": "Critical",
     "verificationNotes": "Verification Notes",
     "selectFinding": "Select a finding to view details",
+    "statusUpdateFailed": "Could not update the finding's status.",
     "colVis": {
       "title": "Title",
       "severity": "Severity",

@@ -3,10 +3,11 @@ import { useCallback, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { useThresholdLoadMore } from '@/components/ui/hooks';
+import { useThresholdLoadMore, useToast } from '@/components/ui/hooks';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ownerDisplayName } from '@/lib/owner-display';
+import { apiErrorMessage } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
@@ -48,6 +49,14 @@ interface FindingsClientProps {
 
     initialFindings: FindingRow[];
     tenantSlug: string;
+    /**
+     * The coarse write tier. `createFinding` and `updateFinding` both
+     * `assertCanWrite` and nothing more (findings carry no granular key), so
+     * this alone decides whether the create button and the status actions
+     * are offered. Without it Readers, Auditors and AI admins were shown both
+     * and refused by the server.
+     */
+    canWrite: boolean;
     translations: {
         title: string;
         listDescription: string;
@@ -81,8 +90,9 @@ interface FindingsClientProps {
  * Client island for findings — handles create form and status updates.
  * Data is pre-fetched server-side and passed via props.
  */
-export function FindingsClient({ initialFindings, tenantSlug, translations: t }: FindingsClientProps) {
+export function FindingsClient({ initialFindings, tenantSlug, canWrite, translations: t }: FindingsClientProps) {
     const tx = useTranslations('findings');
+    const toast = useToast();
     const [showForm, setShowForm] = useState(false);
 
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
@@ -139,13 +149,23 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status }),
             });
-            if (!res.ok) throw new Error('Failed to update status');
+            if (!res.ok) {
+                // The server's reason (a refusal, a finding that is gone),
+                // read through the shared envelope helper.
+                const body = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, tx('statusUpdateFailed')));
+            }
             return res.json();
         },
     });
 
+    // The hook rolls the row back and re-throws. Without this catch the
+    // status flipped and flipped back with nothing said; now the reason is
+    // shown.
     const updateStatus = (id: string, status: string) => {
-        void statusMutation.trigger({ id, status });
+        statusMutation.trigger({ id, status }).catch((err: unknown) => {
+            toast.error(err instanceof Error && err.message ? err.message : tx('statusUpdateFailed'));
+        });
     };
 
     const sevLabel = (sev: string) => {
@@ -187,7 +207,7 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
     });
 
 
-    const findingColumns = useMemo(() => createColumns<FindingRow>([
+    const findingColumns = useMemo(() => [...createColumns<FindingRow>([
         {
             accessorKey: 'title',
             header: t.findingTitle,
@@ -270,6 +290,10 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
             // creating a two-loud-badge wall per row.
             cell: ({ row }) => <StatusBadge tone="subtle" variant={STATUS_BADGE[row.original.status]}>{statusLabel(row.original.status)}</StatusBadge>,
         },
+    ]),
+    // The status actions only for a role the server lets write; for any
+    // other the column would be empty, so it is not built at all.
+    ...(canWrite ? createColumns<FindingRow>([
         {
             id: 'actions',
             header: t.actions,
@@ -286,8 +310,9 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
                 );
             },
         },
+    ]) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    ]), [t]);
+    ], [t, canWrite]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call. Calling it inline in JSX would hand DataTable a fresh
@@ -309,17 +334,21 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
                     title={t.title}
                     description={t.listDescription || undefined}
                     actions={
-                        <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowForm(!showForm)}>{t.newFinding}</Button>
+                        canWrite ? (
+                            <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowForm(!showForm)}>{t.newFinding}</Button>
+                        ) : undefined
                     }
                 />
             </ListPageShell.Header>
 
-            <CreateFindingModal
-                open={showForm}
-                setOpen={setShowForm}
-                tenantSlug={tenantSlug}
-                apiUrl={apiUrl}
-            />
+            {canWrite && (
+                <CreateFindingModal
+                    open={showForm}
+                    setOpen={setShowForm}
+                    tenantSlug={tenantSlug}
+                    apiUrl={apiUrl}
+                />
+            )}
 
             <ListPageShell.Body>
                 <TruncationBanner truncated={truncated} />
@@ -334,6 +363,9 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
                     getRowId={getFindingRowId}
                     columnVisibility={columnVisibility}
                     onColumnVisibilityChange={setColumnVisibility}
+                    // No bulk actions act on ticked rows, so the default-on
+                    // select column only made a click tick a row (#4275).
+                    selectionEnabled={false}
                     emptyState={
                         <EmptyState
                             size="sm"

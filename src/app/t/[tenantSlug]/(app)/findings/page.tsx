@@ -38,6 +38,9 @@ export default async function FindingsPage({
             <FindingsClient
                 initialFindings={JSON.parse(JSON.stringify(findings))}
                 tenantSlug={tenantSlug}
+                // `createFinding` / `updateFinding` assert the coarse write
+                // tier only, so the UI offers writes on exactly that.
+                canWrite={ctx.permissions.canWrite}
                 translations={{
                     title: t('title'),
                 listDescription: t('listDescription'),
