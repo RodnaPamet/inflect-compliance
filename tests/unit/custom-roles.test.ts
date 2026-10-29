@@ -181,6 +181,28 @@ describe('Custom Roles — Create', () => {
         ).rejects.toThrow(/already exists/);
     });
 
+    // #4467 — a deleted (isActive false) role frees its name. The check asks
+    // the partial unique index's own question: live roles only.
+    it('the duplicate-name check on create looks at LIVE roles only', async () => {
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn(async () => null),
+            create: jest.fn(async ({ data }: any) => ({ id: 'cr-new', ...data })),
+        };
+
+        await createCustomRole(makeCtx(), {
+            name: 'Compliance Lead',
+            baseRole: 'READER',
+            permissionsJson: VALID_PERMISSIONS,
+        });
+
+        expect(mockTx.tenantCustomRole.findFirst).toHaveBeenCalledTimes(1);
+        expect(mockTx.tenantCustomRole.findFirst.mock.calls[0][0].where).toEqual({
+            tenantId: 'tenant-1',
+            name: 'Compliance Lead',
+            isActive: true,
+        });
+    });
+
     it('rejects missing permission domains', async () => {
         await expect(
             createCustomRole(makeCtx(), {
@@ -213,6 +235,24 @@ describe('Custom Roles — Update', () => {
 
         const result = await updateCustomRole(makeCtx(), 'cr-1', { name: 'New Name' });
         expect(result.name).toBe('New Name');
+    });
+
+    it('the duplicate-name check on rename looks at LIVE roles only, other than this one (#4467)', async () => {
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn()
+                .mockResolvedValueOnce(existingRole)
+                .mockResolvedValueOnce(null),
+            update: jest.fn(async () => ({ ...existingRole, name: 'New Name' })),
+        };
+
+        await updateCustomRole(makeCtx(), 'cr-1', { name: 'New Name' });
+
+        expect(mockTx.tenantCustomRole.findFirst.mock.calls[1][0].where).toEqual({
+            tenantId: 'tenant-1',
+            name: 'New Name',
+            isActive: true,
+            id: { not: 'cr-1' },
+        });
     });
 
     it('updates permissions with validation', async () => {
@@ -429,6 +469,22 @@ describe('Custom Roles — privilege escalation', () => {
         ).rejects.toThrow(/admin\.tenant_lifecycle|admin\.owner_management/);
     });
 
+    it('carries a reason and the keys in details, so the page can name them by label (#4467)', async () => {
+        mockTx.tenantCustomRole = { findFirst: jest.fn(async () => null), create: jest.fn() };
+
+        const err: any = await createCustomRole(makeCtx('ADMIN'), {
+            name: 'Sneaky Owner',
+            baseRole: 'ADMIN',
+            permissionsJson: OWNER_ONLY_PERMISSIONS,
+        }).catch((e) => e);
+
+        expect(err.status).toBe(403);
+        expect(err.details).toEqual({
+            reason: 'CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER',
+            exceeded: ['admin.tenant_lifecycle', 'admin.owner_management', 'admin.agent_ownership'],
+        });
+    });
+
     it('ADMIN cannot UPDATE an existing role to add OWNER-only permissions', async () => {
         mockTx.tenantCustomRole = {
             findFirst: jest.fn(async () => ({
@@ -608,7 +664,10 @@ describe('listCustomRoles — permissionsJson normalisation', () => {
         const roles = await listCustomRoles(makeCtx('ADMIN'));
         const perms = roles[0].permissionsJson;
 
-        // EDITOR grants assets view/create/edit; personnel + incidents view only.
+        // EDITOR grants assets view/create/edit and incidents view only. Its
+        // personnel domain is all-false (OWNER/ADMIN only since 2026-10-29),
+        // so the personnel line can no longer tell a fill from an invented
+        // `false`; the assets and incidents lines still can.
         expect(perms.assets).toEqual(getPermissionsForRole('EDITOR').assets);
         expect(perms.personnel).toEqual(getPermissionsForRole('EDITOR').personnel);
         expect(perms.incidents).toEqual(getPermissionsForRole('EDITOR').incidents);

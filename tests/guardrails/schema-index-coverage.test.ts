@@ -684,7 +684,7 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     IdentityAccountLink: 'reconcileIdentityAccountLinks reads existing links by (tenantId, connectedAccountId IN [...]) to tell a re-verify from a new link — served by the field-level @unique on connectedAccountId, with @@index([tenantId, employeeId]) covering the leaver-path lookup by worker; bounded take \u2264 10000 (MAX_EMPLOYEES). The #3051 step-5c target population terminated_employee_entra_account_ids adds a third shape \u2014 (tenantId, lastVerifiedAt >= cutoff, contradictedAt IS NULL) with relation predicates on the employee and the account \u2014 which the tenantId-leading @@index([tenantId, employeeId]) serves as a tenant scan over a table bounded by one tenant\u2019s linked accounts; bounded take = MAX_POPULATION_ROWS + 1.',
     TenantCalendarConsent: 'getConsentStates filters by tenantId alone and is bounded by the provider count (1) — covered by the tenantId-leading @@unique([tenantId, provider]).',
     UserCalendarConnection: 'listCalendarConnections filters by (tenantId, userId) and orders by provider — covered by the tenantId-leading @@unique([tenantId, userId, provider]); bounded take = the provider count (2). The push fan-out\'s (tenantId, provider, revokedAt) scan has its own composite.',
-    Employee: 'listEmployees filters by tenantId (+status) — covered by @@index([tenantId, status]); bounded take ≤500. The #3051 step-5c target populations read (tenantId, status TERMINATED) with the same index, one of them adding hrisRecordId IS NOT NULL as an in-page filter; bounded take = MAX_POPULATION_ROWS + 1.',
+    Employee: 'listEmployees filters by tenantId (+status IN) — covered by @@index([tenantId, status]); bounded take = PERSONNEL_ROSTER_CAP + 1, and a count over the same filter only when that cap is passed. The #3051 step-5c target populations read (tenantId, status TERMINATED) with the same index, one of them adding hrisRecordId IS NOT NULL as an in-page filter; bounded take = MAX_POPULATION_ROWS + 1.',
     EvidenceReview: 'getLatestSubmitters (evidence review-gate SoD) filters by (tenantId, evidenceId IN […]) + action equality, orders by createdAt desc — covered by @@index([tenantId, evidenceId]); action is a small in-page equality filter; bounded by the evidenceId set (bulk cap ≤100).',
     EvidenceControlLink: 'listControlLinks filters by (tenantId, evidenceId) — covered by @@index([tenantId, evidenceId]); bounded by the single evidence row it lists links for.',
     EvidenceRiskLink: 'Risk evidence tab filters by (tenantId, riskId) — covered by @@index([tenantId, riskId]); bounded by take: 500.',
@@ -1039,9 +1039,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // NIS2 incident response — listIncidents filters by tenantId (+ optional
     // phase / severity), orders by detectedAt DESC; covered by
     // @@index([tenantId, phase]) + @@index([tenantId, severity, detectedAt]);
-    // bounded take:200.
+    // always bounded (the route reads LIST_BACKFILL_CAP + 1, the page
+    // SSR_PAGE_LIMIT, any other caller the repository's default of 200).
     Incident:
-        'listIncidents filters by tenantId (+ optional phase / severity), orders by detectedAt DESC — covered by @@index([tenantId, phase]) + @@index([tenantId, severity, detectedAt]); bounded take:200.',
+        'listIncidents filters by tenantId (+ optional phase / severity), orders by detectedAt DESC — covered by @@index([tenantId, phase]) + @@index([tenantId, severity, detectedAt]); always bounded (LIST_BACKFILL_CAP + 1 on the route, SSR_PAGE_LIMIT on the page, take:200 by default).',
     // Notification deadlines fetched per incident (detail page) and scanned
     // by [tenantId, status, dueAt] (the deadline-clock job); covered by
     // @@index([tenantId, incidentId]) + @@index([tenantId, status, dueAt]).

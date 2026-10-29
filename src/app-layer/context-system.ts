@@ -197,8 +197,9 @@ export function buildSystemContext(input: {
  * **Where the id is borrowed ONLY for the foreign key, use
  * `buildTenantSystemJobContext` instead** (#4400): it writes as the
  * tenant's SYSTEM user, so the row names no person. The policy review
- * reminder moved first; the other callers move one per pull request, each
- * with a test that the row no longer names a person.
+ * reminder and the evidence retention notifications have moved; the other
+ * callers move one per pull request, each with a test that the row no
+ * longer names a person.
  */
 export function buildDelegatedJobContext(input: {
     tenantId: string;

@@ -10,9 +10,9 @@
  *       (`GET /personnel`, `/devices`, `/training`)
  *   getTrustCenter → `admin.manage` (`GET /admin/trust-center`)
  *
- * `personnel.view` is held by every built-in role by design ("view for all",
- * `PermissionSet.personnel`), so for the three people-layer reads only a
- * custom role that switches the key off is refused. `admin.manage` is OWNER
+ * `personnel.view` is held by OWNER and ADMIN only (owner decision,
+ * 2026-10-29), so the three people-layer reads refuse every other built-in
+ * role, and a custom role that switches the key off. `admin.manage` is OWNER
  * and ADMIN.
  *
  * Each refusal must come BEFORE the database is touched.
@@ -62,11 +62,20 @@ describe.each([
         expect(query).not.toHaveBeenCalled();
     });
 
-    test.each(['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'AI_ADMIN'])(
+    test.each(['OWNER', 'ADMIN'])(
         'a built-in %s holds it and reads, as through the route',
         async (role) => {
             await read(makeRequestContext(role));
             expect(query).toHaveBeenCalledTimes(1);
+        },
+    );
+
+    test.each(['EDITOR', 'AUDITOR', 'READER', 'AI_ADMIN'])(
+        'a built-in %s does not hold it and is refused before any query',
+        async (role) => {
+            await expect(read(makeRequestContext(role))).rejects.toMatchObject({ status: 403 });
+            expect(runInTenantContextMock).not.toHaveBeenCalled();
+            expect(query).not.toHaveBeenCalled();
         },
     );
 });

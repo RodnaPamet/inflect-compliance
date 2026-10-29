@@ -100,7 +100,8 @@ export type ListPageEntity =
     | 'vendors'
     | 'findings'
     | 'tasks'
-    | 'access-reviews';
+    | 'access-reviews'
+    | 'incidents';
 
 interface RecordOpts {
     entity: ListPageEntity;

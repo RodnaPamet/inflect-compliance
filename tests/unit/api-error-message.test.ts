@@ -13,7 +13,7 @@
  * This helper is the fix, and it had no test. The three body shapes below are
  * the ones that actually reach it.
  */
-import { apiErrorMessage } from '@/lib/api-error';
+import { apiErrorMessage, apiRefusalMessage, validationIssueMessages } from '@/lib/api-error';
 
 describe('apiErrorMessage', () => {
     const FALLBACK = 'Failed to save';
@@ -80,5 +80,51 @@ describe('apiErrorMessage', () => {
         expect(apiErrorMessage(null, FALLBACK)).toBe(FALLBACK);
         expect(apiErrorMessage({}, FALLBACK)).toBe(FALLBACK);
         expect(apiErrorMessage('plain text', FALLBACK)).toBe(FALLBACK);
+    });
+});
+
+describe('apiRefusalMessage (#4471)', () => {
+    const FALLBACK = 'Could not register the agent.';
+    // What `toApiErrorResponse` sends for a ZodError: the reason is in
+    // `details`, and the message is the same generic sentence for every one.
+    const zodRefusal = (...messages: string[]) => ({
+        error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request payload',
+            details: messages.map((message, i) => ({ path: [`field${i}`], code: 'custom', message })),
+        },
+    });
+
+    it('shows a validation refusal’s reasons instead of "Invalid request payload"', () => {
+        expect(apiRefusalMessage(zodRefusal('A THIRD_PARTY agent must name the vendor that supplies it'), FALLBACK)).toBe(
+            'A THIRD_PARTY agent must name the vendor that supplies it',
+        );
+    });
+
+    it('joins several reasons, once each', () => {
+        expect(apiRefusalMessage(zodRefusal('Name is required', 'Name is required', 'Pick an owner'), FALLBACK)).toBe(
+            'Name is required; Pick an owner',
+        );
+    });
+
+    it('falls back to the envelope message when the details carry no readable reason', () => {
+        const body = { error: { code: 'VALIDATION_ERROR', message: 'Invalid request payload', details: [{ path: [] }] } };
+        expect(validationIssueMessages(body)).toEqual([]);
+        expect(apiRefusalMessage(body, FALLBACK)).toBe('Invalid request payload');
+    });
+
+    it('reads every other refusal as apiErrorMessage does', () => {
+        expect(apiRefusalMessage({ error: { code: 'BAD_REQUEST', message: 'The cap must be 0 to 1000' } }, FALLBACK)).toBe(
+            'The cap must be 0 to 1000',
+        );
+        // The edge's flat refusal.
+        expect(apiRefusalMessage({ error: 'Admin access required' }, FALLBACK)).toBe('Admin access required');
+        expect(apiRefusalMessage(null, FALLBACK)).toBe(FALLBACK);
+    });
+
+    it('ignores `details` on an error that is not a validation error', () => {
+        const body = { error: { code: 'CONFLICT', message: 'Already registered', details: [{ message: 'raw' }] } };
+        expect(validationIssueMessages(body)).toEqual([]);
+        expect(apiRefusalMessage(body, FALLBACK)).toBe('Already registered');
     });
 });

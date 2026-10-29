@@ -93,6 +93,33 @@ export function normaliseCap(cap: number | null | undefined): number | null {
 }
 
 /**
+ * The largest cap that may be stored.
+ *
+ * A sanity rail rather than a policy: a cap of ten thousand is
+ * indistinguishable from no cap at all, and a typo that large is worth
+ * refusing at the door. Here, in the pure half, so the register's form refuses
+ * the same number with the same limit before it sends it (#4471) — the route
+ * used to hold it as a bare `max(1000)` whose refusal reached the operator as
+ * "Invalid request payload", and nothing on the page said what the limit was.
+ */
+export const MAX_CONCURRENCY_CAP = 1000;
+
+/**
+ * Whether a cap may be stored: `null` (no cap), or a whole number from 0 to
+ * `MAX_CONCURRENCY_CAP`. A fractional cap is refused rather than floored: an
+ * operator who typed 2.5 should be told, not rounded.
+ */
+export function isSettableConcurrencyCap(cap: number | null): boolean {
+    if (cap === null) return true;
+    return Number.isInteger(cap) && cap >= 0 && cap <= MAX_CONCURRENCY_CAP;
+}
+
+/** What the setter refuses with: the rule, stated with its limit. */
+export const CONCURRENCY_CAP_SETTING_MESSAGE =
+    `The concurrent-run cap must be a whole number from 0 to ${MAX_CONCURRENCY_CAP}, ` +
+    `or null for no cap.`;
+
+/**
  * Does the cap admit ONE MORE run?
  *
  * `inFlight` is the count of runs that can still progress — deliberately not

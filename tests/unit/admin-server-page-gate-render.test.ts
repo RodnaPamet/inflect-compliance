@@ -73,7 +73,7 @@ jest.mock('next-intl/server', () => {
 
 /** Every data read the gated pages make. */
 const reads = {
-    listEmployees: jest.fn(async () => []),
+    listEmployees: jest.fn(async () => ({ employees: [], truncated: false, total: 0 })),
     listDevices: jest.fn(async () => []),
     listTrainingAssignments: jest.fn(async () => []),
     listAuditLogPage: jest.fn(async (_ctx: unknown, _input: unknown) => ({
@@ -169,7 +169,7 @@ import { ADMIN_PAGE_REQUIREMENTS } from '@/app/t/[tenantSlug]/(app)/admin/_lib/a
 type Element = { type: unknown; props: Record<string, unknown> };
 type PageFn = (args: {
     params: Promise<Record<string, string>>;
-    searchParams?: Promise<Record<string, unknown>>;
+    searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) => Promise<Element>;
 
 /** Every gated page, keyed by its route; the last test pins it to the table. */
@@ -193,13 +193,16 @@ const PAGES: Record<string, unknown> = {
     '/admin/vendor-templates/[templateId]': VendorTemplatePage,
 };
 
-async function render(route: string, role: string, searchParams?: Record<string, unknown>): Promise<Element> {
+async function render(
+    route: string,
+    role: string,
+    searchParams?: Record<string, string | string[] | undefined>,
+): Promise<Element> {
     currentCtx = makeRequestContext(role, { tenantSlug: 'acme' });
     const params = Promise.resolve({ tenantSlug: 'acme', assessmentId: 'a-1', templateId: 't-1' });
-    return (PAGES[route] as PageFn)({
-        params,
-        ...(searchParams === undefined ? {} : { searchParams: Promise.resolve(searchParams) }),
-    });
+    // Next hands every page `searchParams`; the personnel page reads it, and
+    // the audit log reads its cursor from it.
+    return (PAGES[route] as PageFn)({ params, searchParams: Promise.resolve(searchParams ?? {}) });
 }
 
 /** The first element of `type` in a rendered element tree. */
@@ -306,7 +309,7 @@ describe('audit log — the header names only pages the reader can open', () => 
 });
 
 describe('audit log — paged, so an entry older than one page can be reached', () => {
-    const client = async (searchParams?: Record<string, unknown>) => {
+    const client = async (searchParams?: Record<string, string | string[] | undefined>) => {
         const el = find(await render('/admin/audit-log', 'AUDITOR', searchParams), AuditLogClient);
         expect(el).not.toBeNull();
         return el!.props as { olderHref: string | null; newestHref: string | null };

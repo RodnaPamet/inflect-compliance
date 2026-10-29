@@ -126,16 +126,73 @@ describe('the concurrent-run cap panel', () => {
     });
 
     it('shows the SERVER\'s message when the save is refused', async () => {
-        // Not a generic "something went wrong": the route refuses a cap above
-        // its sanity rail, and that is the sentence an operator needs.
-        mockFetch(false, { error: { message: 'cap must be 1000 or less' } });
+        // Not a generic "something went wrong": the operator reads the
+        // server's own sentence.
+        mockFetch(false, { error: { code: 'BAD_REQUEST', message: 'The cap is refused for a reason' } });
         renderPanel(null);
-        await userEvent.type(screen.getByTestId('agents-concurrency-input'), '99999');
+        await userEvent.type(screen.getByTestId('agents-concurrency-input'), '5');
         await userEvent.click(screen.getByTestId('agents-concurrency-save'));
 
         expect(await screen.findByTestId('agents-concurrency-error')).toHaveTextContent(
-            /1000 or less/,
+            'The cap is refused for a reason',
         );
+    });
+
+    it('refuses a cap above the limit before it reaches the server, and says what the limit is (#4471)', async () => {
+        // The route's rail used to be the only check, and its refusal reached
+        // the operator as "Invalid request payload" with the limit nowhere on
+        // the page.
+        const fetchMock = mockFetch();
+        renderPanel(null);
+        await userEvent.type(screen.getByTestId('agents-concurrency-input'), '1001');
+        await userEvent.click(screen.getByTestId('agents-concurrency-save'));
+
+        expect(await screen.findByTestId('agents-concurrency-error')).toHaveTextContent(/\b1000\b/);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('accepts the limit itself', async () => {
+        const fetchMock = mockFetch();
+        renderPanel(null);
+        await userEvent.type(screen.getByTestId('agents-concurrency-input'), '1000');
+        await userEvent.click(screen.getByTestId('agents-concurrency-save'));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(JSON.parse(String(init.body))).toEqual({ cap: 1000 });
+    });
+
+    it('states the limit beside the input', () => {
+        renderPanel(null);
+        expect(screen.getByTestId('agents-concurrency-hint')).toHaveTextContent(/\b1000\b/);
+    });
+
+    it('shows a validation refusal\'s reasons, never "Invalid request payload" (#4471)', async () => {
+        mockFetch(false, {
+            error: {
+                code: 'VALIDATION_ERROR',
+                message: 'Invalid request payload',
+                details: [{ path: ['cap'], code: 'invalid_type', message: 'Expected number, received string' }],
+            },
+        });
+        renderPanel(null);
+        await userEvent.type(screen.getByTestId('agents-concurrency-input'), '5');
+        await userEvent.click(screen.getByTestId('agents-concurrency-save'));
+
+        const error = await screen.findByTestId('agents-concurrency-error');
+        expect(error).toHaveTextContent('Expected number, received string');
+        expect(error).not.toHaveTextContent('Invalid request payload');
+    });
+
+    it('shows the edge\'s flat refusal rather than the generic save-failed text (#4471)', async () => {
+        // The middleware answers an admin path it refuses with
+        // `{ error: 'Admin access required' }` — a string, not the envelope.
+        mockFetch(false, { error: 'Admin access required' });
+        renderPanel(null);
+        await userEvent.type(screen.getByTestId('agents-concurrency-input'), '5');
+        await userEvent.click(screen.getByTestId('agents-concurrency-save'));
+
+        expect(await screen.findByTestId('agents-concurrency-error')).toHaveTextContent('Admin access required');
     });
 
     it('names the monthly budget, so a refused run can be attributed to the right limit', () => {

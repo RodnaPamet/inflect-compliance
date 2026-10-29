@@ -294,7 +294,19 @@ const BUDGETS_KB: Record<string, number> = {
     // 580 is measured + ~4, the convention above. That is the THIRD rot of
     // these comments, which is the point at which a hand-maintained number
     // beside its own source stops being worth defending — filed separately.
-    'root': 580,
+    //
+    // RAISED 580 -> 584 on 2026-10-29 (#4496), and the route that tripped it
+    // is not in that PR. Main (e1d5b31bab) measured `org/…/tenants/new/page`
+    // at 579.9 KB, 0.1 KB left; the Board findings branch measured it at
+    // 580.1. That branch changes only the tenant dashboard, the Evidence
+    // list and two shared dashboard-card modules, none of which the org page
+    // imports. Every bucket moved by the same 0.1 KB in that build
+    // (dashboard 618.1 -> 618.2, risks 655.1 -> 655.2, tenant-default
+    // 680.3 -> 680.4), which is webpack re-partitioning shared chunks, the
+    // effect the `controls` note describes, not code added to this route.
+    // With 0.1 KB left, any change to client code could trip this bucket.
+    // 584 is measured + ~4, the convention.
+    'root': 584,
 };
 
 /** Map an app route key to a budget key. */

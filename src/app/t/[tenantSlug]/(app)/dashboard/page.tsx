@@ -16,44 +16,26 @@ import { cachedSsrPayload } from '@/lib/cache/ssr-cache';
 import DashboardClient from './DashboardClient';
 import RecentActivityCard from './RecentActivityCard';
 import AgenticGovernanceCard from './AgenticGovernanceCard';
+import { dashboardQuickAddGates, mayReadRecentActivity } from './dashboard-gates';
 import { Card } from '@/components/ui/card';
 import { getTranslations } from 'next-intl/server';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Executive Dashboard — server shell.
+ * Executive Dashboard — server shell (Epic 69 hybrid SSR + SWR).
  *
- * After Epic 69 the dashboard is a hybrid SSR + SWR page:
+ *   1. Fetch the executive payload, trends and posture summary once per
+ *      navigation, so first paint carries real data.
+ *   2. Hand them to `<DashboardClient>` as SWR `fallbackData`; the client
+ *      revalidates on focus and on mutation-site `mutate(...)`.
+ *   3. `RecentActivityCard` stays a server component, passed as `children`
+ *      so its server boundary survives the client edge — and only for a
+ *      viewer who can read the audit log (`mayReadRecentActivity`), so
+ *      nobody else fetches its rows or sees the card.
  *
- *   1. This server component fetches the executive payload + trend
- *      data once on every navigation. The
- *      first paint therefore contains real data — no loading flash,
- *      no skeleton-on-cold-cache regression vs. the all-server
- *      version.
- *
- *   2. Those payloads are handed to `<DashboardClient>` as
- *      `initialExec` / `initialTrends`. The client component reads
- *      them through `useTenantSWR(CACHE_KEYS.dashboard.executive())`
- *      with `fallbackData`, so:
- *        - first render uses the server-fetched data synchronously,
- *        - subsequent visits hit SWR cache,
- *        - tab focus / network reconnect trigger a background
- *          refetch with no UI flash (the hook keeps previous data),
- *        - the control-status, risk-bulk, and evidence-upload
- *          mutation sites call `mutate(CACHE_KEYS.dashboard.executive())`
- *          to refresh this card stack precisely — no `router.refresh()`
- *          needed.
- *
- *   3. `RecentActivityCard` stays a server component (no API route
- *      yet). It's rendered HERE and passed as `children` to
- *      `<DashboardClient>` so its server boundary survives the
- *      client-component edge.
- *
- * Pre-Epic-69 this file was ~500 lines of inline JSX + a pair of
- * Suspense-streamed async wrappers. The new shape is intentionally
- * boring — fetch on the server, hand off to the client. Future
- * pages adopting the SWR pattern follow the same recipe.
+ * Per-viewer gates (quick adds, the activity card) are computed here from
+ * the request context, OUTSIDE the tenant-scoped payload cache below.
  */
 export default async function DashboardPage({
     params,
@@ -64,18 +46,11 @@ export default async function DashboardPage({
     const t = await getTranslations('dashboard');
     const ctx = await getTenantCtx({ tenantSlug });
 
-    // PR3 perf: fetch all three payloads in ONE parallel batch. Trends were
-    // previously awaited AFTER the exec+matrix Promise.all — a serial waterfall
-    // on the dashboard's hot path. The trend snapshot stays best-effort: a
-    // daily-snapshot row may not exist for the first few days of a fresh tenant
-    // (the client renders the empty state when `trends.daysAvailable < 2`), so
-    // its rejection resolves to `null` inside the batch rather than failing the
-    // whole page.
-    // SSR payload cache (origin-tier, per-tenant, tenant-version-keyed).
-    // getExecutiveDashboard is ~11 parallel COUNT queries and is NOT
-    // list-cached, so this is the real win. Tenant-pure (no per-user data),
-    // so a tenant-scoped key is safe. Any entity write bumps the tenant
-    // version → next load recomputes. See docs/response-caching.md.
+    // One parallel batch. Trends and the posture summary are best-effort:
+    // a fresh tenant has neither yet, and the client renders their empty
+    // states rather than failing the page. The SSR payload cache is
+    // per-tenant and tenant-version-keyed, so it may hold only tenant-pure
+    // data (see docs/response-caching.md).
     const { exec, trends, postureSummary } = await cachedSsrPayload({
         tenantId: ctx.tenantId,
         route: 'dashboard',
@@ -84,8 +59,7 @@ export default async function DashboardPage({
             const [exec, trends, postureRow] = await Promise.all([
                 getExecutiveDashboard(ctx),
                 getComplianceTrends(ctx, 30).catch((): TrendPayload | null => null),
-                // Cheap cached-row read; never invokes an LLM. best-effort so a
-                // missing row (fresh tenant) doesn't fail the page.
+                // Cheap cached-row read; never invokes an LLM.
                 getLatestPostureSummary(ctx).catch(() => null),
             ]);
             return { exec, trends, postureSummary: toPostureDto(postureRow) };
@@ -97,21 +71,24 @@ export default async function DashboardPage({
             initialExec={exec}
             initialTrends={trends}
             initialPostureSummary={postureSummary}
+            quickAdds={dashboardQuickAddGates(ctx)}
             agentic={<AgenticGovernanceCard tenantSlug={tenantSlug} />}
         >
-            <Suspense
-                fallback={
-                    <Card className="space-y-compact">
-                        <Skeleton className="h-4 w-full sm:w-32" />
-                    </Card>
-                }
-            >
-                <RecentActivityCard
-                    tenantSlug={tenantSlug}
-                    label={t('recentActivity')}
-                    noActivityLabel={t('noRecentActivity')}
-                />
-            </Suspense>
+            {mayReadRecentActivity(ctx) ? (
+                <Suspense
+                    fallback={
+                        <Card className="space-y-compact">
+                            <Skeleton className="h-4 w-full sm:w-32" />
+                        </Card>
+                    }
+                >
+                    <RecentActivityCard
+                        tenantSlug={tenantSlug}
+                        label={t('recentActivity')}
+                        noActivityLabel={t('noRecentActivity')}
+                    />
+                </Suspense>
+            ) : null}
         </DashboardClient>
     );
 }

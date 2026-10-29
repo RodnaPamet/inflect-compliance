@@ -28,6 +28,7 @@ import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import type { DueItem, DueItemUrgency, JobRunResult } from './types';
 import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
+import { openRiskStatusFilter } from '../domain/risk-status';
 import { CONTROL_TEST_ELIGIBILITY } from '../domain/control-test-due';
 import { appendAuditEntry } from '@/lib/audit';
 
@@ -262,7 +263,7 @@ async function scanRisks(
 
     const where: Prisma.RiskWhereInput = {
         deletedAt: null,
-        status: { notIn: ['CLOSED', 'ACCEPTED'] },
+        status: openRiskStatusFilter(),
         nextReviewAt: { not: null, lte: horizon },
     };
     if (tenantId) where.tenantId = tenantId;

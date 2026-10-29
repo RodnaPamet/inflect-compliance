@@ -47,13 +47,14 @@ const Body = z.object({
     /**
      * `null` clears the cap. `0` is legal and means no run may start.
      *
-     * The upper bound is a sanity rail rather than a policy: a cap of ten
-     * thousand is indistinguishable from no cap at all, and a typo that large
-     * is worth refusing at the door. `int()` refuses a fractional cap here
-     * rather than letting `normaliseCap` floor it silently — an operator who
-     * typed 2.5 should be told, not rounded.
+     * Only the TYPE is checked here. The range — a whole number from 0 to
+     * `MAX_CONCURRENCY_CAP`, a sanity rail — is the setter's
+     * (`isSettableConcurrencyCap`), which refuses with the rule as its message,
+     * as the budget's does. A Zod `int().min(0).max(1000)` here answered every
+     * out-of-range cap with "Invalid request payload" and the limit only in
+     * `details`, which is what the register showed the operator (#4471).
      */
-    cap: z.number().int().min(0).max(1000).nullable(),
+    cap: z.number().nullable(),
 });
 
 export const GET = withApiErrorHandling(

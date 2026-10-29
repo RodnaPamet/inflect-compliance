@@ -57,8 +57,8 @@ export interface VendorChoice {
 
 /**
  * Resolved on the server, because the shell decides which tabs are reachable
- * before any tab mounts. See `page.tsx` for why `canCloseBreaker` is the one
- * flag that is a conjunction.
+ * before any tab mounts. `canManageRegistry` and `canCloseBreaker` are asked of
+ * every gate their writes pass (`agentRegisterAffordances`).
  */
 export interface AgentDetailPermissions {
     /**
@@ -68,7 +68,11 @@ export interface AgentDetailPermissions {
      * page and finds those tabs disabled.
      */
     canReadRegistry: boolean;
-    /** `admin.agent_registry` AND the role-tier write — status moves and amendment. */
+    /**
+     * Status moves, amendment and the risk assessment's writes: the edge,
+     * `admin.agent_registry` and `assertAgentGovernanceWrite`, asked by
+     * `agentRegisterAffordances` (#4471).
+     */
     canManageRegistry: boolean;
     /** `admin.agent_policy_card` — gates the policy-card GET, not only its writes. */
     canEditPolicyCard: boolean;
@@ -76,8 +80,17 @@ export interface AgentDetailPermissions {
     canGrantTools: boolean;
     /** `admin.agent_kill_switch` — engage and lift, independently grantable. */
     canKill: boolean;
-    /** `admin.agent_registry` AND the role-tier admin check the usecase asserts. */
+    /**
+     * Closing a breaker: the edge, `admin.agent_registry` and
+     * `assertAgentGovernanceAdmin`, asked by `agentRegisterAffordances`.
+     */
     canCloseBreaker: boolean;
+    /**
+     * `admin.agent_kill_switch` behind the edge — the kill-switch list route
+     * the breaker tab's history reads. Optional; absent reads as
+     * `canCloseBreaker`, the gate it used to borrow.
+     */
+    canReadKillHistory?: boolean;
     /**
      * `admin.agent_skill_review` (#3680) — authoring and review of the
      * WORKSPACE's own skills on the Skills tab. The repository corpus is
@@ -352,6 +365,7 @@ export function AgentDetailClient({
                     {...props}
                     onChanged={refresh}
                     canCloseBreaker={perms.canCloseBreaker}
+                    canReadKillHistory={perms.canReadKillHistory ?? perms.canCloseBreaker}
                 />
             )}
             {amending && (

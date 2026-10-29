@@ -414,6 +414,9 @@
     "evidence": "Evidence",
     "openTasks": "Open Tasks",
     "openFindings": "Open Findings",
+    "implementedOfApplicable": "{implemented} of {applicable} implemented",
+    "overdueCount": "{count} overdue",
+    "publishedCount": "{count} published",
     "highCritical": "{count} high/critical",
     "pendingReview": "{count} pending review",
     "clauseProgress": "Clause Progress (4–10)",
@@ -436,10 +439,36 @@
     "exportReports": "Export Reports",
     "recentActivity": "Recent Activity",
     "noRecentActivity": "No recent activity",
+    "nextAction": {
+      "quickAdd": "Quick add:",
+      "overdueEvidence": {
+        "label": "Refresh overdue evidence",
+        "description": "{count, plural, one {# evidence record past review date.} other {# evidence records past review date.}}"
+      },
+      "overdueTasks": {
+        "label": "Resolve overdue tasks",
+        "description": "{count, plural, one {# task past due.} other {# tasks past due.}} Address them before the next audit."
+      },
+      "highRisks": {
+        "label": "Review high-severity risks",
+        "description": "{count, plural, one {# open risk} other {# open risks}} with an inherent score of 10 or more. Review treatment plans."
+      },
+      "lowCoverage": {
+        "label": "Improve control coverage",
+        "description": "Coverage is {count}%. Reach 80% to meet the readiness baseline."
+      },
+      "readinessCheck": {
+        "label": "Run a readiness check",
+        "description": "Everything looks good. Generate a readiness report to confirm."
+      }
+    },
     "hero": {
       "eyebrow": "Compliance posture",
+      "coverageDescription": "{implemented} of {applicable} controls implemented",
+      "vsPrevious": "vs prev",
       "regenerate": "Regenerate",
       "regenerating": "Regenerating…",
+      "regenerateFailed": "The summary could not be regenerated. The previous summary is still shown; try again later.",
       "radarAria": "Compliance posture profile — six axes, higher is better",
       "radarAxes": {
         "controls": "Controls",
@@ -461,22 +490,61 @@
         "optimising": "Optimising"
       },
       "levelOfSuffix": "/ 5 on the maturity ladder",
+      "postureLabel": {
+        "STRONG": "Strong",
+        "ESTABLISHED": "Established",
+        "DEVELOPING": "Developing",
+        "AT_RISK": "At risk"
+      },
       "nextAxisTitle": "Then {axis}",
       "nextAxisDetail": "{measured} of {total} healthy — level {level}. The next spoke to lift."
     },
     "controlCoverage": "Control Coverage",
+    "coverageSegments": {
+      "implemented": "Implemented",
+      "inProgress": "In Progress",
+      "notStarted": "Not Started"
+    },
+    "coverageTrend": "Coverage (trend)",
     "taskStatus": "Task Status",
+    "taskSegments": {
+      "open": "Open",
+      "inProgress": "In Progress",
+      "inReview": "In Review",
+      "blocked": "Blocked",
+      "resolved": "Resolved"
+    },
     "policyStatus": "Policy Status",
+    "policySegments": {
+      "draft": "Draft",
+      "inReview": "In Review",
+      "approved": "Approved",
+      "published": "Published",
+      "archived": "Archived"
+    },
     "policies": "Policies",
     "riskDistribution": "Risk Distribution",
+    "severity": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "donut": {
+      "total": "Total",
+      "tasks": "Tasks",
+      "policies": "Policies"
+    },
+    "legendRowAria": "{label}: {value} — open filtered list",
     "openMitigating": "Open / Mitigating",
     "evidenceStatus": "Evidence Status",
     "overdueTrend": "Overdue (trend)",
     "complianceTrends": "Compliance Trends",
+    "daysOfData": "{count, plural, one {# day of data} other {# days of data}}",
     "coverage": "Coverage",
     "openRisks": "Open Risks",
     "overdueEvidenceLabel": "Overdue Evidence",
-    "trendsEmpty": "Trend charts will appear here after the daily compliance snapshot runs. Snapshots are generated automatically at 05:00 UTC.",
+    "trendsEmpty": "Trend charts will appear here once the daily compliance snapshot has run on two days. A snapshot is taken automatically each day at 05:00 UTC.",
     "openList": "Open {label} list",
     "customKpi": {
       "title": "Custom KPI",
@@ -490,7 +558,36 @@
       "treatmentPlans": "Treatment plans",
       "total": "Total",
       "noData": "No data for this metric yet",
-      "trendComing": "Trend history is still being collected for this metric."
+      "segments": {
+        "active": "Active",
+        "retired": "Retired",
+        "other": "Other",
+        "planning": "Planning",
+        "inProgress": "In Progress",
+        "ready": "Ready",
+        "complete": "Complete",
+        "pass": "Pass",
+        "fail": "Fail",
+        "inconclusive": "Inconclusive",
+        "pending": "Pending",
+        "overdue": "Overdue",
+        "dueWithin7d": "Due ≤7d",
+        "due8to30d": "Due 8–30d",
+        "current": "Current",
+        "expiringWithin7d": "Expiring ≤7d",
+        "expiring8to30d": "Expiring 8–30d",
+        "expired": "Expired",
+        "onTrack": "On track",
+        "completed": "Completed"
+      },
+      "subtitles": {
+        "highCritical": "{count} high/critical",
+        "complete": "{count} complete",
+        "passed": "{count} passed",
+        "currentPercent": "{count}% current",
+        "active": "{count} active",
+        "dueWithin7d": "{count} due ≤7d"
+      }
     },
     "exceptions": {
       "title": "Exception Inventory",
@@ -2928,7 +3025,7 @@
   },
   "personnel": {
     "title": "Personnel",
-    "description": "{total} people in the roster — synced from your HRIS or added manually.",
+    "description": "{total} people in the roster, synced from your HRIS.",
     "resourceSingular": "person",
     "resourcePlural": "people",
     "colName": "Name",
@@ -2937,9 +3034,11 @@
     "colTitle": "Job title",
     "colSource": "Source",
     "emptyTitle": "No personnel yet",
-    "emptyDesc": "Connect an HRIS (BambooHR) or add a person to build the roster.",
+    "emptyDesc": "Connect your HRIS on the Integrations page. People appear here after its first sync.",
     "emptyMatchingTitle": "No matching people",
-    "emptyMatchingDesc": "No personnel match the current filters.",
+    "emptyMatchingDesc": "No personnel match the current filters or search.",
+    "searchPlaceholder": "Search people…",
+    "loadError": "Couldn't load the roster. Reload the page to try again.",
     "fieldStartDate": "Start date",
     "fieldEndDate": "End date",
     "fieldExternalId": "HRIS id",
@@ -2955,6 +3054,10 @@
         "TERMINATED": "Terminated",
         "LEAVE": "Leave"
       }
+    },
+    "sourceLabels": {
+      "HRIS": "HRIS",
+      "MANUAL": "Manual"
     }
   },
   "devices": {
@@ -4689,7 +4792,7 @@
       "createSubmit": "Create Role",
       "editTitle": "Edit: {name}",
       "editSubmit": "Save Changes",
-      "emptyState": "No custom roles defined yet. Click \"Create Custom Role\" to get started.",
+      "emptyState": "No custom roles defined yet. Click \"{button}\" to create one.",
       "roleSingular": "custom role",
       "rolesPlural": "custom roles",
       "colName": "Name",
@@ -4718,9 +4821,56 @@
       "deleteFailed": "Delete failed",
       "createdSuccess": "Custom role \"{name}\" created successfully.",
       "updatedSuccess": "Custom role \"{name}\" updated successfully.",
-      "deleteConfirm": "Delete \"{name}\"?",
-      "deleteMemberWarning": "\n\n{count, plural, one {# member} other {# members}} will lose this custom role and fall back to their base role.",
-      "deletedSuccess": "Deleted \"{name}\". {count, plural, one {# member} other {# members}} reassigned to fallback."
+      "deleteTitle": "Delete \"{name}\"?",
+      "deleteDesc": "The role leaves the list and can no longer be given to members. Deleting cannot be undone.",
+      "deleteMemberWarning": "{count, plural, one {# member carries} other {# members carry}} this role. Each loses it and goes back to the role on their own membership, the one shown on the Members & Roles page, which may allow more or less than this role did.",
+      "deleteConfirmLabel": "Delete role",
+      "deletedSuccess": "Deleted \"{name}\". {count, plural, one {# member went} other {# members went}} back to the role on their own membership.",
+      "grantRefused": "You cannot give a role permissions you do not hold yourself: {permissions}.",
+      "exceedsHeldNotice": "This role grants permissions you do not hold yourself: {permissions}. It cannot be saved while it keeps them. Remove them, or ask someone who holds them to make the change.",
+      "notHeldHint": "Permissions you do not hold yourself are greyed out: you cannot give them to a role.",
+      "permissionLabel": "{resource}: {action}",
+      "cellGranted": "{permission}: granted. Click to remove it.",
+      "cellNotGranted": "{permission}: not granted. Click to grant it.",
+      "cellNotHeld": "{permission}: not granted. You do not hold this permission yourself, so you cannot give it.",
+      "cellGrantedNotHeld": "{permission}: granted. You do not hold this permission yourself, so you can remove it but not give it back.",
+      "actions": {
+        "view": "View",
+        "create": "Create",
+        "edit": "Edit",
+        "upload": "Upload",
+        "download": "Download",
+        "approve": "Approve",
+        "assign": "Assign",
+        "execute": "Run",
+        "manage": "Manage",
+        "decide": "Decide",
+        "close": "Close",
+        "confirm": "Confirm",
+        "install": "Install",
+        "freeze": "Freeze",
+        "share": "Share",
+        "workpaper_view": "View workpapers",
+        "export": "Export",
+        "schedule_external": "Schedule to external recipients",
+        "members": "Manage members",
+        "sso": "SSO settings",
+        "scim": "SCIM settings",
+        "tenant_lifecycle": "Workspace lifecycle",
+        "owner_management": "Manage owners",
+        "compliance_dsar_view": "View data subject requests",
+        "compliance_dsar_manage": "Manage data subject requests",
+        "agent_registry": "Agent register",
+        "agent_registry_view": "View agent register",
+        "agent_tool_exposure": "Agent tool exposure",
+        "agent_policy_card": "Agent policy cards",
+        "agent_kill_switch": "Agent kill switch",
+        "agent_external_tools": "Agent external tools",
+        "agent_harness_ingest": "Agent scan reports",
+        "agent_ownership": "Own agents",
+        "agent_skill_review": "Review agent skills",
+        "agent_skill_author": "Author agent skills"
+      }
     },
     "members": {
       "crumbSelf": "Members & Roles",
@@ -5722,6 +5872,8 @@
       "failed": "Failed",
       "statusError": "Error",
       "statusConnected": "Connected",
+      "statusDisabled": "Disabled",
+      "disabledHint": "This connection is disabled, so it cannot be tested or read. Disconnect it, then connect SharePoint again.",
       "sitesAllowed": "{count} site(s) allowed",
       "test": "Test",
       "sites": "Sites",
@@ -5730,6 +5882,8 @@
       "selectSites": "Select sites…",
       "cancel": "Cancel",
       "saveSites": "Save sites",
+      "sitesLoadFailed": "Could not load the sites.",
+      "saveSitesFailed": "Could not save the sites.",
       "healthCrumb": "SharePoint health",
       "healthTitle": "SharePoint sync health",
       "lastTested": "Last tested: {date}",
@@ -5747,6 +5901,7 @@
       "providerNameRequired": "Provider and name are required",
       "connectionUpdated": "Connection updated",
       "connectionCreated": "Connection created.",
+      "connectionCreatedWithSecrets": "Connection created. Its secrets are encrypted and cannot be viewed again.",
       "saveFailed": "Failed to save",
       "networkError": "Network error",
       "testPassed": "Connection test passed",
@@ -5755,6 +5910,8 @@
       "testFailedNetwork": "Test failed: network error",
       "connectionDisabled": "Connection disabled",
       "disableFailed": "Failed to disable",
+      "connectionEnabled": "Connection enabled",
+      "enableFailed": "Failed to enable",
       "webhookBaseUrl": "Webhook Base URL",
       "availableTitle": "Available integrations",
       "availableSubtitle": "Connect a provider to run automated checks and import evidence.",
@@ -5762,11 +5919,31 @@
       "configuredConnections": "Configured Connections",
       "addButton": "Integration",
       "fetching": "Fetching integrations",
-      "emptyConfigured": "No integrations configured. Click \"Add Integration\" to get started.",
+      "emptyConfigured": "No integrations configured. Add an integration to get started.",
       "colProvider": "Provider",
+      "providerLabels": {
+        "okta": "Okta",
+        "google-workspace": "Google Workspace",
+        "entra-id": "Microsoft Entra ID",
+        "active-directory": "Active Directory (on-prem)",
+        "legacy-mcp": "Legacy application (tool server)",
+        "aws-posture": "AWS Cloud Posture",
+        "azure-posture": "Azure Cloud Posture",
+        "gcp-posture": "GCP Cloud Posture",
+        "github": "GitHub",
+        "bamboohr": "BambooHR",
+        "workday": "Workday",
+        "orangehrm": "OrangeHRM",
+        "personnel": "Personnel",
+        "device": "Device Posture",
+        "training": "Training & Background",
+        "servicenow": "ServiceNow",
+        "mcp-server": "External tool server",
+        "a2a-peer": "A2A peer agent (outbound)",
+        "sharepoint": "Microsoft SharePoint"
+      },
       "colName": "Name",
       "colStatus": "Status",
-      "colSecrets": "Secrets",
       "colLastTest": "Last Test",
       "colLastCollected": "Last collected",
       "neverCollected": "Never",
@@ -5776,6 +5953,7 @@
       "statusDisabled": "Disabled",
       "testConnection": "Test connection",
       "disableIntegration": "Disable integration",
+      "enableIntegration": "Enable integration",
       "resourceConnections": "connections",
       "resourceConnection": "connection",
       "editIntegration": "Edit Integration",
@@ -5790,12 +5968,32 @@
       "show": "Show",
       "secretsNotice": "Secrets are encrypted at rest. They cannot be viewed after saving.",
       "supportedChecks": "Supported Checks",
+      "automationKeysHint": "To run one of these checks for a control, set the control's automation key to:",
+      "checkLabels": {
+        "mfa_enforced": "MFA enforced",
+        "no_dormant_admins": "No dormant admins",
+        "admin_count_within_threshold": "Admin count within limit",
+        "sso_enforced": "SSO enforced",
+        "training_completed_annually": "Annual training completed",
+        "background_check_complete": "Background checks complete",
+        "change_approved_before_implementation": "Changes approved before implementation",
+        "devices_encrypted": "Device disks encrypted",
+        "devices_screenlock": "Device screen lock on",
+        "devices_antivirus": "Device antivirus running",
+        "devices_password_manager": "Password manager installed",
+        "offboarded_access_removed": "Leavers' access removed",
+        "onboarding_complete_within_sla": "Onboarding completed on time",
+        "every_employee_has_manager": "Every employee has a manager",
+        "soc2": "SOC 2 benchmark",
+        "cis": "CIS benchmark",
+        "branch_protection": "Branch protection"
+      },
       "updateConnection": "Update Connection",
       "createConnection": "Create Connection",
       "cancel": "Cancel",
       "health": {
         "title": "Connection health",
-        "description": "Time since each enabled connection last succeeded. A stale connection may have a broken credential or a silently-dead collector.",
+        "description": "Freshness is the time since each enabled connection last ran, whatever the result, or passed a connection test. A connection whose runs keep failing still reads Fresh, so check Last success to spot a broken credential.",
         "colLastSuccess": "Last success",
         "colFreshness": "Freshness",
         "neverSucceeded": "Never succeeded",
@@ -5813,8 +6011,20 @@
       "syncNow": "Sync now",
       "viewOutcomes": "View outcomes",
       "syncRunning": "Running sync…",
-      "syncDone": "Sync complete — {total} checks ({passed} passed, {failed} failed), {accounts} accounts synced.",
       "syncFailed": "Sync failed.",
+      "syncResult": {
+        "directoryPassed": "Directory sync complete: {count} accounts read.",
+        "directoryPartial": "Directory sync incomplete: {count} accounts read before it stopped.",
+        "directoryError": "Directory sync failed.",
+        "directorySkipped": "A directory sync of this connection was already running, so this one did not start.",
+        "hrPassed": "HR sync complete: {count} people read.",
+        "hrPartial": "HR sync incomplete: {count} people read, but the roster was not fully updated.",
+        "hrError": "HR sync failed.",
+        "hrSkipped": "An HR sync of this connection was already running, so this one did not start.",
+        "checks": "{total} checks ran: {passed} passed, {failed} failed, {errored} could not run.",
+        "ranNothing": "Nothing was collected: no control uses this connection's checks, so none ran.",
+        "reason": "Reason: {reason}"
+      },
       "outcome": {
         "breadcrumb": "Outcomes",
         "title": "Connection outcomes",
@@ -5847,6 +6057,11 @@
       },
       "authorizeEntra": "Authorize with Microsoft Entra",
       "authorizeFailed": "Could not start the authorization.",
+      "consentResult": {
+        "connected": "Microsoft Entra authorization complete. The tool server connection can now be used.",
+        "declined": "Microsoft Entra authorization was declined, so the tool server connection is not authorized.",
+        "error": "Microsoft Entra authorization did not complete. Try again; if it fails again, check the connection's Entra tenant ID, client ID and client secret."
+      },
       "legacyQueue": {
         "crumbIntegrations": "Integrations",
         "crumbConnection": "Connection",
@@ -6510,6 +6725,8 @@
       "tests": "Tests",
       "incidents": "Incidents",
       "personnel": "Personnel",
+      "access_reviews": "Access reviews",
+      "identity_reconciliation": "Legacy reconciliation",
       "continuity": "Business continuity",
       "processes": "Processes",
       "frameworks": "Frameworks",
@@ -8571,6 +8788,18 @@
       "owner": "Owner"
     },
     "assigned": "Assigned",
+    "kindShort": {
+      "EARLY_WARNING_24H": "24h",
+      "DETAILED_72H": "72h",
+      "FINAL_1MONTH": "1mo"
+    },
+    "deadlineStatus": {
+      "PENDING": "Pending",
+      "DUE": "Due soon",
+      "OVERDUE": "Overdue",
+      "SUBMITTED": "Submitted",
+      "NOT_REQUIRED": "Not required"
+    },
     "kpi": {
       "open": "Open incidents",
       "reportable": "Reportable",
@@ -8578,6 +8807,9 @@
     },
     "emptyTitle": "No incidents yet",
     "emptyDesc": "When a security incident is detected, open it here to start the NIS2 Article 23 response clock.",
+    "emptyFilteredTitle": "No incidents match your search or filters",
+    "emptyFilteredDesc": "Try a different search, or clear the filters to see every incident.",
+    "emptyClearFilters": "Clear filters",
     "new": {
       "createFailed": "Failed to open incident",
       "title": "Open incident",
@@ -8589,6 +8821,7 @@
         "severity": "Severity",
         "type": "Type",
         "detectedAt": "Detected at",
+        "detectedTime": "Time detected",
         "commander": "Incident commander"
       },
       "placeholders": {
@@ -8600,6 +8833,14 @@
         "commander": "Assign an owner"
       },
       "detectedHint": "The clock that drives the 24h / 72h / 1-month deadlines.",
+      "detectedTimeHint": "Your local time ({zone}).",
+      "errors": {
+        "titleRequired": "Title is required",
+        "titleTooLong": "Keep the title to {max, number} characters or fewer.",
+        "descriptionTooLong": "Keep the description to {max, number} characters or fewer.",
+        "detectedTimeRequired": "Enter the time the incident was detected.",
+        "detectedInFuture": "The detection time cannot be in the future."
+      },
       "cancel": "Cancel",
       "creating": "Creating…",
       "create": "Create incident"
@@ -8628,6 +8869,8 @@
       "runbookAria": "Incident containment runbook",
       "containmentRunbook": "Containment runbook",
       "runbookDesc": "First-response containment steps for a {type} incident. Operational guidance, not legal advice. Completing a step records it on the timeline.",
+      "stepDone": "Done",
+      "stepNotDone": "Not done",
       "deadlinesHeading": "Article 23 notification deadlines",
       "notReportableText": "This incident is not yet marked reportable. Marking it reportable is a human determination (not automatic, not legal advice) that starts the 24h / 72h / 1-month clocks.",
       "markReportable": "Mark reportable",
@@ -9122,7 +9365,7 @@
       "exportFiledBody": "Filed as “{title}” in the evidence library, under the Agent governance folder, retained for seven years. Nothing was downloaded.",
       "exportFiledNotEnforcing": "The filed document states, at the top, that registration is not enforced here and that its figures describe a sample rather than a population.",
       "notEnforcingTitle": "These figures describe a register that is not being enforced",
-      "notEnforcingBody": "Agent registration is switched off for this workspace, so the tool boundary refuses nothing on the strength of what is below. Every figure is still true about what is RECORDED; none of it is true about what is ENFORCED. Read the pack with that in mind, and turn enforcement on from Security settings before treating it as assurance.",
+      "notEnforcingBody": "Agent registration is switched off for this workspace, so the tool boundary refuses nothing on the strength of what is below. Every figure is still true about what is RECORDED; none of it is true about what is ENFORCED. Read the pack with that in mind, and turn enforcement on with \"Enforce registration\" on the Security & MFA page before treating it as assurance.",
       "inventoryHeading": "The register",
       "emptyTitle": "No agents are registered",
       "emptyDesc": "That is a complete answer, not a missing one: nothing autonomous is recorded as acting in this workspace. There is nothing to assess until an agent is registered.",
@@ -9243,7 +9486,10 @@
         "provenanceThirdParty": "Third party — a supplier wrote it",
         "vendorLabel": "Supplier",
         "vendorPlaceholder": "Choose the vendor",
+        "vendorSearchPlaceholder": "Search vendors…",
         "vendorHint": "Required for a third-party agent: third-party risk you cannot attribute to a named supplier is not third-party risk.",
+        "vendorRequired": "A third-party agent must name the vendor that supplies it.",
+        "vendorUnavailable": "Your role cannot list vendors, so a third-party agent cannot be registered here.",
         "classificationHeading": "EU AI Act classification",
         "classificationHelp": "Leaving every question blank yields MINIMAL risk (Art 95). The tier and the clause that drove it are computed on the server.",
         "art5Label": "Article 5 — prohibited practice",
@@ -9266,7 +9512,7 @@
         "egress": "Sends data outside"
       },
       "governance": {
-        "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. Turn on \"Require registered agent\" in Security settings to make this register binding.",
+        "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. To make this register binding, open Security & MFA and click \"Enforce registration\" on the Agent registration enforcement card.",
         "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live credential is bound to no agent} other {# live credentials are bound to no agent}} — each is refused at the agent surface. A credential's agent can be set only when it is created: create a new one for a registered agent, then revoke the old one.",
         "unboundMore": "+{count} more…",
         "enforcing": "Registration is enforced: a credential must name an ACTIVE agent below before it reaches the agent surface."
@@ -9287,8 +9533,8 @@
         "inputLabel": "Concurrent run cap",
         "placeholder": "No cap",
         "save": "Save cap",
-        "hint": "Leave empty for no cap; 0 stops new agentic runs without engaging a kill switch. Separate from the monthly token budget, which bounds spend rather than simultaneity.",
-        "invalid": "Enter a whole number of 0 or more, or leave it empty for no cap.",
+        "hint": "Leave empty for no cap, or enter a whole number up to {max}; 0 stops new agentic runs without engaging a kill switch. Separate from the monthly token budget, which bounds spend rather than simultaneity.",
+        "invalid": "Enter a whole number from 0 to {max}, or leave it empty for no cap.",
         "saveFailed": "Could not save the cap. Try again."
       },
       "budget": {
