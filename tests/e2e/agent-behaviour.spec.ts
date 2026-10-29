@@ -169,11 +169,13 @@ test.describe('agent behaviour: two people, one approved version', () => {
             await safeGoto(page, `/t/${tenantSlug}/admin/audit-log`, { waitUntil: 'domcontentloaded' });
             const table = page.getByRole('main').locator('#audit-log-table');
             await expect(table).toBeVisible({ timeout: 20_000 });
-            const row = table.getByRole('row').filter({ hasText: 'AGENT_PROFILE_APPROVED' });
+            // The Action column shows the code in words once #4468's display lands;
+            // either form identifies the row.
+            const row = table.getByRole('row').filter({ hasText: /AGENT_PROFILE_APPROVED|Agent profile approved/ });
             await expect(row).toHaveCount(1, { timeout: 15_000 });
             await expect(row).toContainText(reviewerName);
             await expect(row).toContainText(`Approved version 1 of the profile of agent ${agentName}`);
-            await expect(table.getByRole('row').filter({ hasText: 'AGENT_PROFILE_SUBMITTED' })).toHaveCount(1);
+            await expect(table.getByRole('row').filter({ hasText: /AGENT_PROFILE_SUBMITTED|Agent profile submitted/ })).toHaveCount(1);
         });
     });
 });
