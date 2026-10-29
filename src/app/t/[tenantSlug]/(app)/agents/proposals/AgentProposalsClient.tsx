@@ -17,6 +17,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 import type { ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 // The guard's three states, and the rule that reads them. Shared with the
 // governance pack, which counts the same three — see the module header for why
@@ -305,8 +306,10 @@ export function AgentProposalsClient({
                 ),
             });
             if (!res.ok) {
+                // The server's sentence, not a code: a four-eyes or a closed-
+                // window refusal says why and what to do, in `error.message`.
                 const body = await res.json().catch(() => null);
-                throw new Error(body?.error?.message ?? fallback);
+                throw new Error(apiErrorMessage(body, fallback));
             }
 
             // TWO SUCCESS SHAPES, AND THEY MEAN OPPOSITE THINGS.
