@@ -13,18 +13,29 @@ needs input gets a small form for it on the page, rather than being hidden.
 One generic form, driven by the definition's own declaration:
 
 ```
-WorkflowDefinition.requiredInput ──► startPlanFor(def) ──► ONE_CLICK | FORM(fields) | NOT_HERE(reason)
-                                       │
-                                       ├─ START_FIELDS[inputName]   how to collect a value of that name
-                                       └─ NOT_STARTED_HERE[key]     workflows whose input this page cannot collect
+WorkflowDefinition.requiredInput ──► startPlanFor(def, abilities) ──► ONE_CLICK | FORM(fields)
+                                       │                                | ON_ANOTHER_PAGE(path) | NOT_HERE(reason)
+                                       ├─ START_FIELDS[inputName]      how to collect a value of that name
+                                       ├─ FIELD_NEEDS[kind]            the ability a picker's list needs
+                                       ├─ STARTED_ON_ANOTHER_PAGE[key] the page that starts it, and that page's gate
+                                       └─ NOT_STARTED_HERE[key]        workflows whose input this page cannot collect
 ```
+
+`abilities` (`StartAbilities`) are resolved by `page.tsx` from the gates the
+relevant routes apply, never inferred in the client:
+
+- `discoveredAgents` combines two checks. One is `checkAdminAccess`, called
+  with the session claim the middleware reads. The other is
+  `mayReadAgentInventory`, the keys the list route requires.
+- `askPage` is `controls.view`, the Ask page's own gate.
 
 - `src/lib/agentic/workflow-start-plan.ts` is pure data and one pure function, so
   the client component can call it. `START_FIELDS` is keyed on the INPUT NAME,
   not the workflow, so `frameworkKey` is the same framework picker in both
   workflows that take it.
 - `WorkflowStartModal` renders one `FormField` per declared input: a `Combobox`
-  over `GET /frameworks` for a framework, an `Input` for text. It refuses only a
+  over `GET /frameworks` for a framework, a `Combobox` over
+  `GET …/admin/agents/discovered` for a discovered agent, an `Input` for text. It refuses only a
   blank value (what admission refuses) and a format the run's first step validates
   (`periodLabel`). The server's refusal is shown through `apiErrorMessage`.
 - A workflow with no required input starts in one click, as before.
@@ -44,7 +55,10 @@ Alongside, the list itself:
 
 | File | Role |
 | --- | --- |
-| `src/lib/agentic/workflow-start-plan.ts` | The planner: field kinds by input name, the not-here list, the form's own check |
+| `src/lib/agentic/workflow-start-plan.ts` | The planner: field kinds by input name, abilities, the other-page and not-here lists, the form's own check |
+| `src/app/api/t/[tenantSlug]/admin/agents/discovered/route.ts` | The discovered-agent list, `requirePermission` on the inventory read |
+| `src/app-layer/usecases/discovered-agent-list.ts` | Tenant-scoped, newest seen first, one past a 200 cap, `truncated` |
+| `src/lib/security/route-permissions.ts`, `src/lib/auth/guard.ts` | The route's rule; `discovered` as a static segment beside `[agentId]` |
 | `src/app/t/[tenantSlug]/(app)/agents/runs/WorkflowStartModal.tsx` | The one start form |
 | `src/app/t/[tenantSlug]/(app)/agents/runs/AgentRunsClient.tsx` | Start buttons by plan, router refresh, labels, Resume for PAUSED, truncation notice |
 | `src/app/t/[tenantSlug]/(app)/agents/runs/page.tsx` | Reads one past the cap, projects `workflowName`, passes `requiredInput` |
@@ -52,14 +66,30 @@ Alongside, the list itself:
 
 ## Decisions
 
-- **Four workflows are NOT started here, and stay visible, disabled, with the
-  reason.** This is the page's convention for a control the operator cannot use.
-  - `ad-hoc-question`: the Ask page binds the designated agent and bounds the question.
-  - `agent-recertification-pack`: its inputs are set by an access review's pack preparation.
-  - `sap-transaction-review`: its `facts` are host-supplied JSON.
-  - `discovered-agent-review`: it takes an internal id, and no list exists to pick one from.
-
-  These are reported to the owner rather than guessed at.
+- **The owner settled the four workflows the first version could not start**
+  (2026-10-29):
+  - `ad-hoc-question` LINKS to the Ask page. The Ask page binds the designated
+    agent and bounds the question, which a run started here would not. The
+    link is offered on the Ask page's own gate rather than on write access,
+    because following it starts nothing here.
+  - `discovered-agent-review` gets a picker over a new list API, offered only
+    to a caller who can call that API.
+  - `agent-recertification-pack` (its inputs are set by an access review's
+    pack preparation) and `sap-transaction-review` (its `facts` are
+    host-supplied JSON) stay disabled, each with its reason. Disabled is the
+    page's convention for a control the operator cannot use.
+- **The list API takes the inventory read and no new key.** It requires
+  `admin.agent_registry_view` OR `admin.agent_registry`. That is what the
+  harness-scans list takes, and what `get_discovered_agent` (the run's first
+  read) asserts, so the picker never offers a row the run could not read.
+  - It is not added to `AUDITOR_ADMIN_READ_PATHS`: the picker serves a person
+    starting a run, which an AUDITOR may not.
+  - `discovered` is listed in `AGENT_ADMIN_API_STATIC_SEGMENTS`. Without that,
+    the edge reads the segment as an agent id and admits an AUDITOR's GET of it.
+- **The page asks the edge with the claim the edge reads.** `ctx.role` is a
+  custom role's BASE role; the middleware reads the membership's own role from
+  `memberships[]`. Using `ctx.role` would offer the picker to a READER whose
+  custom role is built on ADMIN, and the edge would then refuse its load.
 - **Unknown input fails closed.** A definition declaring a key `START_FIELDS`
   does not know is `NOT_HERE: UNCLASSIFIED_INPUT`, never a guessed text box. The
   unit test walks the registry so a new key fails CI until it is classified.
