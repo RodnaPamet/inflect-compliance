@@ -27,7 +27,7 @@ sentence. That is the shape `src/lib/asset-name-taken.ts` set for Assets.
 
 | File | Role |
 | --- | --- |
-| `prisma/migrations/20261029190000_vendor_name_unique_among_live/migration.sql` | builds the partial index, then drops the full one; rollback in the header |
+| `prisma/migrations/20261029213000_vendor_name_unique_among_live/migration.sql` | builds the partial index, then drops the full one; rollback in the header |
 | `prisma/schema/vendor.prisma` | drops `@@unique([tenantId, name])`; says why the partial index cannot be declared |
 | `src/app-layer/repositories/VendorRepository.ts` | `findLiveByName` — the index's own question |
 | `src/app-layer/usecases/vendor.ts` | name check on create and rename; activation gate on create |
