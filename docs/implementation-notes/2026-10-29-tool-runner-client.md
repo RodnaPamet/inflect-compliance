@@ -42,7 +42,7 @@ file, a second `new Anthropic(...)` cannot be written.
 | `src/env.ts` | `AGENT_TOOL_RUNNER_MODEL_BALANCED` / `_DEEP`; `ANTHROPIC_CUSTOM_HEADERS`, read only to refuse |
 | `eslint-rules/rules/anthropic-client-single-seam.js` | the one-construction-site rule |
 | `eslint.config.mjs` | the rule on for `src/**`, off for the seam |
-| `tests/guards/anthropic-client-single-seam.test.ts` | plants a construction and lints it with the real config |
+| `eslint-rules/__tests__/anthropic-client-single-seam.config.test.ts` | plants a construction and lints it with the real config |
 | `tests/guards/eslint-local-rules-wired.test.ts` | the rule is wired at error |
 | `docs/legacy-access-recertification-design.md` | the residency bullet names the client, which branches on residency ahead of its feature |
 | `tests/guardrails/sub-processor-coverage.test.ts` | the three variables' triage |

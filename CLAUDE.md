@@ -2837,7 +2837,7 @@ one careless edit from being undone:
     import, re-export, `import()` or `require()` of any `@anthropic-ai/*` package
     elsewhere under `src/`; `import type` is allowed. It is a rule rather than a
     `no-restricted-syntax` selector because config blocks replace that list for
-    their own files. `tests/guards/anthropic-client-single-seam.test.ts` plants a
+    their own files. `eslint-rules/__tests__/anthropic-client-single-seam.config.test.ts` plants a
     construction and lints it with the real config.
   - **Residency first, then the key, then the ambient headers.** LOCAL_ONLY is
     refused before anything external is read, and no refusal constructs a

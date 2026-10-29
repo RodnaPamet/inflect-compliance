@@ -18,7 +18,11 @@
  *
  * ESLint runs in a child process because it loads `eslint.config.mjs` with a
  * native dynamic import that Jest's module system does not provide (the same
- * reason `eslint-skips-build-output.test.ts` does).
+ * reason `tests/guards/eslint-skips-build-output.test.ts` does).
+ *
+ * It lives beside the rule's RuleTester suite rather than in `tests/guards/`,
+ * whose file count is held under a ceiling (`no-epic-named-ratchets`): it
+ * proves this rule's wiring, so this is where a reader of the rule looks.
  */
 import { execFileSync } from 'child_process';
 import * as path from 'path';
