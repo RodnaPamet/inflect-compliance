@@ -5,9 +5,11 @@
  *
  * Renders the campaign roster with status badges, deadline,
  * reviewer, and a progress bar (% decided). Admin actions:
- *   • New campaign — modal that submits to POST /access-reviews. Shown
- *     only to a caller holding `access_reviews.create` (#4130): every other
- *     role used to fill the form in and then meet "Permission denied".
+ *   • New campaign — modal that submits to POST /access-reviews, or to the
+ *     scope's own route (`/connected`, `/agents`, `/legacy`). Shown only to a
+ *     caller holding `access_reviews.create` (#4130), the key every one of
+ *     those routes takes: every other role used to fill the form in and then
+ *     meet "Permission denied".
  *   • Row click → /t/:slug/access-reviews/:id (detail page)
  */
 import { useMemo, useState } from 'react';
@@ -85,8 +87,9 @@ interface Props {
     initialReviews: AccessReviewSummary[];
     /**
      * The caller holds `access_reviews.create` — the key `POST /access-reviews`
-     * and its connected and agent siblings take. The New campaign button
-     * follows it, so it is offered only to those the server will let create.
+     * and its connected, agent and legacy siblings take. The New campaign
+     * button, and so every scope it offers, follows it, so it is offered only
+     * to those the server will let create.
      */
     canCreate: boolean;
 }
@@ -352,8 +355,58 @@ function readIdentityAccounts(data: unknown): IdentityAccount[] | null {
     return null;
 }
 
-/** The scopes the create modal offers; LEGACY_APP is created from a reconciled snapshot. */
-type CreatableScope = 'ALL_USERS' | 'ADMIN_ONLY' | 'CONNECTED_APP' | 'AGENT';
+/** Every scope the create modal offers, each posted to its own route. */
+type CreatableScope = 'ALL_USERS' | 'ADMIN_ONLY' | 'CONNECTED_APP' | 'LEGACY_APP' | 'AGENT';
+
+/**
+ * The legacy-application connector's provider id. Spelled here rather than
+ * imported, because its module is server code; `LegacyAccessMappingCard` does
+ * the same.
+ */
+const LEGACY_PROVIDER = 'legacy-mcp';
+
+/** One integration connection, narrowed to what the legacy picker reads. */
+interface IntegrationConnectionRow {
+    id: string;
+    provider: string;
+    name: string;
+}
+
+/** `GET /admin/integrations` answers `{ connections }`; anything else is unknown (`null`). */
+function readLegacyConnections(data: unknown): IntegrationConnectionRow[] | null {
+    if (!data || typeof data !== 'object') return null;
+    const { connections } = data as { connections?: unknown };
+    if (!Array.isArray(connections)) return null;
+    return (connections as IntegrationConnectionRow[]).filter((c) => c?.provider === LEGACY_PROVIDER);
+}
+
+/**
+ * The sentence a refused create shows, never a generic one.
+ *
+ * Every refusal the create routes give carries its own message (the legacy
+ * snapshot refusals, `REVIEWER_NOT_A_MEMBER`, `NO_SUBJECTS`, …) and is shown
+ * as sent. A validation error's message is only "Invalid request payload";
+ * what was wrong is in `details`, one issue per field, so those are shown
+ * instead, each with the field it names.
+ */
+function createRefusalMessage(
+    body: unknown,
+    fallback: string,
+    invalidFields: (details: string) => string,
+): string {
+    const error = (body as { error?: { code?: unknown; details?: unknown } } | null)?.error;
+    if (error && error.code === 'VALIDATION_ERROR' && Array.isArray(error.details) && error.details.length > 0) {
+        const details = (error.details as Array<{ path?: unknown; message?: unknown }>)
+            .map((d) => {
+                const message = typeof d.message === 'string' ? d.message : '';
+                const path = Array.isArray(d.path) && d.path.length > 0 ? d.path.join('.') : '';
+                return path ? `${path}: ${message}` : message;
+            })
+            .filter((line) => line.trim() !== '');
+        if (details.length > 0) return invalidFields(details.join('; '));
+    }
+    return apiErrorMessage(body, fallback);
+}
 
 function CreateCampaignButton({
     tenantSlug,
@@ -369,6 +422,17 @@ function CreateCampaignButton({
     // campaign to one directory. Matches the ScheduledCheckProvider ids the
     // access-review-connected usecase accepts.
     const [directory, setDirectory] = useState<string>('all');
+    // The legacy application a LEGACY_APP campaign recertifies: one
+    // `legacy-mcp` connection, whose latest complete, reconciled pull becomes
+    // the campaign's population. The server checks the pull; the form only
+    // names the application.
+    const [legacyConnectionId, setLegacyConnectionId] = useState('');
+    const legacyQuery = useTenantSWR<unknown>(scope === 'LEGACY_APP' ? '/admin/integrations' : null);
+    const legacyConnections = useMemo(() => readLegacyConnections(legacyQuery.data), [legacyQuery.data]);
+    const legacyOptions: ComboboxOption[] = useMemo(
+        () => (legacyConnections ?? []).map((c) => ({ value: c.id, label: c.name })),
+        [legacyConnections],
+    );
     const [reviewerUserId, setReviewerUserId] = useState('');
     // #3674 — an AGENT review names the registered agent that prepares every
     // reviewer pack but its own, and optionally a second that prepares that one
@@ -473,15 +537,29 @@ function CreateCampaignButton({
             // its own endpoint, which freezes the population; its reviewer
             // packs are then prepared by a second call. A failed preparation
             // does not undo the campaign — the detail page offers it again.
+            //
+            // A LEGACY_APP review (#4377) recertifies one legacy application
+            // from its latest reconciled pull. Its route parses the body
+            // strictly, so it is sent exactly the fields that route takes.
             const isConnected = scope === 'CONNECTED_APP';
             const isAgent = scope === 'AGENT';
+            const isLegacy = scope === 'LEGACY_APP';
             // A period is sent only when both ends are set: the picker
             // commits a range as a pair, and half a period is not one.
             const periodFields =
                 period.from && period.to
                     ? { periodStartAt: period.from.toISOString(), periodEndAt: period.to.toISOString() }
                     : {};
-            const body = isConnected || isAgent
+            const body = isLegacy
+                ? {
+                      name,
+                      description: description || undefined,
+                      connectionId: legacyConnectionId,
+                      reviewerUserId,
+                      dueAt: dueAt ? dueAt.toISOString() : undefined,
+                      ...periodFields,
+                  }
+                : isConnected || isAgent
                 ? {
                       name,
                       description: description || undefined,
@@ -501,7 +579,14 @@ function CreateCampaignButton({
                       dueAt: dueAt ? dueAt.toISOString() : undefined,
                       ...periodFields,
                   };
-            const res = await fetch(isConnected ? `${apiUrl}/connected` : isAgent ? `${apiUrl}/agents` : apiUrl, {
+            const endpoint = isConnected
+                ? `${apiUrl}/connected`
+                : isAgent
+                  ? `${apiUrl}/agents`
+                  : isLegacy
+                    ? `${apiUrl}/legacy`
+                    : apiUrl;
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
@@ -513,7 +598,9 @@ function CreateCampaignButton({
                 // message here is genuinely useful ("connect and sync a
                 // directory first"); it was just buried in JSON.
                 const body = (await res.json().catch(() => null)) as unknown;
-                throw new Error(apiErrorMessage(body, t('createFailed')));
+                throw new Error(
+                    createRefusalMessage(body, t('createFailed'), (details) => t('createInvalidFields', { details })),
+                );
             }
             const data = (await res.json()) as { accessReviewId: string };
             if (isAgent) {
@@ -524,6 +611,7 @@ function CreateCampaignButton({
             setDescription('');
             setReviewerUserId('');
             setDirectory('all');
+            setLegacyConnectionId('');
             setPreparerAgentId('');
             setCrossPreparerAgentId('');
             setScope('ALL_USERS');
@@ -540,6 +628,10 @@ function CreateCampaignButton({
     const submit = () => {
         if (!name.trim() || !reviewerUserId.trim()) {
             setError(t('nameReviewerRequired'));
+            return;
+        }
+        if (scope === 'LEGACY_APP' && !legacyConnectionId) {
+            setError(t('legacyConnectionRequired'));
             return;
         }
         void handleCreate();
@@ -593,6 +685,9 @@ function CreateCampaignButton({
                                             // via the integrations connector; scoped by the Directory
                                             // picker below.
                                             ['CONNECTED_APP', t('scopeConnectedApp')],
+                                            // Recertifies one legacy application's accounts
+                                            // from its latest reconciled pull; picked below.
+                                            ['LEGACY_APP', t('scopeLegacyApp')],
                                             // Recertifies the registered agents (#3674): one subject
                                             // per agent, a reviewer pack each, created at its own
                                             // endpoint.
@@ -658,6 +753,51 @@ function CreateCampaignButton({
                                                 </Link>
                                             </p>
                                         )}
+                                    </div>
+                                </FormField>
+                            ) : null}
+                            {scope === 'LEGACY_APP' ? (
+                                <FormField
+                                    label={t('fieldLegacyConnection')}
+                                    hint={t('legacyConnectionHint')}
+                                    required
+                                >
+                                    <div data-testid="access-review-new-legacy-connection">
+                                        <Combobox
+                                            id="access-review-legacy-connection-select"
+                                            placeholder={t('legacyConnectionPlaceholder')}
+                                            selected={legacyOptions.find((o) => o.value === legacyConnectionId) ?? null}
+                                            setSelected={(opt) => setLegacyConnectionId(opt?.value ?? '')}
+                                            options={legacyOptions}
+                                            matchTriggerWidth
+                                        />
+                                        {/* Three states, not two: a list that
+                                            could not be read is not a tenant
+                                            with no legacy application, and only
+                                            the second is fixed by connecting
+                                            one. */}
+                                        {legacyQuery.error ? (
+                                            <p
+                                                className="mt-tight text-xs text-content-warning"
+                                                data-testid="access-review-legacy-connections-unavailable"
+                                            >
+                                                {t('legacyConnectionsUnavailable')}
+                                            </p>
+                                        ) : legacyConnections !== null && legacyConnections.length === 0 ? (
+                                            <p
+                                                className="mt-tight text-xs text-content-warning"
+                                                data-testid="access-review-no-legacy-connections"
+                                            >
+                                                {t('legacyConnectionsNone')}{' '}
+                                                <Link
+                                                    href={`/t/${tenantSlug}/admin/integrations`}
+                                                    className="text-content-info hover:underline"
+                                                    id="access-review-connect-legacy-link"
+                                                >
+                                                    {t('legacyConnectLink')}
+                                                </Link>
+                                            </p>
+                                        ) : null}
                                     </div>
                                 </FormField>
                             ) : null}

@@ -9,7 +9,9 @@
  */
 import prisma from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
-import { getPermissionsForRole } from '@/lib/permissions';
+import type { PermissionSet } from '@/lib/permissions';
+import type { Permissions } from '@/lib/tenant-context';
+import { borrowedJobActor, type BorrowFailure } from '@/app-layer/context-system';
 import {
     checkPortfolioAppetite,
     recordBreaches,
@@ -18,28 +20,44 @@ import {
 import { logger } from '@/lib/observability/logger';
 import type { RiskAppetiteMonitorPayload } from './types';
 
+/**
+ * Whether a borrowed actor's RESOLVED authority lets this job do its work:
+ * `checkPortfolioAppetite` asserts `assertCanRead`, which reads
+ * `permissions.canRead`.
+ *
+ * One definition, read by the pick below, so the job can never choose a member
+ * its own usecase would then refuse (#4388).
+ */
+export function mayRunAppetiteMonitor(authority: { permissions: Permissions; appPermissions: PermissionSet }): boolean {
+    return authority.permissions.canRead === true;
+}
+
 /** Build a read-capable tenant context (first active admin/owner). */
-async function buildCtx(tenantId: string): Promise<RequestContext | null> {
-    const admin = await prisma.tenantMembership.findFirst({
-        where: { tenantId, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
-        select: { userId: true, role: true },
-        orderBy: { createdAt: 'asc' },
-    });
-    if (!admin) return null;
-    const appPermissions = getPermissionsForRole(admin.role);
-    return {
-        requestId: `risk-appetite-${tenantId}`,
-        userId: admin.userId,
+async function buildCtx(
+    tenantId: string,
+): Promise<{ ctx: RequestContext; reason: null } | { ctx: null; reason: BorrowFailure }> {
+    // The actor is the first member IN ORDER whose resolved authority allows
+    // this job's work -- custom role included. It used to be the oldest
+    // OWNER/ADMIN with `getPermissionsForRole(role)`, which dropped the custom
+    // role, and the coarse flags were hand-projected from granular ones rather
+    // than computed from the role (#4388).
+    const { actor, reason } = await borrowedJobActor({
         tenantId,
-        role: admin.role,
-        permissions: {
-            canRead: appPermissions.risks.view,
-            canWrite: appPermissions.risks.edit,
-            canAdmin: appPermissions.admin.manage,
-            canAudit: appPermissions.audits.view,
-            canExport: appPermissions.reports.export,
+        roles: ['OWNER', 'ADMIN'],
+        orderBy: 'createdAt',
+        allows: mayRunAppetiteMonitor,
+    });
+    if (!actor) return { ctx: null, reason };
+    return {
+        ctx: {
+            requestId: `risk-appetite-${tenantId}`,
+            userId: actor.userId,
+            tenantId,
+            role: actor.role,
+            permissions: actor.permissions,
+            appPermissions: actor.appPermissions,
         },
-        appPermissions,
+        reason: null,
     };
 }
 
@@ -48,9 +66,21 @@ export async function runRiskAppetiteMonitor(_payload: RiskAppetiteMonitorPayloa
     let scanned = 0;
     let newBreaches = 0;
     let resolved = 0;
+    let unroutable = 0;
     for (const { tenantId } of configs) {
-        const ctx = await buildCtx(tenantId);
-        if (!ctx) continue;
+        const { ctx, reason } = await buildCtx(tenantId);
+        // A tenant with a configured appetite that this job cannot act in was
+        // previously skipped in silence, so a workspace could stop being
+        // monitored with nothing anywhere saying so (#4388).
+        if (!ctx) {
+            unroutable++;
+            logger.warn('risk-appetite-monitor: no borrowable actor, tenant not scanned', {
+                component: 'risk-appetite',
+                tenantId,
+                reason,
+            });
+            continue;
+        }
         try {
             const result = await checkPortfolioAppetite(ctx);
             newBreaches += await recordBreaches(ctx, result.breaches);
@@ -64,5 +94,5 @@ export async function runRiskAppetiteMonitor(_payload: RiskAppetiteMonitorPayloa
             });
         }
     }
-    return { tenants: configs.length, scanned, newBreaches, resolved };
+    return { tenants: configs.length, scanned, unroutable, newBreaches, resolved };
 }

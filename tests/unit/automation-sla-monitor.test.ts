@@ -38,7 +38,13 @@ jest.mock('@/app-layer/automation', () => ({
 }));
 
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
-jest.mock('@/lib/permissions', () => ({ getPermissionsForRole: () => ({}) }));
+// Spread the real module. A partial factory throws on every export it does not
+// list, the moment that export is reached -- and a hand-rolled return value
+// makes the ARGUMENT untestable besides, which is how a job's permission
+// narrowing went unasserted in control-test-runner (#4397, #4388).
+jest.mock('@/lib/permissions', () => ({
+    ...jest.requireActual('@/lib/permissions'),
+}));
 
 import { sweepTenant } from '@/app-layer/jobs/sla-monitor';
 import { AutomationExecutionRepository } from '@/app-layer/automation';

@@ -243,7 +243,7 @@ describe('Evidence list — download is offered only where the route serves it',
 describe('Evidence list — a custom role follows its evidence grants', () => {
     // EDITOR base, so the coarse tier reads canWrite — but the role may not
     // edit or upload evidence, and every one of these usecases checks that.
-    const viewOnly = { evidenceEdit: false, evidenceUpload: false, adminManage: false, controlsEdit: true };
+    const viewOnly = { evidenceEdit: false, evidenceUpload: false, adminManage: false, controlsEdit: true, tasksCreate: true, tasksEdit: true };
 
     it('no Add evidence menu, Edit, Archive or Submit for a role without evidence.edit / upload', async () => {
         mount(makeServer(), { permissions: COARSE.EDITOR, grants: viewOnly });

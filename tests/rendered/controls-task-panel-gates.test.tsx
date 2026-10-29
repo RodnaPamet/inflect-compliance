@@ -197,6 +197,20 @@ describe('Controls list — the Task quick view follows the keys its routes chec
         expect(assignee(panel)).toBeEnabled();
     });
 
+    // The WIRING (#4389). Dropping `canWriteTier` from this page's call site
+    // and restoring `canEditTasks && canUploadEvidence` left 13/13 green here
+    // before this case existed, so the panel's fix was unprotected from the
+    // page that configures it.
+    it('a custom role with the write tier and evidence.upload but no tasks.edit still gets the evidence box', async () => {
+        mount(slice('EDITOR', { tasksEdit: false, evidenceUpload: true }));
+        const panel = await openTaskPanel();
+
+        expect(within(panel).getByTestId('evidence-upload-dropzone')).toBeInTheDocument();
+        // `/evidence/uploads` asks `evidence.upload` and the write tier;
+        // `PATCH /tasks/:id` asks `tasks.edit`, which this viewer lacks.
+        expect(panel.querySelector('#task-panel-title')).toBeDisabled();
+    });
+
     it('a custom role with tasks.edit but not tasks.assign gets a locked assignee picker', async () => {
         mount(editorWith({ tasksAssign: false }));
         const panel = await openTaskPanel();

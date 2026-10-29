@@ -80,6 +80,7 @@ import { assertCanAdmin, assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { AccessReviewRepository } from '../repositories/AccessReviewRepository';
 import { RegisteredAgentToolRepository } from '../repositories/RegisteredAgentToolRepository';
+import { DateField, refinePeriodOrder } from '../schemas/access-review.schemas';
 import { remediationDescription } from './access-review-connected';
 import { startWorkflowRun } from './workflow-runs';
 import { assertAgentCampaignsAvailable } from './access-review-scope-gate';
@@ -206,21 +207,24 @@ async function assertPreparerEligible(
 
 // ── Create ───────────────────────────────────────────────────────────────
 
-export const CreateAgentAccessReviewSchema = z.object({
-    name: z.string().min(1).max(200),
-    description: z.string().max(2000).optional(),
-    reviewerUserId: z.string().min(1),
-    /** Prepares every pack but its own. Required — refused by name when absent. */
-    preparerAgentId: z.string().max(64).optional(),
-    /**
-     * Prepares the preparer's own pack. Optional: left out, a person prepares
-     * that one pack on the static path.
-     */
-    crossPreparerAgentId: z.string().max(64).optional(),
-    dueAt: z.coerce.date().optional(),
-    periodStartAt: z.coerce.date().optional(),
-    periodEndAt: z.coerce.date().optional(),
-});
+export const CreateAgentAccessReviewSchema = z
+    .object({
+        name: z.string().min(1).max(200),
+        description: z.string().max(2000).optional(),
+        reviewerUserId: z.string().min(1),
+        /** Prepares every pack but its own. Required — refused by name when absent. */
+        preparerAgentId: z.string().max(64).optional(),
+        /**
+         * Prepares the preparer's own pack. Optional: left out, a person prepares
+         * that one pack on the static path.
+         */
+        crossPreparerAgentId: z.string().max(64).optional(),
+        // The campaign schemas' one date field and one period rule.
+        dueAt: DateField.optional(),
+        periodStartAt: DateField.optional(),
+        periodEndAt: DateField.optional(),
+    })
+    .superRefine(refinePeriodOrder);
 
 export interface CreateAgentResult {
     readonly accessReviewId: string;

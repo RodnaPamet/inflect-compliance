@@ -23,8 +23,21 @@ const mockTx = {
 
 import { mapAssetToRisk } from '@/app-layer/usecases/traceability';
 import { logEvent } from '@/app-layer/events/audit';
+import { makeRequestContext } from '../helpers/make-context';
 
-const ctx = { userId: 'user-1', tenantId: 'tenant-1', role: 'EDITOR', permissions: {}, appPermissions: {} } as never;
+/**
+ * A REAL context, not a stub.
+ *
+ * This was `{ role: 'EDITOR', permissions: {}, appPermissions: {} }`, which
+ * satisfied the file-local role-NAME check `mapAssetToRisk` used to sit behind
+ * — `['OWNER','ADMIN','EDITOR'].includes(ctx.role)` reads nothing else. Since
+ * #4413 the gate is `assets.edit` (`canWrite` AND the granular key), and an
+ * empty `permissions` fails the coarse half before the granular one is
+ * reached. These tests are about the LINK's emit logic, so they need a context
+ * that gets past the gate rather than one shaped by the gate it was written
+ * against.
+ */
+const ctx = makeRequestContext('EDITOR', { userId: 'user-1', tenantId: 'tenant-1' });
 
 describe('AssetRiskRepository.link — idempotent upsert shape', () => {
     it('uses upsert keyed on the composite unique', async () => {

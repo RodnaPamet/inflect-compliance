@@ -13,6 +13,7 @@
  */
 import { z } from 'zod';
 import { RequestContext } from '../types';
+import { DateField, refinePeriodOrder } from '../schemas/access-review.schemas';
 import { AccessReviewRepository } from '../repositories/AccessReviewRepository';
 import { suggestLegacyEvidenceControls } from './legacy-evidence-controls';
 import { assertCanAdmin, assertCanRead } from '../policies/common';
@@ -33,16 +34,19 @@ import { assertReviewerIsActiveMember } from './access-review-reviewer';
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
 const MAX_SUBJECTS = 5000;
 
-export const CreateConnectedAccessReviewSchema = z.object({
-    name: z.string().min(1).max(200),
-    description: z.string().max(2000).optional(),
-    /** Restrict to one provider; omit to review all connected identity accounts. */
-    provider: z.enum(['okta', 'google-workspace', 'entra-id', 'active-directory']).optional(),
-    reviewerUserId: z.string().min(1),
-    dueAt: z.coerce.date().optional(),
-    periodStartAt: z.coerce.date().optional(),
-    periodEndAt: z.coerce.date().optional(),
-});
+export const CreateConnectedAccessReviewSchema = z
+    .object({
+        name: z.string().min(1).max(200),
+        description: z.string().max(2000).optional(),
+        /** Restrict to one provider; omit to review all connected identity accounts. */
+        provider: z.enum(['okta', 'google-workspace', 'entra-id', 'active-directory']).optional(),
+        reviewerUserId: z.string().min(1),
+        // The campaign schemas' one date field and one period rule.
+        dueAt: DateField.optional(),
+        periodStartAt: DateField.optional(),
+        periodEndAt: DateField.optional(),
+    })
+    .superRefine(refinePeriodOrder);
 
 export interface CreateConnectedResult {
     accessReviewId: string;

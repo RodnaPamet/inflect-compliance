@@ -163,14 +163,25 @@ export function buildSystemContext(input: {
  * `Task.createdByUserId` is `String` — NOT NULL — with a foreign key to
  * `User`. So a task simply cannot be created by `SYSTEM_PRINCIPAL`: the
  * insert dies on `Task_createdByUserId_fkey`. That constraint is the
- * reason these two jobs borrowed a real member's id in the first place,
- * and it is not something a context helper can wish away.
+ * reason the first callers borrowed a real member's id, and it is not
+ * something a context helper can wish away.
+ *
+ * THE FK ARGUMENT DOES NOT COVER EVERY CALLER. It was written for two and
+ * there are now nine (#4388 classifies them). Where the id comes from a
+ * `requestedByUserId` the constraint is satisfied either way, so the ADMIN
+ * grant below is not the FK's doing and must be justified on its own.
  *
  * What this fixes is the half that IS fixable today: the row now carries
  * `actorType: 'JOB'`, so the trail reads "a job did this, attributed to
  * <user>" instead of "<user> did this". A reviewer can filter machine
  * activity out; nobody is misled into treating a nightly sweep as a
  * deliberate act by the person named.
+ *
+ * `appPermissions` defaults to ADMIN's granular set and can be narrowed.
+ * It could NOT before, which made a caller's coarse narrowing misleading:
+ * `assertCanUploadEvidence` reads only `appPermissions.evidence.upload`, so
+ * a context with `canAdmin: false` still passed every purely-granular
+ * assert. Narrow BOTH or the narrowing is decorative (#4388).
  *
  * **The ADMIN role stays, and that is a known remaining gap.** Resolving
  * the owner's real role instead (see `resolveMemberContext`) would mean a
@@ -191,6 +202,11 @@ export function buildDelegatedJobContext(input: {
     requestId?: string;
     /** Coarse flags; defaults to full. Pass explicitly to keep a narrower set. */
     permissions?: RequestContext['permissions'];
+    /**
+     * Granular set; defaults to ADMIN's. Narrow it alongside `permissions` —
+     * the asserts that read only this one are not gated by the coarse flags.
+     */
+    appPermissions?: PermissionSet;
 }): RequestContext {
     return {
         requestId: input.requestId ?? `${input.job}-${input.tenantId}`,
@@ -206,7 +222,7 @@ export function buildDelegatedJobContext(input: {
             canAudit: true,
             canExport: false,
         },
-        appPermissions: getPermissionsForRole('ADMIN'),
+        appPermissions: input.appPermissions ?? getPermissionsForRole('ADMIN'),
     };
 }
 
@@ -296,6 +312,127 @@ export function initiatorAuthority(membership: {
         role,
         permissions: computePermissions(role),
         appPermissions: permissionsForMembership(membership),
+    };
+}
+
+/**
+ * How many memberships a borrowed-actor pick will consider before giving up.
+ *
+ * THIS CAP IS WHY THE SHAREPOINT DELTA-SYNC DISPATCHER DOES NOT USE THIS
+ * FUNCTION, and the reason is recorded here because the convergence looks
+ * obviously right from this side (#4398, measured 2026-10-29).
+ *
+ * That dispatcher picks an actor for EVERY enabled connection in one pass. Its
+ * membership query is deliberately shaped against two things this function
+ * cannot avoid:
+ *
+ *   * it is hoisted OUT of the per-connection loop — one query for every
+ *     active OWNER/ADMIN of every tenant in scope, because a pick per
+ *     connection is an N+1;
+ *   * it is UNCAPPED, and its own comment records why: a global `take: 5000`
+ *     once dropped every membership of a tenant that sorted late, and the
+ *     tenant was then logged as having no eligible admin when it had several.
+ *
+ * A per-tenant `take` of 50 is a smaller version of exactly that failure — a
+ * qualifying admin sorting 51st reads as NO_QUALIFYING_ACTOR — in a file that
+ * has already paid for it once. So the duplication between
+ * `DELTA_SYNC_UNROUTABLE` and `BORROW_FAILURE` is deliberate: the two jobs ask
+ * the same question about different populations, and only the single-tenant
+ * one can afford a bounded pick.
+ */
+export const BORROWED_ACTOR_CANDIDATE_CAP = 50;
+
+/** Why a borrowed-actor pick came up empty. One definition for every such job. */
+export const BORROW_FAILURE = {
+    /** The tenant has no ACTIVE member matching the requested roles. */
+    NO_ACTIVE_MEMBER: 'NO_ACTIVE_MEMBER',
+    /** It has members, and not one of their RESOLVED authorities allows the work. */
+    NO_QUALIFYING_ACTOR: 'NO_QUALIFYING_ACTOR',
+} as const;
+
+export type BorrowFailure = (typeof BORROW_FAILURE)[keyof typeof BORROW_FAILURE];
+
+export type BorrowedActor = {
+    userId: string;
+    role: Role;
+    permissions: Permissions;
+    appPermissions: PermissionSet;
+};
+
+export type BorrowedActorOutcome =
+    | { actor: BorrowedActor; reason: null }
+    | { actor: null; reason: BorrowFailure };
+
+/**
+ * Pick the member a job BORROWS, by what their authority actually resolves to.
+ *
+ * Some jobs act for nobody in particular — a nightly sweep, a cron summary — and
+ * borrow a member so RLS and the read policies have an actor. They used to take
+ * the oldest ACTIVE OWNER/ADMIN and call `getPermissionsForRole(membership.role)`,
+ * which drops a custom role entirely: a workspace whose only admins carry a
+ * custom role got the BUILT-IN role's authority, which is not the authority any
+ * request of theirs would have (#4388, owner decision 2026-10-26).
+ *
+ * Two things follow, and the second is why this is a pick rather than a lookup:
+ *
+ *   * authority comes from `initiatorAuthority`, the same resolution a request
+ *     uses — custom role included, and the coarse flags computed from the role
+ *     rather than hand-projected from granular ones;
+ *   * the member chosen is the first IN ORDER whose resolved authority actually
+ *     ALLOWS the job's work. Picking the oldest admin and discovering at the
+ *     usecase's `assertCan*` that they cannot do it turns a routing decision
+ *     into a thrown refusal, which is what the delta-sync dispatcher avoids by
+ *     asking `mayRunDeltaSync` before it queues.
+ *
+ * `allows` is the job's OWN definition of its requirement and must be the key
+ * its usecase asserts — one definition, so the pick can never choose a member
+ * the work would then refuse.
+ *
+ * Never returns a bare `null`: the two ways a pick can come up empty are
+ * different operational facts and a caller that cannot tell them apart reports
+ * the wrong one. `NO_ACTIVE_MEMBER` means the tenant has nobody to borrow;
+ * `NO_QUALIFYING_ACTOR` means it has members and not one of them may do this
+ * work. Both are REFUSALS the caller reports under that name, never a fallback
+ * to a system context: a job that silently escalated past every member's
+ * authority is the failure this exists to prevent.
+ */
+export async function borrowedJobActor(input: {
+    tenantId: string;
+    /** Restrict to these roles, or omit to consider every ACTIVE member. */
+    roles?: Role[];
+    /** `createdAt` for "the oldest", `role` for "the most senior" (enum order). */
+    orderBy: 'createdAt' | 'role';
+    allows: (authority: { permissions: Permissions; appPermissions: PermissionSet }) => boolean;
+}): Promise<BorrowedActorOutcome> {
+    const candidates = await prisma.tenantMembership.findMany({
+        where: {
+            tenantId: input.tenantId,
+            status: 'ACTIVE',
+            ...(input.roles ? { role: { in: input.roles } } : {}),
+        },
+        // `customRole` is the whole point: without it selected, the resolution
+        // below cannot see the role that governs this member.
+        select: {
+            userId: true,
+            role: true,
+            customRole: { select: { baseRole: true, permissionsJson: true } },
+        },
+        orderBy: input.orderBy === 'role' ? { role: 'asc' } : { createdAt: 'asc' },
+        take: BORROWED_ACTOR_CANDIDATE_CAP,
+    });
+
+    for (const membership of candidates) {
+        const authority = initiatorAuthority(membership);
+        if (input.allows(authority)) {
+            return { actor: { userId: membership.userId, ...authority }, reason: null };
+        }
+    }
+    // An empty candidate list and a list nobody in which qualifies are not the
+    // same fact: the first is an empty tenant, the second is a permissions
+    // configuration that has locked a job out of a workspace that relies on it.
+    return {
+        actor: null,
+        reason: candidates.length === 0 ? BORROW_FAILURE.NO_ACTIVE_MEMBER : BORROW_FAILURE.NO_QUALIFYING_ACTOR,
     };
 }
 

@@ -35,6 +35,10 @@ export const POST = withApiErrorHandling(
         const job = await enqueue('key-rotation', {
             tenantId: ctx.tenantId,
             initiatedByUserId: ctx.userId,
+            // Carried so the job can re-check it before rotating: this route
+            // admits an `admin:write` key, and the grant that authorised the
+            // request has to still hold when the work runs (#4386).
+            ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
             requestId: ctx.requestId,
         });
 

@@ -463,6 +463,14 @@ export interface KeyRotationPayload {
     tenantId: string;
     /** User who initiated — attribution on audit-log entries. */
     initiatedByUserId: string;
+    /**
+     * The API key the rotation was requested with, when it was requested with
+     * one (#4386). Re-read for LIVENESS before any work: a key revoked or
+     * expired while the job sat in the queue no longer authorises the request
+     * that queued it. Absent for a session request, and for every payload
+     * queued before this member existed.
+     */
+    apiKeyId?: string;
     /** Upstream request id for log correlation. */
     requestId?: string;
 }
@@ -667,6 +675,16 @@ export interface SharePointDeltaSyncPayload {
     connectionId: string;
     /** Member to attribute the re-imports to (an admin of the tenant). */
     actorUserId: string;
+    /**
+     * The API key the "Sync now" request was made with, when it was made with
+     * one (#4386). The worker re-reads the key and runs with its authority AND
+     * the actor's, refusing when the key is revoked, expired, gone or another
+     * tenant's. Absent for a session request, for every SCHEDULED run (the
+     * dispatcher borrows a member and no key is involved), and on every payload
+     * queued before this member existed: all three run with the actor's
+     * authority, as before.
+     */
+    apiKeyId?: string;
     triggeredBy: 'scheduled' | 'manual';
     requestId?: string;
 }

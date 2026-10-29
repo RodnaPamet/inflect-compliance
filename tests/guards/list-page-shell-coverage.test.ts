@@ -35,6 +35,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const APP_ROOT = path.resolve(
     __dirname,
@@ -213,6 +214,13 @@ const EXEMPTIONS: Record<string, string> = {
 // composition (which wraps `ListPageShell` internally — see
 // `src/components/layout/EntityListPage.tsx`). Both satisfy the
 // viewport-clamped scroll contract this ratchet exists to enforce.
+// Only the ESCAPE half reads comment-masked source, and the asymmetry is
+// deliberate (#4356). The two directions fail differently: a pattern that
+// matches a COMMENT and pulls a page INTO scope produces a false alarm, which
+// reddens CI and gets fixed by whoever sees it. One that matches a comment and
+// lets a page OUT is silent forever, and nobody chose it. So the escape is
+// hardened and the in-scope read is left alone rather than changed for
+// symmetry's sake.
 const SHELL_IMPORT_RE =
     /['"]@\/components\/layout\/(ListPageShell|EntityListPage)['"]/;
 const DATATABLE_IMPORT_RE = /from\s+['"]@\/components\/ui\/table[^'"]*['"]/;
@@ -246,7 +254,9 @@ function audit(): Finding[] {
                 .split(path.sep)
                 .join('/'),
             importsDataTable: DATATABLE_IMPORT_RE.test(content),
-            importsListPageShell: SHELL_IMPORT_RE.test(content),
+            // The escape hatch, so it reads code and not prose — see the note
+            // on SHELL_IMPORT_RE above.
+            importsListPageShell: SHELL_IMPORT_RE.test(codeOf(content)),
             referencesDataTable: /\bDataTable\b/.test(content),
         };
     });

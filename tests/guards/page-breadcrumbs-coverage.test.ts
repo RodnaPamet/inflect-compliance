@@ -35,6 +35,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { codeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
 // Scoped to tenant-scoped pages only. Org-scoped pages
@@ -150,6 +151,12 @@ const HEADING_RE = /<Heading\s+[^>]*level=\{1\}/;
 // wrapper that pushes the trail into the chrome (PR-2)
 // context AND keeps a mobile inline render. Either shape
 // satisfies the coverage requirement.
+// Only the ESCAPE half reads comment-masked source, and the asymmetry is
+// deliberate (#4356). The two directions fail differently: a pattern matching
+// a COMMENT that pulls a page INTO scope is a false alarm — it reddens CI and
+// whoever sees it fixes it. One that lets a page OUT is silent forever, and
+// nobody chose it. So the escape is hardened; the in-scope read is left as it
+// is rather than changed for symmetry.
 const BREADCRUMBS_RE = /<Breadcrumbs\b|<PageBreadcrumbs\b|breadcrumbs:\s*\[/;
 
 interface Hit {
@@ -185,7 +192,9 @@ describe("page breadcrumbs coverage", () => {
             for (const file of walk(path.join(ROOT, dir))) {
                 const content = fs.readFileSync(file, "utf8");
                 if (!HEADING_RE.test(content)) continue;
-                if (BREADCRUMBS_RE.test(content)) continue;
+                // The escape hatch reads code, not prose (#4356): a comment
+                // mentioning `<Breadcrumbs>` used to satisfy this.
+                if (BREADCRUMBS_RE.test(codeOf(content))) continue;
                 // Page has a level-1 heading but no breadcrumbs +
                 // not in the exempt list.
                 const lines = content.split("\n");

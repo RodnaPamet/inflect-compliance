@@ -91,10 +91,6 @@ const BASELINE: Readonly<Record<string, string>> = {
     'prom/prometheus': 'Observability stack, version-pinned. Scrapes metrics, never tenant rows.',
     'otel/opentelemetry-collector-contrib':
         'Observability stack, version-pinned. Forwards spans and metrics, never tenant rows.',
-    'ghcr.io/luckypipewrench/pipelock':
-        'A peer tool, outside the application stack, and its own compose line already says '
-        + '"pin to a digest before enabling" — so it is baselined as UNENABLED rather than as '
-        + 'reviewed. Enabling it is the moment that comment has to be honoured.',
 };
 
 /** Every `image:` reference in a compose file git tracks, with its file. */
@@ -158,6 +154,72 @@ export function composeImageRefs(): readonly ImageRef[] {
     return out;
 }
 
+/**
+ * Image references in the OpenShell gateway's TOML configuration — 4.3 (#3964).
+ *
+ * ═══ WHY A THIRD SOURCE AND NOT A COMPOSE FILE ═══
+ *
+ * Because this deployment has no compose file to put them in. Upstream
+ * publishes no gateway container image for the pinned release — its images stop
+ * at 0.0.91, built three months earlier, and lack `--compute-driver`,
+ * `--enable-operator-auth` and `--oidc-jwks-allowed-origins` — so the gateway
+ * runs from the checksum-verified binary and the two images that DO exist are
+ * named in its config instead.
+ *
+ * A compose-only scan is therefore blind to the only images this deployment
+ * pulls, and "every image is digest-pinned" would have been true of a set that
+ * did not include them. The pin belongs where the reference lives.
+ *
+ * ═══ KEYED ON THE VALUE, NOT ON THE KEY NAME ═══
+ *
+ * `sandbox_runtime_image` and `supervisor_image` both end in `image`, and
+ * matching that would have been shorter. It would also go blind the moment a
+ * release renames one — which this project does: it has three live numbering
+ * spaces and re-pushed a release tag inside 72 hours. So the test is whether
+ * the VALUE looks like a registry reference, which is the property that makes
+ * something pinnable in the first place.
+ */
+export function gatewayConfigImageRefs(): readonly ImageRef[] {
+    const out: ImageRef[] = [];
+    // A registry reference: a host with a dot (so `ghcr.io/x`, never `./x`), an
+    // optional port, then a path.
+    const REGISTRY_REF = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?::\d+)?\/\S+$/;
+    for (const rel of repoRelativeFiles()) {
+        if (!/^deploy\/openshell\/.*\.toml$/.test(rel)) continue;
+        const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+        for (const raw of text.split('\n')) {
+            // NO COMMENT STRIPPING, and that is measured rather than assumed.
+            //
+            // The first version of this scanner skipped `^\s*#` lines, and a
+            // mutation proof showed the skip was dead code: the key-name class
+            // below is anchored at `^` and excludes `#`, so a commented
+            // assignment can never match in the first place. Deleting the skip
+            // changed no result on any input, which is the definition of a line
+            // that is not doing anything.
+            //
+            // A trailing comment needs no stripping either, unlike the compose
+            // scanner's: a TOML value is quoted, so the match ends at the
+            // closing quote and `#` inside the quotes stays data.
+            //
+            // Nor is there a test for comment handling, and that absence is
+            // deliberate. `gateway.toml` carries the unpinned form it replaced
+            // inside a comment, in `key = "value"` shape, as bait; TWO separate
+            // mutations failed to make this regex pick it up — deleting the
+            // comment skip, then widening the key class to admit `#`. The shape
+            // is what protects it: the key must be CONTIGUOUS and immediately
+            // followed by `=`, so `#   key = "v"` cannot match whatever the
+            // class allows. A test for a property no mutation can break is a
+            // test that cannot fail, so there is none. The denominator test
+            // below is the one with teeth.
+            const m = /^\s*[A-Za-z0-9_.-]+\s*=\s*"([^"]+)"/.exec(raw);
+            if (!m) continue;
+            if (!REGISTRY_REF.test(m[1])) continue;
+            out.push({ file: rel, ref: m[1] });
+        }
+    }
+    return out;
+}
+
 /** Digest-pinned? `repo@sha256:…`, with or without a tag before the digest. */
 export function isDigestPinned(ref: string): boolean {
     return /@sha256:[0-9a-f]{64}$/.test(ref);
@@ -213,7 +275,16 @@ const CANONICAL_COMPOSE = 'deploy/docker-compose.prod.yml';
  * baselined on that basis. This asks a narrower question: does a baseline whose
  * reason is "it does not run" agree with the file that decides what runs.
  */
-const BASELINED_AS_UNENABLED: readonly string[] = ['ghcr.io/luckypipewrench/pipelock'];
+/*
+    EMPTY since 2026-10-27 (#3967). `ghcr.io/luckypipewrench/pipelock` was the
+    only member, and it is now digest-pinned in both compose files, so a
+    baseline excusing it from the pin rule no longer excuses anything.
+
+    Kept as an empty list rather than deleted: the cross-check below and the
+    conditional pin rule are the mechanism a FUTURE unenabled image needs, and
+    rebuilding them from the prose would be harder than reading them.
+*/
+const BASELINED_AS_UNENABLED: readonly string[] = [];
 
 describe('a baseline that claims an image is UNENABLED stays true', () => {
     const canonical = composeImageRefs().filter((r) => r.file === CANONICAL_COMPOSE);
@@ -267,7 +338,7 @@ describe('a baseline that claims an image is UNENABLED stays true', () => {
 describe('runtime images — a new one is pinned by digest', () => {
     // The UNION: a Compose `image:` and a Dockerfile `FROM` are the same
     // question about the same kind of artefact.
-    const refs = [...composeImageRefs(), ...dockerfileImageRefs()];
+    const refs = [...composeImageRefs(), ...dockerfileImageRefs(), ...gatewayConfigImageRefs()];
 
     it('finds BOTH populations at all', () => {
         // The denominator, printed as an assertion. A scan that silently found
@@ -287,6 +358,21 @@ describe('runtime images — a new one is pinned by digest', () => {
         expect(fromRefs).not.toContain('deps');
         // The positive control: the real base images ARE found.
         expect(fromRefs.some((r) => r.startsWith('node:'))).toBe(true);
+    });
+
+    it('sees the OpenShell gateway config, and both of its images are pinned', () => {
+        // A DENOMINATOR. Every assertion in this file would be exactly as green
+        // if `gatewayConfigImageRefs()` returned nothing, because an empty set
+        // satisfies "every image is pinned" perfectly. 4.3's whole point is
+        // that these two references exist somewhere a compose scan cannot see.
+        const refs = gatewayConfigImageRefs();
+        expect(refs.length).toBe(2);
+        expect(refs.every((r) => r.file === 'deploy/openshell/gateway.toml')).toBe(true);
+        expect(refs.map((r) => repositoryOf(r.ref)).sort()).toEqual([
+            'ghcr.io/nvidia/openshell/sandbox',
+            'ghcr.io/nvidia/openshell/supervisor',
+        ]);
+        for (const r of refs) expect(isDigestPinned(r.ref)).toBe(true);
     });
 
     it('every image is digest-pinned OR baselined with a reason', () => {
@@ -309,7 +395,22 @@ describe('runtime images — a new one is pinned by digest', () => {
         // is removed or finally pinned, its entry goes in the same diff.
         const present = new Set(refs.map((r) => repositoryOf(r.ref)));
         const stale = Object.keys(BASELINE).filter((image) => !present.has(image));
+        // A SECOND kind of stale, which the line above cannot see: an entry for
+        // an image that is still referenced but is now digest-pinned
+        // everywhere. Its exemption excuses nothing, and nothing failed when
+        // pipelock's did — found by pinning it (#3967) and watching 15/15 stay
+        // green with the carve-out still in place.
+        //
+        // `ALLOWED_EXECUTORS` in `tool-execution-is-bounded` states the
+        // property this is borrowing: "an entry here for a file that no longer
+        // executes anything fails it too, so a stale carve-out cannot outlive
+        // the code it excused."
+        const excusesNothing = Object.keys(BASELINE).filter((image) => {
+            const refs = composeImageRefs().filter((r) => repositoryOf(r.ref) === image);
+            return refs.length > 0 && refs.every((r) => isDigestPinned(r.ref));
+        });
         expect(stale).toEqual([]);
+        expect(excusesNothing).toEqual([]);
     });
 
     describe('detector proof — on synthetic references, so a clean run means something', () => {

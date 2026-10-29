@@ -248,7 +248,7 @@ describe('the details panel offers the link picker and unlink cross only with co
     }
 
     it('an EDITOR-based custom role without controls.edit sees neither the cross nor the link picker', async () => {
-        await openPanel({ permissions: COARSE.EDITOR, grants: { ...GRANTS.EDITOR, controlsEdit: false } });
+        await openPanel({ permissions: COARSE.EDITOR, grants: { ...GRANTS.EDITOR, controlsEdit: false, tasksCreate: true, tasksEdit: true } });
         expect(document.getElementById('unlink-control-c1')).toBeNull();
         // The link route requires controls.edit too, so the picker goes with the cross.
         expect(document.getElementById('evidence-link-control-btn')).toBeNull();

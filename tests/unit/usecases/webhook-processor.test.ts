@@ -109,8 +109,12 @@ jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
 
+// Spread the real module. A partial factory throws on every export it does not
+// list, the moment that export is reached -- and a hand-rolled return value
+// makes the ARGUMENT untestable besides, which is how a job's permission
+// narrowing went unasserted in control-test-runner (#4397, #4388).
 jest.mock('@/lib/permissions', () => ({
-    getPermissionsForRole: jest.fn(() => ({})),
+    ...jest.requireActual('@/lib/permissions'),
 }));
 
 import { processIncomingWebhook } from '@/app-layer/usecases/webhook-processor';

@@ -33,11 +33,12 @@ const riskReport = {
 };
 jest.mock('@/app-layer/usecases/risk-report', () => riskReport);
 
+// Spread the real module. A partial factory throws on every export it does not
+// list, the moment that export is reached -- and a hand-rolled return value
+// makes the ARGUMENT untestable besides, which is how a job's permission
+// narrowing went unasserted in control-test-runner (#4397, #4388).
 jest.mock('@/lib/permissions', () => ({
-    getPermissionsForRole: () => ({
-        risks: { view: true, edit: true }, admin: { manage: true },
-        audits: { view: true }, reports: { export: true },
-    }),
+    ...jest.requireActual('@/lib/permissions'),
 }));
 
 jest.mock('@/lib/observability/logger', () => ({

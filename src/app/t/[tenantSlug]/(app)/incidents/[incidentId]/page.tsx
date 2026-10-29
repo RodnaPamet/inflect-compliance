@@ -134,7 +134,7 @@ export default function IncidentDetailPage() {
     // Tenant-root API base (for cross-resource fetches like the evidence
     // list) — keeps the `/api/` literal out of the fetch call site.
     const tenantApiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
-    const { permissions } = useTenantContext();
+    const { permissions, appPermissions } = useTenantContext();
     const canWrite = !!permissions?.canWrite;
     const post = async (
         path: string,
@@ -606,6 +606,12 @@ export default function IncidentDetailPage() {
                         entityId={incidentId}
                         tenantHref={(p) => `/t/${tenantSlug}${p}`}
                         canWrite={canWrite}
+                        // `tasks.create` for the create affordance,
+                        // `tasks.edit` for the bulk actions behind row
+                        // selection — the two keys the server asks, which the
+                        // coarse tier alone could not express (#4415).
+                        canCreateTasks={permissions.canWrite && appPermissions.tasks.create}
+                        canEditTasks={permissions.canWrite && appPermissions.tasks.edit}
                     />
                 </div>
             )}

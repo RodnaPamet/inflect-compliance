@@ -10,13 +10,27 @@ import { policyCountsWhere } from '@/lib/policy/coverage-predicate';
 // the traceability graph exposes control/risk/asset titles, so it must sit
 // behind the same canRead check as every other read surface.
 import { assertCanRead } from '../policies/common';
+import { assertCanEditAsset } from '../policies/asset.policies';
+import { assertCanUpdateControl } from '../policies/control.policies';
 
-function assertCanManage(ctx: RequestContext) {
-    // Epic 1 — OWNER is a superset of ADMIN per CLAUDE.md RBAC.
-    if (!['OWNER', 'ADMIN', 'EDITOR'].includes(ctx.role)) {
-        throw forbidden('Only OWNER, ADMIN, or EDITOR can manage mappings');
-    }
-}
+/**
+ * A mapping is governed by the key of the entity you edit FROM (#4413, owner
+ * decision 2026-10-27).
+ *
+ * This WAS a file-local check on the role NAME —
+ * `['OWNER','ADMIN','EDITOR'].includes(ctx.role)` — and `ctx.role` for a
+ * custom-role member is its BASE role, so a custom role on an EDITOR base
+ * that withheld every granular key still drew and removed traceability lines,
+ * and no key could narrow it. The comment above `assertCanRead` records a
+ * previous incident of the same shape in this same file; this was the second.
+ *
+ * "From" is the entity whose page and whose URL the mapping hangs off:
+ * `/assets/:id/risks` is an edit to the asset, `/controls/:id/risks` an edit to
+ * the control. The route gates mirror these exactly, so route and usecase ask
+ * one question.
+ */
+const assertCanMapFromAsset = assertCanEditAsset;
+const assertCanMapFromControl = assertCanUpdateControl;
 
 // ─── Control ↔ Risk ───
 
@@ -31,7 +45,7 @@ export async function listRiskControls(ctx: RequestContext, riskId: string) {
 }
 
 export async function mapControlToRisk(ctx: RequestContext, controlId: string, riskId: string, rationale?: string) {
-    assertCanManage(ctx);
+    assertCanMapFromControl(ctx);
     return runInTenantContext(ctx, async (db) => {
         // Both endpoints must live in the caller's tenant — the join row is
         // stamped with ctx.tenantId regardless, so an unverified id would
@@ -50,7 +64,7 @@ export async function mapControlToRisk(ctx: RequestContext, controlId: string, r
 }
 
 export async function unmapControlFromRisk(ctx: RequestContext, controlId: string, riskId: string) {
-    assertCanManage(ctx);
+    assertCanMapFromControl(ctx);
     return runInTenantContext(ctx, async (db) => {
         await ControlRiskRepository.unlink(db, ctx.tenantId, controlId, riskId);
         await logEvent(db, ctx, { action: 'CONTROL_RISK_UNLINKED', entityType: 'Control', entityId: controlId, details: `Unlinked from risk ${riskId}`, detailsJson: { category: 'relationship', operation: 'unlinked', sourceEntity: 'Control', sourceId: controlId, targetEntity: 'Risk', targetId: riskId, relation: 'mitigates' }, metadata: { riskId } });
@@ -70,7 +84,7 @@ export async function listControlAssets(ctx: RequestContext, controlId: string) 
 }
 
 export async function mapAssetToControl(ctx: RequestContext, assetId: string, controlId: string, coverageType?: string, rationale?: string) {
-    assertCanManage(ctx);
+    assertCanMapFromAsset(ctx);
     return runInTenantContext(ctx, async (db) => {
         // Both the URL asset AND the body-supplied control must live in the
         // caller's tenant — the link insert stamps ctx.tenantId regardless, so
@@ -89,7 +103,7 @@ export async function mapAssetToControl(ctx: RequestContext, assetId: string, co
 }
 
 export async function unmapAssetFromControl(ctx: RequestContext, assetId: string, controlId: string) {
-    assertCanManage(ctx);
+    assertCanMapFromAsset(ctx);
     return runInTenantContext(ctx, async (db) => {
         await AssetControlRepository.unlink(db, ctx.tenantId, assetId, controlId);
         await logEvent(db, ctx, { action: 'ASSET_CONTROL_UNLINKED', entityType: 'Asset', entityId: assetId, details: `Unlinked from control ${controlId}`, detailsJson: { category: 'relationship', operation: 'unlinked', sourceEntity: 'Asset', sourceId: assetId, targetEntity: 'Control', targetId: controlId }, metadata: { controlId } });
@@ -109,7 +123,7 @@ export async function listRiskAssets(ctx: RequestContext, riskId: string) {
 }
 
 export async function mapAssetToRisk(ctx: RequestContext, assetId: string, riskId: string, exposureLevel?: string, rationale?: string) {
-    assertCanManage(ctx);
+    assertCanMapFromAsset(ctx);
     return runInTenantContext(ctx, async (db) => {
         // Verify both the URL asset AND the body-supplied risk live in the
         // caller's tenant before linking (see mapAssetToControl). 404 otherwise.
@@ -131,7 +145,7 @@ export async function mapAssetToRisk(ctx: RequestContext, assetId: string, riskI
 }
 
 export async function unmapAssetFromRisk(ctx: RequestContext, assetId: string, riskId: string) {
-    assertCanManage(ctx);
+    assertCanMapFromAsset(ctx);
     return runInTenantContext(ctx, async (db) => {
         await AssetRiskRepository.unlink(db, ctx.tenantId, assetId, riskId);
         await logEvent(db, ctx, { action: 'ASSET_RISK_UNLINKED', entityType: 'Asset', entityId: assetId, details: `Unlinked from risk ${riskId}`, detailsJson: { category: 'relationship', operation: 'unlinked', sourceEntity: 'Asset', sourceId: assetId, targetEntity: 'Risk', targetId: riskId }, metadata: { riskId } });

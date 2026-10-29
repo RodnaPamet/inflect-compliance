@@ -1,0 +1,92 @@
+#
+# OpenShell gateway configuration — 4.3 (#3964), release v0.1.5.
+#
+# Installed at /etc/openshell/gateway.toml on the GATEWAY VM and nowhere else.
+# Read by openshell-gateway.service via OPENSHELL_GATEWAY_CONFIG. Every key
+# below was taken from `openshell-gateway --help` and from a working
+# configuration on the pinned binary, not from documentation: the published
+# docs version themselves v0.0.116 while releases run 0.1.x, and the two are
+# not the same number.
+#
+# ── WHY THE GATEWAY IS NOT A CONTAINER HERE ───────────────────────────
+#
+# Because upstream publishes no container image for this release. Measured:
+# ghcr.io/nvidia/openshell/gateway carries 4000 tags whose highest semantic
+# version is 0.0.91, built 2026-07-24, and `docker run … --version` on it
+# reports `openshell-gateway 0.0.91`. Our pinned binary reports 0.1.5.
+#
+# That image is not merely older, it cannot be configured the way this phase
+# requires. It is missing nine flags the 0.1.5 binary has, and three of them
+# are the ones 4.3 depends on:
+#
+#   --compute-driver              selects the Docker driver
+#   --enable-operator-auth        the operator-mTLS control
+#   --oidc-jwks-allowed-origins   the inbound OIDC path
+#
+# Using it would also break this phase's own rule that, pre-1.0, the SDK and
+# the gateway move together: it would pair a 0.1.5 SDK with a 0.0.91 gateway
+# and revert three months of fixes, including the ones found on 0.1.2.
+#
+# So the gateway runs from the release binary, verified to its published
+# checksum, and what IS an image here — the two images the Docker driver
+# pulls — is digest-pinned below.
+#
+[openshell]
+version = 2
+
+[openshell.gateway]
+# Root-equivalent on the host, which is the whole reason this VM is separate.
+compute_driver = "docker"
+# CA the gateway presents to sandbox guests.
+guest_tls_ca = "/etc/openshell/pki/ca.crt"
+
+[openshell.gateway.gateway_jwt]
+# Sandbox-facing JWT identity. The PRIVATE half never leaves this VM, and is
+# not in this repository: the unit refuses to start if it is absent (see
+# openshell-gateway.service). Mode 0400, root-owned, created out of band.
+signing_key_path = "/etc/openshell/pki/jwt/signing.pem"
+public_key_path = "/etc/openshell/pki/jwt/public.pem"
+kid_path = "/etc/openshell/pki/jwt/kid"
+gateway_id = "inflect-prod"
+
+[openshell.gateway.ocsf_log]
+# The audit log 0.1g measured. It rotates daily and keeps 3 by default, which
+# is a retention decision recorded in the phase note, not a default to inherit
+# silently.
+path = "/var/log/openshell/gateway-ocsf.jsonl"
+
+[openshell.drivers.docker]
+#
+# ═══ DIGEST-PINNED, AND THE TAG IS NOT TRUSTWORTHY ═══
+#
+# With no configuration the gateway resolves these by MUTABLE TAG. Observed
+# directly, in its own Docker socket traffic:
+#
+#   GET /images/ghcr.io/nvidia/openshell/sandbox:0.1.5/json
+#   GET /images/ghcr.io/nvidia/openshell/supervisor:0.1.5/json
+#
+# And that tag moves. The digests below are the images this phase actually ran
+# and verified, recorded 2026-10-24. Re-resolved on 2026-10-27, three days
+# later, `:0.1.5` pointed at DIFFERENT content in both repositories:
+#
+#   sandbox:0.1.5     -> sha256:e9adf9ec…   (recorded: sha256:d60222e1…)
+#   supervisor:0.1.5  -> sha256:fabcd01f…   (recorded: sha256:07cc8b62…)
+#
+# Both recorded digests still exist and still pull, so this is not a mistaken
+# record: a RELEASE tag was re-pushed within 72 hours. Anyone who pinned
+# `:0.1.5` and believed they had pinned v0.1.5 would have had both images
+# replaced underneath them, with nothing to see in any diff.
+#
+# The form this replaces, left here as the thing NOT to restore. It is written
+# in `key = "value"` shape on purpose: it is bait for the pinning guard, which
+# must not count a commented assignment as a live one.
+#
+#   sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:0.1.5"
+#   supervisor_image = "ghcr.io/nvidia/openshell/supervisor:0.1.5"
+#
+# These are single-platform manifests (`…image.manifest.v1+json`), not manifest
+# lists, so unlike the pipelock pin there is no amd64/arm64 list digest to
+# prefer — the gateway VM is amd64 and that is what these are.
+#
+sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox@sha256:d60222e1183ad3212436507c4b9035c0aeda1c1bba4a00a02ec7949fb0a0d7b2"
+supervisor_image = "ghcr.io/nvidia/openshell/supervisor@sha256:07cc8b62b34a0b54a3ebeb485cebe9f223cffe10dad819af550849cf0699816f"

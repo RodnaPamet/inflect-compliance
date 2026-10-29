@@ -7,9 +7,13 @@
  * The traceability usecase wires the Control ↔ Risk ↔ Asset mapping
  * graph. The branch-dense, highest-risk paths:
  *
- *   - assertCanManage — only OWNER / ADMIN / EDITOR can mutate
- *     mappings; READER + AUDITOR are denied. A regression here lets
- *     an auditor rewrite the control coverage graph.
+ *   - the mutation gate — a mapping is governed by the key of the
+ *     entity you edit FROM (#4413): `assets.edit` for the asset-side
+ *     pairs, `controls.edit` for control↔risk. It WAS a file-local
+ *     check on the role NAME, which a custom role on an EDITOR base
+ *     bypassed whatever its granular set withheld. A regression here
+ *     lets an auditor — or a deliberately narrowed custom role —
+ *     rewrite the control coverage graph.
  *   - mapAssetToRisk's three-way emit logic: a brand-new link emits
  *     ASSET_RISK_LINKED; an existing link with changed
  *     exposureLevel/rationale emits ASSET_RISK_UPDATED; a no-op
@@ -60,6 +64,7 @@ import {
     unmapControlFromRisk,
     mapAssetToControl,
     mapAssetToRisk,
+    unmapAssetFromRisk,
     getControlTraceability,
     coverageSummary,
 } from '@/app-layer/usecases/traceability';
@@ -91,24 +96,24 @@ beforeEach(() => {
     jest.clearAllMocks();
 });
 
-describe('assertCanManage — mutation RBAC gate', () => {
+describe('the mutation gate — the key of the entity you edit FROM (#4413)', () => {
     it('rejects a READER from mapping a control to a risk', async () => {
         await expect(
             mapControlToRisk(makeRequestContext('READER'), 'c1', 'r1'),
-        ).rejects.toThrow(/Only OWNER, ADMIN, or EDITOR/);
+        ).rejects.toThrow(/do not have permission to update controls/);
         expect(mockRunInTx).not.toHaveBeenCalled();
     });
 
     it('rejects an AUDITOR from mapping an asset to a control', async () => {
         await expect(
             mapAssetToControl(makeRequestContext('AUDITOR'), 'a1', 'c1'),
-        ).rejects.toThrow(/Only OWNER, ADMIN, or EDITOR/);
+        ).rejects.toThrow(/do not have permission to edit assets/);
     });
 
     it('rejects a READER from unmapping a control from a risk', async () => {
         await expect(
             unmapControlFromRisk(makeRequestContext('READER'), 'c1', 'r1'),
-        ).rejects.toThrow(/Only OWNER, ADMIN, or EDITOR/);
+        ).rejects.toThrow(/do not have permission to update controls/);
     });
 
     it('allows an EDITOR to map a control to a risk and emits a relationship event', async () => {
@@ -321,5 +326,65 @@ describe('mapControlToRisk — both endpoints must be in the caller tenant', () 
             mapControlToRisk(makeRequestContext('EDITOR'), 'c1', 'r-other-tenant'),
         ).rejects.toThrow(/not found/i);
         expect(mockCtrlRisk.link).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * The case the role-name check could not express (#4413).
+ *
+ * `ctx.role` for a custom-role member is its BASE role, so
+ * `['OWNER','ADMIN','EDITOR'].includes(ctx.role)` admitted a custom role on an
+ * EDITOR base however narrowly it was drawn — and no key could narrow it,
+ * because the check read none. Each pair now reads the FROM entity's edit key.
+ */
+describe('a custom role is honoured, which the role-name check could not do', () => {
+    /** An EDITOR-based custom role with one granular key withheld. */
+    const withheld = (resource: 'assets' | 'controls') => {
+        const ctx = makeRequestContext('EDITOR') as any;
+        ctx.appPermissions = {
+            ...ctx.appPermissions,
+            [resource]: { ...ctx.appPermissions[resource], edit: false },
+        };
+        return ctx;
+    };
+
+    it('refuses control↔risk mapping to a custom role without controls.edit', async () => {
+        await expect(
+            mapControlToRisk(withheld('controls'), 'c1', 'r1'),
+        ).rejects.toThrow(/do not have permission to update controls/);
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
+    it('refuses asset↔control mapping to a custom role without assets.edit', async () => {
+        await expect(
+            mapAssetToControl(withheld('assets'), 'a1', 'c1'),
+        ).rejects.toThrow(/do not have permission to edit assets/);
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
+    it('refuses asset↔risk UNmapping to a custom role without assets.edit', async () => {
+        await expect(
+            unmapAssetFromRisk(withheld('assets'), 'a1', 'r1'),
+        ).rejects.toThrow(/do not have permission to edit assets/);
+    });
+
+    it('reads the FROM entity, not the other end: controls.edit withheld does not stop an ASSET mapping', async () => {
+        // The ruling's whole content. This role may not edit controls, and is
+        // still linking a control TO an asset — which is an asset edit.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(linkTx as never));
+        mockAssetCtrl.link.mockResolvedValueOnce({ id: 'link-9' } as never);
+
+        await expect(
+            mapAssetToControl(withheld('controls'), 'a1', 'c1'),
+        ).resolves.toBeDefined();
+    });
+
+    it('a full EDITOR still maps, so the gate is not simply closed', async () => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(linkTx as never));
+        mockCtrlRisk.link.mockResolvedValueOnce({ id: 'link-10' } as never);
+
+        await expect(
+            mapControlToRisk(makeRequestContext('EDITOR'), 'c1', 'r1'),
+        ).resolves.toBeDefined();
     });
 });

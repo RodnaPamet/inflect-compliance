@@ -886,6 +886,7 @@ executorRegistry.register('key-rotation', async (payload) => {
     const r = await runKeyRotation({
         tenantId: payload.tenantId,
         initiatedByUserId: payload.initiatedByUserId,
+        apiKeyId: payload.apiKeyId,
         requestId: payload.requestId,
     });
     return makeResult(
@@ -1126,6 +1127,9 @@ executorRegistry.register('sharepoint-policy-pull', async (payload) => {
         tenantId: payload.tenantId,
         policyId: payload.policyId,
         pulled: r.pulled,
+        // Which refusal it was: an empty tenant, an unlinked policy, or members
+        // none of whom may pull (#4388). One shape per cause, not one for all.
+        reason: 'reason' in r ? r.reason : undefined,
     });
 });
 
@@ -1158,9 +1162,13 @@ executorRegistry.register('risk-appetite-monitor', async (payload) => {
     const startMs = performance.now();
     const { runRiskAppetiteMonitor } = await import('./risk-appetite-jobs');
     const r = await runRiskAppetiteMonitor(payload);
-    return makeResult('risk-appetite-monitor', startedAt, startMs, r.scanned, r.newBreaches, 0, {
+    // A tenant this job could not act in used to be a hardcoded ZERO here, so a
+    // workspace that had silently stopped being monitored scored as a clean run
+    // (#4388). It is a failure, and it is counted as one.
+    return makeResult('risk-appetite-monitor', startedAt, startMs, r.scanned, r.newBreaches, r.unroutable, {
         tenants: r.tenants,
         scanned: r.scanned,
+        unroutable: r.unroutable,
         newBreaches: r.newBreaches,
         resolved: r.resolved,
     });
@@ -1249,6 +1257,7 @@ executorRegistry.register('compliance-posture-summary', async (payload) => {
         provider: r.provider,
         postureLabel: r.postureLabel,
         isFallback: r.isFallback,
+        reason: 'reason' in r ? r.reason : undefined,
     });
 });
 

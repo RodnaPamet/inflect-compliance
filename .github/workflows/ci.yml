@@ -359,6 +359,75 @@ jobs:
   #  Job 1: Lint — ESLint + Next.js lint rules
   #  Fast, no DB needed. Fails immediately on lint errors.
   # ═══════════════════════════════════════════════════════════════
+  change-class:
+    name: Change class
+    # THE POLICY'S OWN FOLLOW-UP, BUILT (#4437).
+    #
+    # `docs/change-management-policy.md` required a rollback plan and a risk
+    # assessment on a SIGNIFICANT change and said enforcement was human review,
+    # because the gate "needs PR-metadata access that the current structural
+    # ratchets (file scanners) do not have". True of the ratchets; a workflow
+    # step has it, and `branch-freshness.yml` already reads the same context.
+    #
+    # It requires the ANALYSIS, never a `Sign-off:` line. The owner waiver of
+    # 2026-08-18 made the countersignature optional for assistant-driven PRs
+    # while keeping the analysis mandatory, so gating on `Sign-off:` would block
+    # exactly the PRs that waiver exists to unblock.
+    #
+    # RUNS ON merge_group TOO, and exits 0 there. A required check that simply
+    # does not run in the queue is ABSENT, and an absent check scores as zero
+    # failures — so it would silently stop gating at the point of merge. The
+    # queue ref carries no `pull_request` context to read, so the PR-level run
+    # is the gate and this reports rather than vanishing.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Shallow: only the script is needed from the tree. The CHANGED FILES
+      # come from the API below rather than a local diff, which is why there is
+      # no `fetch-depth: 0` here — a full clone of this repo to compute a list
+      # GitHub already holds is minutes of IO for nothing.
+      - uses: actions/checkout@v7
+      # Plain `setup-node`, NOT `setup-node-prisma`. The script imports only
+      # `node:fs` — proved by running its self-test 15/15 in a directory with
+      # no `package.json` and no `node_modules` — so `npm ci` plus a
+      # `prisma generate` would be minutes of work per PR for nothing, and
+      # would put this job's failure behind two unrelated retry loops
+      # (registry ECONNRESET, the Roadmap-27 prisma SIGILL). A gate that can
+      # fail for reasons unconnected to what it gates is a flaky required
+      # check, which is worse than no check.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Before trusting it: a classifier that answered "not significant" for
+      # everything would pass every PR and gate nothing. Its self-test pins both
+      # directions, and this step is deliberately blocking.
+      - name: Self-test the change classifier
+        run: node scripts/check-significant-change-analysis.mjs --self-test
+      - name: Require the rollback plan and risk assessment
+        # The body and title go through `env`, never into `run` via `${{ }}`:
+        # a PR description is attacker-controlled text, and interpolating it
+        # into a shell would execute whatever it contains.
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "Event is $EVENT, which carries no PR description."
+            echo "The gate runs on the pull request; this reports so the check is never ABSENT."
+            exit 0
+          fi
+          printf '%s' "$PR_BODY" > pr-body.txt
+          # `--paginate` is load-bearing: this endpoint returns 30 files a page,
+          # so without it a PR touching more than 30 files silently reports a
+          # TRUNCATED list — and a truncated list is how `prisma/` goes missing
+          # from a big change and the gate passes it.
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > pr-files.txt
+          node scripts/check-significant-change-analysis.mjs pr-body.txt pr-files.txt --title "$PR_TITLE"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -670,9 +739,10 @@ jobs:
       # `--shard` keeps each test file on exactly one shard, so per-DB-row
       # fixtures never collide across shards.
       #
-      # `JEST_SKIP_RATCHETS=1` drops tests/guards + tests/contracts + most
-      # of tests/guardrails from this run — 776 of 1946 files. They were
-      # never excluded from the shard glob, so the shards ran all of them
+      # The ratchet directories are not in this run at all: they belong to
+      # the `scan` jest project, which carries no `globalSetup` (#4395).
+      # They were never excluded from the shard glob originally, so the
+      # shards ran all of them
       # AND two later steps ran `tests/guards/` and `tests/contracts/`
       # again, as separate Jest boots that each re-shelled
       # `prisma migrate deploy`. The `ratchets` job below runs them once,
@@ -734,7 +804,6 @@ jobs:
       # `Coverage (>=60%)` job.
       - name: "Run tests: unit + integration (shard)"
         env:
-          JEST_SKIP_RATCHETS: '1'
           # 12288 for THIS step only; every other job keeps the workflow's
           # 8192. On 2026-10-18 `Test (shard 4/4)` OOM'd on #3721 ("Ineffective
           # mark-compacts near heap limit", exit 134, old space at 8047 of
@@ -875,7 +944,7 @@ jobs:
       # THIS RUN IS INSTRUMENTED, and that is load-bearing for the coverage
       # gate rather than incidental. The gate's population must be the WHOLE
       # suite. These 654 files are the exact complement of what the shards
-      # run under `JEST_SKIP_RATCHETS=1` — verified disjoint and exhaustive
+      # run in the `scan` project — verified disjoint and exhaustive
       # via `jest --listTests` (1386 + 654 = 2040, intersection empty) — and
       # they are not decoration in the report: measured on 2026-08-25 they
       # alone execute 4125 in-scope statements across 326 files, including
@@ -883,11 +952,38 @@ jobs:
       # silently change what every floor in `jest.thresholds.json` means.
       # If this job ever stops emitting coverage, bump nothing — fix it.
       - name: "Run tests: architectural guards + API contracts"
+        # `--selectProjects scan` rather than paths plus an ignore list, and the
+        # difference is load-bearing (#4395). A CLI `--testPathIgnorePatterns`
+        # REPLACES the project's own list wholesale — `.claude/`,
+        # `tests/rendered/`, `tests/flue/`, every exclusion `node` carries — so
+        # passing it pulled these directories back into `node` and ran that
+        # project's `globalSetup`, which refuses when the shared test database
+        # is behind the branch's migrations. Nothing here opens a connection,
+        # so that refusal cost a hand-off per session per migration for nothing.
+        #
+        # The project pins the population instead: `scan` owns exactly these
+        # three directories and excludes `rls-coverage` — the one ratchet that
+        # queries the database — in its own config, so the flag is gone.
         run: |
-          npx jest tests/guards tests/guardrails tests/contracts \
-            --testPathIgnorePatterns '/node_modules/' 'rls-coverage\.test\.ts' \
+          npx jest --selectProjects scan \
             --maxWorkers=2 --forceExit --ci \
-            --coverage --coverageReporters=json
+            --coverage --coverageReporters=json \
+            --json --outputFile=jest-scan-results.json
+
+        # Outside jest ON PURPOSE (#4426). Every other check on this population is
+        # a jest test, and that is the defect: the suite pinning the `scan`
+        # project's ignore list lives INSIDE the population it protects, so one
+        # pattern naming its directory removes 225 suites AND the assertion
+        # against doing so, leaving this job green. Measured: 810 -> 585 files,
+        # with "0 matches" for the pinning suite. No jest-level pattern can reach
+        # a step that is not jest.
+        #
+        # `if: always()` so a population cut is still reported when the suite run
+        # itself failed: the two causes are independent, and skipping this on
+        # failure is how the quieter one stays invisible.
+      - name: "Verify the Ratchets population actually ran"
+        if: always()
+        run: node scripts/check-scan-population.mjs jest-scan-results.json
 
       - name: Upload shard coverage
         uses: actions/upload-artifact@v7
@@ -1015,7 +1111,7 @@ jobs:
   #  The old matrix ran the whole suite in one command. The five jobs
   #  that replace it must therefore partition that same suite exactly:
   #
-  #    Test shards 1-4  (JEST_SKIP_RATCHETS=1)  1386 test files
+  #    Test shards 1-4  (node + jsdom projects)  1386 test files
   #    Ratchets         (guards+guardrails+contracts, minus
   #                      rls-coverage, which stays in the shards)
   #                                              654 test files

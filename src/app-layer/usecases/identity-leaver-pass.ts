@@ -976,6 +976,16 @@ export async function runIdentityLeaverPass(input: {
     // including rows a named admin caused. `buildDelegatedJobContext` exists
     // for exactly this shape of work, and every write below inherits the
     // attribution without another parameter to forget.
+    // ACCEPTED, NOT OVERLOOKED (#4388, owner decision 2026-10-26). The route
+    // that queues this asserts `admin.tenant_lifecycle`, so no under-privileged
+    // user reaches it. But that check happens at ENQUEUE and is never repeated
+    // HERE: a pass queued by somebody since demoted or removed still runs, with
+    // full ADMIN, attributed to them. `resolveMemberContext` is the primitive
+    // that would close it and refuse instead -- and refusing a leaver pass
+    // leaves a departing employee's accounts enabled, which is the quiet
+    // compliance miss this codebase treats as worse than the over-grant.
+    // Closing it properly needs the per-tenant SYSTEM `User` row (#4400), so
+    // the borrow is unnecessary at all and the refusal costs nothing.
     const ctx = input.requestedByUserId
         ? buildDelegatedJobContext({
               tenantId: input.tenantId,

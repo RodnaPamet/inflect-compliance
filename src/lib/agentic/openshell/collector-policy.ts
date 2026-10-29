@@ -98,8 +98,83 @@ const PROVIDER_ENDPOINTS: Readonly<Record<CollectorProvider, ReadonlyArray<{ hos
         { host: 'management.azure.com', reason: 'the ARM control plane every azure_compliance control reads' },
         { host: 'login.microsoftonline.com', reason: 'token acquisition for the service principal' },
     ],
+    //
+    // ═══ EXPLICIT PER-SERVICE, NOT `*.googleapis.com` (4.1, #3961) ═══
+    //
+    // DERIVED, not guessed. The GCP collector runs Powerpipe over the steampipe
+    // GCP plugin, and that plugin builds every API client it will ever use in
+    // one file — `gcp/service.go` — so the services it queries are enumerable
+    // from its imports: 35 under `google.golang.org/api/<service>/v*` plus
+    // `aiplatform` and `redis` under `cloud.google.com/go`. A cross-check
+    // against its 123 `table_gcp_*.go` files found no service family outside
+    // that set.
+    //
+    // 4.1 recorded that the per-service host set "is not derivable from this
+    // repository", and that stays true — it is derivable from the PLUGIN's
+    // repository, which is a different claim and the one that closes this.
+    //
+    // ═══ WHAT THIS CLOSES, AND THE HALF IT CANNOT ═══
+    //
+    // 4.4 (#4409) pinned that `*.googleapis.com` admitted two inference hosts.
+    // The explicit list drops `generativelanguage.googleapis.com` outright.
+    //
+    // It CANNOT drop `aiplatform.googleapis.com`, and the reason is worth
+    // stating rather than leaving as an apparent oversight: the plugin has
+    // Vertex AI tables and audits its configuration, and Vertex AI serves
+    // configuration reads and `:predict` / `:generateContent` inference ON THE
+    // SAME HOST. So no host-level allowlist can permit the audit and deny the
+    // inference — they are one origin. Closing that needs an L7 rule on method
+    // and path, which this gateway does support
+    // (`host:port:METHOD:path_glob`), and which needs a real run's paths to
+    // write safely. Recorded as the residual rather than implied away.
+    //
+    // ═══ THE FAILURE MODE IF THIS LIST IS WRONG ═══
+    //
+    // A service the plugin needs and this list omits makes that query fail,
+    // which fails the collection CLOSED — `ERROR`, never a quiet `PASSED` —
+    // because that is the existing check semantics. So an incomplete list is
+    // observable rather than silent, which is what makes narrowing from a
+    // derived set an acceptable risk instead of a guess.
     gcp: [
-        { host: '*.googleapis.com', reason: 'service APIs the benchmark queries' },
+        { host: 'accessapproval.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'alloydb.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'apikeys.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'appengine.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'artifactregistry.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'bigquery.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'bigtableadmin.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'billingbudgets.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'cloudasset.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'cloudbilling.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'cloudfunctions.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'cloudidentity.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'cloudkms.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'cloudresourcemanager.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'composer.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'compute.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'container.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'dataplex.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'dataproc.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'dns.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'essentialcontacts.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'firestore.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'iam.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'logging.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'metastore.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'monitoring.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'pubsub.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'run.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'secretmanager.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'serviceusage.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'sqladmin.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'storage.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'tpu.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'vpcaccess.googleapis.com', reason: 'queried by the GCP plugin' },
+        { host: 'workstations.googleapis.com', reason: 'queried by the GCP plugin' },
+        // Vertex AI: audited for configuration, and the same origin serves
+        // inference. See the note above — this entry is the residual.
+        { host: 'aiplatform.googleapis.com', reason: 'Vertex AI config audited; same origin serves inference (L7 residual)' },
+        { host: 'redis.googleapis.com', reason: 'queried by the GCP plugin' },
         { host: 'oauth2.googleapis.com', reason: 'token acquisition for the service account' },
     ],
 };

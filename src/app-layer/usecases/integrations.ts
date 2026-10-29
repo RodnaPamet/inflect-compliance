@@ -1583,7 +1583,15 @@ export async function getConnectionsHealth(ctx: RequestContext) {
     return runInTenantContext(ctx, async (db) => {
         const connections = await db.integrationConnection.findMany({
             where: { tenantId: ctx.tenantId, isEnabled: true },
-            select: { id: true, provider: true, name: true, createdAt: true, lastTestedAt: true, lastTestStatus: true },
+            select: {
+                id: true, provider: true, name: true, createdAt: true,
+                lastTestedAt: true, lastTestStatus: true,
+                // #4389 — a connection whose sync has nobody to run as. Read
+                // from the CONNECTION, not from executions: a connection in
+                // this state produces no execution rows at all, which is
+                // exactly why it was invisible.
+                syncBlockedAt: true, syncBlockedReason: true,
+            },
             orderBy: [{ provider: 'asc' }, { name: 'asc' }],
             take: 500,
         });
@@ -1664,6 +1672,10 @@ export async function getConnectionsHealth(ctx: RequestContext) {
                 secondsSinceActivity,
                 lastTestedAt: c.lastTestedAt ? c.lastTestedAt.toISOString() : null,
                 lastTestStatus: c.lastTestStatus,
+                // A machine token, not a sentence — the UI owns the words, so
+                // the copy can change without a migration (#4389).
+                syncBlockedAt: c.syncBlockedAt ? c.syncBlockedAt.toISOString() : null,
+                syncBlockedReason: c.syncBlockedReason,
             };
         });
 
@@ -1671,6 +1683,10 @@ export async function getConnectionsHealth(ctx: RequestContext) {
             connections: rows,
             staleThresholdSeconds: CONNECTION_STALE_AFTER_SECONDS,
             staleCount: rows.filter((r) => r.isStale).length,
+            // Counted separately from `staleCount` because the two need
+            // different actions: a stale connection may just be quiet, a
+            // blocked one needs somebody's permissions changed (#4389).
+            blockedCount: rows.filter((r) => r.syncBlockedAt != null).length,
             generatedAt: new Date(now).toISOString(),
         };
     });

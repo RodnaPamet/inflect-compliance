@@ -146,6 +146,20 @@ model IntegrationConnection {
   // cleared on every successful sync. See integrations/connection-health.ts.
   authFailedAt      DateTime?
   authFailureReason String?
+  // Why a background sync cannot RUN AT ALL, as opposed to running and being
+  // rejected. The scheduled SharePoint delta sync borrows a member to act as,
+  // and a workspace with no active Owner or Admin who may upload evidence
+  // leaves it with nobody to attribute the evidence to — so the connection is
+  // never queued and the admin is told nothing (#4389).
+  //
+  // A SEPARATE pair from authFailure* for the reason that pair is separate
+  // from lastTested*: a revoked credential and a permissions configuration are
+  // different facts with different fixes, and one field would let either paper
+  // over the other. Cleared whenever a sync IS queued, on the same argument
+  // clearAuthFailure rests on — a banner that outlives its cause teaches
+  // people to ignore it. See integrations/connection-health.ts.
+  syncBlockedAt     DateTime?
+  syncBlockedReason String?
   // Per-connection sync LEASE. One sync at a time per connection: two
   // concurrent SharePoint delta syncs replay the same change set and each
   // create a fresh Evidence row for the same file (only the mapping is

@@ -9,7 +9,11 @@
  */
 import prisma from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
-import { initiatorAuthority, resolveInitiatorContext } from '@/app-layer/context-system';
+import {
+    initiatorAuthority,
+    resolveInitiatorContext,
+    resolveKeyInitiatorContext,
+} from '@/app-layer/context-system';
 import type { PermissionSet } from '@/lib/permissions';
 import { runSharePointDeltaSync } from '@/app-layer/integrations/providers/sharepoint/import';
 import { enqueue } from './queue';
@@ -19,6 +23,7 @@ import type { SharePointDeltaSyncPayload, SharePointDeltaSyncDispatchPayload } f
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 import { runInTenantContext } from '@/lib/db-context';
 import { acquireSyncLock, releaseSyncLock } from '@/app-layer/integrations/connection-lock';
+import { markSyncBlocked, clearSyncBlocked } from '@/app-layer/integrations/connection-health';
 
 /**
  * Whether a member's resolved permissions let them run a delta sync: the key
@@ -48,13 +53,42 @@ export type DeltaSyncUnroutableReason = keyof typeof DELTA_SYNC_UNROUTABLE;
  * authority a request from them gets, custom role included (#4362). For a
  * manual sync the actor is whoever clicked "Sync now"; for a scheduled one it
  * is the member the dispatcher below picked.
+ *
+ * A sync requested with an API KEY runs as that key AND its user
+ * (`resolveKeyInitiatorContext`, the shape #4382 settled for the evidence
+ * import). The route checked the key — its scopes, its tenant, its liveness —
+ * and then queued a job that rebuilt the user's WHOLE membership, so a key
+ * holding `evidence:write` and nothing else had the sync run with everything
+ * its creator may do, and a key revoked while the job waited did not stop it
+ * (#4386). The key is read again here, by id, and the job holds the
+ * conjunction: never more than either term.
+ *
+ * A payload with no key id runs as the member, unchanged. That covers a session
+ * request, EVERY scheduled run — the dispatcher borrows a member and no key is
+ * involved — and any payload queued before the route carried the id.
  */
-async function buildJobContext(tenantId: string, actorUserId: string): Promise<RequestContext> {
-    const ctx = await resolveInitiatorContext({
-        tenantId,
-        userId: actorUserId,
-        requestId: `sharepoint-delta-sync-${tenantId}`,
-    });
+async function buildJobContext(payload: SharePointDeltaSyncPayload): Promise<RequestContext> {
+    const { tenantId, actorUserId } = payload;
+    const requestId = payload.requestId ?? `sharepoint-delta-sync-${tenantId}`;
+
+    if (payload.apiKeyId) {
+        const resolved = await resolveKeyInitiatorContext({
+            tenantId,
+            userId: actorUserId,
+            apiKeyId: payload.apiKeyId,
+            requestId,
+        });
+        if (!resolved.ok) {
+            // Named, because an operator has to tell a revoked key from a key
+            // belonging to somebody else, and the job does no work either way.
+            throw new Error(
+                `sharepoint-delta-sync: API key ${payload.apiKeyId} that started this sync is refused (${resolved.reason}) on tenant ${tenantId}`,
+            );
+        }
+        return resolved.ctx;
+    }
+
+    const ctx = await resolveInitiatorContext({ tenantId, userId: actorUserId, requestId });
     if (!ctx) {
         throw new Error(`sharepoint-delta-sync: user ${actorUserId} is not an active member of tenant ${tenantId}`);
     }
@@ -62,7 +96,7 @@ async function buildJobContext(tenantId: string, actorUserId: string): Promise<R
 }
 
 export async function runSharePointDeltaSyncJob(payload: SharePointDeltaSyncPayload) {
-    const ctx = await buildJobContext(payload.tenantId, payload.actorUserId);
+    const ctx = await buildJobContext(payload);
     // The key the "Sync now" route asks, not the coarse tier, which a custom
     // role can hold without it.
     if (!mayRunDeltaSync(ctx.appPermissions)) {
@@ -160,6 +194,27 @@ export async function runSharePointDeltaSyncDispatch(_payload: SharePointDeltaSy
         });
         return false;
     });
+
+    // Record the block ON THE CONNECTION, which is the only place an admin
+    // looks. The dispatch result and the warn line above are read by neither
+    // (#4389). Marked per reason so the two stay distinguishable, and the first
+    // observation is the one whose timestamp sticks.
+    for (const reason of Object.values(DELTA_SYNC_UNROUTABLE)) {
+        await markSyncBlocked(
+            prisma,
+            unroutable.filter((u) => u.reason === reason).map((u) => u.connectionId),
+            reason,
+        );
+    }
+    // Cleared on being ROUTABLE, not on being dispatched: the block records
+    // "nobody may run this", and an eligible actor existing is exactly what
+    // falsifies it. A throwing enqueue is a different failure with its own
+    // counter, and letting it hold this banner up would blame a Redis outage on
+    // a permissions configuration.
+    await clearSyncBlocked(
+        prisma,
+        routable.map((c) => c.id),
+    );
 
     // FOUR-hourly bucket, not daily — this dispatcher runs `0 */4 * * *`, and a
     // 24 h bucket would dedupe five of the six daily runs into a silent no-op.

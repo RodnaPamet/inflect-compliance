@@ -240,7 +240,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     // Ordered ids for the prev/next stepper beside the name — list order,
     // so stepping walks the sequence the user just saw.
     const vendorIds = useEntityListIds(CACHE_KEYS.vendors.list());
-    const { permissions } = useTenantContext();
+    const { permissions, appPermissions } = useTenantContext();
     const canWrite = permissions?.canWrite;
     const triggerUndoToast = useToastWithUndo();
     const toast = useToast();
@@ -1695,6 +1695,12 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                         entityId={params.vendorId}
                         tenantHref={tenantHref}
                         canWrite={!!canWrite}
+                        // `tasks.create` for the create affordance,
+                        // `tasks.edit` for the bulk actions behind row
+                        // selection — the two keys the server asks, which the
+                        // coarse tier alone could not express (#4415).
+                        canCreateTasks={permissions.canWrite && appPermissions.tasks.create}
+                        canEditTasks={permissions.canWrite && appPermissions.tasks.edit}
                     />
                 </div>
             )}

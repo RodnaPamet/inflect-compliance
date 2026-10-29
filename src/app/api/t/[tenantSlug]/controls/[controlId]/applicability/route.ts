@@ -1,13 +1,24 @@
-import { getTenantCtx } from '@/app-layer/context';
 import { setControlApplicability } from '@/app-layer/usecases/control';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import { SetControlApplicabilitySchema } from '@/lib/schemas';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
-export const POST = withApiErrorHandling(withValidatedBody(SetControlApplicabilitySchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string }> }, body) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const control = await setControlApplicability(ctx, params.controlId, body.applicability, body.justification ?? null);
-    return jsonResponse(control);
-}));
+type Params = { tenantSlug: string; controlId: string };
+
+/**
+ * The route gate mirrors the usecase's own (#4387).
+ *
+ * `setControlApplicability` asserts `assertCanSetApplicability` (`canWrite` + `controls.edit`), and this route carried no
+ * `requirePermission` at all — so the refusal happened inside the usecase and
+ * wrote no `AUTHZ_DENIED` row. No role gains or loses anything here: the key is
+ * the one the usecase already asks for. What changes is that a denial is now
+ * audited, and happens before the handler runs.
+ */
+export const POST = withApiErrorHandling(
+    requirePermission<Params>('controls.edit', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, SetControlApplicabilitySchema);
+        return jsonResponse(await setControlApplicability(ctx, params.controlId, body.applicability, body.justification ?? null));
+    }),
+);

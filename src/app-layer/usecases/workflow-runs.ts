@@ -58,6 +58,12 @@ import { WorkflowRunStatus } from '@prisma/client';
 
 import { runInTenantContext, runInGlobalContext } from '@/lib/db/rls-middleware';
 import { initiatorAuthority } from '@/app-layer/context-system';
+import { keyAuthorityFromScopes } from '@/lib/auth/api-key-auth';
+import {
+    intersectPermissionSets,
+    intersectPermissions,
+    lowerRole,
+} from '@/lib/agentic/agent-authority';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { failRun } from '@/lib/agentic/drivers/run-settlement';
 import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
@@ -1624,6 +1630,7 @@ export async function rebuildRunContext(row: {
     if (!membership) return null;
 
     let apiKeyScopes: string[] | undefined;
+    let keyAuthority: ReturnType<typeof keyAuthorityFromScopes> | undefined;
     if (row.triggeredViaKeyId) {
         const now = new Date();
         const key = await runInGlobalContext((db) =>
@@ -1632,6 +1639,12 @@ export async function rebuildRunContext(row: {
                     id: row.triggeredViaKeyId as string,
                     tenantId: row.tenantId,
                     revokedAt: null,
+                    // The TENANT too. `deleteTenantUnderOrg` soft-deletes a
+                    // tenant and does NOT revoke its keys, so without this an
+                    // offboarded customer's queued run resumes on a credential
+                    // no live request could use — the gap `resolveApiKeyForJob`
+                    // closes with its own `tenant_deleted` refusal (#4386).
+                    tenant: { deletedAt: null },
                     // EXPIRY COUNTS TOO. A key that lapsed while the job sat in
                     // the queue is as gone as a revoked one; only `revokedAt`
                     // would let a run continue on a credential that no live
@@ -1651,7 +1664,28 @@ export async function rebuildRunContext(row: {
         apiKeyScopes = Array.isArray(key.scopes)
             ? key.scopes.filter((v): v is string => typeof v === 'string')
             : [];
+        // The scopes are AUTHORITY, not just a list to check tools against.
+        //
+        // They were carried on the context and nothing else: the run's role,
+        // coarse flags and granular set came from the membership alone, so a
+        // step calling a usecase directly ran with everything the member may do
+        // and the key bound only where something happened to read
+        // `apiKeyScopes`. A key scoped `risks:read` could have its run edit a
+        // control because its creator could (#4386).
+        keyAuthority = keyAuthorityFromScopes(apiKeyScopes);
     }
+
+    const member = initiatorAuthority(membership);
+    // key now ∧ the principal's membership now — the conjunction
+    // `resolveKeyInitiatorContext` applies to a job a key queued, applied here
+    // to a run a key started. Never more than either term.
+    const authority = keyAuthority
+        ? {
+              role: lowerRole(member.role, keyAuthority.role),
+              permissions: intersectPermissions(member.permissions, keyAuthority.permissions),
+              appPermissions: intersectPermissionSets(member.appPermissions, keyAuthority.appPermissions),
+          }
+        : member;
 
     return {
         // Correlates every log line and audit row of this attempt back to the
@@ -1660,8 +1694,9 @@ export async function rebuildRunContext(row: {
         userId: row.startedByUserId,
         tenantId: row.tenantId,
         // The principal's authority exactly as a request resolves it, custom
-        // role and coarse flags included (`initiatorAuthority`, #4362).
-        ...initiatorAuthority(membership),
+        // role and coarse flags included (`initiatorAuthority`, #4362) —
+        // intersected with the key's when a key started the run (#4386).
+        ...authority,
         // NOT `actorType: 'JOB'`. The worker is only where this runs; the run
         // was asked for by a person or a key, and the audit trail must keep
         // saying so or a review cannot tell an agent's work from a sweep's.

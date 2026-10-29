@@ -82,7 +82,18 @@ services:
   # is NOT auto-updated by Watchtower (no enable label) and should be
   # activated deliberately by an operator.
   pipelock:
-    image: ghcr.io/luckypipewrench/pipelock:latest # pin to a digest before enabling
+    # PINNED 2026-10-27 (#3967). The MANIFEST LIST digest
+    # (manifest.list.v2+json), not a platform digest: the list covers
+    # linux/amd64 AND linux/arm64, so the same reference resolves on the
+    # production VM and on an arm64 workstation. A platform digest would
+    # pin one and break the other.
+    #
+    # The tag said "pin to a digest before enabling", and
+    # `runtime-image-pinning` baselined this image as UNENABLED rather than
+    # reviewed, deferring the pin to "the moment that comment has to be
+    # honoured". This is that moment. Pinning does not ENABLE the service —
+    # it removes one of the two reasons it cannot be.
+    image: ghcr.io/luckypipewrench/pipelock@sha256:20402f0df5d2fb3ef50dadd8f70f758b49d878c3d90b2797eaadcb0f2f0c2ebd
     restart: unless-stopped
     depends_on:
       - app

@@ -52,10 +52,26 @@ interface LinkedTasksPanelProps {
     entityId: string;
     tenantHref: (path: string) => string;
     /**
-     * When true, surface the create affordance + row multi-select.
-     * READER roles see only the read-only table.
+     * The write tier. On its own it surfaces both affordances below, which is
+     * what every caller did before #4415 — kept as the DEFAULT for the two
+     * keys, so a caller that passes only this is unchanged.
      */
     canWrite?: boolean;
+    /**
+     * `tasks.create`, which is what the create affordance's POST is gated on
+     * (`assertCanCreateTask`). Defaults to `canWrite`.
+     *
+     * Separate from the key below because the two are separately grantable: a
+     * custom role may hold one without the other, and this panel offered both
+     * affordances on the coarse tier alone — so such a role was shown a create
+     * it would be refused, or bulk actions it would be refused (#4415).
+     */
+    canCreateTasks?: boolean;
+    /**
+     * `tasks.edit`, which is what the BULK ACTIONS behind row selection are
+     * gated on (`assertCanWriteTasks`). Defaults to `canWrite`.
+     */
+    canEditTasks?: boolean;
 }
 
 export default function LinkedTasksPanel({
@@ -64,6 +80,8 @@ export default function LinkedTasksPanel({
     entityId,
     tenantHref,
     canWrite = false,
+    canCreateTasks = canWrite,
+    canEditTasks = canWrite,
 }: LinkedTasksPanelProps) {
     const guardedPush = useGuardedPush();
     const t = useTranslations('panels');
@@ -117,7 +135,9 @@ export default function LinkedTasksPanel({
         entityType === 'CONTROL'
             ? entityType
             : null;
-    const showCreate = canWrite && canonicalEntityType !== null;
+    // `tasks.create`, not the coarse tier: the create modal POSTs a task and
+    // the server asks that key (#4415).
+    const showCreate = canCreateTasks && canonicalEntityType !== null;
 
     // Columns mirror the Tasks page table so this tab reads identically.
     const columns = useMemo(
@@ -235,7 +255,9 @@ export default function LinkedTasksPanel({
                 loading={loading}
                 // Same UX as the global Tasks table: row select +
                 // navigate to the full task detail page on click.
-                selectionEnabled={canWrite}
+                // Selection is what reveals the bulk actions, and those ask
+                // `tasks.edit` (#4415).
+                selectionEnabled={canEditTasks}
                 onRowClick={(row) =>
                     guardedPush(tenantHref(`/tasks/${row.original.id}`))
                 }

@@ -61,12 +61,18 @@ const tenantFindUnique = jest.fn();
 const tenantUpdate = jest.fn();
 const queryRawUnsafe = jest.fn();
 const executeRawUnsafe = jest.fn();
+const apiKeyFindUnique = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         tenant: {
             findUnique: (...args: unknown[]) => tenantFindUnique(...args),
             update: (...args: unknown[]) => tenantUpdate(...args),
+        },
+        // The job re-reads the key it was requested with (#4386).
+        tenantApiKey: {
+            findUnique: (...args: unknown[]) => apiKeyFindUnique(...args),
+            update: jest.fn(),
         },
         $queryRawUnsafe: (...args: unknown[]) => queryRawUnsafe(...args),
         $executeRawUnsafe: (...args: unknown[]) => executeRawUnsafe(...args),
@@ -75,6 +81,10 @@ jest.mock('@/lib/prisma', () => ({
         tenant: {
             findUnique: (...args: unknown[]) => tenantFindUnique(...args),
             update: (...args: unknown[]) => tenantUpdate(...args),
+        },
+        tenantApiKey: {
+            findUnique: (...args: unknown[]) => apiKeyFindUnique(...args),
+            update: jest.fn(),
         },
         $queryRawUnsafe: (...args: unknown[]) => queryRawUnsafe(...args),
         $executeRawUnsafe: (...args: unknown[]) => executeRawUnsafe(...args),
@@ -350,5 +360,91 @@ describe('runKeyRotation — audit + observability', () => {
         expect(second.action).toBe('KEY_ROTATION_COMPLETED');
         expect(second.metadataJson).toHaveProperty('dekRewrapped', true);
         expect(second.metadataJson).toHaveProperty('totalScanned');
+    });
+});
+
+/**
+ * The grant that authorised the rotation must still hold when it runs (#4386).
+ *
+ * `POST /admin/key-rotation` admits an `admin:write` key, and the rotation sits
+ * in a queue. A key revoked or expired in between no longer authorises the
+ * request that queued it.
+ *
+ * LIVENESS ONLY. Unlike the other key-started jobs, this one acts with no
+ * authority to narrow — it is a system act that does one fixed thing and reads
+ * no permission — so there is no conjunction to apply, and the initiator's
+ * membership is deliberately not a term: a rotation stopping because the admin
+ * who asked has since left would leave keys unrotated.
+ */
+describe('runKeyRotation — the key that requested it is re-checked', () => {
+    const liveKey = (over: Record<string, unknown> = {}) => ({
+        id: 'key-1',
+        tenantId: 'tenant-A',
+        createdById: 'user-admin',
+        scopes: ['admin:write'],
+        revokedAt: null,
+        expiresAt: null,
+        agentId: null,
+        maxAutonomyLevel: null,
+        tenant: { slug: 'acme', deletedAt: null },
+        ...over,
+    });
+
+    const KEY_OPTS = { tenantId: 'tenant-A', initiatedByUserId: 'user-admin', apiKeyId: 'key-1' };
+
+    beforeEach(() => {
+        tenantFindUnique.mockResolvedValue({ encryptedDek: wrapDek(generateDek()) });
+        queryRawUnsafe.mockImplementation(async () => []);
+    });
+
+    test('a session request never reads a key at all', async () => {
+        await runKeyRotation({ tenantId: 'tenant-A', initiatedByUserId: 'user-admin' });
+
+        expect(apiKeyFindUnique).not.toHaveBeenCalled();
+    });
+
+    test('a live key rotates as before', async () => {
+        apiKeyFindUnique.mockResolvedValue(liveKey());
+
+        const result = await runKeyRotation(KEY_OPTS);
+
+        expect(result.dekRewrapped).toBe(true);
+    });
+
+    test('a REVOKED key stops it, and names the reason', async () => {
+        apiKeyFindUnique.mockResolvedValue(liveKey({ revokedAt: new Date() }));
+
+        await expect(runKeyRotation(KEY_OPTS)).rejects.toThrow(
+            /API key key-1 that requested this rotation is refused \(revoked\)/,
+        );
+    });
+
+    test('an EXPIRED key stops it', async () => {
+        apiKeyFindUnique.mockResolvedValue(liveKey({ expiresAt: new Date(Date.now() - 60_000) }));
+
+        await expect(runKeyRotation(KEY_OPTS)).rejects.toThrow(/refused \(expired\)/);
+    });
+
+    test('a key from another tenant stops it', async () => {
+        apiKeyFindUnique.mockResolvedValue(liveKey({ tenantId: 'tenant-B' }));
+
+        await expect(runKeyRotation(KEY_OPTS)).rejects.toThrow(/refused \(other_tenant\)/);
+    });
+
+    test('a key whose tenant was soft-deleted stops it', async () => {
+        apiKeyFindUnique.mockResolvedValue(liveKey({ tenant: { slug: 'acme', deletedAt: new Date() } }));
+
+        await expect(runKeyRotation(KEY_OPTS)).rejects.toThrow(/refused \(tenant_deleted\)/);
+    });
+
+    test('the refusal happens BEFORE any work — no re-wrap, no audit start', async () => {
+        apiKeyFindUnique.mockResolvedValue(liveKey({ revokedAt: new Date() }));
+
+        await expect(runKeyRotation(KEY_OPTS)).rejects.toThrow(/refused/);
+
+        // The point of the check: a rotation that half-ran on a dead grant is
+        // worse than one that did not start.
+        expect(tenantUpdate).not.toHaveBeenCalled();
+        expect(appendAuditEntryMock).not.toHaveBeenCalled();
     });
 });

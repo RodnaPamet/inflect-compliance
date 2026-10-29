@@ -608,7 +608,14 @@ const HIGH_MULTIPLICITY = 5;
 // the whole-file assertions over them in `observability-infra`,
 // `epic19-coherence` and the two `oi-3-*` guards: thirteen ambiguous needles.
 // Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1147;
+//
+// 1147 -> 1139 on 2026-10-27. `control-exception-api`'s route assertions were
+// re-pinned while #4387 gave those routes a `requirePermission`: four bare
+// `'parseJsonBody'` and four bare schema names became four needles naming the
+// CALL (`await parseJsonBody(req, ApproveExceptionSchema)`), and the
+// five-route `getTenantCtx` loop became one assertion naming its call. Eight
+// ambiguous needles fewer. Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1139;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
@@ -734,7 +741,12 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1147;
 //   165 -> 159 (2026-10-26). Six of the thirteen needles that left with
 //   `infra/alerts/rules.yml` and `infra/dashboards/` (see the ambiguous
 //   baseline above) had five or more satisfying positions. Measured.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 159;
+//
+//   159 -> 158 (2026-10-27). #4387's UI half re-bounded
+//   `control-task-create-modal`'s window on the ELEMENT's own end instead of a
+//   fixed 400 characters, which also narrowed its needle from one satisfied in
+//   several places to one satisfied in the panel's props alone. Measured.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 158;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -1203,8 +1215,31 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 159;
     `epic19-coherence` and the `oi-3-*` guards that the analyser could not
     resolve: values parsed out of the JSON and YAML, and reads sliced between
     two `- alert:` markers. Measured.
+
+    1386 -> 1388 (2026-10-27): the D4 split block in
+    `agent-action-receipt.test.ts` (#3967) adds four assertions that are not
+    whole-file reads — an import-reach check, two parsed-endpoint checks and a
+    directory-completeness check — so `not-a-file-read` grows by two. Measured:
+    main is green at 1386, this tree measures 1388.
+
+    WORTH RECORDING WHY IT IS NOT A READ. The property is that an OpenShell
+    module reaches no MCP surface, and the first three attempts asserted it over
+    source text. A NEGATIVE whole-file assertion has to mask comments — this
+    directory's docblocks discuss MCP precisely because it is absent — and
+    masking is what Class D scores as `content-transformed`. So Class A requires
+    the masking Class D penalises, and the figure moved 1386 -> 1388 -> 1390 ->
+    1391 across constant paths and `it.each` before the shape changed.
+
+    Importing the modules and inspecting what came with them needs no read, no
+    needle and no mask, and it catches a TRANSITIVE import that no scan of those
+    three files would. That is the same trade the note above this one makes:
+    the better test, at the cost of a count.
 */
-const UNANALYSABLE_READ_BASELINE = 1386;
+// 1388 -> 1387 on 2026-10-27. #4387's route gates collapsed
+// `control-exception-api`'s five-route `getTenantCtx` loop into one assertion
+// naming the call, so one whole-file read over an un-analysable slice is gone.
+// Measured.
+const UNANALYSABLE_READ_BASELINE = 1387;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

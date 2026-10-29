@@ -1762,8 +1762,10 @@ export default function TaskDetailPage() {
                         // Its assignee picker POSTs to `/tasks/:id/assign`
                         // (`tasks.assign`). The form variant shows no
                         // evidence box; its gate is passed so it holds if
-                        // one is ever shown here.
-                        canUploadEvidence={canUploadTaskEvidence}
+                        // one is ever shown here — as the two facts the panel
+                        // ANDs, rather than pre-combined (#4389).
+                        canUploadEvidence={appPermissions.evidence.upload}
+                        canWriteTier={!!permissions.canWrite}
                         canAssign={canAssignTask}
                         onSaved={() => void taskQuery.mutate()}
                     />

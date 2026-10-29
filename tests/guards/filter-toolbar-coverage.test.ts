@@ -25,6 +25,8 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { codeOf } from "../helpers/source-blocks";
+
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIR = "src/app";
 
@@ -212,9 +214,32 @@ describe("FilterToolbar coverage", () => {
     it("every file mounting <DataTable> either mounts <FilterToolbar> or is in EXEMPTIONS", () => {
         const violations: Violation[] = [];
         for (const file of walk(path.join(ROOT, SCAN_DIR))) {
-            const content = fs.readFileSync(file, "utf8");
-            if (!/<DataTable\b/.test(content)) continue;
-            if (/FilterToolbar/.test(content)) continue;
+            // CODE, NOT PROSE, and a MOUNT, not a mention (#4356).
+            //
+            // This read used to be `/FilterToolbar/.test(content)` — a bare
+            // substring over the raw file — so an IMPORT line satisfied it, and
+            // so would a comment arguing the page should not use the toolbar.
+            // The test's own name says "mounting".
+            //
+            // Found by mutation: deleting the `<FilterToolbar>` mount from a
+            // page left this green, because the import stayed. That is the
+            // whole of the defect.
+            //
+            // CORRECTION, because the original version of this comment got the
+            // consequence wrong and shipped. It said
+            // `controls/templates/page.tsx` and `admin/members/page.tsx` were
+            // "exempt invisibly without appearing in EXEMPTIONS". They are both
+            // IN `EXEMPTIONS` (above), each with a written reason, and that is
+            // what passes them — the `rel in EXEMPTIONS` check three lines
+            // down, not their incidental mention of the toolbar. Nobody was
+            // exempt invisibly. The bad read was real; the pages named as its
+            // victims were not.
+            //
+            // `<EntityListPage>` counts because it mounts the toolbar itself —
+            // the same alternative `list-page-shell-coverage` accepts.
+            const code = codeOf(fs.readFileSync(file, "utf8"));
+            if (!/<DataTable\b/.test(code)) continue;
+            if (/<FilterToolbar\b/.test(code) || /<EntityListPage\b/.test(code)) continue;
             const rel = path.relative(ROOT, file);
             if (rel in EXEMPTIONS) continue;
             violations.push({ file: rel });
@@ -241,8 +266,13 @@ describe("FilterToolbar coverage", () => {
             }
             // The file must still mount DataTable, otherwise the
             // exemption is stale (the file was refactored, etc.).
-            const content = fs.readFileSync(full, "utf8");
-            expect(content).toMatch(/<DataTable\b/);
+            //
+            // On CODE, for the same reason as the scan above (#4356): a
+            // commented-out `<DataTable>` would keep an exemption alive for a
+            // page that no longer has a table to exempt. Measured free when
+            // tightened — no exempt file's `<DataTable>` lives only in a
+            // comment.
+            expect(codeOf(fs.readFileSync(full, "utf8"))).toMatch(/<DataTable\b/);
         }
     });
 

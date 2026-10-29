@@ -29,6 +29,10 @@
  * skills' manifest.
  */
 import { REPORTING_CHANNELS } from '@/app-layer/usecases/sandbox-runtime-config';
+import { collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
+import { REPO_ROOT, repoRelativeFiles } from '../helpers/repo-files';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 /**
  * Every reporting-related `OPENSHELL_*` variable the v0.1.5 gateway defines.
@@ -99,5 +103,339 @@ describe('the reporting channels match the runtime that has them', () => {
             'OPENSHELL_MADE_UP',
         ]);
         expect(RUNTIME_REPORTING_VARS.filter((v) => !['OPENSHELL_OCSF_JSON'].includes(v)).length).toBe(6);
+    });
+});
+
+/**
+ * 5.3 (#3973) — AN UPGRADE MUST FAIL A TEST, NOT AN AUDIT.
+ *
+ * The block above ends by saying "re-pinning the release means re-reading the
+ * vocabulary, which is the same discipline as the vendored skills' manifest".
+ * That sentence was true as an intention and enforced by nothing. The release
+ * appeared in this repository 34 times across 13 files, every one of them as
+ * PROSE — and prose does not fail. Somebody could bump the gateway and leave
+ * every recorded measurement describing a version no longer in use, with a
+ * green build.
+ *
+ * ═══ WHY THE ENFORCEMENT DEFAULT IS THE FACT THAT MATTERS ═══
+ *
+ * #3927 calls it "the most consequential fact in the roadmap", and the
+ * measurement confirmed the third-party report: an endpoint with `enforcement`
+ * unset runs in AUDIT mode. `NETWORK_ENFORCEMENT_MODE_UNSPECIFIED` is zero on
+ * the wire and documented as "log violations and allow traffic", so an endpoint
+ * that omits the field, one whose field a proxy dropped, and one explicitly set
+ * to audit are the same bytes — and all three allow the traffic they appear to
+ * forbid.
+ *
+ * Every verdict the scanner and the skill derive from a policy rests on that.
+ * A release that changed it — making the zero value deny, or renaming the enum
+ * so our explicit value stops matching — would silently invert what a policy
+ * means, and the issue is explicit about where that discovery should happen:
+ * in CI, not in a client's estate.
+ *
+ * ═══ THE MECHANISM, AND WHY IT IS A VERSION CHECK ═══
+ *
+ * A test cannot read the default out of a release: the honest source is the
+ * gateway binary, and the block above already records why this file refuses to
+ * shell out to one — it would pass or fail on whether a developer happened to
+ * have a release unpacked, which is not a property of this repository.
+ *
+ * So each fact carries the release it was VERIFIED AGAINST, and the pin is a
+ * constant rather than a sentence. Move the pin and every fact's provenance is
+ * stale, which fails here by name. The upgrade is then blocked until somebody
+ * re-measures and re-records — which is precisely the "re-verify the phase 0.1
+ * facts" bullet, enforced instead of requested.
+ */
+const PINNED_RELEASE = '0.1.5';
+
+/** `0.1.5` -> [0,1,5], so releases compare as numbers and not as strings. */
+const semver = (v: string): number[] => v.replace(/^v/, '').split('.').map((n) => Number(n));
+const newerThan = (a: string, b: string): boolean => {
+    const [x, y] = [semver(a), semver(b)];
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+        if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+    }
+    return false;
+};
+
+/**
+ * The phase 0.1 facts that were ESTABLISHED, each against a release.
+ *
+ * Only the closed ones. Listing an open question here with a `verifiedAgainst`
+ * would be the exact failure this guard exists to prevent — a record that reads
+ * as measured when it is not.
+ */
+/**
+ * A release newer than the pin that we KNOW about and have deliberately not
+ * adopted, with the reason.
+ *
+ * ═══ WHY THIS EXISTS, AND WHY IT IS NOT A HOLE IN THE SCAN BELOW ═══
+ *
+ * The scan asks that nothing claim a release newer than the pin, to catch the
+ * half-done upgrade — a version bumped in one place while every recorded
+ * measurement stayed behind. Without this register it also forbids something
+ * valuable: WRITING DOWN that an upgrade exists while the decision to take it
+ * is still open.
+ *
+ * That is backwards. 0.1f (#3931) found v0.1.6 the day after it shipped, and
+ * under the original scan the only way to record the finding was to perform the
+ * upgrade — so the cheapest path was to say nothing, which is the state this
+ * whole guard exists to prevent. A discovery should be recordable before it is
+ * actioned, and an entry here is the record.
+ *
+ * It is NOT an exemption. An entry must name the version, the date it was seen
+ * and why it is not adopted; the scan still refuses any newer version that is
+ * NOT registered; and the entry does not relax the fact provenance above, so
+ * moving `PINNED_RELEASE` still reddens every fact until it is re-measured.
+ */
+const KNOWN_NEWER_RELEASES: ReadonlyArray<{
+    readonly version: string;
+    readonly seen: string;
+    readonly reason: string;
+}> = [
+    {
+        version: '0.1.6',
+        seen: '2026-10-29',
+        reason:
+            'Released 2026-10-27, found while answering 0.1f (#3931). Not adopted: ' +
+            "taking it runs 5.3's checklist in full — re-measure every phase 0.1 " +
+            'fact against it, re-resolve the driver digests, re-pin the vendored ' +
+            'skills — and that is its own piece of work, not a side effect of a ' +
+            'spike answer.',
+    },
+] as const;
+
+const VERIFIED_FACTS = [
+    {
+        id: '0.1a',
+        issue: 3926,
+        verifiedAgainst: '0.1.5',
+        fact: 'policy schema version 2; filesystem_policy/landlock/process are static, network_policies is dynamic',
+    },
+    {
+        id: '0.1b',
+        issue: 3927,
+        verifiedAgainst: '0.1.5',
+        fact: 'enforcement unset runs in AUDIT mode — UNSPECIFIED is zero on the wire and logs-and-allows',
+    },
+    {
+        id: '0.1d',
+        issue: 3929,
+        verifiedAgainst: '0.1.5',
+        fact: 'the dropped-tool MCP rule defect is NOT established as fixed: upstream #4679 is open, and the release exposes no proposal flow and no policy-body read to observe it',
+    },
+    {
+        id: '0.1e',
+        issue: 3930,
+        verifiedAgainst: '0.1.5',
+        fact: 'telemetry is ON by default and event-driven; OPENSHELL_TELEMETRY_ENABLED=false turns it off completely (3013 bytes vs 0, reproduced, same activity)',
+    },
+    {
+        id: '0.1g',
+        issue: 3932,
+        verifiedAgainst: '0.1.5',
+        fact: 'the OCSF log records no sandbox lifecycle decision — created, policy changed, network denied and deleted all produce zero records; deletion is recoverable from neither the log nor the API afterwards',
+    },
+    {
+        id: '0.1f',
+        issue: 3931,
+        verifiedAgainst: '0.1.5',
+        fact: 'there is no NVIDIA-published JS SDK; the official SDK is Python (requires_python >=3.11), so no flue-style isolation applies',
+    },
+    {
+        id: '0.1c',
+        issue: 3928,
+        verifiedAgainst: '0.1.5',
+        fact: 'landlock best_effort is the default; hard_requirement refuses to start rather than skipping paths',
+    },
+] as const;
+
+/**
+ * Still open, and deliberately carrying no release.
+ *
+ * 0.1e is worth a word: 4.3 (#3964) measured that the telemetry setting's
+ * effect is NOT observable — the variable is absent from `--help`, an invalid
+ * value is accepted silently, and three traced runs were indistinguishable. So
+ * "can telemetry be turned off completely" is not merely unanswered, there is
+ * evidence that answering it from outside the process may not be possible.
+ */
+const OPEN_QUESTIONS: ReadonlyArray<{
+    readonly id: string;
+    readonly issue: number;
+    readonly question: string;
+}> = [
+    // EMPTY, and that is the point: every phase 0.1 question is answered, each
+    // against the pinned release. The list stays rather than being deleted
+    // because the exhaustiveness check below reads both halves, and because an
+    // upgrade can reopen a question — moving an entry back here is how that is
+    // recorded.
+] as const;
+
+describe('an upgrade fails a test rather than an audit (#3973)', () => {
+    it('every established fact was verified against the release that is pinned', () => {
+        // THE FORCING FUNCTION. Bump `PINNED_RELEASE` and this fails, naming
+        // each fact whose provenance went stale, until somebody re-measures.
+        expect(VERIFIED_FACTS.length).toBeGreaterThanOrEqual(3);
+        const stale = VERIFIED_FACTS.filter((f) => f.verifiedAgainst !== PINNED_RELEASE).map(
+            (f) => `${f.id} (#${f.issue}) verified against ${f.verifiedAgainst}`,
+        );
+        expect(stale).toEqual([]);
+    });
+
+    it('no open question is recorded as an established fact', () => {
+        // The two lists must stay disjoint, or an unanswered question acquires
+        // a provenance it never had. 0.1d and 0.1e are the ones at risk: both
+        // have partial evidence, which is the state most easily mistaken for an
+        // answer.
+        // `Set<string>`, not the inferred literal union. `as const` on both
+        // lists makes the ids literal types, and tsc then REJECTED
+        // `verified.has(q.id)` outright — proof that the two lists are disjoint
+        // today, which is a nice guarantee and not the one this test wants: it
+        // evaporates the moment somebody adds the overlap, which is exactly the
+        // mistake worth catching. So the comparison is widened deliberately.
+        const verified = new Set<string>(VERIFIED_FACTS.map((f) => f.id));
+        expect(OPEN_QUESTIONS.filter((q) => verified.has(q.id))).toEqual([]);
+
+        // THE DENOMINATOR IS THE WHOLE OF 0.1, not a floor on either list.
+        //
+        // This read `OPEN_QUESTIONS.length >= 4` until 0.1f was answered, and
+        // answering it turned the assertion red — a floor on the open list
+        // makes progress a failure, which is precisely backwards. The property
+        // worth holding is that every 0.1 sub-item is classified in EXACTLY one
+        // list, so the two together are exhaustive and neither can quietly lose
+        // an item.
+        const ALL_0_1 = ['0.1a', '0.1b', '0.1c', '0.1d', '0.1e', '0.1f', '0.1g'];
+        const classified = [...verified, ...OPEN_QUESTIONS.map((q) => q.id)].sort();
+        expect(classified).toEqual([...ALL_0_1].sort());
+    });
+
+    it('nothing in the repository claims a release NEWER than the pin', () => {
+        // The half-done upgrade: a version bumped in one place while the pin,
+        // and therefore every recorded measurement, stayed behind.
+        //
+        // NEWER, not different, and that asymmetry is the point. Older mentions
+        // are legitimate history — the spike notes name v0.1.2, v0.1.3 and
+        // v0.1.4 as the releases inherited defects were found on, and forcing
+        // those to the pin would destroy the provenance. Requiring equality
+        // would also need an allowlist that grows on every upgrade, which is a
+        // second thing to forget.
+        //
+        // The pattern has no leading `\b`: `v0.1.2` has a word character
+        // before the digit, so `\b0\.1\.` never matches it, and a first draft
+        // of this scan reported the spike notes as clean.
+        const RELEASE = /v?0\.1\.\d+/g;
+        const offenders: string[] = [];
+        for (const rel of repoRelativeFiles()) {
+            if (!/\.(ts|tsx|md|toml|ya?ml|json|service|sh)$/.test(rel)) continue;
+            const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+            if (!/openshell/i.test(text)) continue;
+            for (const m of text.match(RELEASE) ?? []) {
+                if (!newerThan(m, PINNED_RELEASE)) continue;
+                // Registered above with a date and a reason, or it is an
+                // offender. Normalised past the optional `v`, so `v0.1.6` and
+                // `0.1.6` are the same release.
+                const bare = m.replace(/^v/, '');
+                if (KNOWN_NEWER_RELEASES.some((k) => k.version === bare)) continue;
+                offenders.push(`${rel}: ${m}`);
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    it('every registered newer release is really newer, dated, and reasoned', () => {
+        // A register whose entries are not newer than the pin is dead weight —
+        // and worse, it reads as a list of pending upgrades when it is a list
+        // of nothing. An entry that the pin has caught up with must be deleted
+        // in the diff that moves the pin.
+        for (const k of KNOWN_NEWER_RELEASES) {
+            expect(newerThan(k.version, PINNED_RELEASE)).toBe(true);
+            expect(k.seen).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+            // A reason long enough to be a reason. The shape this guards is an
+            // entry added to silence the scan with "TODO" in the field.
+            expect(k.reason.length).toBeGreaterThan(40);
+        }
+    });
+
+    it('the scan reaches the files that name the release, and can see a newer one', () => {
+        // A denominator and a control in one. The assertion above is satisfied
+        // by a scan that reads nothing, and by a comparison that calls nothing
+        // newer.
+        let claiming = 0;
+        for (const rel of repoRelativeFiles()) {
+            if (!/\.(ts|tsx|md|toml|ya?ml|json|service|sh)$/.test(rel)) continue;
+            const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+            if (/openshell/i.test(text) && text.includes(PINNED_RELEASE)) claiming++;
+        }
+        expect(claiming).toBeGreaterThanOrEqual(8);
+
+        // DERIVED FROM THE PIN, never written as literals, for three reasons
+        // and all three were found by this file failing its own scan.
+        //
+        // A literal next-patch version here IS a mention of a release newer
+        // than the pin, so the scan above reported this file as an offender:
+        // a test's control inputs read as production claims. Writing the same
+        // versions into THIS COMMENT to explain that reported it again, which
+        // is why the explanation now names no version at all.
+        //
+        // And a hardcoded control stops testing anything once the pin passes
+        // it — a fixed "newer" version is not newer than its successor — so the
+        // assertion would need editing by whoever upgrades, the person least
+        // likely to notice it had gone quiet.
+        const shift = (index: number, by: number): string => {
+            const parts = semver(PINNED_RELEASE);
+            parts[index] += by;
+            return parts.join('.');
+        };
+        expect(newerThan(shift(2, 1), PINNED_RELEASE)).toBe(true); // next patch
+        expect(newerThan(shift(1, 1), PINNED_RELEASE)).toBe(true); // next minor
+        expect(newerThan(shift(2, -1), PINNED_RELEASE)).toBe(false); // previous patch
+        expect(newerThan(PINNED_RELEASE, PINNED_RELEASE)).toBe(false);
+        // Numeric, not lexicographic: shifting the patch into double digits
+        // produces a version that is GREATER numerically and SMALLER as a
+        // string, which is the comparison a naive `>` on strings gets wrong.
+        expect(newerThan(shift(2, 5), PINNED_RELEASE)).toBe(true);
+    });
+
+    it('the vendored skills are pinned to the same release', () => {
+        // #3973's third bullet: "re-pin the vendored developer skills (4.6) to
+        // the same release, update VENDORED.md and the NOTICE commit".
+        //
+        // Before this, the release was pinned in TWO independent places — here
+        // and as literals in `vendored-openshell-skills`/`VENDORED.md` — with
+        // nothing holding them equal. Two pins that can disagree are worse than
+        // one, because each looks authoritative on its own and the disagreement
+        // is only visible to somebody comparing them.
+        //
+        // Asserted over the extracted row rather than the manifest's text: a
+        // whole-file match would also be satisfied by the prose further down,
+        // which explains what the pin is for and names it in passing.
+        const md = fs.readFileSync(path.join(REPO_ROOT, '.claude/skills/VENDORED.md'), 'utf8');
+        const tagRows = md.split('\n').filter((l) => /^\|\s*Tag\s*\|/.test(l));
+        // Exactly one row, or the extraction is reading something else.
+        expect(tagRows.length).toBe(1);
+        expect(tagRows.filter((l) => !l.includes(PINNED_RELEASE))).toEqual([]);
+    });
+
+    it('the code that 0.1b justifies still writes enforcement on every endpoint', () => {
+        // Ties the FACT to the CODE that depends on it. The unit suite asserts
+        // this too, for a different reason — that the policy is correct. Here it
+        // is the other direction: if the audit-mode default were ever refuted,
+        // THIS is the code whose justification would have evaporated, and the
+        // assertion names the fact so the two move together.
+        const benchmarks = [
+            'aws_compliance.benchmark.soc_2',
+            'azure_compliance.benchmark.soc_2',
+            'gcp_compliance.benchmark.cis_v300',
+        ];
+        let endpoints = 0;
+        for (const b of benchmarks) {
+            for (const e of collectorSandboxPolicy(b).networkPolicies) {
+                endpoints++;
+                // Explicit, and the one value that enforces. An absent field is
+                // the same bytes as audit.
+                expect(e.enforcement).toBe('NETWORK_ENFORCEMENT_MODE_ENFORCE');
+            }
+        }
+        expect(endpoints).toBeGreaterThanOrEqual(6);
     });
 });

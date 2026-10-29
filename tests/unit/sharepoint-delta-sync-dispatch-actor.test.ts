@@ -11,7 +11,10 @@
  * is reported with a named reason.
  */
 const prismaMock = {
-    integrationConnection: { findMany: jest.fn() },
+    // `updateMany` is the connection-health write: the dispatcher records the
+    // block on the CONNECTION, because the result and the warn line it already
+    // produced are read by nobody (#4389).
+    integrationConnection: { findMany: jest.fn(), updateMany: jest.fn() },
     tenantMembership: { findMany: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: prismaMock, prisma: prismaMock }));
@@ -48,6 +51,7 @@ const actors = () =>
 
 beforeEach(() => {
     jest.clearAllMocks();
+    prismaMock.integrationConnection.updateMany.mockResolvedValue({ count: 0 });
     enqueueMock.mockResolvedValue({ id: 'job' });
     prismaMock.integrationConnection.findMany.mockResolvedValue([{ id: 'conn-A', tenantId: 'tenant-A' }]);
 });
@@ -150,5 +154,72 @@ describe('a connection with nobody qualifying is not queued, and says why', () =
         expect(r.unroutable.map((u) => [u.connectionId, u.reason])).toEqual([
             ['conn-A', 'NO_ADMIN_WITH_EVIDENCE_UPLOAD'],
         ]);
+    });
+});
+
+/**
+ * The block reaches the CONNECTION, which is the only place an admin looks
+ * (#4389).
+ *
+ * Before this, an unsyncable connection was reported in the dispatch result and
+ * a `warn` line and nowhere else, so the integrations page showed no sign that
+ * it had stopped syncing. Writing an `IntegrationExecution` row instead would
+ * have been worse than silence: `getConnectionsHealth` takes `lastActivity`
+ * from the most recent execution of ANY status, so a row every four hours would
+ * have cleared the stale flag and made it read as healthy.
+ */
+describe('the dispatcher records the block on the connection', () => {
+    /** The connection-health writes, in call order. */
+    const healthWrites = () =>
+        prismaMock.integrationConnection.updateMany.mock.calls.map(([args]) => args);
+
+    it('marks an unroutable connection with its own reason', async () => {
+        prismaMock.tenantMembership.findMany.mockResolvedValue([
+            member('tenant-A', 'admin-1', 'ADMIN', withoutUpload),
+        ]);
+
+        await runSharePointDeltaSyncDispatch({} as never);
+
+        const marks = healthWrites().filter((a) => a.data.syncBlockedAt instanceof Date);
+        expect(marks).toHaveLength(1);
+        expect(marks[0].where.id).toEqual({ in: ['conn-A'] });
+        expect(marks[0].data.syncBlockedReason).toBe(DELTA_SYNC_UNROUTABLE.NO_ADMIN_WITH_EVIDENCE_UPLOAD);
+    });
+
+    it('does not re-stamp a block that is already recorded with the same reason', async () => {
+        prismaMock.tenantMembership.findMany.mockResolvedValue([]);
+
+        await runSharePointDeltaSyncDispatch({} as never);
+
+        // The predicate is what makes "blocked since" mean since: a dispatcher
+        // on `0 */4 * * *` would otherwise move the timestamp forever.
+        const [mark] = healthWrites().filter((a) => a.data.syncBlockedAt instanceof Date);
+        expect(mark.where.OR).toEqual([
+            { syncBlockedAt: null },
+            { syncBlockedReason: { not: DELTA_SYNC_UNROUTABLE.NO_ACTIVE_ADMIN } },
+        ]);
+    });
+
+    it('clears the block for a connection it CAN route, so the banner cannot outlive its cause', async () => {
+        prismaMock.tenantMembership.findMany.mockResolvedValue([
+            member('tenant-A', 'good-admin', 'ADMIN'),
+        ]);
+
+        await runSharePointDeltaSyncDispatch({} as never);
+
+        const clears = healthWrites().filter((a) => a.data.syncBlockedAt === null);
+        expect(clears).toHaveLength(1);
+        expect(clears[0].where).toEqual({ id: { in: ['conn-A'] }, syncBlockedAt: { not: null } });
+        expect(clears[0].data).toEqual({ syncBlockedAt: null, syncBlockedReason: null });
+    });
+
+    it('marks nothing when every connection routes', async () => {
+        prismaMock.tenantMembership.findMany.mockResolvedValue([
+            member('tenant-A', 'good-admin', 'ADMIN'),
+        ]);
+
+        await runSharePointDeltaSyncDispatch({} as never);
+
+        expect(healthWrites().filter((a) => a.data.syncBlockedAt instanceof Date)).toEqual([]);
     });
 });

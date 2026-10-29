@@ -212,34 +212,37 @@ const nodeProject = {
         // '@flue/runtime'"), not at transform.
         '<rootDir>/tests/flue/',
         '<rootDir>/dub-reference/',
-        // ── Ratchets, when the caller opts out (JEST_SKIP_RATCHETS=1) ──
+        // ── Ratchets: the source scans, which belong to `scan` ──
         //
-        // `tests/guards/`, `tests/guardrails/` and `tests/contracts/` were
-        // never excluded here, so `jest --shard=K/N` already ran all 777 of
-        // them — and CI then ran `jest tests/guards/` and
-        // `jest tests/contracts/` again as two more Jest boots, each
-        // re-shelling `prisma migrate deploy`. 777 files, executed twice.
+        // `tests/guards/`, `tests/guardrails/` and `tests/contracts/` are
+        // readFileSync + regex over source text. They were never excluded
+        // here, so `jest --shard=K/N` ran all of them AND the ratchet job ran
+        // them again as two more Jest boots, each re-shelling `prisma migrate
+        // deploy` — the same files executed twice.
         //
-        // They are now a separate CI job that needs no Postgres, because
-        // exactly ONE of the 777 touches a database (`rls-coverage`, which
-        // reads `pg_policies`); the rest are readFileSync + regex over
-        // source text. That job runs them once, in parallel with the
-        // shards, and the shards shed ~40% of their files.
+        // Excluding them here was first done under `JEST_SKIP_RATCHETS=1`, so
+        // one config could serve both jobs: the ratchet job ran this same
+        // config with the flag UNSET and explicit paths. That is what made the
+        // cost — with the flag unset these 810 files landed in THIS project and
+        // inherited its `globalSetup`, which refuses when the shared test
+        // database is behind the branch's migrations. Correct for anything
+        // opening a connection, wrong for 809 of these: measured, exactly ONE
+        // (`rls-coverage`) connects. It cost a human hand-off per session per
+        // migration to run scans that only read files off disk.
         //
-        // The env var (rather than a hard exclusion) keeps ONE config for
-        // both jobs: the ratchet job runs the same config with the flag
-        // unset and explicit paths.
-        ...(process.env.JEST_SKIP_RATCHETS === '1'
-            ? [
-                  '<rootDir>/tests/guards/',
-                  '<rootDir>/tests/contracts/',
-                  // …except the one that needs the database, which stays
-                  // with the DB-backed shards. Negative lookahead rather
-                  // than moving the file: six other suites and CLAUDE.md
-                  // reference it by path.
-                  '<rootDir>/tests/guardrails/(?!rls-coverage\\.test\\.ts)',
-              ]
-            : []),
+        // UNCONDITIONAL since #4395, with the three directories owned by the
+        // `scan` project below, which carries no `globalSetup`. The exclusion
+        // and `scan`'s `testMatch` are now complements of one another, and
+        // `tests/guardrails/coverage-gate-population.test.ts` is what holds
+        // them to that: a directory dropped here must reappear there, or those
+        // files run nowhere.
+        '<rootDir>/tests/guards/',
+        '<rootDir>/tests/contracts/',
+        // …except the one that needs the database, which stays HERE, where
+        // `globalSetup` provisions the per-worker databases it queries.
+        // Negative lookahead rather than moving the file: six other suites and
+        // CLAUDE.md reference it by path.
+        '<rootDir>/tests/guardrails/(?!rls-coverage\\.test\\.ts)',
         // Epic 67 — co-located UI hook tests live next to the hook
         // (`src/components/ui/hooks/__tests__/`) but require jsdom
         // (RTL render, real React lifecycle). Excluded from the node
@@ -545,56 +548,28 @@ const jsdomProject = {
  * different entry point, silently, with no diff to point at. This project
  * matches `tests/flue/**` and nothing else.
  *
- * No `globalSetup`: nothing here touches Postgres, which is also what makes it
- * cheap enough to run on every PR.
- */
-/**
- * Resolve a file inside a package that does NOT export it.
+ * ── HOW IT LOADS ESM: Node's own `require(esm)`, so Node 24.9 or later ──────
  *
- * `@flue/runtime` publishes `{".": {"import": "./dist/index.mjs"}}` and no
- * `require` condition and no `./package.json` entry, so `require.resolve`
- * throws `ERR_PACKAGE_PATH_NOT_EXPORTED` for every specifier — the package is
- * unreachable from a CJS resolver by design.
+ * The project prefers the `import` condition (`customExportConditions`) and
+ * transforms nothing under `node_modules/`. Every ESM-only entry it reaches is
+ * loaded by Node's native `require(esm)`, which Jest uses from Node 24.9 on:
+ * `@flue/runtime`, pi-ai, and the `.mjs` side of any dual package, such as
+ * `dedent`, which Jest's own test framework pulls in. CI runs Node 24, as
+ * `.nvmrc` and `package.json` engines pin it.
  *
- * `require.resolve.paths()` is not blocked by an exports map: it returns the
- * `node_modules` directories Node WOULD search, walking up the tree. Finding
- * the manifest there and joining the file gives the same answer Node's own
- * resolver would, and keeps working from a `.claude/worktrees/<id>/` checkout
- * that has no `node_modules` of its own — which a spelled `<rootDir>/…` path
- * does not, and which broke the rendered suites for worktree users once
- * already (see the `react-grid-layout` note above).
- */
-const resolveInPackage = (pkg, subpath) => {
-    const fs = require('node:fs');
-    const path = require('node:path');
-    for (const base of require.resolve.paths(pkg) || []) {
-        if (fs.existsSync(path.join(base, pkg, 'package.json'))) {
-            return path.join(base, pkg, subpath);
-        }
-    }
-    throw new Error(`jest.config: cannot locate ${pkg} — is it installed?`);
-};
-
-/**
- * The THIRD project: the Flue runtime, which is ESM-only.
+ * Under an older Node every suite failed at load with "Must use import to load
+ * ES Module: …/dedent/dist/dedent.mjs". That message names neither the project
+ * nor the cause, so the project's `globalSetup` (`tests/setup/flue-node-gate.js`)
+ * now refuses first and says which Node it needs. Jest runs it only when a flue
+ * test is selected.
  *
- * ── WHY NOT `customExportConditions` ────────────────────────────────────────
+ * This comment used to describe the opposite approach (conditions left alone,
+ * the ESM entries mapped by hand and compiled by ts-jest). The config had moved
+ * on and the comment had not. The `resolveInPackage` helper that approach
+ * needed was no longer called, and is gone too.
  *
- * The obvious fix is to prefer the `import` condition. It was tried, and it
- * breaks the project it is scoped to: a package's OWN exports map decides
- * priority, not the order of this array, so activating `import` re-points
- * every dependency that ships both conditions. `dedent` — pulled in by the
- * test harness itself — immediately resolved to `dedent.mjs` and died on
- * `Unexpected token 'export'`. That is the same hazard, one scope down, that
- * makes setting this on the node project unthinkable for 2040 files.
- *
- * So the conditions are left alone and the three ESM-only entries are mapped
- * explicitly. Every other package in this project resolves exactly as it does
- * everywhere else.
- *
- * `transformIgnorePatterns` then lets ts-jest compile those `.mjs` files (and
- * pi-ai, which is `"type": "module"`) down to CJS. No `globalSetup`: nothing
- * here touches Postgres, which is what makes it cheap enough to run per PR.
+ * Nothing here touches Postgres, which is also what makes it cheap enough to
+ * run on every PR.
  */
 const flueProject = {
     displayName: 'flue',
@@ -631,6 +606,8 @@ const flueProject = {
         '^@/(.*)$': '<rootDir>/src/$1',
     },
     testEnvironmentOptions: { customExportConditions: ['node', 'import'] },
+    // Refuses a Node older than 24.9 by name; see the docblock above.
+    globalSetup: '<rootDir>/tests/setup/flue-node-gate.js',
     transform: {
         '^.+\\.tsx?$': ['ts-jest', { useESM: true }],
     },
@@ -643,8 +620,70 @@ const flueProject = {
     coveragePathIgnorePatterns: ['/node_modules/', '/tests/'],
 };
 
+/**
+ * `scan` — the architectural guards, guardrails and API contracts (#4395).
+ *
+ * `node` MINUS its database hooks, and built by spreading it rather than
+ * restating it. That construction is the point: a hand-written copy was missing
+ * `transformIgnorePatterns`, so the first import chain that reached an ESM-only
+ * package (`drivers/index` → … → `sanitize-html`) failed with
+ * `createRequireEsmError`, and it was missing both `.claude/` ignore lists and
+ * `coveragePathIgnorePatterns` that `coverage-config-resolution` requires of
+ * every project. Spreading means the only differences are the ones written
+ * below.
+ *
+ * What it drops, and why that is the whole reason it exists: `globalSetup`
+ * refuses to run when the shared test database is behind the branch's
+ * migrations. Correct for anything that connects; wrong for these, which are
+ * `readFileSync` + regex over source text. Measured: of the 810 suites in these
+ * three directories, exactly ONE connects.
+ *
+ * That one — `tests/guardrails/rls-coverage`, which queries `pg_policies` — is
+ * excluded below and runs in `node`, where `globalSetup` provisions the
+ * per-worker databases it needs. `scan-project-is-database-free` keeps the
+ * arrangement honest.
+ *
+ * `coverageThreshold` comes off in the same destructure, and it has to be
+ * DELETED rather than set to `undefined`: Jest's validator tests for the key's
+ * PRESENCE, so `coverageThreshold: undefined` still earns the "not supported
+ * in an individual project configuration" warning. It sits on the NODE project
+ * as documentation (see the coverage-scope comment above) and enforces nothing
+ * anywhere; a copy here would be a second place to drift.
+ * `globalConfig.coverageThreshold` stays undefined either way, which is the
+ * invariant `coverage-config-resolution` pins.
+ */
+const {
+    globalSetup: _nodeGlobalSetup,
+    globalTeardown: _nodeGlobalTeardown,
+    coverageThreshold: _nodeCoverageThreshold,
+    ...nodeWithoutDbHooks
+} = nodeProject;
+
+const scanProject = {
+    ...nodeWithoutDbHooks,
+    displayName: 'scan',
+    // Narrowed from node's pair: `disconnect-after-suite` closes the prisma
+    // test client, and nothing here opens one, so only the shims remain. They
+    // ARE still needed — `structuredClone` and friends are absent from this
+    // Node's test environment and ratchets that parse fixtures use them.
+    setupFilesAfterEnv: ['<rootDir>/tests/setup/jsdom-shims.ts'],
+    testMatch: [
+        '<rootDir>/tests/guards/**/*.test.ts',
+        '<rootDir>/tests/guardrails/**/*.test.ts',
+        '<rootDir>/tests/contracts/**/*.test.ts',
+    ],
+    testPathIgnorePatterns: [
+        '<rootDir>/node_modules/',
+        // `.claude/worktrees/<id>/` holds a full checkout, so without this the
+        // project runs every ratchet twice (#3633).
+        '<rootDir>/.claude/',
+        // Connects to Postgres — belongs to `node`.
+        'rls-coverage\\.test\\.ts',
+    ],
+};
+
 module.exports = {
-    projects: [nodeProject, jsdomProject, flueProject],
+    projects: [nodeProject, scanProject, jsdomProject, flueProject],
     // Recycle a worker once its heap crosses this after a suite. Over a
     // ~1400-suite run a long-lived worker accumulates module + mock state
     // until GC stalls (or it OOMs), which surfaces as NON-deterministic
