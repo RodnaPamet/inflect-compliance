@@ -129,6 +129,16 @@ describe('the monthly token budget panel', () => {
         expect(await screen.findByTestId('agents-budget-error')).toHaveTextContent(/admin\.agent_registry/);
     });
 
+    it('shows the edge\'s flat refusal rather than the generic save-failed text (#4471)', async () => {
+        // The middleware refuses an admin path with `{ error: 'Admin access
+        // required' }` — a string, which `body.error.message` never reached.
+        mockFetch(false, { error: 'Admin access required' });
+        renderPanel(null);
+        await userEvent.click(screen.getByTestId('agents-budget-mode-set'));
+        await userEvent.click(screen.getByTestId('agents-budget-save'));
+        expect(await screen.findByTestId('agents-budget-error')).toHaveTextContent('Admin access required');
+    });
+
     it('names the concurrent-run cap, so a refused run can be attributed to the right limit', () => {
         renderPanel(null);
         expect(screen.getByTestId('agents-budget')).toHaveTextContent(/concurrent/i);

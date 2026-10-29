@@ -40,7 +40,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
-import { aiActTierTone } from '@/lib/eu-ai-act/tier-display';
+import { AI_ACT_TIER_TONE, aiActTierTone } from '@/lib/eu-ai-act/tier-display';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo/plus';
 import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
 import { EntityListPage } from '@/components/layout/EntityListPage';
@@ -53,8 +53,11 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { InfoTooltip } from '@/components/ui/tooltip';
+import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import type { AgentKpiCounts } from '@/app-layer/repositories/RegisteredAgentRepository';
 import { BUDGET_RUN_TOKEN_CEILING, MAX_MONTHLY_TOKEN_BUDGET, monthlyBudgetSettingRefusal } from '@/lib/agentic/monthly-budget';
+import { isSettableConcurrencyCap, MAX_CONCURRENCY_CAP } from '@/lib/agentic/run-concurrency';
+import { apiRefusalMessage } from '@/lib/api-error';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AgentsViewsMenu } from './AgentsViewsMenu';
@@ -101,11 +104,36 @@ interface Props {
     /** Badge count for the Proposals menu entry; `null` when unreadable. */
     proposalsAwaitingReview: number | null;
     /**
-     * `admin.agent_registry` — register an agent, set the concurrency cap, and
-     * reach the assurance surfaces that key gates. FALSE for a reader holding
-     * only the inventory view key (#3710), who gets the register read-only.
+     * May this reader REGISTER an agent? Computed on the server by
+     * `agentRegisterAffordances` from the three gates a registration passes —
+     * the edge, `admin.agent_registry` and `assertAgentGovernanceWrite` — so the
+     * button is offered exactly where the server takes the POST (#4471). FALSE
+     * for a reader holding only the inventory view key (#3710).
      */
     canWrite: boolean;
+    /**
+     * May this reader set the concurrent-run cap and the monthly token budget?
+     * The same three gates with `assertAgentGovernanceAdmin` as the floor.
+     * Defaults to `canWrite`, which it equals for every built-in role.
+     */
+    canSetCapacity?: boolean;
+    /**
+     * `admin.agent_registry` alone — the key the assurance views gate their
+     * own pages on. Defaults to `canWrite`.
+     */
+    canInvestigate?: boolean;
+    /**
+     * The table holds the first page of a longer register. The KPI cards still
+     * count the whole of it, so without a notice the two disagree silently.
+     */
+    truncated?: boolean;
+    /** The page size `truncated` refers to. */
+    truncationCap?: number;
+    /**
+     * May this reader list vendors (`vendors.view`)? The supplier picker is
+     * disabled, and says why, when not.
+     */
+    canListVendors?: boolean;
     /** `mayReadAgentActivity` — the gate the proposals and runs pages ask. */
     canReviewProposals: boolean;
     /** `admin.view` — the compose page's gate (#3710); defaults to `canReviewProposals`. */
@@ -131,6 +159,23 @@ const TIER_VARIANT: Record<string, StatusBadgeVariant> = {
 };
 
 const AUTONOMY_MAX = 6;
+
+/**
+ * The result of one scheduled agent check, by tone. INCONCLUSIVE is a warning,
+ * not a failure: the check could not decide, which is a different thing to act
+ * on than a check that decided against the control. A result this client does
+ * not know is a warning too, never a pass.
+ */
+const CHECK_RESULT_CLASS: Record<string, string> = {
+    PASS: 'text-content-success',
+    FAIL: 'text-content-error',
+    INCONCLUSIVE: 'text-content-warning',
+};
+
+/** Whether a stored code has a label here: an unknown one is shown as stored. */
+function hasOwn(record: Readonly<Record<string, unknown>>, key: string): boolean {
+    return Object.prototype.hasOwnProperty.call(record, key);
+}
 
 /**
  * The four KPI ids, and the ONLY four.
@@ -170,6 +215,11 @@ function AgentsInner({
     assurance,
     proposalsAwaitingReview,
     canWrite,
+    canSetCapacity = canWrite,
+    canInvestigate = canWrite,
+    truncated = false,
+    truncationCap = 200,
+    canListVendors = true,
     canReviewProposals,
     canCompose,
     canSetOrphanPass = false,
@@ -182,6 +232,9 @@ function AgentsInner({
     // keys are a separate move. This page reaches across for exactly ONE of
     // them; see the Agent column's cell for why that sharing is deliberate.
     const tAdmin = useTranslations('admin');
+    // The AI-system register's own tier labels, so the two registers name one
+    // tier one way.
+    const tRisks = useTranslations('risks');
     const tGroup = useTranslations('common.filterGroups');
     const filterDefs = useMemo(
         () =>
@@ -368,7 +421,12 @@ function AgentsInner({
                     cell: ({ row }) =>
                         row.original.riskTier ? (
                             <StatusBadge variant={TIER_VARIANT[row.original.riskTier] ?? 'neutral'}>
-                                {row.original.riskTier}
+                                {/* The filter's own labels. A tier this client
+                                    does not know shows as stored rather than as
+                                    a missing translation key. */}
+                                {hasOwn(TIER_VARIANT, row.original.riskTier)
+                                    ? t(`register.filterEnums.riskTier.${row.original.riskTier}`)
+                                    : row.original.riskTier}
                             </StatusBadge>
                         ) : (
                             // Not a dash. NULL means nobody has assessed this
@@ -392,7 +450,9 @@ function AgentsInner({
                                     // register; an unknown value is a warning, never neutral.
                                     variant={aiActTierTone(row.original.aiSystem.riskTier)}
                                 >
-                                    {row.original.aiSystem.riskTier}
+                                    {hasOwn(AI_ACT_TIER_TONE, row.original.aiSystem.riskTier)
+                                        ? tRisks(`aiSystems.filterEnums.riskTier.${row.original.aiSystem.riskTier}`)
+                                        : row.original.aiSystem.riskTier}
                                 </StatusBadge>
                                 <span className="tabular-nums text-xs text-content-subtle">
                                     {row.original.aiSystem.classificationClauseId ?? ''}
@@ -411,7 +471,7 @@ function AgentsInner({
                     ),
                 },
             ]),
-        [t, tAdmin],
+        [t, tAdmin, tRisks],
     );
 
     // Stable table-model identities — a fresh identity here rebuilds the table
@@ -490,19 +550,20 @@ function AgentsInner({
                 }}
                 banner={
                     <div className="space-y-compact">
+                        <TruncationBanner truncated={truncated} cap={truncationCap} />
                         <GovernanceBanner governance={governance} />
                         {assurance && <AssurancePanel assurance={assurance} />}
                         <ConcurrencyPanel
                             cap={governance.concurrency.cap}
                             inFlight={governance.concurrency.inFlight}
                             tenantSlug={tenantSlug}
-                            canEdit={canWrite}
+                            canEdit={canSetCapacity}
                         />
                         <BudgetPanel
                             budget={governance.budget?.tokens ?? null}
                             spentThisMonth={governance.budget?.spentThisMonth ?? 0}
                             tenantSlug={tenantSlug}
-                            canEdit={canWrite}
+                            canEdit={canSetCapacity}
                         />
                     </div>
                 }
@@ -581,10 +642,9 @@ function AgentsInner({
                                 canReviewProposals={canReviewProposals}
                                 canCompose={canCompose}
                                 canSetOrphanPass={canSetOrphanPass}
-                                // `canWrite` IS `admin.agent_registry` — the
-                                // same key the three assurance surfaces gate
-                                // themselves on. Named for what it gates here.
-                                canInvestigate={canWrite}
+                                // `admin.agent_registry` — the same key the
+                                // three assurance surfaces gate themselves on.
+                                canInvestigate={canInvestigate}
                                 // The governance pack asks the INVENTORY read
                                 // (#3710), which this page already required.
                                 canReadReports
@@ -631,6 +691,7 @@ function AgentsInner({
                     tenantSlug={tenantSlug}
                     owners={owners}
                     vendors={vendors}
+                    canListVendors={canListVendors}
                     onClose={() => setShowNew(false)}
                     onCreated={() => {
                         setShowNew(false);
@@ -685,6 +746,8 @@ export interface AgenticAssurance {
  */
 export function AssurancePanel({ assurance }: { assurance: AgenticAssurance }) {
     const t = useTranslations('agents');
+    // The control-test register's own result labels: these are control tests.
+    const tTests = useTranslations('controlTests');
     const { riskCoverage: rc, sampleAudit: sa, controlTests } = assurance;
     const unscored = rc.total - rc.scored;
 
@@ -722,11 +785,10 @@ export function AssurancePanel({ assurance }: { assurance: AgenticAssurance }) {
                             </span>
                         ) : (
                             <span
-                                className={
-                                    c.result === 'PASS' ? 'text-content-success' : 'text-content-error'
-                                }
+                                className={hasOwn(CHECK_RESULT_CLASS, c.result) ? CHECK_RESULT_CLASS[c.result] : 'text-content-warning'}
+                                data-testid={`agents-assurance-result-${c.checkId}`}
                             >
-                                {c.result}
+                                {hasOwn(CHECK_RESULT_CLASS, c.result) ? tTests(`result.${c.result}`) : c.result}
                             </span>
                         )}
                     </li>
@@ -817,8 +879,10 @@ export function ConcurrencyPanel({
         try {
             const trimmed = draft.trim();
             const next = trimmed === '' ? null : Number(trimmed);
-            if (next !== null && (!Number.isInteger(next) || next < 0)) {
-                setError(t('register.concurrency.invalid'));
+            // The server's own rule, from the module the setter reads it from,
+            // so the limit refused here is the limit refused there (#4471).
+            if (!isSettableConcurrencyCap(next)) {
+                setError(t('register.concurrency.invalid', { max: MAX_CONCURRENCY_CAP }));
                 return;
             }
             const res = await fetch(
@@ -830,13 +894,12 @@ export function ConcurrencyPanel({
                 },
             );
             if (!res.ok) {
-                // The server's own message, not a generic one: the route
-                // refuses a cap above its sanity rail and an operator should
-                // read that rather than "something went wrong".
-                const body = (await res.json().catch(() => null)) as
-                    | { error?: { message?: string } }
-                    | null;
-                setError(body?.error?.message ?? t('register.concurrency.saveFailed'));
+                // The server's own reason, not a generic one. `apiRefusalMessage`
+                // reads every shape a refusal arrives in: the envelope's message,
+                // a validation error's per-field reasons, and the edge's flat
+                // `{ error: '…' }` (#4471).
+                const body: unknown = await res.json().catch(() => null);
+                setError(apiRefusalMessage(body, t('register.concurrency.saveFailed')));
                 return;
             }
             // Re-read from the server rather than patching local state: the
@@ -879,6 +942,7 @@ export function ConcurrencyPanel({
                         id="agent-concurrency-cap"
                         type="number"
                         min={0}
+                        max={MAX_CONCURRENCY_CAP}
                         inputMode="numeric"
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
@@ -898,7 +962,11 @@ export function ConcurrencyPanel({
                 </div>
             )}
             {/* The hint tells an editor what to type, so it goes with the input. */}
-            {canEdit && <p className="text-xs text-content-muted">{t('register.concurrency.hint')}</p>}
+            {canEdit && (
+                <p className="text-xs text-content-muted" data-testid="agents-concurrency-hint">
+                    {t('register.concurrency.hint', { max: MAX_CONCURRENCY_CAP })}
+                </p>
+            )}
             {error && (
                 <InlineNotice variant="warning" data-testid="agents-concurrency-error">
                     {error}
@@ -953,10 +1021,8 @@ export function BudgetPanel({
                 body: JSON.stringify({ budget: next }),
             });
             if (!res.ok) {
-                const body = (await res.json().catch(() => null)) as
-                    | { error?: { message?: string } }
-                    | null;
-                setError(body?.error?.message ?? t('register.budget.saveFailed'));
+                const body: unknown = await res.json().catch(() => null);
+                setError(apiRefusalMessage(body, t('register.budget.saveFailed')));
                 return;
             }
             // Re-read from the server: the month's spend comes from the same read.

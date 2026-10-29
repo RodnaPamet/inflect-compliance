@@ -87,6 +87,12 @@ import { statusBadgeVariants } from '@/components/ui/status-badge';
 
 const DETAIL = (require('../../messages/en.json') as { admin: { agentDetail: Record<string, string> } }).admin
     .agentDetail;
+/** The AI-system register's own tier labels, which the agent register shows (#4471). */
+const AI_TIER = (
+    require('../../messages/en.json') as {
+        risks: { aiSystems: { filterEnums: { riskTier: Record<string, string> } } };
+    }
+).risks.aiSystems.filterEnums.riskTier;
 
 const badgeClasses = (variant: 'neutral' | 'warning'): string[] =>
     statusBadgeVariants({ variant }).split(' ').filter(Boolean);
@@ -140,11 +146,20 @@ function aiActBadge(agentId: string, tier: string): HTMLElement {
 }
 
 describe('the agent register', () => {
+    it('labels the AI Act tier the way the AI-system register does, never with the stored code (#4471)', () => {
+        renderRegister([row('minimal', 'MINIMAL'), row('provisional', 'UNCLASSIFIED')]);
+        expect(aiActBadge('minimal', AI_TIER.MINIMAL)).toBeInTheDocument();
+        expect(aiActBadge('provisional', AI_TIER.UNCLASSIFIED)).toBeInTheDocument();
+        const table = screen.getByTestId('agents-table');
+        expect(within(table).queryByText('MINIMAL')).toBeNull();
+        expect(within(table).queryByText('UNCLASSIFIED')).toBeNull();
+    });
+
     it("tones an UNCLASSIFIED AI system's badge as a warning, never as MINIMAL's neutral", () => {
         renderRegister([row('minimal', 'MINIMAL'), row('provisional', 'UNCLASSIFIED')]);
 
-        const minimal = aiActBadge('minimal', 'MINIMAL').className.split(' ');
-        const unclassified = aiActBadge('provisional', 'UNCLASSIFIED').className.split(' ');
+        const minimal = aiActBadge('minimal', AI_TIER.MINIMAL).className.split(' ');
+        const unclassified = aiActBadge('provisional', AI_TIER.UNCLASSIFIED).className.split(' ');
 
         // Positive anchor: MINIMAL really is the neutral badge, so the absence
         // below is measured against the tone it would fall back to.
@@ -157,9 +172,11 @@ describe('the agent register', () => {
         // A value from a later deploy, read by a container that predates it.
         renderRegister([row('minimal', 'MINIMAL'), row('future', 'SOME_LATER_TIER')]);
 
-        expect(aiActBadge('minimal', 'MINIMAL').className.split(' ')).toEqual(
+        expect(aiActBadge('minimal', AI_TIER.MINIMAL).className.split(' ')).toEqual(
             expect.arrayContaining(badgeClasses('neutral')),
         );
+        // A tier with no label here is shown as stored rather than as a
+        // missing translation key.
         const future = aiActBadge('future', 'SOME_LATER_TIER').className.split(' ');
         expect(future).toEqual(expect.arrayContaining(badgeClasses('warning')));
         expect(future).not.toEqual(expect.arrayContaining(badgeClasses('neutral')));

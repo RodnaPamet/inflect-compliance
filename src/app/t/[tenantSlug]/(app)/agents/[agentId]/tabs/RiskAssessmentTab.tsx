@@ -585,21 +585,11 @@ export function RiskAssessmentTab({
                     </p>
                 ) : null}
                 <div className="flex flex-wrap items-center gap-compact pt-2">
-                    {/* `canManageRegistry` is the route key ALONE, and the three
-                        usecases behind this panel additionally call
-                        `assertCanWrite`, which reads the membership's BASE ROLE
-                        rather than the permissions blob. So a custom role with
-                        base role READER holding `admin.agent_registry` gets an
-                        enabled button here and a refusal inside the transaction.
-                        The failure is honest — an error notice, no partial write
-                        — but the button should not have rendered. Fixing it
-                        properly is one conjunction in `page.tsx`
-                        (`&& ctx.permissions.canWrite`, exactly as
-                        `canCloseBreaker` already does), which is a frozen
-                        single-writer seam; escalated rather than worked around
-                        here, because faking it locally would mean this tab
-                        deriving a permission the shell is the one place that
-                        derives. */}
+                    {/* `canManageRegistry` is derived ONCE, on the server
+                        (`agentRegisterAffordances`), from every gate the three
+                        usecases behind this panel pass: the edge, the register
+                        key and `assertAgentGovernanceWrite`. This tab does not
+                        re-derive it (#4471). */}
                     <Button
                         variant="secondary"
                         size="sm"

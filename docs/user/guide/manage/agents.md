@@ -21,7 +21,7 @@ Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar. The entry
 
 Editors and Readers do not see the sidebar entry, and opening the page shows **{{ui:agents.register.accessTitle}}**. Auditors get the same page with every change withheld: no **{{ui:agents.register.addAgent}}** button, and the cap and the budget shown as sentences without a form.
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given. A custom role built on the Editor, Reader or Auditor role is shown the register's buttons when it may manage the register, but every save is refused.
+If your workspace uses custom roles, what you can do depends on the permissions your role was given. A change to the register is accepted only from a member whose built-in role in the workspace is Owner, Admin or AI admin, so a custom role that may manage the register is not offered its buttons when it is held on an Editor, Reader or Auditor membership. A role that cannot see vendors finds the supplier field disabled when registering a third-party agent.
 
 The **{{ui:common.ui.viewsMenu}}** menu lists only the agent pages your role can open, so it differs by role.
 
@@ -34,7 +34,7 @@ Use the register to answer two questions: which agents may act in this workspace
 **The notices.** Above the cards, in this order:
 
 - **Whether registration is enforced.** A warning when it is not: the register is then a record only, and suspending an agent here stops nothing. A warning naming the credentials that are bound to no agent, when registration is enforced and some are; each of them is refused. Otherwise a blue note that registration is enforced.
-- **{{ui:agents.register.assurance.heading}}.** How many registered agents have an assessed risk tier, how often a second reviewer disagreed with a sampled approval over the last 90 days, and the latest result of four scheduled agent checks, as **PASS**, **FAIL** or **INCONCLUSIVE**. A check that has never run reads **{{ui:agents.register.assurance.checkNeverRun}}**. Retired agents are left out of the coverage line.
+- **{{ui:agents.register.assurance.heading}}.** How many registered agents have an assessed risk tier, how often a second reviewer disagreed with a sampled approval over the last 90 days, and the latest result of four scheduled agent checks, as **{{ui:controlTests.result.PASS}}**, **{{ui:controlTests.result.FAIL}}** or **{{ui:controlTests.result.INCONCLUSIVE}}**. An inconclusive check is shown as a warning rather than a failure: it could not decide. A check that has never run reads **{{ui:agents.register.assurance.checkNeverRun}}**. Retired agents are left out of the coverage line.
 - **{{ui:agents.register.concurrency.heading}}.** How many agent runs may execute at once, and how many are running now.
 - **{{ui:agents.register.budget.heading}}.** How many tokens agent runs may use in a calendar month (UTC), and how many have been used this month.
 
@@ -50,11 +50,11 @@ Use the register to answer two questions: which agents may act in this workspace
 **The toolbar.** From left to right:
 
 - **{{ui:agents.register.addAgent}}** opens the registration form. Only roles that can register agents see it.
-- The **{{ui:common.ui.filter}}** button holds the filters: {{ui:agents.register.filters.status}}, {{ui:agents.register.filters.accessScope}} and {{ui:agents.register.filters.riskTier}}. You can pick several values in each, and each active filter shows as a pill beside the button. The search box, **{{ui:agents.register.searchPlaceholder}}**, does not narrow the list; use the filters.
+- The **{{ui:common.ui.filter}}** button holds the filters: {{ui:agents.register.filters.status}}, {{ui:agents.register.filters.accessScope}} and {{ui:agents.register.filters.riskTier}}. You can pick several values in each, and each active filter shows as a pill beside the button. The search box, **{{ui:agents.register.searchPlaceholder}}**, narrows the list to the agents whose name contains what you type. The summary cards other than **{{ui:agents.register.kpi.total}}** count within your search as well as your filters.
 - **{{ui:common.ui.viewsMenu}}** opens the other agent pages, in two groups. **{{ui:agents.views.groupOperate}}** holds {{ui:agents.views.compose}}, {{ui:agents.views.proposals}} (with a count of proposals waiting), {{ui:agents.views.runs}} and {{ui:agents.views.ownerOrphanPass}}. **{{ui:agents.views.groupAssurance}}** holds {{ui:agents.views.receipts}}, {{ui:agents.views.quarantine}}, {{ui:agents.views.decisions}}, {{ui:agents.views.reports}}, {{ui:agents.views.auditPilot}}, {{ui:agents.views.reviewQuality}}, {{ui:agents.views.externalTools}} and {{ui:agents.views.peers}}.
 - A settings button chooses which summary cards are shown. The page remembers your choice.
 
-Filters are kept in the page address, so a filtered view can be bookmarked or shared with a colleague who can read the register.
+Filters and the search are kept in the page address, so a filtered view can be bookmarked or shared with a colleague who can read the register.
 
 **The table.** Newest agents come first. Click a row to open the agent's own page.
 
@@ -65,7 +65,7 @@ Filters are kept in the page address, so a filtered view can be bookmarked or sh
 | {{ui:agents.register.colAutonomy}} | Its autonomy level, from 0 (it only suggests) to 6 (it acts unattended across systems) |
 | {{ui:agents.register.colAccess}} | How far into your data it reaches, from {{ui:agents.register.filterEnums.accessScope.NONE}} to {{ui:agents.register.filterEnums.accessScope.EXTERNAL_EGRESS}} |
 | {{ui:agents.register.colReversibility}} | {{ui:agents.register.reversibility.REVERSIBLE}}, {{ui:agents.register.reversibility.COMPENSABLE}} or {{ui:agents.register.reversibility.TERMINAL}} |
-| {{ui:agents.register.colTier}} | Its assessed authority, shown as **LOW**, **MODERATE**, **HIGH** or **CRITICAL**. **{{ui:agents.register.unscored}}** means nobody has assessed it, and it then reaches nothing |
+| {{ui:agents.register.colTier}} | Its assessed authority: {{ui:agents.register.filterEnums.riskTier.LOW}}, {{ui:agents.register.filterEnums.riskTier.MODERATE}}, {{ui:agents.register.filterEnums.riskTier.HIGH}} or {{ui:agents.register.filterEnums.riskTier.CRITICAL}}. **{{ui:agents.register.unscored}}** means nobody has assessed it, and it then reaches nothing |
 | {{ui:agents.register.colAiAct}} | The EU AI Act tier of the AI system it belongs to, and the clause that decided it. This is a different scale from the authority tier |
 | {{ui:agents.register.colKeys}} | How many API keys are bound to the agent, revoked and expired ones included |
 
@@ -78,7 +78,7 @@ Click **{{ui:agents.register.addAgent}}**. The **{{ui:agents.register.new.title}
 - **{{ui:agents.register.new.nameLabel}}**, at least two characters, and optionally **{{ui:agents.register.new.descriptionLabel}}**.
 - **{{ui:agents.register.new.ownerLabel}}**, chosen from the workspace's active members.
 - **{{ui:agents.register.new.autonomyLabel}}**, **{{ui:agents.register.new.accessLabel}}**, **{{ui:agents.register.new.reversibilityLabel}}** and **{{ui:agents.register.new.provenanceLabel}}**. Each starts on its least exposing choice.
-- **{{ui:agents.register.new.vendorLabel}}**, for a third-party agent only. A third-party agent must name the vendor that supplies it.
+- **{{ui:agents.register.new.vendorLabel}}**, for a third-party agent only. A third-party agent must name the vendor that supplies it, and the form says so before sending if you leave it empty. The list opens on your first vendors; type part of a name to search all of them.
 - **{{ui:agents.register.new.classificationHeading}}**: three lists, for a prohibited practice, a high-risk area and a transparency case, and a box to tick when the agent is a safety component of a regulated product. Each list starts on {{ui:agents.register.new.noneApplicable}}. Inflect works out the AI Act tier from your answers, and leaving them all as they are gives the minimal tier; the form has no field for the tier itself.
 
 Click **{{ui:agents.register.new.submit}}**. The agent joins the register as {{ui:agents.register.filterEnums.status.DRAFT}} and {{ui:agents.register.unscored}}, with an entry in the workspace's AI-system register.
@@ -94,7 +94,7 @@ Under **{{ui:agents.register.budget.heading}}**, choose **{{ui:agents.register.b
 ## What happens next
 
 - A new agent cannot act until somebody scores its risk and activates it on its own page. While registration is not enforced, its status decides nothing.
-- Opening an agent leads to its own page, with the tabs {{ui:admin.agentDetail.tabOverview}}, {{ui:admin.agentDetail.tabRisk}}, {{ui:admin.agentDetail.tabPolicy}}, {{ui:admin.agentDetail.tabTools}}, {{ui:admin.agentDetail.tabSkills}}, {{ui:admin.agentDetail.tabCoverage}}, {{ui:admin.agentDetail.tabRuns}} and {{ui:admin.agentDetail.tabBreaker}}. That is where an agent is assessed, amended, activated, suspended, retired or stopped. An Auditor finds several of those tabs greyed out. An AI admin can open every tab, but is not offered **{{ui:admin.agentDetail.amend.action}}**, **{{ui:admin.agentDetail.overview.activateAction}}**, **{{ui:admin.agentDetail.overview.suspendAction}}** or **{{ui:admin.agentDetail.overview.retireAction}}** there, and cannot score an agent's risk.
+- Opening an agent leads to its own page, with the tabs {{ui:admin.agentDetail.tabOverview}}, {{ui:admin.agentDetail.tabRisk}}, {{ui:admin.agentDetail.tabPolicy}}, {{ui:admin.agentDetail.tabTools}}, {{ui:admin.agentDetail.tabSkills}}, {{ui:admin.agentDetail.tabCoverage}}, {{ui:admin.agentDetail.tabRuns}} and {{ui:admin.agentDetail.tabBreaker}}. That is where an agent is assessed, amended, activated, suspended, retired or stopped. Owners, Admins and AI admins are offered **{{ui:admin.agentDetail.amend.action}}**, **{{ui:admin.agentDetail.overview.activateAction}}**, **{{ui:admin.agentDetail.overview.suspendAction}}** and **{{ui:admin.agentDetail.overview.retireAction}}** there, and can score an agent's risk. An Auditor finds several of those tabs greyed out and is offered none of those changes.
 - Every registration, cap change and budget change is recorded in the workspace's audit log, naming who made it.
 - A cap or a budget applies to the next run that starts. A run refused by either says which one refused it.
 
@@ -105,14 +105,14 @@ Under **{{ui:agents.register.budget.heading}}**, choose **{{ui:agents.register.b
 | **{{ui:agents.register.accessTitle}}** | Your role cannot read the agent register | Ask an Owner or Admin |
 | **{{ui:agents.register.emptyTitle}}** | No agent is registered | Click **{{ui:agents.register.addAgent}}** |
 | **{{ui:agents.register.emptyMatchingTitle}}** | Agents exist, but none match the filters | Remove a filter pill |
-| **Invalid request payload** after **{{ui:agents.register.new.submit}}** | Most often a third-party agent with no supplier chosen | Choose the supplier and try again |
-| **{{ui:agents.register.new.errorFallback}}** | The agent was not registered | Try again |
-| **{{ui:agents.register.concurrency.invalid}}** | The cap is not a whole number of 0 or more | Correct it, or empty the box |
-| **Invalid request payload** after **{{ui:agents.register.concurrency.save}}** | The cap is above 1,000 | Enter 1,000 or less |
+| **{{ui:agents.register.new.vendorRequired}}** under the supplier field | A third-party agent was submitted with no supplier | Choose the supplier and try again |
+| A reason from the server above the form after **{{ui:agents.register.new.submit}}** | The agent was not registered, for the reason it names | Correct what it names and try again |
+| **{{ui:agents.register.new.errorFallback}}** | The agent was not registered, and no reason came back | Try again |
+| A warning that the cap must be a whole number from 0 to 1,000 | The cap is not a whole number, or is above 1,000 | Correct it, or empty the box |
 | A warning that the budget would refuse every run, with **{{ui:agents.register.budget.save}}** greyed out | The budget is above 0 but below one run's ceiling | Enter 0, or at least the ceiling the warning names |
 | **{{ui:agents.register.concurrency.saveFailed}}** or **{{ui:agents.register.budget.saveFailed}}** | The change did not go through | Try again |
 
-The table loads the 200 newest agents. A register holding more shows only those 200, without a notice; the **{{ui:agents.register.kpi.total}}** card still counts them all.
+The table loads the 200 newest agents. A register holding more shows only those 200, with a notice above the table saying so; narrow the list with the filters or the search to reach the rest. The **{{ui:agents.register.kpi.total}}** card still counts them all.
 
 ## Related
 

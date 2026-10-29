@@ -100,3 +100,42 @@ describe('an unaudited approval queue is stated, not left blank', () => {
         expect(text).toMatch(/2 of 10/);
     });
 });
+
+describe('a check result is shown as a word, and an undecided check is not a failure (#4471)', () => {
+    const EN_RESULT = (require('../../messages/en.json') as { controlTests: { result: Record<string, string> } })
+        .controlTests.result;
+    const results = {
+        ...base,
+        controlTests: [
+            { checkId: 'C_PASS', title: 'Review quality', result: 'PASS', lastRunAt: '2026-09-10T00:00:00Z' },
+            { checkId: 'C_FAIL', title: 'Kill switch drill', result: 'FAIL', lastRunAt: '2026-09-10T00:00:00Z' },
+            { checkId: 'C_INC', title: 'Receipt chain', result: 'INCONCLUSIVE', lastRunAt: '2026-09-10T00:00:00Z' },
+            { checkId: 'C_NEW', title: 'A later check', result: 'SKIPPED_LATER', lastRunAt: '2026-09-10T00:00:00Z' },
+        ],
+    };
+
+    it('renders the control-test labels, never the stored codes', () => {
+        render(<AssurancePanel assurance={results} />);
+        expect(screen.getByTestId('agents-assurance-result-C_PASS')).toHaveTextContent(EN_RESULT.PASS);
+        expect(screen.getByTestId('agents-assurance-result-C_FAIL')).toHaveTextContent(EN_RESULT.FAIL);
+        expect(screen.getByTestId('agents-assurance-result-C_INC')).toHaveTextContent(EN_RESULT.INCONCLUSIVE);
+        const checks = screen.getByTestId('agents-assurance-checks').textContent ?? '';
+        expect(checks).not.toMatch(/\bPASS\b|\bFAIL\b|\bINCONCLUSIVE\b/);
+    });
+
+    it('tones INCONCLUSIVE as a warning, FAIL as an error and PASS as a success', () => {
+        render(<AssurancePanel assurance={results} />);
+        expect(screen.getByTestId('agents-assurance-result-C_PASS')).toHaveClass('text-content-success');
+        expect(screen.getByTestId('agents-assurance-result-C_FAIL')).toHaveClass('text-content-error');
+        const inconclusive = screen.getByTestId('agents-assurance-result-C_INC');
+        expect(inconclusive).toHaveClass('text-content-warning');
+        expect(inconclusive).not.toHaveClass('text-content-error');
+    });
+
+    it('shows a result this client does not know as stored, toned as a warning rather than a pass', () => {
+        render(<AssurancePanel assurance={results} />);
+        const unknown = screen.getByTestId('agents-assurance-result-C_NEW');
+        expect(unknown).toHaveTextContent('SKIPPED_LATER');
+        expect(unknown).toHaveClass('text-content-warning');
+    });
+});
