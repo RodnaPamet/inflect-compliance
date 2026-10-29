@@ -136,7 +136,7 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
         fallbackData: initialIncidents,
     });
     const incidents = query.data ?? initialIncidents;
-    const { state, search } = useFilters();
+    const { state, search, hasActive, clearAll } = useFilters();
 
     // Client-side filtering (the API returns the bounded per-tenant list).
     const filtered = useMemo(() => {
@@ -291,7 +291,20 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
                 loading: query.isLoading && !query.data,
                 getRowId: getIncidentRowId,
                 onRowClick: handleIncidentRowClick,
-                emptyState: (
+                // A search or filter that matches nothing is not an empty
+                // register — say so, and offer the way back.
+                emptyState: hasActive ? (
+                    <EmptyState
+                        size="sm"
+                        variant="no-results"
+                        title={t('emptyFilteredTitle')}
+                        description={t('emptyFilteredDesc')}
+                        secondaryAction={{
+                            label: t('emptyClearFilters'),
+                            onClick: clearAll,
+                        }}
+                    />
+                ) : (
                     <EmptyState
                         size="sm"
                         variant="no-records"

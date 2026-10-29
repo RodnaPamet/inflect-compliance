@@ -8560,6 +8560,9 @@
     },
     "emptyTitle": "No incidents yet",
     "emptyDesc": "When a security incident is detected, open it here to start the NIS2 Article 23 response clock.",
+    "emptyFilteredTitle": "No incidents match your search or filters",
+    "emptyFilteredDesc": "Try a different search, or clear the filters to see every incident.",
+    "emptyClearFilters": "Clear filters",
     "new": {
       "createFailed": "Failed to open incident",
       "title": "Open incident",

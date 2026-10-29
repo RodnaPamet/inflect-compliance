@@ -139,6 +139,36 @@ describe('IncidentsClient render', () => {
     });
 });
 
+// #4463 — a search or filter that matches nothing is not an empty register.
+describe('IncidentsClient — a search that matches nothing', () => {
+    afterEach(() => {
+        mockSWR.mockReset();
+        window.history.replaceState({}, '', '/');
+    });
+
+    it('says nothing matched, not "No incidents yet", and clears back to the register', () => {
+        window.history.replaceState({}, '', '/t/acme/incidents?q=no-such-incident');
+        mockSWR.mockReturnValue({ data: ROWS, isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentsClient initialIncidents={ROWS} tenantSlug="acme" canManage />));
+
+        expect(screen.getByText('No incidents match your search or filters')).toBeInTheDocument();
+        expect(screen.queryByText(/No incidents yet/i)).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+        expect(screen.getByText(/INC-2026-001/)).toBeInTheDocument();
+        expect(screen.queryByText('No incidents match your search or filters')).not.toBeInTheDocument();
+    });
+
+    it('says nothing matched when a filter hides every row', () => {
+        window.history.replaceState({}, '', '/t/acme/incidents?severity=MEDIUM');
+        mockSWR.mockReturnValue({ data: ROWS, isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentsClient initialIncidents={ROWS} tenantSlug="acme" canManage />));
+
+        expect(screen.getByText('No incidents match your search or filters')).toBeInTheDocument();
+        expect(screen.queryByText(/No incidents yet/i)).not.toBeInTheDocument();
+    });
+});
+
 describe('NewIncidentModal submit', () => {
     const origFetch = global.fetch;
     afterEach(() => {
