@@ -13,6 +13,12 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { apiErrorMessage } from '@/lib/api-error';
+import {
+    combineDetectedAt,
+    isDetectedAtInFuture,
+    localTimeOf,
+    pickerDayOf,
+} from '@/lib/incidents/detected-at';
 import { buildSeverityLabels, buildIncidentTypeLabels } from './filter-defs';
 
 // The server's bounds (CreateIncidentSchema), checked here first so a long
@@ -54,7 +60,15 @@ export function NewIncidentModal({ open, onClose, tenantSlug, onCreated }: NewIn
         () => buildFormSchema((k, v) => t(k as Parameters<typeof t>[0], v as Parameters<typeof t>[1])),
         [t],
     );
-    const [detectedAt, setDetectedAt] = useState<Date | undefined>(new Date());
+    // "Detected at" is a full timestamp: the day from the DatePicker (which is
+    // day-level by design) and the time from a time field, both defaulting to
+    // the moment the form opened, in the person's own time zone. It drives
+    // every Article 23 deadline, so midnight of the chosen day would not do.
+    const [openedAt] = useState(() => new Date());
+    const [detectedDay, setDetectedDay] = useState<Date | null>(() => pickerDayOf(openedAt));
+    const [detectedTime, setDetectedTime] = useState(() => localTimeOf(openedAt));
+    const [detectedError, setDetectedError] = useState<string | null>(null);
+    const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
     const {
         register,
@@ -73,6 +87,16 @@ export function NewIncidentModal({ open, onClose, tenantSlug, onCreated }: NewIn
 
     const onSubmit = async (values: FormValues) => {
         setApiError(null);
+        const detectedAt = combineDetectedAt(detectedDay, detectedTime);
+        if (!detectedAt) {
+            setDetectedError(t('new.errors.detectedTimeRequired'));
+            return;
+        }
+        if (isDetectedAtInFuture(detectedAt, new Date())) {
+            setDetectedError(t('new.errors.detectedInFuture'));
+            return;
+        }
+        setDetectedError(null);
         try {
             const res = await fetch(`/api/t/${tenantSlug}/incidents`, {
                 method: 'POST',
@@ -83,7 +107,7 @@ export function NewIncidentModal({ open, onClose, tenantSlug, onCreated }: NewIn
                     severity: values.severity,
                     incidentType: values.incidentType,
                     ownerUserId: values.ownerUserId || undefined,
-                    detectedAt: detectedAt ? detectedAt.toISOString() : undefined,
+                    detectedAt: detectedAt.toISOString(),
                 }),
             });
             if (!res.ok) {
@@ -195,11 +219,34 @@ export function NewIncidentModal({ open, onClose, tenantSlug, onCreated }: NewIn
                         <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                             <FormField label={t('new.fields.detectedAt')} hint={t('new.detectedHint')}>
                                 <DatePicker
-                                    value={detectedAt ?? null}
-                                    onChange={(d) => setDetectedAt(d ?? undefined)}
+                                    value={detectedDay}
+                                    onChange={(d) => {
+                                        setDetectedDay(d);
+                                        setDetectedError(null);
+                                    }}
+                                    // No later day than today; the time field
+                                    // and the submit check refuse a later time today.
+                                    disabledDays={{ after: new Date() }}
                                     placeholder={t('new.placeholders.detectedAt')}
                                 />
                             </FormField>
+                            <FormField
+                                label={t('new.fields.detectedTime')}
+                                hint={t('new.detectedTimeHint', { zone: timeZone })}
+                                error={detectedError ?? undefined}
+                            >
+                                <Input
+                                    id="incident-detected-time-input"
+                                    type="time"
+                                    value={detectedTime}
+                                    onChange={(e) => {
+                                        setDetectedTime(e.target.value);
+                                        setDetectedError(null);
+                                    }}
+                                />
+                            </FormField>
+                        </div>
+                        <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                             <FormField label={t('new.fields.commander')}>
                                 <Controller
                                     control={control}

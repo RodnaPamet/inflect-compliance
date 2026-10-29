@@ -8574,6 +8574,7 @@
         "severity": "Severity",
         "type": "Type",
         "detectedAt": "Detected at",
+        "detectedTime": "Time detected",
         "commander": "Incident commander"
       },
       "placeholders": {
@@ -8585,10 +8586,13 @@
         "commander": "Assign an owner"
       },
       "detectedHint": "The clock that drives the 24h / 72h / 1-month deadlines.",
+      "detectedTimeHint": "Your local time ({zone}).",
       "errors": {
         "titleRequired": "Title is required",
         "titleTooLong": "Keep the title to {max, number} characters or fewer.",
-        "descriptionTooLong": "Keep the description to {max, number} characters or fewer."
+        "descriptionTooLong": "Keep the description to {max, number} characters or fewer.",
+        "detectedTimeRequired": "Enter the time the incident was detected.",
+        "detectedInFuture": "The detection time cannot be in the future."
       },
       "cancel": "Cancel",
       "creating": "Creating…",

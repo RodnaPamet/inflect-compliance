@@ -41,8 +41,9 @@ export const CreateIncidentSchema = z.object({
     description: z.string().max(20000).optional(),
     severity: z.enum(INCIDENT_SEVERITIES),
     incidentType: z.enum(INCIDENT_TYPES),
-    // ISO datetime; the clock that drives the Article 23 deadlines.
-    // Defaults to now() server-side if omitted.
+    // ISO datetime — the full instant, not a day; the clock that drives the
+    // Article 23 deadlines. Defaults to now() server-side if omitted;
+    // `createIncident` refuses one in the future.
     detectedAt: z.string().datetime().optional(),
     ownerUserId: z.string().optional().nullable(),
     linkedControlIds: z.array(z.string()).max(100).optional(),

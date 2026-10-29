@@ -25,6 +25,10 @@ import { notFound, badRequest } from '@/lib/errors/types';
 import { runInTenantContext, PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { computeDeadlines, nextPhase } from '@/lib/incidents/deadlines';
+import {
+    DETECTED_AT_FUTURE_TOLERANCE_MS,
+    isDetectedAtInFuture,
+} from '@/lib/incidents/detected-at';
 import type { IncidentPhase, IncidentSeverity } from '@prisma/client';
 import type {
     CreateIncidentInput,
@@ -76,8 +80,16 @@ export async function getIncident(ctx: RequestContext, id: string) {
 export async function createIncident(ctx: RequestContext, data: CreateIncidentInput) {
     assertCanManageIncidents(ctx);
 
+    // The full timestamp the Article 23 deadlines are counted from. A
+    // detection time in the future would start every clock late, so it is
+    // refused — with a small allowance for a submitting device whose clock
+    // runs ahead of ours (its form defaults to its own "now").
+    const detectedAt = data.detectedAt ? new Date(data.detectedAt) : new Date();
+    if (isDetectedAtInFuture(detectedAt, new Date(), DETECTED_AT_FUTURE_TOLERANCE_MS)) {
+        throw badRequest('The detection time cannot be in the future.');
+    }
+
     return runInTenantContext(ctx, async (db) => {
-        const detectedAt = data.detectedAt ? new Date(data.detectedAt) : new Date();
         const year = detectedAt.getUTCFullYear();
         const reference = await IncidentRepository.nextReference(db, ctx, year);
 
