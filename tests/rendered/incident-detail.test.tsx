@@ -248,3 +248,32 @@ describe('IncidentDetailPage — a refused action shows the server reason', () =
         expect(await screen.findByRole('alert')).toHaveTextContent('Action failed');
     });
 });
+
+// GET /evidence answers with the capped `{ rows, truncated }` envelope. The
+// link-evidence picker read it as a bare array, so it offered no records.
+describe('IncidentDetailPage — link-evidence picker reads the capped evidence list', () => {
+    const origFetch = global.fetch;
+    afterEach(() => {
+        global.fetch = origFetch;
+        mockSWR.mockReset();
+    });
+
+    it('offers the evidence records from the { rows, truncated } envelope', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                rows: [{ id: 'ev_9', title: 'Firewall export 2026-06-01' }],
+                truncated: false,
+            }),
+        }) as unknown as typeof fetch;
+        mockSWR.mockReturnValue({ data: makeIncident(), isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentDetailPage />));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Link evidence' }));
+        expect(global.fetch).toHaveBeenCalledWith('/api/t/acme/evidence');
+        // Let the fetch resolve, then open the evidence picker.
+        await new Promise((r) => setTimeout(r, 0));
+        fireEvent.click(screen.getByText('Select evidence…'));
+        expect(await screen.findByText('Firewall export 2026-06-01')).toBeInTheDocument();
+    });
+});

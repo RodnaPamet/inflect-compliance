@@ -24,6 +24,7 @@ import { Heading } from '@/components/ui/typography';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { apiErrorMessage } from '@/lib/api-error';
+import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { PHASE_ORDER } from '@/lib/incidents/deadlines';
 import {
     containmentRunbookFor,
@@ -182,8 +183,12 @@ export default function IncidentDetailPage() {
         try {
             const res = await fetch(tenantApiUrl('/evidence'));
             if (!res.ok) return;
-            const rows = (await res.json()) as Array<{ id: string; title: string }>;
-            const list = Array.isArray(rows) ? rows : [];
+            // GET /evidence answers with the capped `{ rows, truncated }`
+            // envelope, not a bare array — reading it as an array left the
+            // picker empty for every tenant.
+            const list = unwrapCappedList(
+                (await res.json()) as CappedList<{ id: string; title: string }>,
+            );
             setEvidenceOptions(list.map((e) => ({ value: e.id, label: e.title })));
         } catch {
             /* non-fatal — the picker just shows no options */
