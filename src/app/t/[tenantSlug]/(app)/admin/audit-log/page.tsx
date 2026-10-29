@@ -1,5 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import { listAuditLogs } from '@/app-layer/usecases/auditLog';
+import { listAuditLogPage } from '@/app-layer/usecases/auditLog';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { gateAdminPage } from '../_lib/admin-page-gate';
@@ -29,17 +29,32 @@ export const dynamic = 'force-dynamic';
  */
 export default async function AuditLogPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ tenantSlug: string }>;
+    searchParams?: Promise<{ cursor?: string | string[] }>;
 }) {
     const gate = await gateAdminPage('/admin/audit-log', params);
     if (!gate.allowed) return gate.forbidden;
     const { ctx, tenantSlug } = gate;
 
+    const { cursor: rawCursor } = (await searchParams) ?? {};
+    const cursor = typeof rawCursor === 'string' && rawCursor !== '' ? rawCursor : null;
+
     const t = await getTranslations('admin');
-    const auditLog = await listAuditLogs(ctx);
+    const page = await listAuditLogPage(ctx, { cursor });
 
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
+    const pageHref = (at: string | null) =>
+        tenantHref(at === null ? '/admin/audit-log' : `/admin/audit-log?cursor=${encodeURIComponent(at)}`);
+    const rows = page.rows.map((r) => ({
+        id: r.id,
+        createdAt: r.createdAt.toISOString(),
+        action: r.action,
+        entity: r.entity,
+        details: r.details,
+        userName: r.user?.name ?? null,
+    }));
     // An AUDITOR reaches this page without `admin.view` (owner decision
     // 2026-10-29), so the Admin crumb would lead them to the forbidden page.
     const adminCrumb = ctx.appPermissions.admin.view
@@ -61,7 +76,9 @@ export default async function AuditLogPage({
             </ListPageShell.Header>
 
             <AuditLogClient
-                auditLog={JSON.parse(JSON.stringify(auditLog))}
+                auditLog={rows}
+                olderHref={page.nextCursor === null ? null : pageHref(page.nextCursor)}
+                newestHref={cursor === null ? null : pageHref(null)}
                 translations={{
                     time: t('time'),
                     user: t('user'),
@@ -69,6 +86,9 @@ export default async function AuditLogPage({
                     entity: t('entity'),
                     details: t('details'),
                     noEntries: t('noEntries'),
+                    older: t('auditLogOlder'),
+                    newest: t('auditLogNewest'),
+                    pages: t('auditLogPages'),
                 }}
             />
         </ListPageShell>

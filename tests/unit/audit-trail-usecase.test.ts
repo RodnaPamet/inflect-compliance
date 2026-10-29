@@ -23,11 +23,12 @@ jest.mock('@/lib/db-context', () => ({
 jest.mock('@/app-layer/repositories/AuditLogRepository', () => ({
     AuditLogRepository: {
         list: jest.fn(),
+        listPage: jest.fn(),
     },
 }));
 
 import { AuditLogRepository } from '@/app-layer/repositories/AuditLogRepository';
-import { listAuditLogs } from '@/app-layer/usecases/auditLog';
+import { AUDIT_LOG_PAGE_SIZE, listAuditLogPage, listAuditLogs } from '@/app-layer/usecases/auditLog';
 import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
@@ -59,5 +60,24 @@ describe('listAuditLogs', () => {
 
     it('rejects READER (audit gate)', async () => {
         await expect(listAuditLogs(readerCtx)).rejects.toBeDefined();
+    });
+});
+
+describe('listAuditLogPage — the Audit log page', () => {
+    it.each([['ADMIN', adminCtx], ['AUDITOR', auditorCtx]])('reads one page for %s, from the cursor given', async (_r, ctx) => {
+        (AuditLogRepository.listPage as jest.Mock).mockResolvedValue({ rows: [{ id: 'a-1' }], nextCursor: 'c-2' });
+        await expect(listAuditLogPage(ctx, { cursor: 'c-1' })).resolves.toEqual({ rows: [{ id: 'a-1' }], nextCursor: 'c-2' });
+        expect(AuditLogRepository.listPage).toHaveBeenCalledWith(mockDb, ctx, { cursor: 'c-1', limit: AUDIT_LOG_PAGE_SIZE });
+    });
+
+    it('reads the newest page when no cursor is given', async () => {
+        (AuditLogRepository.listPage as jest.Mock).mockResolvedValue({ rows: [], nextCursor: null });
+        await listAuditLogPage(adminCtx);
+        expect(AuditLogRepository.listPage).toHaveBeenCalledWith(mockDb, adminCtx, { cursor: null, limit: AUDIT_LOG_PAGE_SIZE });
+    });
+
+    it.each([['EDITOR', editorCtx], ['READER', readerCtx]])('rejects %s (audit gate) before reading', async (_r, ctx) => {
+        await expect(listAuditLogPage(ctx)).rejects.toBeDefined();
+        expect(AuditLogRepository.listPage).not.toHaveBeenCalled();
     });
 });

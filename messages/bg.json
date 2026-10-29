@@ -6109,6 +6109,9 @@
     },
     "auditLogEntries": "записа в дневника",
     "auditLogEntry": "запис в дневника",
+    "auditLogOlder": "По-стари записи",
+    "auditLogNewest": "Най-новите записи",
+    "auditLogPages": "Страници на одитната пътека",
     "billingLog": {
       "event": "Събитие",
       "time": "Време",

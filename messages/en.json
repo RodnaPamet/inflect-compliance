@@ -6109,6 +6109,9 @@
     },
     "auditLogEntries": "log entries",
     "auditLogEntry": "log entry",
+    "auditLogOlder": "Older entries",
+    "auditLogNewest": "Newest entries",
+    "auditLogPages": "Audit log pages",
     "billingLog": {
       "event": "Event",
       "time": "Time",
