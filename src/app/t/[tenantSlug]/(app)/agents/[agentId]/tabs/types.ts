@@ -149,4 +149,9 @@ export interface BehaviourTabProps extends AgentTabProps {
      * because it puts nothing in force.
      */
     retired: boolean;
+    /**
+     * Open the Runs tab (Step 2c): a Test run, once started, is shown where the
+     * agent's runs are. Optional so a caller that predates it still renders.
+     */
+    onOpenRuns?: () => void;
 }

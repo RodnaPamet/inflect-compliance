@@ -354,7 +354,16 @@ export function AgentDetailClient({
                     canAuthorSkills={perms.canAuthorSkills === true}
                 />}
             {tab === 'behaviour' && profilesEnabled && (
-                <BehaviourTab {...props} retired={agent.status === 'RETIRED'} />
+                <BehaviourTab
+                    {...props}
+                    retired={agent.status === 'RETIRED'}
+                    // A started Test run is shown where the agent's runs are,
+                    // re-read so it is listed (Step 2c).
+                    onOpenRuns={() => {
+                        refresh();
+                        setTab('runs');
+                    }}
+                />
             )}
             {tab === 'coverage' && <CoverageTab {...props} />}
             {/* Read-only, and no `onChanged`: resuming or aborting a run

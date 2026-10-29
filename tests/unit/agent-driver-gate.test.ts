@@ -58,12 +58,12 @@ describe('the operator switch is opt-in, not opt-out', () => {
 
 describe('the stored tenant value is coerced at the read boundary', () => {
     it('passes through the values this build knows', () => {
-        expect(AGENT_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE']);
+        expect(AGENT_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE', 'TOOL_RUNNER']);
     });
 
-    it('reads a READ_ONLY value as itself, although no writer accepts it (Step 2b)', () => {
+    it('every stored value is writable once TOOL_RUNNER made its second deploy (Step 2c)', () => {
         expect(STORED_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE', 'TOOL_RUNNER']);
-        expect(isAgentDriverMode('TOOL_RUNNER')).toBe(false);
+        expect(isAgentDriverMode('TOOL_RUNNER')).toBe(true);
     });
 
     it.each([
@@ -101,11 +101,11 @@ describe('the gate now that the flue driver is built', () => {
     it('holds the implemented flag that makes that true', () => {
         // The one line that moved. Pinned so that turning it back off is also
         // deliberate and visible in the diff that does it.
-        expect(DRIVER_IMPLEMENTED).toEqual({ static: true, flue: true, 'tool-runner': false });
+        expect(DRIVER_IMPLEMENTED).toEqual({ static: true, flue: true, 'tool-runner': true });
     });
 
-    it('every engine but the Tool Runner is built, which is why the Flue veto needs its own block', () => {
-        expect(Object.entries(DRIVER_IMPLEMENTED).filter(([, built]) => !built).map(([d]) => d)).toEqual(['tool-runner']);
+    it('every engine is built since Step 2c, which is why each veto below swaps its flag off', () => {
+        expect(Object.entries(DRIVER_IMPLEMENTED).filter(([, built]) => !built).map(([d]) => d)).toEqual([]);
     });
 });
 
@@ -247,7 +247,7 @@ describe('the whole grid, with the driver implemented', () => {
     });
 });
 
-describe('the Tool Runner engine, built and not yet implemented (Step 2b)', () => {
+describe('the Tool Runner engine, implemented since Step 2c', () => {
     const flueEnv = [false, true];
     const toolRunnerEnv = [undefined, false, true];
     const tenantValues = [undefined, null, '', 'STATIC', 'FLUE', 'TOOL_RUNNER', 'tool_runner', 'rubbish'];
@@ -267,18 +267,21 @@ describe('the Tool Runner engine, built and not yet implemented (Step 2b)', () =
         return { examined, cells };
     }
 
-    it('no input selects it while DRIVER_IMPLEMENTED says no', () => {
-        expect(grid()).toEqual({ examined: 48, cells: [] });
+    it('selects it in exactly the cells where its own switch is on and the tenant chose it (the affirmative case)', () => {
+        expect(grid()).toEqual({
+            examined: 48,
+            cells: ['flue=false tr=true tenant=TOOL_RUNNER', 'flue=true tr=true tenant=TOOL_RUNNER'],
+        });
     });
 
-    it('a tenant that chose it is told why: the switch first, then the build', () => {
+    it('a tenant that chose it runs on it once its own switch is on, and is told why before', () => {
         expect(resolveAgentDriver({ envEnabled: true, tenantSetting: 'TOOL_RUNNER' })).toEqual({
             driver: 'static',
             reason: 'ENV_DISABLED',
         });
         expect(resolveAgentDriver({ envEnabled: false, toolRunnerEnvEnabled: true, tenantSetting: 'TOOL_RUNNER' })).toEqual({
-            driver: 'static',
-            reason: 'DRIVER_NOT_IMPLEMENTED',
+            driver: 'tool-runner',
+            reason: null,
         });
     });
 
@@ -289,20 +292,20 @@ describe('the Tool Runner engine, built and not yet implemented (Step 2b)', () =
         expect(resolveAgentDriver({ envEnabled: true, toolRunnerEnvEnabled: false, tenantSetting: 'FLUE' }).driver).toBe('flue');
     });
 
-    describe('with the flag flipped, as Step 2c will', () => {
+    describe('with the flag flipped back off, the one-line revert', () => {
         const realFlag = DRIVER_IMPLEMENTED['tool-runner'];
         beforeAll(() => {
-            (DRIVER_IMPLEMENTED as Record<string, boolean>)['tool-runner'] = true;
+            (DRIVER_IMPLEMENTED as Record<string, boolean>)['tool-runner'] = false;
         });
         afterAll(() => {
             (DRIVER_IMPLEMENTED as Record<string, boolean>)['tool-runner'] = realFlag;
         });
 
-        it('selects it in exactly the cells where its own switch is on and the tenant chose it (the positive control)', () => {
-            expect(grid()).toEqual({
-                examined: 48,
-                cells: ['flue=false tr=true tenant=TOOL_RUNNER', 'flue=true tr=true tenant=TOOL_RUNNER'],
-            });
+        it('no input selects it, and a tenant that chose it is told the build is why', () => {
+            expect(grid()).toEqual({ examined: 48, cells: [] });
+            expect(
+                resolveAgentDriver({ envEnabled: false, toolRunnerEnvEnabled: true, tenantSetting: 'TOOL_RUNNER' }),
+            ).toEqual({ driver: 'static', reason: 'DRIVER_NOT_IMPLEMENTED' });
         });
     });
 });

@@ -74,7 +74,8 @@ import { enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
-import { assertEngineRunsProfiles, resolveRunDefinition } from './agent-profile-runs';
+import { assertEngineRunsProfiles, resolvePinnedRunDefinition, resolveRunDefinition } from './agent-profile-runs';
+import { isProfileRunKey, type ProfileTrigger } from '@/lib/agentic/agent-profile';
 import { isApprovalExpired } from '@/lib/agentic/approval-window';
 import { evaluateAgentRegistration } from '@/lib/agentic/agent-registration-gate';
 import {
@@ -268,6 +269,14 @@ export async function startWorkflowRun(
          * to ask for less authority than the work requires.
          */
         readOnlyAuthority?: boolean;
+        /**
+         * THE TRIGGER a profile run is started by (Step 2c, #4150). Only the
+         * Test-run usecase passes it, as `'TEST_RUN'`: it is what admits a
+         * Test-run key, a SUBMITTED version and the version's own trigger
+         * check (`resolveRunDefinition`). Every other caller leaves it out, so
+         * a Test-run key sent to the generic start route is refused.
+         */
+        profileTrigger?: ProfileTrigger;
     } = {},
 ): Promise<StartWorkflowResult> {
     if (ctx.apiKeyId) {
@@ -284,7 +293,7 @@ export async function startWorkflowRun(
     // into one, read inside the caller's tenant (Step 1a, #4143). Any key that
     // does not ask for a profile resolves exactly as the registry lookup did,
     // and is refused as `Unknown workflow` when the registry has nothing.
-    const { def } = await resolveRunDefinition(ctx, workflowKey);
+    const { def } = await resolveRunDefinition(ctx, workflowKey, { trigger: opts.profileTrigger });
 
     // THE CARVE-OUT, VERIFIED. Deliberately here and not above: keeping the
     // authority check first means an unauthorised caller still cannot learn
@@ -1525,6 +1534,7 @@ export async function executeQueuedWorkflowRun(
                 id: true, tenantId: true, workflowKey: true, status: true,
                 startedByUserId: true, triggeredViaKeyId: true, agentId: true,
                 stepCount: true, startedAt: true,
+                profileVersionId: true, profileInstructionsHash: true,
             },
         }),
     );
@@ -1535,8 +1545,12 @@ export async function executeQueuedWorkflowRun(
     // work left, and BullMQ can deliver a job more than once.
     if (row.status !== 'RUNNING') return { skipped: `NOT_RUNNING:${row.status}` };
 
-    const def = getWorkflowDefinition(row.workflowKey);
-    if (!def) {
+    // A profile run's definition is read from the version it PINNED, inside
+    // the tenant, once there is a context to read it with (below). A
+    // registered workflow resolves from the registry here, as it always has.
+    const profileRun = isProfileRunKey(row.workflowKey);
+    let def = profileRun ? undefined : getWorkflowDefinition(row.workflowKey);
+    if (!profileRun && !def) {
         await failRun(
             { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
             runId,
@@ -1565,6 +1579,22 @@ export async function executeQueuedWorkflowRun(
         );
         return { skipped: 'PRINCIPAL_REVOKED' };
     }
+
+    if (profileRun) {
+        def = await resolvePinnedRunDefinition(ctx, row);
+        if (!def) {
+            await failRun(
+                ctx,
+                runId,
+                'profile_version_unavailable: the agent profile version this run pinned can no longer be ' +
+                    'read as it was pinned, so the run does not continue.',
+            );
+            return { skipped: 'NO_DEFINITION' };
+        }
+    }
+    // Both arms above have already failed and returned a run with no
+    // definition; this only tells the compiler so.
+    if (!def) return { skipped: 'NO_DEFINITION' };
 
     const permitted = (
         await resolveDriverForRun(ctx.tenantId, {
@@ -1736,7 +1766,9 @@ async function runAgentStillInService(tenantId: string, agentId: string | null):
 
 async function loadRunAndDef(ctx: RequestContext, runId: string) {
     const run = await getRunRow(ctx, runId);
-    const def = getWorkflowDefinition(run.workflowKey);
+    // The registry for a registered workflow, the PINNED version for a profile
+    // run (Step 2c): a resume continues what admission admitted.
+    const def = await resolvePinnedRunDefinition(ctx, run);
     if (!def) throw forbidden('Workflow definition no longer exists');
     return { run, def };
 }

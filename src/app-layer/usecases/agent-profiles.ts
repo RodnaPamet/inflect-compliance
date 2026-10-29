@@ -64,6 +64,10 @@ import {
     type ProfileSkillRef,
 } from '@/lib/agentic/agent-profile';
 import type { AgentProfileVersionInput } from '../schemas/agent-profile.schemas';
+import { getAgentDriverSetting } from './agent-driver-setting';
+import { isPersonContext } from '../request-context-kind';
+import { resolveKillState } from '@/lib/agentic/kill-switch';
+import { readBreakerLatch } from '@/lib/agentic/circuit-breaker-store';
 
 // ─── Refusals ───────────────────────────────────────────────────────
 
@@ -87,7 +91,13 @@ export type AgentProfileRefusal =
     | 'HASH_CHANGED'
     | 'REJECTION_REASON_REQUIRED'
     | 'REJECTION_REASON_TOO_LONG'
-    | 'CONCURRENT_CHANGE';
+    | 'CONCURRENT_CHANGE'
+    | 'TESTER_NOT_A_PERSON'
+    | 'TEST_RUN_UNAVAILABLE'
+    | 'TEST_RUN_VERSION_NOT_ELIGIBLE'
+    | 'TEST_RUN_TRIGGER_NOT_ALLOWED'
+    | 'AGENT_KILL_SWITCHED'
+    | 'AGENT_BREAKER_LATCHED';
 
 const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     PROFILES_DISABLED: 404,
@@ -110,6 +120,12 @@ const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     REJECTION_REASON_REQUIRED: 400,
     REJECTION_REASON_TOO_LONG: 400,
     CONCURRENT_CHANGE: 409,
+    TESTER_NOT_A_PERSON: 403,
+    TEST_RUN_UNAVAILABLE: 409,
+    TEST_RUN_VERSION_NOT_ELIGIBLE: 409,
+    TEST_RUN_TRIGGER_NOT_ALLOWED: 409,
+    AGENT_KILL_SWITCHED: 409,
+    AGENT_BREAKER_LATCHED: 409,
 };
 
 /** A refusal carrying its reason as `details.reason`, beside a sentence for the person who asked. */
@@ -216,12 +232,13 @@ interface AgentRow {
     id: string;
     name: string;
     status: string;
+    riskTier: string | null;
 }
 
 async function findAgent(db: PrismaTx, ctx: RequestContext, agentId: string): Promise<AgentRow> {
     const agent = await db.registeredAgent.findFirst({
         where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
-        select: { id: true, name: true, status: true },
+        select: { id: true, name: true, status: true, riskTier: true },
     });
     if (!agent) throw refuse('AGENT_NOT_FOUND', 'Agent not found.');
     return agent;
@@ -755,14 +772,44 @@ export interface AgentProfileView {
      */
     options: { tools: string[]; skills: ProfileSkillRef[] };
     /**
-     * Whether a test run can start, and why not. One state in this build: no
-     * engine runs a profile (decision 7), so the Behaviour tab's Test run is
-     * disabled and names the engine setting it needs. Step 2c adds the start
-     * path and the state in which it is offered, together; until then there is
-     * no `available: true` for a page to act on.
+     * Whether a Test run can start for this agent, and why not (Step 2c). The
+     * version's own `allowedTriggers` decide per version; this is everything
+     * that does not depend on the version.
      */
-    testRun: { available: false; reason: 'NO_ENGINE_RUNS_PROFILES' };
+    testRun: ProfileTestRunState;
     limits: { instructionsMaxChars: number; maxTurns: number; rejectionReasonMaxChars: number };
+}
+
+/**
+ * Whether a Test run can start for an agent, before any version is named.
+ *
+ *   • `ENGINE_DOES_NOT_RUN_PROFILES`: the workspace chose an engine that does
+ *     not run a profile, named, so the page can say which and where to change it;
+ *   • `ENGINE_NOT_IN_FORCE`: it chose the Tool Runner, and the engine is not in
+ *     force (the deployment's switch, or the build), so a run would refuse;
+ *   • `AGENT_NOT_READY`: the agent is not ACTIVE and risk-assessed, which a
+ *     reasoning-engine run requires of the agent it runs as.
+ *
+ * The start path asks the same questions again, and admission asks them a
+ * third time: this state is for the button, not the gate.
+ */
+export type ProfileTestRunState =
+    | { available: true }
+    | { available: false; reason: 'ENGINE_DOES_NOT_RUN_PROFILES'; engine: 'STATIC' | 'FLUE' }
+    | { available: false; reason: 'ENGINE_NOT_IN_FORCE' }
+    | { available: false; reason: 'AGENT_NOT_READY' };
+
+/** The Test run state from the engine setting and the agent. */
+export function profileTestRunState(
+    engine: { mode: string; effectiveDriver: string },
+    agent: { status: string; riskTier: string | null },
+): ProfileTestRunState {
+    if (engine.mode !== 'TOOL_RUNNER') {
+        return { available: false, reason: 'ENGINE_DOES_NOT_RUN_PROFILES', engine: engine.mode === 'FLUE' ? 'FLUE' : 'STATIC' };
+    }
+    if (engine.effectiveDriver !== 'tool-runner') return { available: false, reason: 'ENGINE_NOT_IN_FORCE' };
+    if (agent.status !== 'ACTIVE' || agent.riskTier === null) return { available: false, reason: 'AGENT_NOT_READY' };
+    return { available: true };
 }
 
 /** Display labels for members of this tenant, by user id. Unknown ids are absent. */
@@ -806,8 +853,11 @@ function viewSkillRefs(raw: unknown): ProfileSkillRef[] {
  */
 export async function getAgentProfile(ctx: RequestContext, agentId: string): Promise<AgentProfileView> {
     assertMayManageProfiles(ctx);
+    // Read outside the transaction below: it opens its own, and it is the same
+    // read the settings page and the run path make (Step 2c).
+    const engine = await getAgentDriverSetting(ctx);
     return runInTenantContext(ctx, async (db) => {
-        await findAgent(db, ctx, agentId);
+        const agent = await findAgent(db, ctx, agentId);
         const grants = await db.registeredAgentTool.findMany({
             where: { tenantId: ctx.tenantId, agentId },
             select: { toolName: true },
@@ -815,7 +865,7 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
             take: 500,
         });
         const options = { tools: grants.map((g) => g.toolName), skills: await mountableSkills(db, ctx) };
-        const testRun = { available: false, reason: 'NO_ENGINE_RUNS_PROFILES' } as const;
+        const testRun = profileTestRunState({ mode: engine.mode, effectiveDriver: engine.effective.driver }, agent);
         const limits = {
             instructionsMaxChars: PROFILE_INSTRUCTIONS_MAX_CHARS,
             maxTurns: PROFILE_MAX_TURNS,
@@ -891,3 +941,101 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
         };
     });
 }
+
+// ─── The Test run (Step 2c, #4150) ─────────────────────────────────
+
+/**
+ * START A TEST RUN of one version of an agent's profile, from its Behaviour tab.
+ *
+ * A person tries a version: the approved one in force, or the one submitted for
+ * review, so a reviewer can see what they are asked to approve do something.
+ * The run:
+ *
+ *   • runs AS THE AGENT, with the person's own context and the agent bound
+ *     (`{ ...ctx, agentId }`, the interactive run's seam): the agent's grants,
+ *     card, ceiling and kill switch apply, and the person's permissions are one
+ *     term of the intersection, never a way around it;
+ *   • is READ-ONLY: started with read authority, under a Test-run key whose
+ *     definition withholds the propose surface, here and in the worker;
+ *   • is refused, named, when the version does not allow `TEST_RUN`, when the
+ *     workspace's engine does not run profiles, or when the agent is stopped.
+ *
+ * Admission (`startWorkflowRun` → `resolveRunDefinition`) checks the version,
+ * its trigger, the engine and the agent's standing again. This usecase exists
+ * for what admission cannot know: that a PERSON asked, and which agent.
+ */
+export async function startAgentProfileTestRun(
+    ctx: RequestContext,
+    agentId: string,
+    version: number,
+): Promise<{ runId: string; status: string; runKey: string }> {
+    assertMayManageProfiles(ctx);
+    if (!isPersonContext(ctx)) {
+        throw refuse(
+            'TESTER_NOT_A_PERSON',
+            'A Test run is started by a signed-in person from the Behaviour tab. An API key, an agent and a ' +
+                'scheduled job each start runs their own way.',
+        );
+    }
+
+    const engine = await getAgentDriverSetting(ctx);
+    const { runKey } = await runInTenantContext(ctx, async (db) => {
+        const agent = await findAgent(db, ctx, agentId);
+        assertAgentNotRetired(agent);
+        const state = profileTestRunState({ mode: engine.mode, effectiveDriver: engine.effective.driver }, agent);
+        if (!state.available) {
+            throw refuse('TEST_RUN_UNAVAILABLE', TEST_RUN_UNAVAILABLE_MESSAGE[state.reason], { state });
+        }
+        const profile = await db.agentProfile.findFirst({
+            where: { tenantId: ctx.tenantId, agentId },
+            select: { id: true, currentApprovedVersion: true },
+        });
+        if (!profile) throw refuse('PROFILE_NOT_FOUND', 'This agent has no profile.');
+        const row = await db.agentProfileVersion.findFirst({
+            where: { tenantId: ctx.tenantId, profileId: profile.id, version },
+            select: { version: true, status: true, allowedTriggers: true },
+        });
+        if (!row) throw refuse('VERSION_NOT_FOUND', 'No such version of this profile.');
+        const inForce = row.status === 'APPROVED' && profile.currentApprovedVersion === row.version;
+        if (!inForce && row.status !== 'SUBMITTED') {
+            throw refuse(
+                'TEST_RUN_VERSION_NOT_ELIGIBLE',
+                'A Test run tries the approved version in force or the version submitted for review.',
+            );
+        }
+        if (!row.allowedTriggers.includes('TEST_RUN')) {
+            throw refuse(
+                'TEST_RUN_TRIGGER_NOT_ALLOWED',
+                'This version does not allow Test runs. Write a version that allows them.',
+            );
+        }
+        return { runKey: profileRunKey(profile.id, row.version, { testRun: true }) };
+    });
+
+    const kill = await resolveKillState(ctx.tenantId, agentId);
+    if (kill) {
+        throw refuse('AGENT_KILL_SWITCHED', `A kill switch is in force for this agent (scope: ${kill.scope}).`);
+    }
+    const latch = await readBreakerLatch(ctx.tenantId, agentId);
+    if (latch?.state === 'OPEN') {
+        throw refuse('AGENT_BREAKER_LATCHED', "This agent's circuit breaker is latched open and must be reset.");
+    }
+
+    // Lazily, as the interactive run does: `workflow-runs` imports this module's
+    // neighbour (`agent-profile-runs`), which imports this one.
+    const { startWorkflowRun } = await import('./workflow-runs');
+    const started = await startWorkflowRun({ ...ctx, agentId }, runKey, {}, {
+        readOnlyAuthority: true,
+        profileTrigger: 'TEST_RUN',
+    });
+    return { runId: started.runId, status: started.status, runKey };
+}
+
+const TEST_RUN_UNAVAILABLE_MESSAGE: Record<Exclude<ProfileTestRunState, { available: true }>['reason'], string> = {
+    ENGINE_DOES_NOT_RUN_PROFILES:
+        'This workspace runs agents on an engine that does not run agent profiles. An owner can choose the ' +
+        'Tool Runner engine under Admin, AI features, Agent engines.',
+    ENGINE_NOT_IN_FORCE:
+        'This workspace has chosen the Tool Runner engine, but it is not running on this deployment yet.',
+    AGENT_NOT_READY: 'A Test run runs as the agent, so the agent must be active and risk-assessed.',
+};

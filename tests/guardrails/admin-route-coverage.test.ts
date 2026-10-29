@@ -167,6 +167,8 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/[agentId]/profile/versions/[version]/approve/route.ts',
     'admin/agents/[agentId]/profile/versions/[version]/reject/route.ts',
     'admin/agents/[agentId]/profile/versions/[version]/retire/route.ts',
+    // Step 2c (#4150): start a read-only Test run of a version, as the agent.
+    'admin/agents/[agentId]/profile/versions/[version]/test-run/route.ts',
     // The versioned runtime policy card (Agentic 5) — its own key,
     // `admin.agent_policy_card`, and the WIDEST of the three: a card declares
     // the permitted tools, the data rung, the autonomy rung and both action

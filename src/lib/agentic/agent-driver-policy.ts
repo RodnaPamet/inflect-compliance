@@ -32,6 +32,7 @@ import {
     STATIC_DRIVER,
     type AgentDriverDecision,
 } from './agent-driver';
+import { agentProfilesEnabledFor } from './agent-profile';
 import { listWorkflowDefinitions } from './workflow-registry';
 
 /**
@@ -101,14 +102,45 @@ export async function resolveDriverForTenant(tenantId: string): Promise<AgentDri
  *
  * NOT folded into `resolveAgentDriver`: that function is pure over
  * {env, tenant} and has no business reading the workflow registry.
+ *
+ * THE TOOL RUNNER (Step 2c) is asked for by agent profiles rather than by the
+ * registry (`somethingRequestsToolRunner`), so its narrowing needs the tenant:
+ * the profile surface can be on for one workspace and off for the next. It is
+ * applied by the two REPORTING surfaces, which hold the slug, and not by
+ * `resolveDriverForTenant` on the run path: a run that asks for this engine is
+ * a profile run admission has already admitted, and narrowing it there without
+ * the slug would send an allowlisted tenant's profile runs to the static engine.
  */
 export function narrowToWhatAWorkflowAsksFor(
     decision: AgentDriverDecision,
+    tenantSlug?: string | null,
 ): AgentDriverDecision {
-    if (decision.driver !== 'flue') return decision;
-    return someWorkflowRequestsFlue()
-        ? decision
-        : { driver: STATIC_DRIVER, reason: 'NO_WORKFLOW_REQUESTS_IT' };
+    if (decision.driver === 'flue') {
+        return someWorkflowRequestsFlue()
+            ? decision
+            : { driver: STATIC_DRIVER, reason: 'NO_WORKFLOW_REQUESTS_IT' };
+    }
+    if (decision.driver === 'tool-runner') {
+        return somethingRequestsToolRunner(tenantSlug)
+            ? decision
+            : { driver: STATIC_DRIVER, reason: 'NO_WORKFLOW_REQUESTS_IT' };
+    }
+    return decision;
+}
+
+/**
+ * Can anything in this tenant ask for the Tool Runner engine (Step 2c)?
+ *
+ * Its requests come from agent profiles, not from the workflow registry: a
+ * profile's run definition is compiled with `driver: 'tool-runner'`, and no
+ * registered workflow asks for it. So the engine is reachable exactly when the
+ * profile surface is on for the tenant, or when a registered workflow asks for
+ * it by name. Without this the page would report the engine as live in a
+ * workspace where nothing can start a run on it.
+ */
+export function somethingRequestsToolRunner(tenantSlug: string | null | undefined): boolean {
+    if (listWorkflowDefinitions().some((d) => d.driver === 'tool-runner')) return true;
+    return agentProfilesEnabledFor(env.AGENT_PROFILES, env.AGENT_PROFILES_TENANTS, tenantSlug);
 }
 
 /**
