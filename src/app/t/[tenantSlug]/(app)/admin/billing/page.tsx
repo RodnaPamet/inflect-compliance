@@ -1,8 +1,5 @@
 import { formatDate } from '@inflect/ui/lib/format-date';
-import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { auth } from '@/auth';
-import { resolveTenantContext } from '@/lib/tenant-context';
 import prisma from '@/lib/prisma';
 import { BillingActions } from './BillingActions';
 import { BillingEventLog } from './BillingEventLog';
@@ -14,36 +11,37 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cardVariants } from '@/components/ui/card-variants';
 import { cn } from '@inflect/ui/lib/cn';
+import { gateAdminPage } from '../_lib/admin-page-gate';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Admin-only billing overview page.
  * Shows current plan, status, renewal date, trial info, upgrade/manage actions, and event history.
+ *
+ * Gated here, before any read (`admin.view` + `admin.manage`, the key the
+ * billing-event route holds): the admin layout is a client component and cannot
+ * keep the plan and event history out of the payload. See
+ * `../_lib/admin-page-requirements.ts`.
  */
 export default async function BillingPage({
     params,
 }: {
     params: Promise<{ tenantSlug: string }>;
 }) {
-    const { tenantSlug } = await params;
+    const gate = await gateAdminPage('/admin/billing', params);
+    if (!gate.allowed) return gate.forbidden;
+    const { ctx, tenantSlug } = gate;
     const t = await getTranslations('admin');
 
-    const session = await auth();
-    if (!session?.user?.id) notFound();
-
-    let tenantCtx;
-    try {
-        tenantCtx = await resolveTenantContext({ tenantSlug }, session.user.id);
-    } catch {
-        notFound();
-    }
-
-
+    const tenant = await prisma.tenant.findUnique({
+        where: { id: ctx.tenantId },
+        select: { name: true },
+    });
 
     // Fetch billing account
     const billingAccount = await prisma.billingAccount.findUnique({
-        where: { tenantId: tenantCtx.tenant.id },
+        where: { tenantId: ctx.tenantId },
     });
 
     const billingMode = getBillingMode();
@@ -66,7 +64,7 @@ export default async function BillingPage({
 
     // Fetch recent billing events
     const recentEvents = await prisma.billingEvent.findMany({
-        where: { tenantId: tenantCtx.tenant.id },
+        where: { tenantId: ctx.tenantId },
         orderBy: { createdAt: 'desc' },
         take: 10,
         select: {
@@ -93,7 +91,7 @@ export default async function BillingPage({
                 <Heading level={1}>{t('billing.title')}</Heading>
                 <p className="text-sm text-content-muted mt-1">
                     {t.rich('billing.description', {
-                        name: tenantCtx.tenant.name,
+                        name: tenant?.name ?? tenantSlug,
                         em: (c) => <span className="text-content-emphasis font-medium">{c}</span>,
                     })}
                 </p>

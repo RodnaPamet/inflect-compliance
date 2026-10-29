@@ -37,7 +37,11 @@ function systemCtx(tenantId: string): RequestContext {
     return buildSystemContext({ tenantId, job: 'device-report' });
 }
 
+/** The inventory read. Asserts `personnel.view` itself, the key `GET /devices` holds. */
 export async function listDevices(ctx: RequestContext) {
+    if (!ctx.appPermissions?.personnel?.view) {
+        throw forbidden('You do not have permission to view devices.');
+    }
     return runInTenantContext(ctx, (db) =>
         db.device.findMany({
             where: { tenantId: ctx.tenantId },

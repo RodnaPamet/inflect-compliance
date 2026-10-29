@@ -6,6 +6,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Eyebrow } from '@/components/ui/typography';
+import { gateAdminPage } from './_lib/admin-page-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,13 +18,20 @@ export const dynamic = 'force-dynamic';
  * (`/admin/audit-log`) reachable via the pill next to
  * Notifications. Policy templates were unused chrome and were
  * dropped entirely.
+ *
+ * Reads no tenant data, and is still gated here on `admin.view` like every
+ * admin server page (`./_lib/admin-page-requirements.ts`): the client admin
+ * layout cannot keep a server page's props out of the payload, so a read added
+ * to this page later must already be behind a server gate.
  */
 export default async function AdminPage({
     params,
 }: {
     params: Promise<{ tenantSlug: string }>;
 }) {
-    const { tenantSlug } = await params;
+    const gate = await gateAdminPage('/admin', params);
+    if (!gate.allowed) return gate.forbidden;
+    const { tenantSlug } = gate;
 
     const t = await getTranslations('admin');
 
