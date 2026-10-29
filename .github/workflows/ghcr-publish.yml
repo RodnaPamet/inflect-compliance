@@ -190,6 +190,11 @@ jobs:
                   # pull request had changed, while reporting a green check. The
                   # subject of a build belongs in the build.
                   file: Dockerfile
+                  # The commit this image is built from, which the health
+                  # probes report as `version` (#4477). On a push to main
+                  # that is the merge commit the image contains.
+                  build-args: |
+                      BUILD_SHA=${{ github.sha }}
                   push: false
                   load: true
                   tags: |
@@ -215,6 +220,11 @@ jobs:
                   # pull request had changed, while reporting a green check. The
                   # subject of a build belongs in the build.
                   file: Dockerfile
+                  # The commit this image is built from, which the health
+                  # probes report as `version` (#4477). On a push to main
+                  # that is the merge commit the image contains.
+                  build-args: |
+                      BUILD_SHA=${{ github.sha }}
                   push: false
                   load: true
                   tags: |

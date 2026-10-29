@@ -130,3 +130,30 @@ describe('GET /api/health (GAP-13: Redis ping must affect status)', () => {
         expect(body.checks.redis.status).toBe('ok');
     });
 });
+
+describe('GET /api/health names the build that is serving (#4477)', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        process.env = { ...originalEnv };
+        pingMock.mockResolvedValue('PONG');
+    });
+
+    afterAll(() => {
+        process.env = originalEnv;
+    });
+
+    it('reports the commit the image was built from', async () => {
+        process.env.BUILD_SHA = '3f6d83150b9c4e2a7d1e';
+        const body = await (await loadRouteFresh().GET()).json();
+        expect(body.version).toBe('3f6d83150b9c4e2a7d1e');
+    });
+
+    it("reports 'dev' outside a published image, and for the empty value an unset build argument leaves", async () => {
+        delete process.env.BUILD_SHA;
+        expect((await (await loadRouteFresh().GET()).json()).version).toBe('dev');
+        process.env.BUILD_SHA = '';
+        expect((await (await loadRouteFresh().GET()).json()).version).toBe('dev');
+    });
+});
