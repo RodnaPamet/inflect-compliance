@@ -35,6 +35,8 @@ import { FormField } from '@/components/ui/form-field';
 import { useToast, useEnterSubmit, useThresholdLoadMore } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks';
 import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
+import { apiErrorMessage } from '@/lib/api-error';
+import { vulnerabilityRefusal, type VulnerabilityRefusal } from '@/lib/vulnerability-refusals';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { buildVulnFilters, VULN_FILTER_KEYS, buildVulnStatusLabels } from './filter-defs';
 
@@ -162,6 +164,22 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
 
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
 
+    // A refused action shows WHY (#4465): a refusal this page can name in the
+    // viewer's language gets its own sentence, anything else the server's
+    // message, and only a body with no message the generic fallback.
+    const refusalText = useMemo<Record<VulnerabilityRefusal, string>>(
+        () => ({ REMEDIATION_TASK_EXISTS: t('refusalRemediationTaskExists') }),
+        [t],
+    );
+    const failureMessage = useCallback(
+        async (res: Response, fallback: string) => {
+            const body: unknown = await res.json().catch(() => null);
+            const reason = vulnerabilityRefusal(body);
+            return reason ? refusalText[reason] : apiErrorMessage(body, fallback);
+        },
+        [refusalText],
+    );
+
     const rowData = useMemo(
         () => initialRows.map((r) => (overrides[r.id] ? { ...r, ...overrides[r.id] } : r)),
         [initialRows, overrides],
@@ -206,20 +224,23 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
     const patchVuln = useCallback(
         async (id: string, body: Record<string, unknown>, optimistic: Partial<VulnRow>) => {
             applyOverride(id, optimistic);
+            let message = t('updateFailed');
             try {
                 const res = await fetch(apiUrl(`/vulnerabilities/${id}`), {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body),
                 });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (res.ok) return;
+                message = await failureMessage(res, message);
             } catch {
-                clearOverride(id);
-                toast.error(t('updateFailed'));
-                router.refresh();
+                // Network failure: no body to read, the fallback stands.
             }
+            clearOverride(id);
+            toast.error(message);
+            router.refresh();
         },
-        [apiUrl, applyOverride, clearOverride, router, toast, t],
+        [apiUrl, applyOverride, clearOverride, failureMessage, router, toast, t],
     );
 
     const patchStatus = useCallback(
@@ -264,16 +285,21 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
             setPendingId(row.id);
             try {
                 const res = await fetch(apiUrl(`/vulnerabilities/${row.id}/convert-to-risk`), { method: 'POST' });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                toast.success(t('riskCreated'));
+                if (res.ok) {
+                    toast.success(t('riskCreated'));
+                } else {
+                    toast.error(await failureMessage(res, t('convertRiskFailed')));
+                }
+                // Either way the row may have moved on (a refusal can mean
+                // somebody else got there first), so re-read it.
                 router.refresh();
             } catch {
-                toast.error(t('convertFailed', { target: 'risk' }));
+                toast.error(t('convertRiskFailed'));
             } finally {
                 setPendingId(null);
             }
         },
-        [apiUrl, router, toast, t],
+        [apiUrl, failureMessage, router, toast, t],
     );
 
     const convert = useCallback(
@@ -282,7 +308,11 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
             setPendingId(row.id);
             try {
                 const res = await fetch(apiUrl(`/vulnerabilities/${row.id}/convert-to-finding`), { method: 'POST' });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (!res.ok) {
+                    toast.error(await failureMessage(res, t('convertFindingFailed')));
+                    router.refresh();
+                    return;
+                }
                 const body = (await res.json().catch(() => null)) as { nudge?: { suggestElevateToRisk?: boolean } } | null;
                 if (body?.nudge?.suggestElevateToRisk && can.convertToRisk) {
                     // Finding may under-capture a HIGH/CRITICAL vuln — offer to
@@ -293,12 +323,12 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
                 }
                 router.refresh();
             } catch {
-                toast.error(t('convertFailed', { target: 'finding' }));
+                toast.error(t('convertFindingFailed'));
             } finally {
                 setPendingId(null);
             }
         },
-        [apiUrl, can.convertToRisk, convertToRisk, router, toast, t],
+        [apiUrl, can.convertToRisk, convertToRisk, failureMessage, router, toast, t],
     );
 
     const createRemediationTask = useCallback(
@@ -306,7 +336,12 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
             setPendingId(row.id);
             try {
                 const res = await fetch(apiUrl(`/vulnerabilities/${row.id}/remediation-task`), { method: 'POST' });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (!res.ok) {
+                    toast.error(await failureMessage(res, t('taskCreateFailed')));
+                    // REMEDIATION_TASK_EXISTS means the row already has one: show it.
+                    router.refresh();
+                    return;
+                }
                 const task = (await res.json()) as { id: string; key: string | null };
                 applyOverride(row.id, {
                     remediationTaskId: task.id,
@@ -320,7 +355,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
                 setPendingId(null);
             }
         },
-        [apiUrl, applyOverride, router, toast, t],
+        [apiUrl, applyOverride, failureMessage, router, toast, t],
     );
 
     const statusOptions = useMemo<ComboboxOption[]>(

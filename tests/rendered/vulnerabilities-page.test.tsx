@@ -9,10 +9,13 @@
  *
  *   1. every control follows its route's gate — the coarse tier AND the
  *      route's granular keys — so a built-in role sees what its coarse tier
- *      gave it, and a custom role sees only the controls its keys can use.
+ *      gave it, and a custom role sees only the controls its keys can use;
+ *   2. a refused action shows the server's reason — in the page's own words
+ *      when it is a refusal the page can name — and the generic fallbacks
+ *      carry no English interpolated into a translated sentence.
  */
 import * as React from 'react';
-import { configure, render, screen, within } from '@testing-library/react';
+import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SWRConfig } from 'swr';
 import type { Role } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
@@ -75,6 +78,22 @@ jest.mock('next/navigation', () => {
 
 jest.mock('@/components/layout/PageBreadcrumbs', () => ({ PageBreadcrumbs: () => null }));
 
+// Toasts are captured: no Toaster is mounted, and an action's outcome is
+// reported only as a toast. Everything else in sonner stays real.
+const mockToastError = jest.fn();
+const mockToastSuccess = jest.fn();
+jest.mock('sonner', () => {
+    const actual = jest.requireActual('sonner');
+    return {
+        ...actual,
+        toast: Object.assign((...a: unknown[]) => actual.toast(...a), {
+            ...actual.toast,
+            error: (...a: unknown[]) => mockToastError(...a),
+            success: (...a: unknown[]) => mockToastSuccess(...a),
+        }),
+    };
+});
+
 const mockGetTenantCtx = jest.fn();
 jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (...a: unknown[]) => mockGetTenantCtx(...a),
@@ -121,18 +140,26 @@ function vuln(over: Record<string, unknown> = {}) {
     };
 }
 
+/** Per test: the answer to a write (POST / PATCH), or null for a 200 `{}`. */
+let answerWrite: (url: URL, method: string) => { status: number; body: unknown } | null = () => null;
+
 function installFetch() {
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input), 'https://test.local');
+        let status = 200;
         let body: unknown = {};
-        if (url.pathname === '/api/t/acme/vulnerabilities/status') {
+        const method = init?.method ?? 'GET';
+        const written = method !== 'GET' ? answerWrite(url, method) : null;
+        if (written) {
+            ({ status, body } = written);
+        } else if (url.pathname === '/api/t/acme/vulnerabilities/status') {
             body = { syncEnabled: true, lastSyncedAt: null, assetsTotal: 1, assetsWithIdentity: 1 };
         } else if (url.pathname.includes('/members')) {
             body = [];
         }
         return {
-            ok: true,
-            status: 200,
+            ok: status < 400,
+            status,
             headers: new Headers({ 'content-type': 'application/json' }),
             json: async () => body,
             text: async () => JSON.stringify(body),
@@ -189,7 +216,21 @@ const NONE = { toRisk: false, toFinding: false, createTask: false, linkCve: fals
 beforeEach(() => {
     window.localStorage.clear();
     mockListVulnerabilities.mockReset();
+    mockToastError.mockReset();
+    mockToastSuccess.mockReset();
+    answerWrite = () => null;
     installFetch();
+});
+
+async function click(name: string) {
+    await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name }));
+    });
+}
+
+const refusal = (status: number, code: string, message: string, reason?: string) => ({
+    status,
+    body: { error: { code, message, ...(reason ? { details: { reason } } : {}) } },
 });
 
 // ─── 1. Each control follows its route's gate ───────────────────────
@@ -223,5 +264,57 @@ describe('Vulnerabilities — the write surface each role gets', () => {
     it('a custom EDITOR role without tasks.create is not offered Create task', async () => {
         await mount(customRole('EDITOR', off('tasks', 'create')));
         expect(surface()).toEqual({ ...ALL, createTask: false });
+    });
+});
+
+// ─── 2. A refused action says why ───────────────────────────────────
+
+describe('Vulnerabilities — a refused action shows its reason', () => {
+    it('Create task refused REMEDIATION_TASK_EXISTS reads in the page\'s own words', async () => {
+        answerWrite = (url) =>
+            url.pathname.endsWith('/remediation-task')
+                ? refusal(409, 'CONFLICT', 'A remediation task already exists for this vulnerability.', 'REMEDIATION_TASK_EXISTS')
+                : null;
+        await mount(makeRequestContext('EDITOR'));
+        await click(V.createTask);
+        await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+        expect(mockToastError.mock.calls[0][0]).toBe(V.refusalRemediationTaskExists);
+    });
+
+    it('To Risk refused shows the server\'s message', async () => {
+        answerWrite = (url) =>
+            url.pathname.endsWith('/convert-to-risk') ? refusal(404, 'NOT_FOUND', 'Vulnerability not found') : null;
+        await mount(makeRequestContext('EDITOR'));
+        await click(V.toRisk);
+        await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+        expect(mockToastError.mock.calls[0][0]).toBe('Vulnerability not found');
+    });
+
+    it('To Finding refused with no message falls back to a sentence with no English word spliced in', async () => {
+        answerWrite = (url) => (url.pathname.endsWith('/convert-to-finding') ? { status: 500, body: {} } : null);
+        await mount(makeRequestContext('EDITOR'));
+        await click(V.toFinding);
+        await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+        expect(mockToastError.mock.calls[0][0]).toBe(V.convertFindingFailed);
+        // The old key interpolated the hard-coded word 'finding' into a translated sentence.
+        expect(V.convertFindingFailed).not.toMatch(/\{/);
+        expect(V.convertRiskFailed).not.toMatch(/\{/);
+        expect(V).not.toHaveProperty('convertFailed');
+    });
+
+    it('a refused triage edit shows the server\'s message, not "Could not update"', async () => {
+        answerWrite = (url, method) =>
+            method === 'PATCH' ? refusal(400, 'BAD_REQUEST', 'Owner must be an active member of this tenant') : null;
+        await mount(makeRequestContext('EDITOR'));
+        const picker = screen.getByRole('combobox', { name: V.colStatus });
+        await act(async () => {
+            fireEvent.click(picker);
+        });
+        const option = await screen.findByRole('option', { name: V.filterEnums.status.MITIGATED });
+        await act(async () => {
+            fireEvent.click(option);
+        });
+        await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+        expect(mockToastError.mock.calls[0][0]).toBe('Owner must be an active member of this tenant');
     });
 });
