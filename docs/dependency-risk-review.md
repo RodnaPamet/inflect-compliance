@@ -538,6 +538,28 @@ already in the tree.
 | **Version** | `6.2.12`, the version `@modelcontextprotocol/client` already resolved. No new package enters the image, and `npm audit` reports nothing for it. `next-auth` keeps its own nested `jose` 4. |
 | **Decision** | **Adopt.** Declare explicitly; the `REVIEWED` floor is major 6. |
 
+## Review — 2026-10-29 — the Anthropic SDK for the Tool Runner engine
+
+### `@anthropic-ai/sdk` — `1.3.0` (exact)
+
+Reviewed on adoption (Step 2a of `docs/claude-tool-runner-design.md`, #4148)
+under grounds **(a)** and **(b)**. It performs the network egress to Anthropic
+and carries the API key, and it decodes every model response, tool-call
+arguments included. The owner chose a direct dependency over extending the
+raw-`fetch` providers (decision 3 of that design).
+
+| | |
+|---|---|
+| **Direct?** | Yes, new as a direct dependency. It was already in the tree at `0.129.0`, pinned by `@earendil-works/pi-ai` 1.4.0. **pi-ai keeps that copy**: npm nests it at `node_modules/@earendil-works/pi-ai/node_modules/@anthropic-ai/sdk`, and the Flue engine's provider layer is unchanged. So the image holds two copies: `1.3.0` (ours) and `0.129.0` (pi-ai's). They share no types we pass between them. The new copy's dependencies are `@opentelemetry/api` (already in the production tree at 1.10.0), `json-schema-to-ts` and `standardwebhooks` (both already there under the 0.129.0 copy). No other package enters the image. |
+| **Runtime use** | `src/lib/agentic/tool-runner/client.ts`, `clientForRun`: one `new Anthropic({...})` per agent run. It is the only file under `src/` that may load the package at all (`local/anthropic-client-single-seam`, see below); everything else may write `import type` only. Today nothing calls `clientForRun` outside its tests. The engine that will (Step 2b) is not selectable until Step 2c. |
+| **Classification** | `dependencies`, the deliberate answer for the same reason `@flue/runtime`'s entry gives: the client is built to be executed by the worker, and `npm prune --omit=dev` stripping it would crash a path CI cannot see. |
+| **Version** | `1.3.0` is `latest` (published 2026-10-23). Apache-2.0 from 1.0.0 (MIT before; the package ships both texts and says which applies to which version). Pinned EXACTLY, like pi-ai: this is the layer that talks to the provider, and a caret on 1.x would admit every future minor. The package ships a `require` export condition, so it loads under Jest's CommonJS `node` project and needs no dynamic-import boundary (unlike `@flue/runtime`, see `flue/driver.ts`). |
+| **Exposure** | Holds the API key and sends tenant content to Anthropic, the existing sub-processor. The constructor reads several `ANTHROPIC_*` variables on its own. `clientForRun` pins every one that would move a run's traffic or widen what is logged or traced: `baseURL` (else `ANTHROPIC_BASE_URL`), `logLevel: 'warn'` with our own logger (else `ANTHROPIC_LOG`, which at `debug` logs requests), `openTelemetry` at `metadata_only` with no trace propagation (else `ANTHROPIC_OPEN_TELEMETRY_*`), and `webhookKey: null`. Passing `apiKey` means the SDK reads no other credential source. One variable cannot be pinned: `ANTHROPIC_CUSTOM_HEADERS` is merged into every request, so `clientForRun` refuses while it is set (`SDK_AMBIENT_HEADERS_SET`). The SDK keeps no process-wide default client or provider registry, so one client per run is complete isolation. The SDK can also reach Files, Skills, batches, server-held threads and Managed Agents; each client carries a middleware that refuses, before `fetch`, anything but a Messages call, and a Messages call asking for a `thread`, a `container`, `mcp_servers` or a server tool. |
+| **API version** | 1.x hard-codes `anthropic-version: 2026-10-21` and sends the key as `Authorization: Bearer`. That version refuses `temperature` / `top_p` / `top_k` on every Messages request, a `document` block in an assistant turn, and a cited `text` block in a user turn. The Tool Runner engine is written against it (a Step 2b obligation in the design doc), and a unit test asserts the version a request carries, so a bump that moves it fails there. The raw-`fetch` Anthropic callers (posture summary, risk suggestions, the assistant) do not use this package and stay on `2023-06-01`. |
+| **Maintenance** | Anthropic's official SDK, frequent releases (1.0.0 to 1.3.0 in three days). No advisories. |
+| **Audit** | `npm audit --omit=dev` reports the same findings before and after the addition: the tracked tiptap/tldraw exemption (28 moderate) and nothing else. No new advisory. |
+| **Decision** | **Adopt `1.3.0`, exact-pinned, in `dependencies`.** `REVIEWED` major: 1. Re-review on any bump, and read the API version it speaks. |
+
 ## Re-running this review
 
 When auditing the next batch of dependencies, copy the per-package

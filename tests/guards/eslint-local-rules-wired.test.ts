@@ -40,6 +40,7 @@ const LOCAL_RULES = [
     'no-typed-run-driver-read',
     'observable-gauge-rebinds',
     'require-test-prisma-transaction-budget',
+    'anthropic-client-single-seam',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

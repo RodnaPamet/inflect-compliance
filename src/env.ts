@@ -418,6 +418,16 @@ export const env = createEnv({
         // one key to rotate, two model pins. A LOCAL_ONLY tenant's run never
         // reads it — that route is AI_LOCAL_MODEL.
         AGENT_FLUE_MODEL: z.string().default('claude-sonnet-5-5'),
+        // The models the Tool Runner engine runs an agent profile's two tiers
+        // on (Step 2a, docs/claude-tool-runner-design.md). A profile names a
+        // TIER, never a model id, so these two are the deployment's whole
+        // choice. Unset, `toolRunnerModelFor` in
+        // src/lib/agentic/tool-runner/client.ts uses its defaults (balanced:
+        // claude-sonnet-5-5, deep: claude-opus-5-5); the defaults live there
+        // and only there. Same key and workspace as the rest of the Anthropic
+        // callers; a LOCAL_ONLY tenant is refused before either is read.
+        AGENT_TOOL_RUNNER_MODEL_BALANCED: z.string().optional(),
+        AGENT_TOOL_RUNNER_MODEL_DEEP: z.string().optional(),
 
         // AI Compliance-Posture Summary (dashboard hero, daily cron).
         // 'stub' (default) is fully functional with zero config; 'anthropic'
@@ -442,6 +452,13 @@ export const env = createEnv({
         // `anthropicWorkspaceHeaders` in src/lib/ai/anthropic-workspace.ts.
         // Unset, their requests are unchanged.
         ANTHROPIC_WORKSPACE_ID: z.string().trim().optional(),
+        // Read ONLY to refuse. `@anthropic-ai/sdk` merges this variable into
+        // every request a client makes, and no constructor option turns that
+        // off, so a header set here (a beta flag that stores conversations,
+        // say) would ride on every Tool Runner run without a line of code
+        // saying so. While it is set, `clientForRun` refuses with
+        // SDK_AMBIENT_HEADERS_SET instead of building a client. Leave unset.
+        ANTHROPIC_CUSTOM_HEADERS: z.string().optional(),
 
         // ── Legacy-access decision models (Step 6b) ──────────────────────
         // Jev — TypeSafe AI's hosted System One model. The EXTERNAL path for
@@ -672,6 +689,8 @@ export const env = createEnv({
         AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
+        AGENT_TOOL_RUNNER_MODEL_BALANCED: process.env.AGENT_TOOL_RUNNER_MODEL_BALANCED,
+        AGENT_TOOL_RUNNER_MODEL_DEEP: process.env.AGENT_TOOL_RUNNER_MODEL_DEEP,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,
         SANDBOX_RUNTIME_CONFIG_DIGEST: process.env.SANDBOX_RUNTIME_CONFIG_DIGEST,
         SANDBOX_RUNTIME_APPLIED_AT: process.env.SANDBOX_RUNTIME_APPLIED_AT,
@@ -681,6 +700,7 @@ export const env = createEnv({
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
         ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
         ANTHROPIC_WORKSPACE_ID: process.env.ANTHROPIC_WORKSPACE_ID,
+        ANTHROPIC_CUSTOM_HEADERS: process.env.ANTHROPIC_CUSTOM_HEADERS,
         TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY,
 
         AUDIT_STREAM_RETRY_ENABLED: process.env.AUDIT_STREAM_RETRY_ENABLED,

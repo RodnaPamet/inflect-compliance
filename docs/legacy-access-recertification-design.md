@@ -308,6 +308,13 @@ assertion.
   > exemption is visible rather than hidden in a regex that happens not to reach
   > it.
   >
+  > A seventh file branches on residency ahead of the feature that will use it:
+  > `src/lib/agentic/tool-runner/client.ts` (#4148) refuses a `LOCAL_ONLY` run
+  > before anything external is read, and builds no client. No running path
+  > calls it until the Tool Runner engine is switched on
+  > (`docs/claude-tool-runner-design.md`, Step 2c), so it honours nothing yet and
+  > is not counted among the five.
+  >
   > The last two features arrived with steps 6c and 3b and the
   > bullet was not updated, which is criterion 11 unmet for those steps — the
   > same silent-staleness this section suffered in #3480, in the opposite

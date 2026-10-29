@@ -431,6 +431,26 @@ const config = [
         },
     },
     {
+        // ── One construction site for Anthropic clients (Step 2a, #4148) ──
+        //
+        // Every Anthropic client an agent run uses comes from `clientForRun` in
+        // `src/lib/agentic/tool-runner/client.ts`, which chooses it from the
+        // run's residency and pins what the SDK would otherwise read from the
+        // environment. So no other file under `src/` may load an
+        // `@anthropic-ai/*` package; with the class importable in one file,
+        // a second `new Anthropic(...)` cannot be written. `import type` stays
+        // allowed. A rule rather than a `no-restricted-syntax` selector,
+        // because blocks in this file replace that list for their own files.
+        // See eslint-rules/rules/anthropic-client-single-seam.js.
+        files: ['src/**/*.ts', 'src/**/*.tsx'],
+        rules: { 'local/anthropic-client-single-seam': 'error' },
+    },
+    {
+        // The seam itself.
+        files: ['src/lib/agentic/tool-runner/client.ts'],
+        rules: { 'local/anthropic-client-single-seam': 'off' },
+    },
+    {
         // ── The engine-neutral tool core imports no engine (Step 0a) ──
         //
         // `src/lib/agentic/engine-tools/` is what every engine Inflect runs

@@ -64,5 +64,6 @@ module.exports = {
         'no-typed-run-driver-read': require('./rules/no-typed-run-driver-read'),
         'observable-gauge-rebinds': require('./rules/observable-gauge-rebinds'),
         'require-test-prisma-transaction-budget': require('./rules/require-test-prisma-transaction-budget'),
+        'anthropic-client-single-seam': require('./rules/anthropic-client-single-seam'),
     },
 };
