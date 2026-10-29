@@ -260,6 +260,47 @@ describe('NewIncidentModal submit', () => {
         fireEvent.click(screen.getByText('Create incident'));
         expect(await screen.findByText(/Failed to open incident/i)).toBeInTheDocument();
     });
+
+    // #4463 — the modal threw its generic message on any non-2xx without
+    // reading the body, so the server's reason never reached the person.
+    it("shows the server's reason from the error envelope", async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: false,
+            status: 400,
+            json: async () => ({
+                error: { code: 'BAD_REQUEST', message: 'Owner must be an active member of this tenant' },
+            }),
+        }) as unknown as typeof fetch;
+        render(
+            withSWR(
+                <NewIncidentModal open onClose={jest.fn()} tenantSlug="acme" onCreated={jest.fn()} />,
+            ),
+        );
+        fireEvent.change(screen.getByPlaceholderText(/Ransomware on the billing cluster/i), {
+            target: { value: 'Event with a stale owner' },
+        });
+        fireEvent.click(screen.getByText('Create incident'));
+        expect(
+            await screen.findByText('Owner must be an active member of this tenant'),
+        ).toBeInTheDocument();
+        expect(screen.queryByText(/Failed to open incident/i)).not.toBeInTheDocument();
+    });
+
+    it('names an over-long title at its field and sends nothing', async () => {
+        global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => [] }) as unknown as typeof fetch;
+        render(
+            withSWR(
+                <NewIncidentModal open onClose={jest.fn()} tenantSlug="acme" onCreated={jest.fn()} />,
+            ),
+        );
+        fireEvent.change(screen.getByPlaceholderText(/Ransomware on the billing cluster/i), {
+            target: { value: 'x'.repeat(301) },
+        });
+        fireEvent.click(screen.getByText('Create incident'));
+        expect(await screen.findByText(/Keep the title to/)).toBeInTheDocument();
+        // (The owner picker loads its members; nothing reaches the create route.)
+        expect(global.fetch).not.toHaveBeenCalledWith('/api/t/acme/incidents', expect.anything());
+    });
 });
 
 describe('nextOpenDeadline', () => {

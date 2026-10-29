@@ -8585,6 +8585,11 @@
         "commander": "Assign an owner"
       },
       "detectedHint": "The clock that drives the 24h / 72h / 1-month deadlines.",
+      "errors": {
+        "titleRequired": "Title is required",
+        "titleTooLong": "Keep the title to {max, number} characters or fewer.",
+        "descriptionTooLong": "Keep the description to {max, number} characters or fewer."
+      },
       "cancel": "Cancel",
       "creating": "Creating…",
       "create": "Create incident"
