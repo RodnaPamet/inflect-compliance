@@ -40,6 +40,8 @@ const mockState = {
     killAfterModelCalls: null as number | null,
     /** Engage the kill once the funnel has answered this many calls: a kill engaged WHILE a tool runs. */
     killAfterFunnelCalls: null as number | null,
+    /** Make the kill-switch read throw once this many model calls are answered. */
+    killReadFailsAfterModelCalls: null as number | null,
     modelCalls: 0,
     ledger: [] as Array<{ kind: string; rec: Record<string, unknown> }>,
     decisionRows: [] as Array<{ inputDigest: string }>,
@@ -73,9 +75,12 @@ jest.mock('@/env', () => ({
 jest.mock('@/lib/agentic/kill-switch', () => ({
     KILL_SWITCH_DRILL_AGENT_ID: 'kill-switch-drill',
     killRefusalMessage: (scope: string) => `This agent has been stopped by a ${scope} kill switch.`,
-    resolveKillState: jest.fn(async () =>
-        mockKilled() ? { scope: 'AGENT', switchId: 'sw-1', engagedAt: new Date('2026-10-29T00:00:00Z') } : null,
-    ),
+    resolveKillState: jest.fn(async () => {
+        if (mockState.killReadFailsAfterModelCalls !== null && mockState.modelCalls >= mockState.killReadFailsAfterModelCalls) {
+            throw new Error('the kill-switch store did not answer');
+        }
+        return mockKilled() ? { scope: 'AGENT', switchId: 'sw-1', engagedAt: new Date('2026-10-29T00:00:00Z') } : null;
+    }),
 }));
 
 jest.mock('@/lib/observability/integration-metrics', () => ({ recordAgentKillRefusal: jest.fn() }));
@@ -221,6 +226,7 @@ import type { RequestContext } from '@/app-layer/types';
 import { computeInputDigest } from '@/app-layer/ai/decision-log';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { runToolRunnerDriver, planToolRunnerRun, refusalMessage } from '@/lib/agentic/tool-runner/driver';
+import { KILL_UNREADABLE_MESSAGE } from '@/lib/agentic/tool-runner/execute';
 import { describeDriverConformance } from '../../helpers/driver-conformance';
 
 // ─── The wire ───────────────────────────────────────────────────────
@@ -303,6 +309,7 @@ function reset(run: Pick<ConformanceRun, 'tools' | 'residency' | 'alreadySpent' 
     mockState.toolCallLimit = run.toolCallLimit ?? null;
     mockState.killAfterModelCalls = run.killAfterModelCalls ?? null;
     mockState.killAfterFunnelCalls = null;
+    mockState.killReadFailsAfterModelCalls = null;
     mockState.modelCalls = 0;
     mockState.ledger = [];
     mockState.decisionRows = [];
@@ -507,6 +514,16 @@ describe('Step 2b hardening', () => {
         expect(wire.bodies).toHaveLength(1);
         expect(recordedSettlement()?.status).toBe('ABORTED');
         expect(recordedSettlement()?.reason).toMatch(/^tool_runner_run_agent_killed:/);
+    });
+
+    it('a kill switch that cannot be read stops the run: it fails closed, before that turn\'s tools', async () => {
+        const run = { tools: [LIST_RISKS], turns: [] };
+        reset(run, [{ toolCalls: [{ name: 'list_risks', args: {} }] }, { text: 'done' }]);
+        mockState.killReadFailsAfterModelCalls = 1;
+        await runToolRunnerDriver(context(), `run-${Math.random().toString(36).slice(2)}`, DEFINITION, 0, Date.now());
+        expect(wire.bodies).toHaveLength(1);
+        expect(mockState.funnelCalls).toEqual([]);
+        expect(recordedSettlement()).toEqual({ status: 'FAILED', reason: KILL_UNREADABLE_MESSAGE, cap: null });
     });
 });
 
