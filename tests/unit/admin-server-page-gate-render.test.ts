@@ -332,6 +332,22 @@ describe('audit log — paged, so an entry older than one page can be reached', 
         expect(reads.listAuditLogPage).toHaveBeenLastCalledWith(expect.anything(), { cursor: null });
     });
 
+    test('each row reaches the client as the table shows it: the sentence or summary, never the request JSON', async () => {
+        const at = new Date('2026-10-29T12:00:00.000Z');
+        reads.listAuditLogPage.mockResolvedValueOnce({
+            rows: [
+                { id: 'a', createdAt: at, action: 'RISK_CREATED', entity: 'Risk', details: 'Created risk\n\nContext: {"requestId":"r-1"}', detailsJson: null, user: { name: 'Ivo' } },
+                { id: 'b', createdAt: at, action: 'INTEGRATION_CONNECTION_UPDATED', entity: 'IntegrationConnection', details: 'Context: {"requestId":"r-2"}', detailsJson: { summary: 'Updated integration: Jira' }, user: null },
+            ],
+            nextCursor: null,
+        });
+        const el = find(await render('/admin/audit-log', 'AUDITOR'), AuditLogClient);
+        expect(el!.props.auditLog).toEqual([
+            { id: 'a', createdAt: at.toISOString(), action: 'RISK_CREATED', entity: 'Risk', details: 'Created risk', userName: 'Ivo' },
+            { id: 'b', createdAt: at.toISOString(), action: 'INTEGRATION_CONNECTION_UPDATED', entity: 'IntegrationConnection', details: 'Updated integration: Jira', userName: null },
+        ]);
+    });
+
     test('a failed read is an error, never an empty log', async () => {
         reads.listAuditLogPage.mockRejectedValueOnce(new Error('database unavailable'));
         await expect(render('/admin/audit-log', 'ADMIN')).rejects.toThrow('database unavailable');

@@ -2,6 +2,7 @@ import { getTranslations } from 'next-intl/server';
 import { listAuditLogPage } from '@/app-layer/usecases/auditLog';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ListPageShell } from '@/components/layout/ListPageShell';
+import { auditLogDetailsText } from '@/lib/audit/audit-log-display';
 import { gateAdminPage } from '../_lib/admin-page-gate';
 import { AuditLogClient } from './AuditLogClient';
 
@@ -52,7 +53,9 @@ export default async function AuditLogPage({
         createdAt: r.createdAt.toISOString(),
         action: r.action,
         entity: r.entity,
-        details: r.details,
+        // The writer's sentence without logEvent's request reference, or the
+        // entry's `detailsJson.summary` when it has no sentence.
+        details: auditLogDetailsText(r.details, r.detailsJson),
         userName: r.user?.name ?? null,
     }));
     // An AUDITOR reaches this page without `admin.view` (owner decision

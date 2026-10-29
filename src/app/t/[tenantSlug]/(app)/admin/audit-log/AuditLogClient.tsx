@@ -1,15 +1,18 @@
 'use client';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { buttonVariants } from '@/components/ui/button-variants';
+import { auditEntityNounKey, readableAuditCode } from '@/lib/audit/audit-log-display';
 
 // listAuditLogPage → AuditLogRepository.listPage, projected by the server page
-// to what the table shows. createdAt is an ISO string.
+// to what the table shows. createdAt is an ISO string; `action` and `entity`
+// are the stored codes, made readable here; `details` is already the text to
+// show (`auditLogDetailsText`).
 export interface AuditLogRow {
     id: string;
     createdAt: string;
@@ -45,6 +48,14 @@ interface AuditLogClientProps {
  */
 export function AuditLogClient({ auditLog, olderHref, newestHref, translations: t }: AuditLogClientProps) {
     const tx = useTranslations('admin');
+    const tEntity = useTranslations('dashboard.activity.entity');
+    const entityLabel = useCallback((entity: string) => {
+        // A translated noun where the dashboard feed has one, else the code as words.
+        const key = auditEntityNounKey(entity);
+        if (key === null) return readableAuditCode(entity);
+        const noun = tEntity(key);
+        return noun.charAt(0).toUpperCase() + noun.slice(1);
+    }, [tEntity]);
     const logColumns = useMemo(() => createColumns<AuditLogRow>([
         {
             id: 'time',
@@ -59,13 +70,15 @@ export function AuditLogClient({ auditLog, olderHref, newestHref, translations: 
             cell: ({ getValue }) => <span>{getValue()}</span>,
         },
         {
-            accessorKey: 'action',
+            id: 'action',
             header: t.action,
+            accessorFn: (e) => readableAuditCode(e.action),
             cell: ({ getValue }) => <StatusBadge variant="info">{getValue()}</StatusBadge>,
         },
         {
-            accessorKey: 'entity',
+            id: 'entity',
             header: t.entity,
+            accessorFn: (e) => entityLabel(e.entity),
             cell: ({ getValue }) => <span>{getValue()}</span>,
         },
         {
@@ -73,7 +86,7 @@ export function AuditLogClient({ auditLog, olderHref, newestHref, translations: 
             header: t.details,
             cell: ({ getValue }) => <span className="text-content-muted max-w-xs truncate">{getValue()}</span>,
         },
-    ]), [t]);
+    ]), [t, entityLabel]);
 
     return (
         <ListPageShell.Body>
@@ -82,6 +95,7 @@ export function AuditLogClient({ auditLog, olderHref, newestHref, translations: 
                 data={auditLog}
                 columns={logColumns}
                 getRowId={(e) => e.id}
+                selectionEnabled={false}
                 emptyState={t.noEntries}
                 resourceName={(p) => (p ? tx('auditLogEntries') : tx('auditLogEntry'))}
                 data-testid="audit-log-table"

@@ -5,6 +5,11 @@
  * more existed. The server page now hands the island the older page's link
  * exactly when the read found one, and the newest page's link on any later
  * page; this asserts the island renders each link exactly when it is given.
+ *
+ * Columns: Action and Entity printed the stored codes (`CUSTOM_ROLE_CREATED`,
+ * `TenantCustomRole`); they now read as words, with the dashboard feed's
+ * translated noun where one exists. The table has no bulk actions, so it
+ * offers no row selection.
  */
 import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
@@ -91,5 +96,41 @@ describe('paging', () => {
     test('a log that fits on one page shows no paging at all', () => {
         renderTable();
         expect(screen.queryByRole('navigation', { name: A.auditLogPages })).toBeNull();
+    });
+});
+
+describe('columns', () => {
+    test('Action and Entity read as words, not the stored codes', () => {
+        renderTable({
+            auditLog: [
+                { ...ROW, id: 'a', action: 'CUSTOM_ROLE_CREATED', entity: 'TenantCustomRole' },
+                { ...ROW, id: 'b', action: 'AUTHZ_DENIED', entity: 'Permission' },
+            ],
+        });
+        const table = screen.getByTestId('audit-log-table');
+        for (const text of ['Custom role created', 'Tenant custom role', 'Authorization denied', 'Permission']) {
+            expect(within(table).getAllByText(text).length).toBeGreaterThan(0);
+        }
+        for (const code of ['CUSTOM_ROLE_CREATED', 'TenantCustomRole', 'AUTHZ_DENIED']) {
+            expect(within(table).queryByText(code)).toBeNull();
+        }
+    });
+
+    test("an entity the dashboard feed translates uses that noun", () => {
+        renderTable({ auditLog: [{ ...ROW, entity: 'RISK' }] });
+        const noun = (require('../../messages/en.json') as { dashboard: { activity: { entity: { risk: string } } } })
+            .dashboard.activity.entity.risk;
+        const expected = noun.charAt(0).toUpperCase() + noun.slice(1);
+        expect(within(screen.getByTestId('audit-log-table')).getAllByText(expected).length).toBeGreaterThan(0);
+    });
+
+    test('the details text is shown as given', () => {
+        renderTable();
+        expect(within(screen.getByTestId('audit-log-table')).getAllByText(ROW.details!).length).toBeGreaterThan(0);
+    });
+
+    test('offers no row selection: the table has no bulk actions', () => {
+        renderTable();
+        expect(within(screen.getByTestId('audit-log-table')).queryAllByRole('checkbox')).toEqual([]);
     });
 });
