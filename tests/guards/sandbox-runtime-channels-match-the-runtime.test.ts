@@ -456,6 +456,53 @@ describe('an upgrade fails a test rather than an audit (#3973)', () => {
         expect(endpoints).toBeGreaterThanOrEqual(6);
     });
 
+    it("the deployment README's OPERATOR instructions name the pin, not an older release", () => {
+        /*
+            THE GAP THIS CLOSES, found by auditing my own upgrade diff rather
+            than by a failing test.
+
+            `nothing in the repository claims a release NEWER than the pin`
+            above is one-directional. It cannot see a STALE OLDER claim, and the
+            upgrade left three: the SDK-pairing sentence, the observed Docker
+            socket traffic, and — the one that matters — a precondition reading
+            `openshell-gateway 0.1.5 at /usr/local/bin` sitting directly above a
+            line that said `--version` must print 0.1.6. An operator working
+            that checklist would have installed the wrong binary and then been
+            told by the next line that they were wrong.
+
+            It is NOT a blanket "no older release is mentioned" rule, and that
+            is the whole design question here. This README names 0.1.5 seven
+            more times on purpose: the tag-movement evidence is a record of what
+            `:0.1.5` resolved to before and after upstream re-pushed it, and a
+            rule that forbade it would force the deletion of the measurement
+            that justifies digest pinning in the first place.
+
+            So the rule is scoped to the two places where a release number is an
+            INSTRUCTION rather than a record — the precondition checklist and
+            the Release row — because those are the ones where being stale
+            causes an action, not a misreading.
+        */
+        const md = fs.readFileSync(path.join(REPO_ROOT, 'deploy/openshell/README.md'), 'utf8');
+
+        const fenced = /## Preconditions before enabling\s*\n+```\n([\s\S]*?)\n```/.exec(md);
+        expect(fenced).not.toBeNull();
+        const checklist = (fenced as RegExpExecArray)[1].split('\n');
+
+        // TWO denominators. Without them a renamed heading, a reflowed fence or
+        // a checklist that stops naming versions all pass by examining nothing.
+        expect(checklist.filter((l) => l.trim().startsWith('[')).length).toBeGreaterThanOrEqual(7);
+        const versioned = checklist.filter((l) => /\b0\.\d+\.\d+\b/.test(l));
+        expect(versioned.length).toBeGreaterThanOrEqual(2);
+
+        expect(versioned.filter((l) => !l.includes(PINNED_RELEASE))).toEqual([]);
+
+        // The Release row of the summary table, which is the first thing a
+        // reader takes the deployment's version from.
+        const releaseRows = md.split('\n').filter((l) => /^\|\s*Release\s*\|/.test(l));
+        expect(releaseRows.length).toBe(1);
+        expect(releaseRows.filter((l) => !l.includes(PINNED_RELEASE))).toEqual([]);
+    });
+
     it('the deployed gateway config never turns 0.1.6 authentication back off', () => {
         /*
             A NEW RULE THE UPGRADE CREATED, which is the shape #3973 asks for.

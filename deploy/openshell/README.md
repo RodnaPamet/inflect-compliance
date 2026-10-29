@@ -25,7 +25,7 @@ against our binary's `0.1.6`.
 It is not merely older. It is missing nine flags the 0.1.6 binary has, three of
 which this phase depends on — `--compute-driver`, `--enable-operator-auth` and
 `--oidc-jwks-allowed-origins`. Using it would also break the pre-1.0 rule that
-the SDK and the gateway move together: a 0.1.5 SDK against a 0.0.91 gateway,
+the SDK and the gateway move together: a 0.1.6 SDK against a 0.0.91 gateway,
 reverting three months of fixes including the ones found on 0.1.2.
 
 ## Why its own VM
@@ -59,8 +59,8 @@ With no configuration the gateway resolves its driver images **by mutable tag**.
 Observed in its own Docker socket traffic:
 
 ```
-GET /images/ghcr.io/nvidia/openshell/sandbox:0.1.5/json
-GET /images/ghcr.io/nvidia/openshell/supervisor:0.1.5/json
+GET /images/ghcr.io/nvidia/openshell/sandbox:0.1.6/json
+GET /images/ghcr.io/nvidia/openshell/supervisor:0.1.6/json
 ```
 
 And that tag moves. The digests in `gateway.toml` are the images this phase ran
@@ -179,7 +179,7 @@ absent from both VMs and is presented out of band by a person.
 [ ] A VM exists, with Docker from Docker's apt repository — NOT snap.
 [ ] Linux 6.2+ with Landlock. Under hard_requirement the gateway REFUSES to
     start without it, which is the behaviour to want rather than work around.
-[ ] openshell-gateway 0.1.5 at /usr/local/bin, checksum chain checked.
+[ ] openshell-gateway 0.1.6 at /usr/local/bin, checksum chain checked.
 [ ] /etc/openshell/pki/jwt/signing.pem exists, root-owned, mode 0400.
     The unit ASSERTS this and FAILS without it — it does not skip.
 [ ] /etc/openshell/env written with the four variables above.
