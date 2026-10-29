@@ -2928,7 +2928,7 @@
   },
   "personnel": {
     "title": "Персонал",
-    "description": "{total} души в списъка — синхронизирани от вашата HRIS или добавени ръчно.",
+    "description": "{total} души в списъка, синхронизирани от вашата HRIS.",
     "resourceSingular": "човек",
     "resourcePlural": "хора",
     "colName": "Име",
@@ -2937,7 +2937,7 @@
     "colTitle": "Длъжност",
     "colSource": "Източник",
     "emptyTitle": "Все още няма персонал",
-    "emptyDesc": "Свържете HRIS (BambooHR) или добавете човек, за да изградите списъка.",
+    "emptyDesc": "Свържете вашата HRIS на страницата „Интеграции“. Хората се появяват тук след първата синхронизация.",
     "emptyMatchingTitle": "Няма съвпадащи хора",
     "emptyMatchingDesc": "Няма персонал, който да съответства на текущите филтри.",
     "fieldStartDate": "Начална дата",
@@ -2955,6 +2955,10 @@
         "TERMINATED": "Прекратен",
         "LEAVE": "Отпуск"
       }
+    },
+    "sourceLabels": {
+      "HRIS": "HRIS",
+      "MANUAL": "Ръчно"
     }
   },
   "devices": {

@@ -1,10 +1,9 @@
 'use client';
 
 /**
- * Personnel roster (PR-4) — the people-layer hub. Lists employees synced from
- * an HRIS or entered manually, with employment-status filtering. Built on
- * EntityListPage. Device (PR-5) + Training/Background (PR-6) attach to the
- * detail page.
+ * Personnel roster (PR-4) — the people-layer hub. Lists the employees an HRIS
+ * sync has brought in, with employment-status filtering. Built on
+ * EntityListPage. The page only reads.
  */
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
@@ -14,7 +13,7 @@ import { createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Users } from '@inflect/ui/components/ui/icons/nucleo/users';
-import { buildPersonnelFilters, PERSONNEL_FILTER_KEYS } from './filter-defs';
+import { buildPersonnelFilters, EMPLOYEE_SOURCE_KEYS, EMPLOYEE_STATUS_KEYS, PERSONNEL_FILTER_KEYS } from './filter-defs';
 
 export interface EmployeeRow {
     id: string;
@@ -39,6 +38,9 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     TERMINATED: 'error',
     LEAVE: 'neutral',
 };
+
+const KNOWN_STATUSES: ReadonlySet<string> = new Set(EMPLOYEE_STATUS_KEYS);
+const KNOWN_SOURCES: ReadonlySet<string> = new Set(EMPLOYEE_SOURCE_KEYS);
 
 export function PersonnelClient(props: Props) {
     const t = useTranslations('personnel');
@@ -87,11 +89,30 @@ function PersonnelInner({ initialRows }: Props) {
                     id: 'status',
                     header: t('colStatus'),
                     accessorFn: (r) => r.status,
-                    cell: ({ row }) => <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'}>{row.original.status}</StatusBadge>,
+                    cell: ({ row }) => {
+                        const status = row.original.status;
+                        return (
+                            <StatusBadge variant={STATUS_VARIANT[status] ?? 'neutral'}>
+                                {KNOWN_STATUSES.has(status) ? t(`filterEnums.status.${status}` as Parameters<typeof t>[0]) : status}
+                            </StatusBadge>
+                        );
+                    },
                 },
                 { id: 'department', header: t('colDepartment'), accessorFn: (r) => r.department ?? '', cell: ({ row }) => <span className="text-content-muted">{row.original.department ?? '—'}</span> },
                 { id: 'jobTitle', header: t('colTitle'), accessorFn: (r) => r.jobTitle ?? '', cell: ({ row }) => <span className="text-content-muted">{row.original.jobTitle ?? '—'}</span> },
-                { id: 'source', header: t('colSource'), accessorFn: (r) => r.source, cell: ({ row }) => <span className="text-content-subtle">{row.original.source}</span> },
+                {
+                    id: 'source',
+                    header: t('colSource'),
+                    accessorFn: (r) => r.source,
+                    cell: ({ row }) => {
+                        const source = row.original.source;
+                        return (
+                            <span className="text-content-subtle">
+                                {KNOWN_SOURCES.has(source) ? t(`sourceLabels.${source}` as Parameters<typeof t>[0]) : source}
+                            </span>
+                        );
+                    },
+                },
             ]),
         [t],
     );
@@ -113,6 +134,8 @@ function PersonnelInner({ initialRows }: Props) {
                 data: rows,
                 columns,
                 getRowId: (r) => r.id,
+                // Read-only rows: no bulk action exists, so no select column.
+                selectionEnabled: false,
                 resourceName: (plural) => (plural ? t('resourcePlural') : t('resourceSingular')),
                 emptyState: (
                     <EmptyState
