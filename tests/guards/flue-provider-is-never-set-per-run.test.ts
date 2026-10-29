@@ -170,38 +170,75 @@ describe('OpenShell is not a second inference router (#3966)', () => {
             e.host.startsWith('*.') ? host.endsWith(e.host.slice(1)) : e.host === host,
         );
 
-    it.each(BENCHMARKS)('%s names no inference endpoint outright', (benchmark) => {
-        // Parsed hosts, not source text: a docblock naming a provider must not
-        // fail this, and a host list that genuinely grew must not hide in one.
+    /**
+     * Inference origins this deployment DELIBERATELY admits, each with the
+     * reason it cannot be removed. Anything reachable and not listed here is a
+     * finding; anything listed and no longer reachable is a stale entry to
+     * delete, which the exact-set assertion below also catches.
+     */
+    const ADMITTED_WITH_REASON: ReadonlyArray<{ readonly host: string; readonly why: string }> = [
+        {
+            host: 'aiplatform.googleapis.com',
+            why:
+                'the GCP plugin audits Vertex AI configuration, and the same origin serves ' +
+                ':predict / :generateContent — no host-level rule can permit one and deny the ' +
+                'other. Closing it needs an L7 method/path rule (4.1, #3961).',
+        },
+        {
+            host: 'bedrock-runtime.us-east-1.amazonaws.com',
+            why:
+                'admitted by `*.amazonaws.com`, which is still a wildcard: AWS endpoints are ' +
+                'regional, so a per-service list is region-parameterised and much larger than ' +
+                "GCP's. Not yet derived (4.1, #3961).",
+        },
+    ];
+
+    it.each(BENCHMARKS)('%s names no UNEXPLAINED inference endpoint', (benchmark) => {
+        // Named outright is now ALLOWED for a listed origin, because 4.1
+        // narrowed GCP from `*.googleapis.com` to an explicit per-service list
+        // and `aiplatform.googleapis.com` had to survive it — the plugin audits
+        // Vertex AI, and that audit shares an origin with Vertex AI inference.
+        // Naming it is better than admitting it by wildcard: it is now a
+        // reviewed line with a reason beside it.
         const hosts = collectorSandboxPolicy(benchmark).networkPolicies.map((e) => e.host);
         expect(hosts.length).toBeGreaterThan(0);
-        // A filtered set rather than a per-host `not.toContain`: this names
-        // every offending endpoint on failure instead of stopping at the first,
-        // and it keeps an array-membership check out of the Class D whole-file
-        // read census, which counts `toContain`/`toMatch` to ask a different
-        // question — whether a NEEDLE is ambiguous. A seven-element literal
-        // list of hostnames has no needle to be ambiguous about.
-        expect(hosts.filter((h) => INFERENCE_HOSTS.includes(h))).toEqual([]);
+        const explained = new Set(ADMITTED_WITH_REASON.map((a) => a.host));
+        const named = hosts.filter((h) => INFERENCE_HOSTS.includes(h) && !explained.has(h));
+        expect(named).toEqual([]);
     });
 
-    it('records exactly which inference hosts the wildcards admit anyway', () => {
-        // The subtler half, and the one worth pinning. 4.1 allows a
-        // PROVIDER-scoped host per collector because the per-service set is not
-        // derivable from this repository — and two of those three wildcards
-        // reach an inference API. Asserted as an exact set, so neither a new
-        // admission nor a narrowing can pass unnoticed.
+    it('records exactly which inference hosts are reachable, and why each is', () => {
+        // The exact set, as before, but now every member carries a reason. 4.1
+        // removed `generativelanguage.googleapis.com` from this list by dropping
+        // the GCP wildcard — the first of the two holes 4.4 found, closed.
         const admitted = BENCHMARKS.flatMap((b) =>
             INFERENCE_HOSTS.filter((h) => admits(b, h)).map((h) => `${b} -> ${h}`),
         );
         expect(admitted.sort()).toEqual([
-            // `*.amazonaws.com` — Bedrock, which the pinned gateway's own
-            // configuration help text names as an example endpoint (#4258).
+            // Still a wildcard, and the reason is in ADMITTED_WITH_REASON.
             'aws_compliance.benchmark.soc_2 -> bedrock-runtime.us-east-1.amazonaws.com',
-            // `*.googleapis.com` — both Google inference surfaces sit under the
-            // same suffix as the service APIs the benchmark needs.
+            // Explicit now, not by wildcard, and irreducible at host level.
             'gcp_compliance.benchmark.cis_v300 -> aiplatform.googleapis.com',
-            'gcp_compliance.benchmark.cis_v300 -> generativelanguage.googleapis.com',
         ]);
+
+        // Every reachable inference origin is explained, and every explanation
+        // still describes something reachable — a stale reason is as misleading
+        // as a missing one.
+        const reachable = new Set(admitted.map((a) => a.split(' -> ')[1]));
+        expect(ADMITTED_WITH_REASON.map((a) => a.host).sort()).toEqual([...reachable].sort());
+        for (const a of ADMITTED_WITH_REASON) expect(a.why.length).toBeGreaterThan(60);
+    });
+
+    it('the GCP wildcard is gone, and generativelanguage is no longer reachable', () => {
+        // The improvement itself, asserted rather than left implicit in a diff.
+        const gcp = collectorSandboxPolicy('gcp_compliance.benchmark.cis_v300');
+        expect(gcp.networkPolicies.filter((e) => e.host.startsWith('*.'))).toEqual([]);
+        expect(admits('gcp_compliance.benchmark.cis_v300', 'generativelanguage.googleapis.com')).toBe(
+            false,
+        );
+        // And the narrowing did not empty the list: the derived per-service set
+        // is substantial, so an accidental truncation to nothing fails here.
+        expect(gcp.networkPolicies.length).toBeGreaterThanOrEqual(30);
     });
 
     it('azure is the control — an exact-host policy admits none of them', () => {
