@@ -122,6 +122,11 @@ jobs:
       - name: Build app
         env:
           NODE_ENV: production
+          # The same heap the Dockerfile and ci.yml's builds give `next build`.
+          # Node's default (about 4 GB here) no longer fits: nightly builds died with
+          # "JavaScript heap out of memory" in late October 2026.
+          # tests/guards/app-build-heap-bound.test.ts holds every app build to it.
+          NODE_OPTIONS: "--max-old-space-size=8192"
         run: npm run build
 
       - name: Start app (background)
