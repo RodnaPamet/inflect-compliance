@@ -315,7 +315,31 @@ export function initiatorAuthority(membership: {
     };
 }
 
-/** How many memberships a borrowed-actor pick will consider before giving up. */
+/**
+ * How many memberships a borrowed-actor pick will consider before giving up.
+ *
+ * THIS CAP IS WHY THE SHAREPOINT DELTA-SYNC DISPATCHER DOES NOT USE THIS
+ * FUNCTION, and the reason is recorded here because the convergence looks
+ * obviously right from this side (#4398, measured 2026-10-29).
+ *
+ * That dispatcher picks an actor for EVERY enabled connection in one pass. Its
+ * membership query is deliberately shaped against two things this function
+ * cannot avoid:
+ *
+ *   * it is hoisted OUT of the per-connection loop — one query for every
+ *     active OWNER/ADMIN of every tenant in scope, because a pick per
+ *     connection is an N+1;
+ *   * it is UNCAPPED, and its own comment records why: a global `take: 5000`
+ *     once dropped every membership of a tenant that sorted late, and the
+ *     tenant was then logged as having no eligible admin when it had several.
+ *
+ * A per-tenant `take` of 50 is a smaller version of exactly that failure — a
+ * qualifying admin sorting 51st reads as NO_QUALIFYING_ACTOR — in a file that
+ * has already paid for it once. So the duplication between
+ * `DELTA_SYNC_UNROUTABLE` and `BORROW_FAILURE` is deliberate: the two jobs ask
+ * the same question about different populations, and only the single-tenant
+ * one can afford a bounded pick.
+ */
 export const BORROWED_ACTOR_CANDIDATE_CAP = 50;
 
 /** Why a borrowed-actor pick came up empty. One definition for every such job. */
