@@ -341,6 +341,12 @@ describe('D4 — OpenShell carries no MCP rules, pipelock stays the only mediato
         // earning its place: each PR was green alone, and the fourth module
         // only became uncovered once both were on main.
         'src/lib/agentic/openshell/policy-drift.ts',
+        // Added by the completeness test below, which is the mechanism working:
+        // the v2->v1 prover translation is a pure shape transform and mediates
+        // no tool, so it carries no MCP rule — but nobody would have READ that
+        // rule when the file arrived if a directory walk had covered it
+        // silently.
+        'src/lib/agentic/openshell/prover-policy.ts',
         'src/lib/agentic/openshell/transport.ts',
     ] as const;
 
