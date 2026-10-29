@@ -191,6 +191,38 @@ purpose-adjacent grounds — releases run `0.1.x`, the published documentation
 versions itself `v0.0.116`, and the container images stop at `0.0.91`. Three
 numbering spaces, none of them the same.
 
-An upgrade is: new binary + its checksum chain, new driver digests re-resolved
-and recorded here, the SDK bumped in the same change, and
-`runtime-image-pinning` re-run.
+### The checklist
+
+Steps marked **[test]** fail in CI if skipped — `tests/guards/sandbox-runtime-channels-match-the-runtime.test.ts`
+holds the pinned release as a constant and every recorded measurement against
+it, so moving the pin reddens the build until each one is re-established (5.3,
+#3973). The unmarked steps are still yours to do.
+
+```
+[ ]       new binary at /usr/local/bin, checksum chain re-checked (4 links)
+[ ]       `openshell-gateway --version` on the VM prints the new release
+[ ]       driver digests RE-RESOLVED and recorded in gateway.toml
+[ ] [test] every image reference in deploy/openshell/*.toml is digest-pinned
+[ ]       the SDK bumped in the SAME change — pre-1.0 they move together
+[ ] [test] no file claims a release newer than the pin (a half-done upgrade)
+[ ] [test] every phase 0.1 fact re-verified against the new release
+[ ]          0.1b above all: is `enforcement` unset still AUDIT mode?
+[ ] [test] vendored skills re-pinned, VENDORED.md Tag matches the pin
+[ ]       the NOTICE commit updated, and THE NEW SKILL TEXT READ before merging
+[ ]       policy prover re-run
+[ ]       `npm run skills:evaluate` re-run (needs the owner's key)
+[ ]       scanner contract tests re-run
+```
+
+**Why 0.1b is called out.** #3927 calls it "the most consequential fact in the
+roadmap". An endpoint with `enforcement` unset runs in audit mode:
+`NETWORK_ENFORCEMENT_MODE_UNSPECIFIED` is zero on the wire and documented as
+"log violations and allow traffic", so an omitted field, a proxy-dropped field
+and explicit audit are the same bytes — and all three allow the traffic the
+policy appears to forbid. Every verdict the scanner and the skill derive from a
+policy rests on that reading. A release that changed it, or renamed the enum so
+our explicit value stopped matching, would invert what a policy means with
+nothing visible in any diff.
+
+That is why the re-verification is a test and not a line on a checklist: the
+discovery has to happen in CI rather than in a client's estate.
