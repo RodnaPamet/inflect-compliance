@@ -946,6 +946,26 @@ describe('calendar event ownership', () => {
         ]);
         expect((await eventOfType('finding-due'))?.ownerUserId).toBeUndefined();
     });
+
+    it('an incident notification inherits the commander, and is titled by its deadline, not its enum code', async () => {
+        // #4463 — the title read "Incident notification (EARLY_WARNING_24H): …".
+        mockIncidentNotificationFindMany.mockResolvedValue([
+            {
+                id: 'n-1',
+                kind: 'EARLY_WARNING_24H',
+                dueAt: IN_RANGE,
+                status: 'PENDING',
+                incidentId: 'inc-1',
+                incident: { title: 'Ransomware on the billing cluster', ownerUserId: OWNER },
+            },
+        ]);
+        const event = await eventOfType('incident-notification-due');
+        expect(event?.title).toBe(
+            'Incident notification (24-hour early warning): Ransomware on the billing cluster',
+        );
+        expect(event?.title).not.toMatch(/EARLY_WARNING_24H/);
+        expect(event?.ownerUserId).toBe(OWNER);
+    });
 });
 
 describe('control test deadlines vs implementation status', () => {

@@ -8779,6 +8779,18 @@
       "owner": "Owner"
     },
     "assigned": "Assigned",
+    "kindShort": {
+      "EARLY_WARNING_24H": "24h",
+      "DETAILED_72H": "72h",
+      "FINAL_1MONTH": "1mo"
+    },
+    "deadlineStatus": {
+      "PENDING": "Pending",
+      "DUE": "Due soon",
+      "OVERDUE": "Overdue",
+      "SUBMITTED": "Submitted",
+      "NOT_REQUIRED": "Not required"
+    },
     "kpi": {
       "open": "Open incidents",
       "reportable": "Reportable",
@@ -8786,6 +8798,9 @@
     },
     "emptyTitle": "No incidents yet",
     "emptyDesc": "When a security incident is detected, open it here to start the NIS2 Article 23 response clock.",
+    "emptyFilteredTitle": "No incidents match your search or filters",
+    "emptyFilteredDesc": "Try a different search, or clear the filters to see every incident.",
+    "emptyClearFilters": "Clear filters",
     "new": {
       "createFailed": "Failed to open incident",
       "title": "Open incident",
@@ -8797,6 +8812,7 @@
         "severity": "Severity",
         "type": "Type",
         "detectedAt": "Detected at",
+        "detectedTime": "Time detected",
         "commander": "Incident commander"
       },
       "placeholders": {
@@ -8808,6 +8824,14 @@
         "commander": "Assign an owner"
       },
       "detectedHint": "The clock that drives the 24h / 72h / 1-month deadlines.",
+      "detectedTimeHint": "Your local time ({zone}).",
+      "errors": {
+        "titleRequired": "Title is required",
+        "titleTooLong": "Keep the title to {max, number} characters or fewer.",
+        "descriptionTooLong": "Keep the description to {max, number} characters or fewer.",
+        "detectedTimeRequired": "Enter the time the incident was detected.",
+        "detectedInFuture": "The detection time cannot be in the future."
+      },
       "cancel": "Cancel",
       "creating": "Creating…",
       "create": "Create incident"
@@ -8836,6 +8860,8 @@
       "runbookAria": "Incident containment runbook",
       "containmentRunbook": "Containment runbook",
       "runbookDesc": "First-response containment steps for a {type} incident. Operational guidance, not legal advice. Completing a step records it on the timeline.",
+      "stepDone": "Done",
+      "stepNotDone": "Not done",
       "deadlinesHeading": "Article 23 notification deadlines",
       "notReportableText": "This incident is not yet marked reportable. Marking it reportable is a human determination (not automatic, not legal advice) that starts the 24h / 72h / 1-month clocks.",
       "markReportable": "Mark reportable",
