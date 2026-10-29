@@ -8,9 +8,16 @@
  * carry an endpoint, so an `entra-id` connection shows nothing instead of an
  * error about a missing credential.
  *
- * `null` means UNKNOWN, not false: the list call failed. A card renders in that
- * case, because rendering nothing when an unrelated call failed would hide the
- * whole feature behind that error.
+ * Three answers besides yes and no:
+ *
+ *   undefined  not known yet: the list has not answered, or the caller passed
+ *              `enabled: false` and no request was made;
+ *   null       UNKNOWN: the list call failed. A card renders in that case,
+ *              because rendering nothing when an unrelated call failed would
+ *              hide the whole feature behind that error.
+ *
+ * The list is `admin.manage`. A caller that knows its viewer lacks that key
+ * passes `enabled: false`, so a visit does not write an AUTHZ_DENIED row.
  */
 
 import { useEffect, useState } from 'react';
@@ -19,11 +26,15 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
 export const LEGACY_PROVIDER = 'legacy-mcp';
 
-export function useIsLegacyConnection(connectionId: string): boolean | null {
+export function useIsLegacyConnection(
+    connectionId: string,
+    enabled: boolean = true,
+): boolean | null | undefined {
     const apiUrl = useTenantApiUrl();
-    const [applies, setApplies] = useState<boolean | null>(null);
+    const [applies, setApplies] = useState<boolean | null | undefined>(undefined);
 
     useEffect(() => {
+        if (!enabled) return;
         let alive = true;
         (async () => {
             try {
@@ -41,7 +52,7 @@ export function useIsLegacyConnection(connectionId: string): boolean | null {
             }
         })();
         return () => { alive = false; };
-    }, [apiUrl, connectionId]);
+    }, [apiUrl, connectionId, enabled]);
 
     return applies;
 }

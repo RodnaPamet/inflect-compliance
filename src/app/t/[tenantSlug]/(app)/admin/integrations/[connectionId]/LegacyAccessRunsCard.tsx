@@ -33,9 +33,11 @@
  * "Match to people" sends ITS id, so what this card calls matched is what a
  * campaign will find matched. Statistics only: counts, a status, a date.
  *
- * Both routes, and the standing read, take `admin.manage`. A viewer without it
- * gets the buttons disabled with the reason, and no request: a refused read
- * would write an AUTHZ_DENIED row for a visit.
+ * Both routes, the standing read and the connection list that says whether this
+ * is a legacy connection take `admin.manage`. A viewer without it is shown no
+ * card and sends no request, as the page's owner card is gated at its mount:
+ * every request it could make would be refused, and each refusal writes an
+ * AUTHZ_DENIED row for nothing more than a visit.
  */
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -158,7 +160,11 @@ export function LegacyAccessRunsCard({
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const canManage = usePermissions().admin.manage;
-    const applies = useIsLegacyConnection(connectionId);
+    // No list request without the key it takes (see the module docblock).
+    const applies = useIsLegacyConnection(connectionId, canManage);
+    // Shown only to a viewer holding admin.manage, on a connection known to be
+    // a legacy one or one the list could not classify (`null`).
+    const shown = canManage && applies !== undefined && applies !== false;
 
     const [standing, setStanding] = useState<LegacySnapshotStanding | null>(null);
     const [standingLoading, setStandingLoading] = useState(true);
@@ -183,16 +189,18 @@ export function LegacyAccessRunsCard({
     }, [apiUrl, connectionId]);
 
     useEffect(() => {
-        // No request without the key the route takes, and none for a
-        // connection that is known not to be a legacy one.
-        if (!canManage || applies === false) return;
+        if (!shown) return;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         void loadStanding();
-    }, [canManage, applies, loadStanding]);
+    }, [shown, loadStanding]);
 
     const refresh = useCallback(async () => {
         await Promise.all([loadStanding(), onReloadRuns()]);
     }, [loadStanding, onReloadRuns]);
+
+    // The snapshot "Match to people" sends: the one the standing read named,
+    // which is the one a campaign will be built from.
+    const snapshotId = standing?.id ?? null;
 
     const start = useCallback(
         async (kind: 'read' | 'match') => {
@@ -205,7 +213,7 @@ export function LegacyAccessRunsCard({
                         method: 'POST',
                         headers: { 'content-type': 'application/json' },
                         body: JSON.stringify(
-                            kind === 'read' ? { connectionId } : { snapshotId: standing?.id }
+                            kind === 'read' ? { connectionId } : { snapshotId }
                         ),
                     }
                 );
@@ -226,10 +234,10 @@ export function LegacyAccessRunsCard({
                 setStarting(null);
             }
         },
-        [apiUrl, connectionId, standing?.id, t, refresh]
+        [apiUrl, connectionId, snapshotId, t, refresh]
     );
 
-    if (applies === false) return null;
+    if (!shown) return null;
 
     const lastRead = latestOf(runs, PULL_KEY);
     const lastMatch = latestOf(runs, RECONCILE_KEY);
@@ -237,45 +245,40 @@ export function LegacyAccessRunsCard({
     // Why "Match to people" cannot be pressed, if it cannot. The server refuses
     // the same cases on its own; this saves somebody starting a run that is
     // certain to record a refusal, and says what to do instead.
-    const matchBlockedBy: string | null = !canManage
-        ? t('needsPermission')
-        : standingLoading || standingError !== null
-            ? t('matchNeedsStanding')
-            : !standing
-                ? t('matchNeedsRead')
-                : standing.status !== 'COMPLETE'
-                    ? t('matchNeedsComplete')
-                    : standing.rowCount === 0
-                        ? t('matchNeedsAccounts')
-                        : null;
+    const matchBlockedBy: string | null = standingLoading || standingError !== null
+        ? t('matchNeedsStanding')
+        : !standing
+            ? t('matchNeedsRead')
+            : standing.status !== 'COMPLETE'
+                ? t('matchNeedsComplete')
+                : standing.rowCount === 0
+                    ? t('matchNeedsAccounts')
+                    : null;
 
     return (
         <Card className="space-y-default" id="legacy-access-runs">
             <Heading level={2}>{t('title')}</Heading>
             <p className="text-content-muted">{t('description')}</p>
 
-            {!canManage ? <InlineNotice variant="info">{t('needsPermission')}</InlineNotice> : null}
             {notice ? <InlineNotice variant={notice.variant}>{notice.text}</InlineNotice> : null}
 
-            {canManage ? (
-                <section className="space-y-compact" data-testid="legacy-snapshot-standing">
-                    <Heading level={3}>{t('standingTitle')}</Heading>
-                    {standingLoading ? (
-                        <p className="text-sm text-content-subtle">{t('standingLoading')}</p>
-                    ) : standingError !== null ? (
-                        <InlineNotice variant="error">
-                            {t('standingLoadFailed', { reason: standingError })}
-                        </InlineNotice>
-                    ) : !standing ? (
-                        <p className="text-sm text-content-muted">{t('neverRead')}</p>
-                    ) : (
-                        <SnapshotStanding
-                            standing={standing}
-                            queueHref={tenantHref(`/admin/integrations/${connectionId}/reconciliation`)}
-                        />
-                    )}
-                </section>
-            ) : null}
+            <section className="space-y-compact" data-testid="legacy-snapshot-standing">
+                <Heading level={3}>{t('standingTitle')}</Heading>
+                {standingLoading ? (
+                    <p className="text-sm text-content-subtle">{t('standingLoading')}</p>
+                ) : standingError !== null ? (
+                    <InlineNotice variant="error">
+                        {t('standingLoadFailed', { reason: standingError })}
+                    </InlineNotice>
+                ) : !standing ? (
+                    <p className="text-sm text-content-muted">{t('neverRead')}</p>
+                ) : (
+                    <SnapshotStanding
+                        standing={standing}
+                        queueHref={tenantHref(`/admin/integrations/${connectionId}/reconciliation`)}
+                    />
+                )}
+            </section>
 
             <div className="grid gap-default md:grid-cols-2">
                 <section className="space-y-compact" data-testid="legacy-read-action">
@@ -285,7 +288,6 @@ export function LegacyAccessRunsCard({
                         onClick={() => void start('read')}
                         loading={starting === 'read'}
                         disabled={starting !== null}
-                        disabledTooltip={canManage ? undefined : t('needsPermission')}
                     >
                         {t('readButton')}
                     </Button>
@@ -310,7 +312,7 @@ export function LegacyAccessRunsCard({
                     >
                         {t('matchButton')}
                     </Button>
-                    {canManage && matchBlockedBy && !standingLoading ? (
+                    {matchBlockedBy && !standingLoading ? (
                         <p className="text-sm text-content-muted" data-testid="legacy-match-blocked">
                             {matchBlockedBy}
                         </p>
@@ -334,17 +336,15 @@ export function LegacyAccessRunsCard({
                 </section>
             </div>
 
-            {canManage ? (
-                <Button
-                    variant="ghost"
-                    icon={<AppIcon name="refresh" size={16} />}
-                    onClick={() => void refresh()}
-                    disabled={starting !== null}
-                    id="legacy-runs-refresh-btn"
-                >
-                    {t('refresh')}
-                </Button>
-            ) : null}
+            <Button
+                variant="ghost"
+                icon={<AppIcon name="refresh" size={16} />}
+                onClick={() => void refresh()}
+                disabled={starting !== null}
+                id="legacy-runs-refresh-btn"
+            >
+                {t('refresh')}
+            </Button>
         </Card>
     );
 }

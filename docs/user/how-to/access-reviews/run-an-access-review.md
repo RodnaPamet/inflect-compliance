@@ -45,7 +45,7 @@ An access review is a campaign in which a reviewer looks at each member's access
 
 A {{ui:accessReviews.scopeLegacyApp}} campaign reviews the accounts in one older application that Inflect reads through an integration, instead of the members of this workspace.
 
-You need the Owner or Admin role. Before you start, the application must be connected under **{{ui:nav.admin}}** → **{{ui:admin.nav.integrations}}**. Its accounts must also have been read in full within the last 2 days, and the accounts from that read matched to people. Reading the accounts and matching them are not started from this form.
+You need the Owner or Admin role. Before you start, the application must be connected under **{{ui:nav.admin}}** → **{{ui:admin.nav.integrations}}**. Its accounts must also have been read in full within the last 2 days, and the accounts from that read matched to people. You do both on the application's own page, as described in [Read the accounts and match them](#read-the-accounts-and-match-them).
 
 1. Follow steps 1 to 5 of [Steps](#steps).
 2. Under **{{ui:accessReviews.fieldScope}}**, choose **{{ui:accessReviews.scopeLegacyApp}}**.
@@ -60,12 +60,28 @@ If Inflect refuses to create the campaign, the form shows why:
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | {{ui:accessReviews.legacyConnectionsNone}} | No legacy application is connected | Connect one under **{{ui:admin.nav.integrations}}** |
-| A message that begins **NO_SNAPSHOT** | The application's accounts have never been read | Have them read in full and matched to people, then try again |
-| A message that begins **SNAPSHOT_INCOMPLETE** | The latest read did not finish | Find out why it stopped, have the accounts read again and matched, then try again |
-| A message that begins **SNAPSHOT_STALE** | The latest complete read is more than 2 days old | Have the accounts read again and matched, then try again |
-| A message that begins **NOT_RECONCILED** | The accounts were read but not matched to people | Have them matched, then try again |
-| A message that begins **NO_SUBJECTS** | The latest read holds no accounts | Check the application's connection, have the accounts read again, then try again |
+| A message that begins **NO_SNAPSHOT** | The application's accounts have never been read | Click **{{ui:admin.integrations.legacyRuns.readButton}}**, then **{{ui:admin.integrations.legacyRuns.matchButton}}**, then try again |
+| A message that begins **SNAPSHOT_INCOMPLETE** | The latest read did not finish, or is still running | Read the reason under **{{ui:admin.integrations.legacyRuns.lastRead}}**, put it right, read the accounts again and match them, then try again |
+| A message that begins **SNAPSHOT_STALE** | The latest complete read is more than 2 days old | Read the accounts again and match them, then try again |
+| A message that begins **NOT_RECONCILED** | The accounts were read but not matched to people | Click **{{ui:admin.integrations.legacyRuns.matchButton}}**, then try again |
+| A message that begins **NO_SUBJECTS** | The latest read holds no accounts | Check the application's connection, read the accounts again, then try again |
 | A message that begins **REVIEWER_NOT_A_MEMBER** | The reviewer is not an active member of the workspace | Choose an active member |
+
+### Read the accounts and match them
+
+You need the Owner or Admin role.
+
+1. Go to **{{ui:nav.admin}}** → **{{ui:admin.nav.integrations}}**.
+2. In the application's row, click **{{ui:admin.integrations.viewOutcomes}}**. The application's page opens.
+3. Under **{{ui:admin.integrations.legacyRuns.title}}**, click **{{ui:admin.integrations.legacyRuns.readButton}}**. The read runs in the background, and the page says it has started.
+4. Click **{{ui:admin.integrations.legacyRuns.refresh}}** until **{{ui:admin.integrations.legacyRuns.lastRead}}** shows **{{ui:admin.integrations.legacyRuns.pullRun.PASSED}}**. **{{ui:admin.integrations.legacyRuns.standingTitle}}** then shows when the accounts were read and how many there are.
+5. Click **{{ui:admin.integrations.legacyRuns.matchButton}}**. The matching also runs in the background.
+6. Click **{{ui:admin.integrations.legacyRuns.refresh}}** until **{{ui:admin.integrations.legacyRuns.lastMatch}}** shows **{{ui:admin.integrations.legacyRuns.matchRun.PASSED}}**. **{{ui:admin.integrations.legacyRuns.standingTitle}}** then shows how many accounts were linked to a person, suggested, ambiguous, unmatched, or not a person.
+7. To decide, one by one, the accounts that were not linked to a person, click **{{ui:admin.integrations.legacyRuns.openQueue}}**.
+
+**{{ui:admin.integrations.legacyRuns.matchButton}}** cannot be clicked until the latest read is complete and holds at least one account; the page says which of the two is missing.
+
+If a read or a match is refused, **{{ui:admin.integrations.legacyRuns.lastRead}}** or **{{ui:admin.integrations.legacyRuns.lastMatch}}** shows **{{ui:admin.integrations.legacyRuns.pullRun.PARTIAL}}** with the reason and what to do about it. A match is refused when your HR system has not synced successfully in the last 2 days, because matching against an out-of-date list of people reports the wrong people as leavers. Sync your HR system under **{{ui:admin.nav.integrations}}**, then click **{{ui:admin.integrations.legacyRuns.matchButton}}** again.
 
 ## Change the reviewer or the due date
 

@@ -5939,7 +5939,6 @@
       "legacyRuns": {
         "title": "Accounts and matching",
         "description": "Read this application's accounts, then match them to people in your HR records. An access review of the application is built from the latest read, once that read is complete and matched.",
-        "needsPermission": "Reading and matching accounts needs the permission to manage integrations.",
         "readButton": "Read accounts",
         "matchButton": "Match to people",
         "refresh": "Refresh",
