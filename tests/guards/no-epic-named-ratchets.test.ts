@@ -85,16 +85,229 @@ const ALLOWED: Record<string, string> = {
     'r31-document-bar.test.ts': 'referenced by name from inline-subtitle-budget.test.ts',
 };
 
-function guardFiles(): string[] {
+/**
+ * Every guard file the 2026-08-05 retirement deleted, and every one deleted by
+ * the tranches that retired the rq* family after it, under the path it had. A
+ * restore of any of them fails "no retired guard file has come back" below, by
+ * name.
+ *
+ * Read from git, not from the implementation notes, which give counts rather
+ * than names. For each commit: `git diff --name-status -M <sha>^ <sha> --
+ * tests/guards tests/guardrails`, taking every `D` path and the OLD path of
+ * every `R`.
+ *
+ *   #1790  c7a994a0  2026-08-05  154 deleted, 4 renamed
+ *   #1797  47978689  2026-08-06  2 deleted
+ *   #1800  38858d16  2026-08-06  2 deleted
+ *   #1801  c5f79704  2026-08-06  1 deleted
+ *   #1834  f957c0a6  2026-08-10  2 deleted (the last tranche RQ_CEILING records)
+ *
+ * `2026-08-05-retire-epic-ratchets.md` says 153 were deleted; git shows 154,
+ * and 153 is the net after the one file that commit added, which is this one.
+ *
+ * The four #1790 renamed are here by their OLD names. Their new names
+ * (`evidence-download-authz`, `evidence-review-authz`,
+ * `evidence-list-resilience`, `risk-quantitative-analytics`) are live guards
+ * and must not be added: the restore check would fail on them at once.
+ *
+ * 158 of the 165 also match EPIC_NAME_PATTERNS, so the first test catches
+ * their return too. The five `rq*` files would move RQ_CEILING's count without
+ * being named, and nothing else catches `risk-quantification-integrity` or
+ * `polish-01-score-chip-a11y`.
+ *
+ * This is history: it does not grow with the tree and never needs raising. Its
+ * length is pinned below for that reason, because a shorter list is a restore
+ * being let through.
+ */
+const RETIRED_GUARD_FILES = [
+    // #1790, c7a994a0, 2026-08-05: every file it deleted.
+    'tests/guardrails/b1-bug-fix-bundle.test.ts',
+    'tests/guardrails/b2-table-unification.test.ts',
+    'tests/guardrails/b3-button-card-unify.test.ts',
+    'tests/guardrails/b4-filter-nav-consistency.test.ts',
+    'tests/guardrails/b5-evidence-workflow.test.ts',
+    'tests/guardrails/b6-usezodform-adoption.test.ts',
+    'tests/guardrails/b7-layout-redesign.test.ts',
+    'tests/guardrails/b8-folders-frameworks.test.ts',
+    'tests/guardrails/b8-followup-evidence-folders.test.ts',
+    'tests/guardrails/b9-policy-template-upgrade.test.ts',
+    'tests/guardrails/pr-1-tenant-tables-org-parity.test.ts',
+    'tests/guardrails/pr-2-org-shell-parity.test.ts',
+    'tests/guardrails/pr-3-org-dashboard-parity.test.ts',
+    'tests/guardrails/pr-a-dashboard-reports.test.ts',
+    'tests/guardrails/pr-asset-control-codes.test.ts',
+    'tests/guardrails/pr-b-tables-buttons.test.ts',
+    'tests/guardrails/pr-c-forms-filters-interactions.test.ts',
+    'tests/guardrails/pr-d-entity-id-picker.test.ts',
+    'tests/guards/b1-selection-header-bar.test.ts',
+    'tests/guards/b10-create-button-dark-contrast.test.ts',
+    'tests/guards/b3-popup-texture.test.ts',
+    'tests/guards/b5-entity-prev-next-nav.test.ts',
+    'tests/guards/b6-assets-cia-and-table-height.test.ts',
+    'tests/guards/b7-asset-risk-tasks-column.test.ts',
+    'tests/guards/b8-landing-no-passwords-grc.test.ts',
+    'tests/guards/b9-seed-password-env.test.ts',
+    'tests/guards/epic49-calendar-ratchets.test.ts',
+    'tests/guards/epic51-theme-token-guard.test.ts',
+    'tests/guards/epic55-native-select-ratchet.test.ts',
+    'tests/guards/epic63-timestamp-rollout.test.ts',
+    'tests/guards/item-25-weighted-criticality.test.ts',
+    'tests/guards/item-27-32-34-asset-ux.test.ts',
+    'tests/guards/item-28-task-due-wiring.test.ts',
+    'tests/guards/item-29-status-buttons.test.ts',
+    'tests/guards/item-30-risk-nav.test.ts',
+    'tests/guards/item-31-risk-overview-single-card.test.ts',
+    'tests/guards/item-33-35-layout.test.ts',
+    'tests/guards/r13-active-label-brand-colour.test.ts',
+    'tests/guards/r13-band-reach.test.ts',
+    'tests/guards/r13-band-richness.test.ts',
+    'tests/guards/r13-band-shimmer.test.ts',
+    'tests/guards/r13-bevel-shadow.test.ts',
+    'tests/guards/r13-gloss-highlight.test.ts',
+    'tests/guards/r13-living-sidebar-bundle.test.ts',
+    'tests/guards/r13-radial-active-wash.test.ts',
+    'tests/guards/r13-secondary-brand-tokens.test.ts',
+    'tests/guards/r13-soft-section-divider.test.ts',
+    'tests/guards/r14-environment-badge-discipline.test.ts',
+    'tests/guards/r14-living-chrome-discipline.test.ts',
+    'tests/guards/r14-living-topbar-bundle.test.ts',
+    'tests/guards/r14-nav-bar-brand-discipline.test.ts',
+    'tests/guards/r14-nav-bar-geometry-discipline.test.ts',
+    'tests/guards/r14-nav-bar-import-discipline.test.ts',
+    'tests/guards/r14-notifications-bell-discipline.test.ts',
+    'tests/guards/r14-slot-press-feedback-discipline.test.ts',
+    'tests/guards/r14-tenant-switcher-discipline.test.ts',
+    'tests/guards/r14-user-menu-discipline.test.ts',
+    'tests/guards/r15-active-row-aura.test.ts',
+    'tests/guards/r15-band-active-starburst.test.ts',
+    'tests/guards/r15-band-halo-breath.test.ts',
+    'tests/guards/r15-band-per-row-drift.test.ts',
+    'tests/guards/r15-band-reveal-sweep.test.ts',
+    'tests/guards/r15-band-stardust-trail.test.ts',
+    'tests/guards/r15-label-magnetic-tracking.test.ts',
+    'tests/guards/r15-row-liquid-sweep.test.ts',
+    'tests/guards/r15-weighty-press.test.ts',
+    'tests/guards/r16-chart-frame.test.ts',
+    'tests/guards/r16-chart-gradient-primitives.test.ts',
+    'tests/guards/r16-chart-motion-hooks.test.ts',
+    'tests/guards/r16-chart-tokens.test.ts',
+    'tests/guards/r16-donut-hover.test.ts',
+    'tests/guards/r16-donut-rebuild.test.ts',
+    'tests/guards/r16-donut-zero-value-segments.test.ts',
+    'tests/guards/r16-gantt-chart.test.ts',
+    'tests/guards/r16-gantt-hover.test.ts',
+    'tests/guards/r16-lickable-charts-bundle.test.ts',
+    'tests/guards/r16-line-chart.test.ts',
+    'tests/guards/r16-line-hover.test.ts',
+    'tests/guards/r16-radar-chart.test.ts',
+    'tests/guards/r16-radar-hover.test.ts',
+    'tests/guards/r17-capstone-rollout.test.ts',
+    'tests/guards/r17-hero-ambient-glow.test.ts',
+    'tests/guards/r17-hero-breath-animation.test.ts',
+    'tests/guards/r17-hero-sparkline.test.ts',
+    'tests/guards/r17-metric-card-corner-glow.test.ts',
+    'tests/guards/r17-pr10-next-best-action-urgency-glow.test.ts',
+    'tests/guards/r17-pr11-clear-check.test.ts',
+    'tests/guards/r17-pr12-dashboard-rise-in.test.ts',
+    'tests/guards/r17-pr7-clickable-kpi.test.ts',
+    'tests/guards/r17-pr8-donut-filter-aware.test.ts',
+    'tests/guards/r17-pr9-charts-filter-aware.test.ts',
+    'tests/guards/r18-area-liquid-fill.test.ts',
+    'tests/guards/r18-bar-hover-bubble.test.ts',
+    'tests/guards/r18-bubble-tokens.test.ts',
+    'tests/guards/r18-bubbly-bars.test.ts',
+    'tests/guards/r18-capstone-rollout.test.ts',
+    'tests/guards/r18-chart-gloss.test.ts',
+    'tests/guards/r18-chart-spring.test.ts',
+    'tests/guards/r18-donut-gloss.test.ts',
+    'tests/guards/r18-fluid-morph.test.ts',
+    'tests/guards/r18-line-gloss.test.ts',
+    'tests/guards/r18-sheen-sweep.test.ts',
+    'tests/guards/r18-uplift-a-dashboard-charts.test.ts',
+    'tests/guards/r18-uplift-b-riskmatrix.test.ts',
+    'tests/guards/r21-pra-foundation.test.ts',
+    'tests/guards/r21-prc-heatmap-rebuild.test.ts',
+    'tests/guards/r21-prd-funnel-hover-flicker.test.ts',
+    'tests/guards/r21-prd-funnel-polish.test.ts',
+    'tests/guards/r21-pre-3d-foundation.test.ts',
+    'tests/guards/r21-prf-bar3d-capstone.test.ts',
+    'tests/guards/r22-pre-variant-and-cta-order.test.ts',
+    'tests/guards/r22-prf-capstone.test.ts',
+    'tests/guards/r23-pra-kpi-primitive.test.ts',
+    'tests/guards/r23-prb-kpi-filter-hook.test.ts',
+    'tests/guards/r23-prc-kpi-url-sync.test.ts',
+    'tests/guards/r23-prd-assets-controls-rollout.test.ts',
+    'tests/guards/r23-pre-tasks-evidence-rollout.test.ts',
+    'tests/guards/r23-prf-policies-vendors-capstone.test.ts',
+    'tests/guards/r24-pre-rollout.test.ts',
+    'tests/guards/r25-pra-route-and-shell.test.ts',
+    'tests/guards/r25-prb-canvas-integration.test.ts',
+    'tests/guards/r25-prc-process-step-node.test.ts',
+    'tests/guards/r25-prd-edge-and-control-overlay.test.ts',
+    'tests/guards/r25-pre-interaction-model.test.ts',
+    'tests/guards/r25-prf-polish-and-capstone.test.ts',
+    'tests/guards/r26-prb-node-taxonomy.test.ts',
+    'tests/guards/r26-prc-proximity-auto-bind.test.ts',
+    'tests/guards/r26-prd-edge-controls-semantics.test.ts',
+    'tests/guards/r26-pre-editor-ux.test.ts',
+    'tests/guards/r26-prf-capstone.test.ts',
+    'tests/guards/r27-pra-visual-foundation.test.ts',
+    'tests/guards/r27-prb-graph-elements.test.ts',
+    'tests/guards/r27-prf-capstone.test.ts',
+    'tests/guards/r28-editor-ergonomics.test.ts',
+    'tests/guards/r29-multi-select-perf-collab.test.ts',
+    'tests/guards/r30-group-nodes.test.ts',
+    'tests/guards/r31-background-and-empty-state.test.ts',
+    'tests/guards/r31-capstone.test.ts',
+    'tests/guards/r31-command-palette.test.ts',
+    'tests/guards/r31-edge-label-chip.test.ts',
+    'tests/guards/r31-inspector-asidepanel.test.ts',
+    'tests/guards/r31-left-palette.test.ts',
+    'tests/guards/r31-minimap-zoom.test.ts',
+    'tests/guards/r31-node-geometry.test.ts',
+    'tests/guards/r32-canvas-decomposition.test.ts',
+    'tests/guards/r32-modal-form-completeness.test.ts',
+    'tests/guards/r32-selection-emphasis.test.ts',
+    'tests/guards/r32-small-details-a.test.ts',
+    'tests/guards/r32-small-details-b.test.ts',
+    'tests/guards/roadmap-10-completion.test.ts',
+    'tests/guards/roadmap-11-completion.test.ts',
+    'tests/guards/roadmap-7-completion.test.ts',
+    'tests/guards/roadmap-8-completion.test.ts',
+    'tests/guards/roadmap-9-completion.test.ts',
+    // #1790: the four it RENAMED rather than deleted, by their OLD names.
+    'tests/guardrails/b10-advanced-analytics.test.ts',
+    'tests/guards/r5-p1-evidence-download-security.test.ts',
+    'tests/guards/r5-p2-evidence-review-authz.test.ts',
+    'tests/guards/r5-p3-evidence-resilience.test.ts',
+    // #1797, 47978689, 2026-08-06.
+    'tests/guards/risk-quantification-integrity.test.ts',
+    'tests/guards/rq3-11-capstone.test.ts',
+    // #1800, 38858d16, 2026-08-06.
+    'tests/guards/rq2-9-matrix-movement.test.ts',
+    'tests/guards/rq9-trending.test.ts',
+    // #1801, c5f79704, 2026-08-06.
+    'tests/guards/rq3-ob-c-tab-deep-links.test.ts',
+    // #1834, f957c0a6, 2026-08-10.
+    'tests/guards/polish-01-score-chip-a11y.test.ts',
+    'tests/guards/rq3-ob-f-first-run.test.ts',
+] as const;
+
+/** Every `.test.ts` under GUARD_DIRS, as a repo-relative path. */
+function guardPaths(): string[] {
     const out: string[] = [];
     for (const dir of GUARD_DIRS) {
         const full = path.resolve(__dirname, '../../', dir);
         if (!fs.existsSync(full)) continue;
         for (const name of fs.readdirSync(full)) {
-            if (name.endsWith('.test.ts')) out.push(name);
+            if (name.endsWith('.test.ts')) out.push(`${dir}/${name}`);
         }
     }
     return out;
+}
+
+function guardFiles(): string[] {
+    return guardPaths().map((p) => path.basename(p));
 }
 
 function isEpicNamed(basename: string): boolean {
@@ -140,476 +353,53 @@ describe('epic-named ratchets are not added back', () => {
         expect(unexplained).toEqual([]);
     });
 
-    it('the retirement actually happened', () => {
-        // Guards against a revert that restores the retired files without
-        // anyone noticing this rule went quiet. 777 -> 624 on 2026-08-05.
+    it('no retired guard file has come back', () => {
+        // Keeps the retirement from being undone quietly: a restore fails here
+        // naming each file, in either directory, whatever else the tree holds.
         //
-        // RAISED 700 -> 725 on 2026-09-19, because the ceiling had stopped
-        // measuring what it is for. The retirement removed EPIC-NAMED guards;
-        // the tree then grew back to 697 with invariant-named ones, which is
-        // precisely the growth the comment above says it means to permit. At
-        // 697 the headroom was 2 — `toBeLessThan(700)` fails AT 700 — and four
-        // legitimate new guards were in flight across two concurrent stacks:
-        //
-        //     questionnaire-reaches-production      (#2622)
-        //     soa-gate-is-declared-not-inferred     (#2617)
-        //     section-axis-is-structural            (#2619)
-        //     identity-write-ceiling-matches-the-pass (#2638)
-        //
-        // so the THIRD of them to merge would have turned main red whoever
-        // owned it. That is the ceiling catching ordinary work, not a bulk
-        // restore.
-        //
-        // THE COUNT WAS ALWAYS THE BACKSTOP, NOT THE DETECTOR. A bulk restore
-        // reintroduces epic-named FILES, and the assertion immediately above
-        // names them one by one — it fails with the list, not with a number.
-        // 725 still sits 52 below the pre-retirement 777, so a restore of the
-        // 153 retired files remains impossible to land quietly.
-        //
-        // Found by a peer's eight-way union sweep across both stacks; neither
-        // a per-branch measurement nor either stack's own union would have
-        // seen it, because no single branch crosses the line.
-        //
-        // RAISED 725 -> 750 on 2026-09-23, for the same cause and with the
-        // same reasoning. main stood at 724 — headroom ZERO, because
-        // `toBeLessThan(725)` fails AT 725 — so the next guard file anybody
-        // added was going to be red whoever owned it. The phase-1 agentic
-        // audit contributed six, every one invariant-named:
-        //
-        //     flue-model-call-writes-art12-row          (#2776)
-        //     flue-propose-charges-the-cap              (#2777)
-        //     agent-driver-column-has-a-writer          (#2780)
-        //     flue-model-output-has-one-destination     (#2782)
-        //     agent-autonomy-surface-matches-enforcement (#2784)
-        //     flue-guard-outcome-has-arms               (#2781)
-        //
-        // THE BACKSTOP IS INTACT, which is the only thing that licenses this.
-        // The assertion immediately above — the one that names epic-named
-        // files individually — is GREEN and unchanged; the count is the
-        // backstop, not the detector, and a bulk restore still fails there
-        // with a list rather than here with a number. 750 remains 27 below
-        // the pre-retirement 777.
-        //
-        // Caught in the merge queue rather than locally, and the reason is
-        // worth recording: the full sweep was green on this branch, then two
-        // test-only PRs landed, and the re-check after merging main ran only
-        // the two ratchets predicted to move. A shared budget is exactly the
-        // thing a predicted subset cannot find. Re-run the WHOLE sweep after
-        // a merge, not the part you expect to break.
-        // RAISED 750 -> 775 on 2026-10-01, for one file and on the same
-        // grounds as the two raises above: the rule retires EPIC-NAMED
-        // guards, and `vendored-file-wording.test.ts` is named for the
-        // invariant it protects — files a downstream product copies verbatim
-        // carry no compliance vocabulary. That is the growth the comment at
-        // the top says this ceiling means to permit.
-        //
-        // Why a new file rather than folding it into an existing one, which
-        // would have cost nothing here: nothing in `tests/guards` owns
-        // portability. The nearest matches by name (`vendor-surface-*`) are
-        // about third-party vendor RECORDS, a different sense of the word.
-        // Hanging a portability rule off an unrelated guard would make both
-        // harder to find than spending one slot.
-        //
-        // `.test.tsx` is not counted by `guardFiles()` above. That is not a
-        // way round this: the two rendered specs in the same stack are `.tsx`
-        // because they render components, and renaming a source-scanning
-        // guard to dodge the denominator would be gaming the measure.
-        //
-        // RAISED 775 -> 776 on 2026-10-15, for one file, on the grounds this
-        // ceiling states: `bullmq-job-id-rule.test.ts` is named for the
-        // invariant it protects — a custom BullMQ job id is one the library
-        // will accept, and no site builds one by hand.
-        //
-        // Why a new file rather than folding it in, which is the test the two
-        // raises above apply: nothing in these directories owns job-id
-        // VALIDITY. The nearest match is `fan-out-bucket-matches-schedule`,
-        // whose subject is whether the dedupe bucket agrees with the cron
-        // period — a different invariant about the same function, and hanging
-        // a colon-validity rule off it would make both harder to find, which
-        // is the exact argument the 750 -> 775 raise used.
-        //
-        // What it cost to not have it: #3554. The one enqueue site that did
-        // not use the shared factory hand-rolled
-        // `ctr:{planId}:{scheduledForIso}`, BullMQ rejected every enqueue, and
-        // scheduled control tests did not run in production for 7½ days —
-        // ~4,300 failures. The identical defect had already happened at the
-        // leaver dispatch (#2175) five weeks earlier, where the lesson was
-        // written into a docstring and two call-site tests but never made a
-        // property of the tree. One slot is the cheaper half of that trade.
-        //
-        // Raised to THIS BRANCH'S live count (553 guards + 222 guardrails),
-        // not to a round number with headroom: a ceiling with slack admits the
-        // next file silently, which is how a ratchet stops ratcheting.
-        //
-        // RAISED 776 -> 777 on 2026-10-15, for one file, same test applied:
-        // `work-overdue-grace-matches-schedule.test.ts` is named for the
-        // invariant it protects — the overdue-work reporter's grace periods are
-        // three times the cadence of the job that drains each family, derived
-        // from `SCHEDULED_JOBS` rather than written twice.
-        //
-        // Why a new file rather than folding it in: its consumer is a BASH
-        // SCRIPT on the production VM with no node available, so the contract
-        // is three comment lines in a fixed shape and this test is what makes
-        // them binding. `fan-out-bucket-matches-schedule` is the nearest
-        // relative and does the same job for the dedupe buckets — a different
-        // registry reader for a different consumer, and merging them would
-        // couple a TypeScript constant to a shell script's comments.
-        //
-        // What it cost to not have it: #3558, which exists because #3554 ran
-        // 7.5 days with ~4,300 failures while every counter and log line
-        // worked. A grace that silently stops matching its cadence turns this
-        // alert into noise, then into a muted alert, then back into #3554.
-        //
-        // RAISED 777 -> 778 on 2026-10-15, for one file, same test applied:
-        // `current-state-stays-true.test.ts` is named for the invariant it
-        // protects — the design document's "Current state (true today)" section
-        // must not describe a retired thing as operating.
-        //
-        // Why a new file: nothing in these directories compares PROSE against
-        // CODE. Every existing guard here reads source, config or schema and
-        // asserts about the thing it read; this one reads a document and holds
-        // it to the repository. `docs-accuracy` is the nearest relative and
-        // governs classification and banners — which file belongs in which
-        // bucket — not whether a sentence is still true.
-        //
-        // What it cost to not have it: #3579. The retirement commit updated the
-        // design doc the same day, adding banners at subsection tops, and left
-        // TEN body passages describing a deleted container, a deleted provider
-        // and a deferred key rotation as current. One read "the Laya service
-        // now running on". A banner at the top is the natural minimum effort,
-        // it reads as sufficient, and nothing checked the rest.
-        //
-        // RAISED 778 -> 779 on 2026-10-15, for one file, same test applied:
-        // `a-refusal-is-not-a-success.test.ts` is named for the invariant it
-        // protects — an executor whose usecase handed back a refusal must
-        // report one, rather than reporting success because the argument that
-        // carries the verdict is optional.
-        //
-        // Why a new file: nothing in these directories reads the executor
-        // registry's CALL SITES as a population. `runtime-wiring-coverage` is
-        // the nearest relative and asks whether each job is dispatched at all;
-        // this asks whether each one's result tells the truth. A job can be
-        // wired perfectly and still report every refusal as a pass, which is
-        // exactly what happened.
-        //
-        // What it cost to not have it: #3591. `legacy-reconcile` carried
-        // `refusal` and `status` into its job details and then omitted the
-        // eighth argument to `makeResult`, whose default answer is
-        // `success: true`. The first production run of that job refused
-        // `NO_FRESH_ROSTER`, wrote `IntegrationExecution: PARTIAL` with the
-        // reason, and logged "job processed successfully" in the same breath —
-        // for the whole life of the feature, with no type error, no lint
-        // warning, and nothing in the diff that looks like a dropped verdict.
-        // Its sibling `legacy-access-pull`, registered forty lines earlier,
-        // mapped the same refusal correctly and explained why in a comment.
-        //
-        // RAISED 779 -> 780 on 2026-10-15, for one file, same test applied:
-        // `worker-bundle-defines-its-cjs-shims.test.ts` is named for the
-        // invariant it protects — a bundle that ships a CJS global must define
-        // it, because ESM does not.
-        //
-        // Why a new file: nothing in these directories reads the BUILD SCRIPT
-        // as a contract with the code it bundles. `worker-safe-imports` and
-        // `worker-import-graph` ask what may be imported; this asks whether
-        // what is imported can RUN once bundled, which is a different question
-        // and one no unit test can answer — jest runs from source under CJS,
-        // where `require`, `__filename` and `__dirname` are always defined.
-        //
-        // What it cost to not have it: #3611. The banner defined `require`
-        // only while its own comment claimed it defined `__dirname` too.
-        // `dist/worker.mjs` used `__dirname` once and defined it zero times,
-        // at module scope, so the import threw and took every export in that
-        // file with it. The single symptom was `legacy-reconcile` logging
-        // "adjudication failed, run stands" on every resolved run, from behind
-        // a try/catch that is right to exist — found only by running the job.
-        // RAISED 780 -> 781 on 2026-10-16, for one file, same test applied:
-        // `cited-test-paths-exist.test.ts` is named for the invariant it
-        // protects — a source file that cites a test must cite one that exists.
-        //
-        // Why a new file: nothing in these directories reads a DOCBLOCK as a
-        // claim about the test suite. The nearest neighbours check that a named
-        // surface still exists (`quality-coverage-integrity`) or that copy keys
-        // resolve (`agents-copy-keys-resolve`); neither looks at what `src/`
-        // asserts about `tests/`. It also has to NOT strip comments, which is
-        // the opposite of the convention every scanning guard here follows, so
-        // folding it into one of them would set a trap for the next author.
-        //
-        // What it cost to not have it: 12 of 188 cited test paths did not exist
-        // (#3355), and four of those claimed in the present tense that a named
-        // guard pinned an invariant nothing pinned (#3650) — including the Flue
-        // `setProvider` rule, whose own docblock calls the hazard it guards a
-        // cross-tenant egress. A dead link tells a reader the citation moved;
-        // these told a reader the protection existed, so they stopped looking.
-        // RAISED 781 -> 785 on 2026-10-17, for FOUR files, same test applied to
-        // each: every one is named for the invariant it protects, and none for
-        // the issue that found it. They close #3650, where four docblocks
-        // asserted in the present tense that a named guard pinned an invariant —
-        // and all four named a file that has never existed in this history.
-        //
-        //   identity-joiner-pass-stays-pure       the pass reaches nothing, so a
-        //                                         dry run provably writes nothing
-        //   flue-provider-is-never-set-per-run    no per-run `setProvider`; the
-        //                                         race it prevents is a
-        //                                         CROSS-TENANT EGRESS by the
-        //                                         module's own description
-        //   workflow-reads-only-declared-input    a key read but not declared is
-        //                                         the one case admission cannot
-        //                                         catch, so it died mid-run
-        //   one-banner-landmark-in-src            exactly one `role="banner"`,
-        //                                         floor as well as ceiling
-        //
-        // Why four files and not one: the ratchet below forbids an epic-named
-        // file, and a file named for a single invariant cannot honestly carry
-        // four unrelated ones across four subsystems. Three of the four also
-        // need comment MASKING for opposite reasons to each other, which is a
-        // trap to leave in one shared file.
-        //
-        // What it cost to not have them: nothing yet, measurably — all four
-        // properties still held when the guards were written. That is the
-        // argument FOR them rather than against: each was protected only by a
-        // paragraph that told the reader it was protected by a test.
-        //
-        // RAISED 785 -> 786 on 2026-10-17, for ONE file, the same test applied:
-        // `agent-harness-single-write-seam` is named for its invariant. The
-        // harness tables' level and register link are claims only the verifying
-        // ingest may make, and a second writer would make them indistinguishable
-        // from verified ones. It is not folded into
-        // `directory-identity-tables-single-write-seam`, whose name and allowlist
-        // are about a different subsystem's tables.
-        //
-        // RAISED 786 -> 787 on 2026-10-17, for ONE file, the same test:
-        // `ai-risk-tier-unclassified-writers` is named for its invariant —
-        // nothing writes the UNCLASSIFIED AI-system tier in the deploy that
-        // only teaches readers the value (#3691). It holds the empty writer
-        // allowlist the second deploy (#3669) amends, which no existing guard
-        // owns.
-        //
-        // RAISED 787 -> 788 on 2026-10-18, for ONE file, the same test:
-        // `access-review-agent-scope` is named for its invariant — nothing
-        // writes the AGENT access-review scope in the deploy that only teaches
-        // readers the value (#3674). It holds the empty writer allowlist the
-        // second deploy amends, and the type-level proof that the one create
-        // seam cannot store the value; no existing guard owns either.
-        //
-        // RAISED 788 -> 789 on 2026-10-18, for ONE file, the same test:
-        // `agent-recertification-single-write-seam` is named for its invariant
-        // — the pack, narrowing and sample tables have one writer, and that
-        // writer can delete a grant but cannot add authority (#3674, deploy 2).
-        // It is not folded into `agent-harness-single-write-seam`, whose
-        // tables and allowlist belong to the harness ingest, nor into
-        // `access-review-agent-scope`, which is about the scope VALUE.
-        //
-        // RAISED 789 -> 790 on 2026-10-18, for ONE file, the same test:
-        // `client-reachable-modules-import-no-node-builtins` is named for its
-        // invariant — nothing a `'use client'` file reaches imports a `node:`
-        // specifier, and nothing the workflow registry reaches imports a Node
-        // built-in at all (#3674, deploy 2, whose `node:crypto` in a workflow
-        // step failed `next build`). The nearest guard,
-        // `no-usecase-imports-in-client`, checks one DIRECT import per client
-        // file; this one walks the transitive graph, which that guard's name
-        // and allowlist do not describe, so it is not folded in there.
-        //
-        // RAISED 790 -> 791 on 2026-10-18, for ONE file, the same test applied:
-        // `service-principal-disable-graph-seam` is named for its invariant —
-        // nothing calls Microsoft Graph to disable a service principal except
-        // through the external write dispatch (#3671). It holds an import graph
-        // (one Graph client, one importer, one route) that no existing guard
-        // owns; `identity-log-identifier-scrub` is about log lines, not callers.
-        //
-        // RAISED 791 -> 792 on 2026-10-18, for ONE file, the same test:
-        // `tenant-purge-retained-never-cascades` is named for its invariant —
-        // a model the tenant purge retains is never reached by an
-        // `ON DELETE CASCADE` from a model it deletes (#3724). It is not folded
-        // into `tenant-purge-retains-regulatory` or
-        // `tenant-purge-doc-claim-is-backed`: both compare the retained set
-        // with `docs/data-retention.md`, a list against a document, and
-        // neither reads a foreign key — which is exactly how four "retained"
-        // access-review tables were cascaded away by the purge of their
-        // campaign while both stayed green (#3716).
-        //
-        // RAISED 792 -> 793 on 2026-10-20, for ONE file, the same test:
-        // `cadence-has-one-home` is named for its invariant — cadence
-        // arithmetic happens in `utils/cadence.ts` and nowhere else, which that
-        // module has DECLARED since #3136 ("THE ONE PLACE THIS IS DECIDED")
-        // with nothing asserting it. By #3802 two files had drifted back out:
-        // `risk-report.ts` advanced schedules with a bare `setUTCMonth`, the
-        // overflow that header calls "the bug", and `task-source-reconcile.ts`
-        // had re-grown the flat day table #3136 deleted.
-        //
-        // It is not folded into `work-overdue-grace-matches-schedule` or
-        // `fan-out-bucket-matches-schedule`: each ties ONE constant to ONE
-        // schedule by reading two named files, whereas this walks every `.ts`
-        // under `src/` for a CLASS of arithmetic and carries the carve-out for
-        // the runner's lookback window. Nor into `external-write-clamp-is-pinned`,
-        // where #3797 put the grant-cap-to-review tie — that guard's subject is
-        // the external-write ladder over two named files, and widening it to a
-        // repo-wide walk is how a guard's name stops describing it.
-        // RAISED 792 -> 794 on 2026-10-20, for TWO files, the same test applied
-        // to each:
-        //
-        // `reset-tables-covers-fixture-written-orphans` is named for its
-        // invariant — a model outside the `TRUNCATE ... CASCADE` closure that a
-        // resetting suite creates is either in `RESET_TABLES` or on a
-        // documented allowlist (#3801, the third instance of that list going
-        // stale after #3597's two). The only existing guard that names the
-        // helper at all is `integration-suite-audit-teardown`, which checks
-        // that suites tear their AUDIT rows down; it reads no schema and knows
-        // nothing of the cascade closure, so this is not folded into it.
-        //
-        // `ingest-refusals-bound-the-account-key` is named for its invariant —
-        // a refusal in `ingest.ts` interpolates the untrusted account key only
-        // through the helper that bounds it, by the canonical schema's own
-        // constant (#3800). It is source-text of necessity: two of the three
-        // refusals are post-parse, so no input can make them elide and no
-        // behavioural test can observe whether they use the helper.
-        // RAISED 794 -> 795 on 2026-10-21, for ONE file:
-        //
-        // `assistant-health-reporter-matches-its-policies` is named for its
-        // invariant — every metric type an alert policy FILTERS on is one the
-        // reporter actually PUBLISHES, and each policy carries an absence arm on
-        // that same metric (#3856). Nothing connects those two files otherwise:
-        // a policy watches a type string, the reporter emits one, and a
-        // one-character disagreement leaves a policy whose threshold can never
-        // fire and whose absence arm pages forever. `infra/reporters/README.md`
-        // already records the general form of that cost — 22 alert rules that
-        // "have never run".
-        //
-        // It is not folded into `unsettled-reporter-matches-the-product`, the
-        // only existing guard that drives a reporter: that one's subject is the
-        // IDENTITY reporter and the product population it measures, reading
-        // `listUnsettledWrites` and the leaver pass to check the two agree on a
-        // staleness window. This reads two POLICY files against a third file's
-        // published metric names, and runs a different script. Widening that
-        // guard to a second reporter is how a guard's name stops describing it.
-        // RAISED 795 -> 796 on 2026-10-21, for ONE file:
-        //
-        // `joule-package-matches-the-card` is named for its invariant — the
-        // Joule scenario's `description` IS the `a2aSkill.description` of the
-        // `sap-transaction-review` workflow, verbatim (#3865). Two surfaces
-        // route requests to the same workflow and are edited in different
-        // places: Joule matches user intent on the YAML's text, a spec-reading
-        // host matches on the agent card's skill text. Two independently
-        // maintained copies of "when to call this agent" diverge SILENTLY —
-        // Joule starts sending requests the card does not advertise, or stops
-        // sending ones it does, and nothing fails.
-        //
-        // It is not folded into `a2a-host-card-skills`, the existing guard over
-        // the advertised set: that one reads the workflow registry and the card
-        // it produces, both TypeScript, and its subject is what the card may
-        // disclose (R19). This reads a DEPLOYMENT ARTEFACT — YAML under
-        // `deploy/joule/` that no TypeScript imports — against that card, plus
-        // the two values SAP's own toolkit fails `joule deploy` on. Different
-        // population, different failure, and widening the first to cover YAML
-        // is how a guard's name stops describing it.
-        // RAISED 797 -> 798 on 2026-10-21, for one file, on the grounds this
-        // ceiling states: `bottom-right-corner-has-one-resident.test.ts` is
-        // named for the invariant it protects — the corner the assistant
-        // launcher occupies has one resident, and anything else anchored there
-        // outranks it in z-order so it covers rather than collides.
-        //
-        // Why a new file rather than folding it in. The nearest match is
-        // `modal-overlay-guard`, whose subject is that page authors compose
-        // <Modal>/<Sheet> instead of hand-rolling a `fixed inset-0` backdrop —
-        // overlay PRIMITIVE discipline, scoped to `src/app/t`. This scans
-        // `src/components` for bottom-anchored elements and compares their
-        // z-order. Different population, different failure, and widening the
-        // first to cover corner occupancy is how a guard's name stops
-        // describing it.
-        //
-        // It exists because #3836 asked for this invariant to "remain asserted"
-        // and only the launcher's own position was (#3917). Measuring it found
-        // the prose was also wrong: `src/components/ui/popover.tsx` already
-        // anchors a mobile drawer to the bottom, which #3836 missed by looking
-        // only in `src/components/layout`.
-        //
-        // THE BACKSTOP IS INTACT: the assertion above that names epic-named
-        // files individually is green and unchanged, and this file is named for
-        // an invariant rather than a PR, epic or roadmap item.
-        //
-        // RAISED 798 -> 799 on 2026-10-23, for ONE file:
-        // `docs-site-publication.test.ts`, named for the invariant it holds —
-        // the public docs site publishes only allowlisted docs, never one the
-        // owner kept off it, and never a coordinate of the production estate.
-        //
-        // It is not folded into `docs-accuracy`, the nearest guard: that one
-        // asks whether a doc's TENSE is honest for its class, over every file
-        // in docs/. This one asks whether a doc may be PUBLIC, over the site's
-        // allowlist, and fails on a host path or a project id that
-        // docs-accuracy has no reason to read. Different population, different
-        // failure.
-        //
-        // RAISED 799 -> 800 on 2026-10-24, for ONE file:
-        // `vendored-openshell-skills.test.ts` (#3968). It is the only guard
-        // over `.claude/skills/`, a tree the product's own text scan does not
-        // cover, holding third-party text that every Claude Code session in
-        // this repository reads as instructions. Nothing already in guards or
-        // guardrails ranges over that path, so it cannot be folded in.
-        //
-        // The number is this branch's LIVE count plus one, not a remembered
-        // ceiling: main raised 798 -> 799 for `docs-site-publication` while
-        // this change was in flight, and two branches each raising "to 799"
-        // is how a shared floor lands one short.
-        //
-        // RAISED 800 -> 801 on 2026-10-25, for ONE file:
-        // `sandbox-runtime-channels-match-the-runtime.test.ts` (#4001). It
-        // holds the admin page's reporting-channel list against the gateway's
-        // own committed vocabulary, in BOTH directions — the dangerous one
-        // being a real egress path that no channel claims, because an
-        // incomplete enumeration of where data can go reads exactly like a
-        // complete one.
-        //
-        // Not folded in: nothing in guards or guardrails ranges over
-        // `src/app-layer/usecases/sandbox-runtime-config.ts`, and the figure is
-        // this branch's live count plus one rather than a remembered ceiling.
-        // `scanner-never-reads-credential-values.test.ts` (#3936's hardening
-        // gate). It asserts that no file in the scanner package names
-        // `ProviderClient` or any gateway RPC that returns credential MATERIAL
-        // — over the whole package rather than over the one source whose
-        // author was thinking about it, because the hazard is a later file
-        // added by someone who read the SDK's docs rather than the roadmap.
-        //
-        // Not folded into an existing guard: nothing in guards or guardrails
-        // ranges over `packages/agent-harness-scanner/src`, and the nearest
-        // candidates range over `src/`.
-        //
-        // The number is THIS BRANCH's live count plus one. `feat/4.6-…`
-        // (#4058) also raises this line, so whichever lands second will
-        // conflict here — and the resolution is to re-derive from the live
-        // count, not to take either side's integer.
-        //
-        // RE-DERIVED AT THE MERGE, not taken from either side. Both branches
-        // raised this line to 800 against their own live counts, and both were
-        // right in isolation: each added ONE file to a tree of 799. Together
-        // they add two, so 800 would have landed one short and the next guard
-        // file would have failed for no reason anybody could see in the diff.
-        //
-        // RE-DERIVED AGAIN AT THIS MERGE (2026-10-25), 801 -> 802. #4100 landed
-        // its raise to 801 against a tree that did not yet contain this
-        // branch's `sandbox-runtime-channels-match-the-runtime.test.ts`, and
-        // this branch raised to 801 against a tree without #4100's two. The
-        // post-merge live count is 801 EXACTLY, and `toBeLessThan` fails AT its
-        // argument — so 801 left headroom ZERO and the next guard file from
-        // any peer would have reddened main with nothing in its diff to explain
-        // why. Measured post-merge, not reasoned: 575 in tests/guards + 226 in
-        // tests/guardrails.
-        //
-        // AND RAISED TO 812, NOT 802, which is a change of practice and so
-        // needs its reason written down. +1 per file keeps headroom at exactly
-        // ZERO by construction: this line has now conflicted in four
-        // consecutive PRs (#3968, #4058, #4100, #4001), and each time the
-        // branch that merged second was correct in isolation. The next peer to
-        // add a guard file would hit 802 and go red for a reason invisible in
-        // its own diff — which is verbatim the 2026-09-19 condition above,
-        // where the answer was to raise WITH headroom (700 -> 725) rather than
-        // to the live count.
-        //
-        // What this does NOT give up: the backstop. Restoring the 153 retired
-        // epic-named files would reach 954, so it remains unlandable, and the
-        // named-file assertion above still fails with the LIST rather than with
-        // a number. What it gives up is ten slots of per-file justification
-        // prose — the convention continues, it is simply no longer enforced by
-        // a tripwire that fires on whoever merges second.
-        expect(guardFiles().length).toBeLessThan(812);
+        // This replaced an absolute ceiling, `guardFiles().length < N`, set
+        // at 700 on 2026-08-05 and raised by hand in 25 pull requests between
+        // 2026-09-19 and 2026-10-25, to 812. Every raise was ordinary growth,
+        // new guards named for their invariants as the rule above asks, and
+        // none was a restore. Whenever headroom ran out, the count failed
+        // whoever added the next guard file, in the merge queue, for a reason
+        // nothing in their diff showed (#4445's candidate hit it at 812). The
+        // owner replaced it with this named list (2026-10-29, #4449): a
+        // restore still fails, and a new guard trips nothing here. The raises
+        // and their reasons are in this file's history.
+        const present = guardPaths();
+
+        // Zero is never complete: a read that missed a directory would pass
+        // the assertion below for that directory while checking nothing.
+        expect([...new Set(present.map((p) => path.dirname(p)))].sort()).toEqual(
+            [...GUARD_DIRS].sort(),
+        );
+
+        const retired = new Set(RETIRED_GUARD_FILES.map((p) => path.basename(p)));
+        const restored = present.filter((p) => retired.has(path.basename(p))).sort();
+
+        expect({
+            restored,
+            hint:
+                restored.length === 0
+                    ? 'none'
+                    : 'These guards were retired on purpose; RETIRED_GUARD_FILES names the commit ' +
+                      'that deleted each. Do not bring one back. If it held a real invariant, ' +
+                      'write a test named for that invariant, or an ESLint rule if it is structural.',
+        }).toEqual({ restored: [], hint: 'none' });
+    });
+
+    it('the retired list is the record it claims to be', () => {
+        // The list is history, so its length never moves. A shorter one is a
+        // restore being let through, and a duplicate hides a missing entry.
+        const basenames = RETIRED_GUARD_FILES.map((p) => path.basename(p));
+        expect(RETIRED_GUARD_FILES.length).toBe(165);
+        expect(new Set(basenames).size).toBe(RETIRED_GUARD_FILES.length);
+
+        const outsideGuardDirs = RETIRED_GUARD_FILES.filter(
+            (p) => !GUARD_DIRS.includes(path.dirname(p)) || !p.endsWith('.test.ts'),
+        );
+        expect(outsideGuardDirs).toEqual([]);
     });
 
     /**
