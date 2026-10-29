@@ -30,9 +30,21 @@ import {
  * `resolveFlueModel` reads as EXTERNAL — the same default
  * `tenant-security-settings.ts` applies when the row is absent.
  */
-async function posturesFor(
-    ctx: RequestContext,
-): Promise<{ residency: FlueModelSelection; acknowledgement: ExternalAiAcknowledgement }> {
+/**
+ * The two per-tenant postures a Flue run needs, read together.
+ *
+ * A named type rather than an inline object literal in the return position:
+ * `Promise<{ … }>` puts a brace in the SIGNATURE, which the test helpers that
+ * extract a function body key on, so an inline shape makes
+ * `functionBodyOf(src, 'posturesFor')` return the type instead of the code.
+ * `tests/guards/business-data-transfer-gate-is-wired` found that.
+ */
+interface FlueRunPostures {
+    readonly residency: FlueModelSelection;
+    readonly acknowledgement: ExternalAiAcknowledgement;
+}
+
+async function posturesFor(ctx: RequestContext): Promise<FlueRunPostures> {
     // ONE read, two postures. The business-data acknowledgement (#3872) lives on
     // this same row, and its select is kept separate from `RESIDENCY_SELECT`
     // rather than appended to it: that constant is shared by six sites and its

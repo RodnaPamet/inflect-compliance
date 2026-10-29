@@ -36,7 +36,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string): string => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
@@ -89,9 +89,15 @@ describe('the terms it reads are supplied, not defaulted away', () => {
         // REFUSES — so a driver that stopped passing it would fail closed
         // rather than open. That is the safe direction and still wrong: every
         // run over a marked connection would refuse with no way to proceed.
-        const s = read(DRIVER);
-        expect(s).toContain('EXTERNAL_AI_ACK_SELECT');
-        expect(s).toContain('externalAiAcknowledgement:');
+        // Bound to `posturesFor`, not the file. Two reasons, and the second is
+        // the one that matters: the import line also contains the identifier,
+        // so a whole-file needle is satisfied by an unused import — the same
+        // called-versus-imported hole that `ai-guard-coverage`'s enforcement
+        // check turned out to have. Narrowing is also what
+        // `assertion-needle-uniqueness-ratchet` asks for, and it counted this
+        // needle as ambiguous until it was done.
+        expect(functionBodyOf(read(DRIVER), 'posturesFor')).toContain('EXTERNAL_AI_ACK_SELECT');
+        expect(read(DRIVER)).toContain('externalAiAcknowledgement:');
     });
 
     it('and the offer reports the connections the gate ranges over', () => {
