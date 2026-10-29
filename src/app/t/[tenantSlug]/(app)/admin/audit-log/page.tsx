@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
  * Server component does the fetch; the DataTable lives in the client
  * island.
  *
- * Gated here, before the read, on exactly what `listAuditLogs` asserts —
+ * Gated here, before the read, on exactly what `listAuditLogPage` asserts —
  * `canAudit`: OWNER, ADMIN, AUDITOR (owner decision 2026-10-29, an AUDITOR may
  * read the audit log). It used to call the read for every member and turn the
  * usecase's refusal into an empty table; it now refuses before the read, as
@@ -27,6 +27,12 @@ export const dynamic = 'force-dynamic';
  * server-rendered props out of the payload. A failure of the read itself now
  * reaches the error boundary instead of reading as an empty log.
  * See `../_lib/admin-page-requirements.ts`.
+ *
+ * Paged, newest first, `AUDIT_LOG_PAGE_SIZE` entries a page: `?cursor=` names
+ * where a page starts, and the read takes one row past the page, so "Older
+ * entries" appears exactly when older entries exist. The page used to stop at
+ * the latest 100 with no sign that more existed. It stays a server read, so
+ * an AUDITOR needs no admin API to page.
  */
 export default async function AuditLogPage({
     params,
