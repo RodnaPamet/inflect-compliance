@@ -712,3 +712,57 @@ describe('source-blocks — commentsOf', () => {
         expect(commentsOf(inCode)).not.toMatch(/CC BY 4\.0/);
     });
 });
+
+describe('functionBodyOf refuses a return type it would misread (#4515)', () => {
+    it('throws rather than returning the RETURN TYPE when it holds an object literal', () => {
+        const src = [
+            'function withInline(a: string): Promise<{ x: number; y: string }> {',
+            '    return bodyMarker();',
+            '}',
+        ].join('\n');
+
+        // The old behaviour returned the slice ending at the TYPE's closing
+        // brace, so this assertion would have passed while reading a type
+        // declaration — which is the whole defect.
+        expect(() => functionBodyOf(src, 'withInline')).toThrow(/return type contains an object literal/);
+    });
+
+    it('still extracts an ordinary body, including one whose return type is generic', () => {
+        // The control. A generic return type with no object literal is fine, and
+        // refusing it would break the 64 functions tests extract this way.
+        const src = [
+            'async function plain(a: string): Promise<Record<string, number>> {',
+            '    return bodyMarker(a);',
+            '}',
+        ].join('\n');
+
+        const body = functionBodyOf(src, 'plain');
+        expect(body).toContain('bodyMarker(a)');
+    });
+
+    it('is not confused by `=>` in a return type', () => {
+        // `=>` contains `>`, which a naive angle-bracket count decrements — the
+        // reason this refuses rather than trying to locate the real body.
+        const src = [
+            'function handlers(): Record<string, () => void> {',
+            '    return bodyMarker();',
+            '}',
+        ].join('\n');
+
+        const body = functionBodyOf(src, 'handlers');
+        expect(body).toContain('bodyMarker()');
+    });
+
+    it('is not confused by an object literal in a PARAMETER`s type', () => {
+        // Only the return position is ambiguous. A parameter's own inline type
+        // sits inside the parens, which the parameter-list scan closes first.
+        const src = [
+            'function paramShape(input: { a: string; b: number }): string {',
+            '    return bodyMarker(input.a);',
+            '}',
+        ].join('\n');
+
+        const body = functionBodyOf(src, 'paramShape');
+        expect(body).toContain('bodyMarker(input.a)');
+    });
+});

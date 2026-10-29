@@ -856,7 +856,66 @@ export function functionBodyOf(src: string, name: string): string {
         new RegExp(`\\b(?:export\\s+)?(?:async\\s+)?function\\s+${name}\\b`),
     );
     if (start < 0) throw new Error(`function not found: ${name}`);
+    assertBodyBraceIsNotTheReturnType(code, start, name);
     return braceBoundedFrom(src, code, start, `function body: ${name}`);
+}
+
+/**
+ * REFUSE a declaration whose return type contains an object literal (#4515).
+ *
+ * `braceBoundedFrom` tracks parens and braces and not angle brackets, so for
+ *
+ *     function f(a: string): Promise<{ x: number }> {
+ *
+ * the first brace at paren-depth zero is the one inside `Promise<…>`. It
+ * returned the slice ending at that type's closing brace — the RETURN TYPE,
+ * silently, with no indication the caller was now asserting against a type
+ * declaration. A `.not.toMatch` against it passes vacuously; a `.toContain`
+ * fails showing text that names the right function, which is a confusing way to
+ * learn this.
+ *
+ * It THROWS rather than parsing harder, deliberately. Counting angle brackets to
+ * find the real body means being right about `=>`, `>=`, nested `>>` and a
+ * generic default containing a comparison — a cleverer extractor that is wrong
+ * in a NEW way is worse than a loud refusal, because the next failure would
+ * again be silent. Both ways out are cheap and one of them improves the source:
+ * extract a named return type, or anchor past it with `braceBlockAfter`.
+ *
+ * Measured when added: of the 64 functions any test extracts this way, ZERO had
+ * this shape — so this refuses nothing that was working.
+ */
+function assertBodyBraceIsNotTheReturnType(code: string, start: number, name: string): void {
+    // Close the parameter list first; a parameter's own default or inline type
+    // may contain braces and angle brackets of its own.
+    let i = code.indexOf('(', start);
+    if (i < 0) return;
+    let parens = 0;
+    for (; i < code.length; i++) {
+        if (code[i] === '(') parens += 1;
+        else if (code[i] === ')') {
+            parens -= 1;
+            if (parens === 0) break;
+        }
+    }
+    const brace = code.indexOf('{', i);
+    if (brace < 0) return;
+
+    let angles = 0;
+    for (let j = i; j < brace; j++) {
+        const ch = code[j];
+        // `=>` in a function type is not a closing angle bracket.
+        if (ch === '>' && code[j - 1] === '=') continue;
+        if (ch === '<') angles += 1;
+        else if (ch === '>') angles -= 1;
+    }
+    if (angles > 0) {
+        throw new Error(
+            `function body: ${name} — its return type contains an object literal, so the `
+            + `first brace belongs to the TYPE and not the body. This helper will not guess: `
+            + `extract a named return type (usually better source anyway), or use `
+            + `braceBlockAfter with an anchor past the annotation. See #4515.`,
+        );
+    }
 }
 
 /**
