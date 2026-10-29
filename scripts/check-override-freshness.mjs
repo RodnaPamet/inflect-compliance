@@ -115,10 +115,20 @@ function satisfiesCaret(version, range) {
  * `satisfiesCaret` understands `^X.Y.Z` and nothing else — every other
  * shape returns `null`. The loop below filters the registry's version
  * list with `satisfiesCaret(v, spec) === true`, so an exact pin
- * (`sharp: '0.35.4'`) or a conjunction (`nwsapi: '>=2.2.16 <2.2.25'`)
+ * (`sharp`) or a conjunction (`nwsapi`, whose upper bound is deliberate)
  * yields an EMPTY in-range set, which makes both drift branches
  * unreachable: the entry produces no finding and reads exactly like a
- * pass. Three of today's 24 population entries are that shape.
+ * pass.
+ *
+ * Neither the COUNT nor the specs are written here any more, because both
+ * had gone stale. This comment said "three of today's 24" when the answer
+ * was five, and cited `sharp: '0.35.4'` after the librsvg advisory had
+ * moved that override to 0.35.5 — a hand-maintained census of exactly the
+ * defect class the script exists to detect, decaying inside the script
+ * that detects it. The run already reports the number, one `Override range
+ * not analysed` notice per entry, so count the notices. Closing the gap
+ * itself (teaching it exact pins, and making the residue fail rather than
+ * notice) is #4428.
  *
  * So the loop asks this first and emits an `unanalysable` finding
  * instead of dropping the entry, because a silent drop is
