@@ -164,7 +164,7 @@
 --  reason as `remediationTaskId` beside them: optional pointers between
 --  tenant-scoped models, so composite, and their parents are soft-deleted
 --  then purged row by row, so `SET NULL ("<column>")`.  Migration
---  20261029193500_vulnerability_conversion_pointers.
+--  20261029213500_vulnerability_conversion_pointers.
 --
 --  ── What is NOT in this file, because it was fixed in prisma/schema ──
 --  PR1 (#2410): 7 @default clauses (5 statements), 2 plain-btree @@index

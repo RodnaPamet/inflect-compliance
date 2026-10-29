@@ -302,7 +302,7 @@ const SIGNED_OFF: Array<{ name: string; members: readonly string[] }> = [
         // Same permanent divergence as groups 3-5, for two NEW columns rather
         // than reshaped constraints: `AssetVulnerability.convertedRiskId` ->
         // Risk and `.convertedFindingId` -> Finding (migration
-        // 20261029193500_vulnerability_conversion_pointers). Composite so a
+        // 20261029213500_vulnerability_conversion_pointers). Composite so a
         // cross-tenant pointer is unrepresentable; `ON DELETE SET NULL
         // ("<column>")` because Risk and Finding are purged row by row by the
         // data-lifecycle sweep, which RESTRICT would stop and whole-row SET
