@@ -51,7 +51,7 @@
  */
 
 /** The engines a run can be executed by. */
-export const AGENT_DRIVERS = ['static', 'flue'] as const;
+export const AGENT_DRIVERS = ['static', 'flue', 'tool-runner'] as const;
 
 export type AgentDriver = (typeof AGENT_DRIVERS)[number];
 
@@ -64,18 +64,38 @@ export type AgentDriver = (typeof AGENT_DRIVERS)[number];
 export const STATIC_DRIVER: AgentDriver = 'static';
 
 /**
- * The stored per-tenant values. Mirrors the `AgentDriverMode` Prisma enum;
- * spelled here as well so this module has no server-side import and can be held
+ * The per-tenant values a WRITER may store: the settings PUT, the setting
+ * usecase and the engines the admin page offers. Spelled here rather than read
+ * from the Prisma enum so this module has no server-side import and can be held
  * by a client component rendering the admin toggle — the same reason
  * `src/lib/identity/write-ladder.ts` carries the ladder itself.
+ *
+ * NOT every value the enum declares. A new value ships in two deploys (#4241,
+ * `tests/unit/agent-driver-mode-rollout.test.ts`): first READ_ONLY, in
+ * {@link STORED_DRIVER_MODES} only, and then here.
  */
 export const AGENT_DRIVER_MODES = ['STATIC', 'FLUE'] as const;
 
 export type AgentDriverMode = (typeof AGENT_DRIVER_MODES)[number];
 
-/** Narrowing membership test — the one place the mode list is widened to `string`. */
+/**
+ * Every value the `AgentDriverMode` Prisma enum declares, which every READER
+ * understands. `TOOL_RUNNER` is READ_ONLY (Step 2b of
+ * `docs/claude-tool-runner-design.md`): this build reads it as itself, and no
+ * writer accepts it until Step 2c, once production runs an image that reads it.
+ */
+export const STORED_DRIVER_MODES = [...AGENT_DRIVER_MODES, 'TOOL_RUNNER'] as const;
+
+export type StoredDriverMode = (typeof STORED_DRIVER_MODES)[number];
+
+/** Narrowing membership test — the one place the writable mode list is widened to `string`. */
 export function isAgentDriverMode(value: string): value is AgentDriverMode {
     return (AGENT_DRIVER_MODES as readonly string[]).includes(value);
+}
+
+/** The same test over every value a reader understands, the READ_ONLY ones included. */
+export function isStoredDriverMode(value: string): value is StoredDriverMode {
+    return (STORED_DRIVER_MODES as readonly string[]).includes(value);
 }
 
 /**
@@ -109,9 +129,9 @@ export function flueEnvEnabled(raw: string | null | undefined): boolean {
  */
 export function coerceStoredDriverMode(
     stored: string | null | undefined,
-): AgentDriverMode {
+): StoredDriverMode {
     if (!stored) return 'STATIC';
-    return isAgentDriverMode(stored) ? stored : 'STATIC';
+    return isStoredDriverMode(stored) ? stored : 'STATIC';
 }
 
 /**
@@ -139,7 +159,7 @@ export const RUN_DRIVER_UNRECOGNISED = 'UNRECOGNISED' as const;
  * A run's recorded engine as this build can state it: one of the modes it was
  * built with, or {@link RUN_DRIVER_UNRECOGNISED}.
  */
-export type RecordedRunDriver = AgentDriverMode | typeof RUN_DRIVER_UNRECOGNISED;
+export type RecordedRunDriver = StoredDriverMode | typeof RUN_DRIVER_UNRECOGNISED;
 
 /**
  * Coerce the bytes `WorkflowRun.driver` holds into a {@link RecordedRunDriver}.
@@ -151,7 +171,7 @@ export type RecordedRunDriver = AgentDriverMode | typeof RUN_DRIVER_UNRECOGNISED
  * engine nobody read is not one this build can name either.
  */
 export function coerceRecordedRunDriver(stored: string | null | undefined): RecordedRunDriver {
-    return stored && isAgentDriverMode(stored) ? stored : RUN_DRIVER_UNRECOGNISED;
+    return stored && isStoredDriverMode(stored) ? stored : RUN_DRIVER_UNRECOGNISED;
 }
 
 /**
@@ -198,6 +218,11 @@ export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
     // Every other deployment is unchanged, which is what makes this
     // revertible by reverting one line.
     flue: true,
+    // FALSE until Step 2c (`docs/claude-tool-runner-design.md`). The driver is
+    // complete and conformance-proven, and `resolveAgentDriver` refuses it with
+    // DRIVER_NOT_IMPLEMENTED whatever the switch and the tenant say, so no run
+    // records `TOOL_RUNNER` while that value is READ_ONLY.
+    'tool-runner': false,
 };
 
 /**
@@ -216,6 +241,7 @@ export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
 const REASONING_ENGINE: Readonly<Record<AgentDriver, boolean>> = {
     static: false,
     flue: true,
+    'tool-runner': true,
 };
 
 export function isReasoningEngine(driver: AgentDriver): boolean {
@@ -234,12 +260,16 @@ export function isReasoningEngine(driver: AgentDriver): boolean {
  * enum declares. `tests/unit/agent-driver-mode-rollout.test.ts` holds that
  * mode to its rollout stage for every driver this build can run.
  */
-const RECORDED_MODE: Readonly<Record<AgentDriver, AgentDriverMode>> = {
+const RECORDED_MODE: Readonly<Record<AgentDriver, StoredDriverMode>> = {
     static: 'STATIC',
     flue: 'FLUE',
+    // READ_ONLY, which the rollout test allows only while
+    // `DRIVER_IMPLEMENTED['tool-runner']` is false: the driver is never chosen,
+    // so no run records it.
+    'tool-runner': 'TOOL_RUNNER',
 };
 
-export function recordedModeOf(driver: AgentDriver): AgentDriverMode {
+export function recordedModeOf(driver: AgentDriver): StoredDriverMode {
     return RECORDED_MODE[driver];
 }
 
@@ -260,6 +290,13 @@ export interface AgentDriverTerms {
      * where a comment SATISFIED a guard whose subject had been deleted.)
      */
     readonly envEnabled: boolean;
+    /**
+     * The Tool Runner engine's own switch, `AGENT_DRIVER_TOOL_RUNNER`, read the
+     * same way (Step 2b). Optional, and absent reads as OFF, so every caller
+     * written before this engine keeps its meaning. The Flue switch says
+     * nothing about this engine, and this one nothing about Flue.
+     */
+    readonly toolRunnerEnvEnabled?: boolean;
     /**
      * The tenant's stored setting, exactly as it came out of the database —
      * `TenantSecuritySettings.agentDriver`, or `null`/`undefined` when the row
@@ -284,9 +321,12 @@ export interface AgentDriverTerms {
  *                             the other is a row written by a build that knew a
  *                             mode this one does not — a downgrade mid-rolling-
  *                             deploy, and something an operator should see.
- *   DRIVER_NOT_IMPLEMENTED  — both switches say FLUE and this build cannot
- *                             execute it. The loudest of the four: it means
- *                             configuration is ahead of code.
+ *   DRIVER_NOT_IMPLEMENTED  — both switches name an engine this build cannot
+ *                             execute. The loudest of the four: it means
+ *                             configuration is ahead of code. Today that is
+ *                             only `TOOL_RUNNER`, which no writer accepts yet,
+ *                             so it is reachable only after a rollback from a
+ *                             build that wrote it.
  */
 export type StaticDriverReason =
     | 'ENV_DISABLED'
@@ -330,15 +370,30 @@ export interface AgentDriverDecision {
  * one nothing enforces, which is the log line.
  */
 export function resolveAgentDriver(terms: AgentDriverTerms): AgentDriverDecision {
+    const raw = terms.tenantSetting;
+
+    // THE TOOL RUNNER, under its own switch and its own build flag (Step 2b).
+    // First, because a tenant that chose it is answered by its terms alone; the
+    // Flue switch below says nothing about it. Every other stored value takes
+    // the Flue path exactly as before this engine existed.
+    if (coerceStoredDriverMode(raw) === 'TOOL_RUNNER') {
+        if (terms.toolRunnerEnvEnabled !== true) {
+            return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };
+        }
+        if (!DRIVER_IMPLEMENTED['tool-runner']) {
+            return { driver: STATIC_DRIVER, reason: 'DRIVER_NOT_IMPLEMENTED' };
+        }
+        return { driver: 'tool-runner', reason: null };
+    }
+
     if (!terms.envEnabled) {
         return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };
     }
 
-    const raw = terms.tenantSetting;
     if (coerceStoredDriverMode(raw) !== 'FLUE') {
         return {
             driver: STATIC_DRIVER,
-            reason: raw && !isAgentDriverMode(raw) ? 'UNRECOGNISED_SETTING' : 'TENANT_NOT_OPTED_IN',
+            reason: raw && !isStoredDriverMode(raw) ? 'UNRECOGNISED_SETTING' : 'TENANT_NOT_OPTED_IN',
         };
     }
 

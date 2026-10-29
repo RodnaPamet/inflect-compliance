@@ -331,6 +331,12 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/lib/agentic/bounded-exec.ts — identifier bound elsewhere',
     'src/lib/agentic/tool-manifest-store.ts — call to a helper this rule cannot open',
     'src/lib/agentic/tool-manifest-store.ts — identifier bound elsewhere',
+    // The Tool Runner engine (Step 2b, #4149). Read line by line: the one
+    // opaque value in each is the run id, beside field names written at the
+    // sink. The engine logs no prompt, no tool argument and no model text; the
+    // model's text reaches only the decision row's bounded, sanitised summary.
+    'src/lib/agentic/tool-runner/driver.ts — identifier bound elsewhere',
+    'src/lib/agentic/tool-runner/execute.ts — identifier bound elsewhere',
     // ASI08/ASI10 behavioural circuit breaker. Both files were read line by
     // line: neither carries a prompt, a proposal payload, a rationale or any
     // captured tool output. The opaque values are a tenant id, an agent id, a
@@ -803,7 +809,12 @@ const SINK_FLOOR = 30;
 // loosening carries its reason. Three holes on one sink is above the running
 // average, and the alternative was to log nothing when a sandbox may have
 // leaked — the same trade the entry above records.
-const MEASURED_HOLES = 209;
+// 209 -> 212: THE TOOL RUNNER ENGINE (Step 2b, #4149). Three holes, each the
+// run id, on three of its four sinks (the start warn, the kill-switch read
+// warn, the dispatch info; the decision-row error has none). The error fields
+// were written as `err.message` with a literal fallback rather than
+// `String(err)`, which is what kept two more holes out.
+const MEASURED_HOLES = 212;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -854,7 +865,12 @@ const MEASURED_HOLES = 209;
 // long note under `MEASURED_HOLES` says why that was accepted rather than
 // worked around, and that draining an existing sink is what would actually
 // move it.
-const MEASURED_SINKS = 114;
+// 114 -> 122: the Tool Runner engine's eight sinks, all mine: the four of
+// `clientForRun`'s SDK logger (Step 2a, #4148, which added them without
+// recording them here) and the four of Step 2b's driver, loop and decision
+// recorder. Raising the denominator by more than the numerator TIGHTENS
+// `HOLES_PER_SINK_CEILING`: (209+6)/114 = 1.886 becomes (212+6)/122 = 1.787.
+const MEASURED_SINKS = 122;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

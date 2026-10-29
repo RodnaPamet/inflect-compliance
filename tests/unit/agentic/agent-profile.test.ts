@@ -120,7 +120,7 @@ describe('4. AGENT_PROFILES_TENANTS opens the routes to the tenants it names, an
 
 describe('2. no engine runs a profile in this build', () => {
     it('answers for each driver there is', () => {
-        expect(Object.fromEntries(AGENT_DRIVERS.map((d) => [d, runsProfiles(d)]))).toEqual({ static: false, flue: false });
+        expect(Object.fromEntries(AGENT_DRIVERS.map((d) => [d, runsProfiles(d)]))).toEqual({ static: false, flue: false, 'tool-runner': false });
     });
 });
 

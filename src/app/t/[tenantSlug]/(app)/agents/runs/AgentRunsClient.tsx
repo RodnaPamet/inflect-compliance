@@ -60,6 +60,7 @@ interface WorkflowOption {
 const DRIVER_VARIANT: Record<string, 'info' | 'neutral'> = {
     STATIC: 'neutral',
     FLUE: 'info',
+    TOOL_RUNNER: 'info',
 };
 
 const STATUS_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'error' | 'neutral'> = {

@@ -1805,6 +1805,9 @@ enum AiSystemStatus {
 /// FLUE   — an external agent runtime decides what to try; `runReadTool` still
 ///          decides what is permitted, so every register control stays in front
 ///          of it.
+/// TOOL_RUNNER — the in-process Tool Runner engine (Step 2b). READ_ONLY in this
+///          build: every reader understands it and no writer accepts it until
+///          Step 2c, which ships its writers once production reads it.
 ///
 /// This column is ONE OF TWO switches and cannot enable anything on its own:
 /// the operator's `AGENT_DRIVER_FLUE` must also be on. `STATIC` is the default
@@ -1813,6 +1816,7 @@ enum AiSystemStatus {
 enum AgentDriverMode {
   STATIC
   FLUE
+  TOOL_RUNNER
 }
 
 enum IdentityWriteMode {

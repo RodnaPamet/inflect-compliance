@@ -1,0 +1,24 @@
+-- TOOL_RUNNER agent driver mode (Step 2b, #4149), deploy 1 of 2.
+--
+-- The Tool Runner engine records the engine a run opened under in
+-- WorkflowRun.driver, and a tenant chooses an engine in
+-- TenantSecuritySettings.agentDriver. Both columns are AgentDriverMode.
+--
+-- THIS DEPLOY ONLY ADDS. Every reader is taught the value in this same change
+-- (`coerceStoredDriverMode`, `coerceRecordedRunDriver`), and NOTHING writes it:
+-- the settings writer accepts AGENT_DRIVER_MODES only, and the run writer
+-- records it only for a driver `selectRunDriver` can choose, which
+-- DRIVER_IMPLEMENTED['tool-runner'] = false rules out. A Prisma client that
+-- meets an enum value it was not generated with fails the whole read, which on
+-- WorkflowRun is every agent run a tenant has, so a writer ships only in deploy
+-- 2 (Step 2c), once production runs an image that reads it.
+-- `tests/unit/agent-driver-mode-rollout.test.ts` holds both halves.
+--
+-- ADD VALUE, never RENAME or DROP: an added value breaks no cast an old
+-- container emits. Appended, because nothing orders by either column.
+--
+-- `IF NOT EXISTS`, and nothing else in this file: Postgres commits an enum
+-- addition outside the surrounding transaction, so a re-run after a failure
+-- later in the same file would otherwise fail on the duplicate.
+-- `tests/guardrails/migration-enum-isolation.test.ts`.
+ALTER TYPE "AgentDriverMode" ADD VALUE IF NOT EXISTS 'TOOL_RUNNER';

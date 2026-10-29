@@ -131,6 +131,7 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // triaged on their own above — which is exactly why this flag must not be
     // read as covering them.
     AGENT_DRIVER_FLUE: 'operator feature flag selecting the in-process agent execution engine — an imported library, not an external endpoint, and not a sub-processor',
+    AGENT_DRIVER_TOOL_RUNNER: 'operator feature flag selecting the Tool Runner engine — an in-process loop over the existing Anthropic sub-processor, not an endpoint of its own; selects nothing until Step 2c turns the engine on and records its data category on the Anthropic row',
     // Agent INTERACTIVE-RUN seam (#3868 step 2) — admits a new STARTER for a
     // run, a signed-in person in a browser, beside the job, credential and
     // automation-rule starters that already exist. It names no host, opens no

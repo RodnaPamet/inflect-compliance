@@ -21,6 +21,7 @@ import type {
     ProfileSkillRef,
     ProfileTrigger,
 } from './agent-profile';
+import type { AgentDriver } from './agent-driver';
 import type { ApprovalWindow } from './approval-window';
 
 /** Accumulated run state. `outputs` is keyed by each step's `label`. */
@@ -135,8 +136,11 @@ export interface WorkflowDefinition {
      * toggle and whether this build implements the driver at all — and any
      * disagreement resolves to `static`. A workflow definition is a piece of
      * configuration, so it must not be able to widen its own authority.
+     *
+     * `tool-runner` is a request no build can grant yet (Step 2b): its
+     * `DRIVER_IMPLEMENTED` flag is false.
      */
-    driver?: 'static' | 'flue';
+    driver?: AgentDriver;
 
     /**
      * WHICH SKILLS this workflow's agent loads (#3470), by Agent Skills name.

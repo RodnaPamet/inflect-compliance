@@ -46,6 +46,30 @@ Inflect would host it in the worker, the same way it hosts Flue.
   tool. `toolRunnerModelFor` maps a profile tier to a model id
   (`AGENT_TOOL_RUNNER_MODEL_BALANCED` / `_DEEP`, default Sonnet 5.5 and Opus
   5.5). Nothing calls `clientForRun` yet outside its tests.
+- **The Tool Runner driver is built and cannot run (Step 2b, #4149).**
+  `src/lib/agentic/tool-runner/` holds `driver.ts` (a pure plan that refuses
+  with a named reason, then the hand-off), `execute.ts` (the loop), `tools.ts`
+  (one runnable tool per offered tool, over the engine-neutral core),
+  `params.ts` (`lockedParams`) and `model-decision.ts` (the Art 12 row). It
+  passes the driver conformance suite against a faux model behind `fetch`, and
+  every scenario was mutation-proved. `AGENT_DRIVERS` has `'tool-runner'`,
+  `isReasoningEngine` says yes, and `DRIVER_IMPLEMENTED['tool-runner']` is
+  false, so `resolveAgentDriver` never selects it. `AGENT_DRIVER_TOOL_RUNNER` is
+  its own opt-in switch. `TOOL_RUNNER` is in the `AgentDriverMode` enum as
+  READ_ONLY: every reader understands it, and no writer accepts it.
+  Four things it does that differ from the table above:
+  - **Arguments are validated by the funnel.** The funnel checks each tool's
+    `argsSchema` after its gate (`runReadTool` step 2). Validating in the tool's
+    `run` would put validation ahead of the gate, so `run` checks only the shape.
+  - **A stop between calls aborts the next request.** A cap, a guard verdict, or
+    a kill read when a tool call finishes aborts the run's signal, so the
+    request the runner would send next never leaves. The loop body also checks
+    the kill switch after every message, before the turn's tools run.
+  - **An empty catalogue sends nothing.** Flue makes one model call and then
+    settles `EMPTY_CATALOGUE`. This engine settles first.
+  - **No streaming in v1.** `max_tokens` per tier (16,000 and 20,000) stays
+    under the SDK's non-streaming ceiling, so `stream` is pinned false and each
+    yield is one whole message.
 - **SDK 1.x speaks API version `2026-10-21`.** It sends that version and the key
   as `Authorization: Bearer`. Inflect's other Anthropic callers use raw `fetch`
   on `2023-06-01` (`src/app-layer/ai/*/anthropic-provider.ts`,
@@ -412,6 +436,21 @@ tab and is disabled. This step builds what enables it:
   state where a run can start. It also adds a reason naming the tenant's engine
   choice, for a tenant whose chosen engine does not run profiles.
 - **The button's action.** It starts the run and opens it in the Runs tab.
+
+**Carried from Step 2b (#4149).** The driver is built; these are what turning it
+on still needs, beyond the flag:
+- **The enum's second deploy.** Move `TOOL_RUNNER` from READ_ONLY to WRITTEN in
+  `tests/unit/agent-driver-mode-rollout.test.ts`, and add it to
+  `AGENT_DRIVER_MODES`. Both go in the same pull request as the flag flip.
+- **Profiles ask for this engine.** `resolveRunDefinition` compiles a profile
+  definition with `driver: 'flue'`. It must ask for `'tool-runner'`, and
+  `runsProfiles` must say true for it, in the diff that records the data category.
+- **The fourth gate.** `narrowToWhatAWorkflowAsksFor` narrows only `flue`. Teach
+  it the tool runner, whose requests come from profile definitions rather than
+  the workflow registry.
+- **The settings copy is engine-aware.** The reason sentences
+  (`ENV_DISABLED`, `DRIVER_NOT_IMPLEMENTED`, …) and the wiring checklist name the
+  Flue engine. A tenant who chose this one needs sentences that name it.
 
 **Goal.** One deploy after 2b, let a tenant choose the engine and run a profile on it.
 

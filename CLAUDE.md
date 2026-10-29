@@ -2854,6 +2854,28 @@ one careless edit from being undone:
   - **SDK 1.x speaks API version `2026-10-21`**, which refuses `temperature`,
     `top_p` and `top_k`. A unit test pins the version; read it on any bump.
 
+**The Tool Runner driver is built and cannot run** (`src/lib/agentic/tool-runner/`,
+Step 2b, #4149). `DRIVER_IMPLEMENTED['tool-runner']` is false, and `TOOL_RUNNER`
+is a READ_ONLY value of `AgentDriverMode`: `STORED_DRIVER_MODES` holds it, every
+reader reads it as itself, and `AGENT_DRIVER_MODES` (what a writer accepts) does
+not. Rules that are each one careless edit from being undone:
+
+  - **`lockedParams` is the only shape of a runner request**, and only
+    `execute.ts` starts a runner (`tests/unit/agentic/tool-runner-locked-params.test.ts`
+    pins the values and the key set). `thread: false` is also enforced by the
+    client, which refuses any request carrying a thread.
+  - **Tool calls run one at a time** through a per-run queue in `tools.ts`. The
+    runner starts a turn's calls together, and `disable_parallel_tool_use` is a
+    request to the model, not a guarantee.
+  - **A stop between calls aborts the next request.** A cap, a guard verdict or
+    a kill read when a tool call ends aborts the run's signal; the loop body
+    also reads the kill switch after every message, before that turn's tools.
+    Removing either check fails its own test.
+  - **Model text is egress-scanned before it is recorded**, and a call whose
+    text is not CLEAN keeps no output summary on its decision row.
+  - **Its kill message says `tool_runner_run_agent_killed`.** `haltRunAtKill`
+    takes the engine's prefix; Flue's default is unchanged.
+
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
 `GET /admin/agent-driver` is `admin.view`, so every admin reads the gate, and

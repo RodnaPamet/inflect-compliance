@@ -17,6 +17,7 @@ import type { AgentDriver } from '@/lib/agentic/agent-driver';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 
 import { runFlueDriver } from '@/lib/agentic/flue/driver';
+import { runToolRunnerDriver } from '@/lib/agentic/tool-runner/driver';
 import { runStaticDriver } from './static-driver';
 import type { RunDriver } from './types';
 
@@ -39,6 +40,10 @@ export type { RunDriver, RunDriverOutcome } from './types';
 const DRIVERS: Partial<Record<AgentDriver, RunDriver>> = {
     static: runStaticDriver,
     flue: runFlueDriver,
+    // Mapped and gated, as Flue was: `DRIVER_IMPLEMENTED['tool-runner']` is
+    // false until Step 2c, so `resolveAgentDriver` never permits this key and
+    // `selectRunDriver` never chooses it.
+    'tool-runner': runToolRunnerDriver,
 };
 
 /**

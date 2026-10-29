@@ -95,6 +95,7 @@ const STEP_STATUS_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'erro
 const DRIVER_VARIANT: Record<string, 'info' | 'neutral'> = {
     STATIC: 'neutral',
     FLUE: 'info',
+    TOOL_RUNNER: 'info',
 };
 
 /** A step's payload, shown as TEXT and never interpreted. */

@@ -39,6 +39,7 @@ import {
     flueEnvEnabled,
     resolveAgentDriver,
     type AgentDriverMode,
+    type StoredDriverMode,
 } from '@/lib/agentic/agent-driver';
 import { narrowToWhatAWorkflowAsksFor } from '@/lib/agentic/agent-driver-policy';
 import { runInTenantContext } from '@/lib/db-context';
@@ -48,8 +49,13 @@ import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
 
 export interface AgentDriverSetting {
-    /** What this tenant has ASKED for. Never null: an absent row reads STATIC. */
-    mode: AgentDriverMode;
+    /**
+     * What this tenant has ASKED for. Never null: an absent row reads STATIC.
+     * Any value the enum declares, a READ_ONLY one included (#4241): only a
+     * rollback from a build that wrote it can put one there, and it reads as
+     * itself rather than as STATIC.
+     */
+    mode: StoredDriverMode;
     /**
      * What a run would ACTUALLY execute on, right now, with all three terms
      * ANDed — and why, when that is not what `mode` says. Computed by
@@ -81,6 +87,7 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
     // make this surface disagree with the run path about the same stored byte.
     const mode = coerceStoredDriverMode(stored);
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
+    const toolRunnerEnvEnabled = flueEnvEnabled(env.AGENT_DRIVER_TOOL_RUNNER);
     // FOUR terms, not three. `resolveAgentDriver` ANDs env, tenant and the
     // build flag; `narrowToWhatAWorkflowAsksFor` applies the fourth — no
     // registered WorkflowDefinition asks for the engine, so `selectRunDriver`
@@ -88,7 +95,7 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
     // reported `flue` with `reason: null` on a deployment that runs every
     // workflow on the static engine.
     const decision = narrowToWhatAWorkflowAsksFor(
-        resolveAgentDriver({ envEnabled, tenantSetting: mode }),
+        resolveAgentDriver({ envEnabled, toolRunnerEnvEnabled, tenantSetting: mode }),
     );
 
     return {
