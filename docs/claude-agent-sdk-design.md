@@ -298,9 +298,34 @@ Two things are not enforced yet, and the steps that need them carry them:
 
 The reference scanner's `code` source
 (`packages/agent-harness-scanner/src/sources/code/recognize.ts`) reads static
-code for LangChain and LangGraph agents only. An agent built on the Claude Agent
-SDK that a customer runs today is invisible to it, and so it is reported as
-neither shadow nor registered.
+code for LangChain, LangGraph and Claude Agent SDK agents (Step 3b, #4156).
+
+- **What counts as an SDK agent.** A call resolved through the file's imports:
+  - `query` from `@anthropic-ai/claude-agent-sdk`;
+  - `query` or `ClaudeSDKClient` from `claude_agent_sdk`;
+  - in Python, a `ClaudeAgentOptions` that no such call in its file consumes.
+  A local function called `query` is not one.
+- **What is reported.** Its tools, model and credentials, as for the other
+  frameworks.
+- **Its options become NOT MET verdicts.** The owner's mapping of 2026-10-29
+  (`AGENT_SDK_OPTION_CRITERIA` in `src/lib/agentic/harness-findings.ts`):
+
+  | Option | Criterion |
+  | --- | --- |
+  | `bypassPermissions` | `H3.propose_not_commit` |
+  | host settings loaded | `H3.skills_declared` and `H2.tools_allowlisted` |
+  | an `allowedTools` wildcard | `H2.tools_allowlisted` |
+  | a callable `Bash` or `WebFetch` | `H2.tools_allowlisted` |
+  | no hook, with `settingSources: []` | `H3.payloads_guarded` |
+
+  - Each verdict carries the option's `code://` locator as evidence.
+  - Code never makes a criterion MET.
+  - An option the reader could not resolve concludes nothing, and makes the
+    source `UNPARSEABLE`.
+  - The verdicts reach the ingest through `/3` as it stands; the contract has
+    no member for the options themselves.
+- **Where it shows.** An SDK agent in a scanned repository shows up as shadow,
+  or as registered once the register links it, like a LangGraph one.
 
 ### The free-text instruction question was asked once already
 
@@ -558,14 +583,16 @@ should not. It can make governing it a few clicks:
    agent's exact granted tool names, and the hardening above (`settingSources:
    []`, `strictMcpConfig`, an explicit `permissionMode`). Copy, paste, run.
    The customer types no `curl` and no `ant`.
-3. The harness scanner's `code` source learns to recognise the SDK
-   (`@anthropic-ai/claude-agent-sdk`, Python `claude_agent_sdk`): `query(...)` /
-   `ClaudeSDKClient(...)` call sites, their `tools`, `allowedTools`,
-   `mcpServers`, `permissionMode`, `settingSources` and `agents`. An SDK agent in a
-   scanned repository then shows up as shadow or registered like a LangGraph
-   one. Its options also become harness-ladder evidence. `bypassPermissions`, a
-   missing `settingSources: []` or a wildcard `allowedTools` are findings
-   against H2/H3. They are never gates, because the ladder is report-only.
+3. The harness scanner's `code` source recognises the SDK
+   (`@anthropic-ai/claude-agent-sdk`, Python `claude_agent_sdk`; Step 3b, #4156):
+   `query(...)` / `ClaudeSDKClient(...)` call sites, their `tools`,
+   `allowedTools`, `mcpServers`, `permissionMode`, `settingSources`, `agents`
+   and `hooks`. An SDK agent in a scanned repository shows up as shadow or
+   registered like a LangGraph one. Its options are also harness-ladder
+   evidence, as NOT MET verdicts against H2/H3: `bypassPermissions`, host
+   settings loaded, a wildcard `allowedTools`, a callable `Bash` or `WebFetch`,
+   and no hook. They are never gates, because the ladder is report-only.
+   "What the harness scanner recognises" above has the owner's mapping.
 
 Every call still lands on `/api/mcp`, so the funnel's authorization applies
 unchanged: kill switch, grants, policy card, autonomy ceiling, audit,

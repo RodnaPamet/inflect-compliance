@@ -1,7 +1,4 @@
-import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { auth } from '@/auth';
-import { resolveTenantContext } from '@/lib/tenant-context';
 import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
 import prisma from '@/lib/prisma';
 import type { Role } from '@prisma/client';
@@ -12,39 +9,40 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cardVariants } from '@/components/ui/card-variants';
 import { cn } from '@inflect/ui/lib/cn';
+import { gateAdminPage } from '../_lib/admin-page-gate';
 import { MembersTable, type MembersTableRow } from './MembersTable';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Admin-only RBAC overview page.
- * Authorization: handled by centralized admin layout guard.
  * Shows: permission matrix by role, current tenant members + roles.
+ *
+ * Authorization: this page's own server gate, before any read (`admin.view` +
+ * `admin.members`, the key `GET /admin/members` holds for the same member
+ * list). It used to say "handled by centralized admin layout guard", but that
+ * layout is a client component: it hides the page on screen after this server
+ * component has already rendered every member's name, email and role into the
+ * payload. See `../_lib/admin-page-requirements.ts`.
  */
 export default async function RbacPage({
     params,
 }: {
     params: Promise<{ tenantSlug: string }>;
 }) {
-    const { tenantSlug } = await params;
+    // ─── Server-side guard ───
+    const gate = await gateAdminPage('/admin/rbac', params);
+    if (!gate.allowed) return gate.forbidden;
+    const { ctx, tenantSlug } = gate;
     const t = await getTranslations('admin');
 
-    // ─── Server-side guard ───
-    const session = await auth();
-    if (!session?.user?.id) redirect('/login');
-
-    let tenantCtx;
-    try {
-        tenantCtx = await resolveTenantContext({ tenantSlug }, session.user.id);
-    } catch {
-        redirect(`/t/${tenantSlug}/dashboard`);
-    }
-
-
-
     // ─── Data fetching ───
+    const tenant = await prisma.tenant.findUnique({
+        where: { id: ctx.tenantId },
+        select: { name: true },
+    });
     const memberRecords = await prisma.tenantMembership.findMany({
-        where: { tenantId: tenantCtx.tenant.id },
+        where: { tenantId: ctx.tenantId },
         include: { user: { select: { id: true, name: true, email: true } } },
         orderBy: { createdAt: 'asc' },
     });
@@ -94,10 +92,10 @@ export default async function RbacPage({
                 <Heading level={1}>{t('rbac.title')}</Heading>
                 <p className="text-sm text-content-muted mt-1">
                     {t.rich('rbac.matrixDesc', {
-                        name: tenantCtx.tenant.name,
+                        name: tenant?.name ?? tenantSlug,
                         em: (c) => <span className="text-content-emphasis font-medium">{c}</span>,
                     })}{' '}
-                    <StatusBadge variant="info">{tenantCtx.role}</StatusBadge>
+                    <StatusBadge variant="info">{ctx.role}</StatusBadge>
                 </p>
             </div>
 

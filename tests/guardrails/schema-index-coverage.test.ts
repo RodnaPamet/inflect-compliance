@@ -504,6 +504,17 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // #3744 — the two reads in `a2a-reply-delivery.ts` are both covered by
+    // indexes the table already carries, so no composite is added for them.
+    PeerAgentReplyDelivery:
+        'claimPeerRepliesForRun does exactly two findMany calls on this table, ' +
+        'and neither needs a new index. The pending-decision lookup filters ' +
+        '(tenantId, messageId IN …), which is the unique ' +
+        '(tenantId, messageId) — the index that also enforces one decision per ' +
+        'reply. Any per-run read is (tenantId, runId, outcome), which leads with ' +
+        'tenantId. There is no list SURFACE on this table at all: it is a ledger ' +
+        'read by the delivery decision and by tests, never paged in a UI, so ' +
+        'there is no filter+sort shape for a composite to serve.',
     // #3861 — both host-consumer lists filter on tenantId and sort on a
     // column whose composite index leads with tenantId.
     HostConsumer:

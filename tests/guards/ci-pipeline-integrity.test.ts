@@ -699,11 +699,8 @@ describe('the notice comments only when the failing set changes (#3540)', () => 
  * comment itself — gating CI on prose verifies mention, not accuracy, and this
  * repo retired that pattern deliberately.
  *
- * They live HERE rather than in a file of their own because
- * `no-epic-named-ratchets` caps the guard-file count (`< 799`, the artefact of
- * the 2026-08-05 retirement from 777 to 624). A new file for two assertions
- * spends that budget for nothing; this is the topically correct home, and it
- * already parses `ci.yml`.
+ * They live HERE rather than in a file of their own because this is the
+ * topically correct home, and it already parses `ci.yml`.
  */
 describe('the in-band shard is bounded by the V8 ceiling (#3320)', () => {
     const ci = () =>
