@@ -75,6 +75,13 @@ import {
 } from '@/lib/agentic/harness-estate-health';
 import type { HarnessMatrixView } from '@/lib/agentic/harness-read-model';
 
+/** The estate form's source names, which the estate card shows (#4474). */
+const KIND = (
+    jest.requireActual('../../messages/en.json') as {
+        agents: { harness: { estates: { form: { kind: Record<string, string> } } } };
+    }
+).agents.harness.estates.form.kind;
+
 const NOW = new Date('2026-10-19T12:00:00.000Z');
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000).toISOString();
 
@@ -189,11 +196,16 @@ describe('2. per source: owner, freshness, and why not', () => {
     it('shows each source with its owner and its own status', () => {
         renderTab(view());
         const okta = screen.getByTestId('harness-estate-source-est_acme-okta-app');
+        // Named as the estate form names it, never by its stable id (#4474).
+        expect(okta).toHaveTextContent(KIND['okta-app']);
+        expect(okta).not.toHaveTextContent('okta-app');
         expect(okta).toHaveTextContent('Owner: Jane Identity');
         expect(okta).toHaveTextContent('Fresh');
         expect(screen.getByTestId('harness-estate-source-est_acme-vault')).toHaveTextContent('Owner: Bob Secrets');
         // A source read by the scanner and declared by nobody is called out.
-        expect(screen.getByTestId('harness-estate-undeclared-est_acme')).toHaveTextContent('mcp');
+        const undeclared = screen.getByTestId('harness-estate-undeclared-est_acme');
+        expect(undeclared).toHaveTextContent(KIND.mcp);
+        expect(undeclared.textContent).not.toMatch(/\bmcp\b/);
     });
 
     it('an unreadable source says why, a departed owner is marked, and a retired scanner is called out', () => {
