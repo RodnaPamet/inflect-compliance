@@ -111,6 +111,33 @@ export interface SandboxTransport {
     deleteSandbox(input: { readonly sandboxId: string }): Promise<DeleteResult>;
     /** Resolve once the sandbox is absent. Only called after `ACCEPTED`. */
     awaitDeleted(input: { readonly sandboxId: string; readonly signal: AbortSignal }): Promise<void>;
+    /**
+     * Attach a credential provider the GATEWAY holds to a sandbox — 4.1 (#3961).
+     *
+     * ═══ WHY A FIFTH CALL, AND WHY IT CARRIES NO CREDENTIAL ═══
+     *
+     * 4.1 requires collector credentials to be "an attached provider, injected
+     * by the gateway — not passed in an environment the binary can read and
+     * exfiltrate". Those are different threat models, not two spellings of one:
+     * an env var is readable by everything in the sandbox, including the
+     * third-party binary we are confining and anything it spawns, and it lands
+     * in a core dump and in `/proc/<pid>/environ`.
+     *
+     * So this takes a NAME and nothing else. The credential itself is configured
+     * on the gateway out of band — `provider create`, with a refresh strategy —
+     * exactly as the signing key is, and never crosses this interface. A
+     * transport that accepted a secret here would have reintroduced the thing
+     * the bullet forbids, one layer further in.
+     *
+     * The gateway applies an attachment asynchronously and exposes a status verb
+     * for it, so a caller that needs the credential present before it execs must
+     * wait rather than assume. The collector bridge does exactly that.
+     */
+    attachProvider(input: {
+        readonly sandboxId: string;
+        readonly providerName: string;
+        readonly signal: AbortSignal;
+    }): Promise<void>;
 }
 
 /**
@@ -174,4 +201,5 @@ export const unconfiguredTransport: SandboxTransport = {
     execSandbox: async () => refuse(),
     deleteSandbox: async () => refuse(),
     awaitDeleted: async () => refuse(),
+    attachProvider: async () => refuse(),
 };

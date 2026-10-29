@@ -22,6 +22,7 @@ import type {
     EvidencePayload,
 } from '../types';
 import { runPowerpipeBenchmark, type RunBenchmarkInput } from '../cloud-posture/powerpipe-core';
+import { collectorExecForDeploy } from '../cloud-posture/sandboxed-collector-exec';
 
 export interface GcpPostureConfig {
     benchmark?: string;
@@ -109,7 +110,11 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
 
     private readonly exec?: RunBenchmarkInput['exec'];
     constructor(deps: { exec?: RunBenchmarkInput['exec'] } = {}) {
-        this.exec = deps.exec;
+        // An explicitly injected runner always wins, so every existing test
+        // double behaves exactly as before. Otherwise the deploy decides, and
+        // with the platform switch off — its default — this stays `undefined`
+        // and the on-host `execFile` path is untouched (4.1, #3961).
+        this.exec = deps.exec ?? collectorExecForDeploy() ?? undefined;
     }
 
     static benchmarkId(shorthand: string | undefined): string {
@@ -141,6 +146,14 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
         const env: NodeJS.ProcessEnv = { ...process.env };
         if (cfg.projectId) env.CLOUDSDK_CORE_PROJECT = cfg.projectId;
         try {
+            // `!this.exec` means "the on-host execFile path", which is the
+            // ONLY consumer that needs the key where a child can read it. A
+            // test double does not, and neither does a sandboxed runner: there
+            // the gateway injects the credential as an attached provider, which
+            // is the whole point of 4.1's bullet. So this condition stays
+            // correct after #3961 defaulted `exec` — but it is named here,
+            // because reading it as "no runner configured" would invite
+            // somebody to write the key for the sandboxed path too.
             if (saJson && !this.exec) {
                 dir = await mkdtemp(join(tmpdir(), 'gcp-posture-'));
                 credPath = join(dir, 'sa.json');

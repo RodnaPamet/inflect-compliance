@@ -18,6 +18,7 @@
  *   - The secret is never echoed in logs, errors, or results.
  */
 import { execFile } from 'node:child_process';
+import { collectorExecForDeploy } from './cloud-posture/sandboxed-collector-exec';
 import { logger } from '@/lib/observability/logger';
 import {
     childExitFromCliResult,
@@ -368,7 +369,44 @@ function runCli(
 
 // ─── Provider ────────────────────────────────────────────────────────
 
+/** This file's runner shape: it redacts from `AwsPostureSecrets`, not a list. */
+type AwsCollectorExec = (
+    file: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    secrets: AwsPostureSecrets,
+) => Promise<PowerpipeCliResult>;
+
 export class AwsPostureProvider implements ScheduledCheckProvider {
+    /**
+     * The collector runner — 4.1 (#3961).
+     *
+     * `undefined` means the on-host `execFile` path, which is both the default
+     * and what every existing caller gets: `collectorExecForDeploy()` returns
+     * null while the platform switch is off, which is ITS default.
+     *
+     * The adapter exists because this file's runner takes `AwsPostureSecrets`
+     * where the shared one takes a value list and a pattern list. It hands the
+     * bridge BOTH — `AWS_CREDENTIAL_PATTERNS` through the `patterns` channel
+     * that already existed — so the redaction is identical to this file's own
+     * scrubber, which is that same value loop with those same patterns. Passing
+     * only the values would be the difference between redacting an access key
+     * and printing it.
+     */
+    private readonly exec?: AwsCollectorExec;
+
+    constructor(deps: { exec?: AwsCollectorExec } = {}) {
+        if (deps.exec) {
+            this.exec = deps.exec;
+        } else {
+            const sandboxed = collectorExecForDeploy();
+            this.exec = sandboxed
+                ? (file, args, env, secrets) =>
+                      sandboxed(file, args, env, secretValues(secrets), AWS_CREDENTIAL_PATTERNS)
+                : undefined;
+        }
+    }
+
     readonly id = 'aws-posture';
     readonly displayName = 'AWS Cloud Posture';
     readonly description =
@@ -470,7 +508,17 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         };
         const benchmark = AwsPostureProvider.benchmarkId(cfg.benchmark ?? input.parsed.checkType);
         const env = buildCredentialEnv(secrets, cfg);
-        const res = await runCli('powerpipe', ['benchmark', 'run', benchmark, '--output', 'json'], env, secrets);
+        // THE COLLECTOR CALL, and the only one in this file that 4.1 (#3961)
+        // moves into a sandbox. The `aws sts get-caller-identity` probe in
+        // `validateConnection` is left alone deliberately: it is a different
+        // binary, run at CONFIG time to tell an admin their credential works,
+        // and sandboxing it would make saving a connection depend on a gateway.
+        const res = await (this.exec ?? runCli)(
+            'powerpipe',
+            ['benchmark', 'run', benchmark, '--output', 'json'],
+            env,
+            secrets,
+        );
         if (res.missing) {
             return { status: 'ERROR', summary: 'Powerpipe CLI not installed on the collector host.', details: { benchmark }, durationMs: Date.now() - start, errorMessage: 'powerpipe not installed — see docs/aws-posture-connector.md' };
         }

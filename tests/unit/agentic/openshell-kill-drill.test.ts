@@ -53,6 +53,13 @@ const fake = (opts: FakeOptions = {}): SandboxTransport => ({
         if (opts.absent ?? true) return;
         await neverAbsent(signal);
     },
+    // The drill attaches no provider — it runs nothing in the sandbox it
+    // creates. Present because the interface requires it, and throwing rather
+    // than resolving so a drill that started attaching credentials fails here
+    // instead of silently acquiring a capability it has no use for.
+    attachProvider: async () => {
+        throw new Error('the kill-switch drill attaches no provider');
+    },
 });
 
 describe('the kill-switch drill proves a sandbox is absent, not that delete returned', () => {
