@@ -87,14 +87,14 @@ describe('every external tool reaching an offer carries the two terms', () => {
         // An internal tool has no connection and no rung. Making the field
         // required would mean inventing values for ~40 tools, and whichever
         // default was chosen would be wrong in one direction.
-        expect(read(TYPES)).toContain('externalWrite?: ExternalWriteOffer');
+        expect(read(TYPES)).toContain('externalConnection?: ExternalConnectionFacts');
     });
 });
 
 describe('there is exactly ONE producer of an invocation`s external tools', () => {
     /**
      * The joint that makes assertion 1 worth anything. If a second path built
-     * adapters, they would arrive with no `externalWrite` and the offer's check
+     * adapters, they would arrive with no `externalConnection` and the offer's check
      * would skip them — passing, silently, for exactly the tools it exists to
      * withhold. Same shape as the single-write-seam guards elsewhere in this
      * directory.
@@ -137,7 +137,7 @@ describe('the offer branches on BOTH terms and records the withholding', () => {
         // connection, and the rung alone would withhold the READS the M-route
         // exists to make.
         expect(body).toContain(
-            'if (tool.externalWrite?.declaresWrite && tool.externalWrite.connectionRefusesWrites) {',
+            'if (tool.externalConnection?.declaresWrite && tool.externalConnection.connectionRefusesWrites) {',
         );
         expect(body).toContain("reason: 'CONNECTION_READ_ONLY'");
     });

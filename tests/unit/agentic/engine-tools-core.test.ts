@@ -283,13 +283,15 @@ describe('6. read-only stays read-only: a write tool on a DISABLED connection is
         name: string,
         declaresWrite: boolean,
         connectionRefusesWrites: boolean,
+        reachesBusinessSystem: boolean | null = null,
     ): McpReadTool<unknown> =>
         readTool(name, {
-            externalWrite: {
+            externalConnection: {
                 connectionId: 'conn-1',
                 connectionName: 'SAP sandbox',
                 declaresWrite,
                 connectionRefusesWrites,
+                reachesBusinessSystem,
             },
         });
 

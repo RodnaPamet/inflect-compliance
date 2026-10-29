@@ -145,11 +145,18 @@ export interface McpRowRedactionRule {
  * `connectionRefusesWrites` is `refusesEveryWrite(connection.mode)` on the
  * ALREADY-COERCED rung, so an unset column reads read-only.
  */
-export interface ExternalWriteOffer {
+export interface ExternalConnectionFacts {
     readonly connectionId: string;
     readonly connectionName: string;
     readonly declaresWrite: boolean;
     readonly connectionRefusesWrites: boolean;
+    /**
+     * Does this connection carry third-party business or personal data
+     * (`IntegrationConnection.reachesBusinessSystem`, added by J4/#3864 for this
+     * route)? THREE states: `true` and `false` are reviewed claims, NULL is
+     * nobody having said. The external-residency gate acts on `true` alone.
+     */
+    readonly reachesBusinessSystem: boolean | null;
 }
 
 export interface McpReadTool<TArgs = unknown> {
@@ -200,7 +207,7 @@ export interface McpReadTool<TArgs = unknown> {
      * branches on, so the offer and the funnel cannot disagree about whether a
      * given tool is a write or whether its connection will take one.
      */
-    externalWrite?: ExternalWriteOffer;
+    externalConnection?: ExternalConnectionFacts;
     /** Domain sections that fall away when the principal cannot see them. */
     redact?: readonly McpRedactionRule[];
     /** Rows that fall away when the principal cannot see their domain. */

@@ -162,7 +162,7 @@ export type OriginResolver = (toolCallId: string) => { runId: string; stepSeq: n
 
 export type OfferableTool = Pick<
     McpReadTool<unknown>,
-    'name' | 'description' | 'inputSchema' | 'resourceScope' | 'authorize' | 'externalWrite'
+    'name' | 'description' | 'inputSchema' | 'resourceScope' | 'authorize' | 'externalConnection'
 >;
 
 
@@ -218,9 +218,9 @@ function offerTools<T>(
         // the dispatch branches on (`external-tools.ts::adapterFor`), so the
         // offer cannot form a different opinion about whether a tool is a write
         // or whether its connection takes one. Internal tools carry no
-        // `externalWrite` at all, which is why absence skips this entirely
+        // `externalConnection` at all, which is why absence skips this entirely
         // rather than defaulting either way.
-        if (tool.externalWrite?.declaresWrite && tool.externalWrite.connectionRefusesWrites) {
+        if (tool.externalConnection?.declaresWrite && tool.externalConnection.connectionRefusesWrites) {
             omitted.push({ name: tool.name, reason: 'CONNECTION_READ_ONLY' });
             continue;
         }

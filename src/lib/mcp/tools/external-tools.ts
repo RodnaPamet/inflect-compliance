@@ -261,7 +261,7 @@ function adapterFor(
         openFields?: unknown;
         targetPopulation?: string | null;
     }> = [],
-    connection: { id: string; name: string; url: string; mode: ExternalWriteMode },
+    connection: { id: string; name: string; url: string; mode: ExternalWriteMode; reachesBusinessSystem: boolean | null },
     policyCardVersion: number,
 ): McpReadTool<Record<string, unknown>> {
     // ── WHO CHOOSES THE ARGUMENTS ───────────────────────────────────────────
@@ -433,7 +433,7 @@ function adapterFor(
         // for the reason the AUTONOMY omission beside it already states:
         // advertising a tool and then watching the funnel refuse every call to
         // it is the mismatch both probes exist to prevent.
-        externalWrite: {
+        externalConnection: {
             connectionId: connection.id,
             connectionName: connection.name,
             // An A2A send is ALWAYS a write, exactly as the dispatch's own A2A
@@ -442,6 +442,14 @@ function adapterFor(
             // says. Reading `declaresWrite` for it would ask the wrong question.
             declaresWrite: send.kind === 'a2a' ? true : declaresWrite(def.annotations),
             connectionRefusesWrites: refusesEveryWrite(connection.mode),
+            // THREE states kept as three. `true` is a reviewed claim that this
+            // connection carries third-party business or personal data; `false`
+            // is a reviewed claim that it does not; NULL is nobody having said.
+            // The residency gate acts on `true` alone — treating NULL as `true`
+            // would refuse every run on every connection nobody has reviewed,
+            // and treating `false` and NULL alike at the STORE would lose the
+            // distinction the column was added to keep (#3864).
+            reachesBusinessSystem: connection.reachesBusinessSystem,
         },
         resourceScope: EXTERNAL_TOOL_RESOURCE_SCOPE,
         authorize: {
