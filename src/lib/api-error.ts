@@ -39,3 +39,38 @@ export function apiErrorMessage(body: unknown, fallback: string): string {
     }
     return fallback;
 }
+
+/**
+ * The reasons a VALIDATION_ERROR carries, one per refused field (#4471).
+ *
+ * A Zod refusal's envelope message is only "Invalid request payload"
+ * (`toApiErrorResponse`): what was wrong is in `error.details`, one
+ * `{ path, code, message }` per issue. Empty for any other body, and for a
+ * validation error whose details carry no readable message.
+ */
+export function validationIssueMessages(body: unknown): string[] {
+    if (!body || typeof body !== 'object') return [];
+    const error = (body as { error?: unknown }).error;
+    if (!error || typeof error !== 'object') return [];
+    const { code, details } = error as { code?: unknown; details?: unknown };
+    if (code !== 'VALIDATION_ERROR' || !Array.isArray(details)) return [];
+    const messages: string[] = [];
+    for (const issue of details) {
+        const message =
+            issue && typeof issue === 'object' ? text((issue as { message?: unknown }).message) : undefined;
+        if (message !== undefined && !messages.includes(message)) messages.push(message);
+    }
+    return messages;
+}
+
+/**
+ * The sentence to show for a refused request: a validation error's own
+ * reasons when it carries any, otherwise `apiErrorMessage`. Use it wherever a
+ * form posts a body the server validates with Zod, so the operator reads WHY
+ * rather than "Invalid request payload".
+ */
+export function apiRefusalMessage(body: unknown, fallback: string): string {
+    const issues = validationIssueMessages(body);
+    if (issues.length > 0) return issues.join('; ');
+    return apiErrorMessage(body, fallback);
+}

@@ -354,10 +354,11 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
     },
     // ── The employee manager field (#2492) ──────────────────────────
     // NARROW LEAF ROOT, and the narrowness is the whole reason it can be
-    // here at all. `personnel` as a directory is NOT privileged — its
-    // collection route's GET is gated on `personnel.view`, which every role
-    // holds — so taking the parent would pull that read in and force an
-    // exclusion entry for a route nobody set out to triage. The leaf is the
+    // here at all. `personnel` as a directory is NOT a root — its
+    // collection route's GET is gated on `personnel.view` (every role held
+    // it when this leaf was registered; OWNER/ADMIN only since 2026-10-29) —
+    // so taking the parent would pull that read in and force an exclusion
+    // entry for a route nobody set out to triage. The leaf is the
     // one handler this tranche examined: the single-column write that lets a
     // tenant with no HRIS feed give an employee a manager at all.
     {

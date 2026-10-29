@@ -529,7 +529,7 @@ describe('the detector is not satisfied by a broken page', () => {
 
     const GATE = "    const gate = await gateAdminPage('/admin/personnel', params);\n";
     const REFUSE = '    if (!gate.allowed) return gate.forbidden;\n';
-    const READ = '    const rows = (await listEmployees(gate.ctx)) as unknown as EmployeeRow[];\n';
+    const READ = '    const roster = (await listEmployees(gate.ctx)) as unknown as EmployeeRoster;\n';
 
     /** Apply one edit, failing if the anchor is gone, so no mutant is silently the original. */
     function mutate(src: string, from: string, to: string): string {

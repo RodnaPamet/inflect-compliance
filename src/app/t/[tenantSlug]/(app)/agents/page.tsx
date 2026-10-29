@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 
+import { auth } from '@/auth';
 import { getTenantCtx } from '@/app-layer/context';
 import {
     getAgentGovernanceStatus,
@@ -13,10 +14,19 @@ import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
+import {
+    agentRegisterAffordances,
+    edgeAdmitsAgentAdminWrite,
+} from '@/lib/agentic/agent-register-affordances';
 import { AgentsClient, type AgentRow } from './AgentsClient';
 import type { OwnerOption, VendorOption } from './NewAgentModal';
 
 export const dynamic = 'force-dynamic';
+
+/** How many agents the register shows at once; a longer register says so. */
+const AGENT_REGISTER_PAGE = 200;
+/** The supplier picker's first page; typing searches past it. */
+const VENDOR_PICKER_INITIAL = 200;
 
 /**
  * THE AGENT REGISTER — Server Component, and a standard list page.
@@ -81,10 +91,18 @@ export default async function AgentRegisterPage({
     }
 
     const filters = parseAgentListFilters(await searchParams);
+    // Whether this reader may list suppliers at all. Asked rather than caught:
+    // a role that may read the agent inventory need not read vendors (a custom
+    // role can hold the one without the other), and `listVendors` refuses it.
+    // An unguarded call inside the `Promise.all` took the whole register down
+    // for that role (#4471); the picker is disabled for it instead.
+    const canListVendors = ctx.appPermissions?.vendors?.view === true;
 
-    const [agents, kpiCounts, governance, assurance, proposalsAwaitingReview, members, vendors] =
+    const [agentPage, kpiCounts, governance, assurance, proposalsAwaitingReview, members, vendors] =
         await Promise.all([
-            listRegisteredAgents(ctx, { filters }),
+            // One past the page, so a register longer than the page is a fact
+            // this page holds rather than one it cannot see (#4471).
+            listRegisteredAgents(ctx, { filters, take: AGENT_REGISTER_PAGE + 1 }),
             listAgentKpiCounts(ctx, filters),
             getAgentGovernanceStatus(ctx),
             // Best-effort, like the proposal badge beside it: a reader who may
@@ -98,8 +116,24 @@ export default async function AgentRegisterPage({
             // rendering of "this page cannot tell you".
             countAgentProposalsAwaitingReview(ctx).catch(() => null),
             listAssignableUsers(ctx),
-            listVendors(ctx, {}, { take: 200 }),
+            // The picker's FIRST page. The modal searches every vendor by name
+            // as the operator types, so a supplier past this page is still
+            // reachable (#4471).
+            canListVendors
+                ? listVendors(ctx, {}, { take: VENDOR_PICKER_INITIAL })
+                : Promise.resolve([] as { id: string; name: string }[]),
         ]);
+    const truncated = agentPage.length > AGENT_REGISTER_PAGE;
+    const agents = truncated ? agentPage.slice(0, AGENT_REGISTER_PAGE) : agentPage;
+
+    // The register writes this reader is offered, asked of the same three gates
+    // a write passes — the edge, the route key and the usecase floor — so a
+    // control is shown exactly where the server takes it. See the module.
+    const session = await auth();
+    const affordances = agentRegisterAffordances(
+        ctx,
+        edgeAdmitsAgentAdminWrite(resolved.tenantSlug, session?.user),
+    );
 
     // `listAssignableUsers`, not `listTenantMembers`: it is ACTIVE-only by
     // construction, which is exactly the population the usecase will accept as
@@ -125,7 +159,15 @@ export default async function AgentRegisterPage({
             governance={governance}
             assurance={assurance}
             proposalsAwaitingReview={proposalsAwaitingReview}
-            canWrite={Boolean(ctx.appPermissions?.admin?.agent_registry)}
+            truncated={truncated}
+            truncationCap={AGENT_REGISTER_PAGE}
+            canListVendors={canListVendors}
+            canWrite={affordances.canManage}
+            canSetCapacity={affordances.canAdminister}
+            // The assurance views gate themselves on the register KEY alone —
+            // they are pages, not admin API writes — so the menu entry asks
+            // the key, not the write affordance above.
+            canInvestigate={ctx.appPermissions?.admin?.agent_registry === true}
             // The proposal queue is gated at its own page on `admin.view` OR the
             // view key (`mayReadAgentActivity`, #3710), NOT on the register key
             // — see the note there. The menu entry has to ask the same question

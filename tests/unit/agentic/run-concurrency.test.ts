@@ -14,7 +14,10 @@
 import { WorkflowRunStatus } from '@prisma/client';
 
 import {
+    CONCURRENCY_CAP_SETTING_MESSAGE,
     evaluateConcurrency,
+    isSettableConcurrencyCap,
+    MAX_CONCURRENCY_CAP,
     normaliseCap,
     concurrencyRefusalMessage,
     isLiveRunStatus,
@@ -149,5 +152,26 @@ describe('LIVE_RUN_STATUSES', () => {
         // count as live: a cap that counted it would refuse tenants for a
         // state this module cannot reason about.
         expect(isLiveRunStatus('SOMETHING_NEW')).toBe(false);
+    });
+});
+
+describe('isSettableConcurrencyCap (#4471)', () => {
+    it('admits no cap, zero, and every whole number up to the limit', () => {
+        expect(isSettableConcurrencyCap(null)).toBe(true);
+        expect(isSettableConcurrencyCap(0)).toBe(true);
+        expect(isSettableConcurrencyCap(7)).toBe(true);
+        expect(isSettableConcurrencyCap(MAX_CONCURRENCY_CAP)).toBe(true);
+    });
+
+    it('refuses past the limit, below zero, and a fraction rather than flooring it', () => {
+        expect(isSettableConcurrencyCap(MAX_CONCURRENCY_CAP + 1)).toBe(false);
+        expect(isSettableConcurrencyCap(-1)).toBe(false);
+        expect(isSettableConcurrencyCap(2.5)).toBe(false);
+        expect(isSettableConcurrencyCap(Number.NaN)).toBe(false);
+    });
+
+    it('the refusal states the limit', () => {
+        expect(MAX_CONCURRENCY_CAP).toBe(1000);
+        expect(CONCURRENCY_CAP_SETTING_MESSAGE).toContain(String(MAX_CONCURRENCY_CAP));
     });
 });
