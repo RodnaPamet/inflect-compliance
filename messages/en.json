@@ -9225,7 +9225,10 @@
         "provenanceThirdParty": "Third party — a supplier wrote it",
         "vendorLabel": "Supplier",
         "vendorPlaceholder": "Choose the vendor",
+        "vendorSearchPlaceholder": "Search vendors…",
         "vendorHint": "Required for a third-party agent: third-party risk you cannot attribute to a named supplier is not third-party risk.",
+        "vendorRequired": "A third-party agent must name the vendor that supplies it.",
+        "vendorUnavailable": "Your role cannot list vendors, so a third-party agent cannot be registered here.",
         "classificationHeading": "EU AI Act classification",
         "classificationHelp": "Leaving every question blank yields MINIMAL risk (Art 95). The tier and the clause that drove it are computed on the server.",
         "art5Label": "Article 5 — prohibited practice",
@@ -9248,7 +9251,7 @@
         "egress": "Sends data outside"
       },
       "governance": {
-        "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. Turn on \"Require registered agent\" in Security settings to make this register binding.",
+        "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. To make this register binding, open Security & MFA and click \"Enforce registration\" on the Agent registration enforcement card.",
         "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live credential is bound to no agent} other {# live credentials are bound to no agent}} — each is refused at the agent surface. A credential's agent can be set only when it is created: create a new one for a registered agent, then revoke the old one.",
         "unboundMore": "+{count} more…",
         "enforcing": "Registration is enforced: a credential must name an ACTIVE agent below before it reaches the agent surface."
@@ -9269,8 +9272,8 @@
         "inputLabel": "Concurrent run cap",
         "placeholder": "No cap",
         "save": "Save cap",
-        "hint": "Leave empty for no cap; 0 stops new agentic runs without engaging a kill switch. Separate from the monthly token budget, which bounds spend rather than simultaneity.",
-        "invalid": "Enter a whole number of 0 or more, or leave it empty for no cap.",
+        "hint": "Leave empty for no cap, or enter a whole number up to {max}; 0 stops new agentic runs without engaging a kill switch. Separate from the monthly token budget, which bounds spend rather than simultaneity.",
+        "invalid": "Enter a whole number from 0 to {max}, or leave it empty for no cap.",
         "saveFailed": "Could not save the cap. Try again."
       },
       "budget": {

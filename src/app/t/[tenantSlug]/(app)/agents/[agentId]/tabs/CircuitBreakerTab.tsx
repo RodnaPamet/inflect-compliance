@@ -242,6 +242,7 @@ export function CircuitBreakerTab({
     refreshToken,
     onChanged,
     canCloseBreaker,
+    canReadKillHistory = canCloseBreaker,
 }: CircuitBreakerTabProps) {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
@@ -633,9 +634,10 @@ export function CircuitBreakerTab({
                         ) : (
                             // Stated rather than hidden: the control exists and
                             // is not this principal's to use. `canCloseBreaker`
-                            // is the register key AND the role-tier admin check,
-                            // so holding the key alone is a real and confusing
-                            // way to land here.
+                            // is every gate the close passes — the edge, the
+                            // register key and the agent-governance admin floor
+                            // — so holding the key alone is a real and
+                            // confusing way to land here.
                             <p className="text-sm text-content-muted">
                                 {t('agentDetail.breaker.closeRestricted')}
                             </p>
@@ -915,7 +917,7 @@ export function CircuitBreakerTab({
                 incident timeline belongs beside the breaker's, where somebody
                 reconstructing an incident is already looking. */}
             <Card>
-                <KillSwitchTimeline agentId={agentId} canRead={canCloseBreaker} />
+                <KillSwitchTimeline agentId={agentId} canRead={canReadKillHistory} />
             </Card>
         </div>
     );

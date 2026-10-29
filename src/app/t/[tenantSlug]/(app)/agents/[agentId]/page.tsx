@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
+import { auth } from '@/auth';
 import { getTenantCtx } from '@/app-layer/context';
 import { getRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { agentProfilesOn } from '@/app-layer/usecases/agent-profiles';
@@ -8,6 +9,10 @@ import { listVendors } from '@/app-layer/usecases/vendor';
 import { NotFoundError } from '@/lib/errors/types';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentInventory } from '@/lib/permissions';
+import {
+    agentRegisterAffordances,
+    edgeAdmitsAgentAdminWrite,
+} from '@/lib/agentic/agent-register-affordances';
 import { AgentDetailClient } from './AgentDetailClient';
 
 /**
@@ -78,10 +83,21 @@ export default async function AgentDetailPage({
     // Best-effort, and separately: a reader who may amend the agent but not list
     // vendors still gets the form, with the supplier field disabled rather than
     // the whole page failing.
-    const [owners, vendors] = await Promise.all([
+    const [owners, vendors, session] = await Promise.all([
         listAssignableUsers(ctx).catch(() => []),
         listVendors(ctx, {}, { take: 200 }).catch(() => []),
+        auth(),
     ]);
+
+    // The register writes this reader is offered, asked of the same three
+    // gates every one of them passes — the edge, the route's register key and
+    // the usecase's agent-governance floor — through the functions the server
+    // itself calls (#4471). It used to AND the key with the coarse
+    // `canWrite` / `canAdmin`, which the floor replaced in #3699: the built-in
+    // AI admin, whose coarse tier is READER's, could register an agent and was
+    // then offered no way to score, activate, suspend, retire or amend it.
+    const edgeAdmits = edgeAdmitsAgentAdminWrite(tenantSlug, session?.user);
+    const registry = agentRegisterAffordances(ctx, edgeAdmits);
 
     return (
         <AgentDetailClient
@@ -116,14 +132,6 @@ export default async function AgentDetailPage({
             // tab: the shell has to decide which tabs are even reachable
             // before a tab mounts, and six tabs each re-deriving the same four
             // booleans is six chances to derive one of them differently.
-            //
-            // `canCloseBreaker` is the only conjunction, and it is not
-            // cosmetic. Closing a breaker asserts the role-tier admin check on
-            // top of the route's registry key, and that tier is computed from
-            // the membership's BASE ROLE rather than the permissions blob — so
-            // a custom role with an editor base can hold agent_registry, pass
-            // the route, and be refused by the usecase. Gated on the route key
-            // alone, the button renders for someone who cannot use it.
             perms={{
                 // The register key itself (#3710). The page needs only the
                 // inventory read; the risk, skills, coverage and breaker tabs
@@ -131,22 +139,23 @@ export default async function AgentDetailPage({
                 // holding only the view key (AUDITOR) gets them disabled rather
                 // than opened and refused.
                 canReadRegistry: ctx.appPermissions.admin.agent_registry,
-                // ANDed with `canWrite`, not the route key alone. Every
-                // mutating risk-assessment and register usecase opens with
-                // `assertCanWrite(ctx)` (agent-risk-assessment.ts:197,:256,:608),
-                // which reads the role-tier `ctx.permissions.canWrite` rather
-                // than the permissions blob — the same two-layer split that
-                // makes `canCloseBreaker` a conjunction below. An AUDITOR
-                // granted `admin.agent_registry` passes the route and is
-                // refused by the usecase, so the key alone renders answer
-                // controls that 403 on submit.
-                canManageRegistry:
-                    ctx.appPermissions.admin.agent_registry && ctx.permissions.canWrite,
+                // Amend, activate, suspend, retire, and answer or complete
+                // the risk assessment: the edge, `admin.agent_registry`, and
+                // `assertAgentGovernanceWrite(ctx, 'agent_registry')` — the
+                // coarse write tier OR the register key — as each of those
+                // usecases asserts it.
+                canManageRegistry: registry.canManage,
                 canEditPolicyCard: ctx.appPermissions.admin.agent_policy_card,
                 canGrantTools: ctx.appPermissions.admin.agent_tool_exposure,
                 canKill: ctx.appPermissions.admin.agent_kill_switch,
-                canCloseBreaker:
-                    ctx.appPermissions.admin.agent_registry && ctx.permissions.canAdmin,
+                // Closing a breaker: the same three gates with
+                // `assertAgentGovernanceAdmin` as the floor, which
+                // `closeAgentCircuitBreaker` asserts.
+                canCloseBreaker: registry.canAdminister,
+                // The kill-switch history on the breaker tab reads the kill
+                // switch's own list route: its key, behind the same edge. It
+                // used to borrow `canCloseBreaker`, a different route's gate.
+                canReadKillHistory: ctx.appPermissions.admin.agent_kill_switch === true && edgeAdmits,
                 // The key alone, plus the read every agent floor keeps: the
                 // tenant-skill usecases assert exactly `canRead` and
                 // `admin.agent_skill_review` (#3680), so this flag renders the

@@ -67,11 +67,19 @@ export function assertAgentGovernanceWrite(ctx: RequestContext, key: AgentGovern
 }
 
 /**
+ * Does the caller clear the floor of an agent-governance ADMIN act? The boolean
+ * `assertAgentGovernanceAdmin` throws on, for the same reason
+ * `meetsAgentGovernanceWrite` exists.
+ */
+export function meetsAgentGovernanceAdmin(ctx: RequestContext, key: AgentGovernanceKey): boolean {
+    return Boolean(ctx.permissions.canAdmin) || holdsAgentKey(ctx, key);
+}
+
+/**
  * The floor of an agent-governance ADMIN act: `canAdmin`, or the agent key.
  * Replaces `assertCanAdmin` in the agent usecases.
  */
 export function assertAgentGovernanceAdmin(ctx: RequestContext, key: AgentGovernanceKey): void {
-    if (ctx.permissions.canAdmin) return;
-    if (holdsAgentKey(ctx, key)) return;
+    if (meetsAgentGovernanceAdmin(ctx, key)) return;
     throw forbidden('You do not have permission to perform administrative actions in this context.');
 }
