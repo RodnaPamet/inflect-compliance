@@ -13,6 +13,7 @@ import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { Heading } from '@/components/ui/typography';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -27,9 +28,11 @@ import { EditAuditModal } from './EditAuditModal';
 // detail views (and the cycle page) now share one authoritative reading so
 // CANCELLED can never disagree again.
 import {
+    AUDIT_STATUS_MOVES,
     AUDIT_STATUS_VARIANT,
     CHECKLIST_RESULT_VARIANT,
     DEFAULT_STATUS_VARIANT,
+    NO_STATUS_MOVES,
 } from './_lib/status-variants';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { auditWriteErrorFrom, auditWriteFailureMessage } from './_lib/audit-write-error';
@@ -131,6 +134,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     const [selected, setSelected] = useState<AuditDetail | null>(null);
     const [isFindingOpen, setIsFindingOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
+    const [isCancelOpen, setIsCancelOpen] = useState(false);
 
     // Modal-form follow-up — create-audit modal mounted off the list,
     // auto-opening on `?create=1` (the redirect target from
@@ -275,18 +279,29 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
 
     // #4 — flip the pill optimistically, but reconcile it back to the prior
     // status when the PUT fails so it never sticks on the un-saved value.
-    const updateAuditStatus = async (status: string) => {
-        if (!selected) return;
+    // Resolves to whether the write landed, so the Cancel confirmation can
+    // stay open on a refusal.
+    const updateAuditStatus = async (status: string): Promise<boolean> => {
+        if (!selected) return false;
         const prevStatus = selected.status;
         setSelected((s) => (s ? { ...s, status } : s));
         try {
             await auditWrite.trigger({ auditId: selected.id, body: { status } });
             toast.success(tx('detail.statusChanged', { status: statusLabel(status) }));
+            return true;
         } catch (err) {
             setSelected((s) => (s ? { ...s, status: prevStatus } : s));
             toast.error(auditWriteFailureMessage(err, tx('detail.statusError')));
+            return false;
         }
     };
+
+    const backLabel = (status: 'PLANNED' | 'IN_PROGRESS') =>
+        status === 'PLANNED' ? tx('detail.backToPlanned') : tx('detail.backToInProgress');
+
+    const statusMoves = selected ? (AUDIT_STATUS_MOVES[selected.status] ?? NO_STATUS_MOVES) : NO_STATUS_MOVES;
+    const forwardStatus = statusMoves.forward;
+    const backStatus = statusMoves.back;
 
     const statusLabel = (status: string) => {
         const map: Record<string, string> = { PLANNED: t.planned, IN_PROGRESS: t.inProgress, COMPLETED: t.completed, CANCELLED: t.cancelled };
@@ -528,8 +543,23 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-compact">
                                 <Heading level={2}>{selected.title}</Heading>
                                 <div className="flex flex-wrap gap-tight">
-                                    {canWrite && selected.status === 'PLANNED' && <Button variant="secondary" size="sm" onClick={() => updateAuditStatus('IN_PROGRESS')}>{t.inProgress}</Button>}
-                                    {canWrite && selected.status === 'IN_PROGRESS' && <Button variant="secondary" size="sm" onClick={() => updateAuditStatus('COMPLETED')}>{t.completed}</Button>}
+                                    {/* One step forward, one step back, and Cancel while
+                                        the audit is not yet done (AUDIT_STATUS_MOVES). */}
+                                    {canWrite && forwardStatus && (
+                                        <Button variant="secondary" size="sm" id="audit-status-forward-btn" onClick={() => updateAuditStatus(forwardStatus)}>
+                                            {statusLabel(forwardStatus)}
+                                        </Button>
+                                    )}
+                                    {canWrite && backStatus && (
+                                        <Button variant="ghost" size="sm" id="audit-status-back-btn" onClick={() => updateAuditStatus(backStatus)}>
+                                            {backLabel(backStatus)}
+                                        </Button>
+                                    )}
+                                    {canWrite && statusMoves.cancellable && (
+                                        <Button variant="ghost" size="sm" id="cancel-audit-btn" onClick={() => setIsCancelOpen(true)}>
+                                            {tx('detail.cancelAudit')}
+                                        </Button>
+                                    )}
                                     {canWrite && (
                                         <Button variant="ghost" size="sm" id="edit-audit-btn" onClick={() => setIsEditOpen(true)}>
                                             {tx('editModal.trigger')}
@@ -626,6 +656,24 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                         // row's _count.findings stops showing a stale count.
                         loadAudit(selected.id);
                         auditsQuery.mutate();
+                    }}
+                />
+            )}
+
+            {selected && (
+                <ConfirmDialog
+                    showModal={isCancelOpen}
+                    setShowModal={setIsCancelOpen}
+                    tone="warning"
+                    title={tx('detail.cancelConfirm.title')}
+                    description={tx('detail.cancelConfirm.description')}
+                    confirmLabel={tx('detail.cancelConfirm.confirm')}
+                    cancelLabel={tx('detail.cancelConfirm.keep')}
+                    onConfirm={async () => {
+                        // A refusal keeps the dialog open; its toast says why.
+                        if (!(await updateAuditStatus('CANCELLED'))) {
+                            throw new Error('audit_cancel_refused');
+                        }
                     }}
                 />
             )}

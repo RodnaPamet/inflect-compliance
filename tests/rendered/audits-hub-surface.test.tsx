@@ -213,6 +213,7 @@ describe('write controls follow the write tier the server asserts', () => {
         expect(document.querySelector('#new-audit-btn')).not.toBeNull();
         const p = within(pane());
         expect(p.getByRole('button', { name: 'In progress' })).toBeTruthy();
+        expect(document.querySelector('#cancel-audit-btn')).not.toBeNull();
         // The pane's only combobox is the checklist row's result picker.
         expect(p.getAllByRole('combobox')).toHaveLength(1);
         expect(document.querySelector('#edit-audit-btn')).not.toBeNull();
@@ -224,6 +225,7 @@ describe('write controls follow the write tier the server asserts', () => {
         expect(document.querySelector('#new-audit-btn')).toBeNull();
         const p = within(pane());
         expect(p.queryByRole('button', { name: 'In progress' })).toBeNull();
+        expect(document.querySelector('#cancel-audit-btn')).toBeNull();
         expect(p.queryAllByRole('combobox')).toHaveLength(0);
         expect(document.querySelector('#edit-audit-btn')).toBeNull();
         expect(document.querySelector('#new-audit-finding-btn')).toBeNull();

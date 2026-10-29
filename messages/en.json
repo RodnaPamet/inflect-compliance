@@ -4062,7 +4062,16 @@
       "checklistError": "Could not update the checklist item.",
       "checklistSaved": "Checklist item updated.",
       "statusError": "Failed to update audit status.",
-      "statusChanged": "Audit status changed to {status}."
+      "statusChanged": "Audit status changed to {status}.",
+      "backToPlanned": "Back to Planned",
+      "backToInProgress": "Back to In Progress",
+      "cancelAudit": "Cancel audit",
+      "cancelConfirm": {
+        "title": "Cancel this audit?",
+        "description": "The audit is marked Cancelled. Its checklist results and findings are kept, but this page cannot reopen it.",
+        "confirm": "Cancel audit",
+        "keep": "Keep audit"
+      }
     },
     "packStatus": {
       "DRAFT": "Draft",
