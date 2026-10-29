@@ -401,11 +401,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
 
     // queue it feeds rather than on a sibling path that would imply a second
 
-    // kind of proposal. Authorization is the usecase's `assertCanWrite` —
+    // kind of proposal. Gated on the compose page's `admin.view`, then the
 
-    // deliberately the LOWER bar, because requiring approve-authority to
+    // usecase's `assertCanWrite` — still the LOWER bar than approving, because
 
-    // compose would turn four eyes into two.
+    // requiring approve-authority to compose would turn four eyes into two.
 
     't/[tenantSlug]/agent-proposals/compose/route.ts',
     // REMOVED 2026-10-14 (#3528): the TYPED-PHRASE compose route. The intent

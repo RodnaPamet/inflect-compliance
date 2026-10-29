@@ -5,6 +5,20 @@ import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { cn } from '@inflect/ui/lib/cn';
 import { isDiffReviewable, type ProposalDiff } from '@/lib/agentic/proposal-diff-status';
+import { proposalFieldLabelKey } from '@/lib/agentic/proposal-labels';
+
+/**
+ * A field's name as a reviewer reads it ("Treatment notes"), not as it is stored
+ * (`treatmentNotes`). A name not on the closed list is shown as stored. The
+ * testids keep the stored name: they address the field, they do not label it.
+ */
+function useFieldLabel(): (field: string) => string {
+    const t = useTranslations('agents');
+    return (field) => {
+        const key = proposalFieldLabelKey(field);
+        return key ? t(key) : field;
+    };
+}
 
 /**
  * The review surface for ONE proposal's diff - and the only place the approve
@@ -179,6 +193,7 @@ function ProposedOnlyList({
     variant: 'create' | 'orphaned';
 }) {
     const t = useTranslations('agents');
+    const fieldLabel = useFieldLabel();
     return (
         <ul
             data-testid={`proposal-diff-content-${proposalId}`}
@@ -191,7 +206,7 @@ function ProposedOnlyList({
                     data-testid={`proposal-diff-field-${proposalId}-${f.field}`}
                     className="rounded border border-border-subtle bg-bg-subtle p-2"
                 >
-                    <span className="block text-xs font-medium text-content-subtle">{f.field}</span>
+                    <span className="block text-xs font-medium text-content-subtle">{fieldLabel(f.field)}</span>
                     <span
                         data-testid={`proposal-diff-after-${proposalId}-${f.field}`}
                         className="block whitespace-pre-wrap break-words text-sm text-content-default"
@@ -207,6 +222,7 @@ function ProposedOnlyList({
 /** The two-column rendering: what the record says now, next to what it would say. */
 function BeforeAfterList({ proposalId, diff }: { proposalId: string; diff: ProposalDiff }) {
     const t = useTranslations('agents');
+    const fieldLabel = useFieldLabel();
     return (
         <ul
             data-testid={`proposal-diff-fields-${proposalId}`}
@@ -225,7 +241,7 @@ function BeforeAfterList({ proposalId, diff }: { proposalId: string; diff: Propo
                     )}
                 >
                     <span className="block text-xs font-medium text-content-subtle">
-                        {f.field}
+                        {fieldLabel(f.field)}
                         {!f.changed && ` · ${t('proposals.diff.unchanged')}`}
                     </span>
                     <div className="grid gap-tight sm:grid-cols-2">

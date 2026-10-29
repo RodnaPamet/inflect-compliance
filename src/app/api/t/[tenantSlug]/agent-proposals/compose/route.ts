@@ -9,23 +9,29 @@
  * same approval gate, as anything an agent proposed. A sibling path would
  * suggest a second kind of proposal, and there is only one.
  *
- * ── AUTHORIZATION IS THE USECASE'S ──────────────────────────────────────────
+ * ── TWO GATES, THE PAGE'S TWO ─────────────────────────────────────────────
  *
- * `composeExternalWriteProposal` calls `assertCanWrite`, which is the same
- * shape its siblings here use (`approve` → `assertCanWrite`, the index →
- * `assertCanRead`) and is why this is not under `/admin`: composing is
- * deliberately the LOWER bar. The proposal reaches a reviewer who needs the
- * authority to approve it, and requiring that authority to compose as well
- * would turn four eyes into two.
+ * The `/agents/compose` page renders only for `admin.view` and enables Send on
+ * the role-tier write (`permissions.canWrite`). Both handlers here take the
+ * first as `requirePermission('admin.view')`, so a refusal writes
+ * `AUTHZ_DENIED`; the POST then reaches `composeExternalWriteProposal`, whose
+ * own `assertCanWrite` is the second. Before this the routes had only the
+ * usecases' `assertCanRead` / `assertCanWrite`, so an EDITOR — refused the page
+ * — could compose an external-write proposal here, and every member could read
+ * a template's open fields and candidate subjects.
  *
- * `params` is a Promise and is awaited here, per the Next 15+ contract the
- * `async-params-route-typing` ratchet holds — unlike a `requirePermission`
- * handler, where the wrapper has already reified it.
+ * Composing stays the LOWER bar than approving, which is why it is not under
+ * `/admin`: the write tier is enough to send, and the proposal still reaches a
+ * reviewer who needs the authority to approve it. `admin.view` is the surface,
+ * not the approval authority.
+ *
+ * No API-key carve-out. Nothing but this page calls these routes (a registered
+ * agent queues its own proposals through the MCP propose tools, which never
+ * come here), so a key is held to the same `admin.view` a person is.
  */
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 
-import { getTenantCtx } from '@/app-layer/context';
 import {
     composeExternalWriteProposal,
     describeComposeRefusal,
@@ -34,6 +40,7 @@ import {
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { badRequest } from '@/lib/errors/types';
+import { requirePermission } from '@/lib/security/permission-middleware';
 
 /**
  * The body, and what it deliberately CANNOT carry.
@@ -56,68 +63,60 @@ const BodySchema = z
     })
     .strict();
 
-export const POST = withApiErrorHandling(async (
-    req: NextRequest,
-    { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
-) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
+export const POST = withApiErrorHandling(
+    requirePermission<{ tenantSlug: string }>('admin.view', async (req: NextRequest, _routeArgs, ctx) => {
+        const parsed = BodySchema.safeParse(await req.json().catch(() => null));
+        if (!parsed.success) {
+            throw badRequest('Send { parameterSetId, openFieldValues }.');
+        }
 
-    const parsed = BodySchema.safeParse(await req.json().catch(() => null));
-    if (!parsed.success) {
-        throw badRequest('Send { parameterSetId, openFieldValues }.');
-    }
+        const outcome = await composeExternalWriteProposal(ctx, parsed.data);
+        if (!outcome.ok) {
+            // 409, not 500 and not a bare 400: the request is well-formed and the
+            // CONFIGURATION or the chosen value is what refuses. The sentence names
+            // which of the eleven causes it is, because each is fixed by a
+            // different action.
+            return jsonResponse({ error: describeComposeRefusal(outcome.refusal) }, { status: 409 });
+        }
 
-    const outcome = await composeExternalWriteProposal(ctx, parsed.data);
-    if (!outcome.ok) {
-        // 409, not 500 and not a bare 400: the request is well-formed and the
-        // CONFIGURATION or the chosen value is what refuses. The sentence names
-        // which of the eleven causes it is, because each is fixed by a
-        // different action.
-        return jsonResponse({ error: describeComposeRefusal(outcome.refusal) }, { status: 409 });
-    }
-
-    return jsonResponse({
-        proposalId: outcome.proposalId,
-        // QUARANTINED is not PENDING, and the surface must not report it as
-        // "awaiting approval": a quarantined proposal never enters the review
-        // queue, so that would describe a wait nobody is going to end.
-        status: outcome.status,
-        guardVerdict: outcome.guardVerdict,
-    }, { status: 201 });
-});
+        return jsonResponse({
+            proposalId: outcome.proposalId,
+            // QUARANTINED is not PENDING, and the surface must not report it as
+            // "awaiting approval": a quarantined proposal never enters the review
+            // queue, so that would describe a wait nobody is going to end.
+            status: outcome.status,
+            guardVerdict: outcome.guardVerdict,
+        }, { status: 201 });
+    }),
+);
 
 /**
  * What this template lets an operator fill in, and which subjects it may name.
  *
  * A GET beside the POST on purpose: one path, so "what may I compose" and
  * "compose it" cannot drift apart into two surfaces with different ideas of the
- * bound. Read-gated by the usecase (`assertCanRead`).
+ * bound. The page's `admin.view` here, then the usecase's `assertCanRead`.
  *
  * Candidates are resolved PER REQUEST. A cached list would be a snapshot
  * presented as a live bound, and the submitted value is re-checked at compose
  * and again at dispatch — so this is a convenience for the operator and never
  * the thing that decides.
  */
-export const GET = withApiErrorHandling(async (
-    req: NextRequest,
-    { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
-) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
+export const GET = withApiErrorHandling(
+    requirePermission<{ tenantSlug: string }>('admin.view', async (req: NextRequest, _routeArgs, ctx) => {
+        const parameterSetId = new URL(req.url).searchParams.get('parameterSetId');
+        // Required, not defaulted. There is no sensible "all templates' fields"
+        // answer: the open fields and the population are properties of ONE template.
+        if (!parameterSetId) throw badRequest('parameterSetId is required');
 
-    const parameterSetId = new URL(req.url).searchParams.get('parameterSetId');
-    // Required, not defaulted. There is no sensible "all templates' fields"
-    // answer: the open fields and the population are properties of ONE template.
-    if (!parameterSetId) throw badRequest('parameterSetId is required');
-
-    const outcome = await listComposeOffer(ctx, parameterSetId);
-    if (!outcome.ok) {
-        return jsonResponse({ error: describeComposeRefusal(outcome.refusal) }, { status: 409 });
-    }
-    return jsonResponse({
-        label: outcome.label,
-        toolName: outcome.toolName,
-        fields: outcome.fields,
-    });
-});
+        const outcome = await listComposeOffer(ctx, parameterSetId);
+        if (!outcome.ok) {
+            return jsonResponse({ error: describeComposeRefusal(outcome.refusal) }, { status: 409 });
+        }
+        return jsonResponse({
+            label: outcome.label,
+            toolName: outcome.toolName,
+            fields: outcome.fields,
+        });
+    }),
+);

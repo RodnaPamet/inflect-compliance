@@ -3,6 +3,11 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { listAgentProposals } from '@/app-layer/usecases/agent-proposals';
 import { buildProposalDiffs } from '@/app-layer/usecases/agent-proposal-diff';
+import {
+    PROPOSAL_QUEUE_PAGE_SIZE,
+    annotateProposalQueue,
+} from '@/app-layer/usecases/agent-proposal-queue';
+import { isProposalExpired } from '@/lib/agentic/proposal-expiry';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 
@@ -10,9 +15,11 @@ import { AgentProposalsClient, type ProposalRow } from './AgentProposalsClient';
 
 /**
  * Agent proposals review queue (Epic MCP Phase 3). Lists the PENDING proposals
- * an external agent submitted via the MCP `propose_*` tools, for a human to
- * approve (→ the real create-usecase runs) or reject (→ nothing is created).
- * This is the human-in-the-loop gate: an agent never creates a record directly.
+ * — from an external agent's MCP `propose_*` tools, from Inflect's own workflow
+ * runs, from a person composing an external write, and the finding proposals an
+ * internal auditor's dissent raises — for a human to approve (→ the real
+ * usecase runs) or reject (→ nothing is written). This is the human-in-the-loop
+ * gate: an agent never writes a record directly.
  */
 export default async function AgentProposalsPage({
     params,
@@ -41,7 +48,16 @@ export default async function AgentProposalsPage({
             />
         );
     }
-    const proposals = await listAgentProposals(ctx, { status: 'PENDING' });
+    // ONE PAST THE PAGE, so truncation is a fact this page holds. The usecase's
+    // own default is the same 100, and reading exactly that many cannot tell "a
+    // hundred proposals" from "the first hundred of more" — which is how the
+    // queue used to stop silently while the views-menu badge counted them all.
+    const read = await listAgentProposals(ctx, {
+        status: 'PENDING',
+        take: PROPOSAL_QUEUE_PAGE_SIZE + 1,
+    });
+    const truncated = read.length > PROPOSAL_QUEUE_PAGE_SIZE;
+    const proposals = read.slice(0, PROPOSAL_QUEUE_PAGE_SIZE);
 
     // The diff is computed HERE, on the server, against the target's state right
     // now — never in the browser from a payload, and never from a snapshot taken
@@ -49,6 +65,15 @@ export default async function AgentProposalsPage({
     // do if they approve it now, and only a fresh read answers that question.
     // Batched: one query per kind, not one per proposal.
     const diffs = await buildProposalDiffs(ctx, proposals);
+    // Signatures recorded and the key's prefix, one query each (see the module).
+    const annotations = await annotateProposalQueue(ctx, proposals);
+
+    // The window is judged HERE, against the server's clock, for the reason the
+    // approve path reads the clock rather than the status: the nightly sweep
+    // that stamps EXPIRED leaves a row PENDING for up to a day after its window
+    // closed, and in that gap Approve and Reject can only be refused. Judged once
+    // on the server, so the server render and the hydrated page agree.
+    const now = new Date();
 
     const rows: ProposalRow[] = proposals.map((p) => ({
         id: p.id,
@@ -59,7 +84,17 @@ export default async function AgentProposalsPage({
         // `payloadJson` is deliberately NOT forwarded — see `ProposalRow.diff`.
         rationale: p.rationale,
         proposedViaKeyId: p.proposedViaKeyId,
+        // The prefix the API Keys page shows, never a slice of the internal id.
+        proposedViaKeyPrefix: annotations.get(p.id)?.proposedViaKeyPrefix ?? null,
         createdAt: p.createdAt.toISOString(),
+        // The deadline, pinned at propose time, and whether it has passed. NULL
+        // is "no deadline recorded" (a row from before the column), not expired.
+        expiresAt: p.expiresAt ? p.expiresAt.toISOString() : null,
+        windowClosed: isProposalExpired(p.expiresAt, now),
+        // Read from the signature table, so a proposal holding one of its two
+        // approvals says so after a reload as well as after the click.
+        approvalsRecorded: annotations.get(p.id)?.approvalsRecorded ?? 0,
+        signedByViewer: annotations.get(p.id)?.signedByViewer ?? false,
         // WHICH STEP OF WHICH RUN produced this. `listAgentProposals` has no
         // `select`, so both columns were already arriving here and were simply
         // dropped on the floor — the projection was the only thing between the
@@ -102,6 +137,7 @@ export default async function AgentProposalsPage({
         <AgentProposalsClient
             tenantSlug={tenantSlug}
             initialProposals={rows}
+            truncated={truncated}
             // ROLE-TIER write: both approve and reject assert it, and this
             // page's `admin.view` gate does not imply it.
             canOperate={ctx.permissions.canWrite}

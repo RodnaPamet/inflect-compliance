@@ -335,26 +335,18 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
     // only their usecase's coarse `assertCanRead` / `assertCanWrite` while the
     // pages behind them refused EDITOR and READER. `agent-runs` is taken WHOLE:
     // every route in it now gates on `admin.view` OR `admin.agent_registry_view`,
-    // so the next one added there fails until somebody triages it. The proposal
-    // writes are LEAF roots, because `agent-proposals/` also holds `compose/` and
-    // `sample-audits/`, which were not triaged here; its collection GET cannot be
-    // a leaf root for the same reason, and is pinned by
-    // tests/unit/agent-runs-proposals-route-gates.test.ts instead.
+    // so the next one added there fails until somebody triages it.
+    // `agent-proposals` is taken WHOLE too, now that its last two untriaged
+    // directories (`compose/`, `sample-audits/`) take their pages' gates: the
+    // queue and its writes on the queue's two keys, compose on `admin.view`,
+    // the sample audits on `admin.agent_registry`.
     {
         relPath: 'src/app/api/t/[tenantSlug]/agent-runs',
         why: 'Agentic workflow runs — list, start, one run with its steps, the step feed, resume, abort, the live tail and the checkpoint read. Every one gates on the runs pages\' admin.view OR admin.agent_registry_view (mayReadAgentActivity); the writes add the role-tier write the usecases assert, which is what the page enables its buttons on.',
     },
     {
-        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals/[id]/approve',
-        why: 'Approving an agent proposal runs the real create-usecase — the proposals page\'s admin.view OR admin.agent_registry_view, plus the assertCanWrite the usecase holds.',
-    },
-    {
-        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals/[id]/reject',
-        why: 'Rejecting an agent proposal — gated as its approve sibling.',
-    },
-    {
-        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals/bulk/reject',
-        why: 'Rejecting a batch of agent proposals — gated exactly as the single reject, so the two paths agree about who may reject.',
+        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals',
+        why: 'The agent-proposal queue and the two surfaces filed beside it. The list, approve, reject and bulk reject take the proposals page\'s admin.view OR admin.agent_registry_view, the writes adding the assertCanWrite the usecases hold; compose takes the /agents/compose page\'s admin.view (then the write tier to send); the sample audits take /agents/review-quality\'s admin.agent_registry.',
     },
     // ── The employee manager field (#2492) ──────────────────────────
     // NARROW LEAF ROOT, and the narrowness is the whole reason it can be

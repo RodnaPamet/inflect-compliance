@@ -506,6 +506,32 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'refuses every API key in the usecase: a machine cannot be one of ' +
             'the humans a proposal needs.',
     },
+    // The two other directories under `/agent-proposals` take THEIR pages'
+    // gates, which are not the queue's: compose is `admin.view` alone (the
+    // view key opens the queue, not compose), and the sample audits are
+    // review-quality data, gated `admin.agent_registry` on that page.
+    {
+        path: new RegExp(`^${T}\\/agent-proposals\\/compose$`),
+        methods: ['GET', 'POST'],
+        permission: 'admin.view',
+        note:
+            'Read a template\'s open fields and candidates, or compose an ' +
+            'external-write proposal from it. The /agents/compose page\'s ' +
+            'gate here; POST then takes the role-tier write ' +
+            '`composeExternalWriteProposal` asserts, which is what the page ' +
+            'enables Send on.',
+    },
+    {
+        path: new RegExp(`^${T}\\/agent-proposals\\/sample-audits(\\/[^/]+)?$`),
+        methods: ['GET', 'POST'],
+        permission: 'admin.agent_registry',
+        note:
+            'The retrospective sample audits of approved proposals and their ' +
+            'disagreement rate (GET), and one answer (POST /:id). The gate of ' +
+            '/agents/review-quality, the page about whether approvals mean ' +
+            'anything; the answer also takes the role-tier write and the ' +
+            'not-the-approver refusal in `recordSampleAuditOutcome`.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/policy-card$`),
         permission: 'admin.agent_policy_card',

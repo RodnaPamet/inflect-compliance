@@ -41,6 +41,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import {
+    EXPIRED_REFUSAL_MESSAGE,
     approveAgentProposal,
     createAgentProposal,
     listAgentProposals,
@@ -244,9 +245,10 @@ describeFn('agent proposals expire, and an expired one cannot be approved', () =
             await closeWindow(created.id);
             const risksBefore = await prisma.risk.count({ where: { tenantId: TENANT } });
 
-            await expect(approveAgentProposal(ctxFor(), created.id)).rejects.toThrow(
-                'agent_proposal_expired',
-            );
+            await expect(approveAgentProposal(ctxFor(), created.id)).rejects.toMatchObject({
+                details: { reason: 'agent_proposal_expired' },
+                message: EXPIRED_REFUSAL_MESSAGE,
+            });
 
             // Nothing was created — the refusal is ahead of the claim, so the
             // proposal is still exactly where it was.
@@ -309,9 +311,10 @@ describeFn('agent proposals expire, and an expired one cannot be approved', () =
             });
             await closeWindow(created.id);
 
-            await expect(rejectAgentProposal(ctxFor(), created.id)).rejects.toThrow(
-                'agent_proposal_expired',
-            );
+            await expect(rejectAgentProposal(ctxFor(), created.id)).rejects.toMatchObject({
+                details: { reason: 'agent_proposal_expired' },
+                message: EXPIRED_REFUSAL_MESSAGE,
+            });
             const row = await prisma.agentProposal.findFirstOrThrow({ where: { id: created.id } });
             // Still "nobody decided", not "somebody decided no".
             expect(row.status).toBe('PENDING');

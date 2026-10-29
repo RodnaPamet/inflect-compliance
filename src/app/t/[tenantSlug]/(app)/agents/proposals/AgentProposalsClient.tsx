@@ -17,6 +17,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 import type { ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 // The guard's three states, and the rule that reads them. Shared with the
 // governance pack, which counts the same three — see the module header for why
@@ -31,6 +32,9 @@ import {
 // the ONE definition of the verdict vocabulary instead of keeping a second
 // copy that can drift from the Prisma enum it mirrors.
 import type { AgentGuardVerdict } from '@/app-layer/ai/guard/proposal-guard';
+// TYPE-ONLY, erased at compile time: the bulk route's skip reasons, so a reason
+// added there fails to compile here until it is given a sentence.
+import type { BulkRejectSkipReason } from '@/app-layer/usecases/agent-proposals';
 
 // MOVED OUT OF THIS ROUTE DIRECTORY (#3472). The canvas's checkpoint
 // panel renders the same component, and `route-import-boundaries` is
@@ -38,6 +42,7 @@ import type { AgentGuardVerdict } from '@/app-layer/ai/guard/proposal-guard';
 // from — so the second reader is what moved it, which is the decision
 // that guard exists to force someone to make.
 import { ProposalDiffPanel } from '@/components/agentic/ProposalDiffPanel';
+import { proposalKindLabelKey } from '@/lib/agentic/proposal-labels';
 
 export interface ProposalRow {
     id: string;
@@ -48,8 +53,25 @@ export interface ProposalRow {
     /** The record an UPDATE would change; null for a CREATE. */
     targetEntityId: string | null;
     rationale: string | null;
+    /** Set when the proposal came through an API key. Rendered nowhere. */
     proposedViaKeyId: string | null;
+    /**
+     * That key's `keyPrefix` — the identifier the API Keys page shows — or null
+     * when there is no key or it cannot be read. What the card shows for the key.
+     */
+    proposedViaKeyPrefix: string | null;
     createdAt: string;
+    /**
+     * When the review window closes, pinned at propose time; null for a row
+     * written before the deadline column, which has none.
+     */
+    expiresAt: string | null;
+    /**
+     * The window has closed, judged by the server's clock at page render. The
+     * row still reads PENDING until the nightly sweep stamps it, and in that gap
+     * nothing — approve or reject — can decide it.
+     */
+    windowClosed: boolean;
     /**
      * The run and step that produced this, or null for a proposal made outside
      * a workflow — a propose tool called directly by an agent that is not
@@ -94,13 +116,20 @@ export interface ProposalRow {
      */
     diff: ProposalDiff;
     /**
-     * This viewer's signature is recorded and the proposal still needs another.
+     * Distinct people whose approval is recorded. A PENDING row with one or more
+     * is waiting for another approver: it would have been applied otherwise.
      *
-     * Client-side only and deliberately so: it is set from the approve response,
-     * which is the one moment the browser learns it. The authoritative count
-     * lives on the server; this exists so the row does not silently vanish.
+     * Read from the signature table by the page, and updated from the approve
+     * response in place. It used to be a client-only flag set from that
+     * response, so after a reload a proposal holding one of its two approvals
+     * looked exactly like one holding none.
      */
-    awaitingSecondApproval?: boolean;
+    approvalsRecorded: number;
+    /**
+     * The viewer is one of those approvers. Their Approve can only be refused
+     * (four eyes: a second approval is somebody else's), so it is not offered.
+     */
+    signedByViewer: boolean;
 }
 
 /**
@@ -142,6 +171,58 @@ function guardRuleText(
 }
 
 /**
+ * Where a row's decision stands, when it is anything but "open, unsigned". A
+ * closed window outranks a recorded signature: nothing can complete the
+ * proposal now. Read from the row's data, so a reload shows what a click did.
+ */
+function decisionBadgeFor(
+    p: Pick<ProposalRow, 'windowClosed' | 'approvalsRecorded'>,
+): { variant: 'warning' | 'info'; key: string; testid: string } | null {
+    if (p.windowClosed) {
+        return { variant: 'warning', key: 'proposals.window.closed', testid: 'proposal-window-closed-badge' };
+    }
+    if (p.approvalsRecorded > 0) {
+        return { variant: 'info', key: 'proposals.awaitingSecond', testid: 'proposal-awaiting-second-badge' };
+    }
+    return null;
+}
+
+/** The sentence each bulk-reject skip reason is reported with. */
+type SkipCause = 'decided' | 'expired' | 'quarantined' | 'ownDissent' | 'unknownDissent';
+
+const SKIP_CAUSE: Record<BulkRejectSkipReason, SkipCause> = {
+    NOT_PENDING: 'decided',
+    NOT_FOUND: 'decided',
+    EXPIRED: 'expired',
+    QUARANTINED: 'quarantined',
+    DISSENT_AUTHOR_MAY_NOT_DECIDE: 'ownDissent',
+    DISSENT_AUTHOR_UNKNOWN: 'unknownDissent',
+};
+
+/** The causes in the order they are worth reading: the caller's own first. */
+const SKIP_CAUSE_ORDER: readonly SkipCause[] = [
+    'ownDissent',
+    'unknownDissent',
+    'quarantined',
+    'expired',
+    'decided',
+];
+
+/**
+ * The distinct causes a bulk reject's skipped rows report, each once. A reason
+ * this client does not know names no cause rather than borrowing one: the count
+ * is still reported, and a wrong cause is the defect this replaces.
+ */
+function skipCauses(skipped: ReadonlyArray<{ reason?: string }>): SkipCause[] {
+    const seen = new Set<SkipCause>();
+    for (const s of skipped) {
+        const cause = s.reason ? SKIP_CAUSE[s.reason as BulkRejectSkipReason] : undefined;
+        if (cause) seen.add(cause);
+    }
+    return SKIP_CAUSE_ORDER.filter((c) => seen.has(c));
+}
+
+/**
  * The review-queue client.
  *
  * Each proposal renders its DIFF, and the approve control lives INSIDE that
@@ -162,9 +243,15 @@ export function AgentProposalsClient({
     canCompose = false,
     canInvestigate = false,
     canReadReports = false,
+    truncated = false,
 }: {
     tenantSlug: string;
     initialProposals: ProposalRow[];
+    /**
+     * The page read one more proposal than it lists, and got it: more are
+     * waiting than this page shows.
+     */
+    truncated?: boolean;
     /**
      * The role-tier `canWrite` (#2456). This page is gated on `admin.view` or
      * the inventory view key (#3710);
@@ -252,7 +339,7 @@ export function AgentProposalsClient({
                 });
                 if (!res.ok) throw new Error(t('proposals.bulk.failed'));
                 const body = (await res.json().catch(() => null)) as
-                    | { rejected?: string[]; skipped?: Array<{ id: string }> }
+                    | { rejected?: string[]; skipped?: Array<{ id: string; reason?: string }> }
                     | null;
                 const rejected = body?.rejected?.length ?? ids.length;
                 const skipped = body?.skipped?.length ?? 0;
@@ -272,8 +359,17 @@ export function AgentProposalsClient({
                         );
                         return returning.length > 0 ? [...returning, ...prev] : prev;
                     });
+                    // The count, then WHY, one sentence per cause the batch hit.
+                    // The message used to name two causes whatever happened, so
+                    // a row skipped because the reviewer raised its dissent was
+                    // reported as somebody else's decision or the clock.
                     toast.info(
-                        t('proposals.bulk.rejectedReconciled', { rejected, skipped }),
+                        [
+                            t('proposals.bulk.rejectedReconciled', { rejected, skipped }),
+                            ...skipCauses(body?.skipped ?? []).map((cause) =>
+                                t(`proposals.bulk.skipped.${cause}`),
+                            ),
+                        ].join(' '),
                     );
                 }
             },
@@ -305,8 +401,10 @@ export function AgentProposalsClient({
                 ),
             });
             if (!res.ok) {
+                // The server's sentence, not a code: a four-eyes or a closed-
+                // window refusal says why and what to do, in `error.message`.
                 const body = await res.json().catch(() => null);
-                throw new Error(body?.error?.message ?? fallback);
+                throw new Error(apiErrorMessage(body, fallback));
             }
 
             // TWO SUCCESS SHAPES, AND THEY MEAN OPPOSITE THINGS.
@@ -325,7 +423,9 @@ export function AgentProposalsClient({
                 const required = body.approvalsRequired ?? 2;
                 setProposals((prev) =>
                     prev.map((row) =>
-                        row.id === p.id ? { ...row, awaitingSecondApproval: true } : row,
+                        row.id === p.id
+                            ? { ...row, approvalsRecorded: recorded, signedByViewer: true }
+                            : row,
                     ),
                 );
                 setNotice(t('proposals.signatureRecorded', { recorded, required }));
@@ -364,6 +464,24 @@ export function AgentProposalsClient({
             return;
         }
         void act(p, 'approve');
+    }
+
+    /** The kind's name; a kind this client does not know is shown as stored. */
+    function kindLabel(kind: string): string {
+        const key = proposalKindLabelKey(kind);
+        return key ? t(key) : kind;
+    }
+
+    /**
+     * The key a proposal came through, by the prefix the API Keys page shows.
+     * It used to print eight characters of the key's internal id, which matches
+     * nothing an operator can look up.
+     */
+    function keySuffix(p: ProposalRow): string {
+        if (!p.proposedViaKeyId) return '';
+        return p.proposedViaKeyPrefix
+            ? t('proposals.keySuffix', { key: `${p.proposedViaKeyPrefix}…` })
+            : t('proposals.keySuffixUnresolved');
     }
 
     return (
@@ -410,6 +528,15 @@ export function AgentProposalsClient({
                 >
                     {error}
                 </div>
+            )}
+
+            {truncated && (
+                // The queue stops at a page; the views-menu badge counts every
+                // waiting proposal. Saying so is the difference between "this
+                // is the queue" and "this is the first page of it".
+                <InlineNotice variant="warning" data-testid="proposal-queue-truncated">
+                    {t('proposals.truncated', { shown: initialProposals.length })}
+                </InlineNotice>
             )}
 
             {selected.size > 0 && (
@@ -468,6 +595,7 @@ export function AgentProposalsClient({
                     {proposals.map((p) => {
                         const guardState = resolveProposalGuardState(p);
                         const guardBadge = GUARD_BADGE[guardState];
+                        const decisionBadge = decisionBadgeFor(p);
                         return (
                         <li
                             key={p.id}
@@ -482,17 +610,21 @@ export function AgentProposalsClient({
                                       disabled there, rather than hidden: a
                                       control that vanishes by role leaves a
                                       reader wondering whether the queue even
-                                      has the affordance.
+                                      has the affordance. Disabled too on a row
+                                      whose window has closed: the batch would
+                                      only report it back as skipped.
                                     */}
                                     <Checkbox
                                         size="sm"
                                         aria-label={t('proposals.bulk.selectRow')}
                                         data-testid={`proposal-select-${p.id}`}
-                                        disabled={!canOperate}
+                                        disabled={!canOperate || p.windowClosed}
                                         checked={selected.has(p.id)}
                                         onCheckedChange={() => toggleSelected(p.id)}
                                     />
-                                    <StatusBadge variant="info">{p.kind}</StatusBadge>
+                                    <StatusBadge variant="info" data-testid={`proposal-kind-${p.id}`}>
+                                        {kindLabel(p.kind)}
+                                    </StatusBadge>
                                     <StatusBadge
                                         variant={p.operation === 'UPDATE' ? 'warning' : 'neutral'}
                                     >
@@ -515,34 +647,71 @@ export function AgentProposalsClient({
                                     >
                                         {t(guardBadge.key)}
                                     </StatusBadge>
-                                    <span className="text-xs text-content-subtle">
+                                    {/*
+                                      WHERE THE DECISION STANDS, from the data —
+                                      one badge, subtle, beside the guard's: the
+                                      guard verdict stays the loud one on the row.
+                                    */}
+                                    {decisionBadge && (
+                                        <StatusBadge
+                                            variant={decisionBadge.variant}
+                                            tone="subtle"
+                                            data-testid={`${decisionBadge.testid}-${p.id}`}
+                                        >
+                                            {t(decisionBadge.key)}
+                                        </StatusBadge>
+                                    )}
+                                    <span
+                                        className="text-xs text-content-subtle"
+                                        data-testid={`proposal-meta-${p.id}`}
+                                    >
                                         {t('proposals.proposedAt', {
                                             date: formatDateTime(p.createdAt),
                                         })}
-                                        {p.proposedViaKeyId
-                                            ? t('proposals.keySuffix', {
-                                                key: p.proposedViaKeyId.slice(0, 8),
+                                        {p.expiresAt && !p.windowClosed
+                                            ? t('proposals.decideBy', {
+                                                date: formatDateTime(p.expiresAt),
                                             })
                                             : ''}
+                                        {keySuffix(p)}
                                     </span>
                                 </div>
                                 {/*
                                   Reject only. The approve control is NOT here —
                                   it is rendered by the diff panel below, in the
                                   branch that has already rendered a diff body.
+                                  Not rendered once the window has closed: no
+                                  role can reject then, and the notice below
+                                  says why.
                                 */}
-                                <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        data-testid={`proposal-reject-${p.id}`}
-                                        disabled={!canOperate || busy === p.id}
-                                        onClick={() => act(p, 'reject')}
-                                    >
-                                        {t('proposals.reject')}
-                                    </Button>
-                                </PermissionGated>
+                                {!p.windowClosed && (
+                                    <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            data-testid={`proposal-reject-${p.id}`}
+                                            disabled={!canOperate || busy === p.id}
+                                            onClick={() => act(p, 'reject')}
+                                        >
+                                            {t('proposals.reject')}
+                                        </Button>
+                                    </PermissionGated>
+                                )}
                             </div>
+
+                            {p.windowClosed && p.expiresAt && (
+                                // The sweep that stamps EXPIRED runs overnight,
+                                // so the row is still listed. Say what that
+                                // means before anybody clicks.
+                                <InlineNotice
+                                    variant="warning"
+                                    data-testid={`proposal-window-closed-${p.id}`}
+                                >
+                                    {t('proposals.window.closedNotice', {
+                                        date: formatDateTime(p.expiresAt),
+                                    })}
+                                </InlineNotice>
+                            )}
 
                             {p.targetEntityId && (
                                 <p
@@ -635,17 +804,35 @@ export function AgentProposalsClient({
                                 proposalId={p.id}
                                 diff={p.diff}
                                 approveAction={
-                                    <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            data-testid={`proposal-approve-${p.id}`}
-                                            disabled={!canOperate || busy === p.id}
-                                            onClick={() => onApproveClick(p)}
+                                    p.windowClosed ? (
+                                        <span
+                                            data-testid={`proposal-window-closed-action-${p.id}`}
+                                            className="text-xs text-content-subtle"
                                         >
-                                            {t('proposals.approve')}
-                                        </Button>
-                                    </PermissionGated>
+                                            {t('proposals.window.closed')}
+                                        </span>
+                                    ) : p.signedByViewer ? (
+                                        // This viewer's signature is in. Their
+                                        // second click could only be refused.
+                                        <span
+                                            data-testid={`proposal-signed-by-you-${p.id}`}
+                                            className="text-xs text-content-subtle"
+                                        >
+                                            {t('proposals.signedByYou')}
+                                        </span>
+                                    ) : (
+                                        <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                data-testid={`proposal-approve-${p.id}`}
+                                                disabled={!canOperate || busy === p.id}
+                                                onClick={() => onApproveClick(p)}
+                                            >
+                                                {t('proposals.approve')}
+                                            </Button>
+                                        </PermissionGated>
+                                    )
                                 }
                             />
                         </li>

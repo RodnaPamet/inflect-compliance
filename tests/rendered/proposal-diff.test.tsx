@@ -116,6 +116,11 @@ const CREATE_ROW: ProposalRow = {
     rationale: 'Observed three failed backups in the last quarter.',
     proposedViaKeyId: 'key-abcdef12',
     createdAt: '2026-09-01T10:00:00.000Z',
+    proposedViaKeyPrefix: null,
+    expiresAt: null,
+    windowClosed: false,
+    approvalsRecorded: 0,
+    signedByViewer: false,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,
@@ -136,6 +141,11 @@ const UPDATE_ROW: ProposalRow = {
     rationale: 'Two new incidents raise the likelihood.',
     proposedViaKeyId: 'key-abcdef12',
     createdAt: '2026-09-01T11:00:00.000Z',
+    proposedViaKeyPrefix: null,
+    expiresAt: null,
+    windowClosed: false,
+    approvalsRecorded: 0,
+    signedByViewer: false,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,
@@ -157,6 +167,11 @@ const NO_CHANGES_ROW: ProposalRow = {
     rationale: null,
     proposedViaKeyId: null,
     createdAt: '2026-09-01T12:00:00.000Z',
+    proposedViaKeyPrefix: null,
+    expiresAt: null,
+    windowClosed: false,
+    approvalsRecorded: 0,
+    signedByViewer: false,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,
@@ -178,6 +193,11 @@ const TARGET_MISSING_ROW: ProposalRow = {
     rationale: null,
     proposedViaKeyId: null,
     createdAt: '2026-09-01T13:00:00.000Z',
+    proposedViaKeyPrefix: null,
+    expiresAt: null,
+    windowClosed: false,
+    approvalsRecorded: 0,
+    signedByViewer: false,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,
@@ -199,6 +219,11 @@ const UNREADABLE_ROW: ProposalRow = {
     rationale: null,
     proposedViaKeyId: null,
     createdAt: '2026-09-01T14:00:00.000Z',
+    proposedViaKeyPrefix: null,
+    expiresAt: null,
+    windowClosed: false,
+    approvalsRecorded: 0,
+    signedByViewer: false,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,
@@ -413,7 +438,13 @@ describe('a first signature does not look like an approval', () => {
         });
 
         // The row SURVIVES…
-        expect(screen.getByTestId(`proposal-approve-${CREATE_ROW.id}`)).toBeInTheDocument();
+        expect(screen.getByTestId(`proposal-diff-${CREATE_ROW.id}`)).toBeInTheDocument();
+        // …says it awaits a second approver, from the same data a reload reads…
+        expect(screen.getByTestId(`proposal-awaiting-second-badge-${CREATE_ROW.id}`)).toBeInTheDocument();
+        // …and no longer offers this reviewer an Approve that could only be
+        // refused: a second approval has to be somebody else's.
+        expect(screen.queryByTestId(`proposal-approve-${CREATE_ROW.id}`)).toBeNull();
+        expect(screen.getByTestId(`proposal-signed-by-you-${CREATE_ROW.id}`)).toBeInTheDocument();
         // …and the reviewer is told what is still missing, with both numbers.
         const notice = screen.getByTestId('proposal-awaiting-second');
         expect(notice.textContent).toContain('1');
