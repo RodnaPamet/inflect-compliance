@@ -48,9 +48,17 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 }));
 
 // TP-2 — the page now derives canWrite (for the linked-tasks tab) from the
-// tenant context, so the render harness must provide it.
+// tenant context, so the render harness must provide it. `incidents.manage`
+// is what shows the page's write controls (#4463); each test sets it.
+let mockCanManage = true;
 jest.mock('@/lib/tenant-context-provider', () => ({
-    useTenantContext: () => ({ permissions: { canWrite: true } }),
+    useTenantContext: () => ({
+        permissions: { canWrite: true },
+        appPermissions: {
+            incidents: { view: true, manage: mockCanManage },
+            tasks: { create: true, edit: true },
+        },
+    }),
     useTenantApiUrl: () => (path: string) => `/api/t/acme${path.startsWith('/') ? path : `/${path}`}`,
     useTenantHref: () => (path: string) => `/t/acme${path.startsWith('/') ? path : `/${path}`}`,
 }));
@@ -92,7 +100,10 @@ function withSWR(ui: React.ReactNode) {
 }
 
 describe('IncidentDetailPage render', () => {
-    afterEach(() => mockSWR.mockReset());
+    afterEach(() => {
+        mockSWR.mockReset();
+        mockCanManage = true;
+    });
 
     it('renders the reportable RANSOMWARE incident overview (tracker, deadlines, runbook, forensic, RACI)', () => {
         mockSWR.mockReturnValue({ data: makeIncident(), isLoading: false, error: null, mutate: jest.fn() });
@@ -137,5 +148,103 @@ describe('IncidentDetailPage render', () => {
         mockSWR.mockReturnValue({ data: undefined, isLoading: true, error: null, mutate: jest.fn() });
         const { container } = render(withSWR(<IncidentDetailPage />));
         expect(container).toBeTruthy();
+    });
+});
+
+// #4463 — every write on the page is `incidents.manage` at the route and in
+// the usecase. A role without it (Editor, Reader, Auditor, AI admin by
+// default) must not be offered a control the server will refuse.
+describe('IncidentDetailPage — incidents.manage gates the write controls', () => {
+    afterEach(() => {
+        mockSWR.mockReset();
+        mockCanManage = true;
+    });
+
+    const notReportable = () =>
+        makeIncident({ reportable: false, notifications: [] });
+
+    it('shows no write control to a viewer without incidents.manage', () => {
+        mockCanManage = false;
+        mockSWR.mockReturnValue({ data: makeIncident(), isLoading: false, error: null, mutate: jest.fn() });
+        const { container, unmount } = render(withSWR(<IncidentDetailPage />));
+
+        expect(screen.queryByRole('button', { name: 'Advance phase' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Link evidence' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Unlink' })).not.toBeInTheDocument();
+        // The containment steps are listed with their state, but no box to tick.
+        expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+        expect(screen.getAllByText('Done').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Not done').length).toBeGreaterThan(0);
+
+        fireEvent.click(screen.getByRole('tab', { name: /Timeline/i }));
+        expect(screen.queryByRole('button', { name: 'Add entry' })).not.toBeInTheDocument();
+        unmount();
+
+        mockSWR.mockReturnValue({ data: notReportable(), isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentDetailPage />));
+        // The explanation stays; the button that acts on it does not.
+        expect(screen.getByText(/not yet marked reportable/i)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Mark reportable' })).not.toBeInTheDocument();
+    });
+
+    it('shows every write control to a holder of incidents.manage', () => {
+        mockSWR.mockReturnValue({ data: makeIncident(), isLoading: false, error: null, mutate: jest.fn() });
+        const { container, unmount } = render(withSWR(<IncidentDetailPage />));
+
+        expect(screen.getByRole('button', { name: 'Advance phase' })).toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: 'Submit' }).length).toBeGreaterThan(0);
+        expect(screen.getByRole('button', { name: 'Link evidence' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Unlink' })).toBeInTheDocument();
+        expect(container.querySelectorAll('input[type="checkbox"]').length).toBeGreaterThan(0);
+
+        fireEvent.click(screen.getByRole('tab', { name: /Timeline/i }));
+        expect(screen.getByRole('button', { name: 'Add entry' })).toBeInTheDocument();
+        unmount();
+
+        mockSWR.mockReturnValue({ data: notReportable(), isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentDetailPage />));
+        expect(screen.getByRole('button', { name: 'Mark reportable' })).toBeInTheDocument();
+    });
+});
+
+describe('IncidentDetailPage — a refused action shows the server reason', () => {
+    const origFetch = global.fetch;
+    afterEach(() => {
+        global.fetch = origFetch;
+        mockSWR.mockReset();
+    });
+
+    it('renders the message from the error envelope, not a generic "Action failed"', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: false,
+            status: 400,
+            json: async () => ({
+                error: { code: 'BAD_REQUEST', message: 'Incident is already in that phase.' },
+            }),
+        }) as unknown as typeof fetch;
+        mockSWR.mockReturnValue({ data: makeIncident(), isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentDetailPage />));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Advance phase' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Incident is already in that phase.');
+        expect(screen.queryByText('Action failed')).not.toBeInTheDocument();
+    });
+
+    it('falls back to "Action failed" when the response carries no reason', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: false,
+            status: 502,
+            json: async () => {
+                throw new Error('not json');
+            },
+        }) as unknown as typeof fetch;
+        mockSWR.mockReturnValue({ data: makeIncident(), isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentDetailPage />));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Advance phase' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Action failed');
     });
 });

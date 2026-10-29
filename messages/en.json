@@ -8610,6 +8610,8 @@
       "runbookAria": "Incident containment runbook",
       "containmentRunbook": "Containment runbook",
       "runbookDesc": "First-response containment steps for a {type} incident. Operational guidance, not legal advice. Completing a step records it on the timeline.",
+      "stepDone": "Done",
+      "stepNotDone": "Not done",
       "deadlinesHeading": "Article 23 notification deadlines",
       "notReportableText": "This incident is not yet marked reportable. Marking it reportable is a human determination (not automatic, not legal advice) that starts the 24h / 72h / 1-month clocks.",
       "markReportable": "Mark reportable",

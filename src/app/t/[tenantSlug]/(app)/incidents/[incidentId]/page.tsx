@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { CircleCheckFill, CircleDotted } from '@inflect/ui/components/ui/icons/nucleo';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
@@ -22,6 +23,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Heading } from '@/components/ui/typography';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
+import { apiErrorMessage } from '@/lib/api-error';
 import { PHASE_ORDER } from '@/lib/incidents/deadlines';
 import {
     containmentRunbookFor,
@@ -136,6 +138,12 @@ export default function IncidentDetailPage() {
     const tenantApiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
     const { permissions, appPermissions } = useTenantContext();
     const canWrite = !!permissions?.canWrite;
+    // Every write on this page — advance phase, containment ticks, mark
+    // reportable, file a notification, link / unlink evidence, add a
+    // timeline entry — is `incidents.manage` at the route and in the usecase
+    // (no coarse tier on either), so that one key is what shows the controls.
+    // OWNER and ADMIN hold it by default; a custom role may grant it.
+    const canManage = !!appPermissions?.incidents?.manage;
     const post = async (
         path: string,
         body: unknown,
@@ -149,7 +157,12 @@ export default function IncidentDetailPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error(tx('detail.actionFailed'));
+            if (!res.ok) {
+                // Show the server's reason (e.g. "already in its final phase"),
+                // falling back to the generic message only when it sent none.
+                const body = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, tx('detail.actionFailed')));
+            }
             await query.mutate();
             return true;
         } catch (e) {
@@ -300,15 +313,17 @@ export default function IncidentDetailPage() {
                                 );
                             })}
                         </ol>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={busy || incident.phase === 'CLOSED'}
-                            onClick={() => post('/advance-phase', {})}
-                            id="advance-phase-btn"
-                        >
-                            {tx('detail.advancePhase')}
-                        </Button>
+                        {canManage && (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={busy || incident.phase === 'CLOSED'}
+                                onClick={() => post('/advance-phase', {})}
+                                id="advance-phase-btn"
+                            >
+                                {tx('detail.advancePhase')}
+                            </Button>
+                        )}
                     </section>
 
                     {/* Containment runbook — per incident-type checklist. */}
@@ -332,19 +347,34 @@ export default function IncidentDetailPage() {
                                         const checked = done.has(step.key);
                                         return (
                                             <li key={step.key} className="flex items-start gap-tight">
-                                                <input
-                                                    type="checkbox"
-                                                    className="mt-1"
-                                                    checked={checked}
-                                                    disabled={busy}
-                                                    onChange={(e) =>
-                                                        post('/containment-step', {
-                                                            stepKey: step.key,
-                                                            completed: e.target.checked,
-                                                        })
-                                                    }
-                                                    aria-label={step.label}
-                                                />
+                                                {canManage ? (
+                                                    <input
+                                                        type="checkbox"
+                                                        className="mt-1"
+                                                        checked={checked}
+                                                        disabled={busy}
+                                                        onChange={(e) =>
+                                                            post('/containment-step', {
+                                                                stepKey: step.key,
+                                                                completed: e.target.checked,
+                                                            })
+                                                        }
+                                                        aria-label={step.label}
+                                                    />
+                                                ) : (
+                                                    // Read-only: the step's state, without a
+                                                    // box the viewer cannot tick.
+                                                    <>
+                                                        {checked ? (
+                                                            <CircleCheckFill className="mt-0.5 size-4 shrink-0 text-content-success" aria-hidden="true" />
+                                                        ) : (
+                                                            <CircleDotted className="mt-0.5 size-4 shrink-0 text-content-subtle" aria-hidden="true" />
+                                                        )}
+                                                        <span className="sr-only">
+                                                            {checked ? tx('detail.stepDone') : tx('detail.stepNotDone')}
+                                                        </span>
+                                                    </>
+                                                )}
                                                 <span
                                                     className={
                                                         checked
@@ -370,15 +400,17 @@ export default function IncidentDetailPage() {
                                 <p className="text-sm text-content-muted">
                                     {tx('detail.notReportableText')}
                                 </p>
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    disabled={busy}
-                                    onClick={() => setReportableOpen(true)}
-                                    id="mark-reportable-btn"
-                                >
-                                    {tx('detail.markReportable')}
-                                </Button>
+                                {canManage && (
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={busy}
+                                        onClick={() => setReportableOpen(true)}
+                                        id="mark-reportable-btn"
+                                    >
+                                        {tx('detail.markReportable')}
+                                    </Button>
+                                )}
                             </div>
                         ) : (
                             <div className="space-y-default">
@@ -416,7 +448,7 @@ export default function IncidentDetailPage() {
                                                 <StatusBadge variant={DEADLINE_TONE[n.status] ?? 'neutral'}>
                                                     {n.status}
                                                 </StatusBadge>
-                                                {n.status !== 'SUBMITTED' && (
+                                                {canManage && n.status !== 'SUBMITTED' && (
                                                     <Button
                                                         variant="secondary"
                                                         size="sm"
@@ -459,15 +491,17 @@ export default function IncidentDetailPage() {
                     <section className="space-y-default" aria-label="Forensic evidence checklist">
                         <div className="flex items-center justify-between">
                             <Heading level={2}>{tx('detail.forensicHeading')}</Heading>
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                disabled={busy}
-                                onClick={openEvidenceModal}
-                                id="link-evidence-btn"
-                            >
-                                {tx('detail.linkEvidence')}
-                            </Button>
+                            {canManage && (
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={openEvidenceModal}
+                                    id="link-evidence-btn"
+                                >
+                                    {tx('detail.linkEvidence')}
+                                </Button>
+                            )}
                         </div>
                         <p className="text-xs text-content-muted">
                             {tx('detail.forensicDesc')}
@@ -508,16 +542,18 @@ export default function IncidentDetailPage() {
                                         >
                                             {l.evidence?.title ?? l.evidenceId}
                                         </Link>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            disabled={busy}
-                                            onClick={() =>
-                                                post('/evidence', { evidenceId: l.evidenceId }, 'DELETE')
-                                            }
-                                        >
-                                            {tx('detail.unlink')}
-                                        </Button>
+                                        {canManage && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                disabled={busy}
+                                                onClick={() =>
+                                                    post('/evidence', { evidenceId: l.evidenceId }, 'DELETE')
+                                                }
+                                            >
+                                                {tx('detail.unlink')}
+                                            </Button>
+                                        )}
                                     </li>
                                 ))}
                             </ul>
@@ -554,9 +590,11 @@ export default function IncidentDetailPage() {
                 <div className="space-y-section">
                     <div className="flex items-center justify-between">
                         <Heading level={2}>{tx('detail.timelineHeading')}</Heading>
-                        <Button variant="secondary" size="sm" onClick={() => setTimelineOpen(true)} disabled={busy}>
-                            {tx('detail.addEntry')}
-                        </Button>
+                        {canManage && (
+                            <Button variant="secondary" size="sm" onClick={() => setTimelineOpen(true)} disabled={busy}>
+                                {tx('detail.addEntry')}
+                            </Button>
+                        )}
                     </div>
                     <ol className="space-y-default">
                         {incident.timeline.map((t) => (
