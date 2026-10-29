@@ -84,6 +84,9 @@ const SECRET_SHAPES: readonly RegExp[] = [
     /AKIA[0-9A-Z]{16}/,
     /xox[abpors]-[A-Za-z0-9-]{10,}/,
     /sk-[A-Za-z0-9]{20,}/,
+    // Anthropic's keys, which the line above misses at the hyphen after `sk-ant`
+    // (#4156): the credential an Agent SDK agent is most likely to carry.
+    /sk-ant-[A-Za-z0-9_-]{20,}/,
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
     /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./,
     // A URL carrying a password in its userinfo: `scheme://user:password@host`.

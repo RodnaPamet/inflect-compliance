@@ -24,7 +24,7 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 | `runtime` | LangSmith | Tracing projects that called a tool in a bounded window, and deployments when the estate opts in, with each one's tools and their call counts. Aggregates only: no run is ever fetched | `GET /api/v1/sessions`; with `readDeployments`, `GET /v2/deployments` (`/api-host/v2/deployments` self-hosted) |
 | `cicd` | GitHub Actions (#3784) | Each workflow file on each configured repository's default branch that holds a secret, whose run token may write, or that reaches secrets dynamically; its secrets and run token by reference. The repository's Actions secrets by name, and each one no workflow references, as unbound | `GET /repos/{owner}/{repo}`, `GET /repos/{owner}/{repo}/contents/.github/workflows`, `GET …/contents/.github/workflows/{file}`, `GET /repos/{owner}/{repo}/actions/secrets` on `api.github.com` |
 | `gcp-sa` | Google Cloud IAM (#3785) | Each enabled service account in each configured project, by its numeric id, with its enabled user-managed keys by reference. Never its e-mail address, display name or description; never the scanner's own account | `POST` the JWT-bearer token exchange to `oauth2.googleapis.com`, then `GET /v1/projects/{project}/serviceAccounts` and `GET /v1/projects/{project}/serviceAccounts/{account}/keys?keyTypes=USER_MANAGED` on `iam.googleapis.com` |
-| `code` | LangChain and LangGraph (#3737) | Agent definitions in the Python, JavaScript and TypeScript files under the configured roots: each agent's tools, the model endpoints it calls and the credentials those reference, by reference | None. Local reads only (`lstat`, `readdir`, `readFile`) |
+| `code` | LangChain and LangGraph (#3737), the Claude Agent SDK (#4156) | Agent definitions in the Python, JavaScript and TypeScript files under the configured roots: each agent's tools, the model endpoints it calls and the credentials those reference, by reference; for an Agent SDK agent, the options that fail a ladder criterion | None. Local reads only (`lstat`, `readdir`, `readFile`) |
 
 ### Entra
 
@@ -330,10 +330,33 @@ any project the configuration does not list.
 - their chat models (`ChatOpenAI`, `ChatAnthropic`, `init_chat_model`, a
   `provider:model` string, …) with the endpoint each calls;
 - the credentials those take, as `env://NAME` or, for a value written into the
-  code, `code://<label>/<path>#L<line>` — never the value.
+  code, `code://<label>/<path>#L<line>` — never the value;
+- Claude Agent SDK agents (#4156): `query` from `@anthropic-ai/claude-agent-sdk`,
+  and `query` or `ClaudeSDKClient` from `claude_agent_sdk`, with their options,
+  plus a Python `ClaudeAgentOptions` that no such call in its file consumes.
+  Each agent's tools are the built-ins `tools` turns on (every built-in when it
+  is left out), less `disallowedTools`, plus each `mcpServers` entry as
+  `<server>:*` and each `mcp__<server>__<tool>` that `allowedTools` approves on
+  a server the options configure. Its model is Anthropic's endpoint, or
+  `ANTHROPIC_BASE_URL` from its `env`, and its key is the `env` entry that
+  names one or else `ANTHROPIC_API_KEY`.
 
 Every name is resolved through the file's own imports: only what is imported
-from a `langchain` or `langgraph` module counts. Python is read by a bounded
+from a `langchain`, `langgraph` or Claude Agent SDK module counts, and a file
+that names none of those modules is not parsed at all.
+
+An Agent SDK agent's options also become verdicts, as the owner mapped them
+(#4156, 2026-10-29; `AGENT_SDK_OPTION_CRITERIA` in
+`src/lib/agentic/harness-findings.ts`). Each is NOT MET with the option's
+`code://` locator as evidence:
+- `bypassPermissions` fails `H3.propose_not_commit`;
+- host settings loaded fail `H3.skills_declared` and `H2.tools_allowlisted`;
+- an `allowedTools` wildcard fails `H2.tools_allowlisted`;
+- a callable `Bash` or `WebFetch` fails `H2.tools_allowlisted`;
+- no hook, with `settingSources: []`, fails `H3.payloads_guarded`.
+
+Nothing is ever MET from code, and an option the reader could not resolve
+concludes nothing. Python is read by a bounded
 tokenizer and expression reader (`src/sources/code/python.ts`); JavaScript and
 TypeScript by TypeScript's syntax-only parser (`src/sources/code/javascript.ts`).
 Neither imports, evaluates or spawns anything, and `eslint.config.mjs` refuses

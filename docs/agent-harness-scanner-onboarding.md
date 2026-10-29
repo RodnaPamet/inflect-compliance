@@ -44,7 +44,7 @@ scanner signed it, so each estate has a scanner of its own.
 | `runtime` (LangSmith) | A LangSmith service key holding the workspace Viewer role | `api.smith.langchain.com` (US) or `eu.api.smith.langchain.com` (EU), or the estate's own self-hosted LangSmith |
 | `cicd` (GitHub Actions) | A fine-grained token limited to the listed repositories, holding the repository permissions Contents: read and Secrets: read | `api.github.com` |
 | `gcp-sa` (Google Cloud IAM) | The JSON key of a service account holding `roles/iam.serviceAccountViewer` on the listed projects | `iam.googleapis.com`, and the token from `oauth2.googleapis.com` |
-| `code` (LangChain and LangGraph) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
+| `code` (LangChain, LangGraph and the Claude Agent SDK) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
 | `runtime` (OpenShell) | A renewable client credential scoped to **`sandbox:read`** — and, only if the estate opts in to reading providers, `provider:read` as well | The estate's own OpenShell gateway, the host it names in its configuration |
 
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
@@ -98,8 +98,8 @@ keeps the read read-only.
   resolves outside the listed ranges sends nothing. With an allowlist, an
   internal name such as `langsmith.corp.internal` is accepted.
 
-The `code` source reads the repositories that define the estate's LangChain and
-LangGraph agents. Mount each one read-only into the scanner's container and name
+The `code` source reads the repositories that define the estate's LangChain,
+LangGraph and Claude Agent SDK agents. Mount each one read-only into the scanner's container and name
 it as a root with a label: the label, never the path, is what reports and
 findings carry. The source reads `.py`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`,
 `.mts`, `.cts` and `.tsx` files that mention the framework; it does not enter

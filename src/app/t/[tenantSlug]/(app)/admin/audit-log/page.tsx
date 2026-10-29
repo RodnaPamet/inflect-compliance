@@ -1,8 +1,8 @@
 import { getTranslations } from 'next-intl/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { listAuditLogs } from '@/app-layer/usecases/auditLog';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ListPageShell } from '@/components/layout/ListPageShell';
+import { gateAdminPage } from '../_lib/admin-page-gate';
 import { AuditLogClient } from './AuditLogClient';
 
 export const dynamic = 'force-dynamic';
@@ -15,30 +15,29 @@ export const dynamic = 'force-dynamic';
  * pill in the admin landing is paired with an "Audit log" pill
  * that points here.
  *
- * Server component does the fetch + role-bound graceful degrade
- * (members without AUDITOR / ADMIN see an empty table rather than
- * an authorization error). The DataTable lives in the client
+ * Server component does the fetch; the DataTable lives in the client
  * island.
+ *
+ * Gated here, before the read, on exactly what `listAuditLogs` asserts —
+ * `canAudit`: OWNER, ADMIN, AUDITOR (owner decision 2026-10-29, an AUDITOR may
+ * read the audit log). It used to call the read for every member and turn the
+ * usecase's refusal into an empty table; it now refuses before the read, as
+ * every admin server page does, because the client admin layout cannot keep
+ * server-rendered props out of the payload. A failure of the read itself now
+ * reaches the error boundary instead of reading as an empty log.
+ * See `../_lib/admin-page-requirements.ts`.
  */
 export default async function AuditLogPage({
     params,
 }: {
     params: Promise<{ tenantSlug: string }>;
 }) {
-    const { tenantSlug } = await params;
+    const gate = await gateAdminPage('/admin/audit-log', params);
+    if (!gate.allowed) return gate.forbidden;
+    const { ctx, tenantSlug } = gate;
 
-    const [t, ctx] = await Promise.all([
-        getTranslations('admin'),
-        getTenantCtx({ tenantSlug }),
-    ]);
-
-    let auditLog: unknown[] = [];
-    try {
-        auditLog = await listAuditLogs(ctx);
-    } catch {
-        // User may not have AUDITOR / ADMIN role — gracefully degrade.
-        auditLog = [];
-    }
+    const t = await getTranslations('admin');
+    const auditLog = await listAuditLogs(ctx);
 
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
 

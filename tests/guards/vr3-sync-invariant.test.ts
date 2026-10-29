@@ -84,9 +84,8 @@ describe('VR-3 — sync invariant', () => {
 
 /**
  * #3541 — WHICH NODE KINDS OWN A RULE, folded in here rather than given its own
- * file: `no-epic-named-ratchets` ratchets the guard-FILE count downward, so a
- * new assertion belongs in the guard that already owns the subject. This one
- * does — the kind set is the bridge's other invariant, beside the
+ * file: a new assertion belongs in the guard that already owns the subject.
+ * This one does — the kind set is the bridge's other invariant, beside the
  * geometry/logic split above.
  *
  * THE DEFECT IT PREVENTS. `canvas-rule-sync.ts` held

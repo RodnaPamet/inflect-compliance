@@ -106,6 +106,15 @@ export interface AgentDetailPermissions {
      * a caller that predates it renders no transfer card.
      */
     canTransferOwnership?: boolean;
+    /**
+     * `admin.view` OR `admin.agent_registry_view` (`mayReadAgentActivity`) —
+     * the gate `GET /agent-runs` takes, which the Runs tab reads. Narrower than
+     * the page's own inventory read for exactly one principal: a custom role
+     * holding the register key with neither of these. That reader finds the tab
+     * disabled rather than opened and refused. Optional, and only `false`
+     * disables it, so a caller that predates it renders the tab as before.
+     */
+    canReadRuns?: boolean;
 }
 
 // `skills` is the SEVENTH key and `runs` the EIGHTH. The integration plan said
@@ -281,10 +290,12 @@ export function AgentDetailClient({
                     ? [{ key: 'behaviour' as const, label: t('agentDetail.tabBehaviour'), disabled: !perms.canReadRegistry }]
                     : []),
                 { key: 'coverage', label: t('agentDetail.tabCoverage'), disabled: !perms.canReadRegistry },
-                // NOT disabled: the runs read is `/agent-runs`, which the view
-                // key reads (#3710) — this agent's runs are part of what an
-                // auditor reads about it.
-                { key: 'runs', label: t('agentDetail.tabRuns') },
+                // The runs read is `/agent-runs`, which the view key reads
+                // (#3710) — this agent's runs are part of what an auditor reads
+                // about it. Disabled only for a reader the route refuses: one
+                // holding the register key and neither `admin.view` nor the
+                // view key (`canReadRuns`).
+                { key: 'runs', label: t('agentDetail.tabRuns'), disabled: perms.canReadRuns === false },
                 { key: 'breaker', label: t('agentDetail.tabBreaker'), disabled: !perms.canReadRegistry },
             ]}
             activeTab={tab}
