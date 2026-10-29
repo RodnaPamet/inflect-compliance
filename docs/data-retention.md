@@ -287,7 +287,7 @@ a `userId` but stores no contact PII).
 | `TenantSecuritySettings` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `TreatmentMilestone` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `TrustCenter` | Configuration | No | Cascade on tenant delete; `enabled=false` by default (no public page until published) | Lives with tenant; purged on tenant deletion. Public projection only — no PII unless the tenant types it |
-| `User` | PII subject | Yes | None today — cascade on parent/tenant delete only | UNDEFINED — GDPR erasure question |
+| `User` | PII subject | Yes | None today — cascade on parent/tenant delete only. A tenant's SYSTEM user (`sys_<tenantId>`, #4400) is not a data subject: it is a foreign-key target for job writes and holds no personal data | UNDEFINED — GDPR erasure question |
 | `UserIdentityLink` | Security ephemeral | No | None today — cascade on parent/tenant delete only | DEFINED — expiry-driven |
 | `UserMfaEnrollment` | Security ephemeral | No | None today — cascade on parent/tenant delete only | DEFINED — expiry-driven |
 | `UserCalendarConnection` | Security ephemeral | No | Cascade on User delete; row RETAINED after revoke (token destroyed) so already-pushed events remain attributable for cleanup | DEFINED — revoke destroys the credential, the row survives |
