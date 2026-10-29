@@ -218,11 +218,11 @@ export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
     // Every other deployment is unchanged, which is what makes this
     // revertible by reverting one line.
     flue: true,
-    // FALSE until Step 2c (`docs/claude-tool-runner-design.md`). The driver is
-    // complete and conformance-proven, and `resolveAgentDriver` refuses it with
-    // DRIVER_NOT_IMPLEMENTED whatever the switch and the tenant say, so no run
-    // records `TOOL_RUNNER` while that value is READ_ONLY.
-    'tool-runner': false,
+    // TRUE since Step 2c (`docs/claude-tool-runner-design.md`, #4150), once
+    // `TOOL_RUNNER` was WRITTEN. Like Flue's, it enables nothing alone: the
+    // operator's `AGENT_DRIVER_TOOL_RUNNER` switch and the tenant's choice of
+    // TOOL_RUNNER still each refuse. Revert this line to turn the engine off.
+    'tool-runner': true,
 };
 
 /**
