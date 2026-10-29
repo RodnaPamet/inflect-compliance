@@ -437,3 +437,12 @@ describe('Vulnerabilities — opened from an asset', () => {
         expect(document.getElementById('vuln-asset-scope')).toBeNull();
     });
 });
+
+// ─── 6. No select column without bulk actions ───────────────────────
+
+describe('Vulnerabilities — no row selection', () => {
+    it('renders no checkboxes: the page has no bulk action for them to drive', async () => {
+        await mount(makeRequestContext('OWNER'));
+        expect(screen.queryAllByRole('checkbox')).toEqual([]);
+    });
+});

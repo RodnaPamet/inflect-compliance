@@ -744,6 +744,9 @@ function VulnerabilitiesInner({ initialRows, truncated, cap, scope, tenantSlug, 
                 onReachEnd: hasMoreVulnRows ? loadMoreVulnRows : undefined,
                 columns,
                 getRowId: (r) => r.id,
+                // No bulk actions here, so no select column: its checkboxes
+                // would do nothing (the house rule #4275 applied to Controls).
+                selectionEnabled: false,
                 resourceName: (plural) => (plural ? t('resourcePlural') : t('resourceSingular')),
                 emptyState,
             }}
