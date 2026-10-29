@@ -165,6 +165,46 @@ const newerThan = (a: string, b: string): boolean => {
  * would be the exact failure this guard exists to prevent — a record that reads
  * as measured when it is not.
  */
+/**
+ * A release newer than the pin that we KNOW about and have deliberately not
+ * adopted, with the reason.
+ *
+ * ═══ WHY THIS EXISTS, AND WHY IT IS NOT A HOLE IN THE SCAN BELOW ═══
+ *
+ * The scan asks that nothing claim a release newer than the pin, to catch the
+ * half-done upgrade — a version bumped in one place while every recorded
+ * measurement stayed behind. Without this register it also forbids something
+ * valuable: WRITING DOWN that an upgrade exists while the decision to take it
+ * is still open.
+ *
+ * That is backwards. 0.1f (#3931) found v0.1.6 the day after it shipped, and
+ * under the original scan the only way to record the finding was to perform the
+ * upgrade — so the cheapest path was to say nothing, which is the state this
+ * whole guard exists to prevent. A discovery should be recordable before it is
+ * actioned, and an entry here is the record.
+ *
+ * It is NOT an exemption. An entry must name the version, the date it was seen
+ * and why it is not adopted; the scan still refuses any newer version that is
+ * NOT registered; and the entry does not relax the fact provenance above, so
+ * moving `PINNED_RELEASE` still reddens every fact until it is re-measured.
+ */
+const KNOWN_NEWER_RELEASES: ReadonlyArray<{
+    readonly version: string;
+    readonly seen: string;
+    readonly reason: string;
+}> = [
+    {
+        version: '0.1.6',
+        seen: '2026-10-29',
+        reason:
+            'Released 2026-10-27, found while answering 0.1f (#3931). Not adopted: ' +
+            "taking it runs 5.3's checklist in full — re-measure every phase 0.1 " +
+            'fact against it, re-resolve the driver digests, re-pin the vendored ' +
+            'skills — and that is its own piece of work, not a side effect of a ' +
+            'spike answer.',
+    },
+] as const;
+
 const VERIFIED_FACTS = [
     {
         id: '0.1a',
@@ -250,10 +290,30 @@ describe('an upgrade fails a test rather than an audit (#3973)', () => {
             const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
             if (!/openshell/i.test(text)) continue;
             for (const m of text.match(RELEASE) ?? []) {
-                if (newerThan(m, PINNED_RELEASE)) offenders.push(`${rel}: ${m}`);
+                if (!newerThan(m, PINNED_RELEASE)) continue;
+                // Registered above with a date and a reason, or it is an
+                // offender. Normalised past the optional `v`, so `v0.1.6` and
+                // `0.1.6` are the same release.
+                const bare = m.replace(/^v/, '');
+                if (KNOWN_NEWER_RELEASES.some((k) => k.version === bare)) continue;
+                offenders.push(`${rel}: ${m}`);
             }
         }
         expect(offenders).toEqual([]);
+    });
+
+    it('every registered newer release is really newer, dated, and reasoned', () => {
+        // A register whose entries are not newer than the pin is dead weight —
+        // and worse, it reads as a list of pending upgrades when it is a list
+        // of nothing. An entry that the pin has caught up with must be deleted
+        // in the diff that moves the pin.
+        for (const k of KNOWN_NEWER_RELEASES) {
+            expect(newerThan(k.version, PINNED_RELEASE)).toBe(true);
+            expect(k.seen).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+            // A reason long enough to be a reason. The shape this guards is an
+            // entry added to silence the scan with "TODO" in the field.
+            expect(k.reason.length).toBeGreaterThan(40);
+        }
     });
 
     it('the scan reaches the files that name the release, and can see a newer one', () => {
