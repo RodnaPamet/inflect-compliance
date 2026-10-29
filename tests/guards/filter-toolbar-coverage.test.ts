@@ -217,15 +217,23 @@ describe("FilterToolbar coverage", () => {
             // CODE, NOT PROSE, and a MOUNT, not a mention (#4356).
             //
             // This read used to be `/FilterToolbar/.test(content)` — a bare
-            // substring over the raw file. So an import line satisfied it, and
-            // so did a COMMENT arguing the page should not use the toolbar:
-            // `controls/templates/page.tsx` and `admin/members/page.tsx` each
-            // passed on exactly that, exempt invisibly without appearing in
-            // EXEMPTIONS where the reason is written down and reviewed. The
-            // test's own name says "mounting".
+            // substring over the raw file — so an IMPORT line satisfied it, and
+            // so would a comment arguing the page should not use the toolbar.
+            // The test's own name says "mounting".
             //
             // Found by mutation: deleting the `<FilterToolbar>` mount from a
-            // page left this green, because the import stayed.
+            // page left this green, because the import stayed. That is the
+            // whole of the defect.
+            //
+            // CORRECTION, because the original version of this comment got the
+            // consequence wrong and shipped. It said
+            // `controls/templates/page.tsx` and `admin/members/page.tsx` were
+            // "exempt invisibly without appearing in EXEMPTIONS". They are both
+            // IN `EXEMPTIONS` (above), each with a written reason, and that is
+            // what passes them — the `rel in EXEMPTIONS` check three lines
+            // down, not their incidental mention of the toolbar. Nobody was
+            // exempt invisibly. The bad read was real; the pages named as its
+            // victims were not.
             //
             // `<EntityListPage>` counts because it mounts the toolbar itself —
             // the same alternative `list-page-shell-coverage` accepts.
