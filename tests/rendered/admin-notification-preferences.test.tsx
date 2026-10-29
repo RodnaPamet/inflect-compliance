@@ -27,8 +27,9 @@
  *      `UpdateNotificationSettingsSchema` is `.strict()`, so an unknown key is
  *      a 400. The PUT is captured off the mocked fetch and fed to the REAL
  *      schema. Asserting "the fetch was called" instead would pass while every
- *      save 400'd in production — a swallowed rejection is exactly this page's
- *      failure mode, since `handleSave` never checks `res.ok`.
+ *      save 400'd in production. (The page now reports a refused save rather
+ *      than swallowing it — `admin-notifications-page.test.tsx` — but a save
+ *      that is ALWAYS refused would still be a broken page.)
  *
  * The assertion in (1) is written against the runtime enum ON PURPOSE, and not
  * as `expect(readFileSync(enums.prisma)).toContain('AGENT_KILL_SWITCH_ENGAGED')`.
@@ -46,6 +47,18 @@ import { NotificationType } from '@prisma/client';
 
 import { listInAppNotificationTypes } from '@/app-layer/notifications/agentic';
 import { UpdateNotificationSettingsSchema } from '@/app-layer/schemas/notification-settings.schemas';
+
+// The run-job confirmation is a `<ConfirmDialog>`, and Modal reads the Next
+// router — so the page now needs it mounted. Stable references, for the same
+// reason as the tenant-context mock below.
+const router = { push: jest.fn(), replace: jest.fn(), back: jest.fn(), forward: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() };
+const searchParams = new URLSearchParams();
+jest.mock('next/navigation', () => ({
+    useRouter: () => router,
+    usePathname: () => '/t/acme/admin/notifications',
+    useSearchParams: () => searchParams,
+    useParams: () => ({ tenantSlug: 'acme' }),
+}));
 
 jest.mock('next-intl', () => {
     const en = require('../../messages/en.json');
@@ -154,6 +167,16 @@ function installFetch(muted: string[]): PutCall[] {
     return puts;
 }
 
+/**
+ * Is this switch ON? The toggles are the platform `<Switch>` (Epic 55), a
+ * `role="switch"` button whose state is `aria-checked`, not a checkbox.
+ */
+function isOn(testId: string): boolean {
+    const el = screen.getByTestId(testId);
+    expect(el.getAttribute('role')).toBe('switch');
+    return el.getAttribute('aria-checked') === 'true';
+}
+
 /** Every in-app toggle the page actually rendered, by type. */
 function renderedToggleTypes(): string[] {
     return screen
@@ -205,9 +228,9 @@ describe('/admin/notifications in-app preferences (#2564)', () => {
         // The checkbox means "notify", so a MUTED type reads unchecked. Getting
         // this inverted would ship a page that lies about the current state
         // while saving the right thing.
-        expect((screen.getByTestId(`in-app-type-${first}`) as HTMLInputElement).checked).toBe(false);
+        expect(isOn(`in-app-type-${first}`)).toBe(false);
         for (const type of rest) {
-            expect((screen.getByTestId(`in-app-type-${type}`) as HTMLInputElement).checked).toBe(true);
+            expect(isOn(`in-app-type-${type}`)).toBe(true);
         }
     });
 
@@ -217,16 +240,14 @@ describe('/admin/notifications in-app preferences (#2564)', () => {
         render(<NotificationSettingsPage />);
         await waitFor(() => expect(screen.getByTestId('in-app-notification-types')).toBeTruthy());
 
-        // `fireEvent`, not `userEvent`, for the toggle. The input is nested
-        // inside its `<label>`, so a synthesised pointer click is forwarded by
-        // the label back to the input and the control toggles TWICE — landing
-        // back where it started and sending an empty list, which is how this
-        // assertion first failed. The intermediate state is asserted below so
-        // a future change to that markup cannot make this pass vacuously.
-        const toggle = screen.getByTestId(`in-app-type-${target}`) as HTMLInputElement;
-        expect(toggle.checked).toBe(true);
-        fireEvent.click(toggle);
-        await waitFor(() => expect((screen.getByTestId(`in-app-type-${target}`) as HTMLInputElement).checked).toBe(false));
+        // `fireEvent` for the toggle. When it was a checkbox nested inside its
+        // `<label>`, a synthesised pointer click was forwarded by the label
+        // back to the input and toggled TWICE; the switch now sits beside its
+        // label, but the intermediate state is still asserted below so a
+        // future change to that markup cannot make this pass vacuously.
+        expect(isOn(`in-app-type-${target}`)).toBe(true);
+        fireEvent.click(screen.getByTestId(`in-app-type-${target}`));
+        await waitFor(() => expect(isOn(`in-app-type-${target}`)).toBe(false));
 
         await userEvent.click(screen.getByText('Save Settings'));
 
@@ -234,15 +255,14 @@ describe('/admin/notifications in-app preferences (#2564)', () => {
 
         // The REAL schema, not a copy of it. `.strict()` rejects an unknown
         // key, so a body carrying `mutedInAppTypes` against a schema that does
-        // not declare it throws here — where production would 400 and this
-        // page would swallow it, because `handleSave` never reads `res.ok`.
+        // not declare it throws here — where production would 400 and every
+        // save of the list would be refused.
         // Read back through `Record<string, unknown>` DELIBERATELY. Reading
         // `parsed.mutedInAppTypes` off the inferred type makes removing the key
         // from the schema a COMPILE error, which reddens the whole file before
         // a single test runs — a red, but not this one. What must be provable
         // here is the RUNTIME behaviour: `.strict()` throws on an undeclared
-        // key, which is the 400 the operator would get and this page would
-        // swallow.
+        // key, which is the 400 the operator would get.
         const parsed = UpdateNotificationSettingsSchema.parse(puts[0].body) as Record<string, unknown>;
         expect(parsed.mutedInAppTypes).toEqual([target]);
     });

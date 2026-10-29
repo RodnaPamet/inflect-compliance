@@ -163,13 +163,12 @@ describe('deploymentSenderAddress (the single owner)', () => {
             (f) => !f.startsWith('prisma/migrations/'),
         );
 
-        const offenders = scanned
-            // The notification-settings page shows the address as an input
-            // `placeholder` — greyed-out example text for an operator typing
-            // their own sender. It is rendered, never read: nothing resolves a
-            // from-address through it, so it cannot disagree with the module.
-            .filter((f) => f !== 'src/app/t/[tenantSlug]/(app)/admin/notifications/page.tsx')
-            .filter((f) => writesPlaceholderSender(f));
+        // No carve-out for the notification-settings page any more (#4469).
+        // It used to offer this address as the sender field's `placeholder`,
+        // which suggested to an operator the one address a configured
+        // deployment's relay refuses. Its placeholder is a translated example
+        // now, so the page is held to the same rule as every other file.
+        const offenders = scanned.filter((f) => writesPlaceholderSender(f));
 
         expect(offenders).toEqual(['src/lib/email/sender-identity.ts']);
     });

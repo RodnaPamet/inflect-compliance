@@ -326,7 +326,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/admin/billing/page.tsx': 1, // partial, 1 jsx
     'src/app/t/[tenantSlug]/(app)/admin/entra/page.tsx': 8, // partial, 7 jsx + 1 prop
     'src/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page.tsx': 2, // partial, 2 prop
-    'src/app/t/[tenantSlug]/(app)/admin/notifications/page.tsx': 2, // partial, 2 prop
     'src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx': 9, // partial, 9 prop
     'src/app/t/[tenantSlug]/(app)/admin/trust-center/TrustCenterAdminClient.tsx': 3, // partial, 3 prop
     'src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx': 1, // partial, 1 prop
