@@ -11,11 +11,11 @@ import {
 } from './vendor-link-targets';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, runInTenantReadContext, type PrismaTx } from '@/lib/db-context';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { CreateVendorSchema } from '@/lib/schemas';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
-import { VENDOR_ACTIVATION_NEEDS_REVIEW } from '@/lib/vendor-refusal-reasons';
+import { VENDOR_ACTIVATION_NEEDS_REVIEW, VENDOR_NAME_TAKEN } from '@/lib/vendor-refusal-reasons';
 
 // Epic D.2 — preserve the three-state contract on update paths.
 function sanitizeOptional(v: string | null | undefined): string | null | undefined {
@@ -40,6 +40,27 @@ const FREE_TEXT_VENDOR_FIELDS = [
 const URL_VENDOR_FIELDS = ['websiteUrl'] as const;
 
 // ─── Vendor CRUD ───
+
+/**
+ * Refuse a name another LIVE vendor already holds (#4462). The partial unique
+ * index `Vendor_tenantId_name_live_key` refuses it anyway, but as Prisma's
+ * P2002 — answered with the generic "A resource with that unique constraint
+ * already exists", which does not say the name is the problem. The reason
+ * lets the page say so in the user's language. `excludeId` is the vendor
+ * being renamed, whose own name the index already admits.
+ */
+async function assertVendorNameFree(
+    db: PrismaTx,
+    ctx: RequestContext,
+    name: string,
+    excludeId?: string,
+) {
+    if (await VendorRepository.findLiveByName(db, ctx, name, excludeId)) {
+        throw new ConflictError('Another vendor already has this name. Choose a different name.', {
+            reason: VENDOR_NAME_TAKEN,
+        });
+    }
+}
 
 export async function listVendors(
     ctx: RequestContext,
@@ -115,6 +136,8 @@ export async function createVendor(ctx: RequestContext, input: z.infer<typeof Cr
         if (sanitisedInput.ownerUserId) {
             await assertOwnerInTenant(db, ctx, sanitisedInput.ownerUserId);
         }
+        // The name as it will be WRITTEN (sanitised), compared the index's way.
+        await assertVendorNameFree(db, ctx, sanitisedInput.name);
         const vendor = await VendorRepository.create(db, ctx, sanitisedInput);
         await logEvent(db, ctx, {
             action: 'VENDOR_CREATED',
@@ -154,6 +177,12 @@ export async function updateVendor(ctx: RequestContext, vendorId: string, patch:
     const result = await runInTenantContext(ctx, async (db) => {
         if (typeof sanitisedPatch.ownerUserId === 'string' && sanitisedPatch.ownerUserId) {
             await assertOwnerInTenant(db, ctx, sanitisedPatch.ownerUserId);
+        }
+        // A rename onto a name another live vendor holds gets the same named
+        // 409 as a create. The edit form sends `name` on every save; this
+        // vendor's own name is excluded by id, so an unchanged name passes.
+        if (typeof sanitisedPatch.name === 'string') {
+            await assertVendorNameFree(db, ctx, sanitisedPatch.name, vendorId);
         }
         let previousStatus: string | null = null;
         if (patch.status) {

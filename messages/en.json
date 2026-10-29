@@ -7374,6 +7374,7 @@
     },
     "form": {
       "name": "Vendor Name",
+      "nameTaken": "Another vendor already has this name. Choose a different name.",
       "legalName": "Legal Name",
       "domain": "Domain",
       "domainPlaceholder": "e.g. aws.amazon.com",

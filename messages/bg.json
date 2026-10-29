@@ -7374,6 +7374,7 @@
     },
     "form": {
       "name": "Име на доставчик",
+      "nameTaken": "Друг доставчик вече има това име. Изберете друго име.",
       "legalName": "Юридическо име",
       "domain": "Домейн",
       "domainPlaceholder": "напр. aws.amazon.com",

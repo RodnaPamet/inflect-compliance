@@ -28,6 +28,7 @@ export function NewVendorModal({ open, setOpen }: NewVendorModalProps) {
             router.push(tenantHref(`/vendors/${vendor.id}`));
         },
         fallbackErrorMessage: t('createFailed'),
+        nameTakenMessage: t('form.nameTaken'),
     });
 
     // P3 — unsaved-changes guard. See NewPolicyModal for the pattern.
