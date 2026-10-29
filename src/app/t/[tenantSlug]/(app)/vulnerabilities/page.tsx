@@ -25,11 +25,24 @@ export default async function VulnerabilitiesPage({
     const assetId = typeof sp.assetId === 'string' && sp.assetId ? sp.assetId : undefined;
     const rows = (await listVulnerabilities(ctx, { assetId, take: 500 })) as unknown as VulnRow[];
 
+    // Each control follows its route's gate: the coarse tier AND the granular
+    // keys the route asks (#4465). Built-in roles hold every key or none of
+    // them, so for them this is `canWrite` exactly; a custom role sees only
+    // the controls its keys can use.
+    const p = ctx.appPermissions;
+    const canTriage = ctx.permissions.canWrite && p.assets.edit;
+    const can = {
+        triage: canTriage,
+        convertToRisk: canTriage && p.risks.create,
+        convertToFinding: canTriage,
+        createTask: canTriage && p.tasks.create && p.tasks.edit,
+    };
+
     return (
         <VulnerabilitiesClient
             initialRows={rows}
             tenantSlug={resolved.tenantSlug}
-            canWrite={ctx.permissions.canWrite}
+            can={can}
         />
     );
 }

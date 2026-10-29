@@ -70,10 +70,25 @@ export interface VulnRow {
     asset: { id: string; key: string | null; name: string };
 }
 
+/**
+ * What this viewer may do, one flag per route gate (#4465). Each is the coarse
+ * write tier AND the granular keys its route asks, computed server-side.
+ */
+export interface VulnPermissions {
+    /** Status / owner / due date / note / Link CVE — `assets.edit`. */
+    triage: boolean;
+    /** To Risk — `assets.edit` + `risks.create`. */
+    convertToRisk: boolean;
+    /** To Finding — `assets.edit`. */
+    convertToFinding: boolean;
+    /** Create task — `assets.edit` + `tasks.create` + `tasks.edit`. */
+    createTask: boolean;
+}
+
 interface Props {
     initialRows: VulnRow[];
     tenantSlug: string;
-    canWrite: boolean;
+    can: VulnPermissions;
 }
 
 /** Minimal asset shape the "Link CVE" picker consumes from GET /assets. */
@@ -98,7 +113,7 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     FALSE_POSITIVE: 'neutral',
 };
 
-export function VulnerabilitiesClient({ initialRows, tenantSlug, canWrite }: Props) {
+export function VulnerabilitiesClient({ initialRows, tenantSlug, can }: Props) {
     const tx = useTranslations('vulnerabilities');
     const tGroup = useTranslations('common.filterGroups');
     const filters = useMemo(
@@ -112,12 +127,13 @@ export function VulnerabilitiesClient({ initialRows, tenantSlug, canWrite }: Pro
     const filterCtx = useFilterContext(filters, [...VULN_FILTER_KEYS]);
     return (
         <FilterProvider value={filterCtx}>
-            <VulnerabilitiesInner initialRows={initialRows} tenantSlug={tenantSlug} canWrite={canWrite} />
+            <VulnerabilitiesInner initialRows={initialRows} tenantSlug={tenantSlug} can={can} />
         </FilterProvider>
     );
 }
 
-function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
+function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
+    const canTriage = can.triage;
     const t = useTranslations('vulnerabilities');
     const tGroup = useTranslations('common.filterGroups');
     const tAdapt = (k: string, v?: Record<string, unknown>) =>
@@ -268,7 +284,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
                 const res = await fetch(apiUrl(`/vulnerabilities/${row.id}/convert-to-finding`), { method: 'POST' });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const body = (await res.json().catch(() => null)) as { nudge?: { suggestElevateToRisk?: boolean } } | null;
-                if (body?.nudge?.suggestElevateToRisk) {
+                if (body?.nudge?.suggestElevateToRisk && can.convertToRisk) {
                     // Finding may under-capture a HIGH/CRITICAL vuln — offer to
                     // also elevate to a Risk (opt-in, never automatic).
                     toast.info(t('elevateNudge'), { action: { label: t('elevateAction'), onClick: () => void convertToRisk(row) } });
@@ -282,7 +298,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
                 setPendingId(null);
             }
         },
-        [apiUrl, convertToRisk, router, toast, t],
+        [apiUrl, can.convertToRisk, convertToRisk, router, toast, t],
     );
 
     const createRemediationTask = useCallback(
@@ -377,7 +393,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             accessorFn: (r) => r.status,
             cell: ({ row }) => {
                 const r = row.original;
-                if (!canWrite) {
+                if (!canTriage) {
                     return (
                         <StatusBadge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>
                             {statusLabels[r.status] ?? r.status}
@@ -402,7 +418,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             accessorFn: (r) => r.ownerUser?.name ?? r.ownerUser?.email ?? '',
             cell: ({ row }) => {
                 const r = row.original;
-                if (!canWrite) {
+                if (!canTriage) {
                     const label = r.ownerUser?.name ?? r.ownerUser?.email;
                     return label ? (
                         <span className="text-content-default">{label}</span>
@@ -428,7 +444,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             accessorFn: (r) => (r.remediationDueAt ? new Date(r.remediationDueAt).getTime() : -1),
             cell: ({ row }) => {
                 const r = row.original;
-                if (!canWrite) {
+                if (!canTriage) {
                     return r.remediationDueAt ? (
                         <span className="tabular-nums text-content-default">{formatDate(r.remediationDueAt)}</span>
                     ) : (
@@ -463,7 +479,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
                         </Link>
                     );
                 }
-                if (!canWrite) return <span className="text-content-muted">—</span>;
+                if (!can.createTask) return <span className="text-content-muted">—</span>;
                 return (
                     <Button
                         variant="secondary"
@@ -483,7 +499,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             cell: ({ row }) => (
                 <NoteCell
                     row={row.original}
-                    canWrite={canWrite}
+                    canWrite={canTriage}
                     onSave={patchNote}
                     emptyLabel={t('addNote')}
                     editLabel={t('editNote')}
@@ -491,34 +507,41 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
                 />
             ),
         },
-        ...(canWrite
+        ...(can.convertToRisk || can.convertToFinding
             ? [{
                 id: 'actions',
                 header: '',
                 cell: ({ row }: { row: { original: VulnRow } }) => (
                     <div className="flex justify-end gap-default">
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={pendingId === row.original.id}
-                            onClick={() => convert(row.original, 'risk')}
-                        >
-                            {t('toRisk')}
-                        </Button>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={pendingId === row.original.id}
-                            onClick={() => convert(row.original, 'finding')}
-                        >
-                            {t('toFinding')}
-                        </Button>
+                        {can.convertToRisk && (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={pendingId === row.original.id}
+                                onClick={() => convert(row.original, 'risk')}
+                            >
+                                {t('toRisk')}
+                            </Button>
+                        )}
+                        {can.convertToFinding && (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={pendingId === row.original.id}
+                                onClick={() => convert(row.original, 'finding')}
+                            >
+                                {t('toFinding')}
+                            </Button>
+                        )}
                     </div>
                 ),
             }]
             : []),
     ]), [
-        canWrite,
+        can.convertToFinding,
+        can.convertToRisk,
+        can.createTask,
+        canTriage,
         convert,
         createRemediationTask,
         patchStatus,
@@ -554,10 +577,10 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
 
     // Header actions: the sync strip plus a manual "Link CVE" affordance
     // (write users only) that opens the AssetVulnerability create modal.
-    const headerActions = (syncStrip || canWrite) ? (
+    const headerActions = (syncStrip || canTriage) ? (
         <div className="flex items-center gap-default">
             {syncStrip}
-            {canWrite && (
+            {canTriage && (
                 <Button
                     id="vuln-link-cve-trigger"
                     variant="secondary"
@@ -618,7 +641,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
                 emptyState,
             }}
         >
-            {canWrite && linkOpen && (
+            {canTriage && linkOpen && (
                 <LinkCveModal
                     apiUrl={apiUrl}
                     onClose={() => setLinkOpen(false)}
