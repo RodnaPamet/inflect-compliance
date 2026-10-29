@@ -43,6 +43,13 @@ import type {
 } from '../schemas/incident.schemas';
 import { containmentRunbookFor } from '@/data/incident-containment';
 import { assertOwnerInTenant } from './vendor-link-targets';
+import {
+    INCIDENT_NOTIFICATION_KIND_LABEL,
+    INCIDENT_PHASE_LABEL,
+    INCIDENT_SEVERITY_LABEL,
+    forensicCategoryLabel,
+    incidentTypeLabel,
+} from '@/lib/incidents/labels';
 
 /** sanitize an optional free-text field, preserving the three-state contract. */
 function sanitizeOptional(v: string | null | undefined): string | null | undefined {
@@ -115,7 +122,8 @@ export async function createIncident(ctx: RequestContext, data: CreateIncidentIn
         await IncidentRepository.addTimelineEntry(db, ctx, {
             incidentId: incident.id,
             actorUserId: ctx.userId,
-            entry: `Incident ${reference} opened (severity ${data.severity}, type ${data.incidentType}).`,
+            // Timeline text is read by people: labels, never enum codes.
+            entry: `Incident ${reference} opened (severity ${INCIDENT_SEVERITY_LABEL[data.severity]}, type ${incidentTypeLabel(data.incidentType)}).`,
             phaseAtTime: 'DETECTION',
         });
 
@@ -217,8 +225,8 @@ export async function advancePhase(
             incidentId: id,
             actorUserId: ctx.userId,
             entry: input.note
-                ? `Phase advanced ${incident.phase} → ${target}. ${sanitizePlainText(input.note)}`
-                : `Phase advanced ${incident.phase} → ${target}.`,
+                ? `Phase advanced ${INCIDENT_PHASE_LABEL[incident.phase]} → ${INCIDENT_PHASE_LABEL[target]}. ${sanitizePlainText(input.note)}`
+                : `Phase advanced ${INCIDENT_PHASE_LABEL[incident.phase]} → ${INCIDENT_PHASE_LABEL[target]}.`,
             phaseAtTime: target,
         });
 
@@ -292,8 +300,8 @@ export async function markReportable(
             incidentId: id,
             actorUserId: ctx.userId,
             entry: input.reportable
-                ? `Marked REPORTABLE under NIS2 Article 23 — 24h / 72h / 1-month deadlines started.${input.note ? ' ' + sanitizePlainText(input.note) : ''}`
-                : `Marked NOT reportable — Article 23 deadlines stopped.${input.note ? ' ' + sanitizePlainText(input.note) : ''}`,
+                ? `Marked reportable under NIS2 Article 23 — 24h / 72h / 1-month deadlines started.${input.note ? ' ' + sanitizePlainText(input.note) : ''}`
+                : `Marked not reportable — Article 23 deadlines stopped.${input.note ? ' ' + sanitizePlainText(input.note) : ''}`,
             phaseAtTime: incident.phase,
         });
 
@@ -351,7 +359,7 @@ export async function submitNotification(
         await IncidentRepository.addTimelineEntry(db, ctx, {
             incidentId: id,
             actorUserId: ctx.userId,
-            entry: `Filed ${input.kind} notification${input.submissionRef ? ` (ref ${sanitizePlainText(input.submissionRef)})` : ''}.`,
+            entry: `Filed the ${INCIDENT_NOTIFICATION_KIND_LABEL[input.kind]}${input.submissionRef ? ` (ref ${sanitizePlainText(input.submissionRef)})` : ''}.`,
             phaseAtTime: incident.phase,
         });
 
@@ -552,7 +560,7 @@ export async function linkEvidence(
             incidentId: id,
             actorUserId: ctx.userId,
             entry: input.forensicCategory
-                ? `Linked forensic evidence (${sanitizePlainText(input.forensicCategory)}).`
+                ? `Linked forensic evidence (${forensicCategoryLabel(input.forensicCategory) ?? sanitizePlainText(input.forensicCategory)}).`
                 : 'Linked forensic evidence.',
             phaseAtTime: incident.phase,
         });

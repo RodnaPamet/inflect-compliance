@@ -11,6 +11,9 @@
  *      so a detection at 14:37 is due its early warning at 14:37 next day.
  *   3. create and update store an owner only when they are an ACTIVE member
  *      of the tenant — `Incident.ownerUserId` has no relation to check it.
+ *   4. The timeline entries the usecase writes name severities, types,
+ *      phases, notification kinds and forensic categories by their labels,
+ *      never by enum code — people read them on the incident's Timeline tab.
  */
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(),
@@ -24,6 +27,10 @@ jest.mock('@/app-layer/repositories/IncidentRepository', () => ({
         getById: jest.fn(),
         addTimelineEntry: jest.fn(),
         createNotifications: jest.fn(),
+        getNotification: jest.fn(),
+        updateNotification: jest.fn(),
+        evidenceExists: jest.fn(),
+        linkEvidence: jest.fn(),
     },
 }));
 
@@ -33,7 +40,14 @@ jest.mock('@/app-layer/events/audit', () => ({
 
 import { runInTenantContext } from '@/lib/db-context';
 import { IncidentRepository } from '@/app-layer/repositories/IncidentRepository';
-import { createIncident, markReportable, updateIncident } from '@/app-layer/usecases/incident';
+import {
+    advancePhase,
+    createIncident,
+    linkEvidence,
+    markReportable,
+    submitNotification,
+    updateIncident,
+} from '@/app-layer/usecases/incident';
 import { DETECTED_AT_FUTURE_TOLERANCE_MS } from '@/lib/incidents/detected-at';
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -159,5 +173,54 @@ describe('the incident owner must be an active member of the tenant', () => {
         await updateIncident(admin, 'inc_1', { ownerUserId: null });
         expect(fakeDb.tenantMembership.findFirst).not.toHaveBeenCalled();
         expect((repo.update.mock.calls[0][3] as any).ownerUserId).toBeNull();
+    });
+});
+
+describe('timeline entries name things by label, never by enum code', () => {
+    const entries = () => repo.addTimelineEntry.mock.calls.map((c) => (c[2] as any).entry as string);
+    const CODE = /\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\b(LOW|MEDIUM|HIGH|CRITICAL|RANSOMWARE|DETECTION|CLASSIFICATION|REPORTABLE)\b/;
+    const stored = {
+        id: 'inc_1',
+        reference: 'INC-2026-001',
+        phase: 'DETECTION',
+        detectedAt: new Date('2026-10-29T14:37:00.000Z'),
+        reportedAt: null,
+    };
+
+    it('creation', async () => {
+        await createIncident(admin, { ...base, incidentType: 'DATA_BREACH' });
+        expect(entries()).toEqual(['Incident INC-2026-001 opened (severity High, type Data breach).']);
+    });
+
+    it('phase advance', async () => {
+        repo.getById.mockResolvedValue(stored as any);
+        await advancePhase(admin, 'inc_1', {});
+        expect(entries()).toEqual(['Phase advanced Detection → Classification.']);
+    });
+
+    it('marking reportable', async () => {
+        repo.getById.mockResolvedValue(stored as any);
+        await markReportable(admin, 'inc_1', { reportable: true });
+        expect(entries()[0]).toMatch(/^Marked reportable under NIS2 Article 23/);
+        expect(entries()[0]).not.toMatch(CODE);
+    });
+
+    it('filing a notification', async () => {
+        repo.getById.mockResolvedValue(stored as any);
+        repo.getNotification.mockResolvedValue({ id: 'n-1' } as any);
+        await submitNotification(admin, 'inc_1', {
+            kind: 'EARLY_WARNING_24H',
+            reportText: 'Filed with the CSIRT.',
+            submissionRef: 'CCB-2026-0042',
+        });
+        expect(entries()).toEqual(['Filed the 24-hour early warning (ref CCB-2026-0042).']);
+    });
+
+    it('linking forensic evidence', async () => {
+        repo.getById.mockResolvedValue(stored as any);
+        repo.evidenceExists.mockResolvedValue(true as any);
+        repo.linkEvidence.mockResolvedValue({ id: 'link-1' } as any);
+        await linkEvidence(admin, 'inc_1', { evidenceId: 'ev-1', forensicCategory: 'SYSTEM_LOGS' });
+        expect(entries()).toEqual(['Linked forensic evidence (System & application logs).']);
     });
 });
