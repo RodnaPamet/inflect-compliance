@@ -102,7 +102,13 @@ describe('there is exactly ONE producer of an invocation`s external tools', () =
     const producers = (): string[] =>
         repoRelativeFiles()
             .filter((f) => f.startsWith('src/') && f.endsWith('.ts'))
-            .filter((f) => /^\s*externalTools[,:]/m.test(codeOf(read(f))));
+            // NOT line-anchored. The first version was `/^\s*externalTools[,:]/m`
+            // and a mutation walked straight past it: a second producer written
+            // inline — `{ externalTools: [] }` — has the property mid-line, so
+            // the anchor read a real occurrence as an absence. The lookbehind is
+            // what excludes `inv.externalTools`, which is a READ of the field and
+            // is legitimate anywhere.
+            .filter((f) => /(?<![.\w])externalTools\s*[,:]/.test(codeOf(read(f))));
 
     it('the population is non-trivial, so the assertion below ranges over something', () => {
         // Without this an empty selection would pass the equality and prove
