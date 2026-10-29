@@ -45,18 +45,30 @@ Inflect would host it in the worker, the same way it hosts Flue.
   that asks for a server-held thread, a container, the MCP connector or a server
   tool. `toolRunnerModelFor` maps a profile tier to a model id
   (`AGENT_TOOL_RUNNER_MODEL_BALANCED` / `_DEEP`, default Sonnet 5.5 and Opus
-  5.5). Nothing calls `clientForRun` yet outside its tests.
-- **The Tool Runner driver is built and cannot run (Step 2b, #4149).**
-  `src/lib/agentic/tool-runner/` holds `driver.ts` (a pure plan that refuses
-  with a named reason, then the hand-off), `execute.ts` (the loop), `tools.ts`
-  (one runnable tool per offered tool, over the engine-neutral core),
-  `params.ts` (`lockedParams`) and `model-decision.ts` (the Art 12 row). It
-  passes the driver conformance suite against a faux model behind `fetch`, and
-  every scenario was mutation-proved. `AGENT_DRIVERS` has `'tool-runner'`,
-  `isReasoningEngine` says yes, and `DRIVER_IMPLEMENTED['tool-runner']` is
-  false, so `resolveAgentDriver` never selects it. `AGENT_DRIVER_TOOL_RUNNER` is
-  its own opt-in switch. `TOOL_RUNNER` is in the `AgentDriverMode` enum as
-  READ_ONLY: every reader understands it, and no writer accepts it.
+  5.5). The Tool Runner driver is its one caller.
+- **The Tool Runner engine runs agent profiles (Step 2b, #4149, turned on in
+  Step 2c, #4150).** `src/lib/agentic/tool-runner/` holds `driver.ts` (a pure
+  plan that refuses with a named reason, then the hand-off), `execute.ts` (the
+  loop), `tools.ts` (one runnable tool per offered tool, over the engine-neutral
+  core), `params.ts` (`lockedParams`) and `model-decision.ts` (the Art 12 row).
+  It passes the driver conformance suite against a faux model behind `fetch`,
+  and every scenario was mutation-proved. `DRIVER_IMPLEMENTED['tool-runner']` is
+  true and `TOOL_RUNNER` is a WRITTEN value of `AgentDriverMode`, so a tenant
+  can choose it on Admin → AI features → Agent engines, where it is described
+  "Powered by Claude". It runs only where the operator sets
+  `AGENT_DRIVER_TOOL_RUNNER`. `runsProfiles` is true for it alone, a profile's
+  definition asks for it, and the Anthropic row of `docs/sub-processors.md`
+  names "tenant-authored agent instructions". The builder's **Test run**
+  (Behaviour tab, `POST …/profile/versions/:version/test-run`) starts a
+  read-only run of the approved version in force or the submitted one, as the
+  agent, under the Test-run key `agent-profile:<id>@v<n>:test-run`; the worker
+  rebuilds the definition from the version the run pinned
+  (`resolvePinnedRunDefinition`). The deployed image was confirmed to read
+  `TOOL_RUNNER` before any writer accepted it (a8ba6717, recorded on #4150).
+  `tests/integration/agent-profile-test-run.test.ts` drives a Test run to
+  COMPLETED on a real database with a fake model; the browser E2E stops at the
+  run starting, because the E2E harness has no worker and no model (owner
+  decision, 2026-10-29).
   Four things it does that differ from the table above:
   - **Arguments are validated by the funnel.** The funnel checks each tool's
     `argsSchema` after its gate (`runReadTool` step 2). Validating in the tool's
@@ -80,7 +92,7 @@ Inflect would host it in the worker, the same way it hosts Flue.
   latch after each, bounds iterations, total tool calls and wall clock, and
   states its halts in the answer. Its message builder drops `thinking` blocks
   between turns.
-- **The run engines are `static` and `flue`**, behind the driver seam described
+- **The run engines are `static`, `flue` and `tool-runner`**, behind the driver seam described
   in `docs/claude-agent-sdk-design.md` → *The driver seam*. That document's
   *How Flue was made safe* table is the list of controls any new engine must
   reproduce.

@@ -136,23 +136,23 @@ function installFakeModel(): void {
 }
 
 async function cleanup(): Promise<void> {
-    await prisma.workflowStep.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-    await prisma.agentProposal.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-    await prisma.aiDecisionLog.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-    await prisma.workflowRun.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
+    await prisma.workflowStep.deleteMany({ where: { tenantId: TENANT } });
+    await prisma.agentProposal.deleteMany({ where: { tenantId: TENANT } });
+    await prisma.aiDecisionLog.deleteMany({ where: { tenantId: TENANT } });
+    await prisma.workflowRun.deleteMany({ where: { tenantId: TENANT } });
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
         await tx.$executeRawUnsafe(`DELETE FROM "AgentProfileVersion" WHERE "tenantId" = $1`, TENANT);
         await tx.$executeRawUnsafe(`DELETE FROM "AgentProfile" WHERE "tenantId" = $1`, TENANT);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT);
-    }).catch(() => {});
-    await prisma.registeredAgentTool.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-    await prisma.registeredAgent.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-    await prisma.aiSystem.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-    await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-    await deleteAuditRowsForTenants(prisma, TENANT).catch(() => {});
-    await prisma.user.deleteMany({ where: { id: { in: Object.values(USERS) } } }).catch(() => {});
-    await prisma.tenant.deleteMany({ where: { id: TENANT } }).catch(() => {});
+    });
+    await prisma.registeredAgentTool.deleteMany({ where: { tenantId: TENANT } });
+    await prisma.registeredAgent.deleteMany({ where: { tenantId: TENANT } });
+    await prisma.aiSystem.deleteMany({ where: { tenantId: TENANT } });
+    await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId: TENANT } });
+    await deleteAuditRowsForTenants(prisma, TENANT);
+    await prisma.user.deleteMany({ where: { id: { in: Object.values(USERS) } } });
+    await prisma.tenant.deleteMany({ where: { id: TENANT } });
 }
 
 describeFn('a Test run of an agent profile, on the Tool Runner engine (real DB, fake model)', () => {
