@@ -43,6 +43,7 @@ import { resolveGrantedExternalTools } from '@/app-layer/usecases/external-mcp-t
 import type { RequestContext } from '@/app-layer/types';
 
 import { declaresWrite } from '@/lib/mcp/tool-write-classification';
+import { recordExternalToolCall } from '@/lib/observability/integration-metrics';
 import {
     jsonSchemaForConstraint,
     parseOpenFields,
@@ -600,6 +601,13 @@ function adapterFor(
                 });
             }
             const transport = send.transport;
+            // The same three states the offer carries, as a bounded label.
+            const businessSystem =
+                connection.reachesBusinessSystem === true
+                    ? ('true' as const)
+                    : connection.reachesBusinessSystem === false
+                      ? ('false' as const)
+                      : ('unreviewed' as const);
 
             // ── IS THIS A WRITE? (#2861) ────────────────────────────────
             //
@@ -609,26 +617,56 @@ function adapterFor(
             //
             // Unknown counts as a write — see that module for why the
             // inconvenient direction is the right one.
-            if (!declaresWrite(def.annotations)) {
-                // `callTool` is the one outbound seam and it scans these
-                // arguments before a socket is opened. Nothing is added here: a
-                // second check in a per-tool wrapper would be the copy that
-                // drifts.
-                return callTool(transport, def.name, merged);
+            const isWrite = declaresWrite(def.annotations);
+            // ── ONE COUNTER, BOTH PATHS, EVERY ENGINE (M5, #3872) ───────
+            //
+            // Here rather than in an engine, because every engine reaches the
+            // far end through this closure — a counter in `flue/` would have
+            // missed the Tool Runner the moment it shipped.
+            //
+            // The axis is deliberately "calls that reached the DISPATCH stage".
+            // An argument-validation refusal above never named a connection and
+            // never approached a socket, so counting it here would mix "the far
+            // end refused" with "the model called the tool wrongly".
+            //
+            // A refusal is told from a failure by the `Nothing was sent.`
+            // sentinel every refusal in this module ends with — chosen over the
+            // `external_*` prefix because it states the property that matters
+            // rather than a naming convention.
+            try {
+                const result = isWrite
+                    ? await dispatchWrite(ctx, {
+                          qualified,
+                          advertisedName: def.name,
+                          transport,
+                          connection,
+                          outbound: merged,
+                          policyCardVersion,
+                          // WHICH approved template authorised this, not just
+                          // what came out of it. Null when the tool has no saved
+                          // sets, which the rungs below AUTOMATIC permit and the
+                          // AUTOMATIC arm refuses.
+                          parameterSetLabel: chosen?.label ?? null,
+                      })
+                    // `callTool` is the one outbound seam and it scans these
+                    // arguments before a socket is opened. Nothing is added
+                    // here: a second check in a per-tool wrapper would be the
+                    // copy that drifts.
+                    : await callTool(transport, def.name, merged);
+                recordExternalToolCall({ outcome: 'DONE', write: isWrite, businessSystem });
+                return result;
+            } catch (err) {
+                const message = err instanceof Error ? err.message : '';
+                recordExternalToolCall({
+                    outcome: message.includes('Nothing was sent.') ? 'REFUSED' : 'FAILED',
+                    write: isWrite,
+                    businessSystem,
+                });
+                // RE-THROWN unchanged. A counter must not alter what the caller
+                // sees, and the funnel's own handling of this error is what
+                // reaches the model.
+                throw err;
             }
-
-            return dispatchWrite(ctx, {
-                qualified,
-                advertisedName: def.name,
-                transport,
-                connection,
-                outbound: merged,
-                policyCardVersion,
-                // WHICH approved template authorised this, not just what came
-                // out of it. Null when the tool has no saved sets, which the
-                // rungs below AUTOMATIC permit and the AUTOMATIC arm refuses.
-                parameterSetLabel: chosen?.label ?? null,
-            });
         },
     };
 }
