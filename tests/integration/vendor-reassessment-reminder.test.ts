@@ -48,7 +48,9 @@ describeFn('vendor reassessment reminder — integration', () => {
         // The sweep writes no audit row, but the fixtures can (the audit
         // extension records each statement), and a row would block the deletes.
         await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
-        await globalPrisma.user.deleteMany({ where: { id: ownerId } });
+        if (ownerId) {
+            await globalPrisma.user.deleteMany({ where: { id: ownerId } });
+        }
         await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
         await globalPrisma.$disconnect();
     });
