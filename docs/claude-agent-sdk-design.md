@@ -62,9 +62,13 @@ code:
 - **Trigger it** from the Ask page (the tenant's designated interactive agent,
   ADR 0004), from an automation rule (`INVOKE_AGENT`, #3471), or from a
   schedule.
-- **Connect an agent it runs elsewhere** by minting an API key bound to the
-  agent (`TenantApiKey.agentId`, `maxAutonomyLevel`) and pointing the agent at
-  `/api/mcp`.
+- **Connect an agent it runs elsewhere**, from the agent's page, since Step 3a
+  (#4155). **Connect an agent you run** mints an API key bound to the agent
+  (`TenantApiKey.agentId`, `maxAutonomyLevel` at or below the agent's level)
+  through the api-keys route, and shows the Agent SDK options (TypeScript and
+  Python) or the Console configuration for a Managed Agent that point the agent
+  at `/api/mcp`. The key carries exactly the scopes the agent's grants need
+  (`connectKeyScopes` in `src/lib/agentic/connect-wizard.ts`).
 
 What a tenant **cannot** do yet is have Inflect run what it says the agent
 should *do*. Since Step 1a it can write it down, behind the `AGENT_PROFILES`
@@ -576,7 +580,10 @@ should not. It can make governing it a few clicks:
 1. **Connect an agent you run**, on the agent's detail page. Inflect mints an
    API key bound to the agent (the existing `TenantApiKey.agentId` and
    `maxAutonomyLevel`), scoped `mcp:read` (plus `mcp:propose` when the agent
-   holds a propose grant), and shows it once.
+   holds a propose grant) and each granted tool's own resource scope, and shows
+   it once. The resource scopes are the owner's decision of 2026-10-29 on
+   #4155: `/api/mcp` checks a tool's resource scope on top of `mcp:read`, so a
+   key with `mcp:read` alone reaches no tool. Built in Step 3a.
 2. It generates the **SDK configuration** for that agent, in TypeScript and
    Python: `mcpServers.inflect = { type: 'http', url: '<origin>/api/mcp',
    headers: { Authorization: 'Bearer <key>' } }`, `allowedTools` set to the

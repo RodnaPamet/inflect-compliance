@@ -2956,6 +2956,28 @@ reports more than a run can do** (Phase 0's hardening, 0H):
     whose checklist shows no active agent or bound key, it says no Flue run can
     start yet (`headlineFor`, `headlineToneFor`).
 
+**"Connect an agent you run" mints through the api-keys route, and nowhere
+else** (Step 3a, #4155). The sheet on an agent's page
+(`agents/[agentId]/ConnectAgentSheet.tsx`) POSTs to `/admin/api-keys`, so the
+mint keeps that route's `requirePermission('admin.manage')`, `createApiKey`'s
+`assertCanAdmin` and `API_KEY_CREATE_LIMIT`. Do not add a second minting route
+or let `AI_ADMIN` mint here: that is a new permission decision. Three rules in
+the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
+
+- **The key's scopes are the grants', and no more** (owner decision 2026-10-29).
+  `mcp:read`, `mcp:propose` only with a propose grant, and each granted tool's
+  own resource scope, read from `MCP_TOOL_KEY_SCOPE` in the client-safe
+  `tool-catalogue.ts`. A unit test holds that copy equal to every registry
+  definition's `resourceScope`, so a drifted copy cannot mint a key its tool
+  refuses. An external tool's scope is `admin:external_tools` (#4485).
+- **`allowedTools` and the Console toolset name the grants exactly**: no
+  wildcard and no server-level entry. `/api/mcp` refuses an ungranted tool
+  anyway; the list keeps the customer's agent from asking.
+- **The key is in no snippet.** The snippets read `INFLECT_API_KEY` from the
+  environment, and are built in the browser, so no request after the mint
+  carries the key. It lives only in the sheet's state and goes when the sheet
+  unmounts.
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

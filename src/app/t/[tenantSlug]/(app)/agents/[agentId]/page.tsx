@@ -164,6 +164,11 @@ export default async function AgentDetailPage({
                 // recipient — would be hidden by it.
                 canTransferOwnership:
                     ctx.appPermissions.admin.agent_ownership === true && ctx.permissions.canRead,
+                // The connect wizard's mint (#4155) is the api-keys route:
+                // `requirePermission('admin.manage')`, then `createApiKey`'s
+                // role-tier `assertCanAdmin`. Both halves, for the reason
+                // `canCloseBreaker` gives above.
+                canMintKeys: ctx.appPermissions.admin.manage && ctx.permissions.canAdmin,
             }}
             viewerUserId={ctx.userId}
             // The Behaviour tab exists only where agent profiles are on: the

@@ -18,6 +18,7 @@ import { RunsTab } from './tabs/RunsTab';
 import { CircuitBreakerTab } from './tabs/CircuitBreakerTab';
 import { AgentKillSwitchAction, AgentKillSwitchBanner } from './AgentKillSwitchAction';
 import { AgentAmendModal } from './AgentAmendModal';
+import { ConnectAgentSheet } from './ConnectAgentSheet';
 import { Button } from '@/components/ui/button';
 
 export interface AgentSummary {
@@ -93,6 +94,12 @@ export interface AgentDetailPermissions {
      * a caller that predates it renders no transfer card.
      */
     canTransferOwnership?: boolean;
+    /**
+     * `admin.manage` AND the role-tier admin check `createApiKey` asserts — the
+     * api-keys page's own gate, which the connect wizard's mint goes through
+     * (#4155). Optional so a caller that predates it offers no wizard.
+     */
+    canMintKeys?: boolean;
 }
 
 // `skills` is the SEVENTH key and `runs` the EIGHTH. The integration plan said
@@ -152,6 +159,7 @@ export function AgentDetailClient({
     const [tab, setTab] = useState<TabKey>('overview');
     const [refreshToken, setRefreshToken] = useState(0);
     const [amending, setAmending] = useState(false);
+    const [connecting, setConnecting] = useState(false);
 
     // Handed to tabs so a mutation in one (suspending the agent, pulling the
     // breaker) can make the others re-read without the shell knowing what
@@ -220,6 +228,17 @@ export function AgentDetailClient({
                             text={t('agentDetail.amend.action')}
                         />
                     )}
+                    {/* CONNECT (#4155). Shown to every reader of the page: the
+                        sheet explains why a person without the api-keys
+                        permission cannot connect, rather than the product
+                        appearing not to have the feature. */}
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setConnecting(true)}
+                        data-testid="agent-connect-action"
+                        text={t('agentDetail.connect.action')}
+                    />
                     <AgentKillSwitchAction
                         agentId={agent.id}
                         canKill={perms.canKill}
@@ -341,6 +360,16 @@ export function AgentDetailClient({
                     {...props}
                     onChanged={refresh}
                     canCloseBreaker={perms.canCloseBreaker}
+                />
+            )}
+            {connecting && (
+                <ConnectAgentSheet
+                    agent={agent}
+                    canMintKeys={perms.canMintKeys === true}
+                    canReadGrants={perms.canGrantTools}
+                    // Unmounting is what discards the key: it lives in the
+                    // sheet's own state and nowhere else.
+                    onClose={() => setConnecting(false)}
                 />
             )}
             {amending && (
