@@ -18,10 +18,10 @@ jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (params: unknown, req: unknown) => getTenantCtxMock(params, req),
 }));
 
-const listFindingsMock = jest.fn(async (_ctx: unknown, _opts?: unknown) => [] as unknown[]);
+const listFindingsMock = jest.fn(async (_ctx: unknown, _opts?: unknown, _filters?: unknown) => [] as unknown[]);
 jest.mock('@/app-layer/usecases/finding', () => ({
     ...jest.requireActual('@/app-layer/usecases/finding'),
-    listFindings: (ctx: unknown, opts?: unknown) => listFindingsMock(ctx, opts),
+    listFindings: (ctx: unknown, opts?: unknown, filters?: unknown) => listFindingsMock(ctx, opts, filters),
 }));
 
 jest.mock('@/lib/observability/list-page-metrics', () => ({
@@ -89,7 +89,8 @@ describe('GET /api/t/:slug/findings — forwards the facet', () => {
         expect(res.status).toBe(200);
         expect(listFindingsMock).toHaveBeenCalledWith(
             expect.anything(),
-            expect.objectContaining({ status: 'OPEN,IN_PROGRESS' }),
+            expect.anything(),
+            { status: 'OPEN,IN_PROGRESS' },
         );
     });
 
@@ -97,7 +98,7 @@ describe('GET /api/t/:slug/findings — forwards the facet', () => {
         const req = new NextRequest('http://localhost/api/t/acme/findings', { method: 'GET' });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await GET(req, routeArgs as any);
-        expect((listFindingsMock.mock.calls[0][1] as { status?: string }).status).toBeUndefined();
+        expect((listFindingsMock.mock.calls[0][2] as { status?: string } | undefined)?.status).toBeUndefined();
     });
 });
 

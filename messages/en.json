@@ -4233,7 +4233,8 @@
       "crumbDashboard": "Dashboard",
       "emptyDesc": "Findings capture nonconformities, observations, and opportunities — what an audit surfaced and what needs follow-up.",
       "emptyMatchTitle": "No findings match",
-      "emptyMatchDesc": "No finding has the status you filtered on. Pick another status or clear the filter."
+      "emptyMatchDesc": "No finding has the status you filtered on. Pick another status or clear the filter.",
+      "clearFilters": "Clear filters"
     },
     "filters": {
       "statusDesc": "Where each finding is in its workflow."
@@ -4303,7 +4304,7 @@
       "errorTitle": "Finding unavailable",
       "loadFailed": "This finding could not be loaded.",
       "labelRisks": "Implicated risks",
-      "noRisks": "No risks linked.",
+      "noRisks": "No risks linked",
       "edit": "Edit",
       "editTitle": "Edit finding",
       "save": "Save changes",

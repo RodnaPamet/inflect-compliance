@@ -109,15 +109,18 @@ interface FindingsClientProps {
  * passed via props.
  */
 export function FindingsClient(props: FindingsClientProps) {
-    const tx = useTranslations('findings');
+    // Named apart from the inner component's `tx`: `i18n-keys-resolve` binds
+    // each translator identifier to one namespace, and a second `tx` binding
+    // in the file would leave the whole file unchecked.
+    const tFilters = useTranslations('findings');
     const tGroup = useTranslations('common.filterGroups');
     const filters = useMemo(
         () =>
             buildFindingFilters(
-                (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]),
+                (k, v) => tFilters(k as Parameters<typeof tFilters>[0], v as Parameters<typeof tFilters>[1]),
                 (k) => tGroup(k as Parameters<typeof tGroup>[0]),
             ),
-        [tx, tGroup],
+        [tFilters, tGroup],
     );
     const filterCtx = useFilterContext(filters, [...FINDING_FILTER_KEYS], {
         serverFilters: props.initialFilters,
@@ -148,7 +151,7 @@ function FindingsPageInner({
     // narrows past the backfill cap. Only real statuses are sent: a value
     // carried over from another list's URL (`?status=ACTIVE`) is ignored here
     // rather than turning the whole register into a 400.
-    const { state, hasActive } = useFilters();
+    const { state, hasActive, clearAll } = useFilters();
     const fetchParams = useMemo(
         () =>
             toApiSearchParams({
@@ -490,6 +493,10 @@ function FindingsPageInner({
                                 variant="no-results"
                                 title={tx('list.emptyMatchTitle')}
                                 description={tx('list.emptyMatchDesc')}
+                                secondaryAction={{
+                                    label: tx('list.clearFilters'),
+                                    onClick: () => clearAll(),
+                                }}
                             />
                         ) : (
                             <EmptyState

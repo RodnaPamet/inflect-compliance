@@ -426,12 +426,19 @@ describe('the register filters by status', () => {
         expect(screen.getByText(CLOSED_ROW.title)).toBeInTheDocument();
     });
 
-    it('a status nobody holds says the filter matched nothing', async () => {
-        handler = (url) =>
-            /\/findings(\?|$)/.test(url) ? { status: 200, body: { rows: [], truncated: false } } : undefined;
+    it('a status nobody holds says the filter matched nothing, and offers to clear it', async () => {
+        handler = (url) => {
+            if (!/\/findings(\?|$)/.test(url)) return undefined;
+            const filtered = new URL(url, 'http://localhost').searchParams.has('status');
+            return { status: 200, body: { rows: filtered ? [] : [ROW], truncated: false } };
+        };
         window.history.replaceState({}, '', '/t/acme/findings?status=READY_FOR_VERIFICATION');
         mount('READER', []);
         expect(await screen.findByText(F.list.emptyMatchTitle)).toBeInTheDocument();
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: F.list.clearFilters }));
+        });
+        expect(await screen.findByText(ROW.title)).toBeInTheDocument();
     });
 
     it('a status from another list is not sent to the API', async () => {

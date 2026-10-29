@@ -47,7 +47,7 @@ export default async function FindingsPage({
         getTranslations('common'),
         getTenantCtx({ tenantSlug }),
     ]);
-    const findings = await listFindings(ctx, { take: SSR_PAGE_LIMIT, status: status || undefined });
+    const findings = await listFindings(ctx, { take: SSR_PAGE_LIMIT }, { status: status || undefined });
 
     return (
         <div className="space-y-section animate-fadeIn">

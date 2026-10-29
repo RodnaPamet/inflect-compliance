@@ -15,7 +15,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     // rather than over the loaded rows so it narrows past the backfill cap.
     const status = req.nextUrl.searchParams.get('status') || undefined;
     // PR-5 — backfill cap.
-    const findings = await listFindings(ctx, { take: LIST_BACKFILL_CAP + 1, status });
+    const findings = await listFindings(ctx, { take: LIST_BACKFILL_CAP + 1 }, { status });
     const result = applyBackfillCap(findings);
     // PR-6 — row-count observability.
     recordListPageRowCount({

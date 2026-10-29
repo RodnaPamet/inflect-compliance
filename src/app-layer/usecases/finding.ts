@@ -83,11 +83,12 @@ function sanitizeOptional(v: string | null | undefined): string | null | undefin
 
 export async function listFindings(
     ctx: RequestContext,
-    options: { take?: number; status?: string } = {},
+    options: { take?: number } = {},
+    filters: { status?: string } = {},
 ) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, (db) =>
-        FindingRepository.list(db, ctx, options)
+        FindingRepository.list(db, ctx, { ...options, status: filters.status })
     );
 }
 
