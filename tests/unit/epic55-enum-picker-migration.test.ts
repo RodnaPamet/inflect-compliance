@@ -223,31 +223,26 @@ describe('NewRiskModal — category Combobox', () => {
     });
 });
 
-// ─── 5. vendors/new — status RadioGroup + criticality/dataAccess Combobox ─
+// ─── 5. vendors/new — criticality/dataAccess Combobox; status not a choice ─
 
-describe('vendors/new — mixed primitives (RadioGroup + Combobox)', () => {
-    it('imports Combobox + RadioGroup + Label', () => {
+describe('vendors/new — Combobox pickers; status is not offered (#4462)', () => {
+    it('imports Combobox', () => {
         expect(VENDORS_NEW_SRC).toMatch(
             /from ["']@\/components\/ui\/combobox["']/,
         );
-        expect(VENDORS_NEW_SRC).toMatch(
-            /from ["']@\/components\/ui\/radio-group["']/,
-        );
-        expect(VENDORS_NEW_SRC).toMatch(
-            /from ["']@\/components\/ui\/label["']/,
-        );
     });
 
-    it('vendor status uses RadioGroup (2-option user choice, all-visible)', () => {
-        expect(VENDORS_NEW_SRC).toMatch(
-            /<RadioGroup[\s\S]{0,300}id=["']vendor-status-select["']/,
-        );
-        expect(VENDORS_NEW_SRC).toMatch(/<RadioGroupItem\b/);
+    it('vendor status is not a picker on create — a new vendor starts Onboarding', () => {
+        // The status RadioGroup (Active / Onboarding) was removed: ACTIVE
+        // needs a completed assessment review, which a vendor that does not
+        // exist yet cannot have, and createVendor refuses it.
+        expect(VENDORS_NEW_SRC).not.toMatch(/<RadioGroup\b/);
+        expect(VENDORS_NEW_SRC).not.toMatch(/id=["']vendor-status-select["']/);
+        expect(VENDORS_NEW_SRC).toMatch(/id=["']vendor-status-on-create["']/);
     });
 
-    it('no native <select> for any of the 3 enum pickers', () => {
+    it('no native <select> for either enum picker', () => {
         for (const id of [
-            'vendor-status-select',
             'vendor-criticality-select',
             'vendor-data-access',
         ]) {
@@ -327,10 +322,11 @@ describe('Epic 55 Prompt 6 — drift sentinels', () => {
         }
     });
 
-    it('RadioGroup is only used where semantically appropriate (vendor status, 2 options)', () => {
-        // Only vendors/new should use <RadioGroup> among the four
-        // migrated surfaces; the others should stay on <Combobox>.
-        expect(VENDORS_NEW_SRC).toMatch(/<RadioGroup\b/);
+    it('none of the four migrated surfaces uses RadioGroup', () => {
+        // vendors/new was the one RadioGroup (status, Active / Onboarding)
+        // until #4462 took status off the create form; the others stay on
+        // <Combobox>.
+        expect(VENDORS_NEW_SRC).not.toMatch(/<RadioGroup\b/);
         expect(TASK_NEW_SRC).not.toMatch(/<RadioGroup\b/);
         expect(CONTROL_MODAL_SRC).not.toMatch(/<RadioGroup\b/);
         expect(RISK_MODAL_SRC).not.toMatch(/<RadioGroup\b/);

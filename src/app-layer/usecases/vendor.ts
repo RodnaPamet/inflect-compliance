@@ -15,6 +15,7 @@ import { notFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { CreateVendorSchema } from '@/lib/schemas';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
+import { VENDOR_ACTIVATION_NEEDS_REVIEW } from '@/lib/vendor-refusal-reasons';
 
 // Epic D.2 — preserve the three-state contract on update paths.
 function sanitizeOptional(v: string | null | undefined): string | null | undefined {
@@ -91,6 +92,10 @@ export async function getVendor(ctx: RequestContext, vendorId: string) {
 
 export async function createVendor(ctx: RequestContext, input: z.infer<typeof CreateVendorSchema>) {
     assertCanManageVendors(ctx);
+    // The activation gate every other route to ACTIVE applies (#4462). A new
+    // vendor has no assessment yet, so a create naming ACTIVE is always
+    // refused; the schema still accepts the value so the refusal can say why.
+    assertVendorActivationAllowed(input.status ?? 'ONBOARDING', null, null);
     // Epic D.2 — sanitise every free-text column. Enums + booleans +
     // FK ids pass through untouched.
     const sanitisedInput = {
@@ -663,18 +668,21 @@ const ACTIVATION_GATE_MESSAGE =
 /**
  * PR-T — the ONE activation-gate implementation. Throws when a vendor would be
  * flipped to ACTIVE without a completed assessment review. Every throwing gate
- * site (the edit path `updateVendor`) routes through this; `bulkSetVendorStatus`
+ * site (the edit path `updateVendor`, and `createVendor`, whose vendor has no
+ * current status and no assessment) routes through this; `bulkSetVendorStatus`
  * uses the shared `isActivationEligible` predicate directly because it collects +
  * reports blocked vendors instead of throwing. The dead standalone
  * `updateVendorStatusWithGate` (which duplicated this check) was removed.
+ *
+ * The refusal carries `details.reason: VENDOR_ACTIVATION_NEEDS_REVIEW`.
  */
 function assertVendorActivationAllowed(
     newStatus: string,
-    currentStatus: string,
+    currentStatus: string | null,
     latest: { status: string; riskRating: string | null } | undefined | null,
 ): void {
     if (newStatus === 'ACTIVE' && currentStatus !== 'ACTIVE' && !isActivationEligible(latest)) {
-        throw badRequest(ACTIVATION_GATE_MESSAGE);
+        throw badRequest(ACTIVATION_GATE_MESSAGE, { reason: VENDOR_ACTIVATION_NEEDS_REVIEW });
     }
 }
 

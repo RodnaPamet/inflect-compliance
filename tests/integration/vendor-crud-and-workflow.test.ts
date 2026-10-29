@@ -132,6 +132,20 @@ describeFn('vendor CRUD + workflow — integration', () => {
         expect(v.status).toBe('ONBOARDING');
     });
 
+    it('createVendor refuses ACTIVE with the activation gate\'s named reason, writing nothing', async () => {
+        // A new vendor has no assessment, so the gate every other route to
+        // ACTIVE applies refuses it (#4462). It used to be created ACTIVE.
+        await expect(
+            createVendor(adminCtx(), { name: 'Straight to active', status: 'ACTIVE' }),
+        ).rejects.toMatchObject({
+            status: 400,
+            details: { reason: 'VENDOR_ACTIVATION_NEEDS_REVIEW' },
+        });
+        expect(
+            await globalPrisma.vendor.count({ where: { tenantId: TENANT_ID, name: 'Straight to active' } }),
+        ).toBe(0);
+    });
+
     it('createVendor rejects a READER (canWrite gate)', async () => {
         await expect(
             createVendor(ctxAs(Role.READER, reader.userId), { name: 'Nope' }),
@@ -201,7 +215,10 @@ describeFn('vendor CRUD + workflow — integration', () => {
     it('listVendors honours status / criticality / q / riskRating / reviewDue filters', async () => {
         const now = new Date();
         const overdue = new Date(now.getTime() - 86400000).toISOString();
-        await createVendor(adminCtx(), { name: 'AlphaSearch', status: 'ACTIVE', criticality: 'HIGH', nextReviewAt: overdue });
+        // Created ONBOARDING and then set ACTIVE in the database: creation
+        // refuses ACTIVE (#4462), and this test is about the list filters.
+        const alpha = await createVendor(adminCtx(), { name: 'AlphaSearch', criticality: 'HIGH', nextReviewAt: overdue });
+        await globalPrisma.vendor.update({ where: { id: alpha.id }, data: { status: 'ACTIVE' } });
         await createVendor(adminCtx(), { name: 'BetaCo', status: 'ONBOARDING', criticality: 'LOW' });
 
         // status filter
@@ -311,14 +328,16 @@ describeFn('vendor CRUD + workflow — integration', () => {
     });
 
     it('gate is skipped when vendor already ACTIVE', async () => {
-        const v = await createVendor(adminCtx(), { name: 'AlreadyActive', status: 'ACTIVE' });
+        const v = await createVendor(adminCtx(), { name: 'AlreadyActive' });
+        await globalPrisma.vendor.update({ where: { id: v.id }, data: { status: 'ACTIVE' } });
         // No approved assessment, but vendor.status === ACTIVE so the gate `if` is false.
         const updated = await updateVendor(adminCtx(), v.id, { status: 'ACTIVE' });
         expect(updated.status).toBe('ACTIVE');
     });
 
     it('gate is skipped for a non-ACTIVE target status', async () => {
-        const v = await createVendor(adminCtx(), { name: 'Offboard', status: 'ACTIVE' });
+        const v = await createVendor(adminCtx(), { name: 'Offboard' });
+        await globalPrisma.vendor.update({ where: { id: v.id }, data: { status: 'ACTIVE' } });
         const updated = await updateVendor(adminCtx(), v.id, { status: 'OFFBOARDING' });
         expect(updated.status).toBe('OFFBOARDING');
     });

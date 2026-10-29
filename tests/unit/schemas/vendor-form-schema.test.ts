@@ -12,7 +12,6 @@ describe('NewVendorFormSchema', () => {
     const minimalValid = {
         name: 'Acme',
         criticality: 'HIGH' as const,
-        status: 'ACTIVE' as const,
     };
 
     it('applies all defaults for a minimal valid input', () => {
@@ -43,7 +42,6 @@ describe('NewVendorFormSchema', () => {
             country: 'IE',
             description: 'A vendor',
             criticality: 'CRITICAL',
-            status: 'ONBOARDING',
             dataAccess: 'HIGH',
             isSubprocessor: true,
             nextReviewAt: '2026-01-01',
@@ -59,7 +57,6 @@ describe('NewVendorFormSchema', () => {
         expect(
             NewVendorFormSchema.safeParse({
                 criticality: 'LOW',
-                status: 'ACTIVE',
             } as any).success,
         ).toBe(false);
     });
@@ -85,12 +82,14 @@ describe('NewVendorFormSchema', () => {
         ).toBe(false);
     });
 
-    // status enum branch
-    it('rejects an invalid status', () => {
-        expect(
-            NewVendorFormSchema.safeParse({ ...minimalValid, status: 'ARCHIVED' as any })
-                .success,
-        ).toBe(false);
+    // #4462 — the create form offers no status. A new vendor starts
+    // ONBOARDING (the server default); ACTIVE needs a completed assessment
+    // review, which a vendor that does not exist yet cannot have. The schema
+    // used to accept ACTIVE, and the form sent it.
+    it('carries no status, so the form can never send ACTIVE', () => {
+        expect(Object.keys(NewVendorFormSchema.shape)).not.toContain('status');
+        const r = NewVendorFormSchema.parse({ ...minimalValid, status: 'ACTIVE' } as any);
+        expect(r).not.toHaveProperty('status');
     });
 
     // optionalUrl .refine — empty string passes (the early-return branch)

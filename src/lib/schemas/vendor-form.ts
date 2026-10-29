@@ -15,11 +15,16 @@
  *   - `country`     — optional free text.
  *   - `description` — optional free text.
  *   - `criticality` — one of LOW / MEDIUM / HIGH / CRITICAL.
- *   - `status`      — one of ACTIVE / ONBOARDING.
  *   - `dataAccess`  — optional, one of NONE / LOW / MEDIUM / HIGH.
  *   - `isSubprocessor` — boolean.
  *   - `nextReviewAt`     — optional `YYYY-MM-DD` string.
  *   - `contractRenewalAt` — optional `YYYY-MM-DD` string.
+ *
+ * No `status` (#4462). A new vendor starts ONBOARDING (the server default):
+ * ACTIVE needs a completed assessment review, which a vendor that does not
+ * exist yet cannot have, and `createVendor` refuses it with
+ * `VENDOR_ACTIVATION_NEEDS_REVIEW`. The form used to offer Active, and the
+ * server used to accept it.
  */
 import { z } from 'zod';
 
@@ -57,7 +62,6 @@ export const NewVendorFormSchema = z.object({
     country: z.string().trim().max(255).default(''),
     description: z.string().trim().max(4000).default(''),
     criticality: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
-    status: z.enum(['ACTIVE', 'ONBOARDING']),
     dataAccess: z
         .string()
         .refine(

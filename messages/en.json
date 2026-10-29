@@ -7391,6 +7391,7 @@
       "isSubprocessor": "This vendor is a sub-processor",
       "statusActive": "Active",
       "statusOnboarding": "Onboarding",
+      "statusOnCreateHint": "A new vendor starts as Onboarding. It can be made Active from its page once an assessment of it has been reviewed.",
       "critLow": "Low",
       "critMedium": "Medium",
       "critHigh": "High",

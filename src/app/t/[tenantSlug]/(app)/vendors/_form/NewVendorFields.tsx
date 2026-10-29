@@ -9,8 +9,6 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import {
     parseYMD,
@@ -21,10 +19,6 @@ import type { NewVendorFormFields, NewVendorFormReturn } from './useNewVendorFor
 
 export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
     const t = useTranslations('vendors');
-    const STATUS_OPTIONS = [
-        { value: 'ACTIVE', label: t('form.statusActive') },
-        { value: 'ONBOARDING', label: t('form.statusOnboarding') },
-    ];
     const CRIT_OPTIONS: ComboboxOption[] = [
         { value: 'LOW', label: t('form.critLow') },
         { value: 'MEDIUM', label: t('form.critMedium') },
@@ -94,36 +88,20 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
             </FormField>
 
             <div className="grid grid-cols-3 gap-default">
+                {/* Not a choice (#4462). A new vendor starts Onboarding: Active
+                    needs a completed assessment review, and a vendor that does
+                    not exist yet has none, so the server refuses it. The form
+                    used to offer Active here. */}
                 <div>
-                    <label className="block text-sm font-medium text-content-default mb-1">
+                    <span className="block text-sm font-medium text-content-default mb-1">
                         {t('form.status')}
-                    </label>
-                    <RadioGroup
-                        id="vendor-status-select"
-                        value={form.fields.status}
-                        onValueChange={(v) =>
-                            form.setField('status', v as NewVendorFormFields['status'])
-                        }
-                        className="flex gap-default pt-1"
-                    >
-                        {STATUS_OPTIONS.map((o) => {
-                            const itemId = `vendor-status-${o.value.toLowerCase()}`;
-                            return (
-                                <div
-                                    key={o.value}
-                                    className="flex items-center gap-tight"
-                                >
-                                    <RadioGroupItem value={o.value} id={itemId} />
-                                    <Label
-                                        htmlFor={itemId}
-                                        className="cursor-pointer"
-                                    >
-                                        {o.label}
-                                    </Label>
-                                </div>
-                            );
-                        })}
-                    </RadioGroup>
+                    </span>
+                    <p id="vendor-status-on-create" className="pt-1 text-sm text-content-default">
+                        {t('form.statusOnboarding')}
+                    </p>
+                    <p className="mt-1 text-xs text-content-muted">
+                        {t('form.statusOnCreateHint')}
+                    </p>
                 </div>
                 <FormField label={t('form.criticality')}>
                     <Combobox

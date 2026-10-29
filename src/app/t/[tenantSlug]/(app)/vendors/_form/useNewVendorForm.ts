@@ -62,7 +62,6 @@ const INITIAL: NewVendorFormFields = {
     country: '',
     description: '',
     criticality: 'MEDIUM',
-    status: 'ONBOARDING',
     dataAccess: '',
     isSubprocessor: false,
     nextReviewAt: '',
@@ -82,10 +81,11 @@ export function useNewVendorForm({
             // POST. The frontend schema's `default('')` produces
             // empty strings on optional fields; only forward the
             // non-empty ones to match the legacy POST body shape.
-            const body: { name: string; criticality: string; status: string; isSubprocessor: boolean; legalName?: string; websiteUrl?: string; domain?: string; country?: string; description?: string; dataAccess?: string; nextReviewAt?: string; contractRenewalAt?: string } = {
+            // No `status`: a new vendor starts ONBOARDING, the server
+            // default. ACTIVE needs a completed assessment review (#4462).
+            const body: { name: string; criticality: string; isSubprocessor: boolean; legalName?: string; websiteUrl?: string; domain?: string; country?: string; description?: string; dataAccess?: string; nextReviewAt?: string; contractRenewalAt?: string } = {
                 name: payload.name,
                 criticality: payload.criticality,
-                status: payload.status,
                 isSubprocessor: payload.isSubprocessor,
             };
             if (payload.legalName) body.legalName = payload.legalName;

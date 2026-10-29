@@ -125,6 +125,38 @@ describe('createVendor — RBAC + sanitisation', () => {
         ).rejects.toThrow();
     });
 
+    // #4462 — creation applies the activation gate every other route to
+    // ACTIVE applies. A new vendor has no assessment, so ACTIVE is refused,
+    // by name, before anything is written. It used to be inserted as asked.
+    it('refuses status ACTIVE with VENDOR_ACTIVATION_NEEDS_REVIEW, before any write', async () => {
+        // A working transaction, so "nothing was written" is a real claim:
+        // without the gate the insert below would run.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+
+        await expect(
+            createVendor(makeRequestContext('ADMIN'), { name: 'Acme', status: 'ACTIVE' }),
+        ).rejects.toMatchObject({
+            status: 400,
+            message: expect.stringMatching(/completed assessment review/),
+            details: { reason: 'VENDOR_ACTIVATION_NEEDS_REVIEW' },
+        });
+        expect(mockVendorCreate).not.toHaveBeenCalled();
+        expect(mockLog).not.toHaveBeenCalled();
+        // The gate refused before the transaction opened, so the queued
+        // implementation is still pending — drop it rather than hand it to
+        // the next test.
+        mockRunInTx.mockReset();
+    });
+
+    it.each(['ONBOARDING', 'OFFBOARDING', undefined] as const)(
+        'still creates a vendor at status %s (the gate fires on ACTIVE only)',
+        async (status) => {
+            mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+            await createVendor(makeRequestContext('ADMIN'), { name: 'Acme', ...(status ? { status } : {}) });
+            expect(mockVendorCreate).toHaveBeenCalledTimes(1);
+        },
+    );
+
     it('sanitises name + legalName + country + domain + websiteUrl + description + tags', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
 
