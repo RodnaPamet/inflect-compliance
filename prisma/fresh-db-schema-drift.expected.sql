@@ -32,8 +32,10 @@
 --                              46 statements
 --    after #2356 batch 3b (#2535)
 --                              84 statements
---    after #2861's ExternalWriteJournal (this PR)
---                              86 statements (THIS FILE'S CURRENT STATE)
+--    after #2861's ExternalWriteJournal
+--                              86 statements
+--    after #4465's vulnerability conversion pointers (this PR)
+--                              90 statements (THIS FILE'S CURRENT STATE)
 --
 --  THE ROWS ABOVE WERE RE-MEASURED, not copied.  Each is the statement
 --  count of THIS FILE at that commit, counted with the same parser the
@@ -72,7 +74,7 @@
 --  proposes dropping them and we always keep them.  Verify with
 --      SELECT indexdef FROM pg_indexes WHERE indexname LIKE 'Control_%_trgm_idx';
 --
---  ── GROUP 3 — 80 statements, 40 × column-scoped SET NULL FKs.
+--  ── GROUP 3 — 84 statements, 42 × column-scoped SET NULL FKs.
 --     PERMANENT. ───────────────────────────────────────────────────────
 --  Tenant-carrying composite FKs whose referential action is
 --  `ON DELETE SET NULL (<the fk column>)` in the database, and which the
@@ -155,6 +157,15 @@
 --  delete, naming a map that is gone; inert, because every read is gated
 --  on both columns being non-null.
 --
+--  #4465 ADDED two members, both on `AssetVulnerability`:
+--  `convertedRiskId` -> Risk and `convertedFindingId` -> Finding, the
+--  pointers that make "To Risk" / "To Finding" work once.  New columns
+--  rather than a reshaped constraint, but the same shape and the same
+--  reason as `remediationTaskId` beside them: optional pointers between
+--  tenant-scoped models, so composite, and their parents are soft-deleted
+--  then purged row by row, so `SET NULL ("<column>")`.  Migration
+--  20261029193500_vulnerability_conversion_pointers.
+--
 --  ── What is NOT in this file, because it was fixed in prisma/schema ──
 --  PR1 (#2410): 7 @default clauses (5 statements), 2 plain-btree @@index
 --  declarations, 1 ALTER INDEX … RENAME TO (`map:`), and 6 referential-
@@ -184,6 +195,12 @@ ALTER TABLE "AgentActionReceipt" DROP CONSTRAINT "AgentActionReceipt_auditLogId_
 
 -- DropForeignKey
 ALTER TABLE "AiDecisionLog" DROP CONSTRAINT "AiDecisionLog_aiSystemId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "AssetVulnerability" DROP CONSTRAINT "AssetVulnerability_convertedFindingId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "AssetVulnerability" DROP CONSTRAINT "AssetVulnerability_convertedRiskId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "AssetVulnerability" DROP CONSTRAINT "AssetVulnerability_remediationTaskId_tenantId_fkey";
@@ -310,6 +327,12 @@ ALTER TABLE "UserIdentityLink" ALTER COLUMN "emailAtLinkTimeHash" DROP NOT NULL;
 
 -- AddForeignKey
 ALTER TABLE "AssetVulnerability" ADD CONSTRAINT "AssetVulnerability_remediationTaskId_tenantId_fkey" FOREIGN KEY ("remediationTaskId", "tenantId") REFERENCES "Task"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AssetVulnerability" ADD CONSTRAINT "AssetVulnerability_convertedRiskId_tenantId_fkey" FOREIGN KEY ("convertedRiskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AssetVulnerability" ADD CONSTRAINT "AssetVulnerability_convertedFindingId_tenantId_fkey" FOREIGN KEY ("convertedFindingId", "tenantId") REFERENCES "Finding"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ScannerFinding" ADD CONSTRAINT "ScannerFinding_assetId_tenantId_fkey" FOREIGN KEY ("assetId", "tenantId") REFERENCES "Asset"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;

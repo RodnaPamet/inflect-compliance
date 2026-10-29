@@ -18,7 +18,10 @@
  *      applied to the read, not only to the first 500 rows in the browser;
  *   5. a list opened from an asset says it is that asset's, offers the way
  *      back to every vulnerability, and does not claim "your assets" when
- *      that one asset has none.
+ *      that one asset has none;
+ *   6. the table has no select column (it has no bulk action);
+ *   7. To Risk and To Finding work once: after a conversion the button is a
+ *      link to what it made, and a refused second conversion says why.
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -444,5 +447,60 @@ describe('Vulnerabilities — no row selection', () => {
     it('renders no checkboxes: the page has no bulk action for them to drive', async () => {
         await mount(makeRequestContext('OWNER'));
         expect(screen.queryAllByRole('checkbox')).toEqual([]);
+    });
+});
+
+// ─── 7. Each conversion works once ──────────────────────────────────
+
+describe('Vulnerabilities — To Risk and To Finding work once', () => {
+    it('a converted row links to its risk and finding instead of offering the buttons', async () => {
+        await mount(makeRequestContext('EDITOR'), [
+            vuln({
+                convertedRisk: { id: 'r-9', key: 'RSK-9', deletedAt: null },
+                convertedFinding: { id: 'f-9', deletedAt: null },
+            }),
+        ]);
+        const risk = screen.getByTestId('vuln-converted-risk-v-1');
+        expect(risk.getAttribute('href')).toBe('/t/acme/risks/r-9');
+        expect(risk.textContent).toContain('RSK-9');
+        const finding = screen.getByTestId('vuln-converted-finding-v-1');
+        expect(finding.getAttribute('href')).toBe('/t/acme/findings');
+        expect(finding.textContent).toContain(V.viewFinding);
+        expect(button(V.toRisk)).toBeNull();
+        expect(button(V.toFinding)).toBeNull();
+    });
+
+    it('a deleted risk no longer counts: the button is back', async () => {
+        await mount(makeRequestContext('EDITOR'), [
+            vuln({ convertedRisk: { id: 'r-9', key: 'RSK-9', deletedAt: '2026-10-01T00:00:00.000Z' } }),
+        ]);
+        expect(screen.queryByTestId('vuln-converted-risk-v-1')).toBeNull();
+        expect(button(V.toRisk)).not.toBeNull();
+    });
+
+    it('a role that may not convert has no actions column, converted or not', async () => {
+        // The column is where the button becomes the link; a READER has neither.
+        await mount(makeRequestContext('READER'), [vuln({ convertedRisk: { id: 'r-9', key: 'RSK-9', deletedAt: null } })]);
+        expect(button(V.toRisk)).toBeNull();
+        expect(screen.queryByTestId('vuln-converted-risk-v-1')).toBeNull();
+    });
+
+    it('a second conversion refused by the server says so in the page\'s words, and the row is re-read', async () => {
+        answerWrite = (url) =>
+            url.pathname.endsWith('/convert-to-risk')
+                ? refusal(
+                      409,
+                      'CONFLICT',
+                      'This vulnerability has already been converted into a risk.',
+                      'VULNERABILITY_ALREADY_CONVERTED_TO_RISK',
+                  )
+                : null;
+        await mount(makeRequestContext('EDITOR'));
+        const router = jest.requireMock('next/navigation').useRouter();
+        router.refresh.mockClear();
+        await click(V.toRisk);
+        await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+        expect(mockToastError.mock.calls[0][0]).toBe(V.refusalAlreadyConvertedToRisk);
+        expect(router.refresh).toHaveBeenCalled();
     });
 });

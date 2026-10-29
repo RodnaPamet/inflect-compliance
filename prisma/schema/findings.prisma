@@ -47,6 +47,8 @@ model Finding {
   evidenceLinks         FindingEvidence[]
   riskLinks             FindingRisk[]
   assetLinks            FindingAsset[]
+  // Vulnerabilities converted into this finding (#4465). SET NULL on purge.
+  convertedFromVulnerabilities AssetVulnerability[] @relation("VulnerabilityConvertedFinding")
   // TP-3 — remediation tasks auto-created from this finding (audit
   // checklist / NIS2 gap materializers). SetNull on this side.
   tasks                 Task[]            @relation("FindingTasks")

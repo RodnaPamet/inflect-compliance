@@ -297,6 +297,23 @@ const SIGNED_OFF: Array<{ name: string; members: readonly string[] }> = [
             'ALTER TABLE "VendorAssessmentAnswer" ADD CONSTRAINT "VendorAssessmentAnswer_templateQuestionId_tenantId_fkey" FOREIGN KEY ("templateQuestionId", "tenantId") REFERENCES "VendorAssessmentTemplateQuestion"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
         ],
     },
+    {
+        name: 'group 6 — #4465, the two vulnerability conversion pointers',
+        // Same permanent divergence as groups 3-5, for two NEW columns rather
+        // than reshaped constraints: `AssetVulnerability.convertedRiskId` ->
+        // Risk and `.convertedFindingId` -> Finding (migration
+        // 20261029193500_vulnerability_conversion_pointers). Composite so a
+        // cross-tenant pointer is unrepresentable; `ON DELETE SET NULL
+        // ("<column>")` because Risk and Finding are purged row by row by the
+        // data-lifecycle sweep, which RESTRICT would stop and whole-row SET
+        // NULL would fail on `tenantId`. Prisma renders RESTRICT; we refuse.
+        members: [
+            'ALTER TABLE "AssetVulnerability" DROP CONSTRAINT "AssetVulnerability_convertedFindingId_tenantId_fkey";',
+            'ALTER TABLE "AssetVulnerability" DROP CONSTRAINT "AssetVulnerability_convertedRiskId_tenantId_fkey";',
+            'ALTER TABLE "AssetVulnerability" ADD CONSTRAINT "AssetVulnerability_convertedRiskId_tenantId_fkey" FOREIGN KEY ("convertedRiskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "AssetVulnerability" ADD CONSTRAINT "AssetVulnerability_convertedFindingId_tenantId_fkey" FOREIGN KEY ("convertedFindingId", "tenantId") REFERENCES "Finding"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+        ],
+    },
 ];
 
 /** Every signed-off statement, flattened. */

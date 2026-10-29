@@ -68,6 +68,10 @@ export interface VulnRow {
     remediationDueAt: string | Date | null;
     remediationTaskId: string | null;
     remediationTask: { id: string; key: string | null } | null;
+    /** What To Risk made, if anything (#4465). A deleted one no longer counts. */
+    convertedRisk?: { id: string; key: string | null; deletedAt: string | Date | null } | null;
+    /** What To Finding made, if anything (#4465). A deleted one no longer counts. */
+    convertedFinding?: { id: string; deletedAt: string | Date | null } | null;
     /** Free-text analyst note (encrypted at rest; plaintext on the row). */
     note: string | null;
     cve: {
@@ -119,6 +123,11 @@ interface AssetOption {
     id: string;
     name: string;
     key: string | null;
+}
+
+/** A conversion's target, if it is still there to open (not soft-deleted). */
+function live<T extends { deletedAt: string | Date | null }>(target: T | null | undefined): T | null {
+    return target && !target.deletedAt ? target : null;
 }
 
 const SEVERITY_VARIANT: Record<string, StatusBadgeVariant> = {
@@ -192,7 +201,11 @@ function VulnerabilitiesInner({ initialRows, truncated, cap, scope, tenantSlug, 
     // viewer's language gets its own sentence, anything else the server's
     // message, and only a body with no message the generic fallback.
     const refusalText = useMemo<Record<VulnerabilityRefusal, string>>(
-        () => ({ REMEDIATION_TASK_EXISTS: t('refusalRemediationTaskExists') }),
+        () => ({
+            REMEDIATION_TASK_EXISTS: t('refusalRemediationTaskExists'),
+            VULNERABILITY_ALREADY_CONVERTED_TO_RISK: t('refusalAlreadyConvertedToRisk'),
+            VULNERABILITY_ALREADY_CONVERTED_TO_FINDING: t('refusalAlreadyConvertedToFinding'),
+        }),
         [t],
     );
     const failureMessage = useCallback(
@@ -574,30 +587,60 @@ function VulnerabilitiesInner({ initialRows, truncated, cap, scope, tenantSlug, 
             ? [{
                 id: 'actions',
                 header: '',
-                cell: ({ row }: { row: { original: VulnRow } }) => (
-                    <div className="flex justify-end gap-default">
-                        {can.convertToRisk && (
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                disabled={pendingId === row.original.id}
-                                onClick={() => convert(row.original, 'risk')}
-                            >
-                                {t('toRisk')}
-                            </Button>
-                        )}
-                        {can.convertToFinding && (
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                disabled={pendingId === row.original.id}
-                                onClick={() => convert(row.original, 'finding')}
-                            >
-                                {t('toFinding')}
-                            </Button>
-                        )}
-                    </div>
-                ),
+                cell: ({ row }: { row: { original: VulnRow } }) => {
+                    // Each conversion works once (#4465): once it has made its
+                    // item, the button becomes a link to it.
+                    const risk = live(row.original.convertedRisk);
+                    const finding = live(row.original.convertedFinding);
+                    return (
+                        <div className="flex justify-end gap-default">
+                            {risk ? (
+                                <Link
+                                    href={`/t/${tenantSlug}/risks/${risk.id}`}
+                                    data-testid={`vuln-converted-risk-${row.original.id}`}
+                                    className="inline-flex items-center gap-1 font-medium text-content-link hover:underline"
+                                >
+                                    {risk.key ?? t('viewRisk')}
+                                    <ArrowUpRight className="h-3 w-3 shrink-0" />
+                                </Link>
+                            ) : (
+                                can.convertToRisk && (
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={pendingId === row.original.id}
+                                        onClick={() => convert(row.original, 'risk')}
+                                    >
+                                        {t('toRisk')}
+                                    </Button>
+                                )
+                            )}
+                            {finding ? (
+                                // Findings have no page of their own; the link
+                                // opens the register the finding is in.
+                                <Link
+                                    href={`/t/${tenantSlug}/findings`}
+                                    data-testid={`vuln-converted-finding-${row.original.id}`}
+                                    className="inline-flex items-center gap-1 font-medium text-content-link hover:underline"
+                                >
+                                    {t('viewFinding')}
+                                    <ArrowUpRight className="h-3 w-3 shrink-0" />
+                                </Link>
+                            ) : (
+                                can.convertToFinding && (
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={pendingId === row.original.id}
+                                        onClick={() => convert(row.original, 'finding')}
+                                    >
+                                        {t('toFinding')}
+                                    </Button>
+                                )
+                            )}
+                        </div>
+                    );
+                },
             }]
             : []),
     ]), [
