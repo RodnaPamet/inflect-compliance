@@ -786,6 +786,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'register key; submitting one is the ingest key, above.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/discovered$`),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            'List the discovered agents a person can start a discovered-agent ' +
+            'review with (#4472). The key the harness-scans list and the ' +
+            'get_discovered_agent tool take, so the run can read the agent it ' +
+            'is started with.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/agents\\/harness-estates$`),
         methods: ['GET'],
         permission: ['admin.agent_registry_view', 'admin.agent_registry'],

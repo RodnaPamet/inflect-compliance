@@ -67,6 +67,7 @@ const EN = jest.requireActual('../../messages/en.json') as {
 const PAUSED: RunRow = {
     id: 'run-1',
     workflowKey: 'nightly-review',
+    workflowName: 'Nightly review',
     status: 'AWAITING_APPROVAL',
     stepCount: 3,
     costTokens: 1200,
@@ -79,7 +80,7 @@ const PAUSED: RunRow = {
 };
 
 const renderRuns = (runs: RunRow[]) =>
-    render(<AgentRunsClient tenantSlug="acme" initialRuns={runs} workflows={[]} canOperate={false} />);
+    render(<AgentRunsClient tenantSlug="acme" runs={runs} workflows={[]} canOperate={false} />);
 
 const rowOf = (id: string) => document.getElementById(`run-${id}`) as HTMLElement;
 

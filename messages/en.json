@@ -9833,7 +9833,7 @@
       "accessMessage": "You do not have permission to view agent runs. Contact your workspace administrator to request access.",
       "crumb": "Agent runs",
       "title": "Agent runs",
-      "description": "Multi-step agentic workflows. Every write a run makes is a proposal a human approves — the engine commits nothing directly.",
+      "description": "Multi-step agentic workflows. A change a run makes to this workspace is a proposal a person approves before it is applied. A write to a connected external system follows that connection's write mode, and at Automatic it is sent without a per-write approval.",
       "startWorkflow": "Start a workflow",
       "startFailed": "Failed to start",
       "resumeFailed": "Failed to resume",
@@ -9920,7 +9920,54 @@
         }
       },
       "awaitingApprovalNoProposals": "Paused for review — nothing is queued for approval. Open the run to see what stopped it, then Resume.",
-      "approvalWindowCloses": "Approval window closes {date}"
+      "approvalWindowCloses": "Approval window closes {date}",
+      "pausedHint": "Paused when the service shut down mid-run. Nothing resumes it on its own, and until it is resumed or aborted it counts towards any limit on runs at once. Resume carries it on from where it stopped.",
+      "truncated": "Showing the {shown} most recent runs. Older runs exist and are not listed here.",
+      "status": {
+        "RUNNING": "Running",
+        "AWAITING_APPROVAL": "Awaiting approval",
+        "PAUSED": "Paused",
+        "COMPLETED": "Completed",
+        "ABORTED": "Aborted",
+        "FAILED": "Failed",
+        "EMPTY_CATALOGUE": "Failed: no tools"
+      },
+      "notHere": {
+        "ACCESS_REVIEW_PREPARATION": "Started for you when an agent access review prepares its reviewer packs. A run started here would prepare nothing.",
+        "HOST_SYSTEM_FACTS": "Started by a connected host system, which supplies the SAP document facts this workflow reviews. This page cannot collect them.",
+        "NEEDS_AGENT_INVENTORY": "Reviews one discovered agent, chosen from the agent inventory, which your role cannot read. An administrator can grant read access to the agent inventory.",
+        "NEEDS_ASK_ACCESS": "Questions are asked on the Ask a question page, which needs read access to this workspace's controls.",
+        "UNCLASSIFIED_INPUT": "Needs input this page does not know how to collect, so it cannot be started here."
+      },
+      "startForm": {
+        "title": "Start {workflow}",
+        "submit": "Start run",
+        "required": "This is required.",
+        "frameworkPlaceholder": "Choose a framework",
+        "noFrameworks": "No frameworks available",
+        "frameworksFailed": "The list of frameworks could not be loaded.",
+        "discoveredPlaceholder": "Choose a discovered agent",
+        "noDiscoveredAgents": "No discovered agents yet",
+        "discoveredFailed": "The list of discovered agents could not be loaded.",
+        "discoveredTruncated": "Showing the {shown} most recently seen discovered agents. Older ones are not listed.",
+        "discoveredSeen": "Seen {date} · {sources}",
+        "discoveredRegistered": "registered as {name}",
+        "field": {
+          "frameworkKey": {
+            "label": "Framework",
+            "hint": "The framework the run reads and reports on."
+          },
+          "periodLabel": {
+            "label": "Period",
+            "hint": "A month as YYYY-MM or a quarter as YYYY-Qn, for example 2026-09 or 2026-Q3.",
+            "invalid": "Enter a month as YYYY-MM or a quarter as YYYY-Qn, for example 2026-09 or 2026-Q3."
+          },
+          "discoveredAgentId": {
+            "label": "Discovered agent",
+            "hint": "The agent a harness scan found, newest seen first. The run reviews what the scans observed about it."
+          }
+        }
+      }
     },
     "quarantine": {
       "crumb": "Quarantine",

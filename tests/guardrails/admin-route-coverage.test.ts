@@ -233,6 +233,10 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/harness-scanner-keys/route.ts',
     'admin/agents/harness-scanner-keys/[keyId]/route.ts',
     'admin/agents/harness-acceptances/route.ts',
+    // The discovered agents a discovered-agent review is started with (#4472).
+    // GET only, its own rule above the subtree rule: the inventory read the
+    // harness-scans list and the get_discovered_agent tool take.
+    'admin/agents/discovered/route.ts',
     // Client estates (#3678). The GET has its own rule, the inventory read,
     // above the subtree rule; declaring, changing and removing an estate fall
     // to the subtree rule's `admin.agent_registry`.
