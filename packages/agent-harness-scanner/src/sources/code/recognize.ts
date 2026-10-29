@@ -1,5 +1,6 @@
 /**
- * LANGCHAIN AND LANGGRAPH AGENT DEFINITIONS, READ OUT OF ONE FILE'S FACTS (#3737).
+ * LANGCHAIN, LANGGRAPH AND CLAUDE AGENT SDK AGENT DEFINITIONS, READ OUT OF ONE
+ * FILE'S FACTS (#3737, #4156).
  *
  * One recogniser for both languages: `python.ts` and `javascript.ts` lower a
  * file to the same IR, and this module reads agents out of it by what each
@@ -14,7 +15,12 @@
  *   • an executor — `AgentExecutor(...)`, `AgentExecutor.from_agent_and_tools`
  *     — which ABSORBS the factory it wraps, so one agent is reported once;
  *   • a compiled `StateGraph` that binds tools or a model: its `ToolNode`s'
- *     tools, and the models whose `bind_tools` the file calls.
+ *     tools, and the models whose `bind_tools` the file calls;
+ *   • a Claude Agent SDK call — `query` from `@anthropic-ai/claude-agent-sdk`,
+ *     or `query`, `ClaudeSDKClient` from `claude_agent_sdk` — and, in Python, a
+ *     `ClaudeAgentOptions` no such call in the file consumes. Its options are
+ *     read as well (`sdkAgent`, below), and the planner maps them onto the
+ *     harness ladder (`agentSdkOptionVerdicts`).
  *
  * For each, the tools it binds, the model endpoints it calls and the
  * credentials those reference. A credential is reported by REFERENCE only: the
@@ -31,8 +37,17 @@
 import { createHash } from 'crypto';
 
 import { looksLikeSecret } from '@/lib/agentic/harness-contract';
+import type { AgentSdkOptionFacts } from '@/lib/agentic/harness-findings';
 
-import { isLangChainModule, type CallExpr, type CodeLocation, type Expr, type FileFacts, type Qualified } from './ir';
+import {
+    isClaudeAgentSdkModule,
+    isLangChainModule,
+    type CallExpr,
+    type CodeLocation,
+    type Expr,
+    type FileFacts,
+    type Qualified,
+} from './ir';
 
 export interface DetectedModel {
     readonly provider: string;
@@ -60,7 +75,7 @@ export interface DetectedCredential {
 }
 
 export interface DetectedAgent {
-    readonly framework: 'langchain' | 'langgraph';
+    readonly framework: 'langchain' | 'langgraph' | 'claude-agent-sdk';
     readonly language: 'python' | 'javascript';
     /** The name the definition is bound to, or `L<line>`. */
     readonly name: string;
@@ -69,6 +84,10 @@ export interface DetectedAgent {
     readonly tools: readonly DetectedTool[];
     readonly models: readonly DetectedModel[];
     readonly credentials: readonly DetectedCredential[];
+    /** An Agent SDK agent's options, as read. Null for the other frameworks. */
+    readonly sdkOptions: AgentSdkOptionFacts | null;
+    /** How many subagents an Agent SDK agent's options define; null when unread, or another framework. */
+    readonly subagents: number | null;
 }
 
 export interface FileDetection {
@@ -235,6 +254,45 @@ export function isCredentialKey(key: string): boolean {
     );
 }
 
+// ─── The Claude Agent SDK's options (#4156) ──────────────────────────────────
+
+/** Each option's name in TypeScript's `Options`. */
+const SDK_OPTIONS_JS = {
+    tools: 'tools',
+    allowedTools: 'allowedTools',
+    disallowedTools: 'disallowedTools',
+    mcpServers: 'mcpServers',
+    model: 'model',
+    permissionMode: 'permissionMode',
+    settingSources: 'settingSources',
+    agents: 'agents',
+    hooks: 'hooks',
+    env: 'env',
+} as const;
+
+/** The same options, as Python's `ClaudeAgentOptions` spells them. */
+const SDK_OPTIONS_PY: Readonly<Record<keyof typeof SDK_OPTIONS_JS, string>> = {
+    tools: 'tools',
+    allowedTools: 'allowed_tools',
+    disallowedTools: 'disallowed_tools',
+    mcpServers: 'mcp_servers',
+    model: 'model',
+    permissionMode: 'permission_mode',
+    settingSources: 'setting_sources',
+    agents: 'agents',
+    hooks: 'hooks',
+    env: 'env',
+};
+
+/**
+ * The built-in tools the SDK turns on when the code leaves `tools` out, as
+ * `docs/claude-agent-sdk-design.md` records them (documented 2026-10-24).
+ */
+const SDK_DEFAULT_BUILTINS: readonly string[] = ['Bash', 'Read', 'Edit', 'Write', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Agent', 'Skill'];
+
+/** The built-ins that reach any command or any host. */
+const SDK_SHELL_OR_FETCH: readonly string[] = ['Bash', 'WebFetch'];
+
 // ─── The recogniser ─────────────────────────────────────────────────────────
 
 interface Resolved {
@@ -254,6 +312,19 @@ type Value =
     | { readonly v: 'unknown' };
 
 const UNKNOWN: Value = { v: 'unknown' };
+
+/** A list of string literals, and whether the reader saw all of it. */
+interface StringList {
+    readonly items: { readonly value: string; readonly line: number }[];
+    complete: boolean;
+}
+
+/** One Agent SDK agent, as read. */
+interface SdkAgentRead {
+    readonly r: Resolved;
+    readonly facts: AgentSdkOptionFacts;
+    readonly subagents: number | null;
+}
 const empty = (): Resolved => ({ tools: [], models: [], credentials: [] });
 
 function merge(into: Resolved, from: Resolved): void {
@@ -750,11 +821,369 @@ class Recognizer {
         return clean.length <= 400 && !looksLikeSecret(clean) ? clean : null;
     }
 
+    // ── the Claude Agent SDK (#4156) ──────────────────────────────────────
+
+    /** The name an SDK member was imported as, or null for anything not the SDK's. */
+    private sdkKnown(e: Expr): string | null {
+        const q = this.qualify(e);
+        return q !== null && q.path.length > 0 && isClaudeAgentSdkModule(q.module) ? q.path[q.path.length - 1] : null;
+    }
+
+    /** Follow a name or attribute to the expression it was bound to; null when it is bound to nothing here. */
+    private deref(e: Expr, depth = 0): Expr | null {
+        if (depth > 16) return null;
+        if (e.k !== 'ref' && e.k !== 'attr') return e;
+        const key = this.dotted(e);
+        const bound = key === null ? null : this.binding(key, e.line);
+        return bound === null ? null : this.deref(bound, depth + 1);
+    }
+
+    /** Python's `None` and JavaScript's `undefined`/`null`: an option written as absent. */
+    private isNothing(e: Expr): boolean {
+        return e.k === 'ref' && (e.name === 'None' || e.name === 'undefined' || e.name === 'null');
+    }
+
+    /** A list of string literals. `complete` is false when an item, or the list, did not resolve. */
+    private stringList(e: Expr): StringList {
+        const v = this.deref(e);
+        if (v !== null && v.k === 'concat') {
+            const out: StringList = { items: [], complete: true };
+            for (const part of v.parts) {
+                const sub = this.stringList(part);
+                out.items.push(...sub.items);
+                out.complete &&= sub.complete;
+            }
+            return out;
+        }
+        if (v === null || v.k !== 'list') {
+            this.fail(e.line);
+            return { items: [], complete: false };
+        }
+        const out: StringList = { items: [], complete: !v.spread };
+        for (const item of v.items) {
+            const s = this.deref(item);
+            if (s !== null && s.k === 'str' && !s.template) out.items.push({ value: s.value, line: item.line });
+            else {
+                this.fail(item.line);
+                out.complete = false;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The options an SDK call is given. `open` is true when an option the
+     * reader did not see could still be set — a spread, `**kwargs`, options
+     * passed in from elsewhere — and then an option the reader did not see is
+     * UNKNOWN, never the SDK's default.
+     */
+    private sdkOptions(e: Expr | undefined, callLine: number): { entries: ReadonlyMap<string, Expr>; open: boolean; line: number } {
+        if (e === undefined || this.isNothing(e)) return { entries: new Map(), open: false, line: callLine };
+        const v = this.deref(e);
+        if (v !== null && v.k === 'dict') {
+            const open = v.spread || v.entries.some(([k]) => k === null);
+            if (open) this.fail(v.line);
+            return { entries: new Map(v.entries.filter((en): en is readonly [string, Expr] => en[0] !== null)), open, line: v.line };
+        }
+        if (v !== null && v.k === 'call' && this.sdkKnown(v.fn) === 'ClaudeAgentOptions') {
+            const open = v.spread || v.args.length > 0;
+            if (open) this.fail(v.line);
+            return { entries: v.kwargs, open, line: v.line };
+        }
+        this.fail(e.line);
+        return { entries: new Map(), open: true, line: e.line };
+    }
+
+    /** Each MCP server the options configure, as a `<name>:*` tool at its URL or where the code defines it. */
+    private sdkMcpServers(e: Expr | undefined, open: boolean, r: Resolved): { servers: Map<string, string>; complete: boolean } {
+        const servers = new Map<string, string>();
+        if (e === undefined || this.isNothing(e)) return { servers, complete: !open };
+        const config = this.deref(e);
+        // A Python path to a JSON file is configuration the reader cannot see.
+        if (config === null || config.k !== 'dict') {
+            this.fail(e.line);
+            return { servers, complete: false };
+        }
+        let complete = !config.spread;
+        if (config.spread) this.fail(config.line);
+        for (const [serverName, entry] of config.entries) {
+            const label = serverName !== null ? reportableName(serverName) : null;
+            const server = this.deref(entry);
+            if (label === null || server === null) {
+                this.fail(entry.line);
+                complete = false;
+                continue;
+            }
+            const at = this.at(entry.line);
+            let where: string | null = null;
+            if (server.k === 'call') {
+                // `createSdkMcpServer` / `create_sdk_mcp_server`: tools the code itself defines, in process.
+                const k = this.sdkKnown(server.fn);
+                if (k === 'createSdkMcpServer' || k === 'create_sdk_mcp_server') where = codeLocator(at);
+            } else if (server.k === 'dict') {
+                const urlExpr = server.entries.find(([k]) => k === 'url')?.[1];
+                if (urlExpr !== undefined) {
+                    where = this.endpointOf(urlExpr);
+                    if (where === null) this.fail(urlExpr.line);
+                } else {
+                    // A stdio command, or an in-process `sdk` server: code the agent starts.
+                    where = codeLocator(at);
+                }
+                for (const [k, v] of server.entries) {
+                    if (k === null) continue;
+                    if (isCredentialKey(k)) r.credentials.push(...this.credentialOf(v));
+                    if (k !== 'headers' && k !== 'env') continue;
+                    const nested = this.deref(v);
+                    if (nested?.k === 'dict') {
+                        for (const [hk, hv] of nested.entries) if (hk !== null && isCredentialKey(hk)) r.credentials.push(...this.credentialOf(hv));
+                    } else {
+                        this.fail(v.line);
+                    }
+                }
+            }
+            if (where === null) {
+                this.fail(entry.line);
+                complete = false;
+                continue;
+            }
+            servers.set(label, where);
+            r.tools.push({ name: `${label}:*`, kind: 'mcp', server: where, at });
+        }
+        return { servers, complete };
+    }
+
+    /**
+     * One SDK agent: its tools, its model, its credentials, and the options
+     * the planner maps onto the ladder. Nothing is guessed: an option that
+     * does not resolve is recorded where it is written, and concludes nothing.
+     */
+    private sdkAgent(callLine: number, options: { entries: ReadonlyMap<string, Expr>; open: boolean }): SdkAgentRead {
+        const names = this.facts.language === 'python' ? SDK_OPTIONS_PY : SDK_OPTIONS_JS;
+        const get = (key: keyof typeof SDK_OPTIONS_JS): Expr | undefined => {
+            const e = options.entries.get(names[key]);
+            return e === undefined || this.isNothing(e) ? undefined : e;
+        };
+        const agentAt = this.at(callLine);
+        const callLocator = codeLocator(agentAt);
+        const locatorOf = (e: Expr | undefined) => (e === undefined ? callLocator : codeLocator(this.at(e.line)));
+        const r = empty();
+
+        // MCP servers first: `allowedTools` attributes `mcp__<server>__<tool>` to them.
+        const mcp = this.sdkMcpServers(get('mcpServers'), options.open, r);
+
+        // Built-in tools: what `tools` turns on (every built-in when it is left out), less `disallowedTools`.
+        const toolsExpr = get('tools');
+        let builtins: { names: string[]; complete: boolean };
+        if (toolsExpr === undefined) {
+            builtins = { names: options.open ? [] : [...SDK_DEFAULT_BUILTINS], complete: !options.open };
+        } else {
+            const preset = this.deref(toolsExpr);
+            if (preset?.k === 'dict' && preset.entries.some(([k, v]) => k === 'preset' && v.k === 'str' && v.value === 'claude_code')) {
+                builtins = { names: [...SDK_DEFAULT_BUILTINS], complete: true };
+            } else {
+                const list = this.stringList(toolsExpr);
+                builtins = { names: list.items.map((i) => i.value), complete: list.complete };
+            }
+        }
+        const disallowedExpr = get('disallowedTools');
+        const disallowed: StringList = disallowedExpr === undefined ? { items: [], complete: !options.open } : this.stringList(disallowedExpr);
+        // A scoped rule (`Bash(rm:*)`) narrows a tool; only a bare name removes it.
+        const removed = new Set(disallowed.items.map((i) => i.value).filter((v) => !v.includes('(')));
+        const effective = builtins.names.filter((n) => !removed.has(n));
+        const effectiveComplete = builtins.complete && disallowed.complete;
+        for (const name of effective) {
+            const tool = reportableName(name);
+            if (tool !== null) r.tools.push({ name: tool, kind: 'builtin', server: locatorOf(toolsExpr), at: agentAt });
+        }
+
+        // `allowedTools` auto-approves; it does not restrict. Its MCP names are tools of their server.
+        const allowedExpr = get('allowedTools');
+        const allowed: StringList = allowedExpr === undefined ? { items: [], complete: !options.open } : this.stringList(allowedExpr);
+        let wildcard = false;
+        for (const { value, line } of allowed.items) {
+            const mcpTool = /^mcp__(.+?)__(.+)$/.exec(value);
+            if (value.includes('*') || (mcpTool === null && /^mcp__[^_]/.test(value))) {
+                wildcard = true;
+                continue;
+            }
+            if (mcpTool !== null) {
+                const where = mcp.servers.get(mcpTool[1]);
+                const tool = reportableName(mcpTool[2]);
+                // A server the options do not configure comes from somewhere the reader cannot see.
+                if (where === undefined || tool === null) this.fail(line);
+                else r.tools.push({ name: tool, kind: 'mcp', server: where, at: this.at(line) });
+                continue;
+            }
+            // A built-in the agent cannot call is approved for nothing; one it can is already listed.
+            const builtin = value.split('(')[0].trim();
+            if (!effectiveComplete && !effective.includes(builtin)) {
+                const tool = reportableName(builtin);
+                if (tool !== null) r.tools.push({ name: tool, kind: 'builtin', server: locatorOf(allowedExpr), at: this.at(line) });
+            }
+        }
+
+        // The model, and the endpoint and key the SDK's process reads from the environment it is given.
+        const modelExpr = get('model');
+        let model: string | null = null;
+        if (modelExpr !== undefined) {
+            const v = this.deref(modelExpr);
+            if (v !== null && v.k === 'str' && !v.template) model = reportableName(v.value);
+            else this.fail(modelExpr.line);
+        }
+        const anthropic = PROVIDERS.anthropic;
+        // Options the reader cannot see whole could point the SDK elsewhere through `env`.
+        let endpoint: string | null = options.open ? null : anthropic.endpoint;
+        let endpointBasis: DetectedModel['endpointBasis'] = options.open ? 'unknown' : 'provider-default';
+        let keyKnown = !options.open;
+        let keyGiven = false;
+        const envExpr = get('env');
+        if (envExpr !== undefined) {
+            const env = this.deref(envExpr);
+            if (env === null || env.k !== 'dict') {
+                this.fail(envExpr.line);
+                keyKnown = false;
+            } else {
+                if (env.spread) {
+                    this.fail(env.line);
+                    keyKnown = false;
+                }
+                for (const [k, v] of env.entries) {
+                    if (k === 'ANTHROPIC_BASE_URL') {
+                        endpoint = this.endpointOf(v);
+                        if (endpoint === null) this.fail(v.line);
+                        endpointBasis = endpoint === null ? 'unknown' : endpoint.startsWith('env://') ? 'environment' : 'explicit';
+                    } else if (k !== null && isCredentialKey(k)) {
+                        r.credentials.push(...this.credentialOf(v));
+                        keyGiven = true;
+                    }
+                }
+            }
+        }
+        if (keyKnown && !keyGiven && anthropic.keyEnv) r.credentials.push({ ref: `env://${anthropic.keyEnv}`, basis: 'provider-default', at: agentAt });
+        r.models.push({ provider: 'anthropic', model, endpoint, endpointBasis, at: agentAt });
+
+        // The options the planner maps onto the ladder.
+        const unknownWhenOpen = <T>(value: T): T | null => (options.open ? null : value);
+        const modeExpr = get('permissionMode');
+        let permissionMode: AgentSdkOptionFacts['permissionMode'] = unknownWhenOpen({ mode: null, at: callLocator });
+        if (modeExpr !== undefined) {
+            const v = this.deref(modeExpr);
+            if (v !== null && v.k === 'str' && !v.template) permissionMode = { mode: v.value, at: locatorOf(modeExpr) };
+            else {
+                this.fail(modeExpr.line);
+                permissionMode = null;
+            }
+        }
+        const sourcesExpr = get('settingSources');
+        let settingSources: AgentSdkOptionFacts['settingSources'] = unknownWhenOpen({ state: 'DEFAULT' as const, at: callLocator });
+        if (sourcesExpr !== undefined) {
+            const list = this.deref(sourcesExpr);
+            this.stringList(sourcesExpr); // records an item it cannot read
+            if (list === null || list.k !== 'list') settingSources = null;
+            // One source the reader cannot name is still a source.
+            else if (list.items.length > 0) settingSources = { state: 'NAMED', at: locatorOf(sourcesExpr) };
+            // `[]` is the one value that loads nothing; a spread could hold anything.
+            else settingSources = list.spread ? null : { state: 'EMPTY', at: locatorOf(sourcesExpr) };
+        }
+        const hooksExpr = get('hooks');
+        let hooks: AgentSdkOptionFacts['hooks'] = unknownWhenOpen({ present: false, at: callLocator });
+        if (hooksExpr !== undefined) {
+            const v = this.deref(hooksExpr);
+            if (v !== null && v.k === 'dict') hooks = { present: v.spread || v.entries.length > 0, at: locatorOf(hooksExpr) };
+            else {
+                this.fail(hooksExpr.line);
+                hooks = null;
+            }
+        }
+        const agentsExpr = get('agents');
+        let subagents: number | null = options.open ? null : 0;
+        if (agentsExpr !== undefined) {
+            const v = this.deref(agentsExpr);
+            if (v !== null && v.k === 'dict' && !v.spread) subagents = v.entries.length;
+            else {
+                this.fail(agentsExpr.line);
+                subagents = null;
+            }
+        }
+
+        const facts: AgentSdkOptionFacts = {
+            permissionMode,
+            settingSources,
+            allowedToolsWildcard: wildcard
+                ? { present: true, at: locatorOf(allowedExpr) }
+                : allowed.complete ? { present: false, at: locatorOf(allowedExpr) } : null,
+            shellOrFetch: (() => {
+                const names = SDK_SHELL_OR_FETCH.filter((n) => effective.includes(n));
+                // A name seen is callable unless a removal went unread; none seen
+                // means none only when every list was read whole.
+                if (names.length > 0 && disallowed.complete) return { names, at: locatorOf(toolsExpr) };
+                return effectiveComplete ? { names: [], at: locatorOf(toolsExpr) } : null;
+            })(),
+            hooks,
+        };
+        return { r, facts, subagents };
+    }
+
+    /** Every Agent SDK agent in the file. */
+    private sdkAgents(): { call: CallExpr; boundTo: string | null; sdk: SdkAgentRead }[] {
+        const out: { call: CallExpr; boundTo: string | null; sdk: SdkAgentRead }[] = [];
+        const consumedOptions = new Set<Expr>();
+        const python = this.facts.language === 'python';
+        for (const { call, boundTo } of this.facts.calls) {
+            const k = this.sdkKnown(call.fn);
+            let optionsExpr: Expr | undefined;
+            if (k === 'query' && !python) {
+                const arg = call.args[0] === undefined ? null : this.deref(call.args[0]);
+                if (call.spread || arg === null || arg.k !== 'dict') {
+                    this.fail(call.line);
+                    out.push({ call, boundTo, sdk: this.sdkAgent(call.line, { entries: new Map(), open: true }) });
+                    continue;
+                }
+                optionsExpr = arg.entries.find(([key]) => key === 'options')?.[1];
+                if (optionsExpr === undefined && (arg.spread || arg.entries.some(([key]) => key === null))) {
+                    this.fail(arg.line);
+                    out.push({ call, boundTo, sdk: this.sdkAgent(call.line, { entries: new Map(), open: true }) });
+                    continue;
+                }
+            } else if ((k === 'query' || k === 'ClaudeSDKClient') && python) {
+                optionsExpr = call.kwargs.get('options') ?? (k === 'ClaudeSDKClient' ? call.args[0] : undefined);
+                if (optionsExpr === undefined && call.spread) {
+                    this.fail(call.line);
+                    out.push({ call, boundTo, sdk: this.sdkAgent(call.line, { entries: new Map(), open: true }) });
+                    continue;
+                }
+            } else {
+                continue;
+            }
+            const resolved = optionsExpr === undefined ? null : this.deref(optionsExpr);
+            if (resolved !== null) consumedOptions.add(resolved);
+            const options = this.sdkOptions(optionsExpr, call.line);
+            // An agent the code does not name takes the name of the options it is given.
+            const named = boundTo ?? (optionsExpr?.k === 'ref' ? optionsExpr.name : null);
+            out.push({ call, boundTo: named, sdk: this.sdkAgent(call.line, options) });
+        }
+        // Python: `ClaudeAgentOptions` no call here consumes defines an agent run elsewhere.
+        if (python) {
+            for (const { call, boundTo } of this.facts.calls) {
+                if (consumedOptions.has(call) || this.sdkKnown(call.fn) !== 'ClaudeAgentOptions') continue;
+                const options = this.sdkOptions(call, call.line);
+                out.push({ call, boundTo, sdk: this.sdkAgent(call.line, options) });
+            }
+        }
+        return out;
+    }
+
     // ── agents ─────────────────────────────────────────────────────────────
 
     agents(): DetectedAgent[] {
         const consumed = new Set<CallExpr>();
-        const found: { call: CallExpr; boundTo: string | null; framework: DetectedAgent['framework']; r: Resolved }[] = [];
+        const found: {
+            call: CallExpr;
+            boundTo: string | null;
+            framework: DetectedAgent['framework'];
+            r: Resolved;
+            sdk?: { facts: AgentSdkOptionFacts; subagents: number | null };
+        }[] = [];
 
         // Executors first: each absorbs the factory it wraps.
         for (const { call, boundTo } of this.facts.calls) {
@@ -799,6 +1228,10 @@ class Recognizer {
             if (r === null || (r.tools.length === 0 && r.models.length === 0)) continue;
             found.push({ call, boundTo, framework: 'langgraph', r });
         }
+        // Claude Agent SDK agents.
+        for (const { call, boundTo, sdk } of this.sdkAgents()) {
+            found.push({ call, boundTo, framework: 'claude-agent-sdk', r: sdk.r, sdk: { facts: sdk.facts, subagents: sdk.subagents } });
+        }
 
         const names = new Map<string, number>();
         for (const f of found) {
@@ -819,6 +1252,8 @@ class Recognizer {
                 tools: dedupe(f.r.tools, (t) => `${t.server}\u0000${t.name}`),
                 models: dedupe(f.r.models, (m) => `${m.provider}\u0000${m.model}\u0000${m.endpoint}\u0000${m.at.line}`),
                 credentials: dedupe(f.r.credentials, (c) => c.ref),
+                sdkOptions: f.sdk?.facts ?? null,
+                subagents: f.sdk?.subagents ?? null,
             };
         });
     }

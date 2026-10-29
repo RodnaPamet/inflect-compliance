@@ -79,6 +79,28 @@ c: ChatOpenAI = ChatOpenAI(model="gpt-4o-mini")
     });
 });
 
+describe('Python: a `for` statement runs its iterable (#4156)', () => {
+    it('reads the calls in the iterable, sync and async, and a colon inside its brackets does not end it', () => {
+        const facts = readPython(`from claude_agent_sdk import query
+
+async def main():
+    async for message in query(prompt="hi", options=None):
+        print(message)
+    for key, value in load(cfg={"retries": 3}).items():
+        use(key, value)
+for x in first(): second(x)
+`);
+        expect(callNames(facts)).toEqual(['query', 'print', '.items', 'load', 'use', 'first', 'second']);
+    });
+
+    it('a call that is only an operand of `in` elsewhere is still not read (the case the loop rule exists for)', () => {
+        const facts = readPython(`if name in allowed():
+    pass
+`);
+        expect(callNames(facts)).toEqual([]);
+    });
+});
+
 describe('Python: a file the tokenizer cannot read is refused whole', () => {
     it.each([
         ['an unterminated string', 'x = "never closed\n'],
