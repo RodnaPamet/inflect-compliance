@@ -90,10 +90,16 @@ describe('the two sides compute the same key', () => {
         // spellings can drift apart one edit at a time while each still looks
         // correct, and every link would then open the wrong row silently.
         //
-        // This went red on the merge that made the write per-turn, which is
-        // the point: a change to how the row is written must re-prove the
-        // link, not inherit it.
-        expect(body).toContain('const message = runMessage(def, fromSeq, declared.input);');
+        // This went red on the merge that made the write per-turn, and again
+        // on #3744, which added the claimed peer replies to the binding — which
+        // is the point: a change to what the model is shown, or to how the row
+        // is written, must re-prove the link rather than inherit it. The
+        // replies are IN the binding deliberately, so the decision digest
+        // covers the peer text the step actually acted on; a reply rendered
+        // outside it would be a model input no stored decision mentions.
+        expect(body).toContain(
+            'const message = runMessage(def, fromSeq, declared.input, peerReplies);',
+        );
         expect(body).toContain('decisionDigest: computeInputDigest(message),');
         expect(declarationOf(body, 'settleTurns')).toContain('message,');
     });

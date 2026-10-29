@@ -3,10 +3,17 @@
  *
  * Resolves the campaign + decisions + last-activity map server-side
  * and hands them off to the client for the reviewer-facing UI.
+ *
+ * #4464 — the page asks `access_reviews.view` before it reads anything, the
+ * key `GET /access-reviews/:id` takes. `getAccessReviewWithActivity` asserts
+ * only the coarse read tier, so a custom role without the key was refused by
+ * the API and still shown the campaign the server rendered here. Every
+ * built-in role holds it.
  */
 import { notFound } from 'next/navigation';
 import { getTenantCtx } from '@/app-layer/context';
 import { getAccessReviewWithActivity } from '@/app-layer/usecases/access-review';
+import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { AccessReviewDetailClient } from './AccessReviewDetailClient';
 
 export const dynamic = 'force-dynamic';
@@ -18,6 +25,9 @@ export default async function AccessReviewDetailPage({
 }) {
     const { tenantSlug, reviewId } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
+    if (!ctx.appPermissions.access_reviews.view) {
+        return <ForbiddenPage />;
+    }
     let review;
     try {
         review = await getAccessReviewWithActivity(ctx, reviewId);

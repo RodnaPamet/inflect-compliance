@@ -64,6 +64,11 @@ const EXPECTED: Array<[string, ContentProvenance]> = [
     ['agent.run-input', 'THIRD_PARTY_INGESTED'],
     // An A2A peer's task text: signed by the peer, written by another organisation.
     ['a2a.peer-task', 'THIRD_PARTY_INGESTED'],
+    // An A2A peer's REPLY to a task we sent (#3744). The tempting one to trust —
+    // we chose the peer, we sent the task, and the receipt verifies against a key
+    // we pinned — and every one of those facts is about IDENTITY, not content: a
+    // signature says which author wrote the bytes, never that the bytes are benign.
+    ['a2a.peer-reply', 'THIRD_PARTY_INGESTED'],
     // A signed-in human typing into IC's own surfaces.
     ['ui.authenticated-form', 'TENANT_AUTHORED'],
     ['ui.review-decision', 'TENANT_AUTHORED'],
