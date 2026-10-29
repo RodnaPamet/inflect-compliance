@@ -92,6 +92,15 @@ const REVIEWED: Record<string, { major: number }> = {
     // packages" in the review doc. So 2.x will fail CI until somebody repeats
     // the exercise, which is the intent for a credential-resolving layer.
     '@earendil-works/pi-ai': { major: 1 },
+    // Reviewed 2026-10-29 on adoption (Step 2a, #4148), the Tool Runner
+    // engine's client. Qualifies on two criteria at once: it PERFORMS THE
+    // NETWORK EGRESS to Anthropic with the API key, and it DECODES every model
+    // response, tool-call arguments included. Exact pin, as for pi-ai.
+    // pi-ai keeps its own nested 0.129.0; that copy is not this entry's.
+    // `src/lib/agentic/tool-runner/client.ts` is the only file allowed to load
+    // it (local/anthropic-client-single-seam). Read the API version any bump
+    // speaks: 1.x sends 2026-10-21, which changes what a request may carry.
+    '@anthropic-ai/sdk': { major: 1 },
     '@flue/runtime': { major: 2 },
     // Reviewed in the same diff. Qualifies because it VALIDATES MODEL-SUPPLIED
     // TOOL ARGUMENTS — untrusted input by construction. Already present

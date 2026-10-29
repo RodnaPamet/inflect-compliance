@@ -31,12 +31,25 @@ Inflect would host it in the worker, the same way it hosts Flue.
 
 ## Current state (true today)
 
-- **The SDK is present only as a transitive, pinned dependency.**
-  `@anthropic-ai/sdk@0.129.0` arrives through `@earendil-works/pi-ai@1.4.0`,
-  Flue's model layer (`package-lock.json`; `docs/dependency-risk-review.md`).
-  Inflect's own Anthropic callers use raw `fetch`
-  (`src/app-layer/ai/*/anthropic-provider.ts`). SDK 1.0.0 (API version
-  `2026-10-21`, a breaking release) shipped on 2026-10-21; 1.3.0 is current.
+- **The SDK is a direct dependency, and one function builds every client
+  (Step 2a, #4148).** `@anthropic-ai/sdk@1.3.0` is in `dependencies`, exact-pinned
+  and reviewed in `docs/dependency-risk-review.md`. pi-ai keeps its own nested
+  `0.129.0` for Flue. `clientForRun` in `src/lib/agentic/tool-runner/client.ts`
+  is the only place a client is built, and `local/anthropic-client-single-seam`
+  refuses a load of any `@anthropic-ai/*` package elsewhere under `src/`. It
+  refuses a `LOCAL_ONLY` run first (`TOOL_RUNNER_LOCAL_ONLY_UNSERVED`), then a
+  missing key (`EXTERNAL_CREDENTIAL_NOT_CONFIGURED`), then a set
+  `ANTHROPIC_CUSTOM_HEADERS` (`SDK_AMBIENT_HEADERS_SET`). It pins the host, the
+  log level, tracing at `metadata_only` and no webhook key. Each client it
+  builds refuses, before `fetch`, any request that is not a Messages call or
+  that asks for a server-held thread, a container, the MCP connector or a server
+  tool. `toolRunnerModelFor` maps a profile tier to a model id
+  (`AGENT_TOOL_RUNNER_MODEL_BALANCED` / `_DEEP`, default Sonnet 5.5 and Opus
+  5.5). Nothing calls `clientForRun` yet outside its tests.
+- **SDK 1.x speaks API version `2026-10-21`.** It sends that version and the key
+  as `Authorization: Bearer`. Inflect's other Anthropic callers use raw `fetch`
+  on `2023-06-01` (`src/app-layer/ai/*/anthropic-provider.ts`,
+  `assistant/turn-provider.ts`), and are untouched.
 - **The assistant owns a hand-written loop.** `tool-loop.ts` with
   `turn-provider.ts` runs the same loop against anthropic, openrouter, local and
   stub providers. It dispatches tool calls one at a time and checks the guard
@@ -168,9 +181,9 @@ step with its own preserved-thinking checks.
 
 - `package.json` gains `@anthropic-ai/sdk` 1.x as a **direct** dependency. It
   sits beside pi-ai's pinned 0.129.0, and `docs/dependency-risk-review.md`
-  records both. Step 2a checks whether 1.x still ships a `require` condition. If
-  it does, the dynamic-import boundary Flue needs (`flue/driver.ts`) is not
-  needed here.
+  records both. 1.3.0 ships a `require` condition and loads under Jest's
+  CommonJS `node` project (Step 2a), so the dynamic-import boundary Flue needs
+  (`flue/driver.ts`) is not needed here.
 - `AGENT_DRIVERS` gains `'tool-runner'`, with the env switch
   `AGENT_DRIVER_TOOL_RUNNER` (opt-in, read like `AGENT_DRIVER_FLUE`) and a
   `DRIVER_IMPLEMENTED` entry. `AgentDriverMode` gains `TOOL_RUNNER` in two
@@ -311,6 +324,20 @@ already do three things:
 - pass `def.profile.toolNames` to `offerToolSet` as `profileTools`;
 - route resume and settlement through `resolveRunDefinition`, because a profile
   run key is not in the registry.
+
+**Carried from Step 2a (#4148).** The client the driver gets from
+`clientForRun` speaks API version `2026-10-21` and refuses some requests itself.
+So the driver must:
+- send no `temperature`, `top_p` or `top_k` (a 400 on that version, on every
+  model), no `document` block in an assistant turn, and no `text` block with
+  `citations` in a user turn, tool results included;
+- hand the runner custom tools only, built from `offerToolSet`. The client
+  refuses a server tool, an Anthropic-defined tool, `mcp_servers`, `container`
+  and `thread`, so a toolset or parameter that needs one fails the run rather
+  than reaching Anthropic;
+- still set `thread: false` on the runner, which the client then holds;
+- turn each `clientForRun` refusal into a named run-start refusal, and take the
+  model from `toolRunnerModelFor(profile.modelTier)`.
 
 **Goal.** Build the complete driver behind `DRIVER_IMPLEMENTED = false`, and ship
 the `TOOL_RUNNER` enum value with no writer.

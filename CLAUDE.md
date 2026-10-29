@@ -2829,6 +2829,31 @@ edit from being undone:
     `canDecide`. Compute neither in the client. Instructions and reasons render
     as React text, never through markdown or `innerHTML`.
 
+**Every Anthropic client an agent run uses comes from `clientForRun`**
+(`src/lib/agentic/tool-runner/client.ts`, Step 2a, #4148). Rules that are each
+one careless edit from being undone:
+
+  - **One file loads the SDK.** `local/anthropic-client-single-seam` refuses an
+    import, re-export, `import()` or `require()` of any `@anthropic-ai/*` package
+    elsewhere under `src/`; `import type` is allowed. It is a rule rather than a
+    `no-restricted-syntax` selector because config blocks replace that list for
+    their own files. `tests/guards/anthropic-client-single-seam.test.ts` plants a
+    construction and lints it with the real config.
+  - **Residency first, then the key, then the ambient headers.** LOCAL_ONLY is
+    refused before anything external is read, and no refusal constructs a
+    client. A client is built per call and never cached.
+  - **What the SDK would read from the environment is pinned in code**: the
+    host, `logLevel: 'warn'` with our own logger, tracing at `metadata_only`
+    with no propagation, no webhook key. `ANTHROPIC_CUSTOM_HEADERS` cannot be
+    pinned, so while it is set the client is refused (`SDK_AMBIENT_HEADERS_SET`).
+  - **A run's client sends Messages calls only.** Its `messagesOnly` middleware
+    refuses, before `fetch`, another API path, a `thread`, a `container`,
+    `mcp_servers` and any tool whose `type` is not `custom`. Widening it stores
+    something new at Anthropic or runs a tool outside the funnel, which is the
+    sub-processor step's diff, not an engine's.
+  - **SDK 1.x speaks API version `2026-10-21`**, which refuses `temperature`,
+    `top_p` and `top_k`. A unit test pins the version; read it on any bump.
+
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
 `GET /admin/agent-driver` is `admin.view`, so every admin reads the gate, and
