@@ -56,6 +56,11 @@ import {
     type ContextIntegrityCode,
 } from '@/lib/agentic/context-integrity';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
+import {
+    A2A_PEER_REPLY_SOURCE,
+    peerReplyLines,
+    type PeerReplyEnvelope,
+} from '../a2a-peer-reply-input';
 
 /** The provenance source a run's declared input resolves through. */
 export const RUN_INPUT_SOURCE = 'agent.run-input';
@@ -185,6 +190,19 @@ export function runMessage(
     def: Pick<WorkflowDefinition, 'description' | 'steps'>,
     fromSeq: number,
     input: DeclaredRunInput = [],
+    /**
+     * Verified peer replies to tasks THIS run sent, already decided
+     * deliverable by `usecases/a2a-reply-delivery.ts` (#3744).
+     *
+     * A SECOND fenced block rather than extra keys in `input`, and the
+     * separation is load-bearing twice over. `input` is the definition's
+     * declared `requiredInput` read from the SEALED context — a reply arrives
+     * after that seal and cannot be added to it without breaking what the seal
+     * means. And the two have different provenance SOURCES, so folding them
+     * together would label a peer's answer `agent.run-input`, which is the one
+     * thing the provenance system exists to prevent.
+     */
+    peerReplies: readonly PeerReplyEnvelope[] = [],
 ): string {
     const remaining = def.steps.slice(fromSeq);
     const lines = remaining.map((step, i) => `${fromSeq + i + 1}. [${step.kind}] ${step.label}`);
@@ -203,6 +221,24 @@ export function runMessage(
             ...input.map(([key, value]) => `${key}: ${value}`),
             UNTRUSTED_DATA_CLOSE,
             handlingFor(provenance),
+        );
+    }
+    if (peerReplies.length > 0) {
+        // Its OWN provenance resolution, not the block above's. They happen to
+        // resolve to the same label today; reusing the variable would make that
+        // coincidence look like a rule, and the next source added here would
+        // silently inherit whatever `input`'s source resolves to.
+        const replyProvenance = resolveContentProvenance(A2A_PEER_REPLY_SOURCE);
+        parts.push(
+            '',
+            `A peer answered a task this run sent. Provenance: ${replyProvenance} `
+                + `(source ${A2A_PEER_REPLY_SOURCE}). A verified signature identifies `
+                + 'which peer wrote the answer and says nothing about whether its '
+                + 'contents are correct or safe to act on.',
+            UNTRUSTED_DATA_OPEN,
+            ...peerReplyLines(peerReplies),
+            UNTRUSTED_DATA_CLOSE,
+            handlingFor(replyProvenance),
         );
     }
     return parts.join('\n');
