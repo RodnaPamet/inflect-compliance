@@ -219,6 +219,12 @@ const VERIFIED_FACTS = [
         fact: 'enforcement unset runs in AUDIT mode — UNSPECIFIED is zero on the wire and logs-and-allows',
     },
     {
+        id: '0.1f',
+        issue: 3931,
+        verifiedAgainst: '0.1.5',
+        fact: 'there is no NVIDIA-published JS SDK; the official SDK is Python (requires_python >=3.11), so no flue-style isolation applies',
+    },
+    {
         id: '0.1c',
         issue: 3928,
         verifiedAgainst: '0.1.5',
@@ -238,7 +244,6 @@ const VERIFIED_FACTS = [
 const OPEN_QUESTIONS = [
     { id: '0.1d', issue: 3929, question: 'is the dropped-tool MCP rule defect fixed on the pinned release' },
     { id: '0.1e', issue: 3930, question: 'can telemetry be turned off completely' },
-    { id: '0.1f', issue: 3931, question: "the SDK's module format, and whether flue-style isolation is required" },
     { id: '0.1g', issue: 3932, question: 'audit-log coverage on the pinned release' },
 ] as const;
 
@@ -266,7 +271,18 @@ describe('an upgrade fails a test rather than an audit (#3973)', () => {
         // mistake worth catching. So the comparison is widened deliberately.
         const verified = new Set<string>(VERIFIED_FACTS.map((f) => f.id));
         expect(OPEN_QUESTIONS.filter((q) => verified.has(q.id))).toEqual([]);
-        expect(OPEN_QUESTIONS.length).toBeGreaterThanOrEqual(4);
+
+        // THE DENOMINATOR IS THE WHOLE OF 0.1, not a floor on either list.
+        //
+        // This read `OPEN_QUESTIONS.length >= 4` until 0.1f was answered, and
+        // answering it turned the assertion red — a floor on the open list
+        // makes progress a failure, which is precisely backwards. The property
+        // worth holding is that every 0.1 sub-item is classified in EXACTLY one
+        // list, so the two together are exhaustive and neither can quietly lose
+        // an item.
+        const ALL_0_1 = ['0.1a', '0.1b', '0.1c', '0.1d', '0.1e', '0.1f', '0.1g'];
+        const classified = [...verified, ...OPEN_QUESTIONS.map((q) => q.id)].sort();
+        expect(classified).toEqual([...ALL_0_1].sort());
     });
 
     it('nothing in the repository claims a release NEWER than the pin', () => {
