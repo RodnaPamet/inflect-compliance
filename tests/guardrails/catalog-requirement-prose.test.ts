@@ -569,9 +569,7 @@ describe('catalogue requirements carry prose', () => {
         like the one in their copy of Annex A. That is a helpful-looking commit
         and it is the one that undoes this.
 
-        FOLDED INTO THIS FILE rather than given its own, because
-        `no-epic-named-ratchets` ratchets the guard-FILE count across
-        `tests/guards` AND `tests/guardrails` downward — and because this file
+        FOLDED INTO THIS FILE rather than given its own, because this file
         already reasons about this fixture at length two blocks above.
     */
     describe('the ISO 27001 Annex A fixture is keyed to the standard, not copied from it', () => {

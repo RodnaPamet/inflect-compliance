@@ -232,11 +232,9 @@ describe('#3458 — Graph requests carry a real Accept-Language', () => {
  * #3431 — every registered provider answers whether its response MAPPING has met
  * a live instance.
  *
- * SHARES THIS FILE DELIBERATELY. `tests/guards/epic-named-ratchets...` ratchets
- * the guard-file COUNT downward — the repo is retiring guard files, and adding
- * one to carry four assertions would push that count up. This file already
- * enumerates `registry.listProviders()`, which is the population the census
- * needs, so the assertions live beside it rather than in a file of their own.
+ * SHARES THIS FILE DELIBERATELY. This file already enumerates
+ * `registry.listProviders()`, which is the population the census needs, so the
+ * assertions live beside it rather than in a file of their own.
  *
  * `tsc` already forces the DECLARATION — the field is required on
  * `IntegrationProvider`. What it cannot say is whether the answer is meaningful.
