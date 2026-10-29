@@ -716,9 +716,9 @@ export async function loadFindingEvents(
                 status: classifyStatus(date, now, isDone),
                 entityType: 'FINDING',
                 entityId: r.id,
-                // Findings have no `/findings/[id]` detail route — land on the
-                // findings list rather than a 404.
-                href: tenantHrefFromCtx(ctx, `/findings`),
+                // Findings have no `/findings/[id]` detail route; the register
+                // opens a finding's panel from `?finding=<id>` (#4461).
+                href: tenantHrefFromCtx(ctx, `/findings?finding=${r.id}`),
                 // `Finding.owner` is a legacy free-text NAME — the schema says
                 // so in the comment directly above `assigneeUserId`, which
                 // supersedes it. Publishing it as `ownerUserId` meant a value

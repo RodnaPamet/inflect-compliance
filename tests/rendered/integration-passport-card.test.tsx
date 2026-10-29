@@ -288,7 +288,9 @@ describe('IntegrationPassportCard — the comparison', () => {
         expect(within(changes).getByText('PIN_CHANGED')).toBeInTheDocument();
         expect(within(changes).getByText('close_ticket')).toBeInTheDocument();
         const link = within(screen.getByTestId('passport-findings')).getByRole('link');
-        expect(link).toHaveAttribute('href', '/t/acme/findings/finding-9');
+        // The register with the finding's panel opened: there is no
+        // `/findings/[id]` route, so `/findings/finding-9` 404'd (#4461).
+        expect(link).toHaveAttribute('href', '/t/acme/findings?finding=finding-9');
         expect(within(screen.getByTestId('passport-findings')).getByText(P.findingOwnerRole)).toBeInTheDocument();
     });
 
