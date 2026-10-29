@@ -126,6 +126,16 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             + 'the evidence, so it is not a writer\'s either.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/legacy-access\\/snapshot$`),
+        methods: ['GET'],
+        permission: 'admin.manage',
+        note:
+            'Reads a connection\'s latest legacy snapshot (status, counts, coverage, '
+            + 'whether it is matched) and its id, which the reconcile POST needs. The '
+            + 'same key as the pull and reconcile it drives; the counts describe a '
+            + 'customer legacy access table.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/legacy-access\\/mapping$`),
         methods: ['GET', 'PUT'],
         permission: 'admin.manage',

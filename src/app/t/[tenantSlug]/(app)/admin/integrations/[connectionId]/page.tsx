@@ -23,6 +23,7 @@ import { RefreshCw } from 'lucide-react';
 import { cn } from '@inflect/ui/lib/cn';
 import { RequirePermission } from '@/components/require-permission';
 import { LegacyAccessMappingCard } from './LegacyAccessMappingCard';
+import { LegacyAccessRunsCard } from './LegacyAccessRunsCard';
 import { IntegrationOwnerCard } from './IntegrationOwnerCard';
 import { IntegrationPassportCard } from './IntegrationPassportCard';
 
@@ -143,6 +144,20 @@ export default function ConnectionOutcomePage() {
               * to carry an endpoint, so every other provider's page is unchanged.
               */}
             <LegacyAccessMappingCard connectionId={connectionId} />
+
+            {/*
+              * Reading the accounts and matching them to people, for a
+              * `legacy-mcp` connection only. Both are background jobs whose
+              * result is an execution row, so the card reads the rows this page
+              * already loaded for Check runs, and Refresh reloads them here too.
+              */}
+            <LegacyAccessRunsCard
+                connectionId={connectionId}
+                runs={rows}
+                runsLoading={loading}
+                runsError={error}
+                onReloadRuns={load}
+            />
 
             {/*
               * #3672 — the integration passport. Both cards render only for an

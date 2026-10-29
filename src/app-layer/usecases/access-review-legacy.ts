@@ -71,6 +71,7 @@ import {
     type FindingSubject,
 } from '@/lib/legacy-access/findings';
 import type { PopulationCoverage } from '@/lib/legacy-access/coverage';
+import { LATEST_RESOLUTION_ORDER, LATEST_SNAPSHOT_ORDER } from '@/lib/legacy-access/latest-snapshot';
 import type { RequestContext } from '../types';
 import { logEvent } from '../events/audit';
 import { assertCanAdmin } from '../policies/common';
@@ -157,7 +158,9 @@ export async function createLegacyAccessReview(
                 tenantId: ctx.tenantId,
                 connectionId: parsed.connectionId,
             },
-            orderBy: { completedAt: 'desc' },
+            // Shared with the connection page's standing read, which sends this
+            // snapshot's id to "Match to people": the two must pick the same row.
+            orderBy: LATEST_SNAPSHOT_ORDER,
             select: {
                 id: true,
                 status: true,
@@ -197,7 +200,7 @@ export async function createLegacyAccessReview(
         // reconciled state" is the newest execution's rows.
         const latestResolution = await db.legacyAccountResolution.findFirst({
             where: { tenantId: ctx.tenantId, snapshotId: snapshot.id },
-            orderBy: { createdAt: 'desc' },
+            orderBy: LATEST_RESOLUTION_ORDER,
             select: { executionId: true },
         });
         if (!latestResolution) {
