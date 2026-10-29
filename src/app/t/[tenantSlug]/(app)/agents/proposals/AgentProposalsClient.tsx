@@ -39,6 +39,7 @@ import type { AgentGuardVerdict } from '@/app-layer/ai/guard/proposal-guard';
 // from — so the second reader is what moved it, which is the decision
 // that guard exists to force someone to make.
 import { ProposalDiffPanel } from '@/components/agentic/ProposalDiffPanel';
+import { proposalKindLabelKey } from '@/lib/agentic/proposal-labels';
 
 export interface ProposalRow {
     id: string;
@@ -369,6 +370,12 @@ export function AgentProposalsClient({
         void act(p, 'approve');
     }
 
+    /** The kind's name; a kind this client does not know is shown as stored. */
+    function kindLabel(kind: string): string {
+        const key = proposalKindLabelKey(kind);
+        return key ? t(key) : kind;
+    }
+
     return (
         <div className="space-y-section animate-fadeIn">
             <PageHeader
@@ -495,7 +502,9 @@ export function AgentProposalsClient({
                                         checked={selected.has(p.id)}
                                         onCheckedChange={() => toggleSelected(p.id)}
                                     />
-                                    <StatusBadge variant="info">{p.kind}</StatusBadge>
+                                    <StatusBadge variant="info" data-testid={`proposal-kind-${p.id}`}>
+                                        {kindLabel(p.kind)}
+                                    </StatusBadge>
                                     <StatusBadge
                                         variant={p.operation === 'UPDATE' ? 'warning' : 'neutral'}
                                     >
