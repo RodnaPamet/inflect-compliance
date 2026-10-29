@@ -61,7 +61,8 @@ jest.mock('@/lib/agentic/flue/providers', () => ({
     flueModelIsRegistered: jest.fn(() => modelIsRegistered),
 }));
 jest.mock('@/lib/agentic/flue/tools-adapter', () => ({
-    flueToolsFor: jest.fn(() => ({ tools: offeredTools, omitted: [] })),
+    // `externalConnections` — see #3872; no external tool in this suite.
+    flueToolsFor: jest.fn(() => ({ tools: offeredTools, omitted: [], externalConnections: [] })),
 }));
 /** Set per test: whether the offered tool is treated as a propose tool, and
  *  how many items a call of it proposes. */

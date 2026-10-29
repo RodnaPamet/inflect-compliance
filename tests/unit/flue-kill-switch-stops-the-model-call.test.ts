@@ -67,6 +67,13 @@ jest.mock('@/lib/agentic/flue/tools-adapter', () => ({
     flueToolsFor: jest.fn(() => ({
         tools: [{ name: 'list_risks', description: 'stub', input: undefined, run: async () => '' }],
         omitted: [],
+        // `externalConnections` joined the real `OfferedToolSet` in #3872: the
+        // connection facts of the EXTERNAL tools that survived the narrowing,
+        // which the transfer gate ranges over. Stated rather than defaulted in
+        // the engine — a `?? []` at the read site would let a future engine that
+        // forgot to populate it see an empty list and refuse nothing, the
+        // fail-OPEN direction. This suite offers no external tool.
+        externalConnections: [],
     })),
 }));
 jest.mock('@/lib/mcp/tools/propose-tools', () => ({
