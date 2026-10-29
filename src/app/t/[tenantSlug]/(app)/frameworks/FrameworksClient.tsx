@@ -16,8 +16,9 @@
  */
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
+import type { FrameworkKind } from '@prisma/client';
 import {
     BadgeCheck,
     Car,
@@ -33,7 +34,6 @@ import { cn } from '@inflect/ui/lib/cn';
 
 import { Button } from '@/components/ui/button';
 import { CardList } from '@/components/ui/card-list';
-import { Modal } from '@/components/ui/modal';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -150,12 +150,6 @@ export function FrameworksClient({
 }: FrameworksClientProps) {
     const t = useTranslations('frameworks');
     const [view, setView] = useViewMode('frameworks', 'cards');
-    // B8 — explanatory modal for custom-framework creation. Custom
-    // frameworks require a tenantId column on the (currently global)
-    // Framework model + matching RLS policies — a substantial change
-    // queued for a follow-up. The modal surfaces the path and links
-    // to the existing import flow as the today-answer.
-    const [customFwModalOpen, setCustomFwModalOpen] = useState(false);
     const href = (path: string) => `/t/${tenantSlug}${path}`;
 
     // R10-PR7 — column-visibility gear, table-mode only.
@@ -207,7 +201,14 @@ export function FrameworksClient({
                     description: fw.description ?? undefined,
                     version: fw.version,
                     kind: fw.kind,
-                    requirementCount: fw._count?.requirements ?? 0,
+                    // #4459 — the requirements the coverage figure beside it is
+                    // worked out over: live (not deprecated) and, for a framework
+                    // whose packs this workspace chose, in scope. The catalogue's
+                    // `_count` counts every requirement row of every pack, so the
+                    // two figures on one card described different populations.
+                    // It is the fallback only where coverage is unknown, and
+                    // then no percentage is shown beside it.
+                    requirementCount: cov ? cov.total : (fw._count?.requirements ?? 0),
                     packCount: fw._count?.packs ?? 0,
                     coveragePercent,
                     mapped: cov?.mapped ?? 0,
@@ -244,6 +245,30 @@ export function FrameworksClient({
             </span>
         </Tooltip>
     );
+    // #4459 — a framework with a mapped requirement is "In use", so its
+    // coverage must never read 0%. The server rounds, and one requirement of
+    // more than 200 rounds to 0; the figure says "<1%" instead.
+    const coverageFigure = (row: FwRow) =>
+        row.mapped > 0 && row.coveragePercent === 0
+            ? t('list.coverageBelowOnePercent')
+            : `${row.coveragePercent}%`;
+
+    // #4459 — the framework's kind as a label, never the stored enum value
+    // with its underscore turned into a space ("ISO STANDARD").
+    const kindLabels: Record<FrameworkKind, string> = {
+        ISO_STANDARD: t('kinds.isoStandard'),
+        NIST_FRAMEWORK: t('kinds.nistFramework'),
+        SOC_CRITERIA: t('kinds.socCriteria'),
+        EU_DIRECTIVE: t('kinds.euDirective'),
+        REGULATION: t('kinds.regulation'),
+        INDUSTRY_STANDARD: t('kinds.industryStandard'),
+        CUSTOM: t('kinds.custom'),
+    };
+    const kindLabel = (kind?: string | null): string | undefined =>
+        kind && Object.prototype.hasOwnProperty.call(kindLabels, kind)
+            ? kindLabels[kind as FrameworkKind]
+            : undefined;
+
     // "In use" rather than "Installed": the flag is derived from coverage
     // (at least one requirement has a mapped control), not from a pack
     // install, so the hint says what it actually means.
@@ -277,18 +302,6 @@ export function FrameworksClient({
                         onChange={setView}
                         data-testid="frameworks-view-toggle"
                     />
-                    {/* B8 — Custom-framework explainer CTA. Opens
-                        the modal that documents the design + links
-                        out to the import path. */}
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setCustomFwModalOpen(true)}
-                        id="create-framework-btn"
-                        data-testid="create-framework-btn"
-                    >
-                        {t('list.createFramework')}
-                    </Button>
                     {/* B8 — primary action: jump to the import flow
                         for the first uninstalled framework. Hides
                         when there's literally nothing in the
@@ -343,11 +356,7 @@ export function FrameworksClient({
                                             </Link>
                                         </span>
                                     }
-                                    subtitle={
-                                        row.kind
-                                            ? row.kind.replace('_', ' ')
-                                            : undefined
-                                    }
+                                    subtitle={kindLabel(row.kind)}
                                     badge={statusBadge(row)}
                                 />
                                 <CardList.CardContent
@@ -364,7 +373,7 @@ export function FrameworksClient({
                                             label: t('list.coverage'),
                                             value: row.coverageError
                                                 ? coverageUnknown
-                                                : `${row.coveragePercent}%`,
+                                                : coverageFigure(row),
                                         },
                                     ]}
                                 >
@@ -413,6 +422,9 @@ export function FrameworksClient({
             {view === 'table' && (
                 <DataTable<FwRow>
                     data={rows}
+                    // #4459 — nothing on this page acts on ticked rows, and the
+                    // select column is on by default (a row click ticked it).
+                    selectionEnabled={false}
                     columnVisibility={columnVisibility}
                     onColumnVisibilityChange={setColumnVisibility}
                     columns={createColumns<FwRow>([
@@ -431,14 +443,16 @@ export function FrameworksClient({
                         {
                             id: 'kind',
                             header: t('list.domain'),
-                            cell: ({ row }) =>
-                                row.original.kind ? (
+                            cell: ({ row }) => {
+                                const label = kindLabel(row.original.kind);
+                                return label ? (
                                     <span className="text-xs text-content-muted">
-                                        {row.original.kind.replace('_', ' ')}
+                                        {label}
                                     </span>
                                 ) : (
                                     <span className="text-content-subtle">—</span>
-                                ),
+                                );
+                            },
                         },
                         {
                             id: 'requirementCount',
@@ -457,7 +471,7 @@ export function FrameworksClient({
                                     coverageUnknown
                                 ) : (
                                     <span className="tabular-nums text-xs text-content-default">
-                                        {row.original.coveragePercent}%
+                                        {coverageFigure(row.original)}
                                     </span>
                                 )
                             ),
@@ -479,58 +493,6 @@ export function FrameworksClient({
                 </div>
             )}
 
-            {/* B8 — Custom-framework explainer modal. Documents the
-                today-answer (import from catalogue + customise per-
-                requirement after install) and the planned future
-                (full tenant-scoped frameworks). Pure UX surface — no
-                schema change behind it yet. */}
-            <Modal
-                showModal={customFwModalOpen}
-                setShowModal={setCustomFwModalOpen}
-                size="md"
-                title={t('list.customTitle')}
-                description={t('list.customDescription')}
-            >
-                <Modal.Header
-                    title={t('list.customTitle')}
-                    description={t('list.customDescription')}
-                />
-                <Modal.Body>
-                    <div className="space-y-default text-sm text-content-default">
-                        <p>
-                            {t.rich('list.customToday', {
-                                b: (c) => <strong>{c}</strong>,
-                                em: (c) => <em>{c}</em>,
-                            })}
-                        </p>
-                        <p>
-                            {t.rich('list.customComingSoon', {
-                                b: (c) => <strong>{c}</strong>,
-                            })}
-                        </p>
-                    </div>
-                </Modal.Body>
-                <Modal.Actions>
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setCustomFwModalOpen(false)}
-                    >
-                        {t('list.close')}
-                    </Button>
-                    {canInstall && importHref && (
-                        <Link href={importHref}>
-                            <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => setCustomFwModalOpen(false)}
-                            >
-                                {t('list.importFramework')}
-                            </Button>
-                        </Link>
-                    )}
-                </Modal.Actions>
-            </Modal>
         </div>
     );
 }

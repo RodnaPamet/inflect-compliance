@@ -205,3 +205,18 @@ describe('"Enforce SSO" at sign-in and at the edge', () => {
         expect(await gateFor(await googleSignInToken(), '/t/beta/dashboard')).toBeNull();
     });
 });
+
+describe("a tenant's SYSTEM user cannot sign in (#4400)", () => {
+    it('the jwt callback refuses it before any claim is written', async () => {
+        const jwt = authOptions.callbacks!.jwt!;
+        await expect(
+            jwt({
+                token: { sub: 'sys_tenant-b' },
+                user: { id: 'sys_tenant-b', email: 'system+tenant-b@inflect.invalid' } as any,
+                account: { provider: 'google', type: 'oauth', providerAccountId: 'g-sys' } as any,
+                trigger: 'signIn',
+            } as any),
+        ).rejects.toThrow('A tenant system user cannot sign in');
+    });
+});
+
