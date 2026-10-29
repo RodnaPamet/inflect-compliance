@@ -15,17 +15,24 @@
  *     `admin.manage` on a base below ADMIN is still refused.
  */
 
+import { strictMock } from '../helpers/strict-mock';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getTenantCtxMock = jest.fn<any, [unknown, unknown]>();
 jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (params: unknown, req: unknown) => getTenantCtxMock(params, req),
 }));
 
+// The AUTHZ_DENIED row `requirePermission` writes must not reach a DB. A
+// strict mock, so an export this fixture omits fails loudly rather than
+// resolving to undefined (tests/guards/partial-mock-of-a-guarded-barrel.test.ts).
 const appendAuditEntryOrQueue = jest.fn(async (..._a: unknown[]) => ({ recorded: 'chain' as const, auditId: 'a1' }));
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntryOrQueue: (...a: unknown[]) => appendAuditEntryOrQueue(...a),
-    appendAuditEntry: jest.fn(async () => ({ id: 'a1', entryHash: 'h', previousHash: null })),
-}));
+jest.mock('@/lib/audit', () =>
+    strictMock('@/lib/audit', jest.requireActual('@/lib/audit'), {
+        appendAuditEntryOrQueue: (...a: unknown[]) => appendAuditEntryOrQueue(...a),
+        appendAuditEntry: jest.fn(async () => ({ id: 'a1', entryHash: 'h', previousHash: null })),
+    }),
+);
 
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn({})),
