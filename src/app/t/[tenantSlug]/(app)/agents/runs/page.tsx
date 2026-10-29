@@ -2,7 +2,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { listWorkflowRuns } from '@/app-layer/usecases/workflow-runs';
-import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import { getWorkflowDefinition, listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 
@@ -14,6 +14,15 @@ import { AgentRunsClient, type RunRow } from './AgentRunsClient';
  * start a workflow, watch its step timeline, resume a paused run (after acting on
  * its proposals), or abort a runaway run.
  */
+
+/**
+ * How many runs the page lists, newest first (#4472).
+ *
+ * One more is READ than is shown, so a cut list is a fact the page holds rather
+ * than one it cannot observe: a list that stops at exactly fifty and a tenant
+ * with exactly fifty runs look identical without it.
+ */
+const RUN_LIST_CAP = 50;
 export default async function AgentRunsPage({
     params,
 }: {
@@ -36,11 +45,22 @@ export default async function AgentRunsPage({
             />
         );
     }
-    const runs = await listWorkflowRuns(ctx, {});
+    const listed = await listWorkflowRuns(ctx, { take: RUN_LIST_CAP + 1 });
+    const truncated = listed.length > RUN_LIST_CAP;
 
-    const rows: RunRow[] = runs.map((r) => ({
+    // THE ONE PROJECTION of a run row (#4472). The client used to re-fetch
+    // `GET /agent-runs` after Start, Resume or Abort and render that response
+    // as-is — a different shape, carrying `_count.proposals` and no
+    // `pendingProposals`, so every paused run's hint then said nothing was
+    // queued. It now asks the router to re-render this page instead, so every
+    // row the list ever shows comes through here.
+    const rows: RunRow[] = listed.slice(0, RUN_LIST_CAP).map((r) => ({
         id: r.id,
         workflowKey: r.workflowKey,
+        // What a person calls the workflow, as the run's own page names it. A
+        // key with no registered definition (an agent profile run, or a
+        // definition since removed) is named by its key.
+        workflowName: getWorkflowDefinition(r.workflowKey)?.name ?? r.workflowKey,
         status: r.status,
         stepCount: r.stepCount,
         costTokens: r.costTokens,
@@ -70,7 +90,8 @@ export default async function AgentRunsPage({
     return (
         <AgentRunsClient
             tenantSlug={tenantSlug}
-            initialRuns={rows}
+            runs={rows}
+            truncated={truncated}
             workflows={workflows}
             // The ROLE-TIER write, resolved on the server. Every mutating
             // workflow-run usecase opens with `assertCanWrite(ctx)`, which reads

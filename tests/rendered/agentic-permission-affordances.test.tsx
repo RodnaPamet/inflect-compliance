@@ -85,6 +85,7 @@ const GATE_LABEL = EN.admin.permissionGated.ariaLabel.replace(
 const RUN: RunRow = {
     id: 'run-1',
     workflowKey: 'nightly-review',
+    workflowName: 'Nightly review',
     status: 'RUNNING',
     stepCount: 3,
     costTokens: 1200,
@@ -110,7 +111,7 @@ function renderRuns(canOperate: boolean, runs: RunRow[] = [RUN]) {
     return render(
         <AgentRunsClient
             tenantSlug="acme"
-            initialRuns={runs}
+            runs={runs}
             workflows={WORKFLOWS}
             canOperate={canOperate}
         />,

@@ -9477,7 +9477,18 @@
         }
       },
       "awaitingApprovalNoProposals": "Paused for review — nothing is queued for approval. Open the run to see what stopped it, then Resume.",
-      "approvalWindowCloses": "Approval window closes {date}"
+      "approvalWindowCloses": "Approval window closes {date}",
+      "pausedHint": "Paused when the service shut down mid-run. Nothing resumes it on its own, and until it is resumed or aborted it counts towards any limit on runs at once. Resume carries it on from where it stopped.",
+      "truncated": "Showing the {shown} most recent runs. Older runs exist and are not listed here.",
+      "status": {
+        "RUNNING": "Running",
+        "AWAITING_APPROVAL": "Awaiting approval",
+        "PAUSED": "Paused",
+        "COMPLETED": "Completed",
+        "ABORTED": "Aborted",
+        "FAILED": "Failed",
+        "EMPTY_CATALOGUE": "Failed: no tools"
+      }
     },
     "quarantine": {
       "crumb": "Quarantine",

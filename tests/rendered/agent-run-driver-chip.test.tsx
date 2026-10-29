@@ -63,6 +63,7 @@ const LABEL = EN.agents.runs.driver;
 const RUN: RunRow = {
     id: 'run-1',
     workflowKey: 'nightly-review',
+    workflowName: 'Nightly review',
     status: 'COMPLETED',
     stepCount: 3,
     costTokens: 1200,
@@ -76,7 +77,7 @@ const RUN: RunRow = {
 
 function renderRuns(runs: RunRow[]) {
     return render(
-        <AgentRunsClient tenantSlug="acme" initialRuns={runs} workflows={[]} canOperate={false} />,
+        <AgentRunsClient tenantSlug="acme" runs={runs} workflows={[]} canOperate={false} />,
     );
 }
 
@@ -148,7 +149,8 @@ describe('the run list says which engine walked each run', () => {
         renderRuns([{ ...RUN, id: 'run-9', driver: 'GRAPH' as RunRow['driver'] }]);
         const row = document.getElementById('run-run-9');
         expect(row).not.toBeNull();
-        expect(screen.getByText('nightly-review')).toBeInTheDocument();
+        // The row's link names the run by its workflow (#4472).
+        expect(screen.getByText(RUN.workflowName)).toBeInTheDocument();
     });
 
     it('an engine this build does not know is LABELLED as such, not shown as a key path (#4241)', () => {

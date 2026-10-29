@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
@@ -11,14 +12,22 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { cardVariants } from '@/components/ui/card';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@inflect/ui/lib/cn';
 import type { RecordedRunDriver } from '@/lib/agentic/agent-driver';
+import { apiErrorMessage } from '@/lib/api-error';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 
 export interface RunRow {
     id: string;
     workflowKey: string;
+    /**
+     * The workflow's NAME, resolved on the server from the registry — the
+     * name the run's own page shows. Falls back to the key for a key with no
+     * registered definition.
+     */
+    workflowName: string;
     status: string;
     stepCount: number;
     costTokens: number;
@@ -70,16 +79,47 @@ const STATUS_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'error' | 
     COMPLETED: 'success',
     ABORTED: 'neutral',
     FAILED: 'error',
+    // A run that resolved no tools is a failure, not a success (#3869).
+    EMPTY_CATALOGUE: 'error',
 };
 
 /**
+ * The run statuses with a label under `agents.runs.status` (#4472) — every
+ * value of `WorkflowRunStatus`, pinned to the generated enum and to both
+ * catalogues by `tests/rendered/agent-runs-list.test.tsx`.
+ *
+ * A local set rather than a `t.has()` probe, for the reason
+ * `entity-prev-next-nav.tsx` gives: most hand-rolled `next-intl` mocks
+ * implement `t` alone. A status this build does not know (a rollback) shows
+ * its stored code, which is the truth, rather than a guessed label.
+ */
+export const LABELLED_RUN_STATUSES: ReadonlySet<string> = new Set([
+    'RUNNING',
+    'AWAITING_APPROVAL',
+    'PAUSED',
+    'COMPLETED',
+    'ABORTED',
+    'FAILED',
+    'EMPTY_CATALOGUE',
+]);
+
+/** The statuses a run can be resumed from — the two `resumeWorkflowRun` accepts. */
+const RESUMABLE = new Set(['AWAITING_APPROVAL', 'PAUSED']);
+
+/**
  * The agent-runs client. Lists runs with live status + cost, lets an operator
- * start a workflow, resume an AWAITING_APPROVAL run (after acting on its
- * proposals in the agent-proposals queue), or abort an in-flight run.
+ * start a workflow, resume an AWAITING_APPROVAL or PAUSED run (after acting on
+ * its proposals in the agent-proposals queue), or abort an in-flight run.
+ *
+ * The rows are the SERVER's (`page.tsx`), always. After an action the page is
+ * re-rendered with `router.refresh()` rather than re-fetched here: the client
+ * once replaced its rows with the raw `GET /agent-runs` response, a different
+ * shape, and every paused run's hint then said nothing was queued (#4472).
  */
 export function AgentRunsClient({
     tenantSlug,
-    initialRuns,
+    runs,
+    truncated = false,
     workflows,
     canOperate,
     canCompose = false,
@@ -87,7 +127,10 @@ export function AgentRunsClient({
     canReadReports = false,
 }: {
     tenantSlug: string;
-    initialRuns: RunRow[];
+    /** The newest runs, at most the page's cap, projected by `page.tsx`. */
+    runs: RunRow[];
+    /** More runs exist than `runs` holds — the page read one past its cap. */
+    truncated?: boolean;
     workflows: WorkflowOption[];
     /**
      * The role-tier `canWrite` (#2456), NOT a permissions-blob key.
@@ -118,16 +161,15 @@ export function AgentRunsClient({
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const [runs, setRuns] = useState(initialRuns);
+    const router = useRouter();
+    const [refreshing, startRefresh] = useTransition();
     const [busy, setBusy] = useState<string | null>(null);
     /** The run awaiting an abort confirmation — aborting stops a LIVE execution. */
     const [confirmAbort, setConfirmAbort] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    async function refresh() {
-        const res = await fetch(apiUrl('/agent-runs'));
-        if (res.ok) setRuns((await res.json()) as RunRow[]);
-    }
+    /** Re-render the server page, so the rows come from its one projection. */
+    const refresh = () => startRefresh(() => router.refresh());
 
     async function start(workflowKey: string) {
         setBusy('start');
@@ -138,10 +180,13 @@ export function AgentRunsClient({
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ workflowKey }),
             });
-            if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: { message?: string } })?.error?.message ?? t('runs.startFailed'));
-            await refresh();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t('runs.startFailed'));
+            if (!res.ok) {
+                setError(apiErrorMessage(await res.json().catch(() => null), t('runs.startFailed')));
+                return;
+            }
+            refresh();
+        } catch {
+            setError(t('runs.startFailed'));
         } finally {
             setBusy(null);
         }
@@ -156,16 +201,23 @@ export function AgentRunsClient({
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({}),
             });
-            if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: { message?: string } })?.error?.message ?? t(`runs.${action}Failed`));
-            await refresh();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t(`runs.${action}Failed`));
+            if (!res.ok) {
+                setError(apiErrorMessage(await res.json().catch(() => null), t(`runs.${action}Failed`)));
+                return;
+            }
+            refresh();
+        } catch {
+            setError(t(`runs.${action}Failed`));
         } finally {
             setBusy(null);
         }
     }
 
+    const statusLabel = (status: string) =>
+        LABELLED_RUN_STATUSES.has(status) ? t(`runs.status.${status}`) : status;
+
     const abortTarget = runs.find((r) => r.id === confirmAbort) ?? null;
+    const startBusy = busy === 'start' || refreshing;
 
     return (
         <div className="space-y-section animate-fadeIn">
@@ -175,7 +227,7 @@ export function AgentRunsClient({
                 tone="danger"
                 title={t('runs.abortConfirmTitle')}
                 description={t('runs.abortConfirmBody', {
-                    workflow: abortTarget?.workflowKey ?? '',
+                    workflow: abortTarget?.workflowName ?? '',
                 })}
                 confirmLabel={t('runs.abort')}
                 onConfirm={async () => {
@@ -215,7 +267,7 @@ export function AgentRunsClient({
                             <Button
                                 variant="secondary"
                                 size="sm"
-                                disabled={!canOperate || busy === 'start'}
+                                disabled={!canOperate || startBusy}
                                 onClick={() => start(w.key)}
                                 title={w.description}
                             >
@@ -231,6 +283,15 @@ export function AgentRunsClient({
                 <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-error')}>{error}</div>
             )}
 
+            {truncated && (
+                // Says how many are shown and that older ones exist. There is
+                // no filter on this page to narrow by, so the shared list
+                // banner's "refine your filters" would not be true here.
+                <InlineNotice variant="warning" data-testid="agent-runs-truncated">
+                    {t('runs.truncated', { shown: runs.length })}
+                </InlineNotice>
+            )}
+
             {runs.length === 0 ? (
                 <EmptyState
                     title={t('runs.emptyTitle')}
@@ -242,7 +303,7 @@ export function AgentRunsClient({
                         <li key={r.id} id={`run-${r.id}`} className={cn(cardVariants({ density: 'comfortable' }), 'space-y-tight')}>
                             <div className="flex items-center justify-between gap-default">
                                 <div className="flex items-center gap-tight">
-                                    <StatusBadge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>{r.status}</StatusBadge>
+                                    <StatusBadge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>{statusLabel(r.status)}</StatusBadge>
                                     <StatusBadge variant={DRIVER_VARIANT[r.driver] ?? 'neutral'}>
                                         {t(`runs.driver.${r.driver}`)}
                                     </StatusBadge>
@@ -256,7 +317,7 @@ export function AgentRunsClient({
                                         className="text-sm font-medium text-content-emphasis underline"
                                         href={tenantHref(`/agents/runs/${r.id}`)}
                                     >
-                                        {r.workflowKey}
+                                        {r.workflowName}
                                     </a>
                                     <span className="text-xs text-content-subtle">
                                         {t('runs.stepMeta', {
@@ -279,12 +340,18 @@ export function AgentRunsClient({
                                     )}
                                 </div>
                                 <div className="flex items-center gap-tight">
-                                    {r.status === 'AWAITING_APPROVAL' && (
+                                    {/* AWAITING_APPROVAL and PAUSED, the two
+                                        statuses `resumeWorkflowRun` accepts.
+                                        A PAUSED run was stopped by a shutdown
+                                        mid-run, and nothing else resumes it
+                                        (#4472). */}
+                                    {RESUMABLE.has(r.status) && (
                                         <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
                                             <Button
                                                 variant="secondary"
                                                 size="sm"
-                                                disabled={!canOperate || busy === r.id}
+                                                disabled={!canOperate || busy === r.id || refreshing}
+                                                data-testid={`agent-run-resume-${r.id}`}
                                                 onClick={() => act(r.id, 'resume')}
                                             >
                                                 {t('runs.resume')}
@@ -296,7 +363,7 @@ export function AgentRunsClient({
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                disabled={!canOperate || busy === r.id}
+                                                disabled={!canOperate || busy === r.id || refreshing}
                                                 data-testid={`agent-run-abort-${r.id}`}
                                                 // Aborting stops a LIVE execution
                                                 // mid-flight. It committed on one
@@ -335,6 +402,9 @@ export function AgentRunsClient({
                                         t('runs.awaitingApprovalNoProposals')
                                     )}
                                 </p>
+                            )}
+                            {r.status === 'PAUSED' && (
+                                <p className="text-xs text-content-muted">{t('runs.pausedHint')}</p>
                             )}
                             {r.summary && <p className="text-sm text-content-default">{r.summary}</p>}
                         </li>
