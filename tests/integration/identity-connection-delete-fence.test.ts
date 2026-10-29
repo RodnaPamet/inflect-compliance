@@ -31,8 +31,10 @@
  * WHAT THIS SUITE DOES NOT COVER — say it here, not in a postmortem
  * -----------------------------------------------------------------
  * Every assertion below reaches the database through `disconnectSharePoint`,
- * so this suite detects exactly ONE regression: `loadConnection` losing its
- * provider filter. It does NOT detect the other way the trigger appears — a
+ * so this suite detects exactly ONE regression: its lookup losing its
+ * provider filter. (That lookup was `loadConnection` until #4466 gave the
+ * disconnect its own, without `isEnabled`, so a disabled SharePoint row can
+ * be removed; the provider filter came with it.) It does NOT detect the other way the trigger appears — a
  * SECOND `integrationConnection.delete(...)` call site added elsewhere (a
  * `disconnectGoogleWorkspace` modelled on this one, a tenant-cleanup path, a
  * migration script). Such a call site would leave all five assertions green.
@@ -46,11 +48,10 @@
  * WHERE THE SAFETY PROPERTY ACTUALLY LIVES
  * ----------------------------------------
  * On the LOOKUP, not on the delete. `disconnectSharePoint` deletes
- * whatever `loadConnection` hands it and performs no provider check of
- * its own — it is safe purely because `loadConnection` filters
- * `provider: SHAREPOINT_PROVIDER`. That is one clause in a private helper
- * shared with the browse / client / sync paths, none of which would
- * visibly misbehave if it were widened. Widening it is an
+ * whatever its lookup returns and performs no provider check of its own —
+ * it is safe purely because that lookup filters
+ * `provider: SHAREPOINT_PROVIDER`. That is one clause in a `where`, and
+ * dropping it would not visibly misbehave anywhere else. Widening it is an
  * ordinary-looking edit.
  *
  * Hence the negative below: it drives the real function against a real
@@ -264,6 +265,45 @@ describeFn('identity connections are unreachable from the SharePoint disconnect'
             where: { id: sharePointConnId },
         });
         expect(gone).toBeNull();
+    });
+
+    // #4466 — the disconnect lookup no longer requires `isEnabled: true`, so a
+    // SharePoint connection disabled from the generic Integrations table can be
+    // removed rather than stranded. That widening is exactly the kind of edit
+    // this file exists to watch, so its two halves are pinned here: the
+    // disabled SharePoint row goes, and a disabled IDENTITY row — which the
+    // `isEnabled` clause used to refuse as well — is still refused by the
+    // provider clause alone.
+    it('a DISABLED SharePoint connection disconnects', async () => {
+        const sp = await globalPrisma.integrationConnection.create({
+            data: {
+                tenantId: TENANT_ID,
+                provider: SHAREPOINT_PROVIDER,
+                name: `sharepoint-disabled-${SUITE_TAG}`,
+                configJson: { aadTenantId: '', allowedSiteIds: [] },
+                isEnabled: false,
+            },
+        });
+
+        await expect(disconnectSharePoint(ctx, sp.id)).resolves.toBeUndefined();
+
+        const gone = await globalPrisma.integrationConnection.findUnique({ where: { id: sp.id } });
+        expect(gone).toBeNull();
+    });
+
+    it('a DISABLED identity connection is still refused, and keeps its protection flags', async () => {
+        const { connectionId, accountId } = identity['entra-id'];
+        await globalPrisma.integrationConnection.update({
+            where: { id: connectionId },
+            data: { isEnabled: false },
+        });
+
+        await expect(disconnectSharePoint(ctx, connectionId)).rejects.toBeInstanceOf(NotFoundError);
+
+        const conn = await globalPrisma.integrationConnection.findUnique({ where: { id: connectionId } });
+        expect(conn).not.toBeNull();
+        const account = await globalPrisma.connectedIdentityAccount.findUnique({ where: { id: accountId } });
+        expect(account?.isProtected).toBe(true);
     });
 
     it('the stake is real: deleting an identity connection DOES take its protection flags', async () => {

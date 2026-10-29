@@ -75,6 +75,17 @@ export interface DeclaredConfigField {
  * `config.writesEnabled !== true` is deliberately strict, so the feature stayed
  * off with no error anywhere. This is the other half of that pairing — break it
  * and a connection that was writing stops writing, silently.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DECISION 3 — AN EDIT SENDS THE CONNECTION'S CURRENT `isEnabled`
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `upsertIntegrationConnection` reads an absent `isEnabled` as `true`, on the
+ * update path too, so an edit body without it is an ENABLE. Correcting the name
+ * of a connection somebody had deliberately disabled used to turn its syncs and
+ * checks back on, and the page said only "Connection updated" (#4466). The edit
+ * form therefore carries the state the row had when it was opened, and an edit
+ * never changes it; enabling is its own action on the row.
  */
 export function buildConnectionBody(input: {
     readonly provider: string;
@@ -83,6 +94,11 @@ export function buildConnectionBody(input: {
     readonly secrets: Record<string, string>;
     readonly editingId: string | null;
     readonly configFields: readonly DeclaredConfigField[];
+    /**
+     * The edited connection's `isEnabled` when the form was opened — see
+     * DECISION 3. Ignored when creating, where the server's default applies.
+     */
+    readonly editingIsEnabled?: boolean;
 }): Record<string, unknown> {
     const declaredBoolean = new Set(
         input.configFields.filter((f) => f.type === 'boolean').map((f) => f.key),
@@ -93,7 +109,11 @@ export function buildConnectionBody(input: {
         name: input.name,
         configJson: coerceDeclaredBooleans(input.config, declaredBoolean),
     };
-    if (input.editingId) body.id = input.editingId;
+    if (input.editingId) {
+        body.id = input.editingId;
+        // See DECISION 3: omitting it would re-enable a disabled connection.
+        if (typeof input.editingIsEnabled === 'boolean') body.isEnabled = input.editingIsEnabled;
+    }
 
     // Only send secrets if any field has a value — see DECISION 1.
     const hasSecrets = Object.values(input.secrets).some((v) => v.trim().length > 0);
