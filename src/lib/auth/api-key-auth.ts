@@ -247,9 +247,18 @@ export const WILDCARD_EXCLUDED_ACTIONS: Readonly<Record<string, readonly string[
  * carries, which `get_harness_register` requires so the scanner reads the
  * register with the key it already holds and nothing wider; and
  * `workpaper_view` (#3749), because `audits:read` does not reach a workpaper and
- * `audits:write` would let the key manage, freeze and share audits.
+ * `audits:write` would let the key manage, freeze and share audits; and
+ * `external_tools` (#4485), the action an external tool on `/api/mcp` requires,
+ * so the scope the funnel checks is the one that carries the permission.
  */
-export type ScopeCheckAction = 'read' | 'write' | 'admin' | 'agent_registry_view' | 'harness_ingest' | 'workpaper_view';
+export type ScopeCheckAction =
+    | 'read'
+    | 'write'
+    | 'admin'
+    | 'agent_registry_view'
+    | 'harness_ingest'
+    | 'workpaper_view'
+    | 'external_tools';
 
 /**
  * All valid scope strings that can be assigned to an API key.

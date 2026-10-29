@@ -1,25 +1,33 @@
 /**
  * Guardrail test: Admin API route authorization coverage.
  *
- * Scans all admin-only API route files to ensure they import a centralised
- * authorization guard rather than raw `getTenantCtx`.
+ * Every admin route file is listed below, and every HTTP handler it exports is
+ * wrapped in the permission middleware with THE KEY `ROUTE_PERMISSIONS` names
+ * for that URL and method.
  *
- * Accepted guard:
- *   - `requirePermission` — the sole admin-authorization guard
- *     (Epic C.1 — granular PermissionKey). The legacy role-tier
- *     helpers (`requireAdminCtx` / `requireWriteCtx` / `requireRoleCtx`)
- *     were removed once every route had migrated; the ratchet at
- *     `no-legacy-admin-guard.test.ts` keeps them from returning.
+ * The key a route enforces is the literal in its `requirePermission(...)`:
+ * `ROUTE_PERMISSIONS` is declarative and no request path reads it. So this reads
+ * each handler's gate from the syntax tree (`tests/helpers/route-permission-gate.ts`)
+ * and compares it with what the map resolves. Re-keying a route, or replacing its
+ * gate with a pass-through, now fails here unless the map changes in the same
+ * diff, where its `note` has to say why.
  *
- * Adding a new admin route? Wrap the handler with
- * `requirePermission('admin.X', …)` from
- * `@/lib/security/permission-middleware` and add the URL to
- * `ROUTE_PERMISSIONS` in `@/lib/security/route-permissions`. The
- * companion guardrail `tests/guardrails/api-permission-coverage.test.ts`
- * verifies the route ↔ map sync.
+ * Until #4441 this test checked only that the text `requirePermission` appeared
+ * somewhere in each file. An import line satisfied it, so the signed scanner
+ * ingest route could be re-keyed to `controls.view`, or un-gated with its import
+ * kept, with every test green.
+ *
+ * Adding a new admin route? Wrap each handler with
+ * `requirePermission('admin.X', …)` from `@/lib/security/permission-middleware`,
+ * add the URL to `ROUTE_PERMISSIONS` in `@/lib/security/route-permissions` with
+ * the same key, and list the file below. A handler that is deliberately open to
+ * every member goes in `UNGATED_HANDLERS` with its reason.
  */
 import * as fs from 'fs';
 import * as path from 'path';
+
+import { resolveRoutePermission } from '@/lib/security/route-permissions';
+import { handlerGates, requirementLabel, type HandlerGate } from '../helpers/route-permission-gate';
 
 // ─── Configuration ───
 
@@ -374,49 +382,101 @@ const ADMIN_ONLY_ROUTES = [
 ];
 
 /**
- * The import pattern that indicates proper admin authorization.
- *
- * `requirePermission` (Epic C.1) is the sole canonical guard — the
- * legacy `require*Ctx` role helpers were removed once every route had
- * migrated, so this is now a single-element list.
+ * Exported handlers under these files that carry NO permission gate, on purpose.
+ * Each needs a reason, and the map must hold no rule for it either: a handler
+ * the map says is gated and the route leaves open is a failure, not an entry.
  */
-const ADMIN_GUARD_PATTERNS = [
-    'requirePermission',
-];
+const UNGATED_HANDLERS: Readonly<Record<string, string>> = {
+    'security/mfa/policy/route.ts GET':
+        'Reads the tenant MFA policy for its settings page, which every member '
+        + 'sees; the handler resolves the member through getTenantCtx. Only PUT '
+        + 'changes the policy, and it is admin.manage.',
+};
 
 const BASE_DIR = path.resolve(
     __dirname,
     '../../src/app/api/t/[tenantSlug]'
 );
 
+/** The URL the map is matched against, as api-permission-coverage builds it. */
+function pathnameOf(routePath: string): string {
+    const segments = routePath
+        .replace(/\/route\.ts$/, '')
+        .split('/')
+        .map((seg) => (seg.startsWith('[') && seg.endsWith(']') ? 'stub-id' : seg));
+    return `/api/t/acme/${segments.join('/')}`;
+}
+
+/** Why one handler's gate disagrees with the map, or null when it agrees. */
+function gateProblem(routePath: string, method: string, gate: HandlerGate): string | null {
+    const rule = resolveRoutePermission(pathnameOf(routePath), method);
+    const expected = rule
+        ? requirementLabel(
+            (Array.isArray(rule.permission) ? rule.permission : [rule.permission]) as string[],
+            rule.mode,
+        )
+        : null;
+
+    if (gate.kind === 'unreadable') {
+        return `its gate's requirement is not a literal (${gate.why}), so no test can say which key it enforces`;
+    }
+    if (gate.kind === 'ungated') {
+        if (expected !== null) return `no permission gate wraps it, but ROUTE_PERMISSIONS names ${expected}`;
+        return `${routePath} ${method}` in UNGATED_HANDLERS
+            ? null
+            : 'no permission gate wraps it, and it is not in UNGATED_HANDLERS';
+    }
+    const actual = requirementLabel(gate.keys, gate.mode);
+    if (expected === null) return `the route enforces ${actual}, and ROUTE_PERMISSIONS has no rule for it`;
+    return actual === expected ? null : `the route enforces ${actual}, ROUTE_PERMISSIONS names ${expected}`;
+}
+
 // ─── Tests ───
 
 describe('Admin API route authorization coverage', () => {
-    // Verify each admin route imports the centralized guard
+    // Each exported handler enforces the key the map names for its URL + method.
     for (const routePath of ADMIN_ONLY_ROUTES) {
         const displayPath = `api/t/[tenantSlug]/${routePath}`;
 
-        test(`${displayPath} uses centralized admin guard`, () => {
+        test(`${displayPath}: every exported handler enforces the key ROUTE_PERMISSIONS names`, () => {
             const fullPath = path.join(BASE_DIR, routePath);
-
-            // Route file must exist
             expect(fs.existsSync(fullPath)).toBe(true);
 
-            const content = fs.readFileSync(fullPath, 'utf-8');
+            const gates = handlerGates(fs.readFileSync(fullPath, 'utf-8'), routePath);
+            expect(gates.size).toBeGreaterThan(0);
 
-            // Must import at least one admin guard utility
-            const hasGuard = ADMIN_GUARD_PATTERNS.some(pattern =>
-                content.includes(pattern)
-            );
-
-            expect(hasGuard).toBe(true);
-
-            // Must NOT use raw getTenantCtx (which skips role check)
-            // Exception: if the file also imports a guard, it may use getTenantCtx
-            // for non-admin handlers (e.g. GET that's read-only). We check that
-            // the guard import exists — that's the critical assertion.
+            const problems: string[] = [];
+            for (const [method, gate] of gates) {
+                const problem = gateProblem(routePath, method, gate);
+                if (problem) problems.push(`${method}: ${problem}`);
+            }
+            expect(problems).toEqual([]);
         });
     }
+
+    test('every UNGATED_HANDLERS entry is a listed route whose handler is still ungated', () => {
+        const stale: string[] = [];
+        for (const entry of Object.keys(UNGATED_HANDLERS)) {
+            const [routePath, method] = entry.split(' ');
+            const fullPath = path.join(BASE_DIR, routePath);
+            const gate = ADMIN_ONLY_ROUTES.includes(routePath) && fs.existsSync(fullPath)
+                ? handlerGates(fs.readFileSync(fullPath, 'utf-8'), routePath).get(method as never)
+                : undefined;
+            if (gate?.kind !== 'ungated') stale.push(entry);
+        }
+        expect(stale).toEqual([]);
+    });
+
+    test('positive control: the signed scanner ingest is held to its own key', () => {
+        // The route #4441 was proven on. If this reads anything else, the
+        // analyser stopped seeing the gate and every route test above is vacuous.
+        const routePath = 'admin/agents/harness-scans/route.ts';
+        const gates = handlerGates(fs.readFileSync(path.join(BASE_DIR, routePath), 'utf-8'), routePath);
+        expect(gates.get('POST')).toEqual({ kind: 'gated', keys: ['admin.agent_harness_ingest'], mode: 'all' });
+        expect(gateProblem(routePath, 'POST', { kind: 'gated', keys: ['controls.view'], mode: 'all' }))
+            .toMatch(/^the route enforces controls\.view, ROUTE_PERMISSIONS names admin\.agent_harness_ingest/);
+        expect(gateProblem(routePath, 'POST', { kind: 'ungated' })).toMatch(/^no permission gate wraps it/);
+    });
 
     // Scan for new admin/* route files not in the allowlist
     test('no admin/* route file exists without being listed in ADMIN_ONLY_ROUTES', () => {
@@ -442,25 +502,5 @@ describe('Admin API route authorization coverage', () => {
         );
 
         expect(missing).toEqual([]);
-    });
-
-    // Verify no admin route uses raw getTenantCtx without a guard
-    test('no admin route uses raw getTenantCtx without an admin guard import', () => {
-        const violations: string[] = [];
-
-        for (const routePath of ADMIN_ONLY_ROUTES) {
-            const fullPath = path.join(BASE_DIR, routePath);
-            if (!fs.existsSync(fullPath)) continue;
-
-            const content = fs.readFileSync(fullPath, 'utf-8');
-            const hasGuard = ADMIN_GUARD_PATTERNS.some(p => content.includes(p));
-            const usesRawCtx = content.includes('getTenantCtx');
-
-            if (usesRawCtx && !hasGuard) {
-                violations.push(routePath);
-            }
-        }
-
-        expect(violations).toEqual([]);
     });
 });

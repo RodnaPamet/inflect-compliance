@@ -15,6 +15,7 @@ import { getOrgPermissions, getPermissionsForRole, parsePermissionsJson } from '
 import { logger } from '@/lib/observability/logger';
 import { isOutsideSsoScope, SSO_SCOPE_REFUSAL } from '@/lib/auth/sso-session';
 import { assertSsoEnforcementAdmits } from '@/lib/auth/sso-enforcement';
+import { assertAgentKeyMayActAtRest } from '@/lib/agentic/agent-key-rest-gate';
 
 /**
  * Generates or extracts a request ID.
@@ -291,6 +292,10 @@ async function tryApiKeyAuth(req: NextRequest): Promise<RequestContext | null> {
     // Override requestId from the header if available
     const requestId = getRequestId(req);
     result.ctx.requestId = requestId;
+
+    // A key bound to an agent stops when its agent is stopped: a kill in force,
+    // or any status but ACTIVE, refuses it here as at `/api/mcp` (#4481).
+    await assertAgentKeyMayActAtRest(result.ctx, { method: req.method, path: req.nextUrl.pathname });
 
     // Enrich observability context
     mergeRequestContext({

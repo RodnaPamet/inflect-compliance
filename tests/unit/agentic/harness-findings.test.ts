@@ -7,14 +7,19 @@
  * positive evidence.
  */
 import {
+    SDK_AGENT_ID,
     UNBOUND_VAULT_REF,
+    createFakeScanner,
     validIncompleteReportBody,
     validReportBody,
     validV2CompleteReportBody,
     validV2ReportBody,
+    validV3ReportBodyWithSdkAgent,
 } from '../../helpers/agent-harness-fake-scanner';
 import {
+    AGENT_SDK_OPTION_CRITERIA,
     IDENTITY_BEARING_SOURCE,
+    agentSdkOptionVerdicts,
     firstSecretShapedMember,
     intakeClaimsByDiscoveredId,
     isHarnessShortfall,
@@ -26,17 +31,19 @@ import {
     shortfallFinding,
     toolEvidenceSource,
     toolEvidenceSourcesOf,
+    type AgentSdkOptionFacts,
     type IntakeClaim,
     type PriorHarnessState,
 } from '@/lib/agentic/harness-findings';
 import {
     HARNESS_CONTRACT_V3,
     SOURCE_KINDS,
+    verifyAndParseHarnessReport,
     type HarnessReportBody,
     type HarnessReportBodyV2,
     type HarnessReportBodyV3,
 } from '@/lib/agentic/harness-contract';
-import type { HarnessLevel } from '@/lib/agentic/harness-ladder';
+import { isHarnessCriterionId, type HarnessLevel } from '@/lib/agentic/harness-ladder';
 
 function prior(over: Partial<PriorHarnessState> = {}): PriorHarnessState {
     return {
@@ -594,6 +601,109 @@ describe('ORPHAN_CREDENTIAL is derived from unboundCredentials[], on positive ev
             // A kind the table does not name is treated as identity-bearing: the side that opens nothing.
             expect(isIdentityBearingSource('a-kind-added-later')).toBe(true);
             expect(isIdentityBearingSource('constructor')).toBe(true);
+        });
+    });
+});
+
+describe('Agent SDK options become NOT MET verdicts, as the owner mapped them (#4156, 2026-10-29)', () => {
+    const at = (line: number) => `code://acme/agent.ts#L${line}`;
+    /** The options the connect wizard's snippet sets: nothing to report. */
+    const hardened: AgentSdkOptionFacts = {
+        permissionMode: { mode: 'dontAsk', at: at(1) },
+        settingSources: { state: 'EMPTY', at: at(2) },
+        allowedToolsWildcard: { present: false, at: at(3) },
+        shellOrFetch: { names: [], at: at(4) },
+        hooks: { present: true, at: at(5) },
+    };
+    const unread: AgentSdkOptionFacts = { permissionMode: null, settingSources: null, allowedToolsWildcard: null, shellOrFetch: null, hooks: null };
+    const pairs = (facts: AgentSdkOptionFacts) => agentSdkOptionVerdicts(facts).map((v) => [v.criterion, v.evidence]);
+
+    it('every criterion the mapping names is one the ladder holds', () => {
+        const ids = Object.values(AGENT_SDK_OPTION_CRITERIA) as string[];
+        expect(ids.length).toBeGreaterThan(0);
+        expect(ids.filter((id) => !isHarnessCriterionId(id))).toEqual([]);
+    });
+
+    it('the hardened options raise nothing, and options that were not read conclude nothing', () => {
+        expect(agentSdkOptionVerdicts(hardened)).toEqual([]);
+        expect(agentSdkOptionVerdicts(unread)).toEqual([]);
+    });
+
+    it.each<[string, Partial<AgentSdkOptionFacts>, Array<[string, string]>]>([
+        ['bypassPermissions', { permissionMode: { mode: 'bypassPermissions', at: at(9) } }, [['H3.propose_not_commit', at(9)]]],
+        [
+            'settingSources left at the default',
+            { settingSources: { state: 'DEFAULT', at: at(9) } },
+            [['H3.skills_declared', at(9)], ['H2.tools_allowlisted', at(9)]],
+        ],
+        [
+            'settingSources naming sources',
+            { settingSources: { state: 'NAMED', at: at(9) } },
+            [['H3.skills_declared', at(9)], ['H2.tools_allowlisted', at(9)]],
+        ],
+        ['an allowedTools wildcard', { allowedToolsWildcard: { present: true, at: at(9) } }, [['H2.tools_allowlisted', at(9)]]],
+        ['Bash or WebFetch callable', { shellOrFetch: { names: ['Bash'], at: at(9) } }, [['H2.tools_allowlisted', at(9)]]],
+        ['no hook, with settings off', { hooks: { present: false, at: at(9) } }, [['H3.payloads_guarded', at(9)]]],
+    ])('%s fails its criterion, with the option\'s locator as evidence', (_name, change, expected) => {
+        expect(pairs({ ...hardened, ...change })).toEqual(expected);
+    });
+
+    it('no hook is held against the agent only when no settings file could add one', () => {
+        const noHooks = { ...hardened, hooks: { present: false, at: at(5) } };
+        expect(pairs(noHooks)).toContainEqual(['H3.payloads_guarded', at(5)]);
+        for (const settingSources of [{ state: 'DEFAULT' as const, at: at(2) }, null]) {
+            expect(pairs({ ...noHooks, settingSources }).map(([c]) => c)).not.toContain('H3.payloads_guarded');
+        }
+    });
+
+    it('a present hook, a permission mode other than bypass, and no shell or fetch evidence nothing either way', () => {
+        for (const mode of ['default', 'acceptEdits', 'plan', 'dontAsk', null]) {
+            expect(agentSdkOptionVerdicts({ ...hardened, permissionMode: { mode, at: at(1) } })).toEqual([]);
+        }
+    });
+
+    it('nothing is ever met: code shows a control missing, never one working', () => {
+        const worst: AgentSdkOptionFacts = {
+            permissionMode: { mode: 'bypassPermissions', at: at(1) },
+            settingSources: { state: 'EMPTY', at: at(2) },
+            allowedToolsWildcard: { present: true, at: at(3) },
+            shellOrFetch: { names: ['Bash', 'WebFetch'], at: at(4) },
+            hooks: { present: false, at: at(5) },
+        };
+        for (const facts of [hardened, worst, { ...worst, settingSources: { state: 'NAMED' as const, at: at(2) } }]) {
+            for (const v of agentSdkOptionVerdicts(facts)) expect(v.met).toBe(false);
+        }
+        expect(agentSdkOptionVerdicts(worst)).toHaveLength(4);
+    });
+
+    describe('the reference scanner\'s SDK agent, through the planner', () => {
+        const agentOf = (plan: ReturnType<typeof planHarnessScan>) => plan.agents.find((a) => a.discoveredId === SDK_AGENT_ID)!;
+
+        it('verifies under /3 as it is', () => {
+            const scanner = createFakeScanner();
+            const verdict = verifyAndParseHarnessReport(scanner.serialise(validV3ReportBodyWithSdkAgent()), [scanner.publicKeyHex]);
+            expect(verdict).toMatchObject({ ok: true, complete: true });
+        });
+
+        it('is SHADOW, held to the write bar, and its option verdicts stand between it and the next rung', () => {
+            const plan = planHarnessScan(validV3ReportBodyWithSdkAgent(), prior());
+            expect(agentOf(plan)).toMatchObject({ registeredAgentId: null, linkBasis: null, level: 'H0', reach: 'WRITE_OR_EXTERNAL' });
+            expect(agentOf(plan).verdicts.map((v) => [v.criterion, v.met])).toEqual([
+                ['H3.propose_not_commit', false],
+                ['H3.skills_declared', false],
+                ['H2.tools_allowlisted', false],
+            ]);
+            expect(refs(plan.assert)).toEqual(
+                expect.arrayContaining([`SHADOW_AGENT:${SDK_AGENT_ID}`, `HARNESS_SHORTFALL:${SDK_AGENT_ID}`, `UNPINNED_WRITE_TOOL:${SDK_AGENT_ID}`]),
+            );
+        });
+
+        it('is linked by the register\'s own intake record, which closes SHADOW_AGENT on this complete scan', () => {
+            const claims = new Map<string, IntakeClaim>([[SDK_AGENT_ID, { registeredAgentId: 'agt_intake', status: 'DRAFT', deleted: false }]]);
+            const plan = planHarnessScan(validV3ReportBodyWithSdkAgent(), prior({ intakeClaims: claims }));
+            expect(agentOf(plan)).toMatchObject({ registeredAgentId: 'agt_intake', linkBasis: 'INTAKE' });
+            expect(plan.resolve).toContain(`SHADOW_AGENT:${SDK_AGENT_ID}`);
+            expect(refs(plan.assert)).not.toContain(`SHADOW_AGENT:${SDK_AGENT_ID}`);
         });
     });
 });

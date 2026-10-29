@@ -122,8 +122,9 @@ These are the checks a contributor runs. Each one stands in for a CI job.
   - Only one Jest run may hold the test database at a time; global setup takes
     a lock.
 - **A new guard check goes into the guard that already owns the invariant.**
-  The guard-file count is capped by `tests/guards/no-epic-named-ratchets.test.ts`,
-  and raising that cap needs a written reason there.
+  A new guard file is named for its invariant:
+  `tests/guards/no-epic-named-ratchets.test.ts` refuses a PR- or epic-named one,
+  and the return of any guard the August 2026 retirements deleted.
 - **The description follows `.github/PULL_REQUEST_TEMPLATE.md`.** Delete its
   dependency section when the package files are untouched. Add the rollback and
   risk analysis whenever the change is SIGNIFICANT.

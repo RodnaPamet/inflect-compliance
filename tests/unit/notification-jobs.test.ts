@@ -54,6 +54,19 @@ describe('runDailyEvidenceExpiryNotifications', () => {
         }
     });
 
+    it('flushes only the named tenant\'s outbox when a tenant is given', async () => {
+        // The admin's "Run Daily Sweep" names its tenant. Unscoped, the flush
+        // sent every other tenant's queued mail and returned their counts.
+        await runDailyEvidenceExpiryNotifications({ tenantId: 'tenant-42' });
+        expect(mockedOutbox).toHaveBeenCalledTimes(1);
+        expect(mockedOutbox.mock.calls[0][0]).toEqual({ limit: 200, tenantId: 'tenant-42' });
+    });
+
+    it('drains every tenant\'s outbox when no tenant is given (the scheduled run)', async () => {
+        await runDailyEvidenceExpiryNotifications();
+        expect(mockedOutbox.mock.calls[0][0]).toEqual({ limit: 200 });
+    });
+
     it('returns aggregate results', async () => {
         mockedRetention
             .mockResolvedValueOnce({ scanned: 10, tasksCreated: 2, skippedDuplicate: 1 })

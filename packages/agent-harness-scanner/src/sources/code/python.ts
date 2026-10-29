@@ -696,6 +696,32 @@ export function readPython(src: string): FileFacts {
             }
             continue;
         }
+        if ((first.t === 'name' && first.v === 'for') || (isAsync && head?.t === 'name' && head.v === 'for')) {
+            // `for target in iterable:` runs the iterable, which is often a call:
+            // `async for message in query(...)` is how the Agent SDK is driven
+            // (#4156). The expression reader treats `in` as an operator whose
+            // operands it does not keep, so the iterable is read on its own.
+            let depth = 0;
+            let inAt = -1;
+            let colonAt = -1;
+            for (let j = isAsync ? 2 : 1; j < lineToks.length; j++) {
+                const t = lineToks[j];
+                if (t.t === 'op' && (t.v === '(' || t.v === '[' || t.v === '{')) depth += 1;
+                else if (t.t === 'op' && (t.v === ')' || t.v === ']' || t.v === '}')) depth -= 1;
+                else if (depth === 0 && inAt < 0 && t.t === 'name' && t.v === 'in') inAt = j;
+                else if (depth === 0 && inAt >= 0 && t.t === 'op' && t.v === ':') {
+                    colonAt = j;
+                    break;
+                }
+            }
+            if (inAt >= 0) {
+                const end = colonAt >= 0 ? colonAt : lineToks.length;
+                collect(new LineParser(lineToks.slice(inAt + 1, end)).expr(), null);
+                // A body written on the same line.
+                if (colonAt >= 0 && colonAt + 1 < lineToks.length) scan(lineToks.slice(colonAt + 1));
+                continue;
+            }
+        }
         if ((first.t === 'name' && first.v === 'with') || (isAsync && head?.t === 'name' && head.v === 'with')) {
             // `with Client(...) as client:` binds `client` to the context manager.
             const p = new LineParser(lineToks.slice(isAsync ? 2 : 1));

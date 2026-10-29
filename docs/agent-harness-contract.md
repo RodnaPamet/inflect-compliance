@@ -155,6 +155,11 @@ is left out. How it fills the members every source shares:
 - A model the definition calls is a `models[]` entry: its endpoint as an https
   URL, an `env://` reference to where the URL is configured, or, when neither is
   knowable, the `code://` locator of the model's construction.
+- A verdict, when the definition's own configuration shows a control is
+  missing, is `met: false` with the configuration's `code://` locator as
+  evidence. A Claude Agent SDK agent's options are the one case today (#4156).
+  Code is never evidence that a control works, so the source reports nothing
+  `met: true`.
 
 ### Agents
 
