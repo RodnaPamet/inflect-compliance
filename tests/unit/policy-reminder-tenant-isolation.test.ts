@@ -46,6 +46,15 @@ beforeEach(() => {
         createTask: jest.fn().mockResolvedValue({ id: 'task-x', key: 'TSK-1' }),
         addTaskLink: jest.fn().mockResolvedValue({}),
     }));
+    // #4400 — the task is written as the tenant's SYSTEM user, which the job
+    // creates on first use. Mocked so this stays a unit test.
+    jest.mock('@/app-layer/context-system', () => ({
+        ...jest.requireActual('@/app-layer/context-system'),
+        buildTenantSystemJobContext: jest.fn(async ({ tenantId }: { tenantId: string }) => ({
+            tenantId,
+            userId: `sys_${tenantId}`,
+        })),
+    }));
 });
 
 // ═════════════════════════════════════════════════════════════════════

@@ -130,7 +130,19 @@ export interface EmailDelivery {
     delivered: boolean;
 }
 
+/**
+ * Whether every recipient is under the reserved `.invalid` top-level domain
+ * (RFC 2606), which can never be delivered to. A tenant's SYSTEM user has
+ * such an address (#4400), so a fan-out that reaches it by id sends nothing
+ * rather than handing the transport an address it will bounce.
+ */
+export function isUndeliverableRecipient(to: string): boolean {
+    const addresses = to.split(',').map((a) => a.trim()).filter((a) => a !== '');
+    return addresses.length > 0 && addresses.every((a) => /\.invalid>?$/i.test(a));
+}
+
 export async function sendEmail(msg: EmailMessage): Promise<EmailDelivery> {
+    if (isUndeliverableRecipient(msg.to)) return { delivered: false };
     // Lazy, per-module-instance init from env. Next's bundler can load
     // mailer.ts in a DIFFERENT chunk for a route handler than the one
     // `instrumentation.ts` initialized at startup, leaving the route's
