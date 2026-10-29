@@ -9,6 +9,8 @@
  *      the clock every NIS2 Article 23 deadline is counted from.
  *   2. markReportable counts the three deadlines from that stored instant,
  *      so a detection at 14:37 is due its early warning at 14:37 next day.
+ *   3. create and update store an owner only when they are an ACTIVE member
+ *      of the tenant — `Incident.ownerUserId` has no relation to check it.
  */
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(),
@@ -31,7 +33,7 @@ jest.mock('@/app-layer/events/audit', () => ({
 
 import { runInTenantContext } from '@/lib/db-context';
 import { IncidentRepository } from '@/app-layer/repositories/IncidentRepository';
-import { createIncident, markReportable } from '@/app-layer/usecases/incident';
+import { createIncident, markReportable, updateIncident } from '@/app-layer/usecases/incident';
 import { DETECTED_AT_FUTURE_TOLERANCE_MS } from '@/lib/incidents/detected-at';
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -107,5 +109,55 @@ describe('markReportable — the deadlines follow the real detection time', () =
             ['DETAILED_72H', '2026-11-01T14:37:00.000Z'],
             ['FINAL_1MONTH', '2026-11-29T14:37:00.000Z'],
         ]);
+    });
+});
+
+describe('the incident owner must be an active member of the tenant', () => {
+    const membershipQuery = (userId: string) => ({
+        where: { userId, tenantId: 'tenant-A', status: 'ACTIVE' },
+        select: { id: true },
+    });
+
+    it('createIncident refuses an owner who is not an active member, and writes nothing', async () => {
+        fakeDb.tenantMembership.findFirst.mockResolvedValue(null);
+        await expect(
+            createIncident(admin, { ...base, ownerUserId: 'stranger-9' }),
+        ).rejects.toMatchObject({ status: 400, message: 'Owner must be an active member of this tenant' });
+        expect(fakeDb.tenantMembership.findFirst).toHaveBeenCalledWith(membershipQuery('stranger-9'));
+        expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('createIncident stores an owner who is an active member', async () => {
+        await createIncident(admin, { ...base, ownerUserId: 'member-2' });
+        expect(fakeDb.tenantMembership.findFirst).toHaveBeenCalledWith(membershipQuery('member-2'));
+        expect((repo.create.mock.calls[0][2] as any).ownerUserId).toBe('member-2');
+    });
+
+    it('createIncident asks nothing when no owner is named', async () => {
+        await createIncident(admin, base);
+        expect(fakeDb.tenantMembership.findFirst).not.toHaveBeenCalled();
+        expect((repo.create.mock.calls[0][2] as any).ownerUserId).toBeNull();
+    });
+
+    it('updateIncident refuses an owner who is not an active member, and writes nothing', async () => {
+        fakeDb.tenantMembership.findFirst.mockResolvedValue(null);
+        await expect(
+            updateIncident(admin, 'inc_1', { ownerUserId: 'stranger-9' }),
+        ).rejects.toMatchObject({ status: 400, message: 'Owner must be an active member of this tenant' });
+        expect(fakeDb.tenantMembership.findFirst).toHaveBeenCalledWith(membershipQuery('stranger-9'));
+        expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('updateIncident stores an owner who is an active member', async () => {
+        repo.update.mockResolvedValue({ id: 'inc_1', reference: 'INC-2026-001' } as any);
+        await updateIncident(admin, 'inc_1', { ownerUserId: 'member-2' });
+        expect((repo.update.mock.calls[0][3] as any).ownerUserId).toBe('member-2');
+    });
+
+    it('updateIncident clears the owner without a membership check', async () => {
+        repo.update.mockResolvedValue({ id: 'inc_1', reference: 'INC-2026-001' } as any);
+        await updateIncident(admin, 'inc_1', { ownerUserId: null });
+        expect(fakeDb.tenantMembership.findFirst).not.toHaveBeenCalled();
+        expect((repo.update.mock.calls[0][3] as any).ownerUserId).toBeNull();
     });
 });

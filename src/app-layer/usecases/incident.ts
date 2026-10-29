@@ -42,6 +42,7 @@ import type {
     LinkEvidenceInput,
 } from '../schemas/incident.schemas';
 import { containmentRunbookFor } from '@/data/incident-containment';
+import { assertOwnerInTenant } from './vendor-link-targets';
 
 /** sanitize an optional free-text field, preserving the three-state contract. */
 function sanitizeOptional(v: string | null | undefined): string | null | undefined {
@@ -90,6 +91,11 @@ export async function createIncident(ctx: RequestContext, data: CreateIncidentIn
     }
 
     return runInTenantContext(ctx, async (db) => {
+        // `Incident.ownerUserId` has no relation, so nothing below the usecase
+        // checks it: the commander must be an ACTIVE member of THIS tenant
+        // (the shared check the vendor, risk and agent paths use).
+        if (data.ownerUserId) await assertOwnerInTenant(db, ctx, data.ownerUserId);
+
         const year = detectedAt.getUTCFullYear();
         const reference = await IncidentRepository.nextReference(db, ctx, year);
 
@@ -143,12 +149,15 @@ export async function updateIncident(
     assertCanManageIncidents(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // Same membership check as create; `null` (or '') clears the owner.
+        if (data.ownerUserId) await assertOwnerInTenant(db, ctx, data.ownerUserId);
+
         const updated = await IncidentRepository.update(db, ctx, id, {
             title: data.title !== undefined ? sanitizePlainText(data.title) : undefined,
             description: sanitizeOptional(data.description) ?? undefined,
             severity: data.severity as IncidentSeverity | undefined,
             incidentType: data.incidentType,
-            ownerUserId: data.ownerUserId === undefined ? undefined : data.ownerUserId,
+            ownerUserId: data.ownerUserId === undefined ? undefined : data.ownerUserId || null,
             containedAt:
                 data.containedAt === undefined
                     ? undefined
