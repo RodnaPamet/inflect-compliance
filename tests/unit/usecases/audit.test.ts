@@ -73,6 +73,8 @@ import { createTask } from '@/app-layer/usecases/task';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../../helpers/make-context';
+import { UpdateAuditSchema } from '@/lib/schemas';
+import { AUDIT_STATUS_MOVES } from '@/app/t/[tenantSlug]/(app)/audits/_lib/status-variants';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 const mockCreate = AuditRepository.create as jest.MockedFunction<typeof AuditRepository.create>;
@@ -416,5 +418,50 @@ describe('createAudit — auditCycleId association', () => {
         await createAudit(makeRequestContext('EDITOR'), { title: 'Q4' });
 
         expect(mockCreate.mock.calls[0][2].auditCycleId).toBeNull();
+    });
+});
+
+/**
+ * The status moves the audits hub offers (`AUDIT_STATUS_MOVES`: one step
+ * forward, one step back, Cancel while not done) must all be moves the server
+ * takes. `updateAudit` has no transition rules today, so each lands; if rules
+ * are ever added, this fails until the hub's table and the rules agree.
+ */
+describe('updateAudit — the status moves the audits hub offers', () => {
+    const offered: Array<[string, string]> = Object.entries(AUDIT_STATUS_MOVES).flatMap(
+        ([from, moves]) => [
+            ...(moves.forward ? [[from, moves.forward] as [string, string]] : []),
+            ...(moves.back ? [[from, moves.back] as [string, string]] : []),
+            ...(moves.cancellable ? [[from, 'CANCELLED'] as [string, string]] : []),
+        ],
+    );
+
+    it('offers the one-step-back and Cancel moves, not only the forward ones', () => {
+        expect(offered).toEqual(expect.arrayContaining([
+            ['IN_PROGRESS', 'PLANNED'],
+            ['COMPLETED', 'IN_PROGRESS'],
+            ['PLANNED', 'CANCELLED'],
+            ['IN_PROGRESS', 'CANCELLED'],
+        ]));
+    });
+
+    it.each(offered)('%s → %s passes the schema and reaches the row', async (_from, to) => {
+        const body = UpdateAuditSchema.parse({ status: to });
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeUpdateDb() as never));
+
+        await updateAudit(makeRequestContext('EDITOR'), 'a1', body);
+
+        expect(mockUpdate.mock.calls[0][3].status).toBe(to);
+    });
+
+    it('the schema refuses a status that is not an AuditStatus', () => {
+        expect(UpdateAuditSchema.safeParse({ status: 'REOPENED' }).success).toBe(false);
+    });
+
+    it('a role without the write tier cannot move the status', async () => {
+        await expect(
+            updateAudit(makeRequestContext('READER'), 'a1', { status: 'CANCELLED' }),
+        ).rejects.toThrow(/permission to modify/);
+        expect(mockUpdate).not.toHaveBeenCalled();
     });
 });

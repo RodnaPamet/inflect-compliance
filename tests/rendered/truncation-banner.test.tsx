@@ -80,6 +80,20 @@ describe('TruncationBanner — localized copy', () => {
         expect(bannerText()).not.toMatch(/\{cap[^}]*\}|MISSING:/);
     });
 
+    it('a page with no filters names its own narrowing control instead', () => {
+        mockLocale.current = 'en';
+        render(<TruncationBanner truncated cap={5000} hint="Pick a cycle." />);
+        expect(bannerText()).toContain('Showing the first 5,000 results.');
+        expect(bannerText()).toContain('Pick a cycle.');
+        expect(bannerText()).not.toContain(en.common.truncationBanner.refine);
+    });
+
+    it('`hint={false}` leaves the sentence out rather than pointing at nothing', () => {
+        mockLocale.current = 'en';
+        render(<TruncationBanner truncated cap={5000} hint={false} />);
+        expect(bannerText().trim()).toBe('Showing the first 5,000 results.');
+    });
+
     it('renders nothing when not truncated', () => {
         const { container } = render(<TruncationBanner truncated={false} />);
         expect(container).toBeEmptyDOMElement();
