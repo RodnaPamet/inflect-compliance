@@ -82,15 +82,25 @@ jobs:
             const f=require('./findings.json');
             console.log(f.filter(x=>x.level==='advisory'||x.level==='floor').length);
           ")" >> "$GITHUB_OUTPUT"
+          # `empty-range` needs its own output or it is an annotation nobody
+          # reads (#4428): the step below opens the tracking issue, and a level
+          # missing from its condition prints to the log and stops there. An
+          # override matching no published version is inert, so whatever floor
+          # it was added to enforce is not being enforced.
+          echo "inert=$(node -e "
+            const f=require('./findings.json');
+            console.log(f.filter(x=>x.level==='empty-range').length);
+          ")" >> "$GITHUB_OUTPUT"
 
       - name: Open or update the tracking issue
-        if: steps.check.outputs.lagging != '0' || steps.check.outputs.wrong != '0'
+        if: steps.check.outputs.lagging != '0' || steps.check.outputs.wrong != '0' || steps.check.outputs.inert != '0'
         uses: actions/github-script@v9
         with:
           script: |
             const all = require('./findings.json');
             const findings = all.filter((f) => f.level === 'lagging');
             const floors = all.filter((f) => f.level === 'floor');
+              const inert = all.filter((f) => f.level === 'empty-range');
             const advisories = all.filter((f) => f.level === 'advisory');
             const title = 'Dependency overrides are behind their own ranges';
             const body = [
@@ -98,6 +108,19 @@ jobs:
               // excludes anything, or an entry citing an advisory that
               // says something else, invalidates the offline guard's
               // green tick — that outranks a lagging lockfile.
+              ...(inert.length ? [
+                '## Overrides that match no published version',
+                '',
+                'The range resolves to NOTHING on the registry, so npm cannot be applying it.',
+                'Whatever floor the override was added to enforce is not being enforced, and this',
+                'outranks every other row here: the others say a floor is stale, this says there',
+                'is no floor at all.',
+                '',
+                '| Package | Override | Locked | Newest published |',
+                '|---|---|---|---|',
+                ...inert.map((f) => `| \`${f.name}\` | \`${f.spec}\` | \`${f.locked ?? 'nothing'}\` | \`${f.newestOverall}\` |`),
+                '',
+              ] : []),
               ...(floors.length ? [
                 '## Floors that no longer exclude anything',
                 '',
