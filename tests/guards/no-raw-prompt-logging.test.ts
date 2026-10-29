@@ -267,6 +267,10 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/lib/agentic/flue/model-decision.ts — identifier bound elsewhere',
     'src/lib/agentic/flue/runtime-start.ts — call to a helper this rule cannot open',
     'src/lib/agentic/agent-authority.ts — identifier bound elsewhere',
+    // The REST gate for an agent-bound key (#4481): one denial row and one
+    // audit-failure warn. Every value is an id, a closed reason, a kill scope,
+    // a register status, or the request's method and path. No prompt reaches it.
+    'src/lib/agentic/agent-key-rest-gate.ts — identifier bound elsewhere',
     // The tenant's driver toggle: one audit row and one log line, both written
     // when an OWNER changes which engine executes this tenant's agentic runs.
     // Every value at both sinks is an id (`tenantId`), a member of the closed
@@ -814,22 +818,26 @@ const SINK_FLOOR = 30;
 // warn, the dispatch info; the decision-row error has none). The error fields
 // were written as `err.message` with a literal fallback rather than
 // `String(err)`, which is what kept two more holes out.
+// 212 -> 215: THE REST GATE FOR AN AGENT-BOUND KEY (#4481). Three holes, all in
+// its denial row: the refusal reason, the agent's status, and the surface it was
+// refused at, each a parameter. None is prompt-derived.
+
+// COMPOSED, not picked: 215 -> 216, with MEASURED_SINKS 124 -> 125 in the
+// same diff. #4481 and #3744 each raised 212/122 on their own branch, so
+// neither side's own figure is right on the combined tree — this is main's
+// current value plus this diff's own delta, the arithmetic that stays correct
+// whichever lands first.
 //
-// 212 -> 213, with MEASURED_SINKS 122 -> 123 in the same diff: A2A REPLY INTO A
-// RUN (#3744). One new sink in `flue/execute.ts`, a file already registered
-// `identifier bound elsewhere`, and the new call is the same kind — a component
-// literal, `ctx.tenantId`, `runId`, and the error's NAME. Not its message: that
-// catch covers `guardUntrustedInput`, which is handed the peer's reply body, so
-// a throw from its own write could have carried the scanned text into a log
-// line. Narrowing it to `err.name` is why this entry adds one hole rather than
-// a leak.
+// #3744 contributes ONE hole and ONE sink: a reply-claim `logger.warn` in
+// `flue/execute.ts`, a file already registered `identifier bound elsewhere`,
+// carrying a component literal, `ctx.tenantId`, `runId` and the error's NAME.
+// Not its message — that catch covers `guardUntrustedInput`, which is handed
+// the peer's reply body, so a throw from its own write could have carried the
+// scanned text into a log line.
 //
-// Both numbers are the figure MEASURED on the composed tree, not either
-// branch's own plus one: #4149 and #3744 each raised 209, and a resolution that
-// kept one side's value would have left the ratchet blind to the other's sink.
-// This still TIGHTENS `HOLES_PER_SINK_CEILING`: (212+6)/122 = 1.7869 becomes
-// (213+6)/123 = 1.7805, because the sink is counted alongside the hole.
-const MEASURED_HOLES = 213;
+// Still TIGHTENS `HOLES_PER_SINK_CEILING`: (215+6)/124 = 1.7823 becomes
+// (216+6)/125 = 1.7760, because the sink is counted alongside the hole.
+const MEASURED_HOLES = 216;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -885,9 +893,11 @@ const MEASURED_HOLES = 213;
 // recording them here) and the four of Step 2b's driver, loop and decision
 // recorder. Raising the denominator by more than the numerator TIGHTENS
 // `HOLES_PER_SINK_CEILING`: (209+6)/114 = 1.886 becomes (212+6)/122 = 1.787.
+// 122 -> 124: the REST gate's two sinks (#4481), its denial row and its
+// audit-failure warn. TIGHTENS the ratio: (215+6)/124 = 1.782.
 //
-// 122 -> 123: the reply-claim sink of #3744, recorded beside its hole above.
-const MEASURED_SINKS = 123;
+// 124 -> 125: the reply-claim sink of #3744, recorded beside its hole above.
+const MEASURED_SINKS = 125;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

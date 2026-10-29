@@ -173,6 +173,7 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     AV_WEBHOOK_SECRET: 'internal HMAC secret for the AV webhook',
     // Operator config / URLs.
     APP_URL: 'deployment URL config',
+    BUILD_SHA: 'the commit the image was built from, reported by the health probes',
     AUTH_URL: 'deployment URL config',
     NEXTAUTH_URL: 'deployment URL config',
     NODE_ENV: 'runtime mode',

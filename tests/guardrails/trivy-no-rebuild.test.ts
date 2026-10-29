@@ -300,11 +300,9 @@ describe('every trivy-action invocation sets its own scan timeout', () => {
 // repository is what exposed it; the third will not announce itself, and there
 // is no second one at the moment.
 //
-// WHY THIS LIVES HERE rather than in its own file: `no-epic-named-ratchets`
-// holds a DOWNWARD ratchet on the guard-file count, and its comment says that
-// renaming a guard to dodge the denominator would be gaming the measure. Adding
-// a file to assert a property of the workflows this file already parses would
-// push that count the wrong way for no gain.
+// WHY THIS LIVES HERE rather than in its own file: it asserts a property of
+// the workflows this file already parses, and a second file reading the same
+// workflows would split one subject across two guards for no gain.
 
 interface BuildStep {
     readonly file: string;
