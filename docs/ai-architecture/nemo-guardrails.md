@@ -21,6 +21,32 @@ inflect · ai architecture · nemo guardrails · roadmap v1 · 2026-10-29
 | Unblocks | model-based rails on the assistant and run input; closes the Flue audit's F5 residual (run input unscanned) by a second route |
 | Owner decisions | **D-L1-2** (LLM-free rails first; LLM-backed rails only on the tenant's permitted route) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  P0{{"Phase 0 · close the gap first<br/>re-verify F5, fix with<br/>the existing scanner<br/>D-L1-2, garak baseline"}}:::gate
+  P1["Phase 1 · GuardProvider seam<br/>patterns + nemo, worst-of<br/>LLM-free rails only<br/>outage degrades to flag"]:::todo
+  P2["Phase 2 · LLM-backed rails<br/>one config per residency<br/>Art 12 row per rail call"]:::todo
+  P3["Phase 3 · rail precision<br/>records per rail"]:::todo
+  GA["garak P1<br/>before and after"]:::ext
+  PR["presidio P1<br/>PII rail"]:::ext
+  RT["Hosted or local route<br/>for LLM-backed rails"]:::ext
+  P0 --> P1 --> P2 --> P3
+  GA -.-> P1
+  PR -.-> P1
+  RT -.-> P2
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - **The product has a guard, and it is deterministic.**

@@ -23,6 +23,37 @@ inflect · ai architecture · nemotron reasoning · roadmap v1 · 2026-10-29
 | Unblocks | cheaper subagent fan-out; sovereign-ish workers; [`inspect.md`](./inspect.md) Phase 3 |
 | Owner decisions | **D-L3-1** (the supervisor/worker role axis in model selection), **D-L3-2** (Nemotron as the default worker when hosted or local is configured) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  G1{{"D-L3-1<br/>role axis"}}:::gate
+  P0{{"Phase 0 · verify<br/>tool protocol through vLLM<br/>skill records per revision<br/>D-L3-2 default worker"}}:::gate
+  P1["Phase 1 · role axis, no GPU<br/>supervisor and worker specifiers<br/>same residency rules per role<br/>both recorded at run open"]:::todo
+  P2["Phase 2 · Nemotron as worker<br/>on inflect-hosted"]:::todo
+  P3["Phase 3 · choose models<br/>with records"]:::todo
+  SPK["modal-inference P0<br/>spike or local vLLM"]:::ext
+  ACT["modal-inference P2<br/>activation"]:::ext
+  INS["inspect P3<br/>comparison records"]:::ext
+  SK["Skill records<br/>per model revision"]:::eval
+  G1 --> P1
+  SPK -.-> P0
+  P0 --> P2
+  P1 --> P2 --> P3
+  ACT -.-> P2
+  INS -.-> P3
+  P0 --- SK
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - **Two engines, one model per run, and the model is chosen by residency.**
@@ -96,7 +127,10 @@ inflect · ai architecture · nemotron reasoning · roadmap v1 · 2026-10-29
 - [ ] 0.3 Run the ten skills' evaluation sets with Nemotron as the model
       revision; commit the records (G11) — this is the first number on
       "is Nemotron good enough as a worker".
-- [ ] 0.4 D-L3-1 / D-L3-2 initialled.
+- [ ] 0.4 D-L3-2 initialled, with the skill records in front of the owner.
+      D-L3-1 (the role axis) needs none of this verification and can be
+      initialled on its own — which is what lets Phase 1 run in Wave 1,
+      before any GPU exists.
 
 **Prompt.**
 ```text
@@ -114,19 +148,21 @@ on/off; record what arrives and what tool-decision.ts would do with it. (2) The 
 flags needed (tool-call parser, reasoning parser) recorded in an implementation note and
 in deploy/modal/nemotron.py. (3) Run every skill's evaluation set with Nemotron as the
 model revision and commit the records under the skills' record locations. (4) Recommend
-D-L3-1 (role axis) and D-L3-2 (Nemotron as default worker) with the pass rates in front
-of the owner.
+D-L3-2 (Nemotron as default worker) with the pass rates in front of the owner. D-L3-1
+(the role axis) is decided separately and does not wait for this.
 
 Constraints: seed data only; no src/ change; records committed by PR.
 
 Done when: the note answers the four protocol questions, the skill records exist for the
-Nemotron revision, and both decisions are initialled.
+Nemotron revision, and D-L3-2 is initialled.
 ```
 
 **Hardening.** G11 (the first thing a new model produces is records), G5
 (flags and versions pinned in deploy code).
 
 ### Phase 1 — The role axis (no GPU needed)
+
+**Gate.** D-L3-1 only. This phase does not wait for Phase 0's verification.
 
 **Sub-phases.**
 - [ ] 1.1 `model-selection.ts`: `FlueModelSelection.role`; `resolveFlueModel`

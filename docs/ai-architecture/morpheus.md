@@ -22,6 +22,31 @@ inflect · ai architecture · morpheus · roadmap v1 · 2026-10-29
 | Unblocks | an automated latch on `AgentCircuitBreaker` from behaviour, not only from guard blocks |
 | Owner decisions | **D-L1-3** (the signal, and CPU-first) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  P0{{"Phase 0 · the signal<br/>ledger features, no content<br/>seeded anomaly on CPU<br/>D-L1-3"}}:::gate
+  P1["Phase 1 · CPU detector<br/>rolling baseline per agent<br/>Finding at A<br/>latch at B"]:::todo
+  P2["Phase 2 · Morpheus DFP on Modal<br/>only above the measured threshold<br/>four-week parity window"]:::todo
+  BRK["AgentCircuitBreaker<br/>existing, not a second one"]:::done
+  MOD["modal-inference P1"]:::ext
+  SEED["Seeded anomaly set<br/>precision on baseline days"]:::eval
+  P0 --> P1 --> P2
+  P1 -.->|latches| BRK
+  MOD -.-> P2
+  SEED -.-> P1
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - **The signals Morpheus would read already exist, structured and

@@ -24,6 +24,36 @@ inflect · ai architecture · modal inference · roadmap v1 · 2026-10-29
 | Unblocks | every GPU arm above; sovereign-ish worker inference without an always-on GPU bill |
 | Owner decisions | **D-L5-1** (Modal as a sub-processor: the four-step notice), **D-L5-2** (model, weights, licence, region, GPU class, cold-start budget) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  P0{{"Phase 0 · verify and notify<br/>Nemotron 3 Super on vLLM<br/>region, GPU, cold start, cost<br/>D-L5-1 notice, D-L5-2 model"}}:::gate
+  N30["30-day customer notice<br/>sub-processor policy"]:::gate
+  P1["Phase 1 · inflect-hosted, off<br/>EXTERNAL-class, never LOCAL_ONLY<br/>re-checked at the socket<br/>row lands in the same PR"]:::todo
+  P2["Phase 2 · activation<br/>modal-deploy job, drift check<br/>spend alert"]:::todo
+  P3["Phase 3 · the other GPU arms"]:::todo
+  NR["nemotron-reasoning P2<br/>worker"]:::ext
+  RT["nemotron-retriever P3"]:::ext
+  OTH["ares P1, cuopt P2,<br/>morpheus P2, triton P1"]:::ext
+  OPT["Byte-identical<br/>without AI_HOSTED"]:::eval
+  P0 --> P1 --> P2 --> P3
+  P0 --> N30 -->|window closes| P2
+  P2 -.->|unblocks| NR
+  P3 -.-> RT
+  P3 -.-> OTH
+  P1 --- OPT
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - **There are two model routes and both are already residency-named.**

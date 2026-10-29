@@ -21,6 +21,32 @@ inflect · ai architecture · ragflow · roadmap v1 · 2026-10-29
 | Unblocks | evidence-file and policy-document grounding; the table-aware part of [`ragas.md`](./ragas.md) |
 | Owner decisions | **D-L4-4** (RAGFlow as a parsing service only — or a lighter parser) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  P0{{"Phase 0 · size and decide<br/>fidelity fixtures<br/>footprint on one VM<br/>D-L4-4 backend"}}:::gate
+  P1["Phase 1 · DocumentParser seam<br/>parse, then delete the dataset<br/>safeFetch, byte cap, deadline<br/>holds-nothing test"]:::todo
+  P2["Phase 2 · into the index<br/>sections bound the chunks<br/>tables become table chunks<br/>page and section citations"]:::todo
+  P3["Phase 3 · nightly parse-eval<br/>dated marker a guard parses<br/>then blocking"]:::todo
+  WV["weaviate P2"]:::ext
+  RT["nemotron-retriever P1"]:::ext
+  REC["Parse-fidelity record"]:::eval
+  P0 --> P1 --> P2 --> P3
+  WV -.-> P2
+  RT -.-> P2
+  P3 --- REC
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - **Uploads exist, parsing does not.** Evidence files are `FileRecord` rows

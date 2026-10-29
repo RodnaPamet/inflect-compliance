@@ -22,6 +22,36 @@ inflect · ai architecture · weaviate · roadmap v1 · 2026-10-29
 | Unblocks | [`ragflow.md`](./ragflow.md) (somewhere for parsed chunks to go), [`ragas.md`](./ragas.md) / [`ares.md`](./ares.md) (something to evaluate), the assistant's `search_knowledge` tool |
 | Owner decisions | master § Decisions for the owner, **D-L4-1** (pgvector first or Weaviate first) and **D-L4-2** (vectors-only rule) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  P0{{"Phase 0 · decide<br/>D-L4-1 store<br/>D-L4-2 vectors only"}}:::gate
+  P1["Phase 1 · service + one seam<br/>Compose, digest, no port<br/>VectorRepository sole importer<br/>tenant lifecycle hooks"]:::todo
+  P2["Phase 2 · index pipeline<br/>KnowledgeChunk in Postgres, encrypted<br/>knowledge-index job<br/>rebuildable from Postgres"]:::todo
+  P3["Phase 3 · guarded query path<br/>search_knowledge read tool<br/>through the funnel and guards<br/>mount gate"]:::todo
+  EMB["nemotron-retriever P1<br/>embedding seam"]:::ext
+  RER["nemotron-retriever P2<br/>reranker"]:::ext
+  REC["Ragas record<br/>for the retriever revision"]:::eval
+  RF["ragflow P2<br/>layout-aware chunks"]:::ext
+  ISO["Two-tenant tests<br/>repository, job, tool"]:::eval
+  P0 --> P1 --> P2 --> P3
+  EMB -.-> P2
+  RER -.-> P3
+  REC -.->|opens the gate| P3
+  P2 -.->|unblocks| RF
+  P1 --- ISO
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - **There is no vector store and no embedding anywhere.** `weaviate`, `pgvector`

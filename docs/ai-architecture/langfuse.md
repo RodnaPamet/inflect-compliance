@@ -22,6 +22,32 @@ inflect · ai architecture · langfuse · roadmap v1 · 2026-10-29
 | Unblocks | the eval UI for [`ragas.md`](./ragas.md), [`inspect.md`](./inspect.md); per-tenant cost views |
 | Owner decisions | **D-L4-5** (self-host vs Langfuse Cloud EU vs OTel-only), **D-L4-6** (content capture off by default) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  P0{{"Phase 0 · decide<br/>D-L4-5 hosting<br/>D-L4-6 no content by default"}}:::gate
+  DEC["OTel-only chosen<br/>the existing stack answers the box"]:::declined
+  P1["Phase 1 · exporter, no content<br/>attribute allowlist guard<br/>flush inside the Epic E budget<br/>LOCAL_ONLY spans stay home"]:::todo
+  P2["Phase 2 · datasets and scores<br/>records published one way<br/>guard verdicts, humanOutcome"]:::todo
+  P3["Phase 3 · cost views, capture-on<br/>two keys, masked by Presidio"]:::todo
+  RECS["House records<br/>Ragas, Inspect, skills"]:::ext
+  PR["presidio P2<br/>redaction"]:::ext
+  P0 -->|self-host or Cloud EU| P1 --> P2 --> P3
+  P0 -.->|OTel-only| DEC
+  RECS -.-> P2
+  PR -.-> P3
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - **Observability is OpenTelemetry, and it already carries the agent runs.**

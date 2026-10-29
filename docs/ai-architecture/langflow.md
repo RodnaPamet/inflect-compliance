@@ -22,6 +22,30 @@ inflect · ai architecture · langflow · roadmap v1 · 2026-10-29
 | Unblocks | nothing on the critical path |
 | Owner decisions | **D-L2-1** (design-time only, or not at all) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  P0{{"Phase 0 · decide<br/>D-L2-1"}}:::gate
+  RT["Langflow at run time<br/>refused: outside the funnel,<br/>residency, guards, decision log"]:::declined
+  DEC["Declined<br/>canvas, rule builder and<br/>agent profiles answer the box"]:::declined
+  P1["Phase 1 · design-time exporter<br/>flow JSON to a WorkflowDefinition<br/>refuses credentialed nodes<br/>never a production service"]:::todo
+  P2["Phase 2 · read-only workflow view<br/>on the product canvas<br/>needs no Langflow"]:::todo
+  P0 -->|design-time| P1
+  P0 -.->|declined| DEC
+  P0 --> P2
+  P0 -.- RT
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - **The product already has three authoring surfaces for "what an agent

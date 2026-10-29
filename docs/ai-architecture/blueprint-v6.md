@@ -33,6 +33,11 @@ roadmap:
 2. Layer 5 is **optional**: when a deployment uses an online LLM API, none of
    Layer 5 is deployed.
 
+One edit to the transcription below: the sample `apiKey` placeholder in
+§6A carries a `pragma: allowlist secret` comment, because the repository's
+secret guardrail (`tests/guardrails/no-secrets.test.ts`) reads its shape as a
+credential. Everything else is verbatim.
+
 ---
 
 # Enterprise AI SaaS Architecture Blueprint (v6)
@@ -221,7 +226,7 @@ import OpenAI from "openai";
 // Points to your local vLLM / Triton service
 const localAgentAI = new OpenAI({
   baseURL: "http://localhost:8000/v1", // No external network leaks
-  apiKey: "NOT_NEEDED_FOR_LOCAL_STACK",
+  apiKey: "NOT_NEEDED_FOR_LOCAL_STACK", // pragma: allowlist secret — the blueprint's placeholder, not a credential
 });
 
 async function runLocalAgentTask(taskPrompt: string) {

@@ -34,20 +34,70 @@ deployment using an online LLM API deploys none of it. Both are designed in
 
 ## The target, with status
 
-```text
- LAYER 1  SECURITY, GUARDS & ALIGNMENT
-          [~] AI Guard (ours)   [ ] Morpheus   [ ] NeMo Guardrails   [~] nemoclaw (OpenShell substrate ✓, stack ✗)   [ ] Presidio
- LAYER 2  ORCHESTRATION & WORKFLOW
-          [ ] Langflow + TS client            [✓] Flue (phases 1–3 shipped)          [✓] process canvas + INVOKE_AGENT (ours)
- LAYER 3  COGNITIVE & REASONING
-          [ ] Nemotron workers   [~] supervisor/worker (subagents ✓, role axis ✗)   [~] Claude SDK (Tool Runner built, off; Agent SDK designed)   [ ] cuOpt
- LAYER 4  KNOWLEDGE & DEEP RAG
-          [ ] RAGFlow   [ ] Nemotron Retriever   [ ] Weaviate   [ ] Langfuse (LlamaIndex: not planned)   [~] tool-shaped retrieval (ours)
- LAYER 5  RUNTIME & INFRASTRUCTURE  (optional)
-          [ ] Triton (dormant)   [✗] NIM (de-NIM)   [ ] vLLM on Modal   [✓] OpenShell (gateway VM, collectors)   [✓] TS API gateway + Compose services (ours)
- EVALS    [ ] Garak   [ ] Ragas   [ ] ARES   [✗] SWE-bench (no capability)   [ ] Inspect   [✓] house evaluation records (skills, identity-match)
+Green is on `main`, amber partly present, blue missing (each has a child
+roadmap), grey dashed declined. Requests enter at Layer 1 and descend; the
+evaluation row measures every layer. A node turns green in the pull request
+that puts the framework into production use, together with its status-board
+row.
 
- [✓] present   [~] partly present   [ ] missing → child roadmap   [✗] declined / not applicable
+```mermaid
+flowchart LR
+  subgraph EV["EVALUATION AND VALIDATION · measures every layer"]
+    direction TB
+    GA["Garak<br/>LLM red-teaming"]:::todo
+    RA["Ragas<br/>RAG metrics"]:::todo
+    AR["ARES<br/>calibrated judges"]:::todo
+    IS["Inspect<br/>governed-run tasks"]:::todo
+    SB["SWE-bench<br/>no capability to measure"]:::declined
+    HR["House eval records (ours)<br/>skills, identity-match"]:::done
+  end
+
+  subgraph L5["LAYER 5 · Runtime and infrastructure · OPTIONAL"]
+    direction TB
+    MD["vLLM on Modal<br/>Nemotron 3 Super, scale to zero"]:::todo
+    TT["Triton<br/>dormant until a trigger"]:::todo
+    NIM["NVIDIA NIM<br/>declined: de-NIM"]:::declined
+    OS["OpenShell gateway<br/>collectors sandboxed"]:::done
+    GW["TS API gateway (ours)<br/>Next.js routes + Compose"]:::done
+  end
+
+  subgraph L4["LAYER 4 · Knowledge and deep RAG"]
+    direction TB
+    RF["RAGFlow<br/>parsing service only"]:::todo
+    RT["Nemotron Retriever<br/>embed + rerank on TEI"]:::todo
+    WV["Weaviate<br/>vectors only, per-tenant"]:::todo
+    LU["Langfuse<br/>traces, datasets, scores"]:::todo
+    TR["Tool-shaped retrieval (ours)<br/>MCP read tools"]:::done
+  end
+
+  subgraph L3["LAYER 3 · Cognition and reasoning"]
+    direction TB
+    NR["Nemotron workers<br/>+ role axis"]:::todo
+    SW["Subagents, fan-out<br/>supervisor/worker shape"]:::partial
+    CL["Claude engines<br/>Tool Runner built, off"]:::partial
+    CO["NVIDIA cuOpt<br/>CPU seam first, if any"]:::todo
+  end
+
+  subgraph L2["LAYER 2 · Orchestration and workflow"]
+    direction TB
+    LF["Langflow + TS client<br/>design-time or declined"]:::todo
+    FL["Flue<br/>phases 1-3 shipped"]:::done
+    CV["Canvas, rule builder,<br/>agent profiles (ours)"]:::done
+  end
+
+  subgraph L1["LAYER 1 · Security, guards and alignment"]
+    direction TB
+    AG["AI Guard (ours)<br/>injection + egress"]:::done
+    MO["NVIDIA Morpheus<br/>behaviour anomaly"]:::todo
+    NG["NeMo Guardrails<br/>second guard slice"]:::todo
+    NC["NemoClaw<br/>substrate only"]:::partial
+    PR["Microsoft Presidio<br/>PII redaction, EN + BG"]:::todo
+  end
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef partial fill:#fef3c7,stroke:#b45309,color:#78350f
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
 ```
 
 ## Current state (true today)
@@ -277,6 +327,32 @@ the perimeter on Modal.
   hosts. Operator-held weights and ephemeral containers change the retention
   column, not the processing fact. The four-step notice (G2) runs during the
   Modal roadmap's Phases 0–1.
+
+**The routing, drawn.** Which provider a call reaches is decided by the
+tenant's residency first and the deployment's configuration second; Layer 5
+is one optional branch, and no path leads a `LOCAL_ONLY` tenant to it.
+
+```mermaid
+flowchart LR
+  T{"Tenant<br/>aiResidency"}:::gate
+  T -->|EXTERNAL| R{"Role"}:::gate
+  T -->|LOCAL_ONLY| LL{"AI_LOCAL_*<br/>configured?"}:::gate
+  R -->|supervisor| EXT["inflect-external<br/>Anthropic or OpenRouter"]:::done
+  R -->|worker| H{"AI_HOSTED_*<br/>configured?"}:::gate
+  H -->|yes| HOS["inflect-hosted<br/>vLLM on Modal<br/>Nemotron 3 Super"]:::todo
+  H -->|no| HL{"AI_LOCAL_*<br/>configured?"}:::gate
+  HL -->|yes| LOC["inflect-local<br/>perimeter vLLM or Ollama"]:::done
+  HL -->|no| EXT
+  LL -->|yes| LOC
+  LL -->|no| REF["Refused<br/>with a named reason"]:::declined
+  HOS -.->|outage: degrade, labelled| EXT
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+```
+
 - **The contract.**
 
   | Deployment | `AI_HOSTED_*` | What exists | Worker role → |
@@ -333,43 +409,128 @@ The living part. One row per framework; the child roadmap owns the phases.
 ### Sequencing
 
 Ordered by value delivered per unit of risk, with the zero-GPU pilot first —
-which the blueprint's own §4 also asks for.
+which the blueprint's own §4 also asks for. The timeline is ordering, not
+dates: a wave starts when the waves before it have landed what it depends on.
+"Weaviate 0-3" means that roadmap's Phases 0 to 3.
 
-```text
- WAVE 0  Decisions + two Flue residuals
-         · initial the D-* table below
-         · close F5 (input scan) with the existing scanner  [nemo-guardrails Phase 0]
-         · record F3 (hand-rolled telemetry) as a decision; fix F12 (stale comment)
-
- WAVE 1  Knowledge, zero-GPU                                  → value visible, no sub-processor added
-         weaviate 0→3  ─┬─ nemotron-retriever 0→2 (TEI on CPU)
-                        ├─ ragflow 0→2 (parsing seam)
-                        └─ ragas 0→2 (the mount gate opens)
-         nemotron-reasoning Phase 1 (role axis; no GPU)
-         garak Phase 1 (nightly, non-blocking) — measures everything that follows
-
- WAVE 2  Optional Layer 5 + observability                     → sovereignty and cost
-         modal-inference 0→2 (notice window runs through it)
-         nemotron-reasoning 2 (Nemotron as worker)  ·  nemotron-retriever 3 (GPU arm)
-         inspect 0→2 (records; Tool Runner Step 2c gated on one)
-         langfuse 0→2  ·  ares 0→2
-
- WAVE 3  Layer 1 additions                                     → each measured by garak before/after
-         presidio 0→2  →  nemo-guardrails 1→2  →  garak Phase 2 (blocking)
-         morpheus 0→1 (CPU detector)  ·  nemoclaw Phase 0 (decision)
-
- WAVE 4  Conditional and optional
-         langflow 0 (decide)  ·  cuopt 0 (measure)  ·  triton 0 (trigger)  ·  swe-bench 0 (decide)
-         morpheus 2, cuopt 2, triton 1 only if their triggers fire
+```mermaid
+timeline
+  title Delivery waves (ordering, not dates)
+  section Decide
+    Wave 0 : Owner initials the D-* table
+           : Close F5, scan run input with the existing scanner
+           : Record F3 as a decision, fix F12
+  section Zero GPU
+    Wave 1 · knowledge : Retriever 0-2, TEI on CPU
+                       : Weaviate 0-3, then search_knowledge
+                       : RAGFlow 0-2, parsing seam
+                       : Ragas 0-2, the record opens the gate
+                       : Role axis, nemotron-reasoning 1
+                       : Garak 0-1, nightly and non-blocking
+  section Optional GPU
+    Wave 2 · Layer 5 and observability : Modal 0-2, notice window runs first
+                                       : Nemotron as the worker
+                                       : Retriever 3, the GPU arm
+                                       : Inspect 0-2, governed-run records
+                                       : Langfuse 0-2 and ARES 0-2
+  section Guards
+    Wave 3 · Layer 1 : Presidio 0-2, PII redaction
+                     : NeMo Guardrails 1-2
+                     : Langfuse 3, capture-on and masked
+                     : Garak 2-3, blocking
+                     : Morpheus 0-1, CPU detector
+                     : NemoClaw 0, decision
+  section Conditional
+    Wave 4 : Langflow, cuOpt, Triton and SWE-bench decisions
+           : Morpheus 2, cuOpt 2, Triton 1 only if triggered
 ```
 
-Dependencies that cross child roadmaps are stated in each child's "Where it
-sits" table; the hard ones are: Weaviate Phase 2 needs an embedding provider;
-Ragas needs an index; the `search_knowledge` tool needs a Ragas record;
-every GPU arm needs Modal Phase 1; Langfuse capture-on and NeMo PII rails need
-Presidio; Tool Runner Step 2c needs an Inspect record.
+The hard dependencies between roadmaps, as a graph. A box may start only when
+everything pointing at it has landed; the dashed box belongs to another plan.
+
+```mermaid
+flowchart LR
+  F5["W0 · close F5<br/>input scan"]:::todo
+  RT1["W1 · Retriever 0-2<br/>TEI on CPU"]:::todo
+  WV2["W1 · Weaviate 0-2<br/>store + index"]:::todo
+  RF2["W1 · RAGFlow 0-2"]:::todo
+  RA2["W1 · Ragas 0-2"]:::todo
+  WV3["W1 · Weaviate 3<br/>search_knowledge"]:::todo
+  GA1["W1 · Garak 0-1"]:::todo
+  MD1["W2 · Modal 0-1"]:::todo
+  MD2["W2 · Modal 2<br/>activation"]:::todo
+  RX1["W1 · role axis"]:::todo
+  NW2["W2 · Nemotron worker"]:::todo
+  RT3["W2 · Retriever 3<br/>GPU arm"]:::todo
+  IS2["W2 · Inspect 0-2"]:::todo
+  TR2C["Tool Runner 2c<br/>Claude engines plan"]:::ext
+  LU2["W2 · Langfuse 0-2"]:::todo
+  AR2["W2 · ARES 0-2"]:::todo
+  PR2["W3 · Presidio 0-2"]:::todo
+  NG2["W3 · NeMo 1-2"]:::todo
+  LU3["W3 · Langfuse 3"]:::todo
+  GA2["W3 · Garak 2-3"]:::todo
+
+  RT1 --> WV2
+  WV2 --> RF2
+  WV2 --> RA2
+  RA2 --> WV3
+  RA2 --> AR2
+  MD1 --> MD2
+  MD2 --> NW2
+  MD2 --> RT3
+  RX1 --> NW2
+  GA1 --> IS2
+  IS2 --> TR2C
+  F5 --> NG2
+  PR2 --> NG2
+  PR2 --> LU3
+  LU2 --> LU3
+  GA1 --> GA2
+  NG2 --> GA2
+
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+```
+
+The same dependencies as prose, for a reader without a Mermaid renderer:
+Weaviate Phase 2 needs an embedding provider; Ragas needs an index; the
+`search_knowledge` tool needs a Ragas record; every GPU arm needs Modal
+Phase 1; Langfuse capture-on and NeMo PII rails need Presidio; Tool Runner
+Step 2c needs an Inspect record. Each child's "Where it sits" table states its
+own.
 
 ### Evals by layer
+
+Every evaluation ends in a committed record, and every record either opens a
+gate or ratchets a floor — that is what separates an eval from a dashboard
+(G11). Pink is an evaluation, purple the gate its record controls.
+
+```mermaid
+flowchart LR
+  GA["Garak<br/>probes"]:::eval --> X1["Layer 1<br/>guards"]
+  PII["Presidio fixtures<br/>EN + BG"]:::eval --> X1
+  IS["Inspect<br/>ten governed-run tasks"]:::eval --> X2["Layer 2<br/>engines"]
+  IS --> X3["Layer 3<br/>models"]
+  SK["Skill eval sets<br/>per model revision"]:::done --> X3
+  RA["Ragas"]:::eval --> X4["Layer 4<br/>retrieval"]
+  AR["ARES<br/>calibrated judges"]:::eval --> X4
+  PE["Parse-eval<br/>fixtures"]:::eval --> X4
+  OP["Provider-set test<br/>LOCAL_ONLY task"]:::eval --> X5["Layer 5<br/>optional"]
+
+  X1 --> G1(["Thresholds<br/>blocking after garak 2"]):::gate
+  X1 --> G2(["PII record<br/>mounts the detector"]):::gate
+  X2 --> G3(["Inspect record<br/>gates engine promotion"]):::gate
+  X3 --> G4(["Comparison record<br/>decides model defaults"]):::gate
+  X4 --> G5(["RAG record<br/>opens search_knowledge"]):::gate
+  X5 --> G6(["Byte-identical<br/>without AI_HOSTED"]):::gate
+  class X1,X2,X3,X4,X5 layer
+
+  classDef layer fill:#f8fafc,stroke:#334155,color:#0f172a
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+```
 
 | Layer | What is evaluated | Framework | Record / gate |
 | --- | --- | --- | --- |
@@ -417,9 +578,11 @@ the child records the reasoning.
 ### How this document is updated
 
 - A phase lands → its child's "done when" is met → the **Status board** row's
-  "Phase on `main`" moves and the PR is linked in the child; any fact in
-  **Current state** that changed is rewritten in the present tense **in the
-  same pull request**.
+  "Phase on `main`" moves and the PR is linked in the child; the phase's node
+  in the child's **At a glance** diagram changes from `todo` to `done`; any
+  fact in **Current state** that changed is rewritten in the present tense
+  **in the same pull request**. When a framework reaches production use, its
+  node in **The target, with status** turns green in that pull request too.
 - A decision is taken → the D-* row gets an initial and a date; the child's
   Phase 0 note holds the reasoning.
 - A framework is declined → its row reads "declined (D-…)" with the note's

@@ -21,6 +21,32 @@ inflect · ai architecture · cuopt · roadmap v1 · 2026-10-29
 | Unblocks | nothing |
 | Owner decisions | **D-L3-3** (is there an optimisation problem at a size that needs a GPU) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  P0{{"Phase 0 · measure<br/>formulate one problem<br/>solve it on CPU at 1x to 100x<br/>D-L3-3"}}:::gate
+  DEC["No feature wants it<br/>declined"]:::declined
+  P1["Phase 1 · optimisation seam, CPU<br/>plan_ read tool via the funnel<br/>plans become proposals<br/>bounded solve"]:::todo
+  P2["Phase 2 · cuOpt on Modal<br/>same seam, parity record"]:::todo
+  MOD["modal-inference P1"]:::ext
+  FIX["Fixture instances<br/>known optima"]:::eval
+  P0 -->|feature wanted| P1
+  P0 -.->|no| DEC
+  P1 -->|only if measured scale<br/>exceeds the CPU solver| P2
+  MOD -.-> P2
+  FIX -.-> P1
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - **No optimisation solver of any kind.** No LP/MILP/VRP library in

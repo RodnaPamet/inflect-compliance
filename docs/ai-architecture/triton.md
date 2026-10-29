@@ -21,6 +21,30 @@ inflect · ai architecture · triton · roadmap v1 · 2026-10-29
 | Unblocks | lower GPU cost per model when several share a card |
 | Owner decisions | **D-L5-3** (consolidate on Triton, or keep one Modal function per model) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  P0{{"Phase 0 · record the trigger<br/>D-L5-3"}}:::gate
+  DORM["Dormant<br/>one Modal function per model"]:::declined
+  P1["Phase 1 · one Triton function<br/>on Modal, shared GPU<br/>parity record per model<br/>revert is configuration only"]:::todo
+  MOD["modal-inference P2"]:::ext
+  PAR["Parity records<br/>per consolidated model"]:::eval
+  P0 --> DORM
+  DORM -->|three or more small GPU models<br/>or cold-start cost above the trigger| P1
+  MOD -.-> P1
+  P1 --- PAR
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - No GPU, no model server, no Triton ([`modal-inference.md`](./modal-inference.md)

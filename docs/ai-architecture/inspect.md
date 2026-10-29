@@ -22,6 +22,34 @@ inflect · ai architecture · inspect · roadmap v1 · 2026-10-29
 | Unblocks | an evidence-backed flip of `DRIVER_IMPLEMENTED['tool-runner']` (Claude engines Step 2c); worker-model selection in [`nemotron-reasoning.md`](./nemotron-reasoning.md) |
 | Owner decisions | **D-EV-4** (the first ten tasks, and that the product scores its own agents on its own ladder) |
 
+## At a glance
+
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+
+```mermaid
+flowchart LR
+  P0{{"Phase 0 · ten tasks<br/>one per governed-run invariant<br/>mapped to H3-H5<br/>D-EV-4"}}:::gate
+  P1["Phase 1 · harness<br/>solver starts a run, awaits it<br/>scorers read the ledger<br/>mutation check"]:::todo
+  P2["Phase 2 · evidence and gate<br/>Coverage tab cites records<br/>engine flip needs a record"]:::todo
+  P3["Phase 3 · choose models<br/>comparison records"]:::todo
+  GA["garak P1<br/>harness route"]:::ext
+  TR["Tool Runner Step 2c<br/>Claude engines plan"]:::ext
+  NR["nemotron-reasoning P3"]:::ext
+  REC["Inspect record<br/>per engine and revision"]:::eval
+  P0 --> P1 --> P2 --> P3
+  GA -.-> P1
+  P2 -.->|gates| TR
+  P3 -.-> NR
+  P1 --- REC
+
+  classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
+  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
+  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+```
+
 ## Current state (true today)
 
 - **The product scores *customers'* agents on a six-level harness ladder and
