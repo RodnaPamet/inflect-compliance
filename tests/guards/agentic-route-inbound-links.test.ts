@@ -444,10 +444,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // approve/reject. Agentic surface because it reads the proposal queue
     // through a run.
     //
-    // A READ, and the only route in this family whose gate is load-bearing
-    // rather than documentary: a proposal diff carries the current values of a
-    // risk, control, policy or finding, so it takes `/agents/proposals`' own
-    // `admin.view`. The DECISION is not here — it posts to the proposals
+    // A READ, and the first route in this family to carry the pages' gate
+    // (every `/agent-runs` route carries it since the 2026-10-29 fix): a
+    // proposal diff carries the current values of a risk, control, policy or
+    // finding, so it takes `/agents/proposals`' own `admin.view` OR the view
+    // key. The DECISION is not here — it posts to the proposals
     // routes, which is the plan's "no second approval path" — and
     // `vr6-execution-overlay` asserts this file exports GET and nothing else.
     't/[tenantSlug]/agent-runs/[id]/checkpoint/route.ts',
