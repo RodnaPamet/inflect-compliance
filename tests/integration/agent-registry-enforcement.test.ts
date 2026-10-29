@@ -47,8 +47,10 @@
  * Every TOOL call is refused. The resources door is NARROWED, not closed: a
  * suspended agent that is scored, unkilled, unlatched and inside its card is
  * still served `inflect://frameworks` and this tenant's framework coverage.
- * The REST surface is unchanged — the register has never gated `/api/t/**`.
- * Not "deny-all", and no assertion in this file may be read as saying so; the
+ * At `/api/t/**` the key is refused outright: since #4481 a key bound to an
+ * agent that is not ACTIVE, or under a kill switch, stops at the REST door
+ * (`assertAgentKeyMayActAtRest`). The MCP door is the narrowed one, not
+ * "deny-all", and no assertion in this file may be read as saying so; the
  * 200 on the resources door below is here to keep that impossible.
  *
  * The vouched rows are what keep the others honest: a gate that refused
@@ -61,10 +63,11 @@ import { randomUUID } from 'crypto';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
-import { generateApiKey } from '@/lib/auth/api-key-auth';
+import { generateApiKey, verifyApiKey } from '@/lib/auth/api-key-auth';
 import { POST } from '@/app/api/mcp/route';
 import { POST as START_RUN } from '@/app/api/t/[tenantSlug]/agent-runs/route';
 import { createApiKey } from '@/app-layer/usecases/api-keys';
+import { startWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import { utcDay } from '@/lib/agentic/policy-card-store';
 import { MCP_RESOURCES_AUDIENCE } from '@/lib/mcp/token-exchange';
 import { windowKeyFor } from '@/lib/agentic/circuit-breaker';
@@ -248,6 +251,20 @@ async function denialRows() {
         where: { tenantId: TENANT, action: 'AUTHZ_DENIED' },
         orderBy: { createdAt: 'asc' },
     });
+}
+
+/**
+ * The workflow engine reached WITHOUT the REST door: the key's verified
+ * context, as `tryApiKeyAuth` builds it, handed straight to the usecase. A job
+ * or an inbound A2A message reaches the engine with an agent bound this way,
+ * and there the funnel's own suspension check is the only one in the way. The
+ * REST door itself refuses a suspended agent's key (#4481).
+ */
+async function startRunPastTheDoor(token: string, workflowKey: string) {
+    const verified = await verifyApiKey(token, null);
+    if (!verified.valid) throw new Error(`the key did not verify: ${verified.reason}`);
+    const result = await startWorkflowRun(verified.ctx, workflowKey, {});
+    return { status: result.status, runId: result.runId };
 }
 
 /** The `detailsJson` of the one AUTHZ_DENIED row, or a failure naming the count. */
@@ -754,28 +771,46 @@ describeFn('the agent-registration gate', () => {
      * suspended agent reaches the tool boundary here even when the flag is ON.
      *
      * That makes the answer GENERAL, not opt-out-only, and only a real DB can
-     * show it: it takes `getTenantCtx` → `tryApiKeyAuth` carrying `agentId`
-     * through to `resolveMcpInvocation` and on to `governedAgentIdOf`. The
-     * changelog wording depends on this cell.
+     * show it: it takes the key's context carrying `agentId` through to
+     * `resolveMcpInvocation` and on to `governedAgentIdOf`. The changelog
+     * wording depends on this cell.
+     *
+     * Since #4481 the REST door refuses a suspended agent's key before any run
+     * exists, so the engine cells below reach the engine past that door
+     * (`startRunPastTheDoor`), as a job does. The door has its own cell.
      */
     describe('flag ON — the workflow-engine path honours suspension too', () => {
         beforeEach(() => setEnforcement(true));
 
-        it('starts the run and then refuses its every tool call', async () => {
-            // The run is CREATED — `POST /api/t/:slug/agent-runs` runs no
-            // registration gate, and this fix does not add one; the REST
-            // surface is unchanged and the copy must not imply otherwise. What
-            // changed is that the first tool call the engine makes is refused,
-            // so the run fails at step 0 instead of reading the tenant's whole
-            // compliance posture.
-            const { status, body } = await startRun(keySuspendedWide, 'diagnostic');
+        it('the REST door refuses the suspended agent\'s key before any run exists (#4481)', async () => {
+            const before = await prisma.workflowRun.count({ where: { tenantId: TENANT } });
+            const { status } = await startRun(keySuspendedWide, 'diagnostic');
 
-            expect(status).toBe(201);
-            expect(body.status).toBe('FAILED');
-            expect(typeof body.runId).toBe('string');
+            expect(status).toBe(403);
+            expect(await prisma.workflowRun.count({ where: { tenantId: TENANT } })).toBe(before);
+            const details = await theDenial();
+            expect(details).toMatchObject({
+                gate: 'agent_key_rest',
+                reason: 'agent_not_active',
+                agentId: suspendedAgentId,
+                agentStatus: 'SUSPENDED',
+                method: 'POST',
+                path: `/api/t/${TENANT}/agent-runs`,
+            });
+        });
+
+        it('past the door, starts the run and then refuses its every tool call', async () => {
+            // The run is CREATED: the engine's route decides who may start a
+            // run, and the register's gate is not run here. What the engine
+            // does is refuse the first tool call, so the run fails at step 0
+            // instead of reading the tenant's whole compliance posture.
+            const { status, runId } = await startRunPastTheDoor(keySuspendedWide, 'diagnostic');
+
+            expect(status).toBe('FAILED');
+            expect(typeof runId).toBe('string');
 
             const run = await prisma.workflowRun.findUnique({
-                where: { id: body.runId as string },
+                where: { id: runId },
                 select: { status: true, agentId: true },
             });
             expect(run?.status).toBe('FAILED');
@@ -797,10 +832,10 @@ describeFn('the agent-registration gate', () => {
             // Prevention, not detection. A run that read the posture and then
             // failed would produce the same FAILED status and the same audit
             // row, so the status is not the property; the step trail is.
-            const { body } = await startRun(keySuspendedWide, 'diagnostic');
+            const { runId } = await startRunPastTheDoor(keySuspendedWide, 'diagnostic');
 
             const steps = await prisma.workflowStep.findMany({
-                where: { tenantId: TENANT, runId: body.runId as string },
+                where: { tenantId: TENANT, runId },
                 orderBy: { seq: 'asc' },
                 select: { seq: true, kind: true, status: true },
             });

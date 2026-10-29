@@ -128,9 +128,18 @@ export async function runDailyEvidenceExpiryNotifications(
         // this job's own failure with nothing downstream of it to protect, and
         // swallowing it would hide the one error this job is now responsible
         // for reporting.
+        //
+        // Scoped like the sweeps: a run for one tenant — the admin's "Run Daily
+        // Sweep" — flushes only that tenant's queue. It used to flush every
+        // tenant's, so one tenant's ADMIN sent other tenants' queued mail and
+        // read the combined counts back. The scheduled run names no tenant and
+        // still drains them all, which is its job.
         let outbox: ProcessOutboxResult = { sent: 0, failed: 0, skipped: 0 };
         if (!options.skipOutbox) {
-            outbox = await processOutbox({ limit: 200 });
+            outbox = await processOutbox({
+                limit: 200,
+                ...(options.tenantId ? { tenantId: options.tenantId } : {}),
+            });
             logger.info('outbox flushed', { component: 'job', sent: outbox.sent, failed: outbox.failed, skipped: outbox.skipped });
         }
 

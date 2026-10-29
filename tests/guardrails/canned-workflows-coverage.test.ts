@@ -174,13 +174,11 @@ describe('the Flue engine is reachable from the shipped registry', () => {
  *
  * ## Why it lives here rather than in its own file
  *
- * `no-epic-named-ratchets` caps the number of guard files on purpose, and the
- * question it forces has a real answer: this file already reads definition
- * SOURCE through `read()` and already holds definitions to properties the
- * engine depends on. It also already imports `listWorkflowDefinitions`, which
- * is a better population than any directory glob — `diagnosticWorkflow` is
- * declared inline in the registry, so a guard scoped to `workflows/` would have
- * covered 4 of the 5 definitions that ship.
+ * This file already reads definition SOURCE through `read()` and already holds
+ * definitions to properties the engine depends on. It also already imports
+ * `listWorkflowDefinitions`, which is a better population than any directory
+ * glob — `diagnosticWorkflow` is declared inline in the registry, so a guard
+ * scoped to `workflows/` would have covered 4 of the 5 definitions that ship.
  */
 describe('Canned workflows — a missing input is refused, never invented', () => {
     /**

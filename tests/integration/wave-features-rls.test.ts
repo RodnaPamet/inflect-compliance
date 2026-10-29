@@ -13,6 +13,7 @@ import type { PrismaClient } from '@prisma/client';
 import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { createTenant, createUser, buildRequestContext } from '../helpers/factories';
+import { getPermissionsForRole } from '@/lib/permissions';
 
 import { uploadQuestionnaire, listQuestionnaires, autofillQuestionnaire } from '@/app-layer/usecases/questionnaire';
 import { reportDevice, listDevices } from '@/app-layer/usecases/device';
@@ -30,10 +31,13 @@ describeFn('Two-tenant isolation — 10-PR-wave features (GAP-1)', () => {
         const tB = await createTenant(prisma, { id: randomUUID(), slug: `b-${randomUUID().slice(0, 8)}` });
         const uA = await createUser(prisma, { id: randomUUID(), email: `${randomUUID()}@t.local` });
         const uB = await createUser(prisma, { id: randomUUID(), email: `${randomUUID()}@t.local` });
+        // `appPermissions` as a real ADMIN context carries it: the roster and
+        // device reads assert `personnel.view` themselves.
+        const appPermissions = getPermissionsForRole('ADMIN');
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ctxA = buildRequestContext({ tenantId: tA.id, userId: uA.id }) as any;
+        const ctxA = buildRequestContext({ tenantId: tA.id, userId: uA.id, appPermissions }) as any;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ctxB = buildRequestContext({ tenantId: tB.id, userId: uB.id }) as any;
+        const ctxB = buildRequestContext({ tenantId: tB.id, userId: uB.id, appPermissions }) as any;
         return { tA, tB, ctxA, ctxB };
     }
 

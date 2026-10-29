@@ -10,7 +10,8 @@
  * It produces valid signed `/2` reports — `validReportBody`, the plainest, and
  * `validV2ReportBody`, which carries every member `/2` added — and, on request,
  * `validV3ReportBody`, the same estate under `/3` with a `gcp-sa` source read
- * in full — and, on request,
+ * in full — and `validV3ReportBodyWithSdkAgent`, an Agent SDK agent found in
+ * code (#4156) — and, on request,
  * every malformation the contract tells an ingest to refuse, each paired with
  * the refusal it must get. One of those is `retiredV1ReportBody`, a report as a
  * `/1` scanner sent it, which the verifier refuses since `/1` was retired
@@ -305,6 +306,58 @@ export function validV3ReportBodyWithSandbox(): HarnessReportBodyV3 {
                     // Unevidenced: this estate did not opt in to reading
                     // providers, so no profile was read to bind it against.
                     { criterion: 'H2.credential_bound', met: false, evidence: null },
+                ],
+            },
+        ],
+    } as HarnessReportBodyV3;
+}
+
+/** The `code` source's id for the Agent SDK agent `validV3ReportBodyWithSdkAgent` reports. */
+export const SDK_AGENT_ID = 'code:acme/ops-bot/agent.ts#opsRun';
+
+/**
+ * The same `/3` estate plus ONE CLAUDE AGENT SDK AGENT, as the `code` source
+ * reports one it found in a scanned repository (#4156).
+ *
+ * ADDITIVE, like the sandbox fixture, so no suite that counts
+ * `validV3ReportBody`'s agents changes meaning.
+ *
+ * What makes it the reference for an SDK agent:
+ *
+ *   • `code` kind, and an id made of the root's label, the file and the name
+ *     the call is bound to. No register link and no owner: code names neither,
+ *     so the register decides SHADOW, or links it from its own intake record.
+ *   • Its built-in tools are tools at the `code://` locator of the call, with
+ *     no pin and no read-only hint, so they count as writes.
+ *   • Its options cross as NOT MET verdicts, each with the option's `code://`
+ *     locator as evidence and never the option's value. NOT MET only: code can
+ *     show a control is missing, never that one works. One verdict per
+ *     criterion, as the scanner's report builder collapses them.
+ */
+export function validV3ReportBodyWithSdkAgent(): HarnessReportBodyV3 {
+    const v3 = validV3ReportBody();
+    const at = (line: number) => `code://acme/ops-bot/agent.ts#L${line}`;
+    const builtin = (name: string) => ({ server: at(3), name, manifestHash: null, pinned: false, readOnlyHint: null });
+    return {
+        ...v3,
+        population: { sources: [...v3.population.sources, { kind: 'code', status: 'COMPLETE', rows: 1 }] },
+        agents: [
+            ...v3.agents,
+            {
+                discoveredId: SDK_AGENT_ID,
+                discoveredVia: ['code'],
+                registeredAgentId: null,
+                owner: null,
+                credentials: [{ ref: 'env://ANTHROPIC_API_KEY', ageDays: null, expires: null, boundToAgent: false, grant: 'unknown' }],
+                tools: [builtin('Bash'), builtin('Read'), builtin('WebFetch')],
+                models: [{ endpoint: 'https://api.anthropic.com', model: null }],
+                skills: [],
+                verdicts: [
+                    // `permissionMode: 'bypassPermissions'`, at the option.
+                    { criterion: 'H3.propose_not_commit', met: false, evidence: at(8) },
+                    // `settingSources` left at the default, which loads the host's files: at the call.
+                    { criterion: 'H3.skills_declared', met: false, evidence: at(3) },
+                    { criterion: 'H2.tools_allowlisted', met: false, evidence: at(3) },
                 ],
             },
         ],

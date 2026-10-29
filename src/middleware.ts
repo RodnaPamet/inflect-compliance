@@ -305,9 +305,10 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
                 return forbiddenJson('Admin access required');
             }
 
-            // Allow the request to proceed to the App Router.
-            // The Server Component guard in `admin/layout.tsx` will
-            // safely capture this and render the `<ForbiddenPage>`.
+            // Allow the request to proceed to the App Router. Each admin
+            // server page refuses it itself, before reading anything
+            // (`gateAdminPage`, `admin/_lib/admin-page-gate.tsx`); the
+            // CLIENT layout `admin/layout.tsx` only decides what is shown.
             // (Avoiding NextResponse.redirect(dashboardUrl) here prevents a known Next.js 14 dev server crash
             // where 307-redirecting an HTML request back to the browser's currently active URL causes an Edge Runtime panic).
             return NextResponse.next();

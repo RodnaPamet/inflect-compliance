@@ -267,6 +267,10 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/lib/agentic/flue/model-decision.ts — identifier bound elsewhere',
     'src/lib/agentic/flue/runtime-start.ts — call to a helper this rule cannot open',
     'src/lib/agentic/agent-authority.ts — identifier bound elsewhere',
+    // The REST gate for an agent-bound key (#4481): one denial row and one
+    // audit-failure warn. Every value is an id, a closed reason, a kill scope,
+    // a register status, or the request's method and path. No prompt reaches it.
+    'src/lib/agentic/agent-key-rest-gate.ts — identifier bound elsewhere',
     // The tenant's driver toggle: one audit row and one log line, both written
     // when an OWNER changes which engine executes this tenant's agentic runs.
     // Every value at both sinks is an id (`tenantId`), a member of the closed
@@ -814,7 +818,10 @@ const SINK_FLOOR = 30;
 // warn, the dispatch info; the decision-row error has none). The error fields
 // were written as `err.message` with a literal fallback rather than
 // `String(err)`, which is what kept two more holes out.
-const MEASURED_HOLES = 212;
+// 212 -> 215: THE REST GATE FOR AN AGENT-BOUND KEY (#4481). Three holes, all in
+// its denial row: the refusal reason, the agent's status, and the surface it was
+// refused at, each a parameter. None is prompt-derived.
+const MEASURED_HOLES = 215;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -870,7 +877,9 @@ const MEASURED_HOLES = 212;
 // recording them here) and the four of Step 2b's driver, loop and decision
 // recorder. Raising the denominator by more than the numerator TIGHTENS
 // `HOLES_PER_SINK_CEILING`: (209+6)/114 = 1.886 becomes (212+6)/122 = 1.787.
-const MEASURED_SINKS = 122;
+// 122 -> 124: the REST gate's two sinks (#4481), its denial row and its
+// audit-failure warn. TIGHTENS the ratio: (215+6)/124 = 1.782.
+const MEASURED_SINKS = 124;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

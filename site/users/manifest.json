@@ -2,6 +2,12 @@
     "$comment": "The sections of the USER site, https://rodnapamet.github.io/inflect-compliance/. This site publishes only docs/user/ — page guides, how-tos and runbooks written for people who use the product — and nothing under docs/user/ is published anywhere else. Sections follow the app's own sidebar; a label may be a {{ui:<key>}} token so it prints the app's own name. Listing a folder publishes every doc in it. See docs/docs-site.md.",
     "sections": [
         {
+            "label": "{{ui:nav.dashboard}}",
+            "docs": [
+                "docs/user/guide/overview/"
+            ]
+        },
+        {
             "group": "Page guides",
             "label": "{{ui:nav.govern}}",
             "docs": [

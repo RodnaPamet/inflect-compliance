@@ -148,6 +148,7 @@ describe('looksLikeSecret', () => {
     it.each([
         fragments('gh', 'p_', 'Z'.repeat(36)),
         fragments('AK', 'IA', 'Q'.repeat(16)),
+        fragments('s', 'k-', 'ant-', 'api03-', 'Q'.repeat(40)),
         fragments('-----BEGIN ', 'PRIVATE KEY-----'),
         fragments('xo', 'xb-', '1234567890-abc'),
         fragments('https://svc-reader:', 'S3cret', 'Pass', '@vault.corp.example/v1/audit'),
