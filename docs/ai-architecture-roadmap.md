@@ -80,7 +80,7 @@ flowchart LR
 
   subgraph L2["LAYER 2 · Orchestration and workflow"]
     direction TB
-    LF["Langflow + TS client<br/>design-time or declined"]:::todo
+    LF["Agent-flow canvas<br/>in-product, Langflow not adopted"]:::todo
     FL["Flue<br/>phases 1-3 shipped"]:::done
     CV["Canvas, rule builder,<br/>agent profiles (ours)"]:::done
   end
@@ -160,8 +160,12 @@ request touching Flue re-checks them.
   surfaces.** Profiles (Claude engines Step 1a): approved by a second person,
   frozen by trigger, tools only narrow, no engine runs one yet (owner
   decision 2026-10-26), behind `AGENT_PROFILES` + `AGENT_PROFILES_TENANTS`.
-- Missing: Langflow (and the TS client) — [`langflow.md`](./ai-architecture/langflow.md),
-  most likely to be declined or design-time only.
+- Missing: a canvas on which to draw what an agent does. The process canvas
+  can invoke an agent (an `agent` node owns an `INVOKE_AGENT` rule) and the
+  Behaviour tab defines one through a form, but nothing composes an agent's
+  flow visually. [`langflow.md`](./ai-architecture/langflow.md) plans it in the
+  product as a second editor for the agent profile (D-L2-1, decided
+  2026-10-29); Langflow itself is not adopted.
 
 ### Layer 3 — Cognitive & reasoning
 
@@ -388,7 +392,7 @@ The living part. One row per framework; the child roadmap owns the phases.
 | NeMo Guardrails | 1 | [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md) | 3 | missing (F5 residual closes in its Phase 0) | — | D-L1-2 |
 | Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 | missing; CPU detector first | — | D-L1-3 |
 | NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | substrate present (OpenShell); stack to be declined | — | D-L1-4 |
-| Langflow + TS client | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 4 | missing; likely design-time or declined | — | D-L2-1 |
+| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (author, preview) / 3 (run) | missing; in-product canvas decided, Langflow not adopted | 0 (decided) | D-L2-2 |
 | Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3) | 3 | F3 decision to record |
 | Nemotron workers + role axis | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (hosted) | missing | — | D-L3-1, D-L3-2 |
 | Claude engines | 3 | `docs/claude-*-design.md` (#4135) | — | Tool Runner built, off; Agent SDK designed | 2b | Step 2c (gated on Inspect record) |
@@ -433,6 +437,7 @@ timeline
                                        : Retriever 3, the GPU arm
                                        : Inspect 0-2, governed-run records
                                        : Langfuse 0-2 and ARES 0-2
+                                       : Agent-flow canvas 1-3, author and preview
   section Guards
     Wave 3 · Layer 1 : Presidio 0-2, PII redaction
                      : NeMo Guardrails 1-2
@@ -440,8 +445,9 @@ timeline
                      : Garak 2-3, blocking
                      : Morpheus 0-1, CPU detector
                      : NemoClaw 0, decision
+                     : Agent-flow canvas 4, run and replay
   section Conditional
-    Wave 4 : Langflow, cuOpt, Triton and SWE-bench decisions
+    Wave 4 : cuOpt, Triton and SWE-bench decisions
            : Morpheus 2, cuOpt 2, Triton 1 only if triggered
 ```
 
@@ -456,6 +462,7 @@ flowchart LR
   RF2["W1 · RAGFlow 0-2"]:::todo
   RA2["W1 · Ragas 0-2"]:::todo
   WV3["W1 · Weaviate 3<br/>search_knowledge"]:::todo
+  AR2["W2 · ARES 0-2"]:::todo
   GA1["W1 · Garak 0-1"]:::todo
   MD1["W2 · Modal 0-1"]:::todo
   MD2["W2 · Modal 2<br/>activation"]:::todo
@@ -464,8 +471,9 @@ flowchart LR
   RT3["W2 · Retriever 3<br/>GPU arm"]:::todo
   IS2["W2 · Inspect 0-2"]:::todo
   TR2C["Tool Runner 2c<br/>Claude engines plan"]:::ext
+  AF1["W2 · Agent-flow canvas 1-3<br/>author and preview"]:::todo
+  AF4["W3 · Agent-flow canvas 4<br/>run and replay"]:::todo
   LU2["W2 · Langfuse 0-2"]:::todo
-  AR2["W2 · ARES 0-2"]:::todo
   PR2["W3 · Presidio 0-2"]:::todo
   NG2["W3 · NeMo 1-2"]:::todo
   LU3["W3 · Langfuse 3"]:::todo
@@ -482,6 +490,8 @@ flowchart LR
   RX1 --> NW2
   GA1 --> IS2
   IS2 --> TR2C
+  TR2C --> AF4
+  AF1 --> AF4
   F5 --> NG2
   PR2 --> NG2
   PR2 --> LU3
@@ -556,7 +566,8 @@ the child records the reasoning.
 | D-L1-2 | NeMo rails: LLM-free first; LLM-backed only on the tenant's permitted route | nemo-guardrails | as stated |
 | D-L1-3 | Behaviour anomaly signal; CPU detector before Morpheus | morpheus | CPU first |
 | D-L1-4 | NemoClaw: reference-only; runtime and privacy router declined | nemoclaw | declined |
-| D-L2-1 | Langflow: design-time exporter, or declined | langflow | declined |
+| D-L2-1 | Langflow's box: the visual canvas is the product's own, editing the agent profile; Langflow not adopted | langflow | **decided 2026-10-29** (owner) |
+| D-L2-2 | Reasoning engines enforce flow checkpoints, or the canvas offers no checkpoint node | langflow | build enforcement; no checkpoint node until it lands |
 | D-L3-1 | Supervisor/worker role axis in model selection | nemotron-reasoning | adopt |
 | D-L3-2 | Nemotron as the default worker when a hosted/local route exists | nemotron-reasoning | adopt after skill records |
 | D-L3-3 | An optimisation problem at GPU scale exists | cuopt | no; CPU seam if a feature wants it |
