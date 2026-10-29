@@ -44,7 +44,14 @@ import { repoRelativeFiles } from '../helpers/repo-files';
 import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/**
+ * COMMENT-STRIPPED, always. An assertion on raw source is satisfiable by a
+ * comment that happens to contain the needle — `tests/guardrails/
+ * raw-source-assertion-ratchet` found this file doing exactly that and is
+ * what forced the fix. Every needle below is a piece of CODE, so every read
+ * is of code.
+ */
+const read = (rel: string): string => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const LADDER = 'src/lib/integrations/external-write-ladder.ts';
 const ADAPTER = 'src/lib/mcp/tools/external-tools.ts';
@@ -63,7 +70,7 @@ describe('the fourth rung has a predicate, and it lives in one place', () => {
         // The one narrow statement that survives measurement. A second
         // definition of read-only would drift from the dispatch in the
         // direction that offers a tool every call to which is refused.
-        expect(codeOf(read(OFFER))).not.toContain("'DISABLED'");
+        expect(read(OFFER)).not.toContain("'DISABLED'");
     });
 });
 
@@ -108,7 +115,7 @@ describe('there is exactly ONE producer of an invocation`s external tools', () =
             // the anchor read a real occurrence as an absence. The lookbehind is
             // what excludes `inv.externalTools`, which is a READ of the field and
             // is legitimate anywhere.
-            .filter((f) => /(?<![.\w])externalTools\s*[,:]/.test(codeOf(read(f))));
+            .filter((f) => /(?<![.\w])externalTools\s*[,:]/.test(read(f)));
 
     it('the population is non-trivial, so the assertion below ranges over something', () => {
         // Without this an empty selection would pass the equality and prove
