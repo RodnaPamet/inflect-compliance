@@ -27,10 +27,22 @@ import * as path from 'path';
 const appendAuditEntryMock = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({ appendAuditEntry: (...a: unknown[]) => appendAuditEntryMock(...a) }));
 
-import { scanInjection } from '@/app-layer/ai/guard/injection-scanner';
+import { scanInjection, type GuardVerdict } from '@/app-layer/ai/guard/injection-scanner';
 import { scanEgress } from '@/app-layer/ai/guard/egress-scanner';
-import { resolveEnforcement } from '@/app-layer/ai/guard/policy';
-import { guardUntrustedInput, guardEgress } from '@/app-layer/ai/guard';
+import {
+    DEFAULT_GUARD_MODE,
+    resolveEnforcement,
+    type GuardDirection,
+    type GuardMode,
+} from '@/app-layer/ai/guard/policy';
+import {
+    assertGuardAllowed,
+    assertNoReviewRequired,
+    guardUntrustedInput,
+    guardEgress,
+    type GuardOutcome,
+} from '@/app-layer/ai/guard';
+import { repoFiles, repoRelative } from '../helpers/repo-files';
 import type { PrismaTx } from '@/lib/db-context';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -112,6 +124,11 @@ const AI_GUARD_COVERAGE: Readonly<Record<string, readonly GuardFn[]>> = {
  * An entry here is a deliberate act with a reason, and the test below still
  * requires the declared symbol to be present in the file — this is a different
  * enforcement, not a waiver of enforcement.
+ *
+ * The declared symbol is either a predicate that returns `true` when the input
+ * must be refused, or an assertion that throws. The strictness test CALLS it
+ * over every outcome the guard policy can produce, so any name passes and only
+ * a weaker predicate fails.
  */
 const AI_GUARD_ENFORCEMENT: Readonly<Record<string, { symbol: string; why: string }>> = {
     'src/app-layer/usecases/legacy-adjudication.ts': {
@@ -272,21 +289,101 @@ describe('AI guard — coverage (structural completeness)', () => {
     });
 
     it('every declared alternative is STRICTER than assertGuardAllowed', () => {
-        // The one property that makes an alternative acceptable. `guardQuarantines`
-        // reads `reviewRequired`, which is true for a `flag` AND a `block`;
-        // `assertGuardAllowed` throws on `block` alone. So the alternative refuses
-        // a superset, and under the default `balanced` mode — where a malicious
-        // INPUT resolves to `flag` — it is the only one of the two that refuses at
-        // all. An alternative reading `blocked` would be equal or weaker and has
-        // no business in this map.
-        for (const decl of Object.values(AI_GUARD_ENFORCEMENT)) {
-            const src = readFile('src/app-layer/ai/guard/index.ts');
-            const fn = src.slice(src.indexOf(`export function ${decl.symbol}`));
-            if (!fn) continue;
-            expect(decl.symbol).toBe('guardQuarantines');
+        // The one property that makes an alternative acceptable: it refuses every
+        // outcome `assertGuardAllowed` refuses, AND the `flag` that a malicious
+        // INPUT resolves to under the default mode, which `assertGuardAllowed`
+        // lets through. An alternative reading `blocked` would be equal or weaker
+        // and has no business in this map.
+        //
+        // Measured by calling the declared symbol, not by reading its name. Until
+        // #4480 this asserted the name was `guardQuarantines`, behind a
+        // "definition not found" branch that `slice(-1)` made unreachable, so a
+        // stricter predicate spelled differently failed and the read never
+        // found the one it accepted.
+        const weaker: string[] = [];
+        for (const [rel, decl] of Object.entries(AI_GUARD_ENFORCEMENT)) {
+            const alternative = loadDeclaredEnforcement(decl.symbol);
+            for (const outcome of EVERY_POLICY_OUTCOME) {
+                if (refuses(assertGuardAllowed, outcome) && !refuses(alternative, outcome)) {
+                    weaker.push(`${rel}: ${decl.symbol} lets through ${describeOutcome(outcome)}, which assertGuardAllowed refuses`);
+                }
+            }
+            if (!refuses(alternative, DEFAULT_MODE_MALICIOUS_INPUT)) {
+                weaker.push(`${rel}: ${decl.symbol} lets through ${describeOutcome(DEFAULT_MODE_MALICIOUS_INPUT)}, so it is no stricter than assertGuardAllowed`);
+            }
         }
+        expect(weaker).toEqual([]);
+    });
+
+    it('the strictness check tells a weaker enforcement from a stricter one', () => {
+        // Controls on the outcomes and on `refuses`. If any of these flipped, the
+        // test above would pass whatever the map declared.
+        expect(refuses(assertGuardAllowed, DEFAULT_MODE_MALICIOUS_INPUT)).toBe(false);
+        expect(refuses((o) => o.blocked, DEFAULT_MODE_MALICIOUS_INPUT)).toBe(false);
+        expect(refuses(assertNoReviewRequired, DEFAULT_MODE_MALICIOUS_INPUT)).toBe(true);
+        expect(refuses((o) => o.reviewRequired, DEFAULT_MODE_MALICIOUS_INPUT)).toBe(true);
+        expect(EVERY_POLICY_OUTCOME.some((o) => refuses(assertGuardAllowed, o))).toBe(true);
+        expect(() => loadDeclaredEnforcement('noSuchGuardPredicate')).toThrow(/exactly one/);
     });
 });
+
+/**
+ * Every outcome the guard policy can produce, built the way `guardUntrustedInput`
+ * and `guardEgress` build theirs from `resolveEnforcement`.
+ */
+const EVERY_POLICY_OUTCOME: readonly GuardOutcome[] = (['strict', 'balanced', 'audit'] as const).flatMap(
+    (mode) => (['clean', 'suspicious', 'malicious'] as const).flatMap(
+        (verdict) => (['input', 'egress'] as const).map((direction) => policyOutcome(mode, verdict, direction)),
+    ),
+);
+
+/** The case that makes an alternative worth having: what a hostile input meets by default. */
+const DEFAULT_MODE_MALICIOUS_INPUT = policyOutcome(DEFAULT_GUARD_MODE, 'malicious', 'input');
+
+function policyOutcome(mode: GuardMode, verdict: GuardVerdict, direction: GuardDirection): GuardOutcome {
+    const action = resolveEnforcement(mode, verdict, direction);
+    return {
+        verdict,
+        ruleIds: [],
+        mode,
+        action,
+        blocked: action === 'block',
+        reviewRequired: action === 'flag' || action === 'block',
+        source: 'ai-guard-coverage',
+        direction,
+    };
+}
+
+function describeOutcome(o: GuardOutcome): string {
+    return `a ${o.verdict} ${o.direction} under ${o.mode} mode (${o.action})`;
+}
+
+/** Whether an enforcement refuses an outcome: a predicate answering `true`, or an assertion that throws. */
+function refuses(enforce: (outcome: GuardOutcome) => unknown, outcome: GuardOutcome): boolean {
+    try {
+        return enforce(outcome) === true;
+    } catch {
+        return true;
+    }
+}
+
+/** The exported function a map entry names, from the one module under `src/` that defines it. */
+function loadDeclaredEnforcement(symbol: string): (outcome: GuardOutcome) => unknown {
+    const definition = new RegExp(String.raw`export\s+(?:async\s+)?function\s+${symbol}\s*[(<]`);
+    const modules = repoFiles({ under: 'src', extensions: ['.ts'] }).filter((f) =>
+        definition.test(codeOf(fs.readFileSync(f, 'utf8'))),
+    );
+    if (modules.length !== 1) {
+        throw new Error(
+            `${symbol} must be exported by exactly one module under src/, found ${modules.length}: `
+            + (modules.map(repoRelative).join(', ') || 'none'),
+        );
+    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- the module is found at run time
+    const fn = require(modules[0])[symbol] as unknown;
+    if (typeof fn !== 'function') throw new Error(`${repoRelative(modules[0])} does not export ${symbol} as a function`);
+    return fn as (outcome: GuardOutcome) => unknown;
+}
 
 // ─── EVASION ─────────────────────────────────────────────────────────────
 
