@@ -1,8 +1,20 @@
 import { getTenantCtx } from '@/app-layer/context';
-import { listVulnerabilities } from '@/app-layer/usecases/vulnerability';
+import { listVulnerabilitiesForPage, VULN_STATUSES } from '@/app-layer/usecases/vulnerability';
 import { VulnerabilitiesClient, type VulnRow } from './VulnerabilitiesClient';
 
 export const dynamic = 'force-dynamic';
+
+const VULN_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
+
+/**
+ * A filter list from the URL, as the filter toolbar writes it
+ * (`?status=OPEN,MITIGATING`). Unknown values are dropped rather than
+ * passed to the query.
+ */
+function listParam(value: string | string[] | undefined, allowed: readonly string[]): string[] {
+    if (typeof value !== 'string' || !value) return [];
+    return value.split(',').filter((v) => allowed.includes(v));
+}
 
 /**
  * Vulnerabilities — Server Component. Fetches matched CVEs across the tenant's
@@ -23,7 +35,13 @@ export default async function VulnerabilitiesPage({
     // matches. (The assets list's Vulns badge now opens the asset's own
     // Vulnerabilities tab instead, which also lists its scanner findings.)
     const assetId = typeof sp.assetId === 'string' && sp.assetId ? sp.assetId : undefined;
-    const rows = (await listVulnerabilities(ctx, { assetId, take: 500 })) as unknown as VulnRow[];
+    // The status / severity filters are applied to the READ (#4465), so the
+    // 500-row cap applies after them and "refine your filters" is true advice.
+    const page = await listVulnerabilitiesForPage(ctx, {
+        assetId,
+        statuses: listParam(sp.status, VULN_STATUSES),
+        severities: listParam(sp.severity, VULN_SEVERITIES),
+    });
 
     // Each control follows its route's gate: the coarse tier AND the granular
     // keys the route asks (#4465). Built-in roles hold every key or none of
@@ -40,7 +58,13 @@ export default async function VulnerabilitiesPage({
 
     return (
         <VulnerabilitiesClient
-            initialRows={rows}
+            initialRows={page.rows as unknown as VulnRow[]}
+            truncated={page.truncated}
+            cap={page.cap}
+            // A scoped view says whose list it is (#4465). `asset` is null when
+            // the id names no live asset — the list is then empty, and the
+            // page must not claim it is every vulnerability you have.
+            scope={assetId ? { assetId, asset: page.scopeAsset } : null}
             tenantSlug={resolved.tenantSlug}
             can={can}
         />

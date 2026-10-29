@@ -28,6 +28,8 @@ import { UserCombobox, type Member } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { toYMD } from '@/components/ui/date-picker/date-utils';
 import { EmptyState } from '@/components/ui/empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
@@ -93,8 +95,21 @@ export interface VulnPermissions {
     createTask: boolean;
 }
 
+/**
+ * A view scoped to one asset (`?assetId=`, from the asset page's "See all
+ * vulnerabilities"). `asset` is null when the id names no live asset.
+ */
+export interface VulnScope {
+    assetId: string;
+    asset: { id: string; key: string | null; name: string } | null;
+}
+
 interface Props {
     initialRows: VulnRow[];
+    /** The read stopped at `cap` with more rows behind it. */
+    truncated: boolean;
+    cap: number;
+    scope: VulnScope | null;
     tenantSlug: string;
     can: VulnPermissions;
 }
@@ -121,7 +136,7 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     FALSE_POSITIVE: 'neutral',
 };
 
-export function VulnerabilitiesClient({ initialRows, tenantSlug, can }: Props) {
+export function VulnerabilitiesClient(props: Props) {
     const tx = useTranslations('vulnerabilities');
     const tGroup = useTranslations('common.filterGroups');
     const filters = useMemo(
@@ -135,12 +150,12 @@ export function VulnerabilitiesClient({ initialRows, tenantSlug, can }: Props) {
     const filterCtx = useFilterContext(filters, [...VULN_FILTER_KEYS]);
     return (
         <FilterProvider value={filterCtx}>
-            <VulnerabilitiesInner initialRows={initialRows} tenantSlug={tenantSlug} can={can} />
+            <VulnerabilitiesInner {...props} />
         </FilterProvider>
     );
 }
 
-function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
+function VulnerabilitiesInner({ initialRows, truncated, cap, scope, tenantSlug, can }: Props) {
     const canTriage = can.triage;
     const t = useTranslations('vulnerabilities');
     const tGroup = useTranslations('common.filterGroups');
@@ -644,12 +659,53 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
         </div>
     ) : undefined;
 
-    // Honest empty state — distinguish filtered-out from three list-empty
-    // cases (sync off → no asset identity → genuinely clean), checked in order.
+    // "Show all" from a one-asset view: the same page and filters, without
+    // the asset. `assetId` is the one parameter clearing the filters keeps.
+    const showAllHref = useMemo(() => {
+        const q = new URLSearchParams();
+        for (const key of VULN_FILTER_KEYS) {
+            const values = (state[key] ?? []) as string[];
+            if (values.length) q.set(key, values.join(','));
+        }
+        const qs = q.toString();
+        return `/t/${tenantSlug}/vulnerabilities${qs ? `?${qs}` : ''}`;
+    }, [state, tenantSlug]);
+
+    // Above the table: whose list this is when it is one asset's (#4465), and
+    // that it stops at the cap when it does — nothing on screen said either.
+    const banner = (
+        <>
+            {scope && (
+                <InlineNotice variant="info" id="vuln-asset-scope">
+                    {scope.asset
+                        ? t('scopedToAsset', {
+                              asset: scope.asset.key ? `${scope.asset.key} · ${scope.asset.name}` : scope.asset.name,
+                          })
+                        : t('scopedToMissingAsset')}
+                    {' · '}
+                    <Link href={showAllHref} id="vuln-asset-scope-clear" className="font-medium underline hover:no-underline">
+                        {t('showAllVulnerabilities')}
+                    </Link>
+                </InlineNotice>
+            )}
+            <TruncationBanner truncated={truncated} cap={cap} />
+        </>
+    );
+
+    // Honest empty state — distinguish filtered-out from the list-empty cases
+    // (sync off → one asset's view → no asset identity → genuinely clean),
+    // checked in order. A one-asset view never claims "your assets".
     const emptyState = hasActive ? (
         <EmptyState icon={ShieldAlert} title={t('emptyFilteredTitle')} description={t('emptyFilteredDesc')} />
     ) : syncStatus && !syncStatus.syncEnabled ? (
         <EmptyState icon={ShieldAlert} title={t('emptyDisabledTitle')} description={t('emptyDisabledDesc')} />
+    ) : scope ? (
+        <EmptyState
+            icon={ShieldAlert}
+            title={t('emptyScopedTitle')}
+            description={t('emptyScopedDesc')}
+            primaryAction={{ label: t('showAllVulnerabilities'), href: showAllHref }}
+        />
     ) : syncStatus && syncStatus.assetsWithIdentity === 0 ? (
         <EmptyState
             icon={ShieldAlert}
@@ -682,6 +738,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, can }: Props) {
                 actions: headerActions,
             }}
             filters={{ defs: filterDefs }}
+            banner={banner}
             table={{
                 data: visibleVulnRows,
                 onReachEnd: hasMoreVulnRows ? loadMoreVulnRows : undefined,

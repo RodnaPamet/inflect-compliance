@@ -13,7 +13,12 @@
  *   2. a refused action shows the server's reason — in the page's own words
  *      when it is a refusal the page can name — and the generic fallbacks
  *      carry no English interpolated into a translated sentence;
- *   3. the Severity and Matched columns show labels, not stored codes.
+ *   3. the Severity and Matched columns show labels, not stored codes;
+ *   4. a capped list says so, and the filters it tells you to refine are
+ *      applied to the read, not only to the first 500 rows in the browser;
+ *   5. a list opened from an asset says it is that asset's, offers the way
+ *      back to every vulnerability, and does not claim "your assets" when
+ *      that one asset has none.
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -101,7 +106,8 @@ jest.mock('@/app-layer/context', () => ({
 }));
 const mockListVulnerabilities = jest.fn();
 jest.mock('@/app-layer/usecases/vulnerability', () => ({
-    listVulnerabilities: (...a: unknown[]) => mockListVulnerabilities(...a),
+    VULN_STATUSES: ['OPEN', 'MITIGATING', 'MITIGATED', 'ACCEPTED', 'FALSE_POSITIVE'],
+    listVulnerabilitiesForPage: (...a: unknown[]) => mockListVulnerabilities(...a),
 }));
 
 // ─── Imports (after mocks) ──────────────────────────────────────────
@@ -168,12 +174,25 @@ function installFetch() {
     }) as unknown as typeof fetch;
 }
 
-async function mount(ctx: RequestContext, rows = [vuln()]) {
+interface MountOptions {
+    truncated?: boolean;
+    scopeAsset?: { id: string; key: string | null; name: string } | null;
+    searchParams?: Record<string, string>;
+    /** Wait for this text before returning (default: the first row's CVE). */
+    ready?: string;
+}
+
+async function mount(ctx: RequestContext, rows = [vuln()], opts: MountOptions = {}) {
     mockGetTenantCtx.mockResolvedValue(ctx);
-    mockListVulnerabilities.mockResolvedValue(rows);
+    mockListVulnerabilities.mockResolvedValue({
+        rows,
+        truncated: opts.truncated ?? false,
+        cap: 500,
+        scopeAsset: opts.scopeAsset ?? null,
+    });
     const element = await VulnerabilitiesPage({
         params: Promise.resolve({ tenantSlug: 'acme' }),
-        searchParams: Promise.resolve({}),
+        searchParams: Promise.resolve(opts.searchParams ?? {}),
     });
     const view = render(
         <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
@@ -182,7 +201,7 @@ async function mount(ctx: RequestContext, rows = [vuln()]) {
             </TooltipProvider>
         </SWRConfig>,
     );
-    await screen.findByText('CVE-2026-0001');
+    await screen.findByText(opts.ready ?? (rows[0] as { cve: { id: string } } | undefined)?.cve.id ?? V.title);
     return view;
 }
 
@@ -342,5 +361,79 @@ describe('Vulnerabilities — stored codes render as labels', () => {
         for (const code of ['CRITICAL', 'MEDIUM', 'CPE', 'MANUAL']) {
             expect(within(first.parentElement as HTMLElement).queryByText(code)).toBeNull();
         }
+    });
+});
+
+// ─── 4. A capped list says so ───────────────────────────────────────
+
+describe('Vulnerabilities — the 500-row cap', () => {
+    it('shows the truncation notice when the read had more rows than the cap', async () => {
+        await mount(makeRequestContext('READER'), [vuln()], { truncated: true });
+        const notice = screen.getByTestId('list-truncation-banner');
+        expect(notice.textContent).toContain('500');
+    });
+
+    it('shows no notice when the list is complete', async () => {
+        await mount(makeRequestContext('READER'));
+        expect(screen.queryByTestId('list-truncation-banner')).toBeNull();
+    });
+
+    it('the status and severity filters in the URL reach the read; unknown values are dropped', async () => {
+        await mount(makeRequestContext('READER'), [vuln()], {
+            searchParams: { status: 'OPEN,MITIGATING,BOGUS', severity: 'CRITICAL,NOPE' },
+        });
+        expect(mockListVulnerabilities).toHaveBeenCalledTimes(1);
+        expect(mockListVulnerabilities.mock.calls[0][1]).toEqual({
+            assetId: undefined,
+            statuses: ['OPEN', 'MITIGATING'],
+            severities: ['CRITICAL'],
+        });
+    });
+});
+
+// ─── 5. A list opened from an asset says whose it is ────────────────
+
+describe('Vulnerabilities — opened from an asset', () => {
+    const ASSET = { id: 'a-1', key: 'AST-1', name: 'Web server' };
+
+    it('names the asset and links back to every vulnerability, keeping the filters', async () => {
+        // The filter context reads its state from the address bar.
+        window.history.replaceState(null, '', '/t/acme/vulnerabilities?assetId=a-1&status=OPEN');
+        await mount(makeRequestContext('READER'), [vuln()], {
+            scopeAsset: ASSET,
+            searchParams: { assetId: 'a-1', status: 'OPEN' },
+        });
+        window.history.replaceState(null, '', '/');
+        expect(mockListVulnerabilities.mock.calls[0][1]).toMatchObject({ assetId: 'a-1' });
+        const notice = document.getElementById('vuln-asset-scope') as HTMLElement;
+        expect(notice.textContent).toContain(V.scopedToAsset.replace('{asset}', 'AST-1 · Web server'));
+        const back = document.getElementById('vuln-asset-scope-clear') as HTMLAnchorElement;
+        expect(back.textContent).toBe(V.showAllVulnerabilities);
+        // Same page, same filters, no asset.
+        expect(back.getAttribute('href')).toBe('/t/acme/vulnerabilities?status=OPEN');
+    });
+
+    it('an asset with no matches gets its own empty state, not "No vulnerabilities matched your assets"', async () => {
+        await mount(makeRequestContext('READER'), [], {
+            scopeAsset: ASSET,
+            searchParams: { assetId: 'a-1' },
+            ready: V.emptyScopedTitle,
+        });
+        expect(screen.queryByText(V.emptyCleanTitle)).toBeNull();
+        expect(screen.getByText(V.emptyScopedDesc)).toBeTruthy();
+    });
+
+    it('an id that names no live asset says so instead of naming one', async () => {
+        await mount(makeRequestContext('READER'), [], {
+            scopeAsset: null,
+            searchParams: { assetId: 'gone' },
+            ready: V.emptyScopedTitle,
+        });
+        expect((document.getElementById('vuln-asset-scope') as HTMLElement).textContent).toContain(V.scopedToMissingAsset);
+    });
+
+    it('an unscoped list shows no asset notice', async () => {
+        await mount(makeRequestContext('READER'));
+        expect(document.getElementById('vuln-asset-scope')).toBeNull();
     });
 });
