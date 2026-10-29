@@ -140,6 +140,7 @@ function buildExec(overrides: Partial<ExecutiveDashboardPayload> = {}): Executiv
             total: 4,
             open: 4,
             inProgress: 0,
+            inReview: 0,
             blocked: 0,
             resolved: 0,
             overdue: 0,

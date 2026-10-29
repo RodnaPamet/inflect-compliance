@@ -246,6 +246,9 @@ describe('Dashboard Empty State Handling', () => {
             fs.readFileSync(path.join(__dirname, '..', '..', 'messages/en.json'), 'utf-8'),
         ) as { dashboard: Record<string, string> };
         expect(en.dashboard.trendsEmpty).toContain('Trend charts will appear here');
+        // The section needs TWO snapshots (`daysAvailable < 2` above), so the
+        // copy must not promise charts after the first one.
+        expect(en.dashboard.trendsEmpty).toContain('on two days');
     });
 
     test('UI-15: dashboard no longer renders a notifications bell button', () => {

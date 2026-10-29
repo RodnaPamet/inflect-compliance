@@ -52,7 +52,7 @@ import {
 } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
-import { useThresholdLoadMore, useToast } from '@/components/ui/hooks';
+import { useCreateQueryParam, useThresholdLoadMore, useToast } from '@/components/ui/hooks';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import {
@@ -560,6 +560,12 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     const [showTextModal, setShowTextModal] = useState(false);
     const [showLinkModal, setShowLinkModal] = useState(false);
     const [showBulkImport, setShowBulkImport] = useState(false);
+    // `?create=1` opens the create menu, as it opens the create form on the
+    // Risks and Policies lists — the dashboard's "Add Evidence" quick-add
+    // lands here. The menu belongs to the create trigger, which renders only
+    // for a viewer who may create something, so for anyone else the param
+    // opens nothing.
+    useCreateQueryParam(() => setCreateMenuOpen(true), `/t/${tenantSlug}/evidence`);
 
     // Invalidate every cached evidence-list filter variant. SWR's
     // function-form `mutate()` matches by absolute URL prefix —

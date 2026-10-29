@@ -60,7 +60,7 @@ function reportedPayload(): ExecutiveDashboardPayload {
             archived: 0,
             overdueReview: 0,
         },
-        taskSummary: { total: 600, open: 100, inProgress: 0, blocked: 0, resolved: 500, overdue: 18 },
+        taskSummary: { total: 600, open: 100, inProgress: 0, inReview: 0, blocked: 0, resolved: 500, overdue: 18 },
         vendorSummary: { total: 5, overdueReview: 0 },
         computedAt: '2026-08-04T00:00:00.000Z',
     };

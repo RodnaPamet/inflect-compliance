@@ -30,7 +30,7 @@ import * as path from 'node:path';
 // that harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike (re-derived per file, not assumed from the directory), so
 // `codeOf` is the right lexer and no language split is needed.
-import { codeOf, commentsOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -175,7 +175,13 @@ describe('5. Recent Activity is humanised + identified + linked', () => {
 
     it('uses the humaniser + the enriched (title-bearing) query + links rows', () => {
         expect(ACTIVITY_CARD).toMatch(/activity-humanize/);
-        expect(ACTIVITY_CARD).toMatch(/getRecentActivityDetailed/);
+        // The card reads through the audit-gated usecase (#4458), which is
+        // what reaches the enriched query.
+        expect(ACTIVITY_CARD).toMatch(/await getDashboardRecentActivity\(ctx\)/);
+        expect(ACTIVITY_CARD).not.toMatch(/DashboardRepository/);
+        expect(functionBodyOf(USECASE, 'getDashboardRecentActivity')).toMatch(
+            /assertCanAudit\(ctx\);\s*return runInTenantContext\(ctx, \(db\) =>\s*DashboardRepository\.getRecentActivityDetailed\(db, ctx\)/,
+        );
         expect(ACTIVITY_CARD).toMatch(/from 'next\/link'/);
         expect(REPO).toMatch(/static async getRecentActivityDetailed/);
     });

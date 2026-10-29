@@ -34,13 +34,9 @@ import {
 } from '@/lib/charts/posture-radar';
 import { PostureLadder, LEVEL_TONE } from './PostureLadder';
 
-const LABEL_COPY: Record<PostureLabel, string> = {
-    STRONG: 'Strong',
-    ESTABLISHED: 'Established',
-    DEVELOPING: 'Developing',
-    AT_RISK: 'At risk',
-};
-
+// The headline word itself is `dashboard.hero.postureLabel.<LABEL>`, so it is
+// read in the reader's language. This map's keys are the labels a summary may
+// carry, which is what `summary.postureLabel` is validated against.
 const LABEL_TONE: Record<PostureLabel, string> = {
     STRONG: 'text-content-success',
     ESTABLISHED: 'text-content-info',
@@ -63,6 +59,12 @@ export interface PostureHeroCardProps {
     onRegenerate?: () => void;
     regenerating?: boolean;
     /**
+     * Why the last Regenerate did not replace the summary — the server's
+     * reason, or the caller's own sentence. Null/absent when it did, or
+     * when nobody has clicked it.
+     */
+    regenerateError?: string | null;
+    /**
      * The six rated axes behind the headline (`ratePostureAxes`). Omit —
      * or pass an empty array — and the hero renders exactly as it did
      * before: full-width narrative, no chart column, no level.
@@ -75,6 +77,7 @@ export function PostureHeroCard({
     canRegenerate = false,
     onRegenerate,
     regenerating = false,
+    regenerateError = null,
     ratings,
 }: PostureHeroCardProps) {
     const t = useTranslations('dashboard');
@@ -82,7 +85,7 @@ export function PostureHeroCard({
     // an empty advice list, and a numeric-guarded score so a malformed row can
     // never crash the masthead.
     const label: PostureLabel =
-        summary.postureLabel && LABEL_COPY[summary.postureLabel]
+        summary.postureLabel && LABEL_TONE[summary.postureLabel]
             ? summary.postureLabel
             : 'DEVELOPING';
     const advice = Array.isArray(summary.advice) ? summary.advice : [];
@@ -163,6 +166,15 @@ export function PostureHeroCard({
                 >
                     {t('hero.eyebrow')}
                 </p>
+                {canRegenerate && regenerateError && (
+                    <p
+                        role="alert"
+                        className="text-xs text-content-error"
+                        data-testid="dashboard-hero-regenerate-error"
+                    >
+                        {regenerateError}
+                    </p>
+                )}
                 {/* ONE voice. The headline word used to be the model's own
                     posture label, which sat beside a deterministic level
                     computed from the six axes — "Developing" next to
@@ -201,7 +213,7 @@ export function PostureHeroCard({
                             className={cn('text-[28px] leading-none font-bold', LABEL_TONE[label])}
                             data-posture-label={label}
                         >
-                            {LABEL_COPY[label]}
+                            {t(`hero.postureLabel.${label}`)}
                         </p>
                     )}
                 </div>
