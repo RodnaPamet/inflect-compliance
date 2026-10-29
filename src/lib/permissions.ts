@@ -17,7 +17,19 @@ export type PermissionSet = {
      * visibility.
      */
     incidents: { view: boolean; manage: boolean };
-    /** People layer (PR-4). `manage` = connect HRIS + edit the roster (OWNER/ADMIN); `view` for all. */
+    /**
+     * People layer (PR-4): the employee roster, devices, training assignments
+     * and background checks. `manage` = edit the roster and its records.
+     *
+     * BOTH keys are OWNER/ADMIN only (owner decision, 2026-10-29). `view` was
+     * granted to every role until then, so any member could read the whole
+     * roster through `GET /personnel`, `/devices`, `/training` and
+     * `/background-checks` although the pages that show it sit under the
+     * admin console. EDITOR, AUDITOR, READER and AI_ADMIN hold neither. A
+     * custom role may still grant `view`; a stored blob that carries the key
+     * keeps what it says, and one that predates the domain takes its base
+     * role's default, which is now `false` for every base but ADMIN.
+     */
     personnel: { view: boolean; manage: boolean };
     /**
      * Access reviews (Epic G-4 + legacy recertification Step 5a).
@@ -643,7 +655,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 vendors: { view: true, create: true, edit: true },
                 tests: { view: true, create: true, execute: true },
                 incidents: { view: true, manage: false },
-                personnel: { view: true, manage: false },
+                // OWNER/ADMIN only — see the `personnel` docblock above.
+                personnel: { view: false, manage: false },
                 access_reviews: { view: true, create: false, decide: true, close: false },
                 identity_reconciliation: { view: true, confirm: false },
                 continuity: { edit: true },
@@ -666,7 +679,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 vendors: { view: true, create: false, edit: false },
                 tests: { view: true, create: false, execute: false },
                 incidents: { view: true, manage: false },
-                personnel: { view: true, manage: false },
+                // OWNER/ADMIN only — see the `personnel` docblock above.
+                personnel: { view: false, manage: false },
                 access_reviews: { view: true, create: false, decide: true, close: false },
                 identity_reconciliation: { view: true, confirm: false },
                 continuity: { edit: false },
@@ -686,7 +700,9 @@ export function getPermissionsForRole(role: Role): PermissionSet {
             // no members, SSO, SCIM, billing or security settings
             // (`admin.manage`), no tenant lifecycle, no owner management, no
             // DSAR register and no admin console (`admin.view`). Reads, because
-            // an administrator of agents has to see what the agents touch.
+            // an administrator of agents has to see what the agents touch —
+            // except the people layer, which it inherits from READER as
+            // `personnel.view: false` (OWNER/ADMIN only, 2026-10-29).
             //
             // The coarse tier matches: `ROLE_ORDER.AI_ADMIN` is READER's level,
             // so `canWrite` / `canAdmin` are false and no usecase that gates on
@@ -722,7 +738,10 @@ export function getPermissionsForRole(role: Role): PermissionSet {
     }
 }
 
-/** READER's set — every domain readable, nothing writable, no admin key. */
+/**
+ * READER's set — every domain readable except the people layer
+ * (`personnel.view` is OWNER/ADMIN only), nothing writable, no admin key.
+ */
 function readerPermissions(): PermissionSet {
     return {
         controls: { view: true, create: false, edit: false },
@@ -734,7 +753,8 @@ function readerPermissions(): PermissionSet {
         vendors: { view: true, create: false, edit: false },
         tests: { view: true, create: false, execute: false },
         incidents: { view: true, manage: false },
-        personnel: { view: true, manage: false },
+        // OWNER/ADMIN only — see the `personnel` docblock on `PermissionSet`.
+        personnel: { view: false, manage: false },
         access_reviews: { view: true, create: false, decide: true, close: false },
         identity_reconciliation: { view: true, confirm: false },
         continuity: { edit: false },

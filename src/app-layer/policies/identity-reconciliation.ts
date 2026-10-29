@@ -30,10 +30,13 @@ import { forbidden } from '@/lib/errors/types';
 import type { RequestContext } from '../types';
 
 /**
- * Seeing the queue. Granted to every built-in role, matching `personnel.view`
- * and `access_reviews.view`: a reviewer who cannot see why an account was
+ * Seeing the queue. Granted to every built-in role, matching
+ * `access_reviews.view`: a reviewer who cannot see why an account was
  * suggested to somebody cannot sanely confirm it, and the evidence is the whole
- * point of showing the queue at all.
+ * point of showing the queue at all. (It also matched `personnel.view` until
+ * that became OWNER/ADMIN only on 2026-10-29. The queue's route sits under
+ * `/api/t/:slug/admin/`, where the edge admits a session only on an OWNER or
+ * ADMIN membership.)
  */
 export function assertCanViewReconciliation(ctx: RequestContext): void {
     if (!ctx.appPermissions?.identity_reconciliation?.view) {
