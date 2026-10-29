@@ -54,10 +54,15 @@ function humanizeAge(seconds: number | null): string {
 
 /**
  * GAP-3 — per-connection freshness. Seconds since each enabled connection's
- * last SUCCESSFUL (PASSED) execution, with a stale flag. Read-only view over
- * GET /admin/integrations/health.
+ * last activity — a run of any status, or a successful connection test — with
+ * a stale flag, beside the date of its last SUCCESSFUL execution. Read-only
+ * view over GET /admin/integrations/health.
+ *
+ * `providerLabel` turns a provider id into the name the catalogue shows. The
+ * health endpoint returns only the id, and the page that renders this panel
+ * already holds the names; without it the id is shown.
  */
-export function ConnectionHealthPanel() {
+export function ConnectionHealthPanel({ providerLabel }: { providerLabel?: (id: string) => string } = {}) {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const [data, setData] = useState<HealthResponse | null>(null);
@@ -97,7 +102,13 @@ export function ConnectionHealthPanel() {
     if (!loading && (!data || data.connections.length === 0)) return null;
 
     const cols = createColumns<HealthRow>([
-        { accessorKey: 'provider', header: t('integrations.colProvider'), cell: ({ getValue }) => <StatusBadge variant="info">{getValue()}</StatusBadge> },
+        {
+            accessorKey: 'provider', header: t('integrations.colProvider'),
+            cell: ({ getValue }) => {
+                const id = String(getValue());
+                return <StatusBadge variant="info">{providerLabel ? providerLabel(id) : id}</StatusBadge>;
+            },
+        },
         { accessorKey: 'name', header: t('integrations.colName'), cell: ({ getValue }) => <span className="font-medium">{getValue()}</span> },
         {
             id: 'lastSuccess', header: t('integrations.health.colLastSuccess'), accessorKey: 'lastSuccessAt',
@@ -163,6 +174,8 @@ export function ConnectionHealthPanel() {
                     data={data?.connections ?? []}
                     columns={cols}
                     getRowId={(r) => r.connectionId}
+                    // Read-only: nothing acts on a selected row.
+                    selectionEnabled={false}
                     emptyState={t('integrations.emptyConfigured')}
                     resourceName={(p) => p ? t('integrations.resourceConnections') : t('integrations.resourceConnection')}
                 />

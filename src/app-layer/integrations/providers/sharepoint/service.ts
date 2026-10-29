@@ -202,11 +202,28 @@ export async function updateSharePointAllowedSites(
     });
 }
 
-/** Disconnect: remove the connection row. (SP-4 also revokes subscriptions.) */
+/**
+ * Disconnect: remove the connection row. (SP-4 also revokes subscriptions.)
+ *
+ * A DISABLED SharePoint connection can be disconnected too (#4466), so this
+ * does not go through `loadConnection`. Its `isEnabled: true` clause exists so
+ * that a disabled integration stops WORKING — authenticating, being read,
+ * receiving pushes — and removing the row is none of those. Through it, a
+ * connection disabled from the generic Integrations table could be neither
+ * used nor removed, and the card's Connect stayed hidden behind it.
+ *
+ * The provider filter is KEPT, and it is the clause that matters here: this
+ * function deletes whatever the lookup returns, and deleting an identity
+ * connection would cascade away its never-offboard flags
+ * (`tests/integration/identity-connection-delete-fence.test.ts`).
+ */
 export async function disconnectSharePoint(ctx: RequestContext, connectionId: string): Promise<void> {
     assertCanAdmin(ctx);
     await runInTenantContext(ctx, async (db) => {
-        const conn = await loadConnection(db, ctx, connectionId);
+        const conn = await db.integrationConnection.findFirst({
+            where: { id: connectionId, tenantId: ctx.tenantId, provider: SHAREPOINT_PROVIDER },
+        });
+        if (!conn) throw notFound('SharePoint connection not found');
         await db.integrationConnection.delete({ where: { id: conn.id } });
         await logEvent(db, ctx, {
             action: 'INTEGRATION_CONNECTION_DELETED',

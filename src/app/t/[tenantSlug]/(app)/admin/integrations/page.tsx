@@ -6,7 +6,10 @@
 
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { buildConnectionBody } from '@/lib/integrations/config-form-values';
-import { useEffect, useState, useCallback } from 'react';
+import { LABELLED_CHECKS } from '@/lib/integrations/check-labels';
+import { summariseSync, type SyncConnectionResponse } from '@/lib/integrations/sync-outcome';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { Trash2, CheckCircle, XCircle, Loader2, Link2, Eye, EyeOff, RefreshCw, Activity, Pencil, KeyRound } from 'lucide-react';
@@ -20,6 +23,7 @@ import { RequiredMarker } from '@/components/ui/required-marker';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading, Eyebrow } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
@@ -68,17 +72,59 @@ interface ProviderInfo {
 /** P3 — connector category order + i18n label keys for the grouped hub. */
 const CATEGORY_ORDER = ['identity', 'legacy', 'cloud', 'scm', 'hris', 'document', 'other'] as const;
 
+/**
+ * Providers whose connections a card above the table owns, kept out of
+ * Configured Connections (#4466).
+ *
+ * The table's controls are generic: Test connection and Update Connection go
+ * through the provider `registry`, which has no SharePoint provider —
+ * SharePoint is registered only as an `integrationRegistry` bundle — so both
+ * failed "Unknown provider: sharepoint" on its row. Disable did work, and then
+ * stranded the connection: the SharePoint card's Test, Sites and Disconnect all
+ * refuse a disabled row, and its Connect stays hidden while a row exists. The
+ * SharePoint card is where that connection is connected, tested, scoped and
+ * disconnected, so its row is listed there and nowhere else. The health panel
+ * still lists it, because sync freshness is a question about every connection.
+ */
+const CARD_OWNED_PROVIDERS: ReadonlySet<string> = new Set(['sharepoint']);
+
+/** The `?mcp=` outcomes the Entra consent callback redirects back with. */
+const CONSENT_OUTCOMES = ['connected', 'declined', 'error'] as const;
+type ConsentOutcome = (typeof CONSENT_OUTCOMES)[number];
+const CONSENT_NOTICE_VARIANT: Record<ConsentOutcome, 'success' | 'warning' | 'error'> = {
+    connected: 'success',
+    declined: 'warning',
+    error: 'error',
+};
+
 export default function AdminIntegrationsPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const t = useTranslations('admin');
+    const searchParams = useSearchParams();
+    // The consent callback (`/api/integrations/mcp-server/callback`) always
+    // returns here with `?mcp=connected|declined|error`. Nothing read it, so a
+    // failed exchange and a success looked the same (#4466).
+    const consentParam = searchParams?.get('mcp') ?? null;
+    const consentOutcome =
+        CONSENT_OUTCOMES.find((o) => o === consentParam) ?? null;
 
     const [connections, setConnections] = useState<ConnectionDTO[]>([]);
     const [providers, setProviders] = useState<ProviderInfo[]>([]);
     const [webhookBaseUrl, setWebhookBaseUrl] = useState('');
     const [loading, setLoading] = useState(true);
+    /**
+     * Why the connection list could not be read, or null. A refusal or a
+     * server error used to fall through to `data.connections ?? []` and render
+     * "No integrations configured" with an empty catalogue, so a custom role
+     * without the settings permission read the workspace as unconnected
+     * (#4466).
+     */
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+    /** The edited connection's `isEnabled` — an edit never changes it (#4466). */
+    const [editingEnabled, setEditingEnabled] = useState<boolean | undefined>(undefined);
     const [formProvider, setFormProvider] = useState('');
     const [authorizing, setAuthorizing] = useState<string | null>(null);
     const [formName, setFormName] = useState('');
@@ -101,14 +147,20 @@ export default function AdminIntegrationsPage() {
      * IntegrationExecution and the health endpoint already serves it.
      */
     const [lastSuccessById, setLastSuccessById] = useState<Record<string, string | null>>({});
-    const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+    const [message, setMessage] = useState<{ type: 'success' | 'warning' | 'error'; text: string } | null>(null);
 
     const fetchConnections = useCallback(async () => {
         setLoading(true);
         try {
             const res = await fetch(apiUrl('/admin/integrations'));
-            const data = await res.json();
-            setConnections(data.connections ?? []);
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                setLoadError(apiErrorMessage(data, t('integrations.loadFailed')));
+                setLoading(false);
+                return;
+            }
+            setLoadError(null);
+            setConnections(data?.connections ?? []);
             // Same endpoint the freshness panel below reads. Fetched here so
             // the table can answer "when did this last collect?" without a
             // schema change.
@@ -125,10 +177,10 @@ export default function AdminIntegrationsPage() {
                 // A freshness signal is not worth failing the page over.
                 setLastSuccessById({});
             }
-            setProviders(data.availableProviders ?? []);
-            setWebhookBaseUrl(data.webhookBaseUrl ?? '');
+            setProviders(data?.availableProviders ?? []);
+            setWebhookBaseUrl(data?.webhookBaseUrl ?? '');
         } catch {
-            setMessage({ type: 'error', text: t('integrations.loadFailed') });
+            setLoadError(t('integrations.loadFailed'));
         }
         setLoading(false);
     }, [apiUrl, t]);
@@ -139,6 +191,7 @@ export default function AdminIntegrationsPage() {
     const resetForm = () => {
         setShowForm(false);
         setEditingId(null);
+        setEditingEnabled(undefined);
         setFormProvider('');
         setFormName('');
         setFormConfig({});
@@ -149,6 +202,7 @@ export default function AdminIntegrationsPage() {
     /** Open the Add form pre-selected to a catalog provider ("Connect" card). */
     const handleConnect = (providerId: string) => {
         setEditingId(null);
+        setEditingEnabled(undefined);
         setFormProvider(providerId);
         setFormName('');
         setFormConfig({});
@@ -166,6 +220,28 @@ export default function AdminIntegrationsPage() {
     const connectableProviders = providers.filter(
         (p) => p.configSchema.configFields.length + p.configSchema.secretFields.length > 0,
     );
+
+    /**
+     * A provider's name as the catalogue shows it, for the tables that used to
+     * print its id (`aws-posture`, `mcp-server`) though `displayName` came in
+     * the same response (#4466). SharePoint is not in the generic registry, so
+     * it takes its card's title; anything else unknown falls back to the id.
+     */
+    const providerNames = useMemo(() => {
+        const names = new Map(providers.map((p) => [p.id, p.displayName] as const));
+        names.set('sharepoint', t('sharepoint.title'));
+        return names;
+    }, [providers, t]);
+    const providerLabel = useCallback((id: string) => providerNames.get(id) ?? id, [providerNames]);
+
+    /** A check's label when the catalogues carry one, its id otherwise. */
+    const checkLabel = (check: string) =>
+        LABELLED_CHECKS.has(check)
+            ? t(`integrations.checkLabels.${check}` as Parameters<typeof t>[0])
+            : check;
+
+    /** The table lists every connection except the ones a card above owns. */
+    const listedConnections = connections.filter((c) => !CARD_OWNED_PROVIDERS.has(c.provider));
 
     const handleSave = async () => {
         if (!formProvider || !formName) {
@@ -186,6 +262,9 @@ export default function AdminIntegrationsPage() {
                 config: formConfig,
                 secrets: formSecrets,
                 editingId,
+                // An edit keeps the connection's enabled state; without it the
+                // server reads the edit as an enable (#4466).
+                editingIsEnabled: editingEnabled,
                 configFields:
                     providers.find(p => p.id === formProvider)?.configSchema.configFields ?? [],
             });
@@ -213,11 +292,17 @@ export default function AdminIntegrationsPage() {
                 setMessage({ type: 'error', text: apiErrorMessage(err, t('integrations.saveFailed')) });
             } else {
                 const data = await res.json();
+                // The response's `warning` is an English sentence from the
+                // route, and was appended verbatim in every locale (#4466). It
+                // only ever said the secrets were stored, which `secretStatus`
+                // says as a value, so the words are ours.
                 setMessage({
                     type: 'success',
                     text: editingId
                         ? t('integrations.connectionUpdated')
-                        : `${t('integrations.connectionCreated')}${data.warning ? ` ${data.warning}` : ''}`,
+                        : data.secretStatus === 'configured'
+                            ? t('integrations.connectionCreatedWithSecrets')
+                            : t('integrations.connectionCreated'),
                 });
                 resetForm();
                 await fetchConnections();
@@ -236,6 +321,7 @@ export default function AdminIntegrationsPage() {
     /** P2 — open the form to edit an existing connection (edit was unreachable). */
     const handleEdit = (conn: ConnectionDTO) => {
         setEditingId(conn.id);
+        setEditingEnabled(conn.isEnabled);
         setFormProvider(conn.provider);
         setFormName(conn.name);
         // `String(v)` is a DOWNGRADE for a stored boolean, and it is safe only
@@ -270,8 +356,11 @@ export default function AdminIntegrationsPage() {
             if (!res.ok || !data.authorizeUrl) {
                 // The server's reason is shown: it is our own text — "set the
                 // tenant ID, client ID and client secret first" — and it names
-                // what to fix.
-                setMessage({ type: 'error', text: data.error ?? t('integrations.authorizeFailed') });
+                // what to fix. Through apiErrorMessage, because `data.error` is
+                // the envelope OBJECT `{ code, message, requestId }`: rendered
+                // as-is it threw "Objects are not valid as a React child" and
+                // took the page down on exactly the refusal meant to help (#4466).
+                setMessage({ type: 'error', text: apiErrorMessage(data, t('integrations.authorizeFailed')) });
                 setAuthorizing(null);
                 return;
             }
@@ -318,19 +407,20 @@ export default function AdminIntegrationsPage() {
         setMessage({ type: 'success', text: t('integrations.syncRunning') });
         try {
             const res = await fetch(apiUrl(`/admin/integrations/${connectionId}/sync`), { method: 'POST' });
+            const data = await res.json().catch(() => null);
             if (!res.ok) {
-                setMessage({ type: 'error', text: t('integrations.syncFailed') });
+                setMessage({ type: 'error', text: apiErrorMessage(data, t('integrations.syncFailed')) });
                 return;
             }
-            const data = await res.json() as { counts?: { total: number; passed: number; failed: number; error: number }; identity?: { upserted: number } | null };
+            // A 200 can carry a directory or HR read that failed, stopped
+            // early or never started — `summariseSync` decides the colour and
+            // the sentences from all of it, not from the check counts alone.
+            const summary = summariseSync((data ?? {}) as SyncConnectionResponse);
             setMessage({
-                type: (data.counts?.error ?? 0) > 0 ? 'error' : 'success',
-                text: t('integrations.syncDone', {
-                    total: data.counts?.total ?? 0,
-                    passed: data.counts?.passed ?? 0,
-                    failed: data.counts?.failed ?? 0,
-                    accounts: data.identity?.upserted ?? 0,
-                }),
+                type: summary.tone,
+                text: summary.parts
+                    .map((p) => t(`integrations.syncResult.${p.key}` as Parameters<typeof t>[0], p.values))
+                    .join(' '),
             });
             await fetchConnections();
         } catch {
@@ -351,16 +441,47 @@ export default function AdminIntegrationsPage() {
     const allInternalEnabled = internalProviders.length > 0 &&
         internalProviders.every((ip) => connections.some((c) => c.provider === ip.id && c.isEnabled));
 
+    /**
+     * The body that turns an existing connection back on: its own name and
+     * stored config, plus `isEnabled: true`. The stored config is sent rather
+     * than omitted so the update's audit row reports the connection's real
+     * security flags — an update without `configJson` records none, which reads
+     * in the trail as flags having been switched off.
+     */
+    const enableBody = (conn: ConnectionDTO) => ({
+        id: conn.id,
+        provider: conn.provider,
+        name: conn.name,
+        ...(conn.configJson ? { configJson: conn.configJson } : {}),
+        isEnabled: true,
+    });
+
     const handleEnableInternal = async () => {
         setMessage(null);
         try {
             for (const ip of internalProviders) {
-                if (connections.some((c) => c.provider === ip.id)) continue;
-                await fetch(apiUrl('/admin/integrations'), {
+                const own = connections.filter((c) => c.provider === ip.id);
+                if (own.some((c) => c.isEnabled)) continue;
+                // A check that EXISTS but is disabled is turned back on, not
+                // skipped (#4466). The button shows because this provider has
+                // no enabled connection, so skipping it left the button doing
+                // nothing, saying it had worked, and still showing.
+                const existing = own[0];
+                const res = await fetch(apiUrl('/admin/integrations'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ provider: ip.id, name: ip.displayName, configJson: {} }),
+                    body: JSON.stringify(
+                        existing
+                            ? enableBody(existing)
+                            : { provider: ip.id, name: ip.displayName, configJson: {} },
+                    ),
                 });
+                if (!res.ok) {
+                    const body = await res.json().catch(() => null);
+                    setMessage({ type: 'error', text: apiErrorMessage(body, t('integrations.internalEnableFailed')) });
+                    await fetchConnections();
+                    return;
+                }
             }
             setMessage({ type: 'success', text: t('integrations.internalEnabled') });
             await fetchConnections();
@@ -372,15 +493,51 @@ export default function AdminIntegrationsPage() {
     const handleDisable = async (connectionId: string) => {
         setMessage(null);
         try {
-            await fetch(apiUrl('/admin/integrations'), {
+            const res = await fetch(apiUrl('/admin/integrations'), {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connectionId }),
             });
+            // A refusal used to read "Connection disabled" — only a network
+            // throw reached the red branch (#4466).
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                setMessage({ type: 'error', text: apiErrorMessage(body, t('integrations.disableFailed')) });
+                return;
+            }
             setMessage({ type: 'success', text: t('integrations.connectionDisabled') });
             await fetchConnections();
         } catch {
             setMessage({ type: 'error', text: t('integrations.disableFailed') });
+        }
+    };
+
+    /**
+     * Turn a disabled connection back on. Saving the edit form used to do this
+     * as a side effect — the body never carried `isEnabled`, and the server
+     * reads its absence as `true` — which was also the only way back. The form
+     * now keeps the state it was opened with, so enabling is its own action,
+     * in the place Disable was.
+     */
+    const handleEnable = async (conn: ConnectionDTO) => {
+        setMessage(null);
+        try {
+            const res = await fetch(apiUrl('/admin/integrations'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(enableBody(conn)),
+            });
+            if (!res.ok) {
+                // e.g. the one-enabled-HRIS refusal, which names the
+                // connection holding the slot.
+                const body = await res.json().catch(() => null);
+                setMessage({ type: 'error', text: apiErrorMessage(body, t('integrations.enableFailed')) });
+                return;
+            }
+            setMessage({ type: 'success', text: t('integrations.connectionEnabled') });
+            await fetchConnections();
+        } catch {
+            setMessage({ type: 'error', text: t('integrations.enableFailed') });
         }
     };
 
@@ -437,6 +594,14 @@ export default function AdminIntegrationsPage() {
                     </div>
                 </div>
 
+                {/* Where the Entra consent for a tool server connection ended.
+                    Top of the page, because the callback lands the admin here. */}
+                {consentOutcome && (
+                    <InlineNotice variant={CONSENT_NOTICE_VARIANT[consentOutcome]} data-testid="consent-result">
+                        {t(`integrations.consentResult.${consentOutcome}`)}
+                    </InlineNotice>
+                )}
+
                 {/* SP-1 — SharePoint connection (delegated consent, separate
                     from the generic config-field connections below). */}
                 <SharePointCard />
@@ -478,7 +643,7 @@ export default function AdminIntegrationsPage() {
                                     {p.supportedChecks.length > 0 && (
                                         <div className="flex flex-wrap gap-1">
                                             {p.supportedChecks.slice(0, 3).map((check) => (
-                                                <StatusBadge variant="neutral" key={check}>{check}</StatusBadge>
+                                                <StatusBadge variant="neutral" key={check}>{checkLabel(check)}</StatusBadge>
                                             ))}
                                             {p.supportedChecks.length > 3 && (
                                                 <span className="text-xs text-content-subtle self-center">+{p.supportedChecks.length - 3}</span>
@@ -506,16 +671,11 @@ export default function AdminIntegrationsPage() {
                     </div>
                 )}
 
-                {/* Message banner */}
+                {/* Message banner — the last action's result. */}
                 {message && (
-                    <div className={`p-3 rounded-lg text-sm flex items-center gap-tight ${
-                        message.type === 'success'
-                            ? 'bg-bg-success border border-border-success text-content-success'
-                            : 'bg-bg-error border border-border-error text-content-error'
-                    }`}>
-                        {message.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                    <InlineNotice variant={message.type} data-testid="integrations-message">
                         {message.text}
-                    </div>
+                    </InlineNotice>
                 )}
 
                 {/* Webhook endpoint info */}
@@ -581,20 +741,29 @@ export default function AdminIntegrationsPage() {
                             <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
                             <span className="sr-only">{t('integrations.fetching')}</span>
                         </div>
-                    ) : connections.length === 0 ? (
+                    ) : loadError ? (
+                        // The server's reason, not the empty state: an
+                        // unreadable list is not an empty one.
+                        <InlineNotice variant="error" data-testid="integrations-load-error">
+                            {loadError}
+                        </InlineNotice>
+                    ) : listedConnections.length === 0 ? (
                         <div className="p-8 text-center text-content-subtle">
                             {t('integrations.emptyConfigured')}
                         </div>
                     ) : (
                         (() => {
                             const connCols = createColumns<ConnectionDTO>([
-                                { accessorKey: 'provider', header: t('integrations.colProvider'), cell: ({ getValue }) => <StatusBadge variant="info">{getValue()}</StatusBadge> },
+                                { accessorKey: 'provider', header: t('integrations.colProvider'), cell: ({ getValue }) => <StatusBadge variant="info">{providerLabel(String(getValue()))}</StatusBadge> },
                                 { accessorKey: 'name', header: t('integrations.colName'), cell: ({ getValue }) => <span className="font-medium">{getValue()}</span> },
                                 {
                                     id: 'status', header: t('integrations.colStatus'), accessorKey: 'isEnabled',
                                     cell: ({ row }) => <StatusBadge variant={row.original.isEnabled ? 'success' : 'error'}>{row.original.isEnabled ? t('integrations.statusActive') : t('integrations.statusDisabled')}</StatusBadge>,
                                 },
-                                { id: 'secrets', header: t('integrations.colSecrets'), cell: () => <span className="text-content-subtle font-mono">••••••••</span> },
+                                // No Secrets column: it rendered the same eight
+                                // dots on every row, internal checks with no
+                                // secret included, and the API's `hasSecret` is
+                                // a constant `true` — it said nothing (#4466).
                                 {
                                     id: 'lastTest', header: t('integrations.colLastTest'), accessorKey: 'lastTestedAt',
                                     cell: ({ row }) => row.original.lastTestedAt ? (
@@ -629,11 +798,16 @@ export default function AdminIntegrationsPage() {
                                     id: 'actions', header: t('integrations.colActions'),
                                     cell: ({ row }) => (
                                         <div className="flex gap-1">
-                                            <Tooltip content={t('integrations.syncNow')}>
-                                                <Button variant="secondary" size="xs" onClick={() => handleSyncNow(row.original.id)} disabled={syncingId === row.original.id} aria-label={t('integrations.syncNow')} id={`sync-${row.original.id}-btn`}>
-                                                    <RefreshCw className={cn('w-3.5 h-3.5', syncingId === row.original.id && 'animate-spin')} />
-                                                </Button>
-                                            </Tooltip>
+                                            {/* Not offered on a disabled connection, which the
+                                                sync refuses ("not found or disabled") — the row's
+                                                Enable action is the way back (#4466). */}
+                                            {row.original.isEnabled && (
+                                                <Tooltip content={t('integrations.syncNow')}>
+                                                    <Button variant="secondary" size="xs" onClick={() => handleSyncNow(row.original.id)} disabled={syncingId === row.original.id} aria-label={t('integrations.syncNow')} id={`sync-${row.original.id}-btn`}>
+                                                        <RefreshCw className={cn('w-3.5 h-3.5', syncingId === row.original.id && 'animate-spin')} />
+                                                    </Button>
+                                                </Tooltip>
+                                            )}
                                             <Tooltip content={t('integrations.viewOutcomes')}>
                                                 <Link href={tenantHref(`/admin/integrations/${row.original.id}`)} aria-label={t('integrations.viewOutcomes')} className={buttonVariants({ variant: 'secondary', size: 'xs' })}>
                                                     <Activity className="w-3.5 h-3.5" />
@@ -656,20 +830,30 @@ export default function AdminIntegrationsPage() {
                                                     <Pencil className="w-3.5 h-3.5" />
                                                 </Button>
                                             </Tooltip>
-                                            <Tooltip content={t('integrations.disableIntegration')}>
-                                                <Button variant="destructive" size="xs" onClick={() => handleDisable(row.original.id)} aria-label={t('integrations.disableIntegration')}>
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </Button>
-                                            </Tooltip>
+                                            {row.original.isEnabled ? (
+                                                <Tooltip content={t('integrations.disableIntegration')}>
+                                                    <Button variant="destructive" size="xs" onClick={() => handleDisable(row.original.id)} aria-label={t('integrations.disableIntegration')}>
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </Button>
+                                                </Tooltip>
+                                            ) : (
+                                                <Tooltip content={t('integrations.enableIntegration')}>
+                                                    <Button variant="secondary" size="xs" onClick={() => handleEnable(row.original)} aria-label={t('integrations.enableIntegration')} id={`enable-${row.original.id}-btn`}>
+                                                        <CheckCircle className="w-3.5 h-3.5" />
+                                                    </Button>
+                                                </Tooltip>
+                                            )}
                                         </div>
                                     ),
                                 },
                             ]);
                             return (
                                 <DataTable
-                                    data={connections}
+                                    data={listedConnections}
                                     columns={connCols}
                                     getRowId={(c) => c.id}
+                                    // Every action is per row; nothing acts on a selection.
+                                    selectionEnabled={false}
                                     emptyState={t('integrations.emptyConfigured')}
                                     resourceName={(p) => p ? t('integrations.resourceConnections') : t('integrations.resourceConnection')}
                                     data-testid="integrations-table"
@@ -681,7 +865,7 @@ export default function AdminIntegrationsPage() {
 
                 {/* GAP-3 — per-connection freshness (self-renders only when
                     there is at least one enabled connection). */}
-                <ConnectionHealthPanel />
+                <ConnectionHealthPanel providerLabel={providerLabel} />
 
                 {/* Add/Edit Form */}
                 {showForm && (
@@ -792,10 +976,24 @@ export default function AdminIntegrationsPage() {
                                 <div className="flex flex-wrap gap-1">
                                     {selectedProvider.supportedChecks.map(check => (
                                         <StatusBadge variant="neutral" key={check}>
-                                            {selectedProvider.id}.{check}
+                                            {checkLabel(check)}
                                         </StatusBadge>
                                     ))}
                                 </div>
+                                {/* The automation keys, as keys: a control is wired to a
+                                    check by typing one into its Automation key field, so
+                                    this is the one place the code is the useful form. */}
+                                {selectedProvider.supportedChecks.length > 0 && (
+                                    <p className="text-xs text-content-subtle mt-1" data-testid="automation-keys">
+                                        {t('integrations.automationKeysHint')}{' '}
+                                        {selectedProvider.supportedChecks.map((check, i) => (
+                                            <span key={check}>
+                                                {i > 0 && ', '}
+                                                <code className="font-mono">{selectedProvider.id}.{check}</code>
+                                            </span>
+                                        ))}
+                                    </p>
+                                )}
                             </div>
                         )}
 
