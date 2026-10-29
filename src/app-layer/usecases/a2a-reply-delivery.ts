@@ -55,16 +55,28 @@
  * THE GUARD REFUSES A REPLY; IT NEVER FAILS THE RUN
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * `guardUntrustedInput` is called per reply, and a block becomes a REFUSED row
- * with `GUARD_REFUSED`. It is deliberately NOT `assertGuardAllowed`, which
- * throws: a peer sending one hostile answer would otherwise abort a run that
- * was doing legitimate work, which hands a peer a denial-of-service against
- * the tenant that registered it. The reply is kept, the refusal is recorded,
- * and the step proceeds without it.
+ * `guardUntrustedInput` is called per reply, and anything the guard wants
+ * reviewed — a `flag` as well as a `block` — becomes a REFUSED row with
+ * `GUARD_REFUSED`, through `guardQuarantines`.
+ *
+ * That predicate rather than `assertGuardAllowed`, for two independent reasons.
+ *
+ * It is STRICTER. Under the default `balanced` mode a `malicious` INPUT verdict
+ * resolves to `flag`, which `assertGuardAllowed` lets through — so reading
+ * `blocked` would hand a model the peer answers most worth refusing. Nothing
+ * here is a second definition of "quarantine": the same predicate the
+ * adjudication pass calls, because two would eventually disagree in the
+ * direction that grants access.
+ *
+ * And it does not THROW. A peer sending one hostile answer would otherwise
+ * abort a run that was doing legitimate work, which hands a peer a
+ * denial-of-service against the tenant that registered it. The reply is kept,
+ * the refusal is recorded, and the step proceeds without it.
  */
 import type { WorkflowRunStatus } from '@prisma/client';
 
 import { guardUntrustedInput } from '@/app-layer/ai/guard';
+import { guardQuarantines } from '@/app-layer/ai/identity-match/match-state-builder';
 import {
     A2A_PEER_REPLY_SOURCE,
     peerReplyEnvelope,
@@ -76,7 +88,12 @@ import type { PrismaTx } from '@/lib/db-context';
 
 import type { RequestContext } from '../types';
 
-/** The closed vocabulary pinned by `PeerAgentReplyDelivery_reason_known`. */
+/**
+ * The closed vocabulary pinned by `PeerAgentReplyDelivery_reason_known`.
+ *
+ * Stored in the `refusalCode` column — NOT `reason`, which the encryption
+ * middleware would encrypt by name via its fan-out path. See the migration.
+ */
 export type ReplyDeliveryRefusal =
     | 'RUN_ENDED'
     | 'RUN_NOT_FOUND'
@@ -230,7 +247,16 @@ export async function claimPeerRepliesForRun(
                 source: A2A_PEER_REPLY_SOURCE,
                 db,
             });
-            if (outcome.blocked) {
+            if (guardQuarantines(outcome)) {
+                // `reviewRequired`, NOT `blocked`, and the SAME predicate the
+                // adjudication pass uses rather than a second copy of it.
+                // Under the default `balanced` mode a `malicious` INPUT verdict
+                // resolves to `flag`, so reading `blocked` would hand the model
+                // a peer's answer that scanned as an injection attempt. There is
+                // no human between this read and the model call, and the cost of
+                // refusing is a step that runs without the reply — the step as it
+                // would be before #3744 existed.
+                //
                 // NOT a throw. See the module docstring: throwing would let a
                 // peer abort a run by answering badly.
                 logger.warn('a2a.reply_guard_refused', {
@@ -264,7 +290,7 @@ export async function claimPeerRepliesForRun(
                     runId,
                     peerId: d.peerId,
                     outcome: 'DELIVERED',
-                    reason: null,
+                    refusalCode: null,
                     deliveredAt: now,
                 })),
                 ...refused.map((r) => ({
@@ -273,7 +299,7 @@ export async function claimPeerRepliesForRun(
                     runId,
                     peerId: r.peerId,
                     outcome: 'REFUSED',
-                    reason: r.reason,
+                    refusalCode: r.reason,
                     deliveredAt: null,
                 })),
             ],
@@ -306,7 +332,7 @@ async function recordAll(
             runId,
             peerId: r.peerId,
             outcome: 'REFUSED',
-            reason,
+            refusalCode: reason,
             deliveredAt: null,
         })),
         skipDuplicates: true,

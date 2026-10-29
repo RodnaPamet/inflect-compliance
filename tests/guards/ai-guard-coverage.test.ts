@@ -89,6 +89,13 @@ const AI_GUARD_COVERAGE: Readonly<Record<string, readonly GuardFn[]>> = {
     // response schema re-checks the chosen option against the letters we sent,
     // which is the check that actually matters on the way back.
     'src/app-layer/usecases/legacy-adjudication.ts': ['guardUntrustedInput'],
+    // INPUT ONLY, for a different reason: nothing is generated here at all.
+    // This usecase decides whether a peer's reply may be delivered into a run
+    // and scans it on the way in (#3744). The model call that reads the reply
+    // happens one layer down, inside the run, whose own egress scan covers
+    // whatever it generates — so a `guardEgress` here would scan the peer's
+    // own bytes a second time and still not cover the answer.
+    'src/app-layer/usecases/a2a-reply-delivery.ts': ['guardUntrustedInput'],
 };
 
 /**
@@ -121,6 +128,18 @@ const AI_GUARD_ENFORCEMENT: Readonly<Record<string, { symbol: string; why: strin
             + 'answered, so one hostile record quarantines itself. Stricter than the '
             + 'default — it refuses a flag as well as a block, which is the case the '
             + 'default balanced mode actually produces for a malicious input.',
+    },
+    'src/app-layer/usecases/a2a-reply-delivery.ts': {
+        symbol: 'guardQuarantines',
+        why:
+            'A step may carry several replies, so one hostile answer must refuse '
+            + 'itself rather than abort a run that was doing legitimate work — '
+            + 'which is what `assertGuardAllowed` would do, handing a registered '
+            + 'peer a denial-of-service against the tenant that registered it. '
+            + 'The same predicate as the adjudication pass, and stricter for the '
+            + 'same reason: `reviewRequired` covers the `flag` that a `malicious` '
+            + 'INPUT verdict resolves to under the default mode. The refusal is a '
+            + 'REFUSED ledger row carrying GUARD_REFUSED.',
     },
 };
 
@@ -254,14 +273,22 @@ describe('AI guard — coverage (structural completeness)', () => {
     });
 
     it('every covered usecase ENFORCES, by its declared mechanism', () => {
-        for (const rel of Object.keys(AI_GUARD_COVERAGE)) {
-            const src = readFile(rel);
-            const declared = AI_GUARD_ENFORCEMENT[rel];
-            // The default is `assertGuardAllowed` and stays the default. A
-            // declared alternative must still be PRESENT in the file, so this
-            // remains a check that something enforces rather than a waiver.
-            expect(src).toContain(declared?.symbol ?? 'assertGuardAllowed');
-        }
+        // The default is `assertGuardAllowed` and stays the default. A declared
+        // alternative must still be PRESENT in the file, so this remains a check
+        // that something enforces rather than a waiver.
+        //
+        // Collected into a list rather than asserted per key, for two reasons.
+        // A failure names EVERY unenforced usecase instead of dying on the
+        // first. And a per-key `expect(src).toContain(symbol)` is a whole-file
+        // read whose needle cannot be a literal — the shape
+        // `tests/guardrails/assertion-needle-uniqueness-ratchet` counts as a
+        // blind spot, and it grew one every time a usecase was added to the map
+        // above.
+        const unenforced = Object.keys(AI_GUARD_COVERAGE).filter((rel) => {
+            const symbol = AI_GUARD_ENFORCEMENT[rel]?.symbol ?? 'assertGuardAllowed';
+            return !readFile(rel).includes(symbol);
+        });
+        expect(unenforced).toEqual([]);
     });
 
     it('every declared alternative enforcement carries a written reason', () => {

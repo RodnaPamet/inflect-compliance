@@ -42,7 +42,7 @@ CREATE TABLE "PeerAgentReplyDelivery" (
     "runId"       TEXT         NOT NULL,
     "peerId"      TEXT         NOT NULL,
     "outcome"     TEXT         NOT NULL,
-    "reason"      TEXT,
+    "refusalCode" TEXT,
     "deliveredAt" TIMESTAMP(3),
     "decidedAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -78,17 +78,24 @@ ALTER TABLE "PeerAgentReplyDelivery"
 ALTER TABLE "PeerAgentReplyDelivery"
     ADD CONSTRAINT "PeerAgentReplyDelivery_outcome_shape"
     CHECK (
-        ("outcome" = 'DELIVERED' AND "reason" IS NULL     AND "deliveredAt" IS NOT NULL)
-     OR ("outcome" = 'REFUSED'   AND "reason" IS NOT NULL AND "deliveredAt" IS NULL)
+        ("outcome" = 'DELIVERED' AND "refusalCode" IS NULL     AND "deliveredAt" IS NOT NULL)
+     OR ("outcome" = 'REFUSED'   AND "refusalCode" IS NOT NULL AND "deliveredAt" IS NULL)
     );
 
--- The closed vocabulary. A new reason widens this CHECK in a migration; never
+-- The closed vocabulary. A new code widens this CHECK in a migration; never
 -- repurpose one, as the workpaper dissent codes are pinned.
+--
+-- NAMED `refusalCode`, NOT `reason`, and that is load-bearing. `reason` is a
+-- manifest field name on `PeerAgentKillSwitch`, and the encryption
+-- middleware's fan-out path (`modelName === '*'`) encrypts by FIELD NAME
+-- across every manifest model. A plaintext `reason` column here was therefore
+-- encrypted on write and then refused by this very CHECK — measured: every
+-- REFUSED insert failed while DELIVERED, whose value is NULL, succeeded.
 ALTER TABLE "PeerAgentReplyDelivery"
     ADD CONSTRAINT "PeerAgentReplyDelivery_reason_known"
     CHECK (
-        "reason" IS NULL
-     OR "reason" IN (
+        "refusalCode" IS NULL
+     OR "refusalCode" IN (
             'RUN_ENDED',        -- the run had already ended; the reply is kept
             'RUN_NOT_FOUND',    -- no such run in this tenant
             'RUN_MISMATCH',     -- the reply relates to a message from another run

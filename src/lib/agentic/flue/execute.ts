@@ -279,7 +279,14 @@ export async function executeFlueRun(
             component: 'flue-execute',
             tenantId: ctx.tenantId,
             runId,
-            reason: err instanceof Error ? err.message : 'unknown',
+            // The error's NAME, never its message. This catch covers
+            // `guardUntrustedInput`, which is handed the peer's reply body and
+            // this transaction — so a throw from its own write can carry the
+            // scanned text in its message, and that text would land in a log
+            // line, which is the one place agent input is neither guarded nor
+            // reviewable. The name says which layer failed, which is what this
+            // line is for; the row stays unclaimed either way.
+            reason: err instanceof Error ? err.name : 'unknown',
         });
     }
 

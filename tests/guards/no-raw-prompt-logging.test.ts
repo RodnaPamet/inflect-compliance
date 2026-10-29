@@ -814,7 +814,22 @@ const SINK_FLOOR = 30;
 // warn, the dispatch info; the decision-row error has none). The error fields
 // were written as `err.message` with a literal fallback rather than
 // `String(err)`, which is what kept two more holes out.
-const MEASURED_HOLES = 212;
+//
+// 212 -> 213, with MEASURED_SINKS 122 -> 123 in the same diff: A2A REPLY INTO A
+// RUN (#3744). One new sink in `flue/execute.ts`, a file already registered
+// `identifier bound elsewhere`, and the new call is the same kind — a component
+// literal, `ctx.tenantId`, `runId`, and the error's NAME. Not its message: that
+// catch covers `guardUntrustedInput`, which is handed the peer's reply body, so
+// a throw from its own write could have carried the scanned text into a log
+// line. Narrowing it to `err.name` is why this entry adds one hole rather than
+// a leak.
+//
+// Both numbers are the figure MEASURED on the composed tree, not either
+// branch's own plus one: #4149 and #3744 each raised 209, and a resolution that
+// kept one side's value would have left the ratchet blind to the other's sink.
+// This still TIGHTENS `HOLES_PER_SINK_CEILING`: (212+6)/122 = 1.7869 becomes
+// (213+6)/123 = 1.7805, because the sink is counted alongside the hole.
+const MEASURED_HOLES = 213;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -870,7 +885,9 @@ const MEASURED_HOLES = 212;
 // recording them here) and the four of Step 2b's driver, loop and decision
 // recorder. Raising the denominator by more than the numerator TIGHTENS
 // `HOLES_PER_SINK_CEILING`: (209+6)/114 = 1.886 becomes (212+6)/122 = 1.787.
-const MEASURED_SINKS = 122;
+//
+// 122 -> 123: the reply-claim sink of #3744, recorded beside its hole above.
+const MEASURED_SINKS = 123;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

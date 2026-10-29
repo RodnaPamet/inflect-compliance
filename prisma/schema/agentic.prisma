@@ -3312,7 +3312,14 @@ model PeerAgentReplyDelivery {
   /// predates it forces (see the `PROPOSE` rung and `AI_ADMIN`).
   outcome String
   /// Named reason, required when REFUSED and absent when DELIVERED (CHECK).
-  reason  String?
+  ///
+  /// NOT called `reason`, and that is not style. `reason` is a manifest field
+  /// name on `PeerAgentKillSwitch`, and the encryption middleware's fan-out
+  /// path (`modelName === '*'`) encrypts by FIELD NAME across every manifest
+  /// model — so a plaintext `reason` here was silently encrypted on write and
+  /// then refused by `_reason_known`. Measured: every REFUSED insert failed
+  /// with a CHECK violation while DELIVERED (reason NULL) succeeded.
+  refusalCode String?
 
   /// When the input actually reached a step. NULL for a refusal.
   deliveredAt DateTime?
