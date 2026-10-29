@@ -18,6 +18,7 @@ import { formatDateTime } from '@inflect/ui/lib/format-date';
 import type { HarnessScanCompleteness, HarnessScannerSection, MatrixRow } from '@/lib/agentic/harness-read-model';
 
 import { DriftPanel } from './DriftPanel';
+import { sourceKindLabel } from './source-kind-label';
 import { MatrixGrid } from './MatrixGrid';
 
 export const COMPLETENESS_VARIANT: Readonly<Record<HarnessScanCompleteness, StatusBadgeVariant>> = {
@@ -79,7 +80,7 @@ export function ScannerSection({
                                 kinds: incomplete
                                     .map((s) =>
                                         t('harness.incompleteSourceLine', {
-                                            kind: s.kind,
+                                            kind: sourceKindLabel(t, s.kind),
                                             reason: s.reason ? t(`harness.incompleteReason.${s.reason}`) : '',
                                         }),
                                     )

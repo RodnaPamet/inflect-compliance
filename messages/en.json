@@ -3444,6 +3444,8 @@
       "cyclePickerAll": "All fieldwork audits",
       "emptyTitle": "No audits yet",
       "emptyDesc": "Create your first audit to start tracking checklist results and findings.",
+      "emptyDescReadOnly": "Owners, Admins and Editors can create audits.",
+      "truncatedHint": "Pick a cycle in the Cycle picker to list only that cycle's audits.",
       "workpaperReviews": "Workpaper reviews"
     },
     "readinessLegend": {
@@ -3458,7 +3460,7 @@
       "resultFor": "Result for {prompt}"
     },
     "newModal": {
-      "description": "Plan a new internal audit. The default checklist is generated automatically; you can edit it after creation.",
+      "description": "Plan a new internal audit. Its checklist is generated from the chosen framework's requirements, or from your controls if you choose none. You record a result against each item; the items themselves are fixed once the audit is created.",
       "creating": "Creating…",
       "discardConfirm": "Discard audit? Any details you entered will be lost.",
       "framework": "Framework",
@@ -3470,7 +3472,7 @@
     "editModal": {
       "trigger": "Edit",
       "title": "Edit audit",
-      "description": "Update the audit's scope, schedule, framework and cycle. Checklist results and findings are unaffected.",
+      "description": "Update the audit's scope, schedule, auditors, framework and cycle. Checklist results and findings are unaffected.",
       "labelTitle": "Title",
       "labelSchedule": "Scheduled date",
       "schedulePlaceholder": "Not scheduled",
@@ -4061,7 +4063,16 @@
       "checklistError": "Could not update the checklist item.",
       "checklistSaved": "Checklist item updated.",
       "statusError": "Failed to update audit status.",
-      "statusChanged": "Audit status changed to {status}."
+      "statusChanged": "Audit status changed to {status}.",
+      "backToPlanned": "Back to Planned",
+      "backToInProgress": "Back to In Progress",
+      "cancelAudit": "Cancel audit",
+      "cancelConfirm": {
+        "title": "Cancel this audit?",
+        "description": "The audit is marked Cancelled. Its checklist results and findings are kept, but this page cannot reopen it.",
+        "confirm": "Cancel audit",
+        "keep": "Keep audit"
+      }
     },
     "packStatus": {
       "DRAFT": "Draft",
@@ -9108,7 +9119,7 @@
       "exportFiledBody": "Filed as “{title}” in the evidence library, under the Agent governance folder, retained for seven years. Nothing was downloaded.",
       "exportFiledNotEnforcing": "The filed document states, at the top, that registration is not enforced here and that its figures describe a sample rather than a population.",
       "notEnforcingTitle": "These figures describe a register that is not being enforced",
-      "notEnforcingBody": "Agent registration is switched off for this workspace, so the tool boundary refuses nothing on the strength of what is below. Every figure is still true about what is RECORDED; none of it is true about what is ENFORCED. Read the pack with that in mind, and turn enforcement on from Security settings before treating it as assurance.",
+      "notEnforcingBody": "Agent registration is switched off for this workspace, so the tool boundary refuses nothing on the strength of what is below. Every figure is still true about what is RECORDED; none of it is true about what is ENFORCED. Read the pack with that in mind, and turn enforcement on with \"Enforce registration\" on the Security & MFA page before treating it as assurance.",
       "inventoryHeading": "The register",
       "emptyTitle": "No agents are registered",
       "emptyDesc": "That is a complete answer, not a missing one: nothing autonomous is recorded as acting in this workspace. There is nothing to assess until an agent is registered.",

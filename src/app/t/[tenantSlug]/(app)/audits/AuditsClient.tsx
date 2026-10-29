@@ -13,6 +13,7 @@ import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { Heading } from '@/components/ui/typography';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -27,11 +28,14 @@ import { EditAuditModal } from './EditAuditModal';
 // detail views (and the cycle page) now share one authoritative reading so
 // CANCELLED can never disagree again.
 import {
+    AUDIT_STATUS_MOVES,
     AUDIT_STATUS_VARIANT,
     CHECKLIST_RESULT_VARIANT,
     DEFAULT_STATUS_VARIANT,
+    NO_STATUS_MOVES,
 } from './_lib/status-variants';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+import { auditWriteErrorFrom, auditWriteFailureMessage } from './_lib/audit-write-error';
 
 // listAudits → AuditRepository.list (auditListSelect). The lighter LIST row
 // (distinct from the detail AuditDetail). List map callback stays untyped.
@@ -51,7 +55,13 @@ interface AuditsClientProps {
     /** True when NIS2 is an installed framework — gates the NIS2 Gap Assessment
      *  entry button (absent, not disabled, when false). */
     hasNis2: boolean;
-    /** Gates the "New finding" affordance on the audit detail pane. */
+    /**
+     * `ctx.permissions.canWrite` — the coarse tier `createAudit` and
+     * `updateAudit` assert (`assertCanWrite`), and the only gate either route
+     * has. Every write control on this page follows it: the create button (and
+     * `?create=1`), the status buttons, the checklist result pickers, Edit and
+     * Finding. A role without it sees the audit read-only.
+     */
     canWrite: boolean;
     translations: {
         title: string;
@@ -101,6 +111,8 @@ interface AuditDetail {
     title: string;
     status: string;
     auditScope: string | null;
+    /** Free text collected at creation; shown in the pane and editable. */
+    auditors?: string | null;
     // Editable metadata — carried so `<EditAuditModal>` can seed from the
     // audit already on screen instead of re-fetching it.
     criteria?: string | null;
@@ -124,6 +136,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     const [selected, setSelected] = useState<AuditDetail | null>(null);
     const [isFindingOpen, setIsFindingOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
+    const [isCancelOpen, setIsCancelOpen] = useState(false);
 
     // Modal-form follow-up — create-audit modal mounted off the list,
     // auto-opening on `?create=1` (the redirect target from
@@ -131,7 +144,12 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const searchParams = useSearchParams();
     const router = useRouter();
-    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/audits`);
+    // Only for a viewer who may create — otherwise an old `/audits/new`
+    // bookmark opened a form whose submit the server refuses. The param is
+    // stripped either way.
+    useCreateQueryParam(() => {
+        if (canWrite) setIsCreateOpen(true);
+    }, `/t/${tenantSlug}/audits`);
 
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
 
@@ -232,41 +250,60 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error('audit_write_failed');
+            // The refusal's reason rides the error, so each caller can show it
+            // instead of its own generic sentence.
+            if (!res.ok) throw await auditWriteErrorFrom(res);
             return res.json().catch(() => null);
         },
     });
 
     // #4 — a failed PUT used to silently drop the result; surface it and
     // only refresh the pane once the write actually succeeded.
-    const updateChecklist = async (itemId: string, result: string, notes: string = '') => {
+    //
+    // The update carries the RESULT only. `notes` is left out, not sent as
+    // `''`: the usecase writes any string note it receives and leaves an
+    // absent one alone, and this page has no way to write a note — so sending
+    // a default here erased the item's note (written through the API) on the
+    // first result change.
+    const updateChecklist = async (itemId: string, result: string) => {
         if (!selected) return;
         try {
             await auditWrite.trigger({
                 auditId: selected.id,
-                body: { checklistUpdates: [{ id: itemId, result, notes }] },
+                body: { checklistUpdates: [{ id: itemId, result }] },
             });
             toast.success(tx('detail.checklistSaved'));
             loadAudit(selected.id);
-        } catch {
-            toast.error(tx('detail.checklistError'));
+        } catch (err) {
+            toast.error(auditWriteFailureMessage(err, tx('detail.checklistError')));
         }
     };
 
     // #4 — flip the pill optimistically, but reconcile it back to the prior
     // status when the PUT fails so it never sticks on the un-saved value.
-    const updateAuditStatus = async (status: string) => {
-        if (!selected) return;
+    // Resolves to whether the write landed, so the Cancel confirmation can
+    // stay open on a refusal.
+    const updateAuditStatus = async (status: string): Promise<boolean> => {
+        if (!selected) return false;
         const prevStatus = selected.status;
         setSelected((s) => (s ? { ...s, status } : s));
         try {
             await auditWrite.trigger({ auditId: selected.id, body: { status } });
             toast.success(tx('detail.statusChanged', { status: statusLabel(status) }));
-        } catch {
+            return true;
+        } catch (err) {
             setSelected((s) => (s ? { ...s, status: prevStatus } : s));
-            toast.error(tx('detail.statusError'));
+            toast.error(auditWriteFailureMessage(err, tx('detail.statusError')));
+            return false;
         }
     };
+
+    const backLabel = (status: 'PLANNED' | 'IN_PROGRESS') =>
+        status === 'PLANNED' ? tx('detail.backToPlanned') : tx('detail.backToInProgress');
+
+    const statusMoves = selected ? (AUDIT_STATUS_MOVES[selected.status] ?? NO_STATUS_MOVES) : NO_STATUS_MOVES;
+    const forwardStatus = statusMoves.forward;
+    const backStatus = statusMoves.back;
 
     const statusLabel = (status: string) => {
         const map: Record<string, string> = { PLANNED: t.planned, IN_PROGRESS: t.inProgress, COMPLETED: t.completed, CANCELLED: t.cancelled };
@@ -360,12 +397,20 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                             {tx('nav.incidents')}
                         </Link>
 
-                        <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-audit-btn">{t.newAudit}</Button>
+                        {canWrite && (
+                            <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-audit-btn">{t.newAudit}</Button>
+                        )}
                     </div>
                 }
             />
 
-            <TruncationBanner truncated={truncated} />
+            {/* The page has no filters, so the banner's default "refine your
+                filters" would point at nothing. Its one narrowing control is
+                the cycle picker: name it while it is shown and not yet used. */}
+            <TruncationBanner
+                truncated={truncated}
+                hint={cycles.length > 0 && !cycleId ? tx('hub.truncatedHint') : false}
+            />
 
             {/* Audit lifecycle — the PRIMARY path into the cycle → pack →
                 readiness → share → findings → remediate flow. The header's
@@ -483,8 +528,8 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                         <EmptyState
                             size="sm"
                             title={tx('hub.emptyTitle')}
-                            description={tx('hub.emptyDesc')}
-                            primaryAction={{ label: t.newAudit, onClick: () => setIsCreateOpen(true) }}
+                            description={canWrite ? tx('hub.emptyDesc') : tx('hub.emptyDescReadOnly')}
+                            primaryAction={canWrite ? { label: t.newAudit, onClick: () => setIsCreateOpen(true) } : undefined}
                         />
                     ) : (
                         audits.map((a) => (
@@ -506,8 +551,23 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-compact">
                                 <Heading level={2}>{selected.title}</Heading>
                                 <div className="flex flex-wrap gap-tight">
-                                    {selected.status === 'PLANNED' && <Button variant="secondary" size="sm" onClick={() => updateAuditStatus('IN_PROGRESS')}>{t.inProgress}</Button>}
-                                    {selected.status === 'IN_PROGRESS' && <Button variant="secondary" size="sm" onClick={() => updateAuditStatus('COMPLETED')}>{t.completed}</Button>}
+                                    {/* One step forward, one step back, and Cancel while
+                                        the audit is not yet done (AUDIT_STATUS_MOVES). */}
+                                    {canWrite && forwardStatus && (
+                                        <Button variant="secondary" size="sm" id="audit-status-forward-btn" onClick={() => updateAuditStatus(forwardStatus)}>
+                                            {statusLabel(forwardStatus)}
+                                        </Button>
+                                    )}
+                                    {canWrite && backStatus && (
+                                        <Button variant="ghost" size="sm" id="audit-status-back-btn" onClick={() => updateAuditStatus(backStatus)}>
+                                            {backLabel(backStatus)}
+                                        </Button>
+                                    )}
+                                    {canWrite && statusMoves.cancellable && (
+                                        <Button variant="ghost" size="sm" id="cancel-audit-btn" onClick={() => setIsCancelOpen(true)}>
+                                            {tx('detail.cancelAudit')}
+                                        </Button>
+                                    )}
                                     {canWrite && (
                                         <Button variant="ghost" size="sm" id="edit-audit-btn" onClick={() => setIsEditOpen(true)}>
                                             {tx('editModal.trigger')}
@@ -516,22 +576,32 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 </div>
                             </div>
                             {selected.auditScope && <p className="text-sm text-content-muted">{selected.auditScope}</p>}
+                            {selected.auditors && (
+                                <dl className="flex flex-wrap gap-x-compact text-sm" id="audit-auditors">
+                                    <dt className="text-content-muted">{t.auditors}</dt>
+                                    <dd className="text-content-default">{selected.auditors}</dd>
+                                </dl>
+                            )}
 
                             <div>
                                 <CardHeader title={`${t.checklist} (${selected.checklist?.length || 0})`} className="mb-3" />
                                 <div className="space-y-tight">
                                     {selected.checklist?.map((item) => (
                                         <div key={item.id} className="flex flex-col sm:flex-row items-start gap-compact p-3 border border-border-default/50 rounded-lg">
-                                            <Combobox
-                                                hideSearch
-                                                options={resultOptions}
-                                                selected={resultOptions.find(o => o.value === item.result) ?? null}
-                                                setSelected={(opt) => opt && updateChecklist(item.id, opt.value)}
-                                                matchTriggerWidth
-                                                buttonProps={{ className: 'w-full sm:w-auto text-xs' }}
-                                                aria-label={tx('list.resultFor', { prompt: item.prompt })}
-                                                caret
-                                            />
+                                            {/* A read-only viewer gets no picker: the badge at the
+                                                row's end already states the result. */}
+                                            {canWrite && (
+                                                <Combobox
+                                                    hideSearch
+                                                    options={resultOptions}
+                                                    selected={resultOptions.find(o => o.value === item.result) ?? null}
+                                                    setSelected={(opt) => opt && updateChecklist(item.id, opt.value)}
+                                                    matchTriggerWidth
+                                                    buttonProps={{ className: 'w-full sm:w-auto text-xs' }}
+                                                    aria-label={tx('list.resultFor', { prompt: item.prompt })}
+                                                    caret
+                                                />
+                                            )}
                                             <div className="flex-1">
                                                 <p className="text-sm text-content-default">{item.prompt}</p>
                                                 {item.notes && <p className="text-xs text-content-subtle mt-1">{item.notes}</p>}
@@ -562,7 +632,10 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                     <div key={f.id} className="p-3 border border-border-default/50 rounded-lg mb-2">
                                         <div className="flex items-center justify-between">
                                             <span className="text-sm font-medium">{f.title}</span>
-                                            <StatusBadge variant={f.severity === 'CRITICAL' ? 'error' : f.severity === 'HIGH' ? 'warning' : 'info'}>{f.severity}</StatusBadge>
+                                            {/* The severity's label, not the stored enum value. */}
+                                            <StatusBadge variant={f.severity === 'CRITICAL' ? 'error' : f.severity === 'HIGH' ? 'warning' : 'info'}>
+                                                {tx.has(`findingModal.severityOptions.${f.severity}`) ? tx(`findingModal.severityOptions.${f.severity}`) : f.severity}
+                                            </StatusBadge>
                                         </div>
                                     </div>
                                 ))}
@@ -600,6 +673,24 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                         // row's _count.findings stops showing a stale count.
                         loadAudit(selected.id);
                         auditsQuery.mutate();
+                    }}
+                />
+            )}
+
+            {selected && (
+                <ConfirmDialog
+                    showModal={isCancelOpen}
+                    setShowModal={setIsCancelOpen}
+                    tone="warning"
+                    title={tx('detail.cancelConfirm.title')}
+                    description={tx('detail.cancelConfirm.description')}
+                    confirmLabel={tx('detail.cancelConfirm.confirm')}
+                    cancelLabel={tx('detail.cancelConfirm.keep')}
+                    onConfirm={async () => {
+                        // A refusal keeps the dialog open; its toast says why.
+                        if (!(await updateAuditStatus('CANCELLED'))) {
+                            throw new Error('audit_cancel_refused');
+                        }
                     }}
                 />
             )}
