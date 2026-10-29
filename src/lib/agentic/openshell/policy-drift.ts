@@ -19,7 +19,7 @@
  * ═══ WHY FALLBACK IS DETECTED BY HASH AND NOT BY A FLAG ═══
  *
  * Because the gateway has no flag for it. Read out of `openshell-gateway`
- * v0.1.5 rather than from documentation, `policy_source` carries exactly three
+ * v0.1.6 rather than from documentation, `policy_source` carries exactly three
  * members:
  *
  *     POLICY_SOURCE_UNSPECIFIED   <- proto3 zero

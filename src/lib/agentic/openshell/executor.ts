@@ -58,6 +58,27 @@ export const SANDBOX_OWNER_VALUE = 'bounded-tool';
  */
 export function openShellToolExecutor(
     transport: SandboxTransport = unconfiguredTransport,
+    hooks: {
+        /**
+         * Run after the sandbox exists and BEFORE the tool does — 4.1 (#3961).
+         *
+         * The collector bridge attaches a gateway-held credential provider
+         * here. It cannot do that from outside, because this function owns the
+         * sandbox's whole lifetime and never hands the id out: one sandbox per
+         * execution, created and deleted here, which is the property that makes
+         * the tool path safe to reason about.
+         *
+         * It is called INSIDE the try, so a hook that throws still reaches the
+         * `finally` and still deletes the sandbox. A credential that could not
+         * be attached must not leave a live sandbox behind, and it must not run
+         * the tool either — an unattached collector fails in a way that looks
+         * exactly like a revoked key.
+         */
+        readonly onSandboxReady?: (input: {
+            readonly sandboxId: string;
+            readonly signal: AbortSignal;
+        }) => Promise<void>;
+    } = {},
 ): ToolExecutor {
     return async (file, args, options): Promise<RawExecResult> => {
         // Outside the try: a creation failure must propagate as a REFUSAL, and
@@ -67,6 +88,11 @@ export function openShellToolExecutor(
         });
 
         try {
+            // Before the exec, and allowed to throw: see the hook's own note.
+            if (hooks.onSandboxReady) {
+                await hooks.onSandboxReady({ sandboxId: sandbox.id, signal: options.signal });
+            }
+
             const run = await transport.execSandbox({
                 sandboxId: sandbox.id,
                 file,

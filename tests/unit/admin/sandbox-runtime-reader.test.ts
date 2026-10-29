@@ -4,7 +4,7 @@
  * The property worth testing is NOT that the reader parses an environment
  * variable. It is that a DECLARED value can never leave this function wearing
  * an OBSERVED value's clothes, because that is the mistake the whole
- * sandbox-runtime surface exists to prevent: a v0.1.5 gateway exposes no
+ * sandbox-runtime surface exists to prevent: a v0.1.6 gateway exposes no
  * configuration read API, so anything this product reports about its running
  * configuration is a claim about a process nobody asked.
  *
@@ -67,8 +67,8 @@ describe('2. a declared value never becomes an observed one', () => {
         // `unreachable` to `declared-not-observed`, telling an operator a
         // gateway confirmed something no gateway was asked.
         mockEnv.SANDBOX_RUNTIME_CONFIG_DIGEST = DIGEST;
-        mockEnv.SANDBOX_RUNTIME_VERSION = '0.1.5';
-        mockEnv.OPENSHELL_VERSION = '0.1.5';
+        mockEnv.SANDBOX_RUNTIME_VERSION = '0.1.6';
+        mockEnv.OPENSHELL_VERSION = '0.1.6';
         expect(readSandboxRuntimeDeclaration().reachableVersion).toBeNull();
     });
 
