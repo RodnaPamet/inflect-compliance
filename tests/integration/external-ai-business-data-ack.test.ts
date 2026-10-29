@@ -163,14 +163,35 @@ describe('who may record it', () => {
         },
     );
 
-    it('an API KEY holding admin.manage is refused — a credential cannot accept a transfer', async () => {
+    it('an API KEY holding admin.manage is refused, even carrying a user id', async () => {
         // The narrowing that is NOT the permission. `*`-scoped keys exist, so
         // the settings key alone would let a credential accept a data transfer
         // on a company's behalf.
-        const keyCtx = { ...ctxAs('owner'), apiKeyId: 'key-1', userId: undefined } as RequestContext;
+        //
+        // The `userId` is SET here on purpose, and that is what gives this case
+        // its teeth. A first version passed `userId: undefined`, and removing
+        // the `isPersonContext` check left it green — the usecase's separate
+        // "an acknowledgement needs an author" guard fired instead, with the
+        // same reason, so the probe could not tell the two worlds apart. A key
+        // minted by a person plausibly carries their id, which is exactly the
+        // context the person check exists to refuse.
+        const keyCtx = { ...ctxAs('owner'), apiKeyId: 'key-1' } as RequestContext;
+        expect(keyCtx.userId).toBeTruthy();
         await expect(setExternalAiBusinessDataAcknowledgement(keyCtx, { acknowledged: true })).rejects.toMatchObject({
             details: { reason: 'NOT_A_PERSON' },
         });
+        expect((await stored())?.externalAiBusinessDataAckAt ?? null).toBeNull();
+    });
+
+    it('and an AGENT or JOB context is refused on the same rule', async () => {
+        // `isPersonContext` is one predicate over three non-person kinds; the
+        // key case above would pass if it only excluded keys.
+        for (const over of [{ agentId: 'agent-1' }, { actorType: 'JOB' as const }]) {
+            const ctx = { ...ctxAs('owner'), ...over } as RequestContext;
+            await expect(
+                setExternalAiBusinessDataAcknowledgement(ctx, { acknowledged: true }),
+            ).rejects.toMatchObject({ details: { reason: 'NOT_A_PERSON' } });
+        }
         expect((await stored())?.externalAiBusinessDataAckAt ?? null).toBeNull();
     });
 });
