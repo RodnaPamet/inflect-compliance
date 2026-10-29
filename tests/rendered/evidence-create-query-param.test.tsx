@@ -10,7 +10,6 @@
  * Mounts the REAL `EvidenceClient` (fetch faked by path; see
  * `./evidence-client-harness`).
  */
-import * as React from 'react';
 import { configure, screen, waitFor } from '@testing-library/react';
 
 jest.setTimeout(180_000);
