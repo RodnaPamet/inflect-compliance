@@ -1,8 +1,11 @@
 /**
- * THE `code` SOURCE: LANGCHAIN AND LANGGRAPH AGENTS IN AN ESTATE'S CODE (#3737).
+ * THE `code` SOURCE: LANGCHAIN, LANGGRAPH AND CLAUDE AGENT SDK AGENTS IN AN
+ * ESTATE'S CODE (#3737, #4156).
  *
  * Owner decision, 2026-10-19: LangChain-built agents are governed as things the
- * product DISCOVERS. LangChain is not a dependency of the platform or of this
+ * product DISCOVERS. Agents a customer builds on the Claude Agent SDK and runs
+ * themselves are discovered the same way (Route B of
+ * `docs/claude-agent-sdk-design.md`). LangChain is not a dependency of the platform or of this
  * scanner; the scanner reads the text of the code and configuration it is
  * pointed at and reports each agent definition through the signed contract
  * (`inflect-agent-harness/2`, whose `code` kind and `UNPARSEABLE` reason are
@@ -27,7 +30,11 @@
  *   credentials   by REFERENCE: `env://NAME`, or `code://…#L<line>` where a
  *                 value is written into the code — never the value
  *   owner         null; code names no accountable person
- *   verdicts      none; the code holds no evidence for a harness criterion
+ *   verdicts      none for LangChain and LangGraph, whose code holds no
+ *                 evidence for a harness criterion. For an Agent SDK agent,
+ *                 the NOT MET verdicts its options support, as the owner
+ *                 mapped them (`agentSdkOptionVerdicts`, #4156): code can
+ *                 show a control is missing, never that one works
  *
  *   models        the model endpoints it calls (`/2`'s optional `models[]`):
  *                 an https URL, an `env://` reference to where the URL is
@@ -51,6 +58,8 @@ import type { CodeFs, CodeRoot, FileProblem } from './code/files';
 import { readCodeFiles } from './code/files';
 import { JavaScriptReadError, readJavaScript } from './code/javascript';
 import { PythonReadError, readPython } from './code/python';
+import { agentSdkOptionVerdicts } from '@/lib/agentic/harness-findings';
+
 import { codeLocator, recognizeAgents, type DetectedAgent } from './code/recognize';
 
 export interface LangChainCodeSourceOptions {
@@ -111,7 +120,8 @@ export function observationOf(agent: DetectedAgent): Observation {
         // A definition binds tools; it counts no calls, so none is given.
         tools: agent.tools.map((t) => ({ tool: { server: t.server, name: t.name, manifestHash: null, pinned: false, readOnlyHint: null } })),
         models: agent.models.map((m) => ({ endpoint: m.endpoint ?? codeLocator(m.at), model: m.model })),
-        verdicts: [],
+        // An Agent SDK agent's options, mapped by the planner; the other frameworks' code evidences nothing.
+        verdicts: agent.sdkOptions === null ? [] : agentSdkOptionVerdicts(agent.sdkOptions),
     };
 }
 

@@ -197,10 +197,9 @@ describe('enforceFeatureGate shares the predicate', () => {
     silently allows. All six call sites await today; this keeps the seventh
     honest, because nothing else would notice.
 
-    Folded into this suite rather than given its own file in tests/guards:
-    `no-epic-named-ratchets` caps the number of guard files precisely so that a
-    property belonging to one change does not become a file, and this property
-    belongs to the change this suite is about.
+    Folded into this suite rather than given its own file in tests/guards: a
+    property belonging to one change should not become a file of its own, and
+    this property belongs to the change this suite is about.
 */
 import * as fs from 'fs';
 import * as path from 'path';

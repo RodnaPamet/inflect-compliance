@@ -185,6 +185,85 @@ export function firstSecretShapedMember(body: HarnessReportBody): string | null 
     return walk(body, '');
 }
 
+// ─── Agent SDK options, as the scanner reads them from code (#4156) ─────────
+
+/**
+ * What the reference scanner's `code` source read of ONE Claude Agent SDK
+ * agent's options. A member is `null` when the code sets that option to
+ * something the reader could not resolve: the source is then UNPARSEABLE, and
+ * nothing is concluded from the option. Every `at` is the `code://` locator of
+ * where the option is set, or of the agent's call when the code leaves it at
+ * the SDK's default.
+ */
+export interface AgentSdkOptionFacts {
+    /** The permission mode the code names, or `mode: null` when it names none. */
+    readonly permissionMode: { readonly mode: string | null; readonly at: string } | null;
+    /** `settingSources` left at the SDK's default (which loads the host's files), set to `[]`, or naming sources. */
+    readonly settingSources: { readonly state: 'DEFAULT' | 'EMPTY' | 'NAMED'; readonly at: string } | null;
+    /** Whether an `allowedTools` entry approves more than one tool: a `*`, or a whole MCP server. */
+    readonly allowedToolsWildcard: { readonly present: boolean; readonly at: string } | null;
+    /** Which of `Bash` and `WebFetch` the agent can call, after `disallowedTools`. */
+    readonly shellOrFetch: { readonly names: readonly string[]; readonly at: string } | null;
+    /** Whether the code configures any hook. */
+    readonly hooks: { readonly present: boolean; readonly at: string } | null;
+}
+
+/**
+ * The ladder criterion each Agent SDK option fails, as the owner mapped them
+ * (#4156, 2026-10-29). The ladder stays report-only: these feed the
+ * HARNESS_SHORTFALL finding and the matrix, never a gate.
+ *
+ * NOT MET ONLY. Code can show that a harness lacks a control. It cannot show
+ * that a control it configures works, because a hook's body, a sandbox and a
+ * gateway are out of its sight. So nothing here is ever `met: true`, and a
+ * hook that is present is no evidence for `H3.payloads_guarded`.
+ */
+export const AGENT_SDK_OPTION_CRITERIA = {
+    /** `permissionMode: 'bypassPermissions'`: every call takes effect with nobody approving it. */
+    BYPASS_PERMISSIONS: 'H3.propose_not_commit',
+    /** Host settings loaded: skills and instructions from files the code does not declare. */
+    HOST_SETTINGS_SKILLS: 'H3.skills_declared',
+    /** Host settings loaded: `.mcp.json` and allow-rules can add to the tool list. */
+    HOST_SETTINGS_TOOLS: 'H2.tools_allowlisted',
+    /** An `allowedTools` wildcard approves tools nobody listed. */
+    ALLOWED_TOOLS_WILDCARD: 'H2.tools_allowlisted',
+    /** A shell or an open web fetch reaches any command or host, so no list bounds it. */
+    SHELL_OR_FETCH: 'H2.tools_allowlisted',
+    /** No hook inspects a call before it runs, with no settings file that could add one. */
+    NO_HOOKS: 'H3.payloads_guarded',
+} as const satisfies Readonly<Record<string, HarnessCriterionId>>;
+
+/**
+ * The verdicts one Agent SDK agent's options support: one NOT MET per option
+ * the owner mapped, with the option's locator as evidence. An option the
+ * scanner could not read concludes nothing.
+ */
+export function agentSdkOptionVerdicts(facts: AgentSdkOptionFacts): CriterionVerdict[] {
+    const verdicts: CriterionVerdict[] = [];
+    const notMet = (criterion: HarnessCriterionId, at: string) => verdicts.push({ criterion, met: false, evidence: at });
+
+    if (facts.permissionMode !== null && facts.permissionMode.mode === 'bypassPermissions') {
+        notMet(AGENT_SDK_OPTION_CRITERIA.BYPASS_PERMISSIONS, facts.permissionMode.at);
+    }
+    const settings = facts.settingSources;
+    if (settings !== null && settings.state !== 'EMPTY') {
+        notMet(AGENT_SDK_OPTION_CRITERIA.HOST_SETTINGS_SKILLS, settings.at);
+        notMet(AGENT_SDK_OPTION_CRITERIA.HOST_SETTINGS_TOOLS, settings.at);
+    }
+    if (facts.allowedToolsWildcard !== null && facts.allowedToolsWildcard.present) {
+        notMet(AGENT_SDK_OPTION_CRITERIA.ALLOWED_TOOLS_WILDCARD, facts.allowedToolsWildcard.at);
+    }
+    if (facts.shellOrFetch !== null && facts.shellOrFetch.names.length > 0) {
+        notMet(AGENT_SDK_OPTION_CRITERIA.SHELL_OR_FETCH, facts.shellOrFetch.at);
+    }
+    // With host settings loaded, a hook can come from a settings file, and the
+    // settings verdicts above already say so.
+    if (facts.hooks !== null && !facts.hooks.present && settings !== null && settings.state === 'EMPTY') {
+        notMet(AGENT_SDK_OPTION_CRITERIA.NO_HOOKS, facts.hooks.at);
+    }
+    return verdicts;
+}
+
 /** The `Finding.sourceKind` every harness finding carries — its reconcile key space. */
 export const HARNESS_FINDING_SOURCE_KIND = 'AGENT_HARNESS';
 

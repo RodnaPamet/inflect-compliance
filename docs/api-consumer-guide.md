@@ -80,6 +80,11 @@ curl -fsS https://app.example.com/api/t/<tenantSlug>/risks \
 In Swagger UI (dev/staging), click **Authorize → BearerAuth** and paste
 the key (no `Bearer ` prefix — Swagger adds it).
 
+A key bound to a registered agent stops working while that agent is stopped.
+Every request with it is refused with a 403 while a kill switch covers the agent,
+or while the agent is anything but ACTIVE in the register (draft, suspended,
+retired). It works again once the kill is lifted or the agent is activated.
+
 ### Session cookie — `next-auth.session-token` (browser / dev only)
 
 When you're signed in to the app in a browser, requests carry a NextAuth
