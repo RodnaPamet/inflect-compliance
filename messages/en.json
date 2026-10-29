@@ -10581,8 +10581,17 @@
       "testRun": {
         "action": "Test run",
         "reason": {
-          "NO_ENGINE_RUNS_PROFILES": "A test run needs an agent engine that runs profiles, chosen under Admin → AI features → Agent engines. No engine in this version runs profiles yet."
-        }
+          "ENGINE_DOES_NOT_RUN_PROFILES": "This workspace runs agents on the {engine}, which does not run agent profiles. An owner can choose the Tool Runner engine under Admin → AI features → Agent engines.",
+          "ENGINE_NOT_IN_FORCE": "This workspace has chosen the Tool Runner engine, but it is not running yet. Admin → AI features → Agent engines shows what it still needs.",
+          "AGENT_NOT_READY": "A Test run runs as this agent, so the agent must be active and risk-assessed first.",
+          "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them."
+        },
+        "engine": {
+          "STATIC": "built-in engine",
+          "FLUE": "Flue engine"
+        },
+        "started": "Test run started. It is shown on the Runs tab.",
+        "failed": "Couldn't start the Test run."
       },
       "history": {
         "heading": "Version history",

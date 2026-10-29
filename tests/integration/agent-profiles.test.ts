@@ -677,10 +677,12 @@ describeFn('agent profiles (real DB)', () => {
             expect(v.version).toBe(1);
         });
 
-        it('says why a test run cannot start while no engine runs a profile', async () => {
+        it('says why a test run cannot start on an engine that does not run profiles, naming it (Step 2c)', async () => {
+            // No settings row: the workspace is on the built-in engine.
             expect((await getAgentProfile(reviewerA(), AGENTS.fresh)).testRun).toEqual({
                 available: false,
-                reason: 'NO_ENGINE_RUNS_PROFILES',
+                reason: 'ENGINE_DOES_NOT_RUN_PROFILES',
+                engine: 'STATIC',
             });
         });
 

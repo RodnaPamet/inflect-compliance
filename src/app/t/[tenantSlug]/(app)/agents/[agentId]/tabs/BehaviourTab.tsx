@@ -24,9 +24,12 @@
  * again if a request is crafted by hand. Approve sends the hash on screen, so
  * what is approved is the text the reviewer read.
  *
- * Test run is offered on a SUBMITTED or APPROVED version and is disabled in
- * this step, naming the engine setting it needs: no engine of this build runs
- * a profile (decision 7). Step 2c adds the start path.
+ * Test run is offered on a SUBMITTED or APPROVED version (Step 2c). It starts a
+ * read-only run of that version as the agent, on the Tool Runner engine, and
+ * opens the Runs tab. When it cannot start, it is disabled and says why: the
+ * workspace's engine (named), the engine not in force, the agent not ready, or
+ * a version that does not allow Test runs. The server refuses each of these
+ * again.
  */
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -60,7 +63,7 @@ const STATUS_VARIANT: Record<ProfileVersionStatus, StatusBadgeVariant> = {
     RETIRED: 'warning',
 };
 
-export function BehaviourTab({ agentId, refreshToken, retired }: BehaviourTabProps) {
+export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: BehaviourTabProps) {
     const t = useTranslations('agents.behaviour');
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
@@ -74,6 +77,28 @@ export function BehaviourTab({ agentId, refreshToken, retired }: BehaviourTabPro
     const [rejectError, setRejectError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [actError, setActError] = useState<string | null>(null);
+
+    /** Start a Test run of one version, then show it in the Runs tab. */
+    const startTestRun = async (version: number) => {
+        setBusy(true);
+        try {
+            const res = await fetch(apiUrl(`/admin/agents/${agentId}/profile/versions/${version}/test-run`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            if (!res.ok) {
+                toast.error(apiErrorMessage(await res.json().catch(() => null), t('testRun.failed')));
+                return;
+            }
+            toast.success(t('testRun.started'));
+            onOpenRuns?.();
+        } catch {
+            toast.error(t('testRun.failed'));
+        } finally {
+            setBusy(false);
+        }
+    };
 
     /** POST one act; the refusal, if any, is the server's sentence. */
     const act = async (version: number, verb: 'submit' | 'approve' | 'reject', body: unknown): Promise<string | null> => {
@@ -110,16 +135,36 @@ export function BehaviourTab({ agentId, refreshToken, retired }: BehaviourTabPro
     const open = data.versions.find((v) => v.status === 'DRAFT' || v.status === 'SUBMITTED') ?? null;
     const who = (p: ProfilePerson) => (p.isViewer ? t('you') : p.label ?? t('unknownMember'));
 
-    const testRun = (v: ProfileVersionView) => (
-        <div className="space-y-tight" data-testid={`behaviour-test-run-${v.version}`}>
-            <Button variant="secondary" size="sm" disabled data-testid={`behaviour-test-run-${v.version}-button`}>
-                {t('testRun.action')}
-            </Button>
-            <p className="text-xs text-content-muted" data-testid={`behaviour-test-run-${v.version}-reason`}>
-                {t(`testRun.reason.${data.testRun.reason}`)}
-            </p>
-        </div>
-    );
+    const testRun = (v: ProfileVersionView) => {
+        // Why the button is disabled, or null when it can start. The version's
+        // own triggers decide last, so the engine and the agent are named first.
+        const state = data.testRun;
+        const reason = !state.available
+            ? state.reason === 'ENGINE_DOES_NOT_RUN_PROFILES'
+                ? t('testRun.reason.ENGINE_DOES_NOT_RUN_PROFILES', { engine: t(`testRun.engine.${state.engine}`) })
+                : t(`testRun.reason.${state.reason}`)
+            : !v.allowedTriggers.includes('TEST_RUN')
+              ? t('testRun.reason.TRIGGER_NOT_ALLOWED')
+              : null;
+        return (
+            <div className="space-y-tight" data-testid={`behaviour-test-run-${v.version}`}>
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={reason !== null || busy || retired}
+                    onClick={() => void startTestRun(v.version)}
+                    data-testid={`behaviour-test-run-${v.version}-button`}
+                >
+                    {t('testRun.action')}
+                </Button>
+                {reason !== null && (
+                    <p className="text-xs text-content-muted" data-testid={`behaviour-test-run-${v.version}-reason`}>
+                        {reason}
+                    </p>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-section" data-testid="agent-behaviour-tab">
