@@ -38,6 +38,11 @@ tsconfig.tsbuildinfo
 # `src/app/api/t/[tenantSlug]/coverage/` — which is how this file
 # shadowing was masking a real build in CI.
 /coverage/
+
+# `jest --outputFile` report for the Ratchets population check
+# (scripts/check-scan-population.mjs, #4426). Written by the CI step and by
+# anyone reproducing it locally; it is a measurement, not an input.
+/jest-scan-results.json
 test-results/
 tests/load/results/
 tests/stress/results/
