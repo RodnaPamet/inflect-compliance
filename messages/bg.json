@@ -8553,6 +8553,18 @@
       "owner": "Отговорник"
     },
     "assigned": "Назначен",
+    "kindShort": {
+      "EARLY_WARNING_24H": "24ч",
+      "DETAILED_72H": "72ч",
+      "FINAL_1MONTH": "1 мес."
+    },
+    "deadlineStatus": {
+      "PENDING": "Предстоящо",
+      "DUE": "Наближава",
+      "OVERDUE": "Просрочено",
+      "SUBMITTED": "Подадено",
+      "NOT_REQUIRED": "Не се изисква"
+    },
     "kpi": {
       "open": "Отворени инциденти",
       "reportable": "Подлежащи на докладване",

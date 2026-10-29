@@ -8553,6 +8553,18 @@
       "owner": "Owner"
     },
     "assigned": "Assigned",
+    "kindShort": {
+      "EARLY_WARNING_24H": "24h",
+      "DETAILED_72H": "72h",
+      "FINAL_1MONTH": "1mo"
+    },
+    "deadlineStatus": {
+      "PENDING": "Pending",
+      "DUE": "Due soon",
+      "OVERDUE": "Overdue",
+      "SUBMITTED": "Submitted",
+      "NOT_REQUIRED": "Not required"
+    },
     "kpi": {
       "open": "Open incidents",
       "reportable": "Reportable",

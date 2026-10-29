@@ -139,6 +139,39 @@ describe('IncidentsClient render', () => {
     });
 });
 
+// #4463 — the Next deadline badge's state (pending / due / overdue) was
+// conveyed by its colour alone; the text was only the kind ("24h").
+describe('IncidentsClient — the Next deadline badge names its state', () => {
+    afterEach(() => mockSWR.mockReset());
+
+    it('reads "24h · Overdue", not a red "24h"', () => {
+        mockSWR.mockReturnValue({ data: ROWS, isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentsClient initialIncidents={ROWS} tenantSlug="acme" canManage />));
+        expect(screen.getByText('24h · Overdue')).toBeInTheDocument();
+    });
+
+    it('names a deadline that is due soon, and one that is pending', () => {
+        const rows = [
+            makeRow({
+                notifications: [
+                    { kind: 'DETAILED_72H', dueAt: '2026-06-04T00:00:00.000Z', status: 'DUE' },
+                ],
+            }),
+            makeRow({
+                id: 'inc_3',
+                reference: 'INC-2026-003',
+                notifications: [
+                    { kind: 'FINAL_1MONTH', dueAt: '2026-07-01T00:00:00.000Z', status: 'PENDING' },
+                ],
+            }),
+        ];
+        mockSWR.mockReturnValue({ data: rows, isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentsClient initialIncidents={rows} tenantSlug="acme" canManage />));
+        expect(screen.getByText('72h · Due soon')).toBeInTheDocument();
+        expect(screen.getByText('1mo · Pending')).toBeInTheDocument();
+    });
+});
+
 // #4463 — a search or filter that matches nothing is not an empty register.
 describe('IncidentsClient — a search that matches nothing', () => {
     afterEach(() => {

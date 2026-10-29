@@ -90,12 +90,6 @@ const DEADLINE_TONE: Record<string, StatusBadgeVariant> = {
     NOT_REQUIRED: 'neutral',
 };
 
-const KIND_SHORT: Record<string, string> = {
-    EARLY_WARNING_24H: '24h',
-    DETAILED_72H: '72h',
-    FINAL_1MONTH: '1mo',
-};
-
 /** The earliest still-open (non-submitted, non-NA) notification. */
 export function nextOpenDeadline(
     notifications: IncidentNotificationLite[],
@@ -251,10 +245,14 @@ function IncidentsPageInner({
                     cell: ({ row }) => {
                         const next = nextOpenDeadline(row.original.notifications);
                         if (!next) return <span className="text-content-muted">—</span>;
+                        // The badge names the state in words as well as by
+                        // colour — "24h · Overdue", not a red "24h".
+                        const kind = t(`kindShort.${next.kind}` as Parameters<typeof t>[0]);
+                        const state = t(`deadlineStatus.${next.status}` as Parameters<typeof t>[0]);
                         return (
                             <span className="inline-flex items-center gap-tight">
                                 <StatusBadge variant={DEADLINE_TONE[next.status] ?? 'neutral'}>
-                                    {KIND_SHORT[next.kind] ?? next.kind}
+                                    {`${kind} · ${state}`}
                                 </StatusBadge>
                                 <span className="text-xs text-content-muted">
                                     {formatDate(next.dueAt)}

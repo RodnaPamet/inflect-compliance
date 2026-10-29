@@ -151,6 +151,21 @@ describe('IncidentDetailPage render', () => {
     });
 });
 
+// #4463 — each Article 23 deadline's state badge showed the raw status code.
+describe('IncidentDetailPage — deadline states are labels, not codes', () => {
+    afterEach(() => mockSWR.mockReset());
+
+    it('shows Overdue / Due soon / Pending', () => {
+        mockSWR.mockReturnValue({ data: makeIncident(), isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentDetailPage />));
+        expect(screen.getByText('Overdue')).toBeInTheDocument();
+        expect(screen.getByText('Due soon')).toBeInTheDocument();
+        expect(screen.getByText('Pending')).toBeInTheDocument();
+        expect(screen.queryByText('OVERDUE')).not.toBeInTheDocument();
+        expect(screen.queryByText('PENDING')).not.toBeInTheDocument();
+    });
+});
+
 // #4463 — every write on the page is `incidents.manage` at the route and in
 // the usecase. A role without it (Editor, Reader, Auditor, AI admin by
 // default) must not be offered a control the server will refuse.

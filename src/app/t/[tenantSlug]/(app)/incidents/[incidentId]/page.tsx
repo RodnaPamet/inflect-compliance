@@ -451,7 +451,7 @@ export default function IncidentDetailPage() {
                                             </div>
                                             <div className="flex items-center gap-tight">
                                                 <StatusBadge variant={DEADLINE_TONE[n.status] ?? 'neutral'}>
-                                                    {n.status}
+                                                    {tx(`deadlineStatus.${n.status}`)}
                                                 </StatusBadge>
                                                 {canManage && n.status !== 'SUBMITTED' && (
                                                     <Button
