@@ -41,7 +41,9 @@ test('an owner switches the agent engine, and the audit log records it', async (
         await page.goto(`/t/${slug}/admin/audit-log`);
         const table = page.getByRole('main').locator('#audit-log-table');
         await expect(table).toBeVisible({ timeout: 20_000 });
-        await expect(table.getByText('AGENT_DRIVER_MODE_CHANGED')).toBeVisible({ timeout: 15_000 });
+        // The Action column shows the code in words once #4468's display lands;
+        // either form identifies the entry.
+        await expect(table.getByText(/AGENT_DRIVER_MODE_CHANGED|Agent driver mode changed/)).toBeVisible({ timeout: 15_000 });
         await expect(table).toContainText('Agentic driver: STATIC → FLUE');
     });
 });
