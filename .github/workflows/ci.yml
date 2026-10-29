@@ -359,6 +359,62 @@ jobs:
   #  Job 1: Lint — ESLint + Next.js lint rules
   #  Fast, no DB needed. Fails immediately on lint errors.
   # ═══════════════════════════════════════════════════════════════
+  change-class:
+    name: Change class
+    # THE POLICY'S OWN FOLLOW-UP, BUILT (#4437).
+    #
+    # `docs/change-management-policy.md` required a rollback plan and a risk
+    # assessment on a SIGNIFICANT change and said enforcement was human review,
+    # because the gate "needs PR-metadata access that the current structural
+    # ratchets (file scanners) do not have". True of the ratchets; a workflow
+    # step has it, and `branch-freshness.yml` already reads the same context.
+    #
+    # It requires the ANALYSIS, never a `Sign-off:` line. The owner waiver of
+    # 2026-08-18 made the countersignature optional for assistant-driven PRs
+    # while keeping the analysis mandatory, so gating on `Sign-off:` would block
+    # exactly the PRs that waiver exists to unblock.
+    #
+    # RUNS ON merge_group TOO, and exits 0 there. A required check that simply
+    # does not run in the queue is ABSENT, and an absent check scores as zero
+    # failures — so it would silently stop gating at the point of merge. The
+    # queue ref carries no `pull_request` context to read, so the PR-level run
+    # is the gate and this reports rather than vanishing.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The diff needs both endpoints, so no shallow clone.
+          fetch-depth: 0
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Before trusting it: a classifier that answered "not significant" for
+      # everything would pass every PR and gate nothing. Its self-test pins both
+      # directions, and this step is deliberately blocking.
+      - name: Self-test the change classifier
+        run: node scripts/check-significant-change-analysis.mjs --self-test
+      - name: Require the rollback plan and risk assessment
+        # The body and title go through `env`, never into `run` via `${{ }}`:
+        # a PR description is attacker-controlled text, and interpolating it
+        # into a shell would execute whatever it contains.
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "Event is $EVENT, which carries no PR description."
+            echo "The gate runs on the pull request; this reports so the check is never ABSENT."
+            exit 0
+          fi
+          printf '%s' "$PR_BODY" > pr-body.txt
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > pr-files.txt
+          node scripts/check-significant-change-analysis.mjs pr-body.txt pr-files.txt --title "$PR_TITLE"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
