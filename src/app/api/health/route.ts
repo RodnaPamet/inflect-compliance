@@ -18,6 +18,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { buildVersion } from '@/lib/build-info';
 import { jsonResponse } from '@/lib/api-response';
 
 // Prisma 7 — `new PrismaClient()` requires an adapter. The probe
@@ -95,7 +96,7 @@ export async function GET() {
             status: allOk ? 'healthy' : 'degraded',
             timestamp: new Date().toISOString(),
             uptime: process.uptime(),
-            version: process.env.BUILD_SHA || process.env.VERCEL_GIT_COMMIT_SHA || 'dev',
+            version: buildVersion(),
             node: process.version,
             checks,
             latencyMs: Date.now() - start,

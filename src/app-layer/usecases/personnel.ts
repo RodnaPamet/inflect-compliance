@@ -39,10 +39,18 @@ export interface EmployeeListRow {
     startDate: Date | null;
 }
 
+/**
+ * The roster read. Asserts `personnel.view` itself — the key its route
+ * (`GET /personnel`) holds — so a caller that skips the route gate (the admin
+ * personnel page renders it server-side) cannot read the roster without it.
+ */
 export async function listEmployees(
     ctx: RequestContext,
     filters: { status?: string; search?: string } = {},
 ): Promise<EmployeeListRow[]> {
+    if (!ctx.appPermissions?.personnel?.view) {
+        throw forbidden('You do not have permission to view personnel.');
+    }
     return runInTenantContext(ctx, (db) => {
         const where: Prisma.EmployeeWhereInput = { tenantId: ctx.tenantId };
         if (filters.status && EMPLOYEE_STATUSES.includes(filters.status as (typeof EMPLOYEE_STATUSES)[number])) {

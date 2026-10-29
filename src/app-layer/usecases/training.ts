@@ -23,7 +23,11 @@ function assertManage(ctx: RequestContext) {
 export const CreateCourseSchema = z.object({ name: z.string().min(1).max(200), provider: z.string().max(120).optional(), cadenceDays: z.number().int().min(1).max(3650).optional() });
 export const AssignTrainingSchema = z.object({ employeeId: z.string().min(1), courseId: z.string().min(1), dueAt: z.string().datetime().optional() });
 
+/** The assignment read. Asserts `personnel.view` itself, the key `GET /training` holds. */
 export async function listTrainingAssignments(ctx: RequestContext) {
+    if (!ctx.appPermissions?.personnel?.view) {
+        throw forbidden('You do not have permission to view training assignments.');
+    }
     return runInTenantContext(ctx, (db) =>
         db.trainingAssignment.findMany({
             where: { tenantId: ctx.tenantId },

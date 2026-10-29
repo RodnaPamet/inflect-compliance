@@ -816,6 +816,17 @@ Bearer, nothing else, because the fall-through also skips the admin-role
 and MFA gates. The edge never decides whether a key is REAL; the handler
 does (`tryApiKeyAuth` throws 401 rather than falling back to the cookie).
 
+**A key bound to an agent answers to that agent at REST too** (#4481, owner
+decision 2026-10-29). `tryApiKeyAuth` calls `assertAgentKeyMayActAtRest`
+(`src/lib/agentic/agent-key-rest-gate.ts`) for every key with an `agentId`.
+A kill in force (platform, tenant or agent scope) or any status but ACTIVE
+refuses the key with a 403 and an `AUTHZ_DENIED` row (gate `agent_key_rest`),
+and a kill state that cannot be read fails the request. Before it, only the
+MCP funnel read the agent, so killing or suspending an agent left its key
+reading over REST. It does NOT hold a key to its agent's tool grants on REST:
+REST reach is still the key's scopes intersected with its principal. So a key
+meant for `/api/mcp` carries only the scopes its grants need.
+
 **Last-OWNER protection — two layers.** Usecase layer
 (`updateTenantMemberRole`, `deactivateTenantMember`, `removeTenantMember`)
 counts ACTIVE OWNERs and throws `forbidden('Cannot demote/deactivate the last

@@ -30,6 +30,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { parseSchemaModels } from '../helpers/prisma-schema-models';
+
 const ROOT = path.resolve(__dirname, '../..');
 const MIGRATIONS = path.join(ROOT, 'prisma/migrations');
 
@@ -115,14 +117,19 @@ describe("a table holding a person's decision is one-way at the database", () =>
         // A stale entry is a hole that looks like a decision: the table is gone
         // or renamed, and the entry excuses nothing while implying the question
         // was considered.
-        const schema = fs
-            .readdirSync(path.join(ROOT, 'prisma/schema'))
-            .filter((f) => f.endsWith('.prisma'))
-            .map((f) => fs.readFileSync(path.join(ROOT, 'prisma/schema', f), 'utf8'))
-            .join('\n');
-        for (const [table, reason] of Object.entries(HUMAN_DECISION_TABLES)) {
-            expect(schema).toMatch(new RegExp(`^model\\s+${table}\\s*\\{`, 'm'));
-            expect(reason.length).toBeGreaterThan(60);
-        }
+        // Through the structured parser, not a regex over the concatenated
+        // schema text. Two reasons, and the second is why this was rewritten:
+        // a `^model\s+X` needle is also satisfied by the name appearing inside
+        // a comment or another model's field, and an interpolated needle over
+        // a whole-file read is invisible to
+        // `tests/guardrails/assertion-needle-uniqueness-ratchet` — which is the
+        // ratchet that exists to notice exactly that.
+        const declared = new Set(parseSchemaModels().map((m) => m.name));
+        const absent = Object.keys(HUMAN_DECISION_TABLES).filter((t) => !declared.has(t));
+        expect(absent).toEqual([]);
+        const unreasoned = Object.entries(HUMAN_DECISION_TABLES)
+            .filter(([, reason]) => reason.length <= 60)
+            .map(([table]) => table);
+        expect(unreasoned).toEqual([]);
     });
 });
