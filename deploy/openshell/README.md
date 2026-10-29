@@ -321,9 +321,30 @@ Verified from GCP's own `get-effective-firewalls` view rather than from the rule
 list, and then probed: 22, 17670 and 8081 are all unreachable from the internet
 while IAP SSH and outbound egress still work.
 
+### The external IP is EPHEMERAL, and that is a constraint on egress allowlisting
+
+It changed from `34.156.44.196` to `35.241.231.207` across a single
+stop/start — measured, not assumed. Two consequences:
+
+- **Nothing may allowlist this VM by its outbound IP.** A posture API, a
+  partner firewall or an upstream allowlist keyed on it breaks on the next
+  start, and the schedule above means there is a start most days. A static IP
+  would cost $0.0088/h *unattached*, which on a VM that is stopped 97% of the
+  time is more than the compute.
+- **The app must address the gateway by its INTERNAL IP**, `10.132.0.28`, which
+  is stable across stop/start. That is what the firewall rule and the bind
+  address both use.
+
 ### What is verified on this host, and what is not
 
-Verified: the checksum chain end to end (the installed binary digests
+Verified: the gateway comes up **from a cold boot with no intervention** —
+`systemctl is-active` reports active and `readyz` answers 200 within about 45
+seconds of `instances start`, which is what proves the StateDirectory/HOME pair
+works at boot and not merely on a hand-driven `systemctl restart`. Then: the
+idle timer took the VM down by itself end to end — fourth strike at 17:33:42,
+`STOPPING` at 17:35:50, `TERMINATED` at 17:36:32, at which point compute, RAM
+and the external IP all stop billing and only the disk continues. Also the
+checksum chain end to end (the installed binary digests
 `6451533e…` and `962d7d3a…` match the published sums, re-checked **on the VM**
 after transfer); `openshell-gateway 0.1.6`; the service active with its
 listeners bound to the private address; the Docker driver connected;
