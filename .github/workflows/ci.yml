@@ -670,9 +670,10 @@ jobs:
       # `--shard` keeps each test file on exactly one shard, so per-DB-row
       # fixtures never collide across shards.
       #
-      # `JEST_SKIP_RATCHETS=1` drops tests/guards + tests/contracts + most
-      # of tests/guardrails from this run — 776 of 1946 files. They were
-      # never excluded from the shard glob, so the shards ran all of them
+      # The ratchet directories are not in this run at all: they belong to
+      # the `scan` jest project, which carries no `globalSetup` (#4395).
+      # They were never excluded from the shard glob originally, so the
+      # shards ran all of them
       # AND two later steps ran `tests/guards/` and `tests/contracts/`
       # again, as separate Jest boots that each re-shelled
       # `prisma migrate deploy`. The `ratchets` job below runs them once,
@@ -734,7 +735,6 @@ jobs:
       # `Coverage (>=60%)` job.
       - name: "Run tests: unit + integration (shard)"
         env:
-          JEST_SKIP_RATCHETS: '1'
           # 12288 for THIS step only; every other job keeps the workflow's
           # 8192. On 2026-10-18 `Test (shard 4/4)` OOM'd on #3721 ("Ineffective
           # mark-compacts near heap limit", exit 134, old space at 8047 of
@@ -875,7 +875,7 @@ jobs:
       # THIS RUN IS INSTRUMENTED, and that is load-bearing for the coverage
       # gate rather than incidental. The gate's population must be the WHOLE
       # suite. These 654 files are the exact complement of what the shards
-      # run under `JEST_SKIP_RATCHETS=1` — verified disjoint and exhaustive
+      # run in the `scan` project — verified disjoint and exhaustive
       # via `jest --listTests` (1386 + 654 = 2040, intersection empty) — and
       # they are not decoration in the report: measured on 2026-08-25 they
       # alone execute 4125 in-scope statements across 326 files, including
@@ -883,9 +883,20 @@ jobs:
       # silently change what every floor in `jest.thresholds.json` means.
       # If this job ever stops emitting coverage, bump nothing — fix it.
       - name: "Run tests: architectural guards + API contracts"
+        # `--selectProjects scan` rather than paths plus an ignore list, and the
+        # difference is load-bearing (#4395). A CLI `--testPathIgnorePatterns`
+        # REPLACES the project's own list wholesale — `.claude/`,
+        # `tests/rendered/`, `tests/flue/`, every exclusion `node` carries — so
+        # passing it pulled these directories back into `node` and ran that
+        # project's `globalSetup`, which refuses when the shared test database
+        # is behind the branch's migrations. Nothing here opens a connection,
+        # so that refusal cost a hand-off per session per migration for nothing.
+        #
+        # The project pins the population instead: `scan` owns exactly these
+        # three directories and excludes `rls-coverage` — the one ratchet that
+        # queries the database — in its own config, so the flag is gone.
         run: |
-          npx jest tests/guards tests/guardrails tests/contracts \
-            --testPathIgnorePatterns '/node_modules/' 'rls-coverage\.test\.ts' \
+          npx jest --selectProjects scan \
             --maxWorkers=2 --forceExit --ci \
             --coverage --coverageReporters=json
 
@@ -1015,7 +1026,7 @@ jobs:
   #  The old matrix ran the whole suite in one command. The five jobs
   #  that replace it must therefore partition that same suite exactly:
   #
-  #    Test shards 1-4  (JEST_SKIP_RATCHETS=1)  1386 test files
+  #    Test shards 1-4  (node + jsdom projects)  1386 test files
   #    Ratchets         (guards+guardrails+contracts, minus
   #                      rls-coverage, which stays in the shards)
   #                                              654 test files
