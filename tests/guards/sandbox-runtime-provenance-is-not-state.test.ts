@@ -136,3 +136,67 @@ describe('no rendered string asserts a setting effective value', () => {
         expect(keysFor('bg')).toEqual(keysFor('en'));
     });
 });
+
+describe('an empty deploy value means absent, not invalid', () => {
+    /*
+        #4564. Compose and shell defaults produce EMPTY STRINGS, not absent
+        variables — `"${VAR:-}"` is how every optional value in this stack is
+        defaulted. `SANDBOX_RUNTIME_HEALTH_URL` was `z.string().url().optional()`,
+        which accepts `undefined` and rejects `''` with "Invalid URL", so an
+        operator who left the line in but blank would have failed env validation
+        and the container would not have started.
+
+        A working state turned into an outage by a variable nobody set. Asserted
+        on the SCHEMA rather than by booting the app, because the failure is a
+        validation one and that is where it lives.
+    */
+    it('coerces an empty or whitespace health URL to absent', async () => {
+        const { z } = await import('zod');
+        // The shape `src/env.ts` uses. Kept in step by the assertion below that
+        // the real file still preprocesses this variable.
+        const schema = z.preprocess(
+            (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+            z.string().url().optional(),
+        );
+        for (const empty of ['', '   ', '\t']) {
+            const r = schema.safeParse(empty);
+            expect(r.success).toBe(true);
+            expect(r.success && r.data).toBeUndefined();
+        }
+    });
+
+    it('still rejects a malformed URL — the coercion does not widen validation', async () => {
+        const { z } = await import('zod');
+        const schema = z.preprocess(
+            (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+            z.string().url().optional(),
+        );
+        expect(schema.safeParse('not-a-url').success).toBe(false);
+        expect(schema.safeParse('http://10.132.0.28:8081').success).toBe(true);
+    });
+
+    it('env.ts actually preprocesses that variable (not just this test)', () => {
+        // The assertions above describe a schema shape; this holds the real file
+        // to it. Without this they would pass while `env.ts` kept the raw
+        // `z.string().url().optional()` that caused the problem.
+        const src = read('src/env.ts');
+        const lines = src.split('\n');
+        const idx = lines.findIndex((l) => l.includes('SANDBOX_RUNTIME_HEALTH_URL:'));
+        expect(idx).toBeGreaterThan(-1);
+        expect(lines[idx]).toContain('z.preprocess');
+    });
+
+    it('the deploy README names all four variables an operator must set', () => {
+        // The variables are useless undocumented: nothing in the repo sets them
+        // and the page is blank until somebody does.
+        const readme = read('deploy/openshell/README.md');
+        for (const v of [
+            'SANDBOX_RUNTIME_CONFIG_DIGEST',
+            'SANDBOX_RUNTIME_APPLIED_AT',
+            'SANDBOX_RUNTIME_CHANNELS',
+            'SANDBOX_RUNTIME_HEALTH_URL',
+        ]) {
+            expect(readme.split('\n').filter((l) => l.includes(v)).length).toBeGreaterThanOrEqual(1);
+        }
+    });
+});
