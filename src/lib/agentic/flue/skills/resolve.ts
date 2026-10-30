@@ -198,7 +198,7 @@ export function resolveRunSkills(
  * may take none of them (the usecase refuses at creation; the resolver refuses
  * again, because a later deploy may add a repository skill of that name).
  *
- * Not the list a person CHOOSES from: that is `selectableRepositorySkillNames`.
+ * Not the list a person CHOOSES from: that is `mountableRepositorySkillNames`.
  */
 export function repositorySkillNames(): ReadonlySet<string> {
     const c = shippedCorpus();
@@ -206,21 +206,28 @@ export function repositorySkillNames(): ReadonlySet<string> {
 }
 
 /**
- * THE SHIPPED SKILLS A PERSON MAY CHOOSE: every one the text scan did not
- * refuse. This is the corpus's own split (`SkillCorpus.skills` beside
- * `.refused`), read from the same cached corpus that `lookup` refuses a run by,
- * so a choice offered here is never one the mount path refuses for its text.
+ * THE SHIPPED SKILLS A PERSON MAY CHOOSE: every one a run could mount, asked
+ * exactly as `mountable` asks it for a run. Two questions, both answered by
+ * what the run itself reads, never by a copy:
+ *
+ *   - the text scan did not refuse it: the corpus's own split
+ *     (`SkillCorpus.skills` beside `.refused`), from the same cached corpus
+ *     `lookup` refuses a run by;
+ *   - the mount gate passes it: `verdictFor`, the cached `checkSkillMountable`
+ *     verdict `mountable` refuses a run by (a passing evaluation record
+ *     beside the skill, for this exact text).
  *
  * An agent profile's picker offers these, and its save and approval accept
- * these, and refuse any other shipped name as unknown (owner decision,
- * 2026-10-30, the follow-up to #4523). A refused skill is held apart and never
- * mounts, so offering it would offer a version no run of it can mount.
+ * these and refuse any other shipped name as unknown (owner decisions,
+ * 2026-10-30, the follow-ups to #4523). A skill that fails either question
+ * never mounts, so offering it would offer a version no run of it can mount.
  *
- * The mount gate is not asked: whether a skill's evaluation record passes is
- * admission's question, as `runCatalogue` says.
+ * What it cannot answer is the future: both questions read files in the
+ * deployed build, so a deploy between a version's save and its run can change
+ * either answer. Approval asks again, and admission a third time.
  */
-export function selectableRepositorySkillNames(): ReadonlySet<string> {
-    return new Set(shippedCorpus().skills.map((s) => s.name));
+export function mountableRepositorySkillNames(): ReadonlySet<string> {
+    return new Set(shippedCorpus().skills.filter((s) => verdictFor(s).ok).map((s) => s.name));
 }
 
 /** Test seam: drop the cache so a suite can vary the corpus. */
@@ -308,12 +315,12 @@ export interface RunCatalogue extends CatalogMeasure {
  * comparison the run itself is refused by, so a profile version's save and
  * approval cannot hold a different budget from its admission.
  *
- * Without the mount gate. This asks "would these skills fit", which is all a
- * version's save and approval ask; "may each one mount" is admission's
- * question, asked of every run, because a skill's record or text can change
- * after the version is approved. A skill the text scan refused never reaches
- * this measure from a profile: its save and approval accept only
- * `selectableRepositorySkillNames` and refuse the rest by name first.
+ * Without the mount gate. This asks only "would these skills fit". Whether
+ * each one may mount is asked before it: a profile's save and approval accept
+ * only `mountableRepositorySkillNames` and refuse the rest by name, so a
+ * skill the text scan or the gate refuses never reaches this measure from a
+ * profile. Admission asks every run again, because a skill's record or text
+ * can change after the version is approved.
  */
 export function runCatalogue(repositoryNames: readonly string[], tenantLines: readonly CatalogueLine[]): RunCatalogue {
     const { lines, refused } = repositoryLines(shippedCorpus(), repositoryNames, 'named by the run but not in the shipped corpus');

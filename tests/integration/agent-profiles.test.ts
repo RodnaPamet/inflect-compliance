@@ -20,12 +20,15 @@
  *      over the per-run catalogue budget is refused at save and at approval,
  *      at the byte, by the same measure admission refuses the run by; a
  *      version saved before the check still reads and is superseded.
- *  10. A REFUSED SHIPPED SKILL (owner decision, 2026-10-30). A shipped skill
- *      the text scan refused is not offered, a save naming it is refused by
- *      name and stores nothing, and a version stored naming it before the
- *      check cannot be approved. The refusal is planted by moving a real
- *      shipped skill to the corpus's `refused` list, as the scan would; the
- *      files on disk are untouched.
+ *  10. A SHIPPED SKILL NO RUN COULD MOUNT (owner decisions, 2026-10-30): one
+ *      the text scan refused, and one the mount gate refuses for want of a
+ *      passing evaluation record. Neither is offered, a save naming one is
+ *      refused by name and stores nothing, and a version stored naming one
+ *      before the check cannot be approved. Both are planted on a real
+ *      shipped skill without touching the files on disk: the refusal by
+ *      moving it to the corpus's `refused` list, as the scan would; the
+ *      missing record by pointing the real gate at a copy of its directory
+ *      that holds its evaluation set and no record.
  *
  * The driver decision, the registration gate and the queue are mocked at their
  * module boundary, as `tenant-skills.test.ts` does; the usecases, the resolver
@@ -78,6 +81,22 @@ jest.mock('@/lib/agentic/flue/skills', () => {
         },
     };
 });
+// Section 10 also plants a shipped skill with no evaluation record. The gate
+// itself answers for it, read against a copy of the skill's directory that
+// holds its evaluation set and no `evaluation-record.json` — the directory as
+// it would ship without one. Every other skill reads its own directory.
+let mockUnrecordedShipped: string[] = [];
+let mockUnrecordedDir = '';
+jest.mock('@/lib/agentic/flue/skills/mount-gate', () => {
+    const actual = jest.requireActual('@/lib/agentic/flue/skills/mount-gate') as typeof import('@/lib/agentic/flue/skills/mount-gate');
+    return {
+        ...actual,
+        checkSkillMountable: (skill: Parameters<typeof actual.checkSkillMountable>[0], dir?: string) =>
+            mockUnrecordedShipped.includes(skill.name)
+                ? actual.checkSkillMountable(skill, mockUnrecordedDir)
+                : actual.checkSkillMountable(skill, dir),
+    };
+});
 jest.mock('@/app-layer/jobs/queue', () => ({
     ...jest.requireActual('@/app-layer/jobs/queue'),
     enqueue: jest.fn(async () => undefined),
@@ -86,6 +105,9 @@ jest.mock('@/app-layer/jobs/queue', () => ({
 import { PrismaClient, type Role } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
@@ -105,7 +127,7 @@ import { resolveRunDefinition } from '@/app-layer/usecases/agent-profile-runs';
 import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile.schemas';
 import { profileRunKey } from '@/lib/agentic/agent-profile';
 import { SKILL_TEXT_RULES } from '@/lib/agentic/flue/skills/text-scan';
-import { catalogBytes, loadSkillCorpus, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
+import { catalogBytes, loadSkillCorpus, MAX_CATALOG_BYTES, skillDirectory } from '@/lib/agentic/flue/skills';
 import { resetSkillCache, runCatalogue } from '@/lib/agentic/flue/skills/resolve';
 import { resolveRunSkillMount } from '@/lib/agentic/flue/skills/tenant-mount';
 import {
@@ -150,10 +172,13 @@ const AGENTS = {
     budgetFirst: `ag-bfirst-${SUITE}`,
     budgetApprove: `ag-bappr-${SUITE}`,
     legacy: `ag-legacy-${SUITE}`,
-    refusedFirst: `ag-rfirst-${SUITE}`,
-    refusedSave: `ag-rsave-${SUITE}`,
-    refusedApprove: `ag-rappr-${SUITE}`,
 };
+
+/** Section 10's two kinds of shipped skill no run could mount. */
+const UNMOUNTABLE_KINDS = ['refused', 'unrecorded'] as const;
+type UnmountableKind = (typeof UNMOUNTABLE_KINDS)[number];
+/** Section 10's agents: one per kind for a first version, a later version and an approval. */
+const unmountableAgent = (kind: UnmountableKind, use: 'first' | 'save' | 'approve') => `ag-${kind}-${use}-${SUITE}`;
 
 const ctx = (tenantId: string, role: Role, userId: string, over: Partial<RequestContext> = {}): RequestContext =>
     makeRequestContext(role, { tenantId, tenantSlug: tenantId, userId, ...over });
@@ -278,9 +303,7 @@ describeFn('agent profiles (real DB)', () => {
             AGENTS.budgetFirst,
             AGENTS.budgetApprove,
             AGENTS.legacy,
-            AGENTS.refusedFirst,
-            AGENTS.refusedSave,
-            AGENTS.refusedApprove,
+            ...UNMOUNTABLE_KINDS.flatMap((k) => (['first', 'save', 'approve'] as const).map((use) => unmountableAgent(k, use))),
         ]) {
             await agent(TA, id, USERS.authorA, 'ACTIVE', ['list_risks']);
         }
@@ -1120,25 +1143,47 @@ describeFn('agent profiles (real DB)', () => {
         });
     });
 
-    // ── 10. A refused shipped skill (owner decision, 2026-10-30) ──────
+    // ── 10. A shipped skill no run could mount (owner decisions, 2026-10-30)
 
-    describe('a shipped skill the text scan refused cannot be chosen (owner decision, 2026-10-30)', () => {
+    describe.each([
+        {
+            kind: 'refused' as const,
+            title: 'the text scan refused',
+            runRefusal: (name: string) => `Skill "${name}": refused by the skill text scan (skill.reveal_context)`,
+        },
+        {
+            kind: 'unrecorded' as const,
+            title: 'the mount gate refuses for want of a passing evaluation record',
+            runRefusal: (name: string) => `Skill "${name}": cannot be mounted: NO_RECORD`,
+        },
+    ])('a shipped skill $title cannot be chosen (owner decisions, 2026-10-30)', ({ kind, runRefusal }) => {
         type Ref = { origin: 'repository' | 'tenant'; name: string };
 
         // Read while nothing is planted: the shipped corpus as it is. The first
-        // skill is the one the scan is made to refuse, the second stays clean.
+        // skill is the one planted, the second stays mountable.
         const shipped = loadSkillCorpus().skills.map((s) => s.name);
-        const [REFUSED, CLEAN] = shipped;
-        const refusedRef: Ref = { origin: 'repository', name: REFUSED };
+        const [PLANTED, CLEAN] = shipped;
+        const plantedRef: Ref = { origin: 'repository', name: PLANTED };
         const cleanRef: Ref = { origin: 'repository', name: CLEAN };
-        const unknown = { reason: 'SKILL_UNKNOWN', skills: [`repository:${REFUSED}`] };
+        const unknown = { reason: 'SKILL_UNKNOWN', skills: [`repository:${PLANTED}`] };
+        const agent = (use: 'first' | 'save' | 'approve') => unmountableAgent(kind, use);
 
-        const plant = (names: string[]) => {
-            mockRefusedShipped = names;
+        const plant = (on: boolean) => {
+            mockRefusedShipped = on && kind === 'refused' ? [PLANTED] : [];
+            mockUnrecordedShipped = on && kind === 'unrecorded' ? [PLANTED] : [];
             resetSkillCache();
         };
-        beforeEach(() => plant([REFUSED]));
-        afterEach(() => plant([]));
+        beforeAll(() => {
+            // The planted skill's directory without its record: the evaluation set, copied.
+            const skill = loadSkillCorpus().skills.find((s) => s.name === PLANTED)!;
+            const set = skill.metadata.evaluation;
+            if (!set) throw new Error(`${PLANTED} names no evaluation set, so it cannot be planted as unrecorded`);
+            mockUnrecordedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apf-unrecorded-'));
+            fs.copyFileSync(path.join(skillDirectory(PLANTED), set), path.join(mockUnrecordedDir, set));
+        });
+        afterAll(() => fs.rmSync(mockUnrecordedDir, { recursive: true, force: true }));
+        beforeEach(() => plant(true));
+        afterEach(() => plant(false));
 
         /** A refusal's details, or NO_REFUSAL. */
         const detailsOf = async (p: Promise<unknown>): Promise<unknown> => {
@@ -1152,38 +1197,38 @@ describeFn('agent profiles (real DB)', () => {
 
         it('the picker leaves it out and offers every other shipped skill; a run naming it is refused', async () => {
             expect(shipped.length).toBeGreaterThan(1);
-            const view = await getAgentProfile(reviewerA(), AGENTS.refusedSave);
+            const view = await getAgentProfile(reviewerA(), agent('save'));
             const offered = view.options.skills.filter((s) => s.origin === 'repository').map((s) => s.name);
-            expect(offered).toEqual(shipped.filter((n) => n !== REFUSED).sort());
+            expect(offered).toEqual(shipped.filter((n) => n !== PLANTED).sort());
             // The plant is the mount path's refusal, not only the picker's.
             await expect(
-                resolveRunSkillMount(authorA(), { key: 'agent-profile:refused@v1', profile: { skillRefs: [refusedRef] } }),
-            ).rejects.toThrow(`Skill "${REFUSED}": refused by the skill text scan (skill.reveal_context)`);
+                resolveRunSkillMount(authorA(), { key: 'agent-profile:planted@v1', profile: { skillRefs: [plantedRef] } }),
+            ).rejects.toThrow(runRefusal(PLANTED));
         });
 
-        it('a save naming it is refused by name and stores nothing, on both paths; a clean shipped skill still saves', async () => {
+        it('a save naming it is refused by name and stores nothing, on both paths; a mountable shipped skill still saves', async () => {
             // The first version: no profile is created.
-            expect(await detailsOf(createAgentProfile(authorA(), AGENTS.refusedFirst, version({ skillRefs: [cleanRef, refusedRef] })))).toEqual(
+            expect(await detailsOf(createAgentProfile(authorA(), agent('first'), version({ skillRefs: [cleanRef, plantedRef] })))).toEqual(
                 unknown,
             );
-            expect(await prisma.agentProfile.count({ where: { tenantId: TA, agentId: AGENTS.refusedFirst } })).toBe(0);
+            expect(await prisma.agentProfile.count({ where: { tenantId: TA, agentId: agent('first') } })).toBe(0);
 
-            // A clean shipped skill is offered and saved.
-            const first = await createAgentProfile(authorA(), AGENTS.refusedSave, version({ skillRefs: [cleanRef] }));
+            // A mountable shipped skill is offered and saved.
+            const first = await createAgentProfile(authorA(), agent('save'), version({ skillRefs: [cleanRef] }));
             expect(first.version).toBe(1);
 
             // A later version: nothing is stored and the open draft is not retired.
             const before = await prisma.agentProfileVersion.count({ where: { tenantId: TA } });
             expect(
-                await detailsOf(createAgentProfileVersion(authorA(), AGENTS.refusedSave, version({ skillRefs: [cleanRef, refusedRef] }))),
+                await detailsOf(createAgentProfileVersion(authorA(), agent('save'), version({ skillRefs: [cleanRef, plantedRef] }))),
             ).toEqual(unknown);
             expect(await prisma.agentProfileVersion.count({ where: { tenantId: TA } })).toBe(before);
-            const view = await getAgentProfile(reviewerA(), AGENTS.refusedSave);
+            const view = await getAgentProfile(reviewerA(), agent('save'));
             expect(view.versions.map((v) => [v.version, v.status, v.skillRefs])).toEqual([[1, 'DRAFT', [cleanRef]]]);
         });
 
         it('a version stored naming it before the check is refused approval by name, and nothing moves', async () => {
-            const v1 = await approvedProfile(AGENTS.refusedApprove, { skillRefs: [cleanRef] });
+            const v1 = await approvedProfile(agent('approve'), { skillRefs: [cleanRef] });
             const instructions = `${INSTRUCTIONS} Name the owner first.`;
             // Written as a save before this check would have written it: the name was a shipped skill.
             await prisma.agentProfileVersion.create({
@@ -1194,7 +1239,7 @@ describeFn('agent profiles (real DB)', () => {
                     instructions,
                     instructionsHash: profileInstructionsHash(instructions),
                     toolNames: ['list_risks'],
-                    skillRefs: [cleanRef, refusedRef],
+                    skillRefs: [cleanRef, plantedRef],
                     modelTier: 'balanced',
                     effort: 'medium',
                     maxTurns: 10,
@@ -1203,22 +1248,22 @@ describeFn('agent profiles (real DB)', () => {
                     authoredByUserId: USERS.authorA,
                 },
             });
-            await submitAgentProfileVersion(authorA(), AGENTS.refusedApprove, 2);
+            await submitAgentProfileVersion(authorA(), agent('approve'), 2);
             const approve = () =>
-                approveAgentProfileVersion(reviewerA(), AGENTS.refusedApprove, 2, { instructionsHash: profileInstructionsHash(instructions) });
+                approveAgentProfileVersion(reviewerA(), agent('approve'), 2, { instructionsHash: profileInstructionsHash(instructions) });
 
             expect(await detailsOf(approve())).toEqual(unknown);
-            let view = await getAgentProfile(reviewerA(), AGENTS.refusedApprove);
+            let view = await getAgentProfile(reviewerA(), agent('approve'));
             expect(view.profile?.currentApprovedVersion).toBe(1);
             expect(view.versions.map((v) => [v.version, v.status])).toEqual([
                 [2, 'SUBMITTED'],
                 [1, 'APPROVED'],
             ]);
 
-            // The refused skill is the only obstacle: with the scan no longer refusing it, the same row is approved.
-            plant([]);
+            // The planted skill is the only obstacle: mountable again, the same row is approved.
+            plant(false);
             expect(await approve()).toMatchObject({ status: 'APPROVED', supersededVersion: 1 });
-            view = await getAgentProfile(reviewerA(), AGENTS.refusedApprove);
+            view = await getAgentProfile(reviewerA(), agent('approve'));
             expect(view.profile?.currentApprovedVersion).toBe(2);
         });
     });

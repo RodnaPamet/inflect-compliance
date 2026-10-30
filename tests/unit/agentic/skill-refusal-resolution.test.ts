@@ -44,11 +44,11 @@ import { SkillNotMountableError } from '@/lib/agentic/flue/skills/mount-gate';
 import {
     assertWorkflowCatalogsWithinBudget,
     assertWorkflowSkillsMountable,
+    mountableRepositorySkillNames,
     repositorySkillNames,
     resetSkillCache,
     resolveSkillPins,
     resolveSkillsFor,
-    selectableRepositorySkillNames,
     workflowCatalogs,
 } from '@/lib/agentic/flue/skills/resolve';
 import { listAgentSkills } from '@/app-layer/usecases/agent-skills';
@@ -111,10 +111,11 @@ describe('the workflow checks', () => {
     });
 });
 
-describe('the shipped names a person may choose (owner decision, 2026-10-30)', () => {
-    it('leave out the refused skill, which the mount path refuses a run for', () => {
-        expect([...selectableRepositorySkillNames()].sort()).toEqual(['good-skill', 'unrecorded-skill']);
+describe('the shipped names a person may choose (owner decisions, 2026-10-30)', () => {
+    it('leave out the refused skill and the unevaluated one, each of which the mount path refuses a run for', () => {
+        expect([...mountableRepositorySkillNames()]).toEqual(['good-skill']);
         expect(() => resolveSkillsFor(['bad-skill'])).toThrow(SkillTextRefusedError);
+        expect(() => resolveSkillsFor(['unrecorded-skill'])).toThrow(SkillNotMountableError);
     });
 
     it('do not narrow the names a tenant skill may not take, which still include it', () => {
