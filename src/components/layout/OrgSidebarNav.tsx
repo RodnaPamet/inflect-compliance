@@ -114,11 +114,15 @@ export function useOrgNavSections(): OrgNavSectionDef[] {
                     requiresManageMembers: true,
                 },
                 {
-                    // #4557 — the organization's agent switches. Every
-                    // member may read them; the page holds the write gate.
+                    // #4557 — the organization's agent switches. Restored to
+                    // the sidebar with a page behind it, in the Manage group
+                    // and for org admins, like Members and Audit Log. Every
+                    // member may read /settings directly; the write gate is
+                    // the route's.
                     href: orgHref('/settings'),
                     label: t('nav.settings'),
                     icon: Gear,
+                    requiresManageMembers: true,
                 },
             ],
         },
