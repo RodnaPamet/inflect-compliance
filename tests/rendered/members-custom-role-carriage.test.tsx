@@ -143,15 +143,27 @@ async function choosable(triggerId: string): Promise<Record<string, boolean>> {
     });
 }
 
-/** Choose `label` in the picker `triggerId`, reopening it if a remount closed it, until `done()` holds. */
+/**
+ * Choose `label` in the picker `triggerId`, reopening it if a remount closed
+ * it, until `done()` holds. The clicks are bounded: each one re-renders the
+ * page, and an unbounded loop of them starves the timer that would end the
+ * wait, so a page that never reaches `done()` would hang instead of failing.
+ */
 async function choose(triggerId: string, label: string, done: () => boolean) {
-    await waitFor(() => {
-        if (done()) return;
-        const option = optionNamed(label);
-        if (option) fireEvent.click(option);
-        else fireEvent.click(byId(triggerId)!);
-        if (!done()) throw new Error(`${label} not chosen yet`);
-    });
+    let clicks = 0;
+    await waitFor(
+        () => {
+            if (done()) return;
+            if (clicks < 20) {
+                clicks += 1;
+                const option = optionNamed(label);
+                if (option) fireEvent.click(option);
+                else fireEvent.click(byId(triggerId)!);
+            }
+            if (!done()) throw new Error(`chose ${label} in ${triggerId}, and the page never reached the expected state`);
+        },
+        { timeout: 3000 },
+    );
 }
 
 const patches = () =>
