@@ -20,15 +20,17 @@
  *      over the per-run catalogue budget is refused at save and at approval,
  *      at the byte, by the same measure admission refuses the run by; a
  *      version saved before the check still reads and is superseded.
- *  10. A SHIPPED SKILL NO RUN COULD MOUNT (owner decisions, 2026-10-30): one
- *      the text scan refused, and one the mount gate refuses for want of a
- *      passing evaluation record. Neither is offered, a save naming one is
+ *  10. A SKILL NO RUN COULD MOUNT (owner decisions, 2026-10-30): a shipped
+ *      skill the text scan refused, a shipped skill the mount gate refuses for
+ *      want of a passing evaluation record, and an approved tenant skill the
+ *      tenant mount gate now refuses. None is offered, a save naming one is
  *      refused by name and stores nothing, and a version stored naming one
- *      before the check cannot be approved. Both are planted on a real
- *      shipped skill without touching the files on disk: the refusal by
+ *      before the check cannot be approved. The shipped cases are planted on a
+ *      real shipped skill without touching the files on disk: the refusal by
  *      moving it to the corpus's `refused` list, as the scan would; the
  *      missing record by pointing the real gate at a copy of its directory
- *      that holds its evaluation set and no record.
+ *      that holds its evaluation set and no record. The tenant case swaps an
+ *      approved version's stored record for one written against other text.
  *
  * The driver decision, the registration gate and the queue are mocked at their
  * module boundary, as `tenant-skills.test.ts` does; the usecases, the resolver
@@ -138,7 +140,7 @@ import {
     retireTenantSkillVersion,
     submitTenantSkillVersion,
 } from '@/app-layer/usecases/tenant-skills';
-import { passingRecordFor, tenantSkillFields } from '../helpers/tenant-skill-fixture';
+import { passingRecordFor, TENANT_SKILL_INSTRUCTIONS, tenantSkillFields } from '../helpers/tenant-skill-fixture';
 import { registerWorkflow } from '@/lib/agentic/workflow-registry';
 import type { RequestContext } from '@/app-layer/types';
 import { makeRequestContext } from '../helpers/make-context';
@@ -174,8 +176,8 @@ const AGENTS = {
     legacy: `ag-legacy-${SUITE}`,
 };
 
-/** Section 10's two kinds of shipped skill no run could mount. */
-const UNMOUNTABLE_KINDS = ['refused', 'unrecorded'] as const;
+/** Section 10's three kinds of skill no run could mount. */
+const UNMOUNTABLE_KINDS = ['refused', 'unrecorded', 'tenant'] as const;
 type UnmountableKind = (typeof UNMOUNTABLE_KINDS)[number];
 /** Section 10's agents: one per kind for a first version, a later version and an approval. */
 const unmountableAgent = (kind: UnmountableKind, use: 'first' | 'save' | 'approve') => `ag-${kind}-${use}-${SUITE}`;
@@ -1143,45 +1145,102 @@ describeFn('agent profiles (real DB)', () => {
         });
     });
 
-    // ── 10. A shipped skill no run could mount (owner decisions, 2026-10-30)
+    // ── 10. A skill no run could mount (owner decisions, 2026-10-30) ──
+
+    type UnmountableRef = { origin: 'repository' | 'tenant'; name: string };
+    const refKey = (r: UnmountableRef) => `${r.origin}:${r.name}`;
+
+    // Read while nothing is planted: the shipped corpus as it is. The first
+    // shipped skill is the one planted, the second stays mountable.
+    const shippedNames = loadSkillCorpus().skills.map((s) => s.name);
+    const [SHIPPED_PLANTED, SHIPPED_CLEAN] = shippedNames;
+    const shippedRef = (name: string): UnmountableRef => ({ origin: 'repository', name });
+
+    // Two approved tenant skills: the planted one's stored evaluation record is
+    // swapped for one written against other instructions, so the tenant gate
+    // recomputes it and finds it no longer matches (HASH_MISMATCH). The table
+    // owner may rewrite that encrypted column, for the DEK rotation sweep.
+    const TENANT_PLANTED = `unm-pl-${SUITE}`;
+    const TENANT_CLEAN = `unm-cl-${SUITE}`;
+    let tenantPlantedVersionId = '';
+    let tenantPlantedRecord: string | null = null;
+    const swappedRecord = () =>
+        JSON.stringify(passingRecordFor(TENANT_PLANTED, 1, `${TENANT_SKILL_INSTRUCTIONS}\nOther instructions this record was written for.`));
+    const setTenantRecord = (value: string | null) =>
+        prisma.$executeRawUnsafe(`UPDATE "TenantSkillVersion" SET "evaluationRecordJson" = $1 WHERE "id" = $2`, value, tenantPlantedVersionId);
+    /** A tenant skill in A, created, evaluated, submitted and approved. */
+    const approvedTenantVersion = async (name: string): Promise<string> => {
+        const created = await createTenantSkill(authorA(), { name, ...tenantSkillFields() });
+        await attachTenantSkillEvaluation(authorA(), created.skillId, created.versionId, { record: passingRecordFor(name, 1) });
+        await submitTenantSkillVersion(authorA(), created.skillId, created.versionId);
+        await approveTenantSkillVersion(reviewerA(), created.skillId, created.versionId, { contentHash: created.contentHash });
+        return created.versionId;
+    };
 
     describe.each([
         {
             kind: 'refused' as const,
-            title: 'the text scan refused',
-            runRefusal: (name: string) => `Skill "${name}": refused by the skill text scan (skill.reveal_context)`,
+            title: 'a shipped skill the text scan refused',
+            planted: shippedRef(SHIPPED_PLANTED),
+            clean: shippedRef(SHIPPED_CLEAN),
+            runRefusal: `Skill "${SHIPPED_PLANTED}": refused by the skill text scan (skill.reveal_context)`,
+            setup: async () => {},
+            plant: async (on: boolean) => {
+                mockRefusedShipped = on ? [SHIPPED_PLANTED] : [];
+                resetSkillCache();
+            },
+            teardown: async () => {},
         },
         {
             kind: 'unrecorded' as const,
-            title: 'the mount gate refuses for want of a passing evaluation record',
-            runRefusal: (name: string) => `Skill "${name}": cannot be mounted: NO_RECORD`,
+            title: 'a shipped skill the mount gate refuses for want of a passing evaluation record',
+            planted: shippedRef(SHIPPED_PLANTED),
+            clean: shippedRef(SHIPPED_CLEAN),
+            runRefusal: `Skill "${SHIPPED_PLANTED}": cannot be mounted: NO_RECORD`,
+            setup: async () => {
+                // The planted skill's directory without its record: the evaluation set, copied.
+                const skill = loadSkillCorpus().skills.find((s) => s.name === SHIPPED_PLANTED)!;
+                const set = skill.metadata.evaluation;
+                if (!set) throw new Error(`${SHIPPED_PLANTED} names no evaluation set, so it cannot be planted as unrecorded`);
+                mockUnrecordedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apf-unrecorded-'));
+                fs.copyFileSync(path.join(skillDirectory(SHIPPED_PLANTED), set), path.join(mockUnrecordedDir, set));
+            },
+            plant: async (on: boolean) => {
+                mockUnrecordedShipped = on ? [SHIPPED_PLANTED] : [];
+                resetSkillCache();
+            },
+            teardown: async () => fs.rmSync(mockUnrecordedDir, { recursive: true, force: true }),
         },
-    ])('a shipped skill $title cannot be chosen (owner decisions, 2026-10-30)', ({ kind, runRefusal }) => {
-        type Ref = { origin: 'repository' | 'tenant'; name: string };
-
-        // Read while nothing is planted: the shipped corpus as it is. The first
-        // skill is the one planted, the second stays mountable.
-        const shipped = loadSkillCorpus().skills.map((s) => s.name);
-        const [PLANTED, CLEAN] = shipped;
-        const plantedRef: Ref = { origin: 'repository', name: PLANTED };
-        const cleanRef: Ref = { origin: 'repository', name: CLEAN };
-        const unknown = { reason: 'SKILL_UNKNOWN', skills: [`repository:${PLANTED}`] };
+        {
+            kind: 'tenant' as const,
+            title: 'an approved tenant skill the tenant mount gate now refuses, its record no longer matching',
+            planted: { origin: 'tenant' as const, name: TENANT_PLANTED },
+            clean: { origin: 'tenant' as const, name: TENANT_CLEAN },
+            runRefusal: `Skill "${TENANT_PLANTED}": cannot be mounted: HASH_MISMATCH`,
+            setup: async () => {
+                tenantPlantedVersionId = await approvedTenantVersion(TENANT_PLANTED);
+                await approvedTenantVersion(TENANT_CLEAN);
+                // The stored ciphertext, put back whenever the plant is lifted.
+                tenantPlantedRecord = (
+                    await prisma.tenantSkillVersion.findUniqueOrThrow({
+                        where: { id: tenantPlantedVersionId },
+                        select: { evaluationRecordJson: true },
+                    })
+                ).evaluationRecordJson;
+            },
+            plant: async (on: boolean) => {
+                await setTenantRecord(on ? swappedRecord() : tenantPlantedRecord);
+            },
+            teardown: async () => {},
+        },
+    ])('$title cannot be chosen (owner decisions, 2026-10-30)', ({ kind, planted, clean, runRefusal, setup, plant, teardown }) => {
+        const unknown = { reason: 'SKILL_UNKNOWN', skills: [refKey(planted)] };
         const agent = (use: 'first' | 'save' | 'approve') => unmountableAgent(kind, use);
+        /** The picker's options, as `origin:name`. */
+        const offered = async () => (await getAgentProfile(reviewerA(), agent('save'))).options.skills.map((s) => refKey(s));
 
-        const plant = (on: boolean) => {
-            mockRefusedShipped = on && kind === 'refused' ? [PLANTED] : [];
-            mockUnrecordedShipped = on && kind === 'unrecorded' ? [PLANTED] : [];
-            resetSkillCache();
-        };
-        beforeAll(() => {
-            // The planted skill's directory without its record: the evaluation set, copied.
-            const skill = loadSkillCorpus().skills.find((s) => s.name === PLANTED)!;
-            const set = skill.metadata.evaluation;
-            if (!set) throw new Error(`${PLANTED} names no evaluation set, so it cannot be planted as unrecorded`);
-            mockUnrecordedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apf-unrecorded-'));
-            fs.copyFileSync(path.join(skillDirectory(PLANTED), set), path.join(mockUnrecordedDir, set));
-        });
-        afterAll(() => fs.rmSync(mockUnrecordedDir, { recursive: true, force: true }));
+        beforeAll(() => setup());
+        afterAll(() => teardown());
         beforeEach(() => plant(true));
         afterEach(() => plant(false));
 
@@ -1195,42 +1254,41 @@ describeFn('agent profiles (real DB)', () => {
             return 'NO_REFUSAL';
         };
 
-        it('the picker leaves it out and offers every other shipped skill; a run naming it is refused', async () => {
-            expect(shipped.length).toBeGreaterThan(1);
-            const view = await getAgentProfile(reviewerA(), agent('save'));
-            const offered = view.options.skills.filter((s) => s.origin === 'repository').map((s) => s.name);
-            expect(offered).toEqual(shipped.filter((n) => n !== PLANTED).sort());
-            // The plant is the mount path's refusal, not only the picker's.
+        it('the picker leaves it out and still offers the mountable one; a run naming it is refused', async () => {
+            await plant(false);
+            const mountable = await offered();
+            expect(mountable).toEqual(expect.arrayContaining([refKey(planted), refKey(clean)]));
+            await plant(true);
+            expect(await offered()).toEqual(mountable.filter((k) => k !== refKey(planted)));
+            // The plant is the run's own refusal, not only the picker's.
             await expect(
-                resolveRunSkillMount(authorA(), { key: 'agent-profile:planted@v1', profile: { skillRefs: [plantedRef] } }),
-            ).rejects.toThrow(runRefusal(PLANTED));
+                resolveRunSkillMount(authorA(), { key: 'agent-profile:planted@v1', profile: { skillRefs: [planted] } }),
+            ).rejects.toThrow(runRefusal);
         });
 
-        it('a save naming it is refused by name and stores nothing, on both paths; a mountable shipped skill still saves', async () => {
+        it('a save naming it is refused by name and stores nothing, on both paths; a mountable one still saves', async () => {
             // The first version: no profile is created.
-            expect(await detailsOf(createAgentProfile(authorA(), agent('first'), version({ skillRefs: [cleanRef, plantedRef] })))).toEqual(
-                unknown,
-            );
+            expect(await detailsOf(createAgentProfile(authorA(), agent('first'), version({ skillRefs: [clean, planted] })))).toEqual(unknown);
             expect(await prisma.agentProfile.count({ where: { tenantId: TA, agentId: agent('first') } })).toBe(0);
 
-            // A mountable shipped skill is offered and saved.
-            const first = await createAgentProfile(authorA(), agent('save'), version({ skillRefs: [cleanRef] }));
+            // A mountable skill is offered and saved.
+            const first = await createAgentProfile(authorA(), agent('save'), version({ skillRefs: [clean] }));
             expect(first.version).toBe(1);
 
             // A later version: nothing is stored and the open draft is not retired.
             const before = await prisma.agentProfileVersion.count({ where: { tenantId: TA } });
-            expect(
-                await detailsOf(createAgentProfileVersion(authorA(), agent('save'), version({ skillRefs: [cleanRef, plantedRef] }))),
-            ).toEqual(unknown);
+            expect(await detailsOf(createAgentProfileVersion(authorA(), agent('save'), version({ skillRefs: [clean, planted] })))).toEqual(
+                unknown,
+            );
             expect(await prisma.agentProfileVersion.count({ where: { tenantId: TA } })).toBe(before);
             const view = await getAgentProfile(reviewerA(), agent('save'));
-            expect(view.versions.map((v) => [v.version, v.status, v.skillRefs])).toEqual([[1, 'DRAFT', [cleanRef]]]);
+            expect(view.versions.map((v) => [v.version, v.status, v.skillRefs])).toEqual([[1, 'DRAFT', [clean]]]);
         });
 
         it('a version stored naming it before the check is refused approval by name, and nothing moves', async () => {
-            const v1 = await approvedProfile(agent('approve'), { skillRefs: [cleanRef] });
+            const v1 = await approvedProfile(agent('approve'), { skillRefs: [clean] });
             const instructions = `${INSTRUCTIONS} Name the owner first.`;
-            // Written as a save before this check would have written it: the name was a shipped skill.
+            // Written as a save before this check would have written it: the skill was one the save accepted.
             await prisma.agentProfileVersion.create({
                 data: {
                     tenantId: TA,
@@ -1239,7 +1297,7 @@ describeFn('agent profiles (real DB)', () => {
                     instructions,
                     instructionsHash: profileInstructionsHash(instructions),
                     toolNames: ['list_risks'],
-                    skillRefs: [cleanRef, plantedRef],
+                    skillRefs: [clean, planted],
                     modelTier: 'balanced',
                     effort: 'medium',
                     maxTurns: 10,
@@ -1261,7 +1319,7 @@ describeFn('agent profiles (real DB)', () => {
             ]);
 
             // The planted skill is the only obstacle: mountable again, the same row is approved.
-            plant(false);
+            await plant(false);
             expect(await approve()).toMatchObject({ status: 'APPROVED', supersededVersion: 1 });
             view = await getAgentProfile(reviewerA(), agent('approve'));
             expect(view.profile?.currentApprovedVersion).toBe(2);

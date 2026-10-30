@@ -34,13 +34,14 @@
  * scanned by the skill text scan, and text the scan refuses is refused by rule
  * id and never stored (owner decision 2). Every tool must be one the agent is
  * granted now: an ungranted tool is refused BY NAME, never dropped. Every
- * skill must be one the agent may mount — a shipped skill the text scan
- * refused, or one with no passing evaluation record, is neither offered nor
- * accepted — and together they must fit the per-run catalogue budget a run
- * of the version is refused by (`SKILL_CATALOGUE_OVER_BUDGET`, #4523).
- * Approval asks all of it again, because a grant can be revoked, a tenant
- * skill retired or given a longer description, and a shipped skill's record
- * or text changed by a deploy, while a version waits.
+ * skill must be one a run could mount — a shipped skill the text scan
+ * refused or the mount gate refuses, and an approved tenant skill the tenant
+ * mount gate now refuses, are neither offered nor accepted — and together they
+ * must fit the per-run catalogue budget a run of the version is refused by
+ * (`SKILL_CATALOGUE_OVER_BUDGET`, #4523). Approval asks all of it again,
+ * because a grant can be revoked, a tenant skill retired or given a longer
+ * description, and a skill's record, text or scan changed, while a version
+ * waits.
  *
  * ── THE FLAG ────────────────────────────────────────────────────────────────
  *
@@ -59,8 +60,13 @@ import { AppError, ConflictError, ValidationError } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { scanSkillText } from '@/lib/agentic/flue/skills/text-scan';
-import { mountableRepositorySkillNames, runCatalogue, type CatalogueLine } from '@/lib/agentic/flue/skills/resolve';
-import { approvedTenantSkillsByNameWhere } from '@/lib/agentic/flue/skills/tenant-mount';
+import {
+    mountableRepositorySkillNames,
+    mountableTenantSkillLines,
+    runCatalogue,
+    type CatalogueLine,
+} from '@/lib/agentic/flue/skills/resolve';
+import { readApprovedTenantSkillsByNameIn, readMountableTenantSkillLines } from '@/lib/agentic/flue/skills/tenant-mount';
 import { MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import { agentProfilesOnFor } from '@/lib/agentic/agent-switches-policy';
 import {
@@ -305,19 +311,21 @@ async function assertToolsGranted(db: PrismaTx, ctx: RequestContext, agentId: st
  * name (`SKILL_UNKNOWN`) before the measure. Approval asks again because a
  * deploy can change either answer for a skill a waiting version names, and a
  * version stored before this check was never asked.
+ *
+ * AN APPROVED TENANT SKILL NO RUN COULD MOUNT IS UNKNOWN HERE TOO (owner
+ * decision, 2026-10-30). Its version is read as admission reads it
+ * (`readApprovedTenantSkillsByNameIn`, the mount's own columns) and asked
+ * what admission asks (`mountableTenantSkillLines`: the tenant mount gate,
+ * and no shipped skill of its name). Its approval passed that gate once, but
+ * a deploy can tighten the scan or the record check, and the pinned hash is
+ * recomputed from the stored text. One read of the named versions, so the
+ * cost is the number of tenant skills named.
  */
 async function assertSkillsFit(db: PrismaTx, ctx: RequestContext, refs: readonly ProfileSkillRef[]): Promise<void> {
     const repository = mountableRepositorySkillNames();
     const tenantNames = refs.filter((r) => r.origin === 'tenant').map((r) => r.name);
-    const approved = tenantNames.length
-        ? await db.tenantSkillVersion.findMany({
-              where: approvedTenantSkillsByNameWhere(ctx.tenantId, tenantNames),
-              select: { description: true, skill: { select: { name: true } } },
-              take: tenantNames.length,
-          })
-        : [];
     const tenantLines = new Map<string, CatalogueLine>(
-        approved.map((a) => [a.skill.name, { name: a.skill.name, description: a.description }]),
+        mountableTenantSkillLines(await readApprovedTenantSkillsByNameIn(db, ctx.tenantId, tenantNames)).map((l) => [l.name, l]),
     );
     const unknown = refs
         .filter((r) => (r.origin === 'repository' ? !repository.has(r.name) : !tenantLines.has(r.name)))
@@ -888,23 +896,29 @@ async function memberLabels(db: PrismaTx, ctx: RequestContext, userIds: string[]
     return new Map(members.map((m) => [m.userId, m.user.name ?? m.user.email]));
 }
 
+/** At most this many approved tenant versions are read, and gated, for one picker. */
+const PICKER_TENANT_VERSIONS = 200;
+
 /**
  * The skills a profile may mount: the shipped skills a run could mount (not
  * refused by the text scan, passed by the mount gate) and the tenant's
- * APPROVED skills, each with the bytes its catalogue line costs, measured by
- * `runCatalogue`, which is what the save measures the chosen set by. The
- * repository names are the ones `assertSkillsFit` accepts, from the same
- * function, so the picker offers nothing the save refuses as unknown.
+ * APPROVED skills a run could mount (passed by the tenant mount gate), each
+ * with the bytes its catalogue line costs, measured by `runCatalogue`, which
+ * is what the save measures the chosen set by. Both lists come from the
+ * functions `assertSkillsFit` accepts by, so the picker offers nothing the
+ * save refuses as unknown.
+ *
+ * THE COST of the tenant half, per load: at most `PICKER_TENANT_VERSIONS`
+ * approved versions, read in pages of `MOUNTABLE_TENANT_SKILL_PAGE` (so at
+ * most ten queries), each version's two encrypted columns decrypted, its
+ * instructions hashed and scanned, and its evaluation record parsed and
+ * recomputed. One page of records is held at a time.
  */
 async function mountableSkills(db: PrismaTx, ctx: RequestContext): Promise<ProfileSkillOption[]> {
-    const tenant = await db.tenantSkillVersion.findMany({
-        where: { tenantId: ctx.tenantId, status: 'APPROVED' },
-        select: { description: true, skill: { select: { name: true } } },
-        take: 200,
-    });
     const tenantLines = new Map<string, CatalogueLine>();
-    for (const t of tenant) {
-        if (!tenantLines.has(t.skill.name)) tenantLines.set(t.skill.name, { name: t.skill.name, description: t.description });
+    const mountable = await readMountableTenantSkillLines(db, ctx.tenantId, PICKER_TENANT_VERSIONS);
+    for (const line of mountable) {
+        if (!tenantLines.has(line.name)) tenantLines.set(line.name, line);
     }
     return [
         ...[...mountableRepositorySkillNames()].sort().map((name) => ({

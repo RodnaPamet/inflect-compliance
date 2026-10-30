@@ -2868,18 +2868,30 @@ edit from being undone:
     the workflows it names), and admission a third time, because a deploy can
     lengthen a shipped description. A version stored over the budget before the
     check reads and is superseded as usual, and can be neither approved nor run.
-  - **A shipped skill no run could mount cannot be chosen** (two owner
-    decisions, 2026-10-30): one the text scan refused, and one the mount gate
-    refuses (no passing evaluation record for its text). The picker does not
-    offer it, and save and approval refuse it by name as `SKILL_UNKNOWN`,
-    before the measure. Both read `mountableRepositorySkillNames`, which asks
-    the run's own two questions from the run's own cache: the corpus's
-    `skills`/`refused` split, and `verdictFor` (`checkSkillMountable`). Do not
-    keep a second list, re-run the scan, or write a second evaluation check.
-    Both answers come from files in the deployed build, so a deploy between
-    save and run can change them; approval asks again and admission a third
-    time. It is not `repositorySkillNames`, which keeps refused names on
-    purpose because a tenant skill may take none of them.
+  - **A skill no run could mount cannot be chosen** (three owner decisions,
+    2026-10-30). A shipped skill the text scan refused, a shipped skill the
+    mount gate refuses (no passing evaluation record for its text), and an
+    approved tenant skill the tenant mount gate now refuses. The picker does
+    not offer one, and save and approval refuse it by name as `SKILL_UNKNOWN`
+    (`repository:` or `tenant:`), before the measure. Every one of them reads
+    what the run reads, and asks what the run asks:
+    - shipped skills: `mountableRepositorySkillNames`, the corpus's
+      `skills`/`refused` split and `verdictFor` (`checkSkillMountable`), from
+      the run's own per-process cache;
+    - tenant skills: the version read with the mount's own columns
+      (`readApprovedTenantSkillsByNameIn` for save and approval,
+      `readMountableTenantSkillLines` for the picker), then
+      `mountableTenantSkillLines`, which is `tenantVersionMount`, the
+      per-version half of `resolveRunSkills`.
+
+    Do not keep a second list, re-run the scan, or write a second evaluation
+    check. The shipped answers come from files in the deployed build and the
+    tenant ones from a row a deploy's tighter scan or record check can fail,
+    so approval asks again and admission a third time. The picker gates at
+    most 200 tenant versions per load, in pages of 20, so one page of records
+    (each up to 4 MiB) is held at a time. It is not `repositorySkillNames`,
+    which keeps refused names on purpose because a tenant skill may take none
+    of them.
   - **`agent-profile:<id>@v<n>` resolves only inside the caller's tenant**, and
     only the APPROVED version in force; a malformed key is refused, never read
     as a registered workflow key.
@@ -2929,7 +2941,7 @@ edit from being undone:
     sentence about the instructions, so it never goes in an audit row.
   - **The Behaviour tab offers what the server would accept, from the server's
     read.** The pickers list the view's `options`: the agent's current grants,
-    the shipped skills a run could mount, and the tenant's approved skills.
+    and the shipped and tenant skills a run could mount.
     Approve and Reject follow each version's
     `canDecide`. Compute neither in the client. Instructions and reasons render
     as React text, never through markdown or `innerHTML`. The skills picker
