@@ -59,6 +59,7 @@ function ctxFor(overrides: Partial<OrgContext> = {}): OrgContext {
             canSetThreatLevel: true,
             canSetMaturity: true,
             canManageAgentSwitches: true,
+            canManageOwners: false,
         },
         ...overrides,
     };
@@ -77,6 +78,7 @@ function readerCtx(): OrgContext {
             canSetThreatLevel: false,
             canSetMaturity: false,
             canManageAgentSwitches: false,
+            canManageOwners: false,
         },
     });
 }
@@ -357,6 +359,7 @@ describe('canViewPortfolio gate', () => {
             canSetThreatLevel: false,
             canSetMaturity: false,
             canManageAgentSwitches: false,
+            canManageOwners: false,
             },
         });
 

@@ -16,11 +16,13 @@ import { Input } from '@/components/ui/input';
 import { Tooltip } from '@/components/ui/tooltip';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
+import { isOrgAdminTier, isOrgOwner } from '@/lib/org-roles';
 
 interface MemberRow {
     membershipId: string;
     userId: string;
-    role: 'ORG_ADMIN' | 'ORG_READER';
+    /** ORG_OWNER is read since #4576 (deploy 1); nothing on this page writes it. */
+    role: 'ORG_OWNER' | 'ORG_ADMIN' | 'ORG_READER';
     joinedAt: string;
     user: {
         id: string;
@@ -32,6 +34,8 @@ interface MemberRow {
 interface Props {
     orgSlug: string;
     currentUserId: string;
+    /** The viewer's own org role: an owner's row is changed only by an owner. */
+    viewerRole: 'ORG_OWNER' | 'ORG_ADMIN' | 'ORG_READER';
     rows: MemberRow[];
     invites: PendingInviteRow[];
 }
@@ -45,19 +49,21 @@ export interface PendingInviteRow {
     invitedBy: { id: string; name: string | null; email: string | null } | null;
 }
 
-const ROLE_VARIANT: Record<MemberRow['role'], 'error' | 'info'> = {
+const ROLE_VARIANT: Record<MemberRow['role'], 'error' | 'info' | 'warning'> = {
+    ORG_OWNER: 'warning',
     ORG_ADMIN: 'error',
     ORG_READER: 'info',
 };
 
 const ROLE_LABEL_KEY: Record<MemberRow['role'], string> = {
+    ORG_OWNER: 'members.roleOrgOwner',
     ORG_ADMIN: 'members.roleOrgAdmin',
     ORG_READER: 'members.roleOrgReader',
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function MembersTable({ orgSlug, currentUserId, rows, invites }: Props) {
+export function MembersTable({ orgSlug, currentUserId, viewerRole, rows, invites }: Props) {
     const router = useRouter();
     const t = useTranslations('org');
 
@@ -111,20 +117,24 @@ export function MembersTable({ orgSlug, currentUserId, rows, invites }: Props) {
                     header: '',
                     cell: ({ row }) => {
                         const isSelf = row.original.userId === currentUserId;
+                        // An owner's membership is changed only by an owner (#4576).
+                        const ownerLocked = isOrgOwner(row.original.role) && !isOrgOwner(viewerRole);
                         return (
                             <div className="flex justify-end gap-1.5">
                                 <Tooltip
                                     content={
                                         isSelf
                                             ? t('members.cannotChangeOwnRole')
-                                            : t('members.changeRoleFor', { email: row.original.user.email })
+                                            : ownerLocked
+                                              ? t('members.ownerNeedsOwner')
+                                              : t('members.changeRoleFor', { email: row.original.user.email })
                                     }
                                 >
                                     <Button
                                         type="button"
                                         variant="ghost"
                                         size="sm"
-                                        disabled={isSelf}
+                                        disabled={isSelf || ownerLocked}
                                         onClick={() => setRoleTarget(row.original)}
                                         data-testid={`org-member-role-${row.original.userId}`}
                                     >
@@ -136,7 +146,9 @@ export function MembersTable({ orgSlug, currentUserId, rows, invites }: Props) {
                                     content={
                                         isSelf
                                             ? t('members.cannotRemoveSelf')
-                                            : t('members.removeUser', { email: row.original.user.email })
+                                            : ownerLocked
+                                              ? t('members.ownerNeedsOwner')
+                                              : t('members.removeUser', { email: row.original.user.email })
                                     }
                                 >
                                     <Button
@@ -144,7 +156,7 @@ export function MembersTable({ orgSlug, currentUserId, rows, invites }: Props) {
                                         variant="ghost"
                                         size="sm"
                                         className="text-content-error"
-                                        disabled={isSelf}
+                                        disabled={isSelf || ownerLocked}
                                         onClick={() => setRemoveTarget(row.original)}
                                         data-testid={`org-member-remove-${row.original.userId}`}
                                     >
@@ -160,7 +172,7 @@ export function MembersTable({ orgSlug, currentUserId, rows, invites }: Props) {
                     },
                 },
             ]),
-        [currentUserId, t],
+        [currentUserId, viewerRole, t],
     );
 
     return (
@@ -262,6 +274,7 @@ export function MembersTable({ orgSlug, currentUserId, rows, invites }: Props) {
 
             <ChangeRoleModal
                 orgSlug={orgSlug}
+                viewerIsOwner={isOrgOwner(viewerRole)}
                 target={roleTarget}
                 onClose={() => setRoleTarget(null)}
                 onSuccess={useCallback(() => {
@@ -528,7 +541,7 @@ function RemoveMemberModal({
                                     ),
                                 })}
                             </p>
-                            {target.role === 'ORG_ADMIN' && (
+                            {isOrgAdminTier(target.role) && (
                                 <div
                                     className="flex gap-tight rounded-lg border border-border-warning bg-bg-warning/30 p-3 text-content-warning"
                                     role="alert"
@@ -585,6 +598,8 @@ function RemoveMemberModal({
 
 interface ChangeRoleModalProps {
     orgSlug: string;
+    /** Only an owner is offered Owner (#4576). */
+    viewerIsOwner: boolean;
     target: MemberRow | null;
     onClose: () => void;
     onSuccess: () => void;
@@ -592,6 +607,7 @@ interface ChangeRoleModalProps {
 
 function ChangeRoleModal({
     orgSlug,
+    viewerIsOwner,
     target,
     onClose,
     onSuccess,
@@ -610,7 +626,7 @@ function ChangeRoleModal({
     // When a new target opens, default the radio to the opposite role
     // (the typical operator intent: open this dialog to flip).
     if (target && chosen === null) {
-        setChosen(target.role === 'ORG_ADMIN' ? 'ORG_READER' : 'ORG_ADMIN');
+        setChosen(isOrgAdminTier(target.role) && target.role !== 'ORG_OWNER' ? 'ORG_READER' : 'ORG_ADMIN');
     }
 
     const close = () => {
@@ -658,8 +674,8 @@ function ChangeRoleModal({
         }
     };
 
-    const isPromotion = target?.role === 'ORG_READER' && chosen === 'ORG_ADMIN';
-    const isDemotion = target?.role === 'ORG_ADMIN' && chosen === 'ORG_READER';
+    const isPromotion = target?.role === 'ORG_READER' && isOrgAdminTier(chosen);
+    const isDemotion = isOrgAdminTier(target?.role) && chosen === 'ORG_READER';
     const isNoOp = target !== null && chosen !== null && target.role === chosen;
 
     return (
@@ -690,7 +706,13 @@ function ChangeRoleModal({
                         <legend className="text-sm font-medium text-content-emphasis">
                             {t('members.newRole')}
                         </legend>
-                        {(['ORG_ADMIN', 'ORG_READER'] as const).map((opt) => {
+                        {/* Owner is offered only to an owner (#4576): only an
+                            owner makes another one, and the server refuses
+                            anybody else. */}
+                        {(viewerIsOwner
+                            ? (['ORG_OWNER', 'ORG_ADMIN', 'ORG_READER'] as const)
+                            : (['ORG_ADMIN', 'ORG_READER'] as const)
+                        ).map((opt) => {
                             const id = `org-change-role-${opt}`;
                             const checked = chosen === opt;
                             return (
@@ -718,9 +740,11 @@ function ChangeRoleModal({
                                             {t(ROLE_LABEL_KEY[opt])}
                                         </p>
                                         <p className="text-xs text-content-muted">
-                                            {opt === 'ORG_ADMIN'
-                                                ? t('members.orgAdminDesc')
-                                                : t('members.orgReaderDesc')}
+                                            {opt === 'ORG_OWNER'
+                                                ? t('members.orgOwnerDesc')
+                                                : opt === 'ORG_ADMIN'
+                                                  ? t('members.orgAdminDesc')
+                                                  : t('members.orgReaderDesc')}
                                         </p>
                                     </div>
                                 </label>

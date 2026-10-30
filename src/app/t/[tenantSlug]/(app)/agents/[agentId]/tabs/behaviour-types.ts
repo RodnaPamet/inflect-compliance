@@ -9,6 +9,7 @@ import type {
     ProfileEffort,
     ProfileModelTier,
     ProfileOutputKind,
+    ProfileSkillOption,
     ProfileSkillRef,
     ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
@@ -46,14 +47,19 @@ export interface ProfileVersionView {
 export interface ProfileView {
     profile: { profileId: string; currentApprovedVersion: number | null; runKey: string | null } | null;
     versions: ProfileVersionView[];
-    options: { tools: string[]; skills: ProfileSkillRef[] };
+    options: { tools: string[]; skills: ProfileSkillOption[] };
     /** The server's `ProfileTestRunState` (Step 2c): available, or why not. */
     testRun:
         | { available: true }
         | { available: false; reason: 'ENGINE_DOES_NOT_RUN_PROFILES'; engine: 'STATIC' | 'FLUE' }
         | { available: false; reason: 'ENGINE_NOT_IN_FORCE' }
         | { available: false; reason: 'AGENT_NOT_READY' };
-    limits: { instructionsMaxChars: number; maxTurns: number; rejectionReasonMaxChars: number };
+    limits: {
+        instructionsMaxChars: number;
+        maxTurns: number;
+        rejectionReasonMaxChars: number;
+        skillCatalogueBudgetBytes: number;
+    };
 }
 
 /** The refusal reason a profile route's error body carries, if any. */

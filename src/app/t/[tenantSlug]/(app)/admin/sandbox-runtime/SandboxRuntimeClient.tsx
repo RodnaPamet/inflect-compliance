@@ -63,6 +63,15 @@ export interface SandboxRuntimeView extends Omit<SandboxRuntimeDeclaration, 'app
      * page must not report a gateway that answered as one that did not.
      */
     readonly probeOutcome: 'not-probed' | 'unreachable' | 'answered' | 'answered-without-version';
+    /**
+     * When the probe answered — #4572.
+     *
+     * The answer is reused for up to 30 seconds, including a failed one, because
+     * the gateway is stopped most of the time and that is the case that costs
+     * the full timeout. A reused verdict must be visible as one: "reachable"
+     * from thirty seconds ago is a different claim from "reachable now".
+     */
+    readonly probedAtIso: string;
 }
 
 /**
@@ -193,6 +202,12 @@ export function SandboxRuntimeClient({
                         None of them names a setting's value: this deployment
                         cannot read one back, and a row claiming otherwise is
                         the failure the whole page exists to avoid. */}
+                    <div className="flex gap-tight" data-testid="sandbox-probed-at">
+                        <dt className="text-content-muted">
+                            {t('sandboxRuntime.probedAtLabel')}
+                        </dt>
+                        <dd className="font-mono">{view.probedAtIso}</dd>
+                    </div>
                     <div className="flex gap-tight" data-testid="sandbox-reachability">
                         <dt className="text-content-muted">
                             {t('sandboxRuntime.reachabilityLabel')}

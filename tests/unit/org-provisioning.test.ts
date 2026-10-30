@@ -209,15 +209,17 @@ describe('provisionAllOrgAdminsToTenant', () => {
         }
     });
 
-    it('filters by role=ORG_ADMIN (ORG_READER members not auto-provisioned)', async () => {
+    it('filters to the administrators, owner included (ORG_READER members not auto-provisioned)', async () => {
         orgMembershipFindManyMock.mockResolvedValue([]);
 
         await provisionAllOrgAdminsToTenant('org-1', 'tenant-new');
 
         const queryArg = orgMembershipFindManyMock.mock.calls[0][0];
+        // #4576: an owner is an administrator, so a new tenant is
+        // provisioned to it as to every ORG_ADMIN.
         expect(queryArg.where).toEqual({
             organizationId: 'org-1',
-            role: 'ORG_ADMIN',
+            role: { in: ['ORG_OWNER', 'ORG_ADMIN'] },
         });
     });
 

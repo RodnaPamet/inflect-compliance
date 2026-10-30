@@ -33,6 +33,7 @@ import { cn } from '@inflect/ui/lib/cn';
 // From the leaf module, NOT `@/lib/permissions`: this component renders on
 // every tenant page, and a value import from there ships that whole module.
 import { mayReadAgentInventory } from '@/lib/agent-inventory-read';
+import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import { useCalendarBadge } from './use-calendar-badge';
 import { NavItem } from './nav-item';
 // A SEPARATE type-only import on purpose. `nav-item-import-discipline` pins the
@@ -435,7 +436,11 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                         </div>
                     )}
                     <div className={cn('flex gap-tight', collapsed ? 'flex-col items-center' : 'items-center')}>
-                        {perms.admin.view && (
+                        {/* The membership's own role too, as the edge reads it:
+                            a custom role's `admin.view` on a Reader, Editor or
+                            Auditor membership opens pages whose calls the edge
+                            refuses (#4581 B). */}
+                        {perms.admin.view && membershipOpensAdminConsole(tenant.membershipRole) && (
                             <Tooltip content={tn('admin')} side={collapsed ? 'right' : 'top'}>
                                 <Link
                                     href={tenantHref('/admin')}

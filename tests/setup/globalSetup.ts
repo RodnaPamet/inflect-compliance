@@ -2,11 +2,15 @@
  * Jest globalSetup: runs once before all suites.
  * - Migrates the base/template test DB.
  * - When Jest runs >1 worker, TEMPLATE-clones the migrated base into
- *   one DB per worker (`<base>_w<id>`) so parallel integration tests
- *   (which TRUNCATE in beforeEach) never contend on a shared DB —
- *   the deadlock/data-race flake class. Serial runs (`--runInBand`,
- *   CI) skip cloning and stay on the shared base DB (unchanged path).
- * - Writes a marker the worker-side `getTestDatabaseUrl()` reads.
+ *   one DB per worker (`<base>_<checkoutTag>_w<id>`) so parallel
+ *   integration tests (which TRUNCATE in beforeEach) never contend on a
+ *   shared DB — the deadlock/data-race flake class. Serial runs
+ *   (`--runInBand`, CI) skip cloning and stay on the shared base DB
+ *   (unchanged path).
+ * - Writes THIS checkout's marker (`PER_WORKER_MARKER`), which the
+ *   worker-side `getTestDatabaseUrl()`, `jest.setup.js` and globalTeardown
+ *   read. Its file name carries the checkout tag, because worktrees share
+ *   one `node_modules`; see `tests/helpers/test-db-checkout.js`.
  */
 import * as fs from 'fs';
 import * as path from 'path';

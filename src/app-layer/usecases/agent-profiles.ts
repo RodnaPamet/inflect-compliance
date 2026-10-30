@@ -53,13 +53,15 @@ import { AppError, ConflictError, ValidationError } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { scanSkillText } from '@/lib/agentic/flue/skills/text-scan';
-import { repositorySkillNames } from '@/lib/agentic/flue/skills/resolve';
+import { repositorySkillCatalogue } from '@/lib/agentic/flue/skills/resolve';
+import { catalogBytes, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import { agentProfilesOnFor } from '@/lib/agentic/agent-switches-policy';
 import {
     PROFILE_INSTRUCTIONS_MAX_CHARS,
     PROFILE_MAX_TURNS,
     PROFILE_REJECTION_REASON_MAX_CHARS,
     profileRunKey,
+    type ProfileSkillOption,
     type ProfileSkillRef,
 } from '@/lib/agentic/agent-profile';
 import type { AgentProfileVersionInput } from '../schemas/agent-profile.schemas';
@@ -82,6 +84,7 @@ export type AgentProfileRefusal =
     | 'INSTRUCTIONS_REFUSED'
     | 'TOOL_NOT_GRANTED'
     | 'SKILL_UNKNOWN'
+    | 'SKILL_CATALOGUE_OVER_BUDGET'
     | 'NOT_DRAFT'
     | 'NOT_SUBMITTED'
     | 'ALREADY_RETIRED'
@@ -110,6 +113,7 @@ const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     INSTRUCTIONS_REFUSED: 400,
     TOOL_NOT_GRANTED: 400,
     SKILL_UNKNOWN: 400,
+    SKILL_CATALOGUE_OVER_BUDGET: 409,
     NOT_DRAFT: 409,
     NOT_SUBMITTED: 409,
     ALREADY_RETIRED: 409,
@@ -275,25 +279,78 @@ async function assertToolsGranted(db: PrismaTx, ctx: RequestContext, agentId: st
 
 /**
  * Every skill must be one the product ships or one of the tenant's APPROVED
- * skills. Mounting goes through the existing mount gate when a run is admitted
- * by an engine that runs profiles; this is the save-time refusal.
+ * skills, AND the catalogue they form must fit the per-run budget.
+ *
+ * ── WHY THE BUDGET BELONGS HERE AND NOT ONLY AT THE RUN (#4523) ─────────────
+ *
+ * A run is refused when its catalogue exceeds `MAX_CATALOG_BYTES` — since
+ * #4151 that includes a profile's run, refused at ADMISSION by
+ * `resolveRunSkills` before the run row exists. So without this check a version
+ * naming too many skills could be saved, submitted, approved, and then never
+ * run: the reviewer learns at the first Test run instead of at review.
+ *
+ * It is not hypothetical. The shipped corpus ALONE is over budget — its eleven
+ * skills total 3,187 bytes against 2,048 — so a profile naming all of them is
+ * reachable in two clicks.
+ *
+ * This is the same shape `tenant-skills.ts` already applies when a tenant skill
+ * is approved (`CATALOGUE_OVER_BUDGET`, via `workflowsOverBudget`), and the
+ * pricing is the same function the run uses, `catalogBytes`, so the two cannot
+ * disagree about what a catalogue costs.
+ *
+ * **The run still applies the budget too, and must.** A later deploy can
+ * lengthen a shipped skill's description, and approving a tenant skill does not
+ * consider the profiles that name it — so a version that fit at approval can
+ * stop fitting. This check moves the refusal earlier for the common case; it
+ * does not make the run's check redundant.
+ *
+ * A repository ref must name a MOUNTABLE shipped skill (#4590): the keys of
+ * `repositorySkillCatalogue()`, never `repositorySkillNames()`. The latter
+ * includes skills the load-time text scan refused, by design, because a tenant
+ * skill may take none of those names; but a refused skill cannot mount, so a
+ * profile naming one could be saved and approved and then never run. It is
+ * refused here as `SKILL_UNKNOWN`, by name, and the picker does not offer it.
  */
-async function assertSkillsKnown(db: PrismaTx, ctx: RequestContext, refs: readonly ProfileSkillRef[]): Promise<void> {
-    const repository = repositorySkillNames();
+async function assertSkillsKnownAndWithinBudget(
+    db: PrismaTx,
+    ctx: RequestContext,
+    refs: readonly ProfileSkillRef[],
+): Promise<void> {
+    const shipped = repositorySkillCatalogue();
     const tenantNames = refs.filter((r) => r.origin === 'tenant').map((r) => r.name);
     const approved = tenantNames.length
         ? await db.tenantSkillVersion.findMany({
               where: { tenantId: ctx.tenantId, status: 'APPROVED', skill: { name: { in: tenantNames } } },
-              select: { skill: { select: { name: true } } },
+              select: { description: true, skill: { select: { name: true } } },
               take: tenantNames.length,
           })
         : [];
-    const approvedNames = new Set(approved.map((a) => a.skill.name));
+    const approvedByName = new Map(approved.map((a) => [a.skill.name, a.description]));
     const unknown = refs
-        .filter((r) => (r.origin === 'repository' ? !repository.has(r.name) : !approvedNames.has(r.name)))
+        .filter((r) => (r.origin === 'repository' ? !shipped.has(r.name) : !approvedByName.has(r.name)))
         .map((r) => `${r.origin}:${r.name}`);
     if (unknown.length > 0) {
+        // Checked FIRST: a wrong NAME is more useful to be told than a size,
+        // and pricing an unknown skill would price it at zero.
         throw refuse('SKILL_UNKNOWN', `No skill the agent may mount is called ${unknown.join(', ')}.`, { skills: unknown });
+    }
+
+    const lines = refs
+        .map((r) =>
+            r.origin === 'repository'
+                ? shipped.get(r.name)
+                : { name: r.name, description: approvedByName.get(r.name) ?? '' },
+        )
+        .filter((d): d is { name: string; description: string } => d !== undefined);
+    const bytes = catalogBytes(lines);
+    if (bytes > MAX_CATALOG_BYTES) {
+        throw refuse(
+            'SKILL_CATALOGUE_OVER_BUDGET',
+            `These ${refs.length} skills would cost ${bytes} bytes of catalogue on every turn, over the `
+                + `${MAX_CATALOG_BYTES} budget, so no run could mount them. Name fewer skills, or shorten a `
+                + 'description of one the workspace owns.',
+            { bytes, budget: MAX_CATALOG_BYTES, skills: refs.map((r) => `${r.origin}:${r.name}`) },
+        );
     }
 }
 
@@ -351,7 +408,7 @@ export async function createAgentProfile(
             });
             if (existing) throw refuse('PROFILE_EXISTS', 'This agent already has a profile; edit it to write a new version.');
             await assertToolsGranted(db, ctx, agentId, prepared.toolNames);
-            await assertSkillsKnown(db, ctx, prepared.skillRefs);
+            await assertSkillsKnownAndWithinBudget(db, ctx, prepared.skillRefs);
             const profile = await db.agentProfile.create({
                 data: { tenantId: ctx.tenantId, agentId, createdByUserId: ctx.userId },
                 select: { id: true },
@@ -424,7 +481,7 @@ export async function createAgentProfileVersion(
             assertAgentNotRetired(agent);
             const profile = await findProfile(db, ctx, agentId);
             await assertToolsGranted(db, ctx, agentId, prepared.toolNames);
-            await assertSkillsKnown(db, ctx, prepared.skillRefs);
+            await assertSkillsKnownAndWithinBudget(db, ctx, prepared.skillRefs);
             const latest = await db.agentProfileVersion.findFirst({
                 where: { tenantId: ctx.tenantId, profileId: profile.id },
                 orderBy: { version: 'desc' },
@@ -491,6 +548,8 @@ const VERSION_SELECT = {
     instructions: true,
     instructionsHash: true,
     toolNames: true,
+    // Read so approval can price the catalogue the version names (#4523).
+    skillRefs: true,
     authoredByUserId: true,
 } as const;
 
@@ -577,6 +636,11 @@ export async function approveAgentProfileVersion(
             );
         }
         await assertToolsGranted(db, ctx, agentId, v.toolNames);
+        // Re-priced at APPROVAL, not just at save (#4523): a deploy between the
+        // two can lengthen a shipped skill's description, and approving a tenant
+        // skill does not consider the profiles that name it. The reviewer is the
+        // last person who can act on it before a run is refused.
+        await assertSkillsKnownAndWithinBudget(db, ctx, viewSkillRefs(v.skillRefs));
 
         const now = new Date();
         const inForce = await db.agentProfileVersion.findFirst({
@@ -770,14 +834,20 @@ export interface AgentProfileView {
      * the skills it may mount. The pickers offer these and nothing else; the
      * save refuses anything outside them anyway.
      */
-    options: { tools: string[]; skills: ProfileSkillRef[] };
+    options: { tools: string[]; skills: ProfileSkillOption[] };
     /**
      * Whether a Test run can start for this agent, and why not (Step 2c). The
      * version's own `allowedTriggers` decide per version; this is everything
      * that does not depend on the version.
      */
     testRun: ProfileTestRunState;
-    limits: { instructionsMaxChars: number; maxTurns: number; rejectionReasonMaxChars: number };
+    limits: {
+        instructionsMaxChars: number;
+        maxTurns: number;
+        rejectionReasonMaxChars: number;
+        /** The per-run catalogue budget the save and the run apply (#4590). */
+        skillCatalogueBudgetBytes: number;
+    };
 }
 
 /**
@@ -824,16 +894,27 @@ async function memberLabels(db: PrismaTx, ctx: RequestContext, userIds: string[]
     return new Map(members.map((m) => [m.userId, m.user.name ?? m.user.email]));
 }
 
-/** The skills a profile may mount: the shipped corpus and the tenant's APPROVED skills. */
-async function mountableSkills(db: PrismaTx, ctx: RequestContext): Promise<ProfileSkillRef[]> {
+/**
+ * The skills a profile may mount, each with what its catalogue line costs: the
+ * MOUNTABLE shipped skills (a refused one is absent, #4590) and the tenant's
+ * APPROVED skills. Exactly the population `assertSkillsKnownAndWithinBudget`
+ * accepts, priced by the same `catalogBytes`, so the editor's running total is
+ * the figure the save checks.
+ */
+async function mountableSkills(db: PrismaTx, ctx: RequestContext): Promise<ProfileSkillOption[]> {
     const tenant = await db.tenantSkillVersion.findMany({
         where: { tenantId: ctx.tenantId, status: 'APPROVED' },
-        select: { skill: { select: { name: true } } },
+        select: { description: true, skill: { select: { name: true } } },
         take: 200,
     });
+    const byName = (a: { name: string }, b: { name: string }) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+    const shipped = [...repositorySkillCatalogue().values()].sort(byName);
+    const own = [...new Map(tenant.map((t) => [t.skill.name, t.description])).entries()]
+        .map(([name, description]) => ({ name, description }))
+        .sort(byName);
     return [
-        ...[...repositorySkillNames()].sort().map((name) => ({ origin: 'repository' as const, name })),
-        ...[...new Set(tenant.map((t) => t.skill.name))].sort().map((name) => ({ origin: 'tenant' as const, name })),
+        ...shipped.map((s) => ({ origin: 'repository' as const, name: s.name, catalogueBytes: catalogBytes([s]) })),
+        ...own.map((s) => ({ origin: 'tenant' as const, name: s.name, catalogueBytes: catalogBytes([s]) })),
     ];
 }
 
@@ -870,6 +951,7 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
             instructionsMaxChars: PROFILE_INSTRUCTIONS_MAX_CHARS,
             maxTurns: PROFILE_MAX_TURNS,
             rejectionReasonMaxChars: PROFILE_REJECTION_REASON_MAX_CHARS,
+            skillCatalogueBudgetBytes: MAX_CATALOG_BYTES,
         };
 
         const profile = await db.agentProfile.findFirst({

@@ -819,7 +819,8 @@ function readerPermissions(): PermissionSet {
  *                         the role can see (snapshot data for both;
  *                         drill-down content for ORG_ADMIN only).
  *   - canManageTenants  — create new tenants under the org, link
- *                         existing tenants. ORG_ADMIN only.
+ *                         existing tenants, delete them. ORG_OWNER only
+ *                         since #4576 deploy 2 (it was ORG_ADMIN).
  *   - canManageMembers  — add / remove / role-change org members.
  *                         ORG_ADMIN only.
  *   - canConfigureDashboard — add / update / delete the widgets that
@@ -857,6 +858,12 @@ export type OrgPermissionSet = {
      * Reading the switches takes only `canViewPortfolio`.
      */
     canManageAgentSwitches: boolean;
+    /**
+     * Promote a member to ORG_OWNER, and demote or remove an ORG_OWNER
+     * (#4576). ORG_OWNER only. The last owner is kept by the usecase and by
+     * the `org_membership_last_owner_guard` trigger.
+     */
+    canManageOwners: boolean;
 };
 
 /**
@@ -869,7 +876,12 @@ export type OrgPermissionSet = {
  */
 export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
     switch (role) {
-        case 'ORG_ADMIN':
+        // #4576 (owner decision, 2026-10-30): an owner holds everything an
+        // admin holds, plus the owner-only powers — managing owners and the
+        // tenants under the organization. Deleting or renaming the organization
+        // is owner-only too; no such feature exists yet, and when it is built
+        // it takes `canManageOwners`' tier.
+        case 'ORG_OWNER':
             return {
                 canViewPortfolio: true,
                 canDrillDown: true,
@@ -880,6 +892,21 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canSetThreatLevel: true,
                 canSetMaturity: true,
                 canManageAgentSwitches: true,
+                canManageOwners: true,
+            };
+        case 'ORG_ADMIN':
+            return {
+                canViewPortfolio: true,
+                canDrillDown: true,
+                canExportReports: true,
+                // Owner-only since #4576 deploy 2.
+                canManageTenants: false,
+                canManageMembers: true,
+                canConfigureDashboard: true,
+                canSetThreatLevel: true,
+                canSetMaturity: true,
+                canManageAgentSwitches: true,
+                canManageOwners: false,
             };
         case 'ORG_READER':
             return {
@@ -896,6 +923,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canSetThreatLevel: false,
                 canSetMaturity: false,
                 canManageAgentSwitches: false,
+                canManageOwners: false,
             };
         default: {
             // Defensive — Prisma's enum is closed, so the runtime
@@ -914,6 +942,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canSetThreatLevel: false,
                 canSetMaturity: false,
                 canManageAgentSwitches: false,
+                canManageOwners: false,
             };
         }
     }

@@ -82,7 +82,8 @@ describe('Epic O-2 — getOrgCtx', () => {
         expect(ctx.orgRole).toBe('ORG_ADMIN');
         // permissions field is pre-derived by the resolver
         expect(ctx.permissions.canViewPortfolio).toBe(true);
-        expect(ctx.permissions.canManageTenants).toBe(true);
+        // Tenant management is the owner's since #4576 deploy 2.
+        expect(ctx.permissions.canManageTenants).toBe(false);
         expect(ctx.permissions.canDrillDown).toBe(true);
         expect(typeof ctx.requestId).toBe('string');
         expect(ctx.requestId.length).toBeGreaterThan(0);

@@ -240,7 +240,15 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Derived with the guard's own `keyOrder`/`keyOrderSha` over the merged
         // file, then confirmed by running the guard. Unlike a counted baseline,
         // a digest cannot be composed by arithmetic.
-        keyOrderSha: 'bf7438e7307fe7ddc9ab20d02a1c82821ce03b6884c0222b9fcdcebc7cb84a20',
+        //
+        // Moved 2026-10-30 by two sorted ADDITIONS, the owner's two additions
+        // to the AI architecture roadmap: docs/ai-architecture/web-bot-auth.md,
+        // after `docs/ai-architecture/weaviate.md` ('wea' < 'web'), and
+        // docs/ai-architecture/mastercard-agent-pay.md, between `langfuse.md`
+        // and `modal-inference.md`. Two textual inserts, +6/-0 against main.
+        // The previous digest was first recomputed over main's file and
+        // matched, so the additions are the only change.
+        keyOrderSha: '34e5f437ef4664a904c4544381d38596eaeaf56ae05d9b595b1a60448977dff3',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
