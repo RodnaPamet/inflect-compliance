@@ -869,6 +869,10 @@ export type OrgPermissionSet = {
  */
 export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
     switch (role) {
+        // #4576, deploy 1: an owner holds exactly what an admin holds. Its own
+        // powers (owner management, org lifecycle, tenant management) move to
+        // it in deploy 2, together with the backfill that makes one exist.
+        case 'ORG_OWNER':
         case 'ORG_ADMIN':
             return {
                 canViewPortfolio: true,

@@ -62,6 +62,11 @@ enum Role {
 enum OrgRole {
   ORG_ADMIN
   ORG_READER
+  /// The organization's owner (#4576). Deploy 1 adds the value and teaches
+  /// every reader; nothing writes it until deploy 2. Declared LAST so a sort on
+  /// the column never moves the existing values. Compare roles through
+  /// `src/lib/org-roles.ts`, never with a literal 'ORG_ADMIN'.
+  ORG_OWNER
 }
 
 /// Epic B — actions tracked in the OrgAuditLog ledger.

@@ -12508,7 +12508,8 @@
   },
   "orgRoles": {
     "ORG_ADMIN": "Org admin",
-    "ORG_READER": "Org reader"
+    "ORG_READER": "Org reader",
+    "ORG_OWNER": "Org owner"
   },
   "errorPage": {
     "title": "Something went wrong",
@@ -12787,7 +12788,9 @@
       "revoking": "Revoking…",
       "revoke": "Revoke",
       "failedRevokeInvite": "Failed to revoke invite ({status}).",
-      "unexpectedRevokeInvite": "Unexpected error revoking invite."
+      "unexpectedRevokeInvite": "Unexpected error revoking invite.",
+      "roleOrgOwner": "Org owner",
+      "ownerNeedsOwner": "Only an organization owner can change an owner's membership"
     },
     "audit": {
       "title": "Audit Log",
