@@ -31,7 +31,6 @@ describe('console.* usage guard', () => {
             'app/t/[tenantSlug]/(app)/error.tsx',
             // Client-side components
             'app/t/[tenantSlug]/(app)/risks/new/page.tsx',
-            'components/PdfExportButton.tsx',
             // Edge logger (shim that intentionally wraps console.*)
             'lib/observability/edge-logger.ts',
             // Client-side API helper (dev-only zod validation warning)
