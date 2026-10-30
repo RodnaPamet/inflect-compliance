@@ -42,6 +42,8 @@ import {
     type StoredDriverMode,
 } from '@/lib/agentic/agent-driver';
 import { narrowToWhatAWorkflowAsksFor } from '@/lib/agentic/agent-driver-policy';
+import type { AgentSwitchBasis } from '@/lib/agentic/agent-switches';
+import { toolRunnerDecisionFor } from '@/lib/agentic/agent-switches-policy';
 import { runInTenantContext } from '@/lib/db-context';
 import { readStoredDriverMode } from '@/lib/agentic/agent-driver-stored-mode';
 import { env } from '@/env';
@@ -73,8 +75,13 @@ export interface AgentDriverSetting {
      * its own operator switch, `AGENT_DRIVER_TOOL_RUNNER`. Reported beside
      * Flue's rather than instead of them: the page offers both engines, and
      * which ones an owner may choose depends on each engine's own switch.
+     *
+     * Since #4557 that switch may be the tenant's ORGANIZATION's: with
+     * `AGENT_DRIVER_TOOL_RUNNER` unset, an org admin decides. `envEnabled` is
+     * therefore "available to this workspace", whoever decided, and `basis`
+     * says who did, so the page can name the person to ask.
      */
-    toolRunner: { envEnabled: boolean; implemented: boolean };
+    toolRunner: { envEnabled: boolean; implemented: boolean; basis: AgentSwitchBasis };
 }
 
 /** Read the stored mode and, more importantly, what it will actually do. */
@@ -94,14 +101,15 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
     // make this surface disagree with the run path about the same stored byte.
     const mode = coerceStoredDriverMode(stored);
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
-    const toolRunnerEnvEnabled = flueEnvEnabled(env.AGENT_DRIVER_TOOL_RUNNER);
+    const toolRunnerSwitch = await toolRunnerDecisionFor({ tenantId: ctx.tenantId });
+    const toolRunnerEnvEnabled = toolRunnerSwitch.on;
     // FOUR terms, not three. `resolveAgentDriver` ANDs env, tenant and the
     // build flag; `narrowToWhatAWorkflowAsksFor` applies the fourth — no
     // registered WorkflowDefinition asks for the engine, so `selectRunDriver`
     // cannot choose it however the other three are set. Without this the page
     // reported `flue` with `reason: null` on a deployment that runs every
     // workflow on the static engine.
-    const decision = narrowToWhatAWorkflowAsksFor(
+    const decision = await narrowToWhatAWorkflowAsksFor(
         resolveAgentDriver({ envEnabled, toolRunnerEnvEnabled, tenantSetting: mode }),
         ctx.tenantSlug,
     );
@@ -111,7 +119,11 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
         effective: { driver: decision.driver, reason: decision.reason ?? null },
         envEnabled,
         implemented: DRIVER_IMPLEMENTED.flue,
-        toolRunner: { envEnabled: toolRunnerEnvEnabled, implemented: DRIVER_IMPLEMENTED['tool-runner'] },
+        toolRunner: {
+            envEnabled: toolRunnerEnvEnabled,
+            implemented: DRIVER_IMPLEMENTED['tool-runner'],
+            basis: toolRunnerSwitch.basis,
+        },
     };
 }
 
@@ -181,6 +193,7 @@ export async function setAgentDriverSetting(
                 envEnabled: before.envEnabled,
                 implemented: before.implemented,
                 toolRunnerEnvEnabled: before.toolRunner.envEnabled,
+                toolRunnerBasis: before.toolRunner.basis,
                 toolRunnerImplemented: before.toolRunner.implemented,
             },
         }),

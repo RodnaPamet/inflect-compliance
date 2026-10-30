@@ -43,6 +43,15 @@
 --   - Inactive (soft-deleted) rows are judged the same way; deleting a role
 --     clears its carriers, so in practice none matches.
 --
+-- WITH #4595's MIGRATION (20261030150000_admin_base_only_keys_off_for_non_
+-- admin_custom_roles), which runs first: it switches `admin.manage`,
+-- `admin.members`, `admin.owner_management` and `admin.tenant_lifecycle` off on
+-- READER-, EDITOR- and AUDITOR-based roles, judging the BASE. Its keys and these
+-- ten are disjoint, so neither UPDATE reads or writes what the other decides
+-- and the order changes no result. They differ in what they judge: an
+-- ADMIN-based role carried only by READERs is left whole by #4595's (its base
+-- may hold the four) and has the ten switched off here (its carriers may not).
+--
 -- A pure data UPDATE: no DDL. Idempotent: a changed row states all ten as
 -- `false`, so it no longer matches. Safe against a rolling deploy: an old
 -- container reads the updated blob as a valid permission set with the ten keys

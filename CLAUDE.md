@@ -856,6 +856,19 @@ new tenant-membership creation path).
 - `src/lib/permissions.ts` — `PermissionSet` (granular UI flags) resolved from the user's role
 - Built-in roles: `OWNER`, `ADMIN`, `EDITOR`, `READER`, `AUDITOR` (Prisma enum `Role`)
 - Custom roles: `TenantCustomRole` model with `permissionsJson` overrides, referenced via `TenantMembership.customRoleId`
+- **Organization roles are `OrgRole`: `ORG_OWNER`, `ORG_ADMIN`, `ORG_READER`**
+  (`OrgPermissionSet` from `getOrgPermissions`). `ORG_OWNER` (#4576) lands in two
+  deploys, as `AI_ADMIN` did. Deploy 1 added the value and taught every reader:
+  an owner is at least an admin (`isOrgAdminTier` in `src/lib/org-roles.ts` —
+  never compare with a literal `'ORG_ADMIN'` to ask whether somebody
+  administers an organization), the last-administrator guard counts owners,
+  provisioning fans ADMIN rows to owners as to admins, and an owner's
+  membership is changed only by another owner (an audited `ORG_AUTHZ_DENIED`
+  otherwise), never leaving the org with no owner. No writer accepts the value:
+  the direct add, the role change and the invite refuse it in the usecase.
+  Deploy 2 backfills the oldest ORG_ADMIN of each organization, adds the
+  last-owner trigger, and moves the owner-only powers (owner management, org
+  lifecycle, tenant management).
 - `appPermissions` on `RequestContext` is already custom-role–aware
 - **An OWNER or AI_ADMIN membership never carries a custom role** (#3720, #3699).
   A custom role REPLACES the membership's permissions, so on an OWNER it was a
@@ -902,13 +915,16 @@ new tenant-membership creation path).
   the writers that cannot make the combination (a campaign MODIFY clears the
   custom role; a transfer writes OWNER and ADMIN). No DB CHECK: the rule reads
   `permissionsJson` over a base role's defaults. The stored roles were settled
-  once by migration `20261030150000_admin_membership_only_keys_off_for_non_admin_custom_roles`:
+  once by migration `20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles`:
   a role carried ONLY by non-ADMIN memberships (any status) has the ten stated
   `false`, base unchanged; a role with any ADMIN carrier, a role nobody carries
   and a legacy OWNER- or AI_ADMIN-based row (the NOT VALID #3734 CHECK refuses
-  its update) were left alone. When a writer refuses the save (#4536's
-  `PERSONNEL_MANAGE_NEEDS_ADMIN_BASE` 400 and this 409 can both apply), the
-  personnel refusal is asked first: it reads only the request.
+  its update) were left alone. It is orthogonal to the Admin-base rule (#4536,
+  #4595: `ADMIN_BASE_ONLY_PERMISSIONS` in `src/lib/custom-role-admin-base-rule.ts`),
+  which judges a role's BASE where this one judges its CARRIERS; their key sets
+  are disjoint, and so are the two migrations' (#4595's `20261030150000` runs
+  first). When one save breaks both, the Admin-base refusal (400,
+  `PERMISSION_NEEDS_ADMIN_BASE`) is asked first: it reads only the request.
   `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`
   fails when one of the six gains a consumer outside the admin API, and when
   one of the four stops having one.
@@ -3026,6 +3042,20 @@ is offered by adding its mode to `AGENT_DRIVER_MODES` and its name and
 description to `admin.agentEngines.engine`. A new `StaticDriverReason` must get
 a sentence in `REASON_MESSAGE`, which `satisfies` the union, so `tsc` fails
 until it does.
+
+**The two agent switches are an organization's to decide** (#4557, owner
+decision 2026-10-30). `AGENT_PROFILES` and `AGENT_DRIVER_TOOL_RUNNER` read as
+three states (`readDeploymentSwitch` in `src/lib/agentic/agent-switches.ts`):
+`1`/`true` on for every workspace, any other set value off for every workspace
+(a typo is a veto), and UNSET leaves each workspace's organization to decide
+(`Organization.agentProfilesEnabled` / `agentToolRunnerEnabled`, set by an org
+admin on `/org/:slug/settings`, audited `ORG_AGENT_SWITCHES_CHANGED`). A
+workspace with no organization stays off, and `AGENT_PROFILES_TENANTS` still
+opens the slugs it names. Every reader goes through `agentProfilesDecisionFor` /
+`toolRunnerDecisionFor` in `agent-switches-policy.ts`, which read the
+organization by the workspace's OWN id or slug. Never read either variable
+directly: that reports an organization's choice as off. The Tool Runner's
+"available" is still not "chosen": the workspace owner chooses the engine.
 
 **A new engine passes the driver conformance suite before it is switched on**
 (Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables

@@ -37,9 +37,14 @@ jest.setTimeout(30_000);
 
 const MIGRATION = path.resolve(
     __dirname,
-    '../../prisma/migrations/20261030150000_admin_membership_only_keys_off_for_non_admin_custom_roles/migration.sql',
+    '../../prisma/migrations/20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles/migration.sql',
 );
 const BASE_ROLE_CHECK = 'TenantCustomRole_base_role_not_built_in_scope';
+/** #4595's migration, which sorts before this one and so runs first on deploy. */
+const ADMIN_BASE_MIGRATION = path.resolve(
+    __dirname,
+    '../../prisma/migrations/20261030150000_admin_base_only_keys_off_for_non_admin_custom_roles/migration.sql',
+);
 
 /**
  * The migration's one statement, comments stripped. Asserted to BE one
@@ -47,13 +52,17 @@ const BASE_ROLE_CHECK = 'TenantCustomRole_base_role_not_built_in_scope';
  * first.
  */
 function migrationStatement(): string {
-    const statements = readFileSync(MIGRATION, 'utf8')
+    const statements = statementsOf(MIGRATION);
+    expect(statements).toHaveLength(1);
+    return statements[0];
+}
+
+function statementsOf(file: string): string[] {
+    return readFileSync(file, 'utf8')
         .replace(/--[^\n]*/g, '')
         .split(';')
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-    expect(statements).toHaveLength(1);
-    return statements[0];
 }
 
 type Blob = Record<string, unknown>;
@@ -376,5 +385,58 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
             BASE_ROLE_CHECK,
         );
         expect(constraint).toEqual([{ convalidated: true }]);
+    });
+    /**
+     * #4595's migration switches four other admin keys off on READER, EDITOR and
+     * AUDITOR bases, judging the BASE, and runs first on deploy. Its keys and
+     * these ten are disjoint, so the two compose in either order; this one
+     * judges the CARRIERS, so an ADMIN-based role carried only by Readers is
+     * left whole by #4595's and switched off here. Run in a transaction that
+     * rolls back, since #4595's statements are global too.
+     */
+    it("composes with #4595's migration in either order, each switching off only its own keys", async () => {
+        const ROLLBACK = new Error('rollback');
+        const theirs = statementsOf(ADMIN_BASE_MIGRATION);
+        expect(theirs.length).toBeGreaterThan(0);
+        const mine = migrationStatement();
+        const cases: Seed[] = [
+            // Both rules apply: #4595's takes admin.manage, this one takes sso.
+            { id: `${tag}-c-both`, tenantId: tenantA, baseRole: 'READER', isActive: true, blob: presetBlob('READER', { manage: true, sso: true }), carriers: [READER] },
+            // Only this one: an ADMIN base may hold manage and members; its carriers may not hold the ten.
+            { id: `${tag}-c-admin-base`, tenantId: tenantA, baseRole: 'ADMIN', isActive: true, blob: presetBlob('ADMIN'), carriers: [READER] },
+            // Only #4595's: an ADMIN carrier keeps the ten, a READER base still loses manage.
+            { id: `${tag}-c-admin-carrier`, tenantId: tenantA, baseRole: 'READER', isActive: true, blob: presetBlob('READER', { manage: true, sso: true }), carriers: [{ role: 'ADMIN' }] },
+        ];
+        const run = async (order: 'theirs-first' | 'mine-first') => {
+            const seen: Record<string, unknown> = {};
+            await prisma
+                .$transaction(
+                    async (tx) => {
+                        for (const c of cases) {
+                            await insertRole(tx, { ...c, id: `${c.id}-${order}` });
+                            await insertCarriers(tx, { ...c, id: `${c.id}-${order}` });
+                        }
+                        const sequence = order === 'theirs-first' ? [...theirs, mine] : [mine, ...theirs];
+                        for (const statement of sequence) await tx.$executeRawUnsafe(statement);
+                        for (const c of cases) seen[c.id] = (await readRole(tx, `${c.id}-${order}`)).blob;
+                        throw ROLLBACK;
+                    },
+                    { timeout: 30_000 },
+                )
+                .catch((e) => {
+                    if (e !== ROLLBACK) throw e;
+                });
+            return seen;
+        };
+
+        const theirsFirst = await run('theirs-first');
+        expect(await run('mine-first')).toEqual(theirsFirst);
+
+        const off = (blob: unknown, admin: Admin) => ({ ...(blob as Blob), admin: { ...((blob as Blob).admin as Admin), ...admin } });
+        expect(theirsFirst[`${tag}-c-both`]).toEqual(off(cases[0].blob, { ...TEN_OFF, manage: false }));
+        expect(theirsFirst[`${tag}-c-admin-base`]).toEqual(withTenOff(cases[1].blob as Blob));
+        expect(parsePermissionsJson(theirsFirst[`${tag}-c-admin-base`], 'ADMIN').admin).toMatchObject({ manage: true, members: true });
+        expect(theirsFirst[`${tag}-c-admin-carrier`]).toEqual(off(cases[2].blob, { manage: false }));
+        expect((theirsFirst[`${tag}-c-admin-carrier`] as { admin: Admin }).admin.sso).toBe(true);
     });
 });

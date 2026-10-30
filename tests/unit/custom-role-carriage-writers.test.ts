@@ -50,6 +50,7 @@ import { allCallExpressionsOf, codeOf, functionBodyOf } from '../helpers/source-
 import { makeRequestContext } from '../helpers/make-context';
 import { runInTenantContext } from '@/lib/db-context';
 import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
+import { ADMIN_BASE_ONLY_PERMISSIONS, PERMISSION_NEEDS_ADMIN_BASE } from '@/lib/custom-role-admin-base-rule';
 import {
     CUSTOM_ROLE_ADMIN_BASE_REFUSAL,
     CUSTOM_ROLE_ADMIN_KEYS_REFUSAL,
@@ -242,6 +243,16 @@ function blob(base: string, admin: Partial<PermissionSet['admin']> = {}) {
     return { ...d, admin: { ...d.admin, ...admin } };
 }
 
+/** `blob` with every Admin-base-only permission off (#4536, #4581 A), so its base can be lowered. */
+function withoutAdminBaseOnly(p: PermissionSet): PermissionSet {
+    const out = JSON.parse(JSON.stringify(p)) as Record<string, Record<string, boolean>>;
+    for (const key of ADMIN_BASE_ONLY_PERMISSIONS) {
+        const [domain, action] = key.split('.');
+        out[domain][action] = false;
+    }
+    return out as unknown as PermissionSet;
+}
+
 /** Custom roles by id: an ADMIN-built one, one granting a listed key, and a harmless one. */
 const ROLES: Record<string, { id: string; tenantId: string; baseRole: string; permissionsJson: unknown; isActive: boolean }> = {
     'cr-admin-built': { id: 'cr-admin-built', tenantId: 't-1', baseRole: 'ADMIN', permissionsJson: blob('ADMIN'), isActive: true },
@@ -408,22 +419,24 @@ describe('BEHAVIOUR — updateCustomRole, judged against every carrier', () => {
         expect(err.details).toMatchObject({ reason: CUSTOM_ROLE_ADMIN_BASE_REFUSAL, blockingMemberships: 1 });
     });
 
-    it('when a save breaks the personnel rule (#4536) too, the content refusal comes first and nothing is read', async () => {
-        // personnel.manage on a READER base AND a new admin-only key, with
-        // EDITOR carriers: both rules are broken. The personnel rule reads the
-        // role alone and runs first; the carriage rule reads the carriers.
-        const withManage = (admin: Partial<PermissionSet['admin']>) => ({
-            ...blob('READER', admin),
+    it('when a save breaks the Admin-base rule (#4536, #4581 A) too, the content refusal comes first and nothing is read', async () => {
+        // admin.manage and personnel.manage on a READER base AND a new
+        // admin-only key, with EDITOR carriers: both rules are broken. The
+        // Admin-base rule reads the role alone and runs first; the carriage
+        // rule reads the carriers.
+        const both = {
+            ...blob('READER', { manage: true, agent_policy_card: true }),
             personnel: { view: false, manage: true },
-        });
+        };
         const db = saveDb('cr-plain', [{ role: 'EDITOR', n: 2 }]);
-        const first = await updateCustomRole(owner(), 'cr-plain', {
-            permissionsJson: withManage({ agent_policy_card: true }),
-        }).catch((e) => e);
-        expect(first).toMatchObject({ status: 400, details: { reason: 'PERSONNEL_MANAGE_NEEDS_ADMIN_BASE' } });
+        const first = await updateCustomRole(owner(), 'cr-plain', { permissionsJson: both }).catch((e) => e);
+        expect(first).toMatchObject({
+            status: 400,
+            details: { reason: PERMISSION_NEEDS_ADMIN_BASE, permissions: ['admin.manage', 'personnel.manage'] },
+        });
         expect(db.tenantMembership.groupBy).not.toHaveBeenCalled();
 
-        // With personnel.manage switched off, the carriage refusal is next.
+        // With those switched off, the carriage refusal is next.
         saveDb('cr-plain', [{ role: 'EDITOR', n: 2 }]);
         const second = await refusalOf(
             updateCustomRole(owner(), 'cr-plain', { permissionsJson: blob('READER', { agent_policy_card: true }) }),
@@ -441,9 +454,9 @@ describe('BEHAVIOUR — updateCustomRole, judged against every carrier', () => {
     it('a legacy role is not trapped: removing keys, lowering the base and renaming all pass', async () => {
         for (const input of [
             { permissionsJson: blob('ADMIN', { agent_policy_card: false }) },
-            // Lowered with personnel.manage switched off in the same save, as
-            // the roles page does: #4536 keeps it to an ADMIN base.
-            { baseRole: 'EDITOR' as const, permissionsJson: { ...blob('ADMIN'), personnel: { view: true, manage: false } } },
+            // Lowered with the Admin-base-only permissions switched off in the
+            // same save, as the roles page does (#4536, #4581 A).
+            { baseRole: 'EDITOR' as const, permissionsJson: withoutAdminBaseOnly(blob('ADMIN')) },
             { name: 'Renamed' },
         ]) {
             const db = saveDb('cr-admin-built', [{ role: 'EDITOR', n: 5 }]);

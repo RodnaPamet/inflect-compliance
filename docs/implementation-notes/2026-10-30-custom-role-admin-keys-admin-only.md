@@ -55,7 +55,7 @@ or blob, asks it with what it read and what it is about to write.
 | `src/app-layer/usecases/tenant-invites.ts` | Invite creation, the token redemption's backstop, the sign-in redemption's pre-claim skip |
 | `src/lib/auth/entra-group-sync.ts` | A mapping that would move such an ADMIN off ADMIN is held (`custom_role_held`) |
 | `tests/helpers/route-authorization-graph.ts` | `reachedBodies`: the analyser's call graph, without stopping at a decision |
-| `prisma/migrations/20261030150000_admin_membership_only_keys_off_for_non_admin_custom_roles/` | The ten stated `false` in roles only non-ADMIN memberships carry |
+| `prisma/migrations/20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles/` | The ten stated `false` in roles only non-ADMIN memberships carry |
 | `tests/integration/admin-membership-only-keys-migration.test.ts` | Runs that migration's SQL against a real database |
 | `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts` | Fails when one of the six gains a consumer outside the admin API, or one of the four loses its last |
 | `tests/unit/custom-role-carriage-writers.test.ts` | The census of writers, and each writer's refusal |
@@ -103,13 +103,28 @@ or blob, asks it with what it read and what it is about to write.
   keeps its keys for its other carriers too; that is the owner's scope.
 - **The base refusal comes first.** An ADMIN base grants nine of the ten keys by
   default, so the base is the change that decides what the keys are.
-- **#4536's refusal is asked before this one on a save.** Both can refuse one
-  custom role update: Personnel / manage on a base other than ADMIN (400,
-  `PERSONNEL_MANAGE_NEEDS_ADMIN_BASE`) and a base or key the carriers may not
-  take (409). The personnel check reads only the request, the carriage check
-  reads every carrier, so the cheap one runs first and wins. They never ask for
-  contradictory fixes: with non-ADMIN carriers the base cannot become ADMIN,
-  and the only change that satisfies both is to switch Personnel / manage off.
+- **The Admin-base rule's refusal is asked before this one on a save.** #4536
+  made Personnel / manage need an Admin base, and #4595 generalised it to
+  `ADMIN_BASE_ONLY_PERMISSIONS` (`src/lib/custom-role-admin-base-rule.ts`: that
+  key plus `admin.manage`, `admin.members`, `admin.owner_management` and
+  `admin.tenant_lifecycle`). Both rules can refuse one custom role update: a
+  permission on a base that may not hold it (400, `PERMISSION_NEEDS_ADMIN_BASE`)
+  and a base or key the carriers may not take (409). The Admin-base check reads
+  only the request, the carriage check reads every carrier, so the cheap one
+  runs first and wins. They never ask for contradictory fixes: with non-ADMIN
+  carriers the base cannot become ADMIN, so a save satisfies both by switching
+  those permissions off, or by making every carrier an Admin first.
+- **The two rules, and their migrations, are orthogonal.** The Admin-base rule
+  judges a role's base, this one its carriers, and the key sets are disjoint
+  (#4595's `ADMIN_KEYS_ON_ANY_BASE` lists all ten of these as allowed on any
+  base, which is true: this rule restricts who carries them, not the base).
+  #4595's migration (`20261030150000`) runs first and switches its four admin
+  keys off on READER, EDITOR and AUDITOR bases; this one (`20261030170000`,
+  renamed from a `150000` prefix that collided with it) switches the ten off by
+  carrier. A real-DB test runs both in each order and gets the same rows: an
+  ADMIN-based role carried only by Readers keeps `admin.manage` and loses the
+  ten; a READER-based role carried by an Admin loses `admin.manage` and keeps
+  the ten.
 - **A legacy OWNER base is judged as admin-tier.** No writer makes one
   (`VALID_BASE_ROLES`, a NOT VALID CHECK); the rule reads the tier, not the
   name, so one left over is not mistaken for harmless.

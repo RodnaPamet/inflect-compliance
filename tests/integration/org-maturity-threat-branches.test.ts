@@ -34,7 +34,7 @@ let userId: string;
 const FULL: OrgPermissionSet = {
     canViewPortfolio: true, canDrillDown: true, canExportReports: true,
     canManageTenants: true, canManageMembers: true, canConfigureDashboard: true,
-    canSetThreatLevel: true, canSetMaturity: true,
+    canSetThreatLevel: true, canSetMaturity: true, canManageAgentSwitches: true,
 };
 function orgCtx(perms: Partial<OrgPermissionSet> = {}): OrgContext {
     return {
