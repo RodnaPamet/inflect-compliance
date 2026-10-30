@@ -106,7 +106,9 @@ afterAll(async () => {
     await prisma.tenantOnboarding.deleteMany({ where: { tenantId: { in: tenantIds } } });
     await deleteAuditRowsForTenants(prisma, tenantIds);
     await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } });
-    await prisma.orgMembership.deleteMany({ where: { organizationId: orgId } });
+    // The organization, not its memberships: deploy 2's last-owner trigger
+    // refuses deleting an org's last owner and lets the organization's own
+    // cascade through.
     await deleteOrgAuditRowsForOrganizations(prisma, [orgId]);
     await prisma.organization.deleteMany({ where: { id: orgId } });
     const users = Object.values(ids).filter(Boolean);
