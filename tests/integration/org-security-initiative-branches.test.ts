@@ -38,7 +38,7 @@ let controlId: string;
 const FULL_PERMS: OrgPermissionSet = {
     canViewPortfolio: true, canDrillDown: true, canExportReports: true,
     canManageTenants: true, canManageMembers: true, canConfigureDashboard: true,
-    canSetThreatLevel: true, canSetMaturity: true, canManageAgentSwitches: true,
+    canSetThreatLevel: true, canSetMaturity: true, canManageAgentSwitches: true, canManageOwners: false,
 };
 function orgCtx(perms: Partial<OrgPermissionSet> = {}): OrgContext {
     return {
