@@ -21,9 +21,9 @@ Older links to a separate new-vendor page still work: they open this page with t
 | Set status or assign an owner in bulk | Owner, Admin, Editor |
 | Delete in bulk | Owner, Admin |
 
-Every role can tick rows, and the selection bar offers all three bulk actions to everyone. When your role cannot apply the action you chose, the message **{{ui:vendors.bulk.failed}}** appears. That happens to an Editor's bulk delete, and to every bulk action a Reader, Auditor or AI admin applies.
+The selection bar offers only the bulk actions your role can apply: Editors see no {{ui:vendors.bulk.delete}}. Readers, Auditors and AI admins cannot tick rows at all; clicking a row opens the vendor.
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given. Creating a vendor needs permission both to create and to edit vendors. A role that can create but not edit sees **{{ui:vendors.createButton}}**, and saving the dialog fails.
+If your workspace uses custom roles, what you can do depends on the permissions your role was given. Creating a vendor needs permission both to create and to edit vendors, and a role without both sees no **{{ui:vendors.createButton}}**. Setting status and assigning an owner need permission to edit vendors. Deleting needs permission to manage the workspace and a custom role built on Owner or Admin.
 
 ## What it is for
 
@@ -42,7 +42,7 @@ Use the register to keep track of who the business depends on and what they can 
 | {{ui:vendors.kpi.critical}} | Vendors of {{ui:vendors.criticalityLabel.CRITICAL}} criticality that match your other filters and search | Filters to that criticality |
 | {{ui:vendors.kpi.reviewOverdue}} | Vendors whose next review date has passed, among those that match your filters and search | Filters to {{ui:vendors.filterEnums.reviewDue.overdue}} |
 
-Click a highlighted card again to drop its filter.
+Click a highlighted card again to drop its filter. When the list cannot be loaded, the cards show a dash.
 
 **The toolbar.** From left to right:
 
@@ -54,7 +54,7 @@ Click a highlighted card again to drop its filter.
 
 Filters and the search are kept in the page address, so a filtered view can be bookmarked or shared with a colleague who has access to the workspace.
 
-**The table.** The most critical vendors come first, then A to Z by name. Click a column header to sort by it. {{ui:vendors.columns.criticality}} and {{ui:vendors.columns.risk}} then sort by the name of each level, alphabetically, rather than from low to high.
+**The table.** The most critical vendors come first, then A to Z by name. Click a column header to sort by it. {{ui:vendors.columns.criticality}} and {{ui:vendors.columns.risk}} sort by level, from low to high or high to low; a vendor with no risk rating sorts with the empty values.
 
 | Column | What it shows |
 | --- | --- |
@@ -65,8 +65,7 @@ Filters and the search are kept in the page address, so a filtered view can be b
 | {{ui:vendors.columns.nextReview}} | When the next review is due, as a relative time such as "in 3 days". Hover it for the exact date. **{{ui:vendors.badge.overdue}}** appears once the date has passed |
 | {{ui:vendors.columns.contractRenewal}} | When the contract renews, with **{{ui:vendors.badge.due}}** once that date has passed. Hidden until you turn it on |
 | {{ui:vendors.columns.owner}} | The member accountable for the vendor, or a dash |
-
-The table does not show whether a vendor is a sub-processor. Open the vendor to see it.
+| {{ui:vendors.columns.subprocessor}} | A **{{ui:vendors.detail.subprocessor}}** badge for a vendor marked as one. Hidden until you turn it on |
 
 Click a row or a vendor's name to open the vendor's own page. Its tabs are {{ui:vendors.detail.tabs.overview}}, {{ui:vendors.detail.tabs.documents}}, {{ui:vendors.detail.tabs.assessments}}, {{ui:vendors.detail.tabs.monitoring}}, {{ui:vendors.detail.tabs.links}}, {{ui:vendors.detail.tabs.bundles}}, {{ui:vendors.detail.tabs.subprocessors}} and {{ui:vendors.detail.tabs.tasks}}. Editing a vendor, sending it an assessment and adding its documents all happen there.
 
@@ -76,36 +75,37 @@ Click a row or a vendor's name to open the vendor's own page. Its tabs are {{ui:
 
 Click **{{ui:vendors.createButton}}**. The **{{ui:vendors.modal.title}}** dialog has these fields:
 
-- **{{ui:vendors.form.name}}**, the only required field.
+- **{{ui:vendors.form.name}}**, the only required field, up to 200 characters. No other vendor in the workspace may have the same name; a deleted vendor's name is free to use.
 - **{{ui:vendors.form.legalName}}**, **{{ui:vendors.form.domain}}**, **{{ui:vendors.form.websiteUrl}}** and **{{ui:vendors.form.country}}**. The website must be a full address, such as https://example.com.
 - **{{ui:vendors.form.description}}**.
-- **{{ui:vendors.form.status}}**: {{ui:vendors.form.statusOnboarding}}, which is selected to start with, or {{ui:vendors.form.statusActive}}.
+- **{{ui:vendors.form.status}}**, shown as {{ui:vendors.form.statusOnboarding}} and not chosen here. The hint reads: {{ui:vendors.form.statusOnCreateHint}}
 - **{{ui:vendors.form.criticality}}**, starting on {{ui:vendors.form.critMedium}}.
 - **{{ui:vendors.form.dataAccess}}**: how much of your data the vendor can reach, from {{ui:vendors.form.dataNone}} to {{ui:vendors.form.dataHigh}}. You can leave it unset.
 - **{{ui:vendors.form.nextReviewDate}}** and **{{ui:vendors.form.contractRenewalDate}}**, each today or later.
 - **{{ui:vendors.form.isSubprocessor}}**, a tick box.
 
-Click **{{ui:vendors.modal.create}}**. It stays greyed out until the name is filled in and the website, if you typed one, is a full address. The dialog does not say which of the two is missing. When the vendor is created, the dialog closes and the vendor's page opens. If you close the dialog after typing, it asks **{{ui:vendors.modal.discardConfirm}}**
+Click **{{ui:vendors.modal.create}}**. It stays greyed out until the name is filled in and the website, if you typed one, is a full address. A website that is not a full address is marked under the field: {{ui:vendors.form.websiteUrlInvalid}} Each field stops at the length the server accepts. When the vendor is created, the dialog closes and the vendor's page opens. If you close the dialog after typing, it asks **{{ui:vendors.modal.discardConfirm}}**
 
 The dialog has no owner field. Assign one on the vendor's page, or in bulk from the table.
 
-A vendor created as {{ui:vendors.form.statusActive}} is accepted without a completed assessment review, although moving an existing vendor to {{ui:vendors.statusOption.ACTIVE}} later requires one.
+A vendor can be made {{ui:vendors.statusOption.ACTIVE}} only once an assessment of it has completed review with a risk rating, on its page or in bulk.
 
 ### Change many vendors at once
 
-Tick the rows you want, up to 100 at a time. In the selection bar, choose an action from **{{ui:common.table.chooseAction}}**, fill in its value if it asks for one, and click **{{ui:common.table.apply}}**:
+Tick the rows you want, up to 100 at a time; with more ticked, the bar says **Select at most 100 vendors at a time.** In the selection bar, choose an action from **{{ui:common.table.chooseAction}}**, fill in its value if it asks for one, and click **{{ui:common.table.apply}}**:
 
 - **{{ui:vendors.bulk.setStatus}}** moves every selected vendor to the status you choose. A vendor can move to {{ui:vendors.statusOption.ACTIVE}} only when its latest assessment has completed review with a risk rating. The others are skipped, and the message names up to three of them.
 - **{{ui:vendors.bulk.assignOwner}}** gives them all one owner, who must be an active member of the workspace. Leave the owner empty to unassign them.
 - **{{ui:vendors.bulk.delete}}** asks you to confirm, then removes the selected vendors from the register at once. There is no undo. Owners and Admins only.
 
-The message that follows says how many vendors the change applied to. If a colleague deleted some of them in the meantime, it says how many were already gone. A failed action leaves the rows ticked, so you can try again without picking them again.
+The message that follows says how many vendors the change applied to. If a colleague deleted some of them in the meantime, it says how many were already gone. A refused action says why and leaves the rows ticked, so you can try again without picking them again.
 
 ## What happens next
 
 - Every creation, and every status change, owner change and deletion made in bulk, writes one entry per vendor to the workspace's audit log, naming who made it.
-- A deleted vendor leaves the register at once. The product has no way to restore it, and it is removed for good after 90 days. Until then its name stays taken, so a new vendor cannot use it.
-- Each night, unless your deployment has switched the vendor checks off, every vendor whose next review date has passed and that is not {{ui:vendors.statusOption.OFFBOARDED}} has that date moved to a year from that night, and its owner gets a notification that the review is due. A vendor with no owner has its date moved and nobody is notified. So **{{ui:vendors.badge.overdue}}** and the {{ui:vendors.kpi.reviewOverdue}} card show a vendor for a day at most.
+- A deleted vendor leaves the register at once, and its name is free for a new vendor straight away. The product has no way to restore it, and it is removed for good after 90 days.
+- A vendor whose next review date has passed stays **{{ui:vendors.badge.overdue}}**, and counts on the {{ui:vendors.kpi.reviewOverdue}} card, until a review is done. When an assessment of it completes review, with or without a risk rating, the next review date moves to a year later, unless a later date is already set. You can also change the date on the vendor's page.
+- Each night, unless your installation has switched the vendor checks off, the owner of every overdue vendor that is not {{ui:vendors.statusOption.OFFBOARDED}} gets a notification that the review is due, once for each due date. A vendor with no owner notifies nobody in the app; its overdue review is included in the daily renewal email to Owners and Admins.
 - Assigning an owner from this page sends them no notification.
 - A vendor's next review and contract renewal dates appear on the {{ui:calendar.title}}.
 - The {{ui:vendors.dashboard.title}} catches up with changes made here within a minute.
@@ -116,13 +116,11 @@ The message that follows says how many vendors the change applied to. If a colle
 | --- | --- | --- |
 | **{{ui:vendors.empty.noRecordsTitle}}** | The workspace has no vendors | Click **{{ui:vendors.createButton}}**. Roles that cannot create vendors see no button |
 | **{{ui:vendors.empty.noResultsTitle}}** | Vendors exist, but none match the search and filters | Click **{{ui:vendors.empty.clearFilters}}** |
-| **{{ui:vendors.bulk.failed}}** | A bulk action did not go through. Your role may not allow it, more than 100 rows may be selected, or the owner you chose may no longer be an active member. The message does not say which | Check the roles above, select fewer rows or choose another owner, then try again |
+| The server's reason, or **{{ui:vendors.bulk.failed}}**, after a bulk action | A bulk action did not go through, for example because the owner you chose is no longer an active member | Act on the reason, then try again |
 | A message that some vendors were skipped, after **{{ui:vendors.bulk.setStatus}}** | Those vendors have no completed assessment review, so they cannot become {{ui:vendors.statusOption.ACTIVE}} | Complete an assessment review for each, then try again |
-| **A resource with that unique constraint already exists** in the new-vendor dialog | Another vendor has that name, including one deleted in the last 90 days | Choose a different name |
-| **Invalid request payload** in the new-vendor dialog | The name is longer than 200 characters, or the website address longer than 500 | Shorten it |
-| **Only ADMIN or EDITOR can manage vendors** in the new-vendor dialog | Your custom role can create vendors but not edit them | Ask an Owner or Admin |
+| **{{ui:vendors.form.nameTaken}}** in the new-vendor dialog | Another vendor in the workspace has that name | Choose a different name |
 | **{{ui:vendors.createFailed}}** | The vendor was not created | Try again |
-| The summary cards read 0, or the table does not change after you change a filter | The list did not load. The page shows no error message for this | Reload the page |
+| **{{ui:vendors.loadError}}** | The list did not load. The summary cards show a dash | Reload the page |
 | A banner saying only the first 5,000 results are shown | More than 5,000 vendors match the search and filters | Narrow the list with a filter or the search |
 
 ## Related
