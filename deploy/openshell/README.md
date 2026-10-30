@@ -132,9 +132,37 @@ https://events.telemetry.data.nvidia.com/v1.1/events/jsonstruct
 
 That denial is a **precondition below**, not something this directory
 configures — there is no egress policy here to point at, and claiming otherwise
-would be the same mistake as trusting the setting. A setting whose effect cannot
-be observed is a request; the network rule is the enforcement, and it is the
-thing to check on the host.
+would be the same mistake as trusting the setting.
+
+**And what is deployed is a NAME-RESOLUTION control, not a network one — #4566.**
+An earlier version of this paragraph ended "the network rule is the enforcement",
+which was written to say *do not trust the env var, trust the network*. The
+network half was never built, so the sentence provided exactly the false
+reassurance it was written to prevent. What the host actually carries is a
+sinkhole in `/etc/hosts`:
+
+```
+0.0.0.0 events.telemetry.data.nvidia.com
+```
+
+Verified working — `curl` to the endpoint returns HTTP 000 — and there is **no
+GCP egress firewall rule**, confirmed against the live project. So the honest
+statement of coverage is:
+
+| | |
+|---|---|
+| a process using the system resolver | **denied** |
+| a process with its own resolver | not denied |
+| a connection to a literal address | not denied |
+| an image rebuild that drops the hosts entry | not denied, and silent |
+
+The env var and the sinkhole are two independent controls and both are weak in
+different ways, which is better than one. Neither is a network rule. A
+deny-by-default egress policy is the strong shape and is real work: the endpoint
+is CDN-hosted, so an IP rule would rot, and an allowlist has to admit ghcr.io
+and three clouds' APIs, all CDN-hosted too. Tracked on #4566 alongside the
+collector allowlist, because both need the same answer about egress to hosts
+whose addresses move.
 
 ## Inbound authentication
 
