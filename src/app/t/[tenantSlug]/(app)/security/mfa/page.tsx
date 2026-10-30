@@ -68,7 +68,7 @@ export default function UserMfaPage() {
     }, [apiUrl, t]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchStatus(); }, [fetchStatus]);
+    useEffect(() => { void fetchStatus(); }, [fetchStatus]);
 
     const startEnroll = async () => {
         setSubmitting(true);

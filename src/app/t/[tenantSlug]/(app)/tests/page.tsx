@@ -330,7 +330,7 @@ function TestsRollupContent() {
         if (action === 'delete') {
             const idSet = new Set(ids);
             setSelected(new Set());
-            mutate(
+            void mutate(
                 (cur) =>
                     // guardrail-ignore: optimistic-delete cache update (drop the just-deleted rows during the Epic 67 undo window) — NOT display refiltering; mutate() restores on Undo/failure.
                     cur ? cur.filter((p) => !idSet.has(p.id)) : cur,
@@ -348,10 +348,10 @@ function TestsRollupContent() {
                     if (!res.ok) throw new Error(await refusalMessage(res, t('list.bulkFailed')));
                     await mutate();
                 },
-                undoAction: () => { mutate(); },
+                undoAction: () => { void mutate(); },
                 onError: (err) => {
                     toast.error(err instanceof Error && err.message ? err.message : t('list.bulkFailed'));
-                    mutate();
+                    void mutate();
                 },
             });
             return;
@@ -997,7 +997,7 @@ function TestsRollupContent() {
                     <ErrorState
                         title={t('list.loadErrorTitle')}
                         description={t('list.loadErrorBody')}
-                        onRetry={() => { if (view === 'checks') { mutateChecks(); } else { mutate(); } }}
+                        onRetry={() => { if (view === 'checks') { void mutateChecks(); } else { void mutate(); } }}
                         retryLabel={t('list.retry')}
                         data-testid="tests-load-error"
                     />

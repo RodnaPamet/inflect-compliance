@@ -97,13 +97,20 @@ export default function VendorDashboardPage() {
     const [loading, setLoading] = useState(true);
 
     const fetchMetrics = useCallback(async () => {
-        const res = await fetch(apiUrl('/vendors/metrics'));
-        if (res.ok) setMetrics(await res.json());
-        setLoading(false);
+        try {
+            const res = await fetch(apiUrl('/vendors/metrics'));
+            if (res.ok) setMetrics(await res.json());
+        } catch {
+            // A network failure shows what a non-ok response does. Before
+            // this, a rejection skipped setLoading(false) and the page stayed
+            // loading for ever.
+        } finally {
+            setLoading(false);
+        }
     }, [apiUrl]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
+    useEffect(() => { void fetchMetrics(); }, [fetchMetrics]);
 
     if (loading) return <SkeletonDashboard />;
     if (!metrics) return <div className="text-content-error py-8 text-center">{tx('dashboard.loadFailed')}</div>;

@@ -182,7 +182,7 @@ function MaturityTrend({ orgSlug }: { orgSlug: string }) {
     }, [orgSlug]);
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        load();
+        void load();
     }, [load]);
 
     if (!points || points.length < 2) {

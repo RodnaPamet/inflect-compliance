@@ -85,7 +85,7 @@ export default function AdminSecurityPage() {
     }, [apiUrl, t]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchSettings(); }, [fetchSettings]);
+    useEffect(() => { void fetchSettings(); }, [fetchSettings]);
 
     const handleSave = async () => {
         if (!settings) return;

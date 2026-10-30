@@ -361,7 +361,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             const idSet = new Set(ids);
             setSelected(new Set());
             // guardrail-ignore: optimistic-delete cache update (drop the just-deleted rows during the Epic 67 undo window), NOT display refiltering — server owns the list filter; mutate() restores on Undo/failure.
-            assetsQuery.mutate((cur) => ({
+            void assetsQuery.mutate((cur) => ({
                 // guardrail-ignore: optimistic-delete cache update (drop the just-deleted rows during the Epic 67 undo window), NOT display refiltering — server owns the list filter; mutate() restores on Undo/failure.
                 rows: (cur?.rows ?? []).filter((a) => !idSet.has(a.id)),
                 // A local removal doesn't change whether the SERVER's page
@@ -382,10 +382,10 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                     if (!res.ok) throw new Error('Bulk delete failed');
                     await assetsQuery.mutate();
                 },
-                undoAction: () => { assetsQuery.mutate(); },
+                undoAction: () => { void assetsQuery.mutate(); },
                 onError: () => {
                     toast.error(tx('bulk.actionFailed'));
-                    assetsQuery.mutate();
+                    void assetsQuery.mutate();
                 },
             });
             return;

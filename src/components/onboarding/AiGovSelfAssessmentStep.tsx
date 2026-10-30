@@ -152,7 +152,7 @@ export function AiGovSelfAssessmentStep({
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        load(architecture);
+        void load(architecture);
     }, [load, architecture]);
 
     const saveAnswer = useCallback(
@@ -168,7 +168,7 @@ export function AiGovSelfAssessmentStep({
                 if (!res.ok) throw new Error(t('aiGov.saveError'));
                 // Refresh the coverage readout after a save (cheap, keeps the
                 // three cards live) without blocking the UI.
-                load(architecture);
+                void load(architecture);
             } catch (e) {
                 setError(e instanceof Error ? e.message : t('aiGov.saveError'));
             } finally {

@@ -68,7 +68,7 @@ export function LinkedVendorsPanel({
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
         setFailed(false);
-        (async () => {
+        void (async () => {
             try {
                 const res = await fetch(
                     apiUrl(

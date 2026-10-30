@@ -43,7 +43,12 @@ export function ClausesBrowser({ clauses: initialClauses, tenantSlug }: ClausesB
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
 
     const updateStatus = async (clauseId: string, status: string) => {
-        await fetch(apiUrl(`/clauses/${clauseId}`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+        try {
+            await fetch(apiUrl(`/clauses/${clauseId}`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+        } catch {
+            // Nothing reached the server, so the status shown stays as it was.
+            return;
+        }
         setClauses(prev => prev.map(c => c.id === clauseId ? { ...c, status: status as ClauseRow['status'] } : c));
         if (selected?.id === clauseId) setSelected((s) => (s ? { ...s, status: status as ClauseRow['status'] } : s));
     };
@@ -92,7 +97,7 @@ export function ClausesBrowser({ clauses: initialClauses, tenantSlug }: ClausesB
                                     options={statusOptions}
                                     selected={statusOptions.find(o => o.value === selected.status) ?? null}
                                     setSelected={(o) => {
-                                        if (o) updateStatus(selected.id, o.value);
+                                        if (o) void updateStatus(selected.id, o.value);
                                     }}
                                     placeholder={t('notStarted')}
                                     hideSearch
