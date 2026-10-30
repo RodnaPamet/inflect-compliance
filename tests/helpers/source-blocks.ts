@@ -856,7 +856,96 @@ export function functionBodyOf(src: string, name: string): string {
         new RegExp(`\\b(?:export\\s+)?(?:async\\s+)?function\\s+${name}\\b`),
     );
     if (start < 0) throw new Error(`function not found: ${name}`);
-    return braceBoundedFrom(src, code, start, `function body: ${name}`);
+    return functionBodyFrom(src, code, start, name);
+}
+
+/**
+ * The body of the function declared at `start`, stepping over a brace that
+ * belongs to the RETURN TYPE (#4515).
+ *
+ * `braceBoundedFrom` tracks parens and braces and not angle brackets, so for
+ *
+ *     function f(a: string): Promise<{ x: number }> {
+ *
+ * the first brace at paren-depth zero is the one inside `Promise<…>`, and it
+ * returned the slice ending at that type's closing brace — the return type,
+ * silently. A `.not.toMatch` against that passes vacuously.
+ *
+ * ── WHY THIS PARSES RATHER THAN REFUSING ────────────────────────────────────
+ *
+ * The first attempt THREW, reasoning that an extractor wrong in a new way is
+ * worse than a loud refusal. That rested on a false premise — that every caller
+ * names a function deliberately and can fix its source. It does not:
+ * `tests/unit/agent-registry-view-key.test.ts` enumerates EVERY exported
+ * function in `src/app-layer/usecases` and `src/lib/agentic` that mentions a
+ * permission key and calls this on each, so it passes over functions it does not
+ * control. A refusal makes that caller carry an exclusion list for a shape with
+ * nothing to do with what it checks. Returning the right body serves it.
+ *
+ * ── WHY THE ANGLE COUNT IS SOUND *HERE* ─────────────────────────────────────
+ *
+ * It runs only between the closing `)` and the body `{`, which is definitionally
+ * a type annotation: a bare `<` there is a generic, never a comparison. `=>` is
+ * the one trap — its `>` would decrement — so a `>` preceded by `=` is skipped.
+ *
+ * Deliberately NOT inside `braceBoundedFrom`, which is shared with extractors
+ * that run over `.tsx`, where a JSX tag at brace depth zero would make an angle
+ * count meaningless. The narrow window is what makes this safe.
+ */
+function functionBodyFrom(src: string, code: string, start: number, name: string): string {
+    // 1 — close the parameter list first: a parameter's own inline type may hold
+    // braces and angles of its own.
+    let i = code.indexOf('(', start);
+    if (i < 0) return braceBoundedFrom(src, code, start, `function body: ${name}`);
+    let parens = 0;
+    for (; i < code.length; i++) {
+        if (code[i] === '(') parens += 1;
+        else if (code[i] === ')') {
+            parens -= 1;
+            if (parens === 0) break;
+        }
+    }
+
+    // 2 — walk the return-type annotation to the body brace, stepping over any
+    // brace that sits inside an unclosed angle bracket.
+    let angles = 0;
+    let body = -1;
+    for (let j = i + 1; j < code.length; j += 1) {
+        const ch = code[j];
+        if (ch === '>' && code[j - 1] === '=') continue;
+        if (ch === '<') angles += 1;
+        else if (ch === '>') angles -= 1;
+        else if (ch === '{') {
+            if (angles <= 0) {
+                body = j;
+                break;
+            }
+            // Inside the type: skip to this brace's match, so a nested object
+            // type cannot be mistaken for the body either.
+            let depth = 0;
+            for (; j < code.length; j += 1) {
+                if (code[j] === '{') depth += 1;
+                else if (code[j] === '}') {
+                    depth -= 1;
+                    if (depth === 0) break;
+                }
+            }
+        }
+    }
+    if (body < 0) throw new Error(`unterminated function body: ${name}`);
+
+    // 3 — bound the body from its own brace, and return from the DECLARATION so
+    // the signature stays included, as every existing caller expects.
+    const text = maskComments(src);
+    let braces = 0;
+    for (let j = body; j < code.length; j += 1) {
+        if (code[j] === '{') braces += 1;
+        else if (code[j] === '}') {
+            braces -= 1;
+            if (braces === 0) return text.slice(start, j + 1);
+        }
+    }
+    throw new Error(`unterminated function body: ${name}`);
 }
 
 /**

@@ -712,3 +712,85 @@ describe('source-blocks — commentsOf', () => {
         expect(commentsOf(inCode)).not.toMatch(/CC BY 4\.0/);
     });
 });
+
+describe('functionBodyOf reads past a return type it used to misread (#4515)', () => {
+    it('returns the BODY when the return type holds an object literal', () => {
+        const src = [
+            'function withInline(a: string): Promise<{ x: number; y: string }> {',
+            '    return bodyMarker();',
+            '}',
+        ].join('\n');
+
+        // The old behaviour returned the slice ending at the TYPE's closing
+        // brace, so a `.not.toMatch` against it passed vacuously. Both halves
+        // are asserted: the body is reached, and the type is not mistaken for
+        // it — the second is what actually went wrong.
+        const body = functionBodyOf(src, 'withInline');
+        expect(body).toContain('bodyMarker()');
+        expect(body).toContain('x: number');
+    });
+
+    it('reads past a NESTED object type, not just a flat one', () => {
+        const src = [
+            'function nested(): Promise<{ a: { b: string }; c: number }> {',
+            '    return bodyMarker();',
+            '}',
+        ].join('\n');
+
+        expect(functionBodyOf(src, 'nested')).toContain('bodyMarker()');
+    });
+
+    it('the real shape that broke CI: a usecase returning Promise<{ id: string }>', () => {
+        // `recordA2aMessage` in `usecases/a2a-messages.ts`. A test that
+        // enumerates every exported function in that directory calls this on
+        // each, which is why a refusal was the wrong fix and why the measured
+        // "zero live instances" was wrong — the detector only counted calls
+        // naming a function with a quoted literal.
+        const src = [
+            'export async function recordA2aMessage(ctx: RequestContext, rec: Rec): Promise<{ id: string }> {',
+            '    return bodyMarker(ctx);',
+            '}',
+        ].join('\n');
+
+        expect(functionBodyOf(src, 'recordA2aMessage')).toContain('bodyMarker(ctx)');
+    });
+
+    it('still extracts an ordinary body, including one whose return type is generic', () => {
+        // The control. A generic return type with no object literal is fine, and
+        // refusing it would break the 64 functions tests extract this way.
+        const src = [
+            'async function plain(a: string): Promise<Record<string, number>> {',
+            '    return bodyMarker(a);',
+            '}',
+        ].join('\n');
+
+        const body = functionBodyOf(src, 'plain');
+        expect(body).toContain('bodyMarker(a)');
+    });
+
+    it('is not confused by `=>` in a return type', () => {
+        // `=>` contains `>`, which a naive angle-bracket count decrements — the
+        // reason this refuses rather than trying to locate the real body.
+        const src = [
+            'function handlers(): Record<string, () => void> {',
+            '    return bodyMarker();',
+            '}',
+        ].join('\n');
+
+        const body = functionBodyOf(src, 'handlers');
+        expect(body).toContain('bodyMarker()');
+    });
+
+    it('is not confused by an object literal in a PARAMETER`s type', () => {
+        // Only the return position is ambiguous. A parameter's own inline type
+        // sits inside the parens, which the parameter-list scan closes first.
+        const src = [
+            'function paramShape(input: { a: string; b: number }): string {',
+            '    return bodyMarker(input.a);',
+            '}',
+        ].join('\n');
+
+        const body = functionBodyOf(src, 'paramShape');
+        expect(body).toContain('bodyMarker(input.a)');
+    });
+});
