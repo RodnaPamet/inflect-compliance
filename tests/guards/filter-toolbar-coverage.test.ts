@@ -167,8 +167,8 @@ const EXEMPTIONS: Record<string, string> = {
         "Multi-section dashboard — review cycle list lives inside a tabbed dashboard composition with per-tab filtering.",
     "src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx":
         "Multi-section coverage dashboard — already in the Epic 52 EXEMPTIONS list for ListPageShell; same shape applies here.",
-    "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx":
-        "Findings list — currently uses inline filter controls; planned for FilterToolbar migration in a follow-up.",
+    // FindingsClient left this list in #4461: it mounts a FilterToolbar with a
+    // server-side status facet.
     "src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx":
         "Framework picker — small fixed catalogue of installable frameworks; tile + status surface, not a filter-driven list.",
     // ── Wizards / multi-step flows ──

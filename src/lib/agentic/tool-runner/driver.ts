@@ -33,9 +33,7 @@ export type ToolRunnerStartRefusal =
     /** The definition asked for another engine. */
     | 'DEFINITION_ASKED_FOR_ANOTHER_DRIVER'
     /** The run resumed with its whole step budget already spent. */
-    | 'NO_STEPS_REMAIN'
-    /** The definition mounts skills, which this engine serves from Step 2d. */
-    | 'SKILLS_NOT_SERVED';
+    | 'NO_STEPS_REMAIN';
 
 export type ToolRunnerRunPlan =
     | { ok: true; client: Anthropic }
@@ -46,15 +44,11 @@ export function planToolRunnerRun(
     def: WorkflowDefinition,
     fromSeq: number,
     selection: ToolRunnerResidencyTerms,
+    runId?: string,
 ): ToolRunnerRunPlan {
     if (def.driver !== 'tool-runner') return { ok: false, reason: 'DEFINITION_ASKED_FOR_ANOTHER_DRIVER' };
     if (fromSeq >= ENGINE_CAPS.MAX_STEPS) return { ok: false, reason: 'NO_STEPS_REMAIN' };
-    // A run that would lose its skills is refused rather than run without them:
-    // the skills are part of what the author approved.
-    if ((def.skills?.length ?? 0) > 0 || (def.profile?.skillRefs.length ?? 0) > 0) {
-        return { ok: false, reason: 'SKILLS_NOT_SERVED' };
-    }
-    const choice = clientForRun(selection);
+    const choice = clientForRun(selection, { runId });
     if (!choice.ok) return { ok: false, reason: choice.reason };
     return { ok: true, client: choice.client };
 }
@@ -66,11 +60,6 @@ export function refusalMessage(reason: ToolRunnerStartRefusal): string {
             return 'tool_runner_not_requested: this workflow does not ask for the Tool Runner engine.';
         case 'NO_STEPS_REMAIN':
             return `tool_runner_no_steps_remain: the run resumed with its entire step budget already spent (${ENGINE_CAPS.MAX_STEPS}).`;
-        case 'SKILLS_NOT_SERVED':
-            return (
-                'tool_runner_skills_not_served: this run mounts skills, and the Tool Runner engine does not serve ' +
-                'skills yet. It was not run without them.'
-            );
         case 'TOOL_RUNNER_LOCAL_ONLY_UNSERVED':
             return (
                 'tool_runner_local_only_unserved: this workspace is LOCAL_ONLY, and the Tool Runner engine speaks only ' +
@@ -101,7 +90,7 @@ export async function runToolRunnerDriver(
     fromSeq: number,
     runStartMs: number,
 ): Promise<RunDriverOutcome> {
-    const plan = planToolRunnerRun(def, fromSeq, await residencyTermsFor(ctx));
+    const plan = planToolRunnerRun(def, fromSeq, await residencyTermsFor(ctx), runId);
     if (!plan.ok) {
         // Settled, not thrown: the run row already exists.
         const status = await failRun(ctx, runId, refusalMessage(plan.reason));

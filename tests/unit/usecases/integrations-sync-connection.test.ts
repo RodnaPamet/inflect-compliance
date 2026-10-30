@@ -134,6 +134,20 @@ describe('syncConnection — the identity seam', () => {
         },
     );
 
+    // #4466 — an ERROR or PARTIAL directory sync RETURNS rather than throws, so
+    // the reason it recorded on the execution row has to be carried here or the
+    // page that pressed "Sync now" can say it failed but never why.
+    it('carries the sync\'s own errorMessage when it recorded one', async () => {
+        seed({ connection: { id: 'c1', provider: 'okta', name: 'Corp' } });
+        mockRunIdentitySync.mockResolvedValue({
+            status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: 'Okta API returned 401',
+        });
+        const out = await syncConnection(makeRequestContext('ADMIN'), 'c1');
+        expect(out.identity).toEqual({
+            status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: 'Okta API returned 401',
+        });
+    });
+
     it('reports identity as null for a non-identity provider', async () => {
         seed({ connection: { id: 'c1', provider: 'datadog', name: 'prod' } });
         const out = await syncConnection(makeRequestContext('ADMIN'), 'c1');

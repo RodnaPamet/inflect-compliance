@@ -3,8 +3,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { getTenantCtx } from '@/app-layer/context';
-import { runInTenantContext } from '@/lib/db-context';
-import { DashboardRepository } from '@/app-layer/repositories/DashboardRepository';
+import { getDashboardRecentActivity } from '@/app-layer/usecases/dashboard';
 import {
     activityEntityMeta,
     activityVerbToken,
@@ -28,6 +27,13 @@ interface RecentActivityCardProps {
  * Each row is humanised (localized verb + entity noun instead of raw
  * lowercased enums), identified (the changed entity's resolved title),
  * and linked to the changed item when it has a navigable surface.
+ *
+ * The rows are the audit log's head, so they are read through
+ * `getDashboardRecentActivity`, which asserts the audit log's own gate. The
+ * page renders this card only for a viewer that gate admits.
+ *
+ * So the card also links to the full log. An Auditor has no other way in:
+ * the sidebar gear and the Admin landing page both need `admin.view`.
  */
 export default async function RecentActivityCard({
     tenantSlug,
@@ -37,9 +43,7 @@ export default async function RecentActivityCard({
     const ctx = await getTenantCtx({ tenantSlug });
     const t = await getTranslations('dashboard.activity');
 
-    const recentActivity = await runInTenantContext(ctx, async (db) => {
-        return DashboardRepository.getRecentActivityDetailed(db, ctx);
-    });
+    const recentActivity = await getDashboardRecentActivity(ctx);
 
     return (
         <Card>
@@ -120,6 +124,13 @@ export default async function RecentActivityCard({
                     <p className="text-content-subtle text-xs">{noActivityLabel}</p>
                 )}
             </div>
+            <Link
+                href={`/t/${tenantSlug}/admin/audit-log`}
+                id="recent-activity-audit-log-link"
+                className="mt-3 inline-block text-xs text-content-link hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            >
+                {t('viewAuditLog')}
+            </Link>
         </Card>
     );
 }

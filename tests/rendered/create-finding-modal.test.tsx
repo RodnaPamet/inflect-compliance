@@ -108,6 +108,58 @@ describe('CreateFindingModal', () => {
         await waitFor(() => expect(submit).not.toBeDisabled());
     });
 
+    // #4461 — the API's error envelope is `{ error: { code, message } }`. The
+    // dialog read `data.message || data.error`, handed the OBJECT to
+    // `new Error()`, and showed every refusal as "[object Object]".
+    it("shows the server's refusal, not [object Object]", async () => {
+        const REFUSAL = 'You do not have permission to modify records in this context.';
+        global.fetch = jest.fn((_url: string, init?: RequestInit) =>
+            Promise.resolve(
+                init?.method === 'POST'
+                    ? {
+                          ok: false,
+                          status: 403,
+                          json: () => Promise.resolve({ error: { code: 'FORBIDDEN', message: REFUSAL } }),
+                      }
+                    : { ok: true, json: () => Promise.resolve([]) },
+            ),
+        ) as unknown as typeof fetch;
+        renderModal();
+        await waitFor(() => expect(document.getElementById('finding-title')).not.toBeNull());
+        fireEvent.change(document.getElementById('finding-title')!, { target: { value: 'A finding' } });
+        fireEvent.change(document.getElementById('finding-description')!, {
+            target: { value: 'What was observed' },
+        });
+        const submit = document.getElementById('submit-finding') as HTMLButtonElement;
+        await waitFor(() => expect(submit).not.toBeDisabled());
+        fireEvent.click(submit);
+        const alert = await screen.findByTestId('create-finding-error');
+        expect(alert).toHaveTextContent(REFUSAL);
+        expect(alert).not.toHaveTextContent('[object Object]');
+    });
+
+    it('falls back to the status line when the server gives no reason', async () => {
+        global.fetch = jest.fn((_url: string, init?: RequestInit) =>
+            Promise.resolve(
+                init?.method === 'POST'
+                    ? { ok: false, status: 500, json: () => Promise.reject(new Error('no body')) }
+                    : { ok: true, json: () => Promise.resolve([]) },
+            ),
+        ) as unknown as typeof fetch;
+        renderModal();
+        await waitFor(() => expect(document.getElementById('finding-title')).not.toBeNull());
+        fireEvent.change(document.getElementById('finding-title')!, { target: { value: 'A finding' } });
+        fireEvent.change(document.getElementById('finding-description')!, {
+            target: { value: 'What was observed' },
+        });
+        const submit = document.getElementById('submit-finding') as HTMLButtonElement;
+        await waitFor(() => expect(submit).not.toBeDisabled());
+        fireEvent.click(submit);
+        expect(await screen.findByTestId('create-finding-error')).toHaveTextContent(
+            'Failed to create finding (500)',
+        );
+    });
+
     // Regression lock — the controls lookup must unwrap the backfill-capped
     // `{ rows, truncated }` response shape that GET /controls returns. The
     // pre-fix bare-`Array.isArray` guard fell through to `[]`, so the control

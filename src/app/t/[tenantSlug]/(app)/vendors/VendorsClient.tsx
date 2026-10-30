@@ -4,7 +4,8 @@ import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { Tooltip } from '@/components/ui/tooltip';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useSWRConfig } from 'swr';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
@@ -47,6 +48,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useTranslations } from 'next-intl';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'neutral'> = {
@@ -56,6 +58,22 @@ const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'neutral'>
 const CRIT_VARIANT: Record<string, 'neutral' | 'warning' | 'error'> = {
     LOW: 'neutral', MEDIUM: 'warning', HIGH: 'error', CRITICAL: 'error',
 };
+/**
+ * Criticality and risk sort by LEVEL, not by name. The accessors returned the
+ * enum string, which `sortRowsByDisplay` compares alphabetically: Critical,
+ * High, Low, Medium (#4462). An unknown value sorts with the empties.
+ */
+const LEVEL_RANK: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+const levelRank = (level: string | null | undefined): number | null =>
+    (level && LEVEL_RANK[level]) || null;
+
+/**
+ * The batch cap every vendor bulk route's schema enforces
+ * (`BulkVendor{Status,Assign,Delete}Schema`: `.max(100)`). Checked before the
+ * request, so the refusal names the limit rather than "Invalid request
+ * payload".
+ */
+const VENDOR_BULK_MAX = 100;
 
 function isOverdue(d: string | null, now: Date | null) {
     if (!d || !now) return false;
@@ -79,10 +97,18 @@ interface VendorRow {
 
 interface VendorsClientProps {
     initialVendors: VendorRow[];
+    /** The KPI card counts for the SSR filters, so the first paint is right. */
+    initialKpiCounts: VendorKpiCounts;
     initialFilters: Record<string, string>;
     tenantSlug: string;
+    /**
+     * One flag per write affordance, each the server's own rule for it (see
+     * the page). A control the role cannot use is hidden, not greyed.
+     */
     permissions: {
         canCreate: boolean;
+        canEdit: boolean;
+        canDelete: boolean;
     };
 }
 
@@ -122,7 +148,7 @@ export function VendorsClient(props: VendorsClientProps) {
     );
 }
 
-function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissions }: VendorsClientProps) {
+function VendorsPageInner({ initialVendors, initialKpiCounts, initialFilters, tenantSlug, permissions }: VendorsClientProps) {
     const t = useTranslations('vendors');
     // Bulk-action status options (canonical BulkActionBar), localized.
     const vendorStatusOptions = [
@@ -160,7 +186,12 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     // reopen the modal unexpectedly.
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const searchParams = useSearchParams();
-    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/vendors`);
+    // `/vendors/new` redirects here with `?create=1`. Open only for a role
+    // that may create — the dialog is not mounted otherwise. The param is
+    // stripped either way.
+    useCreateQueryParam(() => {
+        if (permissions.canCreate) setIsCreateOpen(true);
+    }, `/t/${tenantSlug}/vendors`);
 
     const filterCtx = useFilters();
     const { state, search, hasActive } = filterCtx;
@@ -194,16 +225,30 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
             : CACHE_KEYS.vendors.list();
     }, [fetchParams]);
 
-    // PR-5 — API returns `{ rows, truncated }`. SSR initial wraps
+    // PR-5 — API returns `{ rows, truncated, kpiCounts }`. SSR initial wraps
     // with `truncated: false` (the SSR cap is below the backfill cap).
     const vendorsQuery = useTenantSWR<VendorListResponse>(vendorsKey, {
         fallbackData: filtersMatchInitial
-            ? { rows: initialVendors, truncated: false }
+            ? { rows: initialVendors, truncated: false, kpiCounts: initialKpiCounts }
             : undefined,
     });
 
     const vendors = vendorsQuery.data?.rows ?? [];
     const truncated = vendorsQuery.data?.truncated ?? false;
+    // A failed load reads as a failure (#4462) — not as "No vendors match
+    // your filters", and not as the previous query's rows under the new
+    // filter's pills. `useTenantSWR` keeps the PREVIOUS key's data on screen
+    // (`keepPreviousData`), so after a failed filter change `data` is another
+    // query's answer and `!data` alone never fires. The list is unreachable
+    // when the CURRENT key has no rows of its own: nothing cached for it and
+    // no SSR fallback. A failed background refresh of a key that did load
+    // keeps its readable table. Same rule as the Assets list.
+    const { cache: swrCache } = useSWRConfig();
+    const buildApiUrl = useTenantApiUrl();
+    const currentKeyHasRows =
+        filtersMatchInitial || swrCache.get(buildApiUrl(vendorsKey))?.data !== undefined;
+    const listError =
+        vendorsQuery.error && !currentKeyHasRows ? t('loadError') : undefined;
 
     // ─── Sortable headers (per-column asc/desc, parity with Controls) ───
     const [sortBy, setSortBy] = useState<string | undefined>(undefined);
@@ -221,13 +266,15 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     // same-displayed-value rows contiguously and can never drift from the
     // rendered cell. `risk` + `owner` point their column `accessorFn` at the
     // SAME function below (see the column defs) to keep the key and the
-    // rendered value in lockstep.
+    // rendered value in lockstep. Criticality and risk display a LEVEL, so
+    // they sort on its rank (`levelRank`); a vendor with no risk stays at
+    // one end, with the empties (`sortRowsByDisplay`'s nullish rule).
     const sortAccessors = useMemo<SortAccessors<VendorRow>>(
         () => ({
             name: (v) => v.name || '',
             status: (v) => v.status || '',
-            criticality: (v) => v.criticality || '',
-            risk: (v) => v.inherentRisk || '',
+            criticality: (v) => levelRank(v.criticality),
+            risk: (v) => levelRank(v.inherentRisk),
             // Cells render the relative form of these timestamps, which is a
             // monotonic transform of the ISO value — sorting on the raw ISO
             // preserves the displayed order and grouping.
@@ -262,6 +309,10 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     const handleBulkApply = async (action: string, value: string) => {
         const ids = Array.from(selected);
         if (!action || ids.length === 0) return;
+        if (ids.length > VENDOR_BULK_MAX) {
+            toast.error(t('bulk.tooMany', { max: VENDOR_BULK_MAX }));
+            return;
+        }
         setBulkApplying(true);
         try {
             const url = action === 'status'
@@ -286,7 +337,12 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                 // 403 on a 40-vendor bulk delete produced an unhandled
                 // rejection and nothing but a stopped spinner. Also a
                 // hardcoded English string in an otherwise localised surface.
-                toast.error(t('bulk.failed'));
+                //
+                // The server's reason is shown when it sends one ("Owner must
+                // be an active member of this tenant", a refused permission);
+                // every refusal used to read the same (#4462).
+                const errBody = await res.json().catch(() => null);
+                toast.error(apiErrorMessage(errBody, t('bulk.failed')));
                 return;
             }
             // Report what the SERVER did, not what the user selected.
@@ -342,48 +398,62 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
             setBulkApplying(false);
         }
     };
+    // Each verb is offered only to a role its route admits: status + assign
+    // are `vendors.edit`, delete is `admin.manage` + the admin tier. All three
+    // used to be offered to every role, so a Reader saw three actions that
+    // all failed and an Editor saw a Delete that failed (#4462).
     const vendorBulkActions: BulkActionDef[] = useMemo(
         () => [
-            {
-                value: 'status',
-                label: t('bulk.setStatus'),
-                canApply: (v) => v !== '',
-                renderInput: ({ value, setValue }) => (
-                    <Combobox
-                        hideSearch
-                        id="bulk-value-input"
-                        selected={vendorStatusOptions.find((o) => o.value === value) ?? null}
-                        setSelected={(opt) => setValue(opt?.value ?? '')}
-                        options={vendorStatusOptions}
-                        placeholder={t('bulk.selectStatus')}
-                        matchTriggerWidth
-                        buttonProps={{ className: 'text-sm' }}
-                    />
-                ),
-            },
-            {
-                value: 'assign',
-                label: t('bulk.assignOwner'),
-                renderInput: ({ value, setValue, setLabel }) => (
-                    <UserCombobox
-                        tenantSlug={tenantSlug}
-                        selectedId={value || null}
-                        onChange={(id, m) => {
-                            setValue(id ?? '');
-                            setLabel(ownerDisplayName(m?.name, m?.email) ?? '');
-                        }}
-                        forceDropdown
-                        matchTriggerWidth
-                        placeholder={t('bulk.ownerPlaceholder')}
-                        className="w-full sm:w-44"
-                        id="bulk-value-input"
-                    />
-                ),
-            },
-            { value: 'delete', label: t('bulk.delete'), confirm: true },
+            ...(permissions.canEdit
+                ? ([
+                    {
+                        value: 'status',
+                        label: t('bulk.setStatus'),
+                        canApply: (v) => v !== '',
+                        renderInput: ({ value, setValue }) => (
+                            <Combobox
+                                hideSearch
+                                id="bulk-value-input"
+                                selected={vendorStatusOptions.find((o) => o.value === value) ?? null}
+                                setSelected={(opt) => setValue(opt?.value ?? '')}
+                                options={vendorStatusOptions}
+                                placeholder={t('bulk.selectStatus')}
+                                matchTriggerWidth
+                                buttonProps={{ className: 'text-sm' }}
+                            />
+                        ),
+                    },
+                    {
+                        value: 'assign',
+                        label: t('bulk.assignOwner'),
+                        renderInput: ({ value, setValue, setLabel }) => (
+                            <UserCombobox
+                                tenantSlug={tenantSlug}
+                                selectedId={value || null}
+                                onChange={(id, m) => {
+                                    setValue(id ?? '');
+                                    setLabel(ownerDisplayName(m?.name, m?.email) ?? '');
+                                }}
+                                forceDropdown
+                                matchTriggerWidth
+                                placeholder={t('bulk.ownerPlaceholder')}
+                                className="w-full sm:w-44"
+                                id="bulk-value-input"
+                            />
+                        ),
+                    },
+                  ] satisfies BulkActionDef[])
+                : []),
+            ...(permissions.canDelete
+                ? [{ value: 'delete', label: t('bulk.delete'), confirm: true }]
+                : []),
         ],
-        [tenantSlug, t, vendorStatusOptions],
+        [tenantSlug, t, vendorStatusOptions, permissions.canEdit, permissions.canDelete],
     );
+    // No verb, no selection: the checkboxes are on by default, so withholding
+    // the bar alone left a read-only role ticking rows into an empty bar, and
+    // a single click ticked a row instead of opening it (#4275 on Controls).
+    const canBulk = vendorBulkActions.length > 0;
     const tGroup = useTranslations('common.filterGroups');
     const liveFilters = useMemo(
         () =>
@@ -462,11 +532,14 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     //
     // metrics is still read for the dashboard tiles below, which genuinely
     // need the latest assessment per vendor.
-    const kpi = vendorsQuery.data?.kpiCounts;
-    const totalVendors = kpi?.total ?? 0;
-    const activeVendors = kpi?.active ?? 0;
-    const criticalVendors = kpi?.critical ?? 0;
-    const reviewOverdueVendors = kpi?.reviewOverdue ?? 0;
+    //
+    // With the list unreachable the cards show "—", not the previous filter's
+    // numbers or a 0 nobody counted.
+    const kpi = listError ? undefined : vendorsQuery.data?.kpiCounts;
+    const totalVendors = kpi?.total ?? null;
+    const activeVendors = kpi?.active ?? null;
+    const criticalVendors = kpi?.critical ?? null;
+    const reviewOverdueVendors = kpi?.reviewOverdue ?? null;
 
     // Canonical KPI-card sparklines (shared hook). total + reviewOverdue are
     // always-present series; active + critical are forward-only nullable
@@ -530,6 +603,10 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
             { id: 'nextReviewAt', label: t('columns.nextReview') },
             { id: 'contractRenewalAt', label: t('columns.contractRenewal'), defaultVisible: false },
             { id: 'owner', label: t('columns.owner') },
+            // The badge R13-PR1 moved out of the title cell. The comment on
+            // the name column said it had its own column here; it had none,
+            // so the flag was fetched and shown nowhere (#4462).
+            { id: 'subprocessor', label: t('columns.subprocessor'), defaultVisible: false },
         ],
         [t],
     );
@@ -611,6 +688,16 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
             accessorFn: (v) => v.owner?.name || '—',
             cell: ({ getValue }) => <span className="text-content-muted">{getValue()}</span>,
         },
+        {
+            id: 'subprocessor',
+            header: t('columns.subprocessor'),
+            cell: ({ row }) =>
+                row.original.isSubprocessor ? (
+                    <StatusBadge variant="info" icon={null}>{t('detail.subprocessor')}</StatusBadge>
+                ) : (
+                    <span className="text-content-muted">—</span>
+                ),
+        },
     ])), [tenantHref, hydratedNow, orderColumns, sortAccessors, t]);
 
     return (
@@ -643,7 +730,7 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                         const cfg: Record<
                             string,
                             {
-                                value: number;
+                                value: number | null;
                                 tone?: 'success' | 'critical' | 'default';
                                 sparkline: typeof vendorTrends.total;
                                 sparklineVariant: typeof sparkColors.total;
@@ -662,13 +749,13 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                             },
                             critical: {
                                 value: criticalVendors,
-                                tone: criticalVendors > 0 ? 'critical' : 'default',
+                                tone: (criticalVendors ?? 0) > 0 ? 'critical' : 'default',
                                 sparkline: vendorTrends.critical,
                                 sparklineVariant: sparkColors.critical,
                             },
                             reviewOverdue: {
                                 value: reviewOverdueVendors,
-                                tone: reviewOverdueVendors > 0 ? 'critical' : 'default',
+                                tone: (reviewOverdueVendors ?? 0) > 0 ? 'critical' : 'default',
                                 sparkline: vendorTrends.reviewOverdue,
                                 sparklineVariant: sparkColors.reviewOverdue,
                             },
@@ -679,7 +766,7 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                             <KpiFilterCard
                                 key={card.id}
                                 label={card.label}
-                                value={c.value}
+                                value={c.value ?? '—'}
                                 tone={c.tone}
                                 sparkline={c.sparkline}
                                 sparklineVariant={c.sparklineVariant}
@@ -744,22 +831,27 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                         onColumnVisibilityChange={setColumnVisibility}
                         onRowClick={handleVendorRowClick}
                         onRowPrefetch={handleVendorRowPrefetch}
-                        selectionEnabled
+                        error={listError}
+                        selectionEnabled={canBulk}
                         selectedRows={Object.fromEntries(
                             Array.from(selected).map((id) => [id, true]),
                         )}
                         onRowSelectionChange={(rows) =>
                             setSelected(new Set(rows.map((r) => r.original.id)))
                         }
-                        selectionControls={() => (
-                            <BulkActionBar
-                                actions={vendorBulkActions}
-                                onApply={handleBulkApply}
-                                applying={bulkApplying}
-                                selectedCount={selected.size}
-                                entityLabel={t('entityLabelPlural')}
-                            />
-                        )}
+                        selectionControls={
+                            canBulk
+                                ? () => (
+                                      <BulkActionBar
+                                          actions={vendorBulkActions}
+                                          onApply={handleBulkApply}
+                                          applying={bulkApplying}
+                                          selectedCount={selected.size}
+                                          entityLabel={t('entityLabelPlural')}
+                                      />
+                                  )
+                                : undefined
+                        }
                         emptyState={
                             hasActive ? (
                                 <EmptyState

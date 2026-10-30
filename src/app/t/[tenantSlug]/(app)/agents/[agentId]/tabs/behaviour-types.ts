@@ -47,7 +47,12 @@ export interface ProfileView {
     profile: { profileId: string; currentApprovedVersion: number | null; runKey: string | null } | null;
     versions: ProfileVersionView[];
     options: { tools: string[]; skills: ProfileSkillRef[] };
-    testRun: { available: false; reason: 'NO_ENGINE_RUNS_PROFILES' };
+    /** The server's `ProfileTestRunState` (Step 2c): available, or why not. */
+    testRun:
+        | { available: true }
+        | { available: false; reason: 'ENGINE_DOES_NOT_RUN_PROFILES'; engine: 'STATIC' | 'FLUE' }
+        | { available: false; reason: 'ENGINE_NOT_IN_FORCE' }
+        | { available: false; reason: 'AGENT_NOT_READY' };
     limits: { instructionsMaxChars: number; maxTurns: number; rejectionReasonMaxChars: number };
 }
 

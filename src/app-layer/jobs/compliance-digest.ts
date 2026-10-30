@@ -30,6 +30,7 @@ import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/mailer';
+import { resolveTenantEmailEnvelope } from '@/app-layer/notifications/settings';
 import type { JobRunResult } from './types';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -150,6 +151,24 @@ async function generateAndSendDigest(
     recipientOverrides?: string[],
     trendDays: number = 7,
 ): Promise<boolean> {
+    // 0. The workspace's email switch, sender and compliance BCC (#4469).
+    //
+    // This job calls `sendEmail` directly rather than through the outbox, so
+    // nothing upstream of it reads the switch: it mailed a workspace that had
+    // switched email notifications off, from the deployment sender, with no
+    // copy to the compliance mailbox the settings page says receives "all"
+    // email. Read FIRST, before any snapshot query, so a switched-off
+    // workspace costs nothing. A manual re-run with `recipientOverrides` is
+    // governed by the same switch — it is the workspace's, not the caller's.
+    const envelope = await resolveTenantEmailEnvelope(prisma, tenant.id);
+    if (!envelope) {
+        logger.info('Skipping digest — email notifications are switched off', {
+            component: 'compliance-digest',
+            tenantId: tenant.id,
+        });
+        return false;
+    }
+
     // 1. Get latest snapshot
     const latestSnapshot = await prisma.complianceSnapshot.findFirst({
         where: { tenantId: tenant.id },
@@ -224,6 +243,7 @@ async function generateAndSendDigest(
             subject,
             text,
             html,
+            ...envelope,
         });
     }
 

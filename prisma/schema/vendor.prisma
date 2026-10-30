@@ -75,7 +75,20 @@ model Vendor {
   /// (id, tenantId) so that becomes unrepresentable rather than merely
   /// forbidden by application code. Same reason `AiSystem` carries one.
   @@unique([id, tenantId])
-  @@unique([tenantId, name])
+  /// CONSTRAINT NOT VISIBLE HERE: the database carries
+  /// `Vendor_tenantId_name_live_key`, a PARTIAL unique index on
+  /// (tenantId, name) WHERE "deletedAt" IS NULL — migration
+  /// 20261029190000_vendor_name_unique_among_live (#4462), which replaced the
+  /// full unique this model declared, so a deleted vendor frees its name.
+  /// Prisma has no syntax for a filtered index, so it CANNOT be declared:
+  /// writing `@@unique([tenantId, name])` back would make the next
+  /// `migrate dev` add an unconditional index and break name reuse after a
+  /// delete. Asset's name index has the same shape (see assets.prisma).
+  ///
+  /// Consequences for callers: the constraint is CASE-SENSITIVE and ignores
+  /// soft-deleted rows. `createVendor` and a rename in `updateVendor` ask the
+  /// index's exact question first (`VendorRepository.findLiveByName`) and
+  /// refuse a taken name with a 409 `VENDOR_NAME_TAKEN`.
   @@index([tenantId])
   @@index([tenantId, createdAt])
   @@index([tenantId, status])

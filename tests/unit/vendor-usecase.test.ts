@@ -61,6 +61,8 @@ jest.mock('@/app-layer/repositories/VendorRepository', () => ({
         getById: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        // The live-name check (#4462). Unset ⇒ undefined ⇒ the name is free.
+        findLiveByName: jest.fn(),
     },
     VendorDocumentRepository: {
         listByVendor: jest.fn(),

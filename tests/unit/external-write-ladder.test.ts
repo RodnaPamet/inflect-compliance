@@ -15,6 +15,7 @@ import {
     isAboveClamp,
     permitsDispatch,
     recordsIntentOnly,
+    refusesEveryWrite,
     requiresHumanApproval,
     refusalForMove,
     type ExternalWriteMode,
@@ -31,17 +32,40 @@ describe('external write ladder — shape', () => {
         expect(LADDER.length).toBe(4);
     });
 
-    it('marks exactly one rung as dispatching, one as intent-only, one as approval-routed', () => {
+    it('marks exactly one rung as dispatching, one as intent-only, one as approval-routed, one as none of those', () => {
         const dispatching = LADDER.filter(permitsDispatch);
         const intentOnly = LADDER.filter(recordsIntentOnly);
         const approval = LADDER.filter(requiresHumanApproval);
+        const refusing = LADDER.filter(refusesEveryWrite);
         expect(dispatching).toEqual(['AUTOMATIC']);
         expect(intentOnly).toEqual(['DRY_RUN']);
         expect(approval).toEqual(['PROPOSE_ONLY']);
+        expect(refusing).toEqual(['DISABLED']);
         // DISABLED must do none of the three — the whole point of the default.
         expect(permitsDispatch('DISABLED')).toBe(false);
         expect(recordsIntentOnly('DISABLED')).toBe(false);
         expect(requiresHumanApproval('DISABLED')).toBe(false);
+        // And the fourth predicate is false for every rung that DOES something,
+        // so the four are a total partition of the ladder rather than four
+        // independent opinions. #3872's offer-time withholding reads the fourth,
+        // and a rung added without classifying it here would be offered a write
+        // tool the dispatch may not have an arm for.
+        for (const mode of LADDER.filter((m) => m !== 'DISABLED')) {
+            expect(refusesEveryWrite(mode)).toBe(false);
+        }
+        expect(dispatching.length + intentOnly.length + approval.length + refusing.length).toBe(LADDER.length);
+    });
+
+    it('an unset or unrecognised stored rung reads as refusing every write', () => {
+        // The fail-closed direction, through the read boundary rather than
+        // asserted about the predicate alone: a connection with no rung recorded
+        // has been granted no authority, so its write tools are withheld from
+        // the offer exactly as a deliberately DISABLED one's are.
+        for (const stored of [null, undefined, '', 'PROPOSE', 'AUTOMATIC_BUT_TYPOED', '__proto__']) {
+            expect(refusesEveryWrite(coerceStoredMode(stored))).toBe(true);
+        }
+        // And the control: a real rung is not swept up by that.
+        expect(refusesEveryWrite(coerceStoredMode('PROPOSE_ONLY'))).toBe(false);
     });
 
     it('requires evidence from every rung that can be widened off and produces something', () => {

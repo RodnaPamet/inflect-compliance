@@ -132,6 +132,20 @@ describeFn('vendor CRUD + workflow — integration', () => {
         expect(v.status).toBe('ONBOARDING');
     });
 
+    it('createVendor refuses ACTIVE with the activation gate\'s named reason, writing nothing', async () => {
+        // A new vendor has no assessment, so the gate every other route to
+        // ACTIVE applies refuses it (#4462). It used to be created ACTIVE.
+        await expect(
+            createVendor(adminCtx(), { name: 'Straight to active', status: 'ACTIVE' }),
+        ).rejects.toMatchObject({
+            status: 400,
+            details: { reason: 'VENDOR_ACTIVATION_NEEDS_REVIEW' },
+        });
+        expect(
+            await globalPrisma.vendor.count({ where: { tenantId: TENANT_ID, name: 'Straight to active' } }),
+        ).toBe(0);
+    });
+
     it('createVendor rejects a READER (canWrite gate)', async () => {
         await expect(
             createVendor(ctxAs(Role.READER, reader.userId), { name: 'Nope' }),
@@ -187,6 +201,45 @@ describeFn('vendor CRUD + workflow — integration', () => {
         ).rejects.toBeInstanceOf(ValidationError);
     });
 
+    // ── vendor names: unique among LIVE vendors (#4462) ─────────
+
+    it('a clash with a LIVE vendor is a named 409, on create and on rename', async () => {
+        await createVendor(adminCtx(), { name: 'Northwind' });
+        await expect(createVendor(adminCtx(), { name: 'Northwind' })).rejects.toMatchObject({
+            status: 409,
+            details: { reason: 'VENDOR_NAME_TAKEN' },
+        });
+
+        const other = await createVendor(adminCtx(), { name: 'Contoso' });
+        await expect(updateVendor(adminCtx(), other.id, { name: 'Northwind' })).rejects.toMatchObject({
+            status: 409,
+            details: { reason: 'VENDOR_NAME_TAKEN' },
+        });
+        // Saving a vendor under its own name is not a clash with itself.
+        await expect(updateVendor(adminCtx(), other.id, { name: 'Contoso' })).resolves.toBeTruthy();
+        // The match is the index's: case-sensitive.
+        await expect(createVendor(adminCtx(), { name: 'northwind' })).resolves.toBeTruthy();
+    });
+
+    it('a deleted vendor frees its name — the partial unique index admits the reuse', async () => {
+        const first = await createVendor(adminCtx(), { name: 'Fabrikam' });
+        await globalPrisma.vendor.update({
+            where: { id: first.id },
+            data: { deletedAt: new Date(), deletedByUserId: admin.userId },
+        });
+
+        // Before #4462 the full (tenantId, name) unique refused this until
+        // the 90-day purge, as a bare P2002.
+        const reused = await createVendor(adminCtx(), { name: 'Fabrikam' });
+        expect(reused.id).not.toBe(first.id);
+
+        // And the index is what holds it, not only the usecase's check: a
+        // second LIVE row under the name is refused by the database itself.
+        await expect(
+            globalPrisma.vendor.create({ data: { tenantId: TENANT_ID, name: 'Fabrikam' } }),
+        ).rejects.toMatchObject({ code: 'P2002' });
+    });
+
     // ── getVendor ────────────────────────────────────────────────
 
     it('getVendor returns the row; throws NotFoundError when absent', async () => {
@@ -201,7 +254,10 @@ describeFn('vendor CRUD + workflow — integration', () => {
     it('listVendors honours status / criticality / q / riskRating / reviewDue filters', async () => {
         const now = new Date();
         const overdue = new Date(now.getTime() - 86400000).toISOString();
-        await createVendor(adminCtx(), { name: 'AlphaSearch', status: 'ACTIVE', criticality: 'HIGH', nextReviewAt: overdue });
+        // Created ONBOARDING and then set ACTIVE in the database: creation
+        // refuses ACTIVE (#4462), and this test is about the list filters.
+        const alpha = await createVendor(adminCtx(), { name: 'AlphaSearch', criticality: 'HIGH', nextReviewAt: overdue });
+        await globalPrisma.vendor.update({ where: { id: alpha.id }, data: { status: 'ACTIVE' } });
         await createVendor(adminCtx(), { name: 'BetaCo', status: 'ONBOARDING', criticality: 'LOW' });
 
         // status filter
@@ -311,14 +367,16 @@ describeFn('vendor CRUD + workflow — integration', () => {
     });
 
     it('gate is skipped when vendor already ACTIVE', async () => {
-        const v = await createVendor(adminCtx(), { name: 'AlreadyActive', status: 'ACTIVE' });
+        const v = await createVendor(adminCtx(), { name: 'AlreadyActive' });
+        await globalPrisma.vendor.update({ where: { id: v.id }, data: { status: 'ACTIVE' } });
         // No approved assessment, but vendor.status === ACTIVE so the gate `if` is false.
         const updated = await updateVendor(adminCtx(), v.id, { status: 'ACTIVE' });
         expect(updated.status).toBe('ACTIVE');
     });
 
     it('gate is skipped for a non-ACTIVE target status', async () => {
-        const v = await createVendor(adminCtx(), { name: 'Offboard', status: 'ACTIVE' });
+        const v = await createVendor(adminCtx(), { name: 'Offboard' });
+        await globalPrisma.vendor.update({ where: { id: v.id }, data: { status: 'ACTIVE' } });
         const updated = await updateVendor(adminCtx(), v.id, { status: 'OFFBOARDING' });
         expect(updated.status).toBe('OFFBOARDING');
     });

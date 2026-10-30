@@ -135,6 +135,8 @@ jest.mock('@/app-layer/repositories/VendorRepository', () => ({
         create: (...a: unknown[]) => mockVendorCreate(...a),
         update: (...a: unknown[]) => mockVendorUpdate(...a),
         getById: (...a: unknown[]) => mockVendorGetById(...a),
+        // The live-name check (#4462): no other vendor holds the name.
+        findLiveByName: async () => null,
     },
     VendorDocumentRepository: {
         create: (...a: unknown[]) => mockVendorDocCreate(...a),

@@ -34,8 +34,9 @@
  * and stale the day the rule moves.
  */
 import type { RequestContext } from '@/app-layer/types';
-import { someWorkflowRequestsFlue } from '@/lib/agentic/agent-driver-policy';
+import { someWorkflowRequestsFlue, somethingRequestsToolRunner } from '@/lib/agentic/agent-driver-policy';
 import { runInTenantContext } from '@/lib/db-context';
+import { env } from '@/env';
 
 import { getAgentDriverSetting } from './agent-driver-setting';
 
@@ -58,7 +59,26 @@ export const FLUE_WIRING_TERMS = [
     'BOUND_KEY',
 ] as const;
 
-export type FlueWiringTermKey = (typeof FLUE_WIRING_TERMS)[number];
+/**
+ * The Tool Runner engine's checklist (Step 2c, #4150), shown to a workspace that
+ * chose it. Its own switch and build flag, then the two things only it needs:
+ * the agent profile surface, which is what asks for this engine
+ * (`somethingRequestsToolRunner`), and an Anthropic key on the deployment, which
+ * `clientForRun` refuses to run without. No `BOUND_KEY`: a Test run starts from
+ * the agent's Behaviour tab, which binds the agent itself.
+ */
+export const TOOL_RUNNER_WIRING_TERMS = [
+    'ENV',
+    'TENANT',
+    'BUILD',
+    'PROFILES',
+    'MODEL_KEY',
+    'REGISTERED_AGENT',
+] as const;
+
+export type FlueWiringTermKey =
+    | (typeof FLUE_WIRING_TERMS)[number]
+    | (typeof TOOL_RUNNER_WIRING_TERMS)[number];
 
 export interface FlueWiringTerm {
     key: FlueWiringTermKey;
@@ -75,6 +95,12 @@ export interface FlueWiringTerm {
 }
 
 export interface FlueWiringState {
+    /**
+     * Which engine's checklist this is: the Tool Runner's for a workspace that
+     * chose it, Flue's otherwise (the built-in engine needs none, and Flue's was
+     * the only checklist before Step 2c).
+     */
+    engine: 'FLUE' | 'TOOL_RUNNER';
     /** What the tenant has asked for, and what a run would ACTUALLY get. */
     mode: string;
     effective: { driver: string; reason: string | null };
@@ -109,16 +135,29 @@ export async function getFlueWiringState(ctx: RequestContext): Promise<FlueWirin
         ]),
     );
 
-    const terms: FlueWiringTerm[] = [
-        { key: 'ENV', satisfied: driver.envEnabled, actor: 'operator' },
-        { key: 'TENANT', satisfied: driver.mode === 'FLUE', actor: 'tenant' },
-        { key: 'BUILD', satisfied: driver.implemented, actor: 'operator' },
-        { key: 'WORKFLOW', satisfied: someWorkflowRequestsFlue(), actor: 'operator' },
-        { key: 'REGISTERED_AGENT', satisfied: agents > 0, actor: 'tenant', count: agents },
-        { key: 'BOUND_KEY', satisfied: keys > 0, actor: 'tenant', count: keys },
-    ];
+    const engine = driver.mode === 'TOOL_RUNNER' ? 'TOOL_RUNNER' : 'FLUE';
+    const terms: FlueWiringTerm[] =
+        engine === 'TOOL_RUNNER'
+            ? [
+                  { key: 'ENV', satisfied: driver.toolRunner.envEnabled, actor: 'operator' },
+                  { key: 'TENANT', satisfied: true, actor: 'tenant' },
+                  { key: 'BUILD', satisfied: driver.toolRunner.implemented, actor: 'operator' },
+                  { key: 'PROFILES', satisfied: somethingRequestsToolRunner(ctx.tenantSlug), actor: 'operator' },
+                  // Presence only: the value never leaves the server.
+                  { key: 'MODEL_KEY', satisfied: Boolean(env.ANTHROPIC_API_KEY), actor: 'operator' },
+                  { key: 'REGISTERED_AGENT', satisfied: agents > 0, actor: 'tenant', count: agents },
+              ]
+            : [
+                  { key: 'ENV', satisfied: driver.envEnabled, actor: 'operator' },
+                  { key: 'TENANT', satisfied: driver.mode === 'FLUE', actor: 'tenant' },
+                  { key: 'BUILD', satisfied: driver.implemented, actor: 'operator' },
+                  { key: 'WORKFLOW', satisfied: someWorkflowRequestsFlue(), actor: 'operator' },
+                  { key: 'REGISTERED_AGENT', satisfied: agents > 0, actor: 'tenant', count: agents },
+                  { key: 'BOUND_KEY', satisfied: keys > 0, actor: 'tenant', count: keys },
+              ];
 
     return {
+        engine,
         mode: driver.mode,
         effective: driver.effective,
         terms,

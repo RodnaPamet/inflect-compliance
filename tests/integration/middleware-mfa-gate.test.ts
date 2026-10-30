@@ -40,7 +40,7 @@ import { getToken } from 'next-auth/jwt';
 const mockGetToken = getToken as jest.Mock;
 
 /** A signed-in user who has presented a password and not a second factor. */
-function pendingToken(role: 'OWNER' | 'READER' = 'READER') {
+function pendingToken(role: 'OWNER' | 'READER' | 'EDITOR' | 'AUDITOR' = 'READER') {
     return {
         sub: 'user-1',
         userId: 'user-1',
@@ -84,6 +84,43 @@ describe('MFA gate — class 1: tenant paths', () => {
         const loc = new URL(res.headers.get('location')!);
         expect(loc.pathname).toBe('/t/primary/auth/mfa');
         expect(loc.searchParams.get('next')).toBe('/t/acme/dashboard');
+    });
+});
+
+// ── Class 1b — admin pages the edge role check refuses ───────────────
+
+describe('MFA gate — class 1b: an admin page the edge role check refuses', () => {
+    // The edge refuses a non-admin role on `/t/<slug>/admin/**`, and for a PAGE
+    // it lets the request on to the App Router, whose server gate decides. That
+    // gate admits an AUDITOR to the audit log (owner decision 2026-10-29), so the
+    // page is rendered for them. The refused branch used to return before the
+    // MFA gates, so a session still mid-challenge was served it.
+    it.each(['AUDITOR', 'EDITOR', 'READER'] as const)(
+        'role %s, mid-challenge, opening an admin page is sent to the challenge',
+        async (role) => {
+            mockGetToken.mockResolvedValue(pendingToken(role));
+            for (const path of ['/t/acme/admin/audit-log', '/t/acme/admin/members']) {
+                const res = await middleware(req('GET', path), {} as any);
+                expect(res.status).toBe(307);
+                const loc = new URL(res.headers.get('location')!);
+                expect(loc.pathname).toBe('/t/primary/auth/mfa');
+                expect(loc.searchParams.get('next')).toBe(path);
+            }
+        },
+    );
+
+    it('the same AUDITOR, challenge done, still reaches the page and its server gate', async () => {
+        mockGetToken.mockResolvedValue({ ...pendingToken('AUDITOR'), mfaPending: false });
+        const res = await middleware(req('GET', '/t/acme/admin/audit-log'), {} as any);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('location')).toBeNull();
+    });
+
+    it('a refused admin API request is still answered 403 at the edge, before the MFA gate', async () => {
+        mockGetToken.mockResolvedValue({ ...pendingToken('AUDITOR'), mfaPending: false });
+        const res = await middleware(req('GET', '/api/t/acme/admin/members'), {} as any);
+        expect(res.status).toBe(403);
+        await expect(res.json()).resolves.toEqual({ error: 'Admin access required' });
     });
 });
 

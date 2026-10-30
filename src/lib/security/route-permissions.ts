@@ -506,6 +506,32 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'refuses every API key in the usecase: a machine cannot be one of ' +
             'the humans a proposal needs.',
     },
+    // The two other directories under `/agent-proposals` take THEIR pages'
+    // gates, which are not the queue's: compose is `admin.view` alone (the
+    // view key opens the queue, not compose), and the sample audits are
+    // review-quality data, gated `admin.agent_registry` on that page.
+    {
+        path: new RegExp(`^${T}\\/agent-proposals\\/compose$`),
+        methods: ['GET', 'POST'],
+        permission: 'admin.view',
+        note:
+            'Read a template\'s open fields and candidates, or compose an ' +
+            'external-write proposal from it. The /agents/compose page\'s ' +
+            'gate here; POST then takes the role-tier write ' +
+            '`composeExternalWriteProposal` asserts, which is what the page ' +
+            'enables Send on.',
+    },
+    {
+        path: new RegExp(`^${T}\\/agent-proposals\\/sample-audits(\\/[^/]+)?$`),
+        methods: ['GET', 'POST'],
+        permission: 'admin.agent_registry',
+        note:
+            'The retrospective sample audits of approved proposals and their ' +
+            'disagreement rate (GET), and one answer (POST /:id). The gate of ' +
+            '/agents/review-quality, the page about whether approvals mean ' +
+            'anything; the answer also takes the role-tier write and the ' +
+            'not-the-approver refusal in `recordSampleAuditOutcome`.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/policy-card$`),
         permission: 'admin.agent_policy_card',
@@ -758,6 +784,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'List harness scans. Reading the inventory, so the view key or the ' +
             'register key; submitting one is the ingest key, above.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/discovered$`),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            'List the discovered agents a person can start a discovered-agent ' +
+            'review with (#4472). The key the harness-scans list and the ' +
+            'get_discovered_agent tool take, so the run can read the agent it ' +
+            'is started with.',
     },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/harness-estates$`),
@@ -1361,6 +1398,41 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             '(OWNER/ADMIN), not the assets.edit an EDITOR holds.',
     },
 
+    // ── Asset vulnerabilities (#4465) ───────────────────────────────
+    // A matched CVE is an asset-domain row, so it reads under assets.view and
+    // writes under assets.edit; a conversion also needs the create key of what
+    // it creates. Every built-in role holds each set entirely or not at all.
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities(\\/status)?$`),
+        methods: ['GET'],
+        permission: 'assets.view',
+        note: 'Vulnerability list and CVE-sync status reads — asset visibility, held by every role.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities(\\/[^/]+)?$`),
+        methods: ['POST', 'PATCH'],
+        permission: 'assets.edit',
+        note: 'Manually linking a CVE to an asset (POST) and triaging one (PATCH) edit an asset-domain record.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/convert-to-risk$`),
+        methods: ['POST'],
+        permission: ['assets.edit', 'risks.create'],
+        note: 'Converting a vulnerability into a risk writes onto the vulnerability and creates a risk.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/convert-to-finding$`),
+        methods: ['POST'],
+        permission: 'assets.edit',
+        note: 'Converting a vulnerability into a finding writes onto the vulnerability; findings have no key of their own.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/remediation-task$`),
+        methods: ['POST'],
+        permission: ['assets.edit', 'tasks.create', 'tasks.edit'],
+        note: 'Creates a task and links it to the asset — both task keys are asked before the task exists.',
+    },
+
     // ── Tenant security settings ────────────────────────────────────
     // Admin-only on BOTH verbs, unlike the sibling MFA-policy route whose
     // GET is member-visible: this payload carries the session cap and
@@ -1383,6 +1455,26 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Pre-flight for enforcing agent registration: lists the ACTIVE, ' +
             'UNBOUND credentials that the tool boundary would begin refusing. ' +
             'Read-only; the write goes through the sibling PUT.',
+    },
+    // The business-data transfer acknowledgement (M5, #3872). Listed above the
+    // general sibling for the same READER reason the pre-flight above gives —
+    // the sibling is `$`-anchored and would not match this path anyway.
+    //
+    // `admin.manage` is the ROUTE gate, matching both siblings: this accepts the
+    // consequence of the `aiResidency` choice the sibling PUT writes, so it
+    // would be incoherent for it to take a different key. The usecase ALSO
+    // requires a PERSON — a credential, an agent or a job cannot accept a data
+    // transfer on a company's behalf, and `*`-scoped API keys exist. That check
+    // lives in the usecase, not here, so no other path to the same columns can
+    // bypass it.
+    {
+        path: new RegExp(`^${T}\\/admin\\/security-settings\\/external-ai-acknowledgement$`),
+        permission: 'admin.manage',
+        note:
+            'Recording or withdrawing the tenant acknowledgement that data read ' +
+            'over a connection marked as reaching a business system may be sent ' +
+            'to an external model provider. Without it, an EXTERNAL-residency ' +
+            'agent run over such a connection refuses (#3872).',
     },
     {
         path: new RegExp(`^${T}\\/admin\\/security-settings$`),
@@ -1496,6 +1588,15 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'purgeEntity / restoreEntity, which assert only the coarse ' +
             'canAdmin and never reach assertCanAdminPolicies. Adding ' +
             'policies.edit here would out-strict the usecase.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vendors\\/bulk\\/(status|assign)$`),
+        methods: ['POST'],
+        permission: 'vendors.edit',
+        note:
+            'Bulk vendor status change / owner assign — recoverable vendor ' +
+            'mutations. vendors.edit IS the predicate assertCanManageVendors ' +
+            'reads, so the route gate only moves where a refusal is recorded.',
     },
     {
         path: new RegExp(`^${T}\\/vendors\\/bulk\\/delete$`),
@@ -1795,6 +1896,29 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'createEmployee requires (OWNER + ADMIN), so the caller set is ' +
             'exactly the one that can already add the person. `status` is ' +
             'unreachable from this route by construction.',
+    },
+    // ── Workspace notification settings (#4469) ─────────────────────
+    // Outside `/admin/`, so the edge admin gate never applied and nothing
+    // wrote AUTHZ_DENIED on a refusal. `admin.manage` beside the
+    // `assertCanAdmin` already in each handler: for every built-in role the
+    // two admit the same OWNER + ADMIN set.
+    {
+        path: new RegExp(`^${T}\\/notification-settings$`),
+        methods: ['GET', 'PUT'],
+        permission: 'admin.manage',
+        note:
+            'The workspace\'s email sender, compliance-mailbox BCC and email '
+            + 'switch, and its in-app mute list — read and written only by the '
+            + 'OWNER + ADMIN set the handlers\' assertCanAdmin admits.',
+    },
+    {
+        path: new RegExp(`^${T}\\/notification-settings\\/run-job$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Runs the outbox flush or the daily evidence sweep now, scoped to '
+            + 'this workspace. OWNER + ADMIN, the population of the role check '
+            + 'it carried by hand.',
     },
     {
         path: new RegExp(`^${T}\\/processes\\/[^/]+\\/snapshots\\/[^/]+\\/restore$`),

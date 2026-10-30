@@ -7,8 +7,15 @@
  *
  * The chain order IS the contract — see
  * `tests/guards/next-best-action-discipline.test.ts`.
+ *
+ * The module returns no English. The card renders each action's label and
+ * description from `dashboard.nextAction.<messageKey>` in the reader's
+ * language, with `count` as the number the description quotes.
+ *
+ * Every `href` names filters its target page actually reads (its filter-defs
+ * keys): `?filter=` was read by no page, so all three links used to open the
+ * whole unfiltered list.
  */
-
 export interface NextBestActionInput {
     /** % of applicable controls implemented (0–100). */
     coveragePercent: number;
@@ -16,7 +23,7 @@ export interface NextBestActionInput {
     overdueEvidence: number;
     /** Number of tasks past dueAt with non-terminal status. */
     overdueTasks: number;
-    /** Number of risks with inherent score ≥ 15 (high severity). */
+    /** Number of OPEN risks with inherent score ≥ 10 (high or critical). */
     highRisks: number;
 }
 
@@ -28,10 +35,30 @@ export interface NextBestAction {
         | "high-risks"
         | "low-coverage"
         | "readiness-check";
-    label: string;
-    description: string;
+    /** The `dashboard.nextAction.*` message group for this action. */
+    messageKey:
+        | "overdueEvidence"
+        | "overdueTasks"
+        | "highRisks"
+        | "lowCoverage"
+        | "readinessCheck";
+    /** The number the description quotes (a count, or coverage %). */
+    count: number;
     href: string;
 }
+
+/**
+ * The Risks list filter for the population `highRisks` counts: OPEN risks
+ * (not closed, not accepted) with an inherent score of 10 or more.
+ *
+ * Spelled out rather than imported from `app-layer/domain/risk-status`,
+ * because this module sits in the shared UI tree, which takes no domain
+ * imports (`tests/guards/shared-ui-coupling-ratchet.test.ts`).
+ * `tests/guards/next-best-action-discipline.test.ts` builds the expected href
+ * FROM that module's `HIGH_RISK_SCORE_MIN` and `OPEN_RISK_STATUSES`, so the
+ * two cannot drift apart unnoticed.
+ */
+const OPEN_HIGH_RISKS_QUERY = "score=10|25&status=OPEN,MITIGATING,MITIGATED";
 
 export function resolveNextBestAction(
     input: NextBestActionInput,
@@ -40,40 +67,44 @@ export function resolveNextBestAction(
     if (input.overdueEvidence > 0) {
         return {
             id: "overdue-evidence",
-            label: "Refresh overdue evidence",
-            description: `${input.overdueEvidence} evidence record${input.overdueEvidence === 1 ? "" : "s"} past review date.`,
-            href: tenantHref("/evidence?filter=expiring"),
+            messageKey: "overdueEvidence",
+            count: input.overdueEvidence,
+            // The Evidence page's freshness bucket for a row past its
+            // review date.
+            href: tenantHref("/evidence?freshness=expired"),
         };
     }
     if (input.overdueTasks > 0) {
         return {
             id: "overdue-tasks",
-            label: "Resolve overdue tasks",
-            description: `${input.overdueTasks} task${input.overdueTasks === 1 ? "" : "s"} past due. Address them before the next audit.`,
-            href: tenantHref("/tasks?filter=overdue"),
+            messageKey: "overdueTasks",
+            count: input.overdueTasks,
+            // The Tasks page's due chip: past dueAt, not terminal — the same
+            // predicate the count uses.
+            href: tenantHref("/tasks?due=overdue"),
         };
     }
     if (input.highRisks > 0) {
         return {
             id: "high-risks",
-            label: "Review high-severity risks",
-            description: `${input.highRisks} risk${input.highRisks === 1 ? "" : "s"} with inherent score ≥ 15. Review treatment plans.`,
-            href: tenantHref("/risks?filter=high"),
+            messageKey: "highRisks",
+            count: input.highRisks,
+            // The same open, score-10-and-up population the count is of.
+            href: tenantHref(`/risks?${OPEN_HIGH_RISKS_QUERY}`),
         };
     }
     if (input.coveragePercent < 80) {
         return {
             id: "low-coverage",
-            label: "Improve control coverage",
-            description: `Coverage is ${Math.round(input.coveragePercent)}%. Reach 80% to meet the readiness baseline.`,
+            messageKey: "lowCoverage",
+            count: Math.round(input.coveragePercent),
             href: tenantHref("/clauses"),
         };
     }
     return {
         id: "readiness-check",
-        label: "Run a readiness check",
-        description:
-            "Everything looks good. Generate a readiness report to confirm.",
+        messageKey: "readinessCheck",
+        count: 0,
         href: tenantHref("/audits/readiness"),
     };
 }

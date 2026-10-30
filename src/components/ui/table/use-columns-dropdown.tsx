@@ -89,9 +89,14 @@ export function useColumnsDropdown({
     );
 
     const [stored, setStored] = useLocalStorage<string[]>(storageKey, defaults);
+    // Reconciled against EVERY toggleable column, not only the default-visible
+    // ones. Against `defaultVisibleDefs` a `defaultVisible: false` column was
+    // dropped from the order the moment the gear added it, so it could never
+    // be shown: the click stored the id and the table ignored it (#4462).
+    // Ids of columns that no longer exist are still dropped.
     const order = useMemo(
-        () => reconcileOrder(stored, defaultVisibleDefs),
-        [stored, defaultVisibleDefs],
+        () => reconcileOrder(stored, hideable),
+        [stored, hideable],
     );
     const orderSet = useMemo(() => new Set(order), [order]);
 
@@ -127,21 +132,21 @@ export function useColumnsDropdown({
     const onToggle = useCallback(
         (id: string) =>
             setStored((prev) =>
-                toggleOrder(reconcileOrder(prev, defaultVisibleDefs), id),
+                toggleOrder(reconcileOrder(prev, hideable), id),
             ),
-        [setStored, defaultVisibleDefs],
+        [setStored, hideable],
     );
     const onReset = useCallback(() => setStored(defaults), [setStored, defaults]);
     const onReorder = useCallback(
         (fromId: string, toId: string) =>
             setStored((prev) =>
                 reorderOrder(
-                    reconcileOrder(prev, defaultVisibleDefs),
+                    reconcileOrder(prev, hideable),
                     fromId,
                     toId,
                 ),
             ),
-        [setStored, defaultVisibleDefs],
+        [setStored, hideable],
     );
 
     // Back-compat: if a consumer drives visibility from the DataTable side
@@ -150,14 +155,14 @@ export function useColumnsDropdown({
     const setColumnVisibility = useCallback(
         (v: ColumnVisibilityState) =>
             setStored((prev) => {
-                const cur = reconcileOrder(prev, defaultVisibleDefs);
+                const cur = reconcileOrder(prev, hideable);
                 const kept = cur.filter((id) => v[id] !== false);
                 const newly = hideable
                     .filter((c) => v[c.id] === true && !cur.includes(c.id))
                     .map((c) => c.id);
                 return [...kept, ...newly];
             }),
-        [setStored, defaultVisibleDefs, hideable],
+        [setStored, hideable],
     );
 
     const orderColumns = useCallback(

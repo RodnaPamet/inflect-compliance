@@ -18,6 +18,7 @@ import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
 import { AI_ADMIN_ADMIN_PATH_PREFIXES } from '@/lib/auth/guard';
 import {
     ADMIN_PAGE_REQUIREMENTS,
+    adminPageRouteForPath,
     admitsAdminPage,
     type AdminPageRoute,
 } from '@/app/t/[tenantSlug]/(app)/admin/_lib/admin-page-requirements';
@@ -60,8 +61,13 @@ describe('custom roles are judged by their own keys', () => {
         });
     }
 
-    test('admin.view on a READER base reaches the roster, which every role may read', () => {
+    test('admin.view on a READER base does not reach the roster: a READER base no longer holds personnel.view', () => {
         const ctx = custom('READER', { admin: { view: true } });
+        expect(admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS['/admin/personnel'])).toBe(false);
+    });
+
+    test('admin.view and personnel.view on a READER base reach the roster', () => {
+        const ctx = custom('READER', { admin: { view: true }, personnel: { view: true } });
         expect(admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS['/admin/personnel'])).toBe(true);
     });
 
@@ -113,5 +119,45 @@ describe('the AI_ADMIN edge carve-out', () => {
             return AI_ADMIN_ADMIN_PATH_PREFIXES.some((p) => template === p || template.startsWith(`${p}/`));
         });
         expect(inside).toEqual([]);
+    });
+});
+
+describe('the client layout reads the same rows (adminPageRouteForPath)', () => {
+    test('every row is found from its own browser path', () => {
+        for (const route of ROUTES) {
+            const path = `/t/acme${route.replace(/\[[^\]]+\]/g, 'x-1')}`;
+            expect(adminPageRouteForPath(path)).toBe(route);
+        }
+    });
+
+    test('one trailing slash is the same page', () => {
+        expect(adminPageRouteForPath('/t/acme/admin/audit-log/')).toBe('/admin/audit-log');
+        expect(adminPageRouteForPath('/t/acme/admin/')).toBe('/admin');
+    });
+
+    test.each([
+        '/admin/audit-log',
+        '/t/acme/admin/audit-log/extra',
+        '/t/acme/admin/audit-log-export',
+        '/t/acme/admin//audit-log',
+        '/t/acme/admin/AUDIT-LOG',
+        '/t/acme/admin/audit-log?x=1',
+        '/t/acme/admin/members',
+        '/t/acme/admin/vendor-templates//',
+        '/t/acme/dashboard',
+        '/t//admin/audit-log',
+        '',
+    ])('%j names no row, so the layout stays on admin.view', (path) => {
+        expect(adminPageRouteForPath(path)).toBeNull();
+    });
+
+    test('the only rows that stand without admin.view are the audit log', () => {
+        // The layout shows a page whose row admits the caller, so a row without
+        // admin.view opens that page on screen to whoever the row admits. Today
+        // that is one page, by owner decision; a second is a decision too.
+        const withoutAdminView = ROUTES.filter(
+            (r) => !(ADMIN_PAGE_REQUIREMENTS[r].keys as readonly string[]).includes('admin.view'),
+        );
+        expect(withoutAdminView).toEqual(['/admin/audit-log']);
     });
 });

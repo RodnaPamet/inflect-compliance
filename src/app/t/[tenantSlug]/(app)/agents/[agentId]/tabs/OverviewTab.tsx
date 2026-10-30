@@ -73,7 +73,7 @@ interface AgentDetail {
      * driver" — and an operator who has switched flue on deserves to be told
      * which of those they are looking at.
      */
-    driver: 'static' | 'flue';
+    driver: 'static' | 'flue' | 'tool-runner';
     driverReason:
         | 'ENV_DISABLED'
         | 'TENANT_NOT_OPTED_IN'
@@ -147,6 +147,7 @@ type LifecycleMove = 'ACTIVE' | 'SUSPENDED';
 const DRIVER_VARIANT: Record<string, StatusBadgeVariant> = {
     static: 'neutral',
     flue: 'info',
+    'tool-runner': 'info',
 };
 
 /**

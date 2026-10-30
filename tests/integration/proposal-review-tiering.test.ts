@@ -299,7 +299,12 @@ describe('a HIGH-tier proposal cannot be approved by a single reviewer', () => {
         // be enforced without a read-then-write window.
         await expect(
             approveAgentProposal(reviewerCtx(T1, 'alice'), proposalId),
-        ).rejects.toThrow(/agent_proposal_four_eyes/);
+        ).rejects.toMatchObject({
+            // The code is the condition; the message is the sentence the
+            // reviewer is shown, addressed to them and naming nobody else.
+            details: { reason: 'agent_proposal_four_eyes' },
+            message: expect.stringMatching(/already approved this proposal/),
+        });
 
         expect(await signaturesOn(proposalId)).toHaveLength(1);
         expect(await proposalStatus(proposalId)).toBe('PENDING');
@@ -320,7 +325,10 @@ describe('a HIGH-tier proposal cannot be approved by a single reviewer', () => {
     it('THE SECOND APPROVER CANNOT BE THE AGENT’S REGISTERED OWNER', async () => {
         await expect(
             approveAgentProposal(reviewerCtx(T1, 'owner'), proposalId),
-        ).rejects.toThrow(/agent_proposal_four_eyes/);
+        ).rejects.toMatchObject({
+            details: { reason: 'agent_proposal_four_eyes' },
+            message: expect.stringMatching(/registered owner of the agent/),
+        });
 
         expect(await signaturesOn(proposalId)).toHaveLength(1);
         expect(await risksTitled(T1, 'single-reviewer-high')).toBe(0);
@@ -402,7 +410,10 @@ describe('the owner exclusion is scoped to proposals that need two', () => {
         const proposalId = await propose(T1, seeded[T1].highAgentId, 'owner-first-high');
         await expect(
             approveAgentProposal(reviewerCtx(T1, 'owner'), proposalId),
-        ).rejects.toThrow(/agent_proposal_four_eyes/);
+        ).rejects.toMatchObject({
+            details: { reason: 'agent_proposal_four_eyes' },
+            message: expect.stringMatching(/registered owner of the agent/),
+        });
         expect(await signaturesOn(proposalId)).toHaveLength(0);
     });
 

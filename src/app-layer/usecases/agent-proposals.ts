@@ -332,6 +332,14 @@ async function resolveRequirementForRow(
 }
 
 /**
+ * What a reviewer is told when a proposal's window has closed. Exported so the
+ * tests pin the sentence the route sends rather than a copy of it.
+ */
+export const EXPIRED_REFUSAL_MESSAGE =
+    'This proposal\'s review window has closed, so it can no longer be approved ' +
+    'or rejected. It is kept as the record that nobody decided it in time.';
+
+/**
  * The refusal every review path shares for a CLOSED WINDOW.
  *
  * A 403 + `AUTHZ_DENIED` rather than a 400, and that is a claim about what kind
@@ -343,7 +351,10 @@ async function resolveRequirementForRow(
  * writes a row for the same reason the quarantine refusal does.
  *
  * The 403 body names the CONDITION and nothing else — no permission key, no
- * deadline, no fragment of the payload.
+ * deadline, no fragment of the payload. It names it in a SENTENCE the reviewer
+ * can act on, with the code in `details.reason`: the page shows the message,
+ * and showing a bare `agent_proposal_expired` told a reviewer nothing about why
+ * the click failed or that no click would ever succeed.
  *
  * REJECTION IS REFUSED TOO, not only approval. An expired proposal is the
  * record of something nobody agreed to; letting a reviewer move it to REJECTED
@@ -382,7 +393,7 @@ async function refuseExpired(
         },
     }).catch(() => undefined);
 
-    throw forbidden('agent_proposal_expired');
+    throw forbidden(EXPIRED_REFUSAL_MESSAGE, { reason: 'agent_proposal_expired' });
 }
 
 /**
@@ -1265,6 +1276,13 @@ function fourEyesRefusal(err: unknown): { rule: string; message: string } | null
  * `refuseQuarantined`: exactly one hash-chained `AUTHZ_DENIED` row, then a 403
  * whose body names the CONDITION and nothing else — no permission key, no
  * approver identity, no fragment of the payload.
+ *
+ * The body's message is `fourEyesRefusal`'s sentence, addressed to the person
+ * who clicked: "you have already approved", "you are the registered owner".
+ * It names nobody else, and the rule's CODE stays in the trail. The 403 used to
+ * carry the bare `agent_proposal_four_eyes` and throw the sentence away, so the
+ * reviewer saw a code and was not told that somebody else has to sign. The
+ * condition's code is in `details.reason`, beside the other review refusals.
  */
 async function refuseFourEyes(
     ctx: RequestContext,
@@ -1284,7 +1302,8 @@ async function refuseFourEyes(
             event: 'authz_denied',
             reason: 'agent_proposal_four_eyes',
             attemptedAction: 'approve',
-            // WHICH constraint refused goes in the TRAIL, never in the 403.
+            // WHICH constraint refused, as a code, goes in the TRAIL. The 403
+            // carries only the sentence addressed to the caller.
             fourEyesRule: refusal.rule,
             kind: proposal.kind,
             approvalsRequired: proposal.requiredApprovals,
@@ -1296,7 +1315,7 @@ async function refuseFourEyes(
         },
     }).catch(() => undefined);
 
-    throw forbidden('agent_proposal_four_eyes');
+    throw forbidden(refusal.message, { reason: 'agent_proposal_four_eyes' });
 }
 
 /**

@@ -85,6 +85,7 @@ const GATE_LABEL = EN.admin.permissionGated.ariaLabel.replace(
 const RUN: RunRow = {
     id: 'run-1',
     workflowKey: 'nightly-review',
+    workflowName: 'Nightly review',
     status: 'RUNNING',
     stepCount: 3,
     costTokens: 1200,
@@ -110,7 +111,7 @@ function renderRuns(canOperate: boolean, runs: RunRow[] = [RUN]) {
     return render(
         <AgentRunsClient
             tenantSlug="acme"
-            initialRuns={runs}
+            runs={runs}
             workflows={WORKFLOWS}
             canOperate={canOperate}
         />,
@@ -134,6 +135,11 @@ const PROPOSAL: ProposalRow = {
     rationale: 'Observed three failed backups in the last quarter.',
     proposedViaKeyId: 'key-abcdef12',
     createdAt: '2026-09-01T10:00:00.000Z',
+    proposedViaKeyPrefix: null,
+    expiresAt: null,
+    windowClosed: false,
+    approvalsRecorded: 0,
+    signedByViewer: false,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,

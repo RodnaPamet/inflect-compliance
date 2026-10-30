@@ -333,6 +333,9 @@ function merge(into: Resolved, from: Resolved): void {
     into.credentials.push(...from.credentials);
 }
 
+/** Node's process module, under either specifier. */
+const NODE_PROCESS_MODULES: ReadonlySet<string> = new Set(['process', 'node:process']);
+
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
 class Recognizer {
@@ -732,8 +735,18 @@ class Recognizer {
             const qq = this.qualify(x);
             return qq ? [qq.module, ...qq.path].join('.') : null;
         };
-        // process.env.X / process.env["X"]
-        const isProcessEnv = (x: Expr) => x.k === 'attr' && x.name === 'env' && x.obj.k === 'ref' && x.obj.name === 'process';
+        // process.env.X / process.env["X"], and the same `env` imported from
+        // Node's process module — `import { env } from "node:process"` (the
+        // connect wizard's own snippet), a namespace or default import of it, or
+        // a require. A local named `env` is not the environment: it qualifies
+        // to no module, so nothing is assumed about it.
+        const isImportedEnv = (x: Expr) => {
+            const qq = this.qualify(x);
+            if (qq === null || !NODE_PROCESS_MODULES.has(qq.module)) return false;
+            return qq.path.join('.') === 'env' || qq.path.join('.') === 'default.env';
+        };
+        const isProcessEnv = (x: Expr) =>
+            (x.k === 'attr' && x.name === 'env' && x.obj.k === 'ref' && x.obj.name === 'process') || isImportedEnv(x);
         if (e.k === 'attr' && isProcessEnv(e.obj)) return e.name;
         if (e.k === 'sub' && isProcessEnv(e.obj) && e.key.k === 'str' && !e.key.template) return e.key.value;
         // os.environ["X"]

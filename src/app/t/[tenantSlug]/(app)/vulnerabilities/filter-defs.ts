@@ -32,8 +32,18 @@ const fromKeys = (keys: readonly string[], t: T, group: string): Record<string, 
 export function buildVulnStatusLabels(t: T): Record<string, string> {
     return fromKeys(VULN_STATUS_KEYS, t, 'status');
 }
-function vulnSeverityLabels(t: T): Record<string, string> {
+/** CVSS severity → label (badge + filter option source of truth). */
+export function buildVulnSeverityLabels(t: T): Record<string, string> {
     return fromKeys(VULN_SEVERITY_KEYS, t, 'severity');
+}
+
+/**
+ * How a match was made → label. `CPE` is every automatic match (the matcher
+ * writes it for a CPE or a vendor/product key alike); `MANUAL` is Link CVE.
+ */
+const VULN_MATCHED_VIA_KEYS = ['CPE', 'MANUAL'] as const;
+export function buildVulnMatchedViaLabels(t: T): Record<string, string> {
+    return Object.fromEntries(VULN_MATCHED_VIA_KEYS.map((k) => [k, t(`matchedViaLabels.${k}`)]));
 }
 
 function vulnFilterDefsInput(t: T, tGroup: TGroup) {
@@ -52,7 +62,7 @@ function vulnFilterDefsInput(t: T, tGroup: TGroup) {
             description: t('filters.severityDesc'),
             group: tGroup('attributes'),
             icon: ShieldAlert,
-            options: optionsFromEnum(vulnSeverityLabels(t)),
+            options: optionsFromEnum(buildVulnSeverityLabels(t)),
             multiple: true,
             resetBehavior: 'clearable',
         },

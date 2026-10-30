@@ -11,6 +11,9 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
+import { summariseSync, type SyncConnectionResponse, type SyncTone } from '@/lib/integrations/sync-outcome';
+import { LABELLED_PROVIDERS } from '@/lib/integrations/provider-labels';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
@@ -67,7 +70,7 @@ export default function ConnectionOutcomePage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [syncing, setSyncing] = useState(false);
-    const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+    const [msg, setMsg] = useState<{ tone: SyncTone; text: string } | null>(null);
 
     const load = useCallback(async () => {
         setError(false);
@@ -88,18 +91,31 @@ export default function ConnectionOutcomePage() {
         setSyncing(true); setMsg(null);
         try {
             const res = await fetch(apiUrl(`/admin/integrations/${connectionId}/sync`), { method: 'POST' });
-            if (!res.ok) { setMsg({ ok: false, text: t('integrations.syncFailed') }); return; }
-            const d = await res.json() as { counts?: { total: number; passed: number; failed: number }; identity?: { upserted: number } | null };
-            setMsg({ ok: (d.counts?.total ?? 0) > 0 || (d.identity?.upserted ?? 0) > 0, text: t('integrations.syncDone', { total: d.counts?.total ?? 0, passed: d.counts?.passed ?? 0, failed: d.counts?.failed ?? 0, accounts: d.identity?.upserted ?? 0 }) });
+            const d = await res.json().catch(() => null);
+            if (!res.ok) { setMsg({ tone: 'error', text: apiErrorMessage(d, t('integrations.syncFailed')) }); return; }
+            // The same summary the Integrations page shows (#4466): a 200 can
+            // carry a directory or HR read that failed or stopped early.
+            const summary = summariseSync((d ?? {}) as SyncConnectionResponse);
+            setMsg({
+                tone: summary.tone,
+                text: summary.parts
+                    .map((p) => t(`integrations.syncResult.${p.key}` as Parameters<typeof t>[0], p.values))
+                    .join(' '),
+            });
             await load();
         } catch {
-            setMsg({ ok: false, text: t('integrations.syncFailed') });
+            setMsg({ tone: 'error', text: t('integrations.syncFailed') });
         } finally {
             setSyncing(false);
         }
     };
 
-    const provider = rows[0]?.provider ?? null;
+    const providerId = rows[0]?.provider ?? null;
+    // The provider's translated name, as the Integrations page shows it — not
+    // the id (`mcp-server`) in the page title (#4466).
+    const provider = providerId && LABELLED_PROVIDERS.has(providerId)
+        ? t(`integrations.providerLabels.${providerId}` as Parameters<typeof t>[0])
+        : providerId;
     const cols = createColumns<ExecutionRow>([
         { accessorKey: 'automationKey', header: t('integrations.outcome.colCheck'), cell: ({ getValue }) => <span className="font-mono">{getValue()}</span> },
         { id: 'status', accessorKey: 'status', header: t('integrations.colStatus'), cell: ({ row }) => <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'}>{row.original.status}</StatusBadge> },
@@ -123,7 +139,7 @@ export default function ConnectionOutcomePage() {
                     {t('integrations.syncNow')}
                 </Button>
             </div>
-            {msg && <InlineNotice variant={msg.ok ? 'success' : 'error'}>{msg.text}</InlineNotice>}
+            {msg && <InlineNotice variant={msg.tone}>{msg.text}</InlineNotice>}
 
             <Card className="space-y-default p-6">
                 <Heading level={2}>{t('integrations.outcome.checkRuns')}</Heading>

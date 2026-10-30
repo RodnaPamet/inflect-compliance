@@ -73,10 +73,13 @@ jest.mock('next-intl/server', () => {
 
 /** Every data read the gated pages make. */
 const reads = {
-    listEmployees: jest.fn(async () => []),
+    listEmployees: jest.fn(async () => ({ employees: [], truncated: false, total: 0 })),
     listDevices: jest.fn(async () => []),
     listTrainingAssignments: jest.fn(async () => []),
-    listAuditLogs: jest.fn(async () => []),
+    listAuditLogPage: jest.fn(async (_ctx: unknown, _input: unknown) => ({
+        rows: [] as unknown[],
+        nextCursor: null as string | null,
+    })),
     listDsarRequests: jest.fn(async () => []),
     getTrustCenter: jest.fn(async () => null),
     listAgentCredentials: jest.fn(async () => []),
@@ -104,7 +107,10 @@ jest.mock('@/app-layer/usecases/training', () => ({
     __esModule: true,
     listTrainingAssignments: () => reads.listTrainingAssignments(),
 }));
-jest.mock('@/app-layer/usecases/auditLog', () => ({ __esModule: true, listAuditLogs: () => reads.listAuditLogs() }));
+jest.mock('@/app-layer/usecases/auditLog', () => ({
+    __esModule: true,
+    listAuditLogPage: (ctx: unknown, input: unknown) => reads.listAuditLogPage(ctx, input),
+}));
 jest.mock('@/app-layer/usecases/dsar-register', () => ({
     __esModule: true,
     listDsarRequests: () => reads.listDsarRequests(),
@@ -138,9 +144,11 @@ jest.mock('@/lib/prisma', () => ({
 }));
 
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { PageHeader } from '@/components/layout/PageHeader';
 import en from '../../messages/en.json';
 import AdminPage from '@/app/t/[tenantSlug]/(app)/admin/page';
 import AuditLogPage from '@/app/t/[tenantSlug]/(app)/admin/audit-log/page';
+import { AuditLogClient } from '@/app/t/[tenantSlug]/(app)/admin/audit-log/AuditLogClient';
 import BillingPage from '@/app/t/[tenantSlug]/(app)/admin/billing/page';
 import DevicesPage from '@/app/t/[tenantSlug]/(app)/admin/devices/page';
 import DsarPage from '@/app/t/[tenantSlug]/(app)/admin/dsar-requests/page';
@@ -159,7 +167,10 @@ import VendorTemplatePage from '@/app/t/[tenantSlug]/(app)/admin/vendor-template
 import { ADMIN_PAGE_REQUIREMENTS } from '@/app/t/[tenantSlug]/(app)/admin/_lib/admin-page-requirements';
 
 type Element = { type: unknown; props: Record<string, unknown> };
-type PageFn = (args: { params: Promise<Record<string, string>> }) => Promise<Element>;
+type PageFn = (args: {
+    params: Promise<Record<string, string>>;
+    searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) => Promise<Element>;
 
 /** Every gated page, keyed by its route; the last test pins it to the table. */
 const PAGES: Record<string, unknown> = {
@@ -182,10 +193,31 @@ const PAGES: Record<string, unknown> = {
     '/admin/vendor-templates/[templateId]': VendorTemplatePage,
 };
 
-async function render(route: string, role: string): Promise<Element> {
+async function render(
+    route: string,
+    role: string,
+    searchParams?: Record<string, string | string[] | undefined>,
+): Promise<Element> {
     currentCtx = makeRequestContext(role, { tenantSlug: 'acme' });
     const params = Promise.resolve({ tenantSlug: 'acme', assessmentId: 'a-1', templateId: 't-1' });
-    return (PAGES[route] as PageFn)({ params });
+    // Next hands every page `searchParams`; the personnel page reads it, and
+    // the audit log reads its cursor from it.
+    return (PAGES[route] as PageFn)({ params, searchParams: Promise.resolve(searchParams ?? {}) });
+}
+
+/** The first element of `type` in a rendered element tree. */
+function find(el: unknown, type: unknown): Element | null {
+    if (!el || typeof el !== 'object') return null;
+    if (Array.isArray(el)) {
+        for (const child of el) {
+            const hit = find(child, type);
+            if (hit) return hit;
+        }
+        return null;
+    }
+    const node = el as Element;
+    if (node.type === type) return node;
+    return find(node.props?.children, type);
 }
 
 function readsStarted(): string[] {
@@ -250,13 +282,78 @@ describe('rbac — every member with email and role', () => {
 describe('audit log — the owner decision of 2026-10-29', () => {
     test.each(['READER', 'EDITOR', 'AI_ADMIN'])('a %s gets the forbidden page and the log is never read', async (role) => {
         expectAdminForbidden(await render('/admin/audit-log', role));
-        expect(reads.listAuditLogs).not.toHaveBeenCalled();
+        expect(reads.listAuditLogPage).not.toHaveBeenCalled();
     });
 
     test.each(['AUDITOR', 'ADMIN', 'OWNER'])('an %s reads the log', async (role) => {
         const el = await render('/admin/audit-log', role);
         expect(el.type).not.toBe(ForbiddenPage);
-        expect(reads.listAuditLogs).toHaveBeenCalledTimes(1);
+        expect(reads.listAuditLogPage).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('audit log — the header names only pages the reader can open', () => {
+    const crumbs = async (role: string) => {
+        const header = find(await render('/admin/audit-log', role), PageHeader);
+        expect(header).not.toBeNull();
+        return (header!.props.breadcrumbs as Array<{ label: string; href?: string }>).map((c) => c.href ?? null);
+    };
+
+    test('an AUDITOR, who cannot open the admin landing, is not offered it', async () => {
+        expect(await crumbs('AUDITOR')).toEqual(['/t/acme/dashboard', null]);
+    });
+
+    test.each(['ADMIN', 'OWNER'])('an %s keeps the Admin crumb', async (role) => {
+        expect(await crumbs(role)).toEqual(['/t/acme/dashboard', '/t/acme/admin', null]);
+    });
+});
+
+describe('audit log — paged, so an entry older than one page can be reached', () => {
+    const client = async (searchParams?: Record<string, string | string[] | undefined>) => {
+        const el = find(await render('/admin/audit-log', 'AUDITOR', searchParams), AuditLogClient);
+        expect(el).not.toBeNull();
+        return el!.props as { olderHref: string | null; newestHref: string | null };
+    };
+
+    test('the first page links to the older page exactly when the read says one exists', async () => {
+        reads.listAuditLogPage.mockResolvedValueOnce({ rows: [], nextCursor: 'c 2' });
+        expect(await client()).toMatchObject({ olderHref: '/t/acme/admin/audit-log?cursor=c%202', newestHref: null });
+        expect(reads.listAuditLogPage).toHaveBeenLastCalledWith(expect.anything(), { cursor: null });
+
+        reads.listAuditLogPage.mockResolvedValueOnce({ rows: [], nextCursor: null });
+        expect(await client()).toMatchObject({ olderHref: null, newestHref: null });
+    });
+
+    test('a later page reads from its cursor and links back to the newest', async () => {
+        reads.listAuditLogPage.mockResolvedValueOnce({ rows: [], nextCursor: null });
+        expect(await client({ cursor: 'c-2' })).toMatchObject({ olderHref: null, newestHref: '/t/acme/admin/audit-log' });
+        expect(reads.listAuditLogPage).toHaveBeenLastCalledWith(expect.anything(), { cursor: 'c-2' });
+    });
+
+    test.each([[''], [['a', 'b']]])('a cursor of %j reads the newest page', async (cursor) => {
+        await client({ cursor });
+        expect(reads.listAuditLogPage).toHaveBeenLastCalledWith(expect.anything(), { cursor: null });
+    });
+
+    test('each row reaches the client as the table shows it: the sentence or summary, never the request JSON', async () => {
+        const at = new Date('2026-10-29T12:00:00.000Z');
+        reads.listAuditLogPage.mockResolvedValueOnce({
+            rows: [
+                { id: 'a', createdAt: at, action: 'RISK_CREATED', entity: 'Risk', details: 'Created risk\n\nContext: {"requestId":"r-1"}', detailsJson: null, user: { name: 'Ivo' } },
+                { id: 'b', createdAt: at, action: 'INTEGRATION_CONNECTION_UPDATED', entity: 'IntegrationConnection', details: 'Context: {"requestId":"r-2"}', detailsJson: { summary: 'Updated integration: Jira' }, user: null },
+            ],
+            nextCursor: null,
+        });
+        const el = find(await render('/admin/audit-log', 'AUDITOR'), AuditLogClient);
+        expect(el!.props.auditLog).toEqual([
+            { id: 'a', createdAt: at.toISOString(), action: 'RISK_CREATED', entity: 'Risk', details: 'Created risk', userName: 'Ivo' },
+            { id: 'b', createdAt: at.toISOString(), action: 'INTEGRATION_CONNECTION_UPDATED', entity: 'IntegrationConnection', details: 'Updated integration: Jira', userName: null },
+        ]);
+    });
+
+    test('a failed read is an error, never an empty log', async () => {
+        reads.listAuditLogPage.mockRejectedValueOnce(new Error('database unavailable'));
+        await expect(render('/admin/audit-log', 'ADMIN')).rejects.toThrow('database unavailable');
     });
 });
 

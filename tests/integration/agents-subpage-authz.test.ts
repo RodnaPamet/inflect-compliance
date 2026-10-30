@@ -58,6 +58,19 @@ jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (...a: unknown[]) => getTenantCtxMock(...a),
 }));
 
+/**
+ * The runs page reads the session's own role and `memberships[]` claim to ask
+ * the edge whether its caller may load the discovered-agent picker (#4472).
+ * `getServerSession` needs a request scope a test does not have, so it answers
+ * "no session": the page then offers no picker, which none of these tests is
+ * about. Everything else in `next-auth` stays real.
+ */
+jest.mock('next-auth', () => ({
+    __esModule: true,
+    ...jest.requireActual('next-auth'),
+    getServerSession: jest.fn(async () => null),
+}));
+
 /** `next-intl/server` is ESM; resolve the real catalogue. */
 jest.mock('next-intl/server', () => ({
     __esModule: true,

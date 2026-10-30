@@ -16,7 +16,7 @@ Click **{{ui:nav.admin}}**, the gear icon at the bottom of the sidebar. The {{ui
 | --- | --- |
 | Open the roster and filter it | Owner, Admin |
 
-Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. An Admin whose membership carries a custom role can open it only if the custom role can use the admin pages.
+Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. An Admin whose membership carries a custom role can open it only if the custom role can both use the admin pages and view personnel. Custom roles built on Reader, Editor or Auditor had the permission to view personnel switched off when it became an Owner and Admin permission; an Owner or Admin can tick it again for a role on the {{ui:admin.roles.title}} page.
 
 The page only reads. It has no button to add, change or remove a person.
 
@@ -33,19 +33,19 @@ People reach the roster in two ways:
 
 **The header.** The page title and a line counting the people on the roster.
 
-**The filter.** The **{{ui:common.ui.filter}}** button holds one filter, **{{ui:personnel.filters.status}}**, where you can choose one or more statuses. An active filter shows as a pill beside the button; remove the pill to drop it. The filter is kept in the page address, so a filtered view can be bookmarked. The page has no search box.
+**The filter.** The **{{ui:common.ui.filter}}** button holds one filter, **{{ui:personnel.filters.status}}**, where you can choose one or more statuses. An active filter shows as a pill beside the button; remove the pill to drop it. The search box in the same menu, **{{ui:personnel.searchPlaceholder}}**, finds people by name or work email as you type. The filter and the search are kept in the page address, so a filtered view can be bookmarked, and both search the whole roster, not only the people on screen.
 
 **The table.** One row per person, sorted by status, then by name. Rows cannot be opened.
 
 | Column | What it shows |
 | --- | --- |
 | {{ui:personnel.colName}} | The person's full name, with their work email below it |
-| {{ui:personnel.colStatus}} | Their employment status, as a code in capitals: ACTIVE, ONBOARDING, OFFBOARDING, TERMINATED or LEAVE |
+| {{ui:personnel.colStatus}} | Their employment status, such as {{ui:personnel.filterEnums.status.ACTIVE}} or {{ui:personnel.filterEnums.status.TERMINATED}} |
 | {{ui:personnel.colDepartment}} | Their department, or a dash |
 | {{ui:personnel.colTitle}} | Their job title, or a dash |
-| {{ui:personnel.colSource}} | HRIS for a person read from your HR system, MANUAL for one added by hand |
+| {{ui:personnel.colSource}} | {{ui:personnel.sourceLabels.HRIS}} for a person read from your HR system, {{ui:personnel.sourceLabels.MANUAL}} for one added by hand |
 
-The filter names the statuses in words:
+The statuses mean:
 
 | Status | Filter option | What it means |
 | --- | --- | --- |
@@ -55,7 +55,7 @@ The filter names the statuses in words:
 | TERMINATED | {{ui:personnel.filterEnums.status.TERMINATED}} | Has left |
 | LEAVE | {{ui:personnel.filterEnums.status.LEAVE}} | Employed and on leave |
 
-The page loads at most 500 people. In a larger roster, the rest are not shown, and the count in the header stops at 500.
+The page shows at most 500 people at a time. In a larger roster a notice says so, and the count in the header is still the whole roster. Use the search or the status filter to reach anyone past the first 500.
 
 ## What you can do
 
@@ -68,7 +68,7 @@ The page loads at most 500 people. In a larger roster, the rest are not shown, a
 - Each nightly sync adds new people, updates the details of existing ones and sets each person's status from the HR system.
 - When the HR system reports a new department or job title for someone, the change is recorded in the workspace's audit log, and Inflect can raise a task to re-examine their access. It never changes their access by itself.
 - A person the HR system no longer reports, after a complete sync, is marked TERMINATED. If an unusually large share of the roster disappears at once, the sync marks none of them TERMINATED and leaves them for someone to look into. People added by hand are left alone.
-- A person marked TERMINATED becomes a leaver for the identity features, which can then flag, or disable, their accounts, depending on how the workspace has set those features up.
+- A person marked {{ui:personnel.filterEnums.status.TERMINATED}} becomes a leaver for the identity features, which can then flag, or disable, their accounts, depending on how the workspace has set those features up.
 - The internal Personnel check, switched on with **{{ui:admin.integrations.enableInternal}}** on the {{ui:admin.integrations.title}} page, tests this roster: that leavers' access was removed, that joiners were onboarded on time and that every employee has a manager.
 
 ## Empty and error states
@@ -78,7 +78,8 @@ The page loads at most 500 people. In a larger roster, the rest are not shown, a
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
 | **{{ui:personnel.emptyTitle}}**, with **{{ui:personnel.emptyDesc}}** | Nobody is on the roster | Connect your HR system on the {{ui:admin.integrations.title}} page. This page has no way to add a person |
 | **{{ui:personnel.emptyMatchingTitle}}** | Nobody has the statuses you chose | Remove the filter |
-| The roster shows fewer people than your HR system holds | The HR sync has not run since they were added, or the roster holds more than 500 people | Click **{{ui:admin.integrations.syncNow}}** on the HR connection, or filter by status |
+| The roster shows fewer people than your HR system holds | The HR sync has not run since they were added | Click **{{ui:admin.integrations.syncNow}}** on the HR connection, then reload this page |
+| A notice that not every person is shown | The roster holds more than 500 people | Search for the person, or filter by status |
 
 ## Related
 

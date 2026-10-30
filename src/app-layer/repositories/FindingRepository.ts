@@ -1,6 +1,7 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
-import { Prisma } from '@prisma/client';
+import { Prisma, FindingStatus } from '@prisma/client';
+import { parseEnumListFilter } from '../domain/list-filter';
 
 // PR-3 — tight SELECT shape for the Findings list page. Drops the
 // encrypted free-text scalars (`description`, `rootCause`,
@@ -31,13 +32,25 @@ const findingListSelect = {
 } as const;
 
 export class FindingRepository {
+    /**
+     * `status` is the register's facet, raw off the query string
+     * (`OPEN,IN_PROGRESS`); an unknown member is a 400, never a silent
+     * zero-row match.
+     */
     static async list(
         db: PrismaTx,
         ctx: RequestContext,
-        options: { take?: number } = {},
+        options: { take?: number; status?: string } = {},
     ) {
         return db.finding.findMany({
-            where: { tenantId: ctx.tenantId },
+            where: {
+                tenantId: ctx.tenantId,
+                status: parseEnumListFilter<FindingStatus>(
+                    options.status,
+                    Object.values(FindingStatus),
+                    'finding status',
+                ),
+            },
             orderBy: { createdAt: 'desc' },
             select: findingListSelect,
             ...(options.take ? { take: options.take } : {}),

@@ -140,9 +140,15 @@ describe('device usecases', () => {
 
     it('listDevices is tenant-scoped', async () => {
         mockDb.device.findMany.mockResolvedValue([]);
-        const ctx = makeRequestContext('READER');
+        const ctx = makeRequestContext('ADMIN');
         await listDevices(ctx);
         expect(mockDb.device.findMany.mock.calls[0][0].where.tenantId).toBe(ctx.tenantId);
+    });
+
+    it('listDevices refuses a READER, who no longer holds personnel.view', async () => {
+        mockDb.device.findMany.mockResolvedValue([]);
+        await expect(listDevices(makeRequestContext('READER'))).rejects.toMatchObject({ status: 403 });
+        expect(mockDb.device.findMany).not.toHaveBeenCalled();
     });
 });
 

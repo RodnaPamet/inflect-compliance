@@ -29,6 +29,9 @@ jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma, default: prisma }))
 jest.mock('@/lib/mailer', () => ({ sendEmail: (...a: unknown[]) => sendEmail(...(a as [])) }));
 jest.mock('@/app-layer/notifications/settings', () => ({
     getTenantNotificationSettings: (...a: unknown[]) => getTenantNotificationSettings(...(a as [])),
+    // The REAL envelope builder: the sender and BCC are what this file's
+    // send assertions read, so a stub here would test the stub.
+    tenantEmailEnvelope: jest.requireActual('@/app-layer/notifications/settings').tenantEmailEnvelope,
 }));
 jest.mock('@/lib/observability/logger', () => ({
     logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
@@ -74,6 +77,14 @@ describe('the claim precedes the send', () => {
         await processOutbox();
         expect(seq[0]).toBe('claim');
         expect(seq.indexOf('send')).toBeGreaterThan(0);
+    });
+
+    it('sends from the workspace sender with its compliance BCC (#4469)', async () => {
+        await processOutbox();
+        expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({
+            from: 'Inflect <no-reply@inflect.test>',
+            bcc: 'compliance@acme.test',
+        }));
     });
 
     it('the claim is predicated on PENDING *and* the attempts value it read', async () => {

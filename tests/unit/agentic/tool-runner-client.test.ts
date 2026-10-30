@@ -35,12 +35,14 @@ jest.mock('@anthropic-ai/sdk', () => {
 
 import {
     clientForRun,
+    inspectRequest,
     requestRefusal,
     toolRunnerModelFor,
     ANTHROPIC_API_BASE_URL,
     TOOL_RUNNER_DEFAULT_MODELS,
 } from '@/lib/agentic/tool-runner/client';
 import { residencyTermsFrom } from '@/lib/agentic/flue/model-selection';
+import { logger } from '@/lib/observability';
 
 const sdk = jest.requireMock('@anthropic-ai/sdk') as { default: jest.Mock };
 
@@ -300,6 +302,82 @@ describe('5. a run\'s client sends Messages calls only', () => {
             choice.client.beta.messages.create({ ...base, messages: [{ role: 'user', content: 'hi' }], thread: { type: 'create' } }),
         ).rejects.toMatchObject({ details: { reason: 'SERVER_HELD_STATE' } });
         expect(net.impl).not.toHaveBeenCalled();
+    });
+});
+
+describe('6. every request is logged by shape: names, never values (Step 2H)', () => {
+    const PROMPT = 'PROMPT-TEXT-THAT-MUST-NOT-BE-LOGGED-91';
+    const body = {
+        model: 'claude-sonnet-5-5',
+        max_tokens: 16,
+        system: [{ type: 'text' as const, text: PROMPT }],
+        messages: [{ role: 'user' as const, content: PROMPT }],
+    };
+
+    it('reads the method, the path and the member names, and whether a thread member is there', () => {
+        const url = 'https://api.anthropic.com/v1/messages?beta=true';
+        expect(inspectRequest({ method: 'post', url, body: JSON.stringify(body) }).shape).toEqual({
+            method: 'POST',
+            path: '/v1/messages',
+            bodyKeys: ['max_tokens', 'messages', 'model', 'system'],
+            threadMember: 'absent',
+        });
+        expect(inspectRequest({ method: 'POST', url, body: JSON.stringify({ ...body, thread: { type: 'create' } }) })).toMatchObject({
+            refusal: 'SERVER_HELD_STATE',
+            shape: { threadMember: 'present' },
+        });
+        expect(inspectRequest({ method: 'POST', url, body: '{' }).shape.bodyKeys).toEqual([]);
+    });
+
+    it('a real client logs each request it sends, with its run id, and no value from the body', async () => {
+        const info = jest.spyOn(logger, 'info');
+        try {
+            const net = gatedFetch();
+            global.fetch = net.impl;
+            const choice = clientForRun(EXTERNAL, { runId: 'run-log-1' });
+            if (!choice.ok) throw new Error(choice.reason);
+            const sent = choice.client.beta.messages.create(body);
+            await new Promise((resolve) => setImmediate(resolve));
+            net.gates.splice(0).forEach((release) => release());
+            await sent;
+
+            const lines = info.mock.calls.filter(([message]) => message === 'tool-runner: request');
+            expect(lines).toHaveLength(1);
+            expect(lines[0][1]).toEqual({
+                component: 'agentic',
+                runId: 'run-log-1',
+                method: 'POST',
+                path: '/v1/messages',
+                bodyKeys: ['max_tokens', 'messages', 'model', 'system'],
+                threadMember: 'absent',
+                refused: null,
+            });
+            // The request did carry the text, so its absence from the log is the log's doing.
+            expect(JSON.stringify(net.sent[0].body)).toContain(PROMPT);
+            expect(JSON.stringify(info.mock.calls)).not.toContain(PROMPT);
+        } finally {
+            info.mockRestore();
+        }
+    });
+
+    it('a refused request is logged with its reason before it is refused', async () => {
+        const info = jest.spyOn(logger, 'info');
+        try {
+            const net = gatedFetch();
+            global.fetch = net.impl;
+            const choice = clientForRun(EXTERNAL, { runId: 'run-log-2' });
+            if (!choice.ok) throw new Error(choice.reason);
+            await expect(choice.client.beta.messages.create({ ...body, thread: { type: 'create' } })).rejects.toMatchObject({
+                details: { reason: 'SERVER_HELD_STATE' },
+            });
+            const lines = info.mock.calls.filter(([message]) => message === 'tool-runner: request');
+            expect(lines.map(([, fields]) => fields)).toEqual([
+                expect.objectContaining({ runId: 'run-log-2', threadMember: 'present', refused: 'SERVER_HELD_STATE' }),
+            ]);
+            expect(net.impl).not.toHaveBeenCalled();
+        } finally {
+            info.mockRestore();
+        }
     });
 });
 

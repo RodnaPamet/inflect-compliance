@@ -25,6 +25,10 @@ import { notFound, badRequest } from '@/lib/errors/types';
 import { runInTenantContext, PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { computeDeadlines, nextPhase } from '@/lib/incidents/deadlines';
+import {
+    DETECTED_AT_FUTURE_TOLERANCE_MS,
+    isDetectedAtInFuture,
+} from '@/lib/incidents/detected-at';
 import type { IncidentPhase, IncidentSeverity } from '@prisma/client';
 import type {
     CreateIncidentInput,
@@ -38,6 +42,14 @@ import type {
     LinkEvidenceInput,
 } from '../schemas/incident.schemas';
 import { containmentRunbookFor } from '@/data/incident-containment';
+import { assertOwnerInTenant } from './vendor-link-targets';
+import {
+    INCIDENT_NOTIFICATION_KIND_LABEL,
+    INCIDENT_PHASE_LABEL,
+    INCIDENT_SEVERITY_LABEL,
+    forensicCategoryLabel,
+    incidentTypeLabel,
+} from '@/lib/incidents/labels';
 
 /** sanitize an optional free-text field, preserving the three-state contract. */
 function sanitizeOptional(v: string | null | undefined): string | null | undefined {
@@ -56,6 +68,12 @@ export async function listIncidents(
     return runInTenantContext(ctx, (db) => IncidentRepository.list(db, ctx, options));
 }
 
+/** The register's KPI cards, counted over every incident (not the capped list). */
+export async function listIncidentKpiCounts(ctx: RequestContext) {
+    assertCanViewIncidents(ctx);
+    return runInTenantContext(ctx, (db) => IncidentRepository.kpiCounts(db, ctx));
+}
+
 export async function getIncident(ctx: RequestContext, id: string) {
     assertCanViewIncidents(ctx);
     return runInTenantContext(ctx, async (db) => {
@@ -70,8 +88,21 @@ export async function getIncident(ctx: RequestContext, id: string) {
 export async function createIncident(ctx: RequestContext, data: CreateIncidentInput) {
     assertCanManageIncidents(ctx);
 
+    // The full timestamp the Article 23 deadlines are counted from. A
+    // detection time in the future would start every clock late, so it is
+    // refused — with a small allowance for a submitting device whose clock
+    // runs ahead of ours (its form defaults to its own "now").
+    const detectedAt = data.detectedAt ? new Date(data.detectedAt) : new Date();
+    if (isDetectedAtInFuture(detectedAt, new Date(), DETECTED_AT_FUTURE_TOLERANCE_MS)) {
+        throw badRequest('The detection time cannot be in the future.');
+    }
+
     return runInTenantContext(ctx, async (db) => {
-        const detectedAt = data.detectedAt ? new Date(data.detectedAt) : new Date();
+        // `Incident.ownerUserId` has no relation, so nothing below the usecase
+        // checks it: the commander must be an ACTIVE member of THIS tenant
+        // (the shared check the vendor, risk and agent paths use).
+        if (data.ownerUserId) await assertOwnerInTenant(db, ctx, data.ownerUserId);
+
         const year = detectedAt.getUTCFullYear();
         const reference = await IncidentRepository.nextReference(db, ctx, year);
 
@@ -91,7 +122,8 @@ export async function createIncident(ctx: RequestContext, data: CreateIncidentIn
         await IncidentRepository.addTimelineEntry(db, ctx, {
             incidentId: incident.id,
             actorUserId: ctx.userId,
-            entry: `Incident ${reference} opened (severity ${data.severity}, type ${data.incidentType}).`,
+            // Timeline text is read by people: labels, never enum codes.
+            entry: `Incident ${reference} opened (severity ${INCIDENT_SEVERITY_LABEL[data.severity]}, type ${incidentTypeLabel(data.incidentType)}).`,
             phaseAtTime: 'DETECTION',
         });
 
@@ -125,12 +157,15 @@ export async function updateIncident(
     assertCanManageIncidents(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // Same membership check as create; `null` (or '') clears the owner.
+        if (data.ownerUserId) await assertOwnerInTenant(db, ctx, data.ownerUserId);
+
         const updated = await IncidentRepository.update(db, ctx, id, {
             title: data.title !== undefined ? sanitizePlainText(data.title) : undefined,
             description: sanitizeOptional(data.description) ?? undefined,
             severity: data.severity as IncidentSeverity | undefined,
             incidentType: data.incidentType,
-            ownerUserId: data.ownerUserId === undefined ? undefined : data.ownerUserId,
+            ownerUserId: data.ownerUserId === undefined ? undefined : data.ownerUserId || null,
             containedAt:
                 data.containedAt === undefined
                     ? undefined
@@ -190,8 +225,8 @@ export async function advancePhase(
             incidentId: id,
             actorUserId: ctx.userId,
             entry: input.note
-                ? `Phase advanced ${incident.phase} → ${target}. ${sanitizePlainText(input.note)}`
-                : `Phase advanced ${incident.phase} → ${target}.`,
+                ? `Phase advanced ${INCIDENT_PHASE_LABEL[incident.phase]} → ${INCIDENT_PHASE_LABEL[target]}. ${sanitizePlainText(input.note)}`
+                : `Phase advanced ${INCIDENT_PHASE_LABEL[incident.phase]} → ${INCIDENT_PHASE_LABEL[target]}.`,
             phaseAtTime: target,
         });
 
@@ -265,8 +300,8 @@ export async function markReportable(
             incidentId: id,
             actorUserId: ctx.userId,
             entry: input.reportable
-                ? `Marked REPORTABLE under NIS2 Article 23 — 24h / 72h / 1-month deadlines started.${input.note ? ' ' + sanitizePlainText(input.note) : ''}`
-                : `Marked NOT reportable — Article 23 deadlines stopped.${input.note ? ' ' + sanitizePlainText(input.note) : ''}`,
+                ? `Marked reportable under NIS2 Article 23 — 24h / 72h / 1-month deadlines started.${input.note ? ' ' + sanitizePlainText(input.note) : ''}`
+                : `Marked not reportable — Article 23 deadlines stopped.${input.note ? ' ' + sanitizePlainText(input.note) : ''}`,
             phaseAtTime: incident.phase,
         });
 
@@ -324,7 +359,7 @@ export async function submitNotification(
         await IncidentRepository.addTimelineEntry(db, ctx, {
             incidentId: id,
             actorUserId: ctx.userId,
-            entry: `Filed ${input.kind} notification${input.submissionRef ? ` (ref ${sanitizePlainText(input.submissionRef)})` : ''}.`,
+            entry: `Filed the ${INCIDENT_NOTIFICATION_KIND_LABEL[input.kind]}${input.submissionRef ? ` (ref ${sanitizePlainText(input.submissionRef)})` : ''}.`,
             phaseAtTime: incident.phase,
         });
 
@@ -525,7 +560,7 @@ export async function linkEvidence(
             incidentId: id,
             actorUserId: ctx.userId,
             entry: input.forensicCategory
-                ? `Linked forensic evidence (${sanitizePlainText(input.forensicCategory)}).`
+                ? `Linked forensic evidence (${forensicCategoryLabel(input.forensicCategory) ?? sanitizePlainText(input.forensicCategory)}).`
                 : 'Linked forensic evidence.',
             phaseAtTime: incident.phase,
         });

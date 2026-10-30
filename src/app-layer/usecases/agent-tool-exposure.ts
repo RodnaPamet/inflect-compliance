@@ -67,9 +67,47 @@ import { assertGrantWithinAuditorRemit } from './auditor-remit';
 // holds no value import of `@flue/runtime`, which is ESM-only and would not
 // load in this Prisma-reaching graph. Same discipline as
 // `refused-capabilities.ts`.
-import { FLUE_RUNTIME_TOOLS } from '@/lib/agentic/flue/runtime-tools';
+import { FLUE_RUNTIME_TOOLS, type RuntimeToolCondition } from '@/lib/agentic/flue/runtime-tools';
+// The Tool Runner engine's twin (Step 2d), pure data for the same reason.
+import { TOOL_RUNNER_SUPPLIED_TOOLS } from '@/lib/agentic/tool-runner/supplied-tools';
 import { AgentToolGrantSchema } from '../schemas/agent-registry.schemas';
 import type { RequestContext } from '../types';
+
+/** The engines that supply tools of their own, and the list each reports. */
+const ENGINE_SUPPLIED_TOOLS = [
+    { engine: 'flue', tools: FLUE_RUNTIME_TOOLS },
+    { engine: 'tool-runner', tools: TOOL_RUNNER_SUPPLIED_TOOLS },
+] as const;
+
+/**
+ * Every engine's own tools, ONE ROW PER NAME, naming the engines that supply it
+ * (Step 2d). `activate_skill` is supplied by Flue's runtime and by the Tool
+ * Runner engine alike, under the same condition; its row carries both
+ * engines' sentences, because what bounds it is said by each engine.
+ */
+export function engineSuppliedTools(): Array<{
+    name: string;
+    appearsWhen: RuntimeToolCondition;
+    boundedBy: string;
+    engines: string[];
+}> {
+    const rows = new Map<string, { name: string; appearsWhen: RuntimeToolCondition; boundedBy: string; engines: string[] }>();
+    for (const { engine, tools } of ENGINE_SUPPLIED_TOOLS) {
+        for (const t of tools) {
+            const row = rows.get(t.name);
+            if (!row) {
+                rows.set(t.name, { name: t.name, appearsWhen: t.appearsWhen, boundedBy: t.boundedBy, engines: [engine] });
+                continue;
+            }
+            // The wider condition wins: a row must never say a tool arrives
+            // less often than one engine hands it over.
+            if (t.appearsWhen === 'always') row.appearsWhen = 'always';
+            row.boundedBy = `${row.boundedBy} ${t.boundedBy}`;
+            row.engines.push(engine);
+        }
+    }
+    return [...rows.values()];
+}
 
 /**
  * Resolve the agent inside the tenant transaction. See the header for why the
@@ -243,16 +281,17 @@ export async function listAgentTools(ctx: RequestContext, agentId: string) {
              * different questions — what was granted, what could be, and what
              * arrives regardless.
              *
+             * EVERY ENGINE's own tools (Step 2d), one row per name with the
+             * engines that supply it: the Tool Runner engine hands a run that
+             * mounts skills its own `activate_skill`, and a run of this agent
+             * may be on either engine.
+             *
              * NOT conditioned on whether this agent has a Flue run today. The
              * statement is about what a run OF THIS AGENT would be handed, and
              * a field that appeared only after the first run would be absent
              * exactly when somebody is deciding whether to allow one.
              */
-            runtimeProvided: FLUE_RUNTIME_TOOLS.map((t) => ({
-                name: t.name,
-                appearsWhen: t.appearsWhen,
-                boundedBy: t.boundedBy,
-            })),
+            runtimeProvided: engineSuppliedTools(),
         };
     });
 }

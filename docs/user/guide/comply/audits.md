@@ -17,10 +17,10 @@ Open **{{ui:nav.audits}}** under **{{ui:nav.comply}}** in the sidebar. The bread
 | Open the page, the list of audits, and an audit's checklist and findings | Every role: Owner, Admin, Editor, Reader, Auditor and AI admin |
 | Create an audit | Owner, Admin, Editor |
 | Edit an audit, or raise a finding on it | Owner, Admin, Editor |
-| Move an audit to its next status, or record a checklist result | Owner, Admin, Editor |
+| Move an audit forward or back a step, cancel it, or record a checklist result | Owner, Admin, Editor |
 | Open the pages the header and **{{ui:audits.hub.lifecycleTitle}}** link to | Every role. Each page has its own rules for what you can change there |
 
-**{{ui:audits.editModal.trigger}}** and **{{ui:audits.findingModal.trigger}}** appear only for Owners, Admins and Editors. The **{{ui:audits.newAudit}}** button, the status button and the checklist result lists are shown to every role, but for a Reader, an Auditor or an AI admin saving fails: the new-audit form says **You do not have permission to modify records in this context.**, and a status or checklist change shows an error message.
+The **{{ui:audits.newAudit}}** button, the status buttons, **{{ui:audits.detail.cancelAudit}}**, **{{ui:audits.editModal.trigger}}**, **{{ui:audits.findingModal.trigger}}** and the checklist result lists appear only for Owners, Admins and Editors. Readers, Auditors and AI admins see each audit read-only, with each checklist item's result shown as a badge.
 
 If your workspace uses custom roles, these changes follow the built-in role your custom role is based on, not the custom role's own permissions.
 
@@ -40,7 +40,7 @@ Use the page to run internal audits: plan one against a framework, work through 
 | {{ui:audits.nav.scans}} | The {{ui:nav.securityTesting}} page |
 | {{ui:audits.findingsTab}} | The [{{ui:findings.title}}](findings.md) |
 | {{ui:audits.nav.incidents}} | The incidents register |
-| {{ui:audits.newAudit}} | The new-audit form, from the button with a plus sign |
+| {{ui:audits.newAudit}} | The new-audit form, from the button with a plus sign. Shown only to Owners, Admins and Editors |
 
 The four after **{{ui:audits.hub.related}}** are separate pages, linked here because their records feed the audit.
 
@@ -61,18 +61,19 @@ Below them, **{{ui:audits.hub.startTitle}}** sets out six numbered steps. Steps 
 
 **The audit.** Until you pick one, the panel reads **{{ui:audits.selectAudit}}**. An open audit shows:
 
-- Its title, the button that moves it to its next status, and **{{ui:audits.editModal.trigger}}**.
+- Its title and, for Owners, Admins and Editors, the buttons that change its status and **{{ui:audits.editModal.trigger}}**.
 - Its scope, when one was written.
-- **{{ui:audits.checklist}}**, with the number of items. Each item has a result list, {{ui:audits.notTested}}, {{ui:audits.pass}} or {{ui:audits.fail}}, the item's text, and a badge repeating the result. An item's note, when it has one, is shown under its text.
-- **{{ui:audits.findingsTab}}**, with the number of findings and the **{{ui:audits.findingModal.trigger}}** button. Each finding shows its title and its severity in capitals, such as **HIGH**.
+- Its **{{ui:audits.auditors}}**, when any were entered.
+- **{{ui:audits.checklist}}**, with the number of items. Each item shows its text and a badge with its result, {{ui:audits.notTested}}, {{ui:audits.pass}} or {{ui:audits.fail}}. Owners, Admins and Editors also get a result list beside each item. An item's note, when it has one, is shown under its text.
+- **{{ui:audits.findingsTab}}**, with the number of findings and, for Owners, Admins and Editors, the **{{ui:audits.findingModal.trigger}}** button. Each finding shows its title and its severity, such as **{{ui:audits.findingModal.severityOptions.HIGH}}**.
 
-The panel does not show the audit's framework, cycle, date, departments, criteria or auditors. The **{{ui:audits.editModal.trigger}}** form shows all of them but the auditors.
+The panel does not show the audit's framework, cycle, date, departments or criteria. The **{{ui:audits.editModal.trigger}}** form shows all of them.
 
 ## What you can do
 
 ### Create an audit
 
-Click the **{{ui:audits.newAudit}}** button. The form asks for an **{{ui:audits.auditTitle}}**, which is required, and optionally a **{{ui:audits.newModal.framework}}**, the **{{ui:audits.auditors}}**, an **{{ui:audits.newModal.cycle}}** and the **{{ui:audits.scope}}**. The framework list offers every framework Inflect carries, whether or not the workspace uses it, and starts on **{{ui:audits.newModal.noFramework}}**. The cycle list starts on **{{ui:audits.newModal.noCycle}}**, or on the cycle you filtered the list to. Click **{{ui:audits.createAudit}}**.
+Click the **{{ui:audits.newAudit}}** button. The form asks for an **{{ui:audits.auditTitle}}**, which is required, and optionally a **{{ui:audits.newModal.framework}}**, the **{{ui:audits.auditors}}**, an **{{ui:audits.newModal.cycle}}** and the **{{ui:audits.scope}}**. The framework list offers every framework Inflect carries, whether or not the workspace uses it, and starts on **{{ui:audits.newModal.noFramework}}**. The cycle list starts on **{{ui:audits.newModal.noCycle}}**, or on the cycle you filtered the list to, and names each cycle's framework. Click **{{ui:audits.createAudit}}**.
 
 The audit starts as {{ui:audits.planned}} and opens beside the list, with its checklist already written:
 
@@ -83,17 +84,30 @@ The page cannot add, reword or remove checklist items. If you close the form aft
 
 ### Record checklist results
 
-Choose a result in the list beside each item, and the message **{{ui:audits.detail.checklistSaved}}** confirms it. Changing the result clears the item's note.
+Choose a result in the list beside each item, and the message **{{ui:audits.detail.checklistSaved}}** confirms it. Changing the result keeps the item's note.
 
 When an item moves to {{ui:audits.fail}} from any other result, Inflect also raises a finding on the audit, a {{ui:findings.nonconformity}} of {{ui:findings.medium}} severity titled with the item's text, and a remediation task for it. Setting the item back and failing it again does not raise a second one.
 
 ### Move an audit on
 
-A {{ui:audits.planned}} audit shows the **{{ui:audits.inProgress}}** button, and an {{ui:audits.inProgress}} audit the **{{ui:audits.completed}}** button. Click it, and a message confirms the new status. The page has no way to move an audit back or to cancel it. A completed audit can still be edited and its checklist changed.
+The buttons beside the audit's title depend on its status:
+
+| Status | Buttons |
+| --- | --- |
+| {{ui:audits.planned}} | **{{ui:audits.inProgress}}** and **{{ui:audits.detail.cancelAudit}}** |
+| {{ui:audits.inProgress}} | **{{ui:audits.completed}}**, **{{ui:audits.detail.backToPlanned}}** and **{{ui:audits.detail.cancelAudit}}** |
+| {{ui:audits.completed}} | **{{ui:audits.detail.backToInProgress}}** |
+| {{ui:audits.cancelled}} | None |
+
+Click one, and a message confirms the new status. Use a back button to correct an audit that was moved on by mistake.
+
+**{{ui:audits.detail.cancelAudit}}** first asks **{{ui:audits.detail.cancelConfirm.title}}** Click **{{ui:audits.detail.cancelConfirm.confirm}}** to mark the audit {{ui:audits.cancelled}}, or **{{ui:audits.detail.cancelConfirm.keep}}** to leave it as it is. Its checklist results and findings are kept. The page cannot reopen a cancelled audit. If the change is refused, the question stays open and a message says why.
+
+A completed or cancelled audit can still be edited, its checklist results changed and findings raised on it.
 
 ### Edit an audit
 
-Click **{{ui:audits.editModal.trigger}}**. The **{{ui:audits.editModal.title}}** form holds the {{ui:audits.editModal.labelTitle}}, {{ui:audits.newModal.framework}}, {{ui:audits.editModal.labelSchedule}}, {{ui:audits.newModal.cycle}}, {{ui:audits.editModal.labelDepartments}}, {{ui:audits.editModal.labelScope}} and {{ui:audits.editModal.labelCriteria}}. Click **{{ui:audits.editModal.save}}**. A new framework does not change the checklist.
+Click **{{ui:audits.editModal.trigger}}**. The **{{ui:audits.editModal.title}}** form holds the {{ui:audits.editModal.labelTitle}}, {{ui:audits.newModal.framework}}, {{ui:audits.editModal.labelSchedule}}, {{ui:audits.newModal.cycle}}, {{ui:audits.auditors}}, {{ui:audits.editModal.labelDepartments}}, {{ui:audits.editModal.labelScope}} and {{ui:audits.editModal.labelCriteria}}. Click **{{ui:audits.editModal.save}}**. Emptying {{ui:audits.auditors}} removes the auditors. A new framework does not change the checklist.
 
 ### Raise a finding
 
@@ -105,22 +119,22 @@ Click **{{ui:audits.findingModal.trigger}}** in the audit's findings. The **{{ui
 - A finding raised here, by hand or by a failed item, appears in the {{ui:findings.title}} with this audit as its source, or the audit's cycle when it has one. It counts under **{{ui:dashboard.openFindings}}** on the dashboard until it is closed.
 - While open, the findings of a fieldwork audit attached to a cycle lower that cycle's readiness score.
 - A failed item's remediation task appears in {{ui:nav.tasks}}. Resolving or closing that task closes the finding.
+- Cancelling an audit does not close its findings or their remediation tasks. They go on counting as above until they are closed.
 - The page cannot delete an audit.
 
 ## Empty and error states
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:audits.hub.emptyTitle}}** | The workspace has no audits, or none in the chosen cycle | Click **{{ui:audits.newAudit}}** in the message, if your role can create audits |
+| **{{ui:audits.hub.emptyTitle}}** | The workspace has no audits, or none in the chosen cycle. For Readers, Auditors and AI admins the message adds **{{ui:audits.hub.emptyDescReadOnly}}** | Owners, Admins and Editors click **{{ui:audits.newAudit}}** in the message. Others ask one of them |
 | **{{ui:audits.detail.loadError}}** | The audit did not open | Click it in the list again |
-| **You do not have permission to modify records in this context.** in the new-audit form | Your role cannot create audits | Ask an Owner, Admin or Editor |
 | **Audit cycle not found or belongs to a different tenant** | The chosen cycle no longer exists | Choose another cycle, or {{ui:audits.newModal.noCycle}} |
 | **{{ui:audits.newModal.createFailed}}** | The audit was not created | Try again |
-| **{{ui:audits.detail.statusError}}** | The status did not change, and the old one is shown again. It is also what a role that cannot change audits sees | Try again, or ask an Owner, Admin or Editor |
-| **{{ui:audits.detail.checklistError}}** | The result was not saved. It is also what a role that cannot change audits sees | Reload the page and try again, or ask an Owner, Admin or Editor |
-| **{{ui:audits.editModal.saveFailed}}** | The changes were not saved | Try again |
+| **{{ui:audits.detail.statusError}}**, or the reason the server gave | The status did not change, and the old one is shown again | Follow the reason given, then try again |
+| **{{ui:audits.detail.checklistError}}**, or the reason the server gave | The result was not saved | Follow the reason given, or reload the page and try again |
+| **{{ui:audits.editModal.saveFailed}}**, or the reason the server gave | The changes were not saved, and the form stays open | Follow the reason given, then try again |
 | **{{ui:audits.findingModal.createFailed}}**, or the reason the server gave | The finding was not created | Follow the reason given, then try again |
-| A banner saying only the first 5,000 results are shown | The workspace has more than 5,000 audits | Choose a cycle to narrow the list |
+| A banner saying only the first 5,000 results are shown | The workspace has more than 5,000 audits. While the workspace has cycles and none is chosen, the banner adds **{{ui:audits.hub.truncatedHint}}** | Choose a cycle to narrow the list |
 
 ## Related
 

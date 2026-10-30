@@ -272,6 +272,9 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/[agentId]/profile/versions/[version]/approve/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/profile/versions/[version]/reject/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/profile/versions/[version]/retire/route.ts',
+    // #4150 (Claude agents 2c) — the Behaviour tab's Test run, which its button
+    // calls; a route the product reaches for from that page, not a destination.
+    't/[tenantSlug]/admin/agents/[agentId]/profile/versions/[version]/test-run/route.ts',
     't/[tenantSlug]/admin/agents/kill-switch/route.ts',
     // #3670 — the owner-orphan pass's mode and its recorded passes. API-only
     // until a page renders them, like the ownership transfer it hands its
@@ -309,6 +312,10 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/harness-scanner-keys/[keyId]/route.ts',
     't/[tenantSlug]/admin/agents/harness-scanner-keys/route.ts',
     't/[tenantSlug]/admin/agents/harness-scans/route.ts',
+    // #4472 — the discovered agents a person can start a discovered-agent
+    // review with. GET only, the inventory read; the runs page's start form
+    // calls it for its picker, offered only to a caller who can load it.
+    't/[tenantSlug]/admin/agents/discovered/route.ts',
     // #3673 — the A2A peer register and card pinning. API-only in step 2e,
     // which builds the record and the pin and no exchange: the pilot peer is
     // registered and pinned by an operator, and a page belongs with the
@@ -398,11 +405,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
 
     // queue it feeds rather than on a sibling path that would imply a second
 
-    // kind of proposal. Authorization is the usecase's `assertCanWrite` —
+    // kind of proposal. Gated on the compose page's `admin.view`, then the
 
-    // deliberately the LOWER bar, because requiring approve-authority to
+    // usecase's `assertCanWrite` — still the LOWER bar than approving, because
 
-    // compose would turn four eyes into two.
+    // requiring approve-authority to compose would turn four eyes into two.
 
     't/[tenantSlug]/agent-proposals/compose/route.ts',
     // REMOVED 2026-10-14 (#3528): the TYPED-PHRASE compose route. The intent

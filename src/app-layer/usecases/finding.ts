@@ -84,10 +84,11 @@ function sanitizeOptional(v: string | null | undefined): string | null | undefin
 export async function listFindings(
     ctx: RequestContext,
     options: { take?: number } = {},
+    filters: { status?: string } = {},
 ) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, (db) =>
-        FindingRepository.list(db, ctx, options)
+        FindingRepository.list(db, ctx, { ...options, status: filters.status })
     );
 }
 
@@ -187,7 +188,10 @@ export async function updateFinding(ctx: RequestContext, id: string, data: z.inf
             description: sanitizeOptional(data.description) ?? undefined,
             rootCause: sanitizeOptional(data.rootCause) ?? undefined,
             correctiveAction: sanitizeOptional(data.correctiveAction) ?? undefined,
-            analysis: sanitizeOptional(data.analysis) ?? undefined,
+            // Three-state like the FKs below: `null` CLEARS the analysis. It
+            // used to collapse to "untouched", so the register's edit form
+            // could not empty a nullable column it had set.
+            analysis: sanitizeOptional(data.analysis),
             owner: sanitizeOptional(data.owner) ?? undefined,
             // Three-state for the relation FKs: undefined → don't touch,
             // null → clear, string → set.
@@ -195,7 +199,11 @@ export async function updateFinding(ctx: RequestContext, id: string, data: z.inf
             controlId: data.controlId === undefined ? undefined : data.controlId,
             compensatingControlId:
                 data.compensatingControlId === undefined ? undefined : data.compensatingControlId,
-            dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+            // undefined → don't touch, null or '' → clear, string → set. A
+            // null used to be dropped, so a due date, once set, could never
+            // be removed.
+            dueDate:
+                data.dueDate === undefined ? undefined : data.dueDate ? new Date(data.dueDate) : null,
             status: data.status as FindingStatus | undefined,
             verificationNotes: sanitizeOptional(data.verificationNotes) ?? undefined,
             verifiedBy: data.status === 'CLOSED' ? ctx.userId : undefined,

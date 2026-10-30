@@ -50,6 +50,66 @@
         "docs/agentic-iam-roadmap.md": {
             "class": "living"
         },
+        "docs/ai-architecture-roadmap.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/ares.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/blueprint-v6.md": {
+            "class": "historical"
+        },
+        "docs/ai-architecture/cuopt.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/garak.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/inspect.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/langflow.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/langfuse.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/modal-inference.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/morpheus.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/nemo-guardrails.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/nemoclaw.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/nemotron-reasoning.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/nemotron-retriever.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/presidio.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/ragas.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/ragflow.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/swe-bench.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/triton.md": {
+            "class": "living"
+        },
+        "docs/ai-architecture/weaviate.md": {
+            "class": "living"
+        },
         "docs/api-consumer-guide.md": {
             "class": "authoritative"
         },
@@ -405,6 +465,9 @@
             "class": "authoritative"
         },
         "docs/runbooks/joule-byoa.md": {
+            "class": "authoritative"
+        },
+        "docs/runbooks/wiring-an-sap-mcp-connection.md": {
             "class": "authoritative"
         },
         "docs/sap-agent-integration-roadmap.md": {

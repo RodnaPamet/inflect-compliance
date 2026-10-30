@@ -1,9 +1,17 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
 import { RequirePermission } from '@/components/require-permission';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { useTenantContext } from '@/lib/tenant-context-provider';
+
+import {
+    ADMIN_PAGE_REQUIREMENTS,
+    adminPageRouteForPath,
+    admitsAdminPage,
+} from './_lib/admin-page-requirements';
 
 /**
  * Admin layout guard — what the /t/:tenantSlug/admin/* subtree SHOWS a
@@ -20,9 +28,22 @@ import { ForbiddenPage } from '@/components/ForbiddenPage';
  *      before it reads anything — `tests/guardrails/admin-layout-guard.test.ts`.
  *   2. API routes — `requirePermission` (separate concern).
  *   3. This layout — the on-screen fallback.
+ *
+ * The one exception to `admin.view` is read off the server gate's own table:
+ * a page whose row in `ADMIN_PAGE_REQUIREMENTS` admits the caller is shown.
+ * Every row but the audit log's includes `admin.view`, so that adds nobody
+ * anywhere else; on the audit log it shows an AUDITOR the page the server
+ * renders for them (owner decision 2026-10-29).
  */
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
     const t = useTranslations('admin');
+    const tenant = useTenantContext();
+    const route = adminPageRouteForPath(usePathname() ?? '');
+
+    if (route !== null && admitsAdminPage(tenant, ADMIN_PAGE_REQUIREMENTS[route])) {
+        return <>{children}</>;
+    }
+
     return (
         <RequirePermission
             resource="admin"

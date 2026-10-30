@@ -7,17 +7,26 @@ import { ClauseStatus } from '@prisma/client';
 export class ClauseRepository {
     static async list(db: PrismaTx, ctx: RequestContext) {
         const CLAUSES = getISO27001Clauses();
-        // Ensure clauses exist in DB (global table — uses global prisma since Clause has no tenantId)
-        for (const c of CLAUSES) {
-            await prisma.clause.upsert({
-                where: { number: c.number },
-                create: { number: c.number, title: c.title, description: c.description, artifacts: c.artifacts, sortOrder: parseInt(c.number) },
-                update: {},
+        // Clause is a global catalogue (no tenantId, no RLS), read through the
+        // global prisma and seeded on first use: only the clauses that are
+        // missing are inserted, and existing rows are never touched. This runs
+        // inside the caller's tenant transaction, where every write is audited
+        // into the tenant's hash-chained trail — an upsert per clause on every
+        // call put one audit row per clause into the trail on each read, and
+        // the appends were enough to overrun TENANT_TX_TIMEOUT_MS.
+        const readCatalogue = () => prisma.clause.findMany({ orderBy: { sortOrder: 'asc' } });
+        let clauses = await readCatalogue();
+        const present = new Set(clauses.map((c) => c.number));
+        const missing = CLAUSES.filter((c) => !present.has(c.number));
+        if (missing.length > 0) {
+            await prisma.clause.createMany({
+                data: missing.map((c) => ({ number: c.number, title: c.title, description: c.description, artifacts: c.artifacts, sortOrder: parseInt(c.number) })),
+                skipDuplicates: true,
             });
+            clauses = await readCatalogue();
         }
 
-        // Clause is global (no RLS), but ClauseProgress is tenant-scoped — read via tenant tx
-        const clauses = await prisma.clause.findMany({ orderBy: { sortOrder: 'asc' } });
+        // ClauseProgress is tenant-scoped — read via tenant tx
         const progress = await db.clauseProgress.findMany({ where: { tenantId: ctx.tenantId } });
 
         return clauses.map((clause) => {

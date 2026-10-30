@@ -70,21 +70,21 @@ export const STATIC_DRIVER: AgentDriver = 'static';
  * by a client component rendering the admin toggle — the same reason
  * `src/lib/identity/write-ladder.ts` carries the ladder itself.
  *
- * NOT every value the enum declares. A new value ships in two deploys (#4241,
- * `tests/unit/agent-driver-mode-rollout.test.ts`): first READ_ONLY, in
- * {@link STORED_DRIVER_MODES} only, and then here.
+ * NOT necessarily every value the enum declares. A new value ships in two
+ * deploys (#4241, `tests/unit/agent-driver-mode-rollout.test.ts`): first
+ * READ_ONLY, in {@link STORED_DRIVER_MODES} only, and then here. `TOOL_RUNNER`
+ * made that move in Step 2c, once production ran an image that read it.
  */
-export const AGENT_DRIVER_MODES = ['STATIC', 'FLUE'] as const;
+export const AGENT_DRIVER_MODES = ['STATIC', 'FLUE', 'TOOL_RUNNER'] as const;
 
 export type AgentDriverMode = (typeof AGENT_DRIVER_MODES)[number];
 
 /**
  * Every value the `AgentDriverMode` Prisma enum declares, which every READER
- * understands. `TOOL_RUNNER` is READ_ONLY (Step 2b of
- * `docs/claude-tool-runner-design.md`): this build reads it as itself, and no
- * writer accepts it until Step 2c, once production runs an image that reads it.
+ * understands. Equal to {@link AGENT_DRIVER_MODES} while no value is READ_ONLY;
+ * the next new value joins here first and there one deploy later.
  */
-export const STORED_DRIVER_MODES = [...AGENT_DRIVER_MODES, 'TOOL_RUNNER'] as const;
+export const STORED_DRIVER_MODES = [...AGENT_DRIVER_MODES] as const;
 
 export type StoredDriverMode = (typeof STORED_DRIVER_MODES)[number];
 
@@ -218,11 +218,11 @@ export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
     // Every other deployment is unchanged, which is what makes this
     // revertible by reverting one line.
     flue: true,
-    // FALSE until Step 2c (`docs/claude-tool-runner-design.md`). The driver is
-    // complete and conformance-proven, and `resolveAgentDriver` refuses it with
-    // DRIVER_NOT_IMPLEMENTED whatever the switch and the tenant say, so no run
-    // records `TOOL_RUNNER` while that value is READ_ONLY.
-    'tool-runner': false,
+    // TRUE since Step 2c (`docs/claude-tool-runner-design.md`, #4150), once
+    // `TOOL_RUNNER` was WRITTEN. Like Flue's, it enables nothing alone: the
+    // operator's `AGENT_DRIVER_TOOL_RUNNER` switch and the tenant's choice of
+    // TOOL_RUNNER still each refuse. Revert this line to turn the engine off.
+    'tool-runner': true,
 };
 
 /**

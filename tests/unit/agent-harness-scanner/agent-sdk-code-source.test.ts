@@ -29,6 +29,7 @@ import {
 } from '../../helpers/agent-harness-code-fixtures';
 import { looksLikeSecret, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
 import { AGENT_SDK_OPTION_CRITERIA, firstSecretShapedMember } from '@/lib/agentic/harness-findings';
+import { agentSdkPython, agentSdkTypeScript } from '@/lib/agentic/connect-wizard';
 import { isHarnessCriterionId } from '@/lib/agentic/harness-ladder';
 import { parseScannerConfig } from '../../../packages/agent-harness-scanner/src/config';
 import { jsonLineLog } from '../../../packages/agent-harness-scanner/src/log';
@@ -117,6 +118,77 @@ describe('1. SDK agents, their tools, model, credentials and option verdicts', (
             hooks: { present: true, at: loc('support-bot/agent.ts', 25) },
         });
         expect(verdictsOf(support)).toEqual([]);
+    });
+
+    it('the connect wizard\'s own snippets are each found as one SDK agent, naming Inflect and only the granted tools (Step 3H)', async () => {
+        // The REAL generator output (Step 3a), not a fixture written to resemble
+        // it: what a customer pastes is what the scanner reads.
+        const input = { origin: 'https://inflect.acme.example', grantedTools: ['list_risks', 'propose_risks'] };
+        const { scan, byName } = await agentsIn({
+            'wizard/agent.ts': agentSdkTypeScript(input),
+            'wizard/agent.py': agentSdkPython(input),
+        });
+        expect(scan.agents.map((a) => [a.discoveredId, a.framework])).toEqual(
+            expect.arrayContaining([
+                ['code:acme/wizard/agent.ts#options', 'claude-agent-sdk'],
+                ['code:acme/wizard/agent.py#options', 'claude-agent-sdk'],
+            ]),
+        );
+        expect(scan.agents).toHaveLength(2);
+        const ts = byName.get('options')!;
+        for (const agent of scan.agents) {
+            // The server it is configured with, then the names `allowedTools`
+            // approves on it: Inflect's, and no other server's.
+            expect(agent.tools.map((t) => [t.kind, t.name, t.server])).toEqual([
+                ['mcp', 'inflect:*', 'https://inflect.acme.example/api/mcp'],
+                ['mcp', 'list_risks', 'https://inflect.acme.example/api/mcp'],
+                ['mcp', 'propose_risks', 'https://inflect.acme.example/api/mcp'],
+            ]);
+            expect(agent.credentials.map((c) => c.ref)).toContain('env://INFLECT_API_KEY');
+        }
+        // The wizard turns off every option the owner mapped to a criterion;
+        // what code cannot see, a hook, is the one verdict it draws.
+        expect(ts.sdkOptions).toMatchObject({
+            permissionMode: { mode: 'dontAsk' },
+            settingSources: { state: 'EMPTY' },
+            allowedToolsWildcard: { present: false },
+            shellOrFetch: { names: [] },
+        });
+        for (const agent of scan.agents) {
+            expect(observationOf(agent).verdicts.map((v) => [v.criterion, v.met])).toEqual([['H3.payloads_guarded', false]]);
+        }
+    });
+
+    it('a key read from Node\'s process module is the environment however it is imported, and a local `env` is not', async () => {
+        const agent = (prelude: string, read: string) =>
+            [
+                prelude,
+                `import { query } from "@anthropic-ai/claude-agent-sdk";`,
+                `const options = { mcpServers: { inflect: { type: "http", url: "https://inflect.acme.example/api/mcp",`,
+                `  headers: { Authorization: "Bearer " + ${read} } } }, allowedTools: ["mcp__inflect__list_risks"], tools: [] };`,
+                `for await (const m of query({ prompt: "x", options })) {}`,
+            ].join('\n');
+        const { scan } = await agentsIn({
+            'forms/named.ts': agent(`import { env } from "node:process";`, 'env.INFLECT_API_KEY'),
+            'forms/aliased.ts': agent(`import { env as e } from "process";`, 'e["INFLECT_API_KEY"]'),
+            'forms/namespace.ts': agent(`import * as p from "node:process";`, 'p.env.INFLECT_API_KEY'),
+            'forms/default.ts': agent(`import proc from "node:process";`, 'proc.env.INFLECT_API_KEY'),
+            'forms/required.js': agent(`const { env } = require("node:process");`, 'env.INFLECT_API_KEY'),
+            'forms/global.ts': agent('', 'process.env.INFLECT_API_KEY'),
+            'forms/local.ts': agent(`const env = { INFLECT_API_KEY: "not the environment" };`, 'env.INFLECT_API_KEY'),
+        });
+        const inflectKey = new Map(
+            scan.agents.map((a) => [a.discoveredId.split('/')[2].split('#')[0], a.credentials.some((c) => c.ref === 'env://INFLECT_API_KEY')]),
+        );
+        expect(Object.fromEntries(inflectKey)).toEqual({
+            'named.ts': true,
+            'aliased.ts': true,
+            'namespace.ts': true,
+            'default.ts': true,
+            'required.js': true,
+            'global.ts': true,
+            'local.ts': false,
+        });
     });
 
     it('TypeScript: an agent left at the SDK\'s defaults fails every option the owner mapped', async () => {

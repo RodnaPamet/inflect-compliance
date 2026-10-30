@@ -99,19 +99,23 @@ export interface ToolsTabProps extends AgentTabProps {
 /** Circuit breaker. */
 export interface CircuitBreakerTabProps extends AgentTabProps {
     /**
-     * `admin.agent_registry` AND the role-tier `canAdmin`, ANDed on the server.
+     * Every gate closing a breaker passes, asked on the server by
+     * `agentRegisterAffordances` (#4471): the edge, `admin.agent_registry`, and
+     * `assertAgentGovernanceAdmin(ctx, 'agent_registry')` — the coarse admin
+     * tier OR the register key — which `closeAgentCircuitBreaker` asserts.
+     * The coarse tier alone withheld the button from the built-in AI admin,
+     * whom the server accepts.
      *
-     * `closeAgentCircuitBreaker` calls `assertCanAdmin` on top of the route
-     * gate, and `canAdmin` comes from the membership's BASE ROLE rather than
-     * the permissions blob. A custom role with baseRole EDITOR can hold
-     * agent_registry, pass the route, and still be refused inside the usecase —
-     * so gating this button on the route key alone renders a control that
-     * 403s for the very person it rendered for.
-     *
-     * Reading the breaker needs neither: that GET is the register key, which
-     * the page has already required.
+     * Reading the breaker needs none of it: that GET is the register key,
+     * which the page has already required.
      */
     canCloseBreaker: boolean;
+    /**
+     * `admin.agent_kill_switch` behind the edge — the kill-switch list route's
+     * own gates — so the history below the breaker is fetched only by a reader
+     * that route admits. Defaults to `canCloseBreaker`, which it used to be.
+     */
+    canReadKillHistory?: boolean;
 }
 
 /** Skills. The tab's read is the register key the page already required. */
@@ -145,4 +149,9 @@ export interface BehaviourTabProps extends AgentTabProps {
      * because it puts nothing in force.
      */
     retired: boolean;
+    /**
+     * Open the Runs tab (Step 2c): a Test run, once started, is shown where the
+     * agent's runs are. Optional so a caller that predates it still renders.
+     */
+    onOpenRuns?: () => void;
 }

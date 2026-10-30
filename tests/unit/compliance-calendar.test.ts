@@ -929,6 +929,19 @@ describe('calendar event ownership', () => {
         expect((await eventOfType('finding-due'))?.ownerUserId).toBe(OWNER);
     });
 
+    it("a finding links to its panel on the register, there being no /findings/[id] route", async () => {
+        mockFindingFindMany.mockResolvedValue([
+            {
+                id: 'find-1',
+                title: 'Missing 2FA',
+                dueDate: IN_RANGE,
+                status: 'OPEN',
+                assigneeUserId: OWNER,
+            },
+        ]);
+        expect((await eventOfType('finding-due'))?.href).toBe('/t/acme/findings?finding=find-1');
+    });
+
     it('a finding with only the legacy free-text owner reports NO owner', async () => {
         // `Finding.owner` holds a NAME. Publishing it as `ownerUserId` is worse
         // than publishing nothing: a name can never match the viewer, and in
@@ -945,6 +958,26 @@ describe('calendar event ownership', () => {
             },
         ]);
         expect((await eventOfType('finding-due'))?.ownerUserId).toBeUndefined();
+    });
+
+    it('an incident notification inherits the commander, and is titled by its deadline, not its enum code', async () => {
+        // #4463 — the title read "Incident notification (EARLY_WARNING_24H): …".
+        mockIncidentNotificationFindMany.mockResolvedValue([
+            {
+                id: 'n-1',
+                kind: 'EARLY_WARNING_24H',
+                dueAt: IN_RANGE,
+                status: 'PENDING',
+                incidentId: 'inc-1',
+                incident: { title: 'Ransomware on the billing cluster', ownerUserId: OWNER },
+            },
+        ]);
+        const event = await eventOfType('incident-notification-due');
+        expect(event?.title).toBe(
+            'Incident notification (24-hour early warning): Ransomware on the billing cluster',
+        );
+        expect(event?.title).not.toMatch(/EARLY_WARNING_24H/);
+        expect(event?.ownerUserId).toBe(OWNER);
     });
 });
 
@@ -1004,6 +1037,54 @@ describe('control test deadlines vs implementation status', () => {
         expect(isControlTestOutstanding(PAST, NOW)).toBe(true);
         expect(isControlTestOutstanding(new Date('2026-07-15T00:00:00Z'), NOW)).toBe(false);
         expect(isControlTestOutstanding(null, NOW)).toBe(false);
+    });
+});
+
+describe('vulnerability remediation dates vs vulnerability status (#4465)', () => {
+    const PAST = new Date('2026-05-15T00:00:00Z'); // inside [FROM, TO], before NOW
+
+    const row = (id: string, status: string) => ({
+        id,
+        cveId: `CVE-${id}`,
+        status,
+        remediationDueAt: PAST,
+        ownerUserId: null,
+        assetId: 'a-1',
+        asset: { name: 'Web server' },
+    });
+
+    it('a MITIGATED, ACCEPTED or FALSE_POSITIVE vulnerability is done; OPEN and MITIGATING are overdue', async () => {
+        mockAssetVulnerabilityFindMany.mockResolvedValue([
+            row('open', 'OPEN'),
+            row('mitigating', 'MITIGATING'),
+            row('mitigated', 'MITIGATED'),
+            row('accepted', 'ACCEPTED'),
+            row('fp', 'FALSE_POSITIVE'),
+        ]);
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        const res = await getComplianceCalendarEvents(makeCtx() as never, { from: FROM, to: TO, now: NOW });
+        const byId = Object.fromEntries(
+            res.events.filter((e) => e.entityType === 'ASSET_VULNERABILITY').map((e) => [e.entityId, e.status]),
+        );
+        expect(byId).toEqual({
+            open: 'overdue',
+            mitigating: 'overdue',
+            mitigated: 'done',
+            accepted: 'done',
+            fp: 'done',
+        });
+    });
+
+    it('the closing set names only real vulnerability statuses', async () => {
+        const { REMEDIATION_CLOSED_VULN_STATUSES, VULN_STATUSES } = await import(
+            '@/app-layer/domain/vulnerability-status'
+        );
+        // It counted `RESOLVED`, which no vulnerability can hold.
+        for (const s of REMEDIATION_CLOSED_VULN_STATUSES) {
+            expect(VULN_STATUSES as readonly string[]).toContain(s);
+        }
     });
 });
 

@@ -133,6 +133,32 @@ export interface McpRowRedactionRule {
     keyOf: (row: unknown) => PermissionKey | null;
 }
 
+/**
+ * What an external tool's offer has to know about the connection behind it
+ * (#3872).
+ *
+ * `declaresWrite` is `declaresWrite(def.annotations)` — with an A2A send forced
+ * to `true`, because asking another organisation's agent to act is a write
+ * whatever its definition says, which is the same reason the dispatch's A2A
+ * branch sits above its read/write split.
+ *
+ * `connectionRefusesWrites` is `refusesEveryWrite(connection.mode)` on the
+ * ALREADY-COERCED rung, so an unset column reads read-only.
+ */
+export interface ExternalConnectionFacts {
+    readonly connectionId: string;
+    readonly connectionName: string;
+    readonly declaresWrite: boolean;
+    readonly connectionRefusesWrites: boolean;
+    /**
+     * Does this connection carry third-party business or personal data
+     * (`IntegrationConnection.reachesBusinessSystem`, added by J4/#3864 for this
+     * route)? THREE states: `true` and `false` are reviewed claims, NULL is
+     * nobody having said. The external-residency gate acts on `true` alone.
+     */
+    readonly reachesBusinessSystem: boolean | null;
+}
+
 export interface McpReadTool<TArgs = unknown> {
     /** MCP tool name (snake_case, stable — agents key off it). */
     name: string;
@@ -171,6 +197,17 @@ export interface McpReadTool<TArgs = unknown> {
     resourceScope: { resource: string; action: ScopeAction };
     /** The human route's own authorization, reused rather than re-stated. */
     authorize: McpToolAuthorization;
+    /**
+     * For an EXTERNAL tool, what the offer needs to know about its connection
+     * (#3872). Absent on every tool this build defines itself, which is why it
+     * is optional: an internal tool has no connection and no rung.
+     *
+     * The two terms are read at invocation-build time by `adapterFor`, from the
+     * same `connection.mode` and `declaresWrite(annotations)` the dispatch
+     * branches on, so the offer and the funnel cannot disagree about whether a
+     * given tool is a write or whether its connection will take one.
+     */
+    externalConnection?: ExternalConnectionFacts;
     /** Domain sections that fall away when the principal cannot see them. */
     redact?: readonly McpRedactionRule[];
     /** Rows that fall away when the principal cannot see their domain. */

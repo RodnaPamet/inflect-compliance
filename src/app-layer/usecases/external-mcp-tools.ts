@@ -385,7 +385,7 @@ export interface GrantedExternalTool {
      * name and url are denormalised into the journal so a row stays readable
      * after the connection is deleted.
      */
-    connection: { id: string; name: string; url: string; mode: ExternalWriteMode };
+    connection: { id: string; name: string; url: string; mode: ExternalWriteMode; reachesBusinessSystem: boolean | null };
     /**
      * The tenant's APPROVED parameter sets for this tool, if any.
      *
@@ -447,7 +447,20 @@ export async function resolveGrantedExternalTools(
                 provider: MCP_SERVER_PROVIDER_ID,
                 isEnabled: true,
             },
-            select: { id: true, name: true, configJson: true, secretEncrypted: true, externalWriteMode: true },
+            // `reachesBusinessSystem` since #3872 (M5): the offered tool carries
+            // it so the external-residency gate can refuse a run that would
+            // hand an ERP's rows to an external model provider with no
+            // acknowledgement. Selected HERE rather than re-read at the gate —
+            // one snapshot per invocation, the same reason the policy-card
+            // version is taken at build time and never re-read at dispatch.
+            select: {
+                id: true,
+                name: true,
+                configJson: true,
+                secretEncrypted: true,
+                externalWriteMode: true,
+                reachesBusinessSystem: true,
+            },
         })),
         // The approved sets for the granted tools — the values in force AND
         // the bounds in force. The `pending*` columns are deliberately NOT
@@ -639,7 +652,17 @@ export async function resolveGrantedExternalTools(
                 qualified,
                 def,
                 transport: { url, authorization },
-                connection: { id: connection.id, name: connection.name, url, mode: rung },
+                connection: {
+                    id: connection.id,
+                    name: connection.name,
+                    url,
+                    mode: rung,
+                    // THREE states, kept as three: NULL is "nobody has said",
+                    // which the gate treats as not-a-business-system because
+                    // `false` is a REVIEWED claim and defaulting unreviewed
+                    // rows to `true` would refuse every existing connection.
+                    reachesBusinessSystem: connection.reachesBusinessSystem,
+                },
                 parameterSets: setsByTool.get(qualified) ?? [],
             });
         }

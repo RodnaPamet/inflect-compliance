@@ -18,12 +18,13 @@ Older links to a separate agent-runs page open this page.
 | --- | --- |
 | Open the page, and open a run's own page | Owner, Admin, AI admin, Auditor |
 | Start a workflow | Owner, Admin |
-| Resume a run that is waiting for review | Owner, Admin |
+| Follow the ad-hoc question to the {{ui:agents.ask.title}} page | Owner, Admin, AI admin, Auditor |
+| Resume a run that is waiting for review or paused | Owner, Admin |
 | Abort a run | Owner, Admin |
 
-AI admins and Auditors see the buttons greyed out. Hovering one explains that it needs write access to the workspace. Editors and Readers see **{{ui:agents.runs.accessTitle}}** instead of the page.
+AI admins and Auditors see the start, resume and abort buttons greyed out. Hovering one explains that it needs write access to the workspace. Editors and Readers see **{{ui:agents.runs.accessTitle}}** instead of the page.
 
-If your workspace uses custom roles, opening the page depends on the permissions your role was given. Starting, resuming and aborting depend on whether the built-in role your custom role is based on can make changes.
+If your workspace uses custom roles, opening the page depends on the permissions your role was given. Starting, resuming and aborting depend on whether the built-in role your custom role is based on can make changes. The discovered-agent review also needs permission to read the agent inventory, and a membership of Owner, Admin or AI admin; without them its button is greyed out and says why. The ad-hoc question needs permission to view controls.
 
 ## What it is for
 
@@ -31,23 +32,29 @@ Use the page to see what agent workflows have done and what they are doing now, 
 
 ## What you see
 
-**{{ui:agents.runs.startWorkflow}}.** A row of buttons, one per workflow. Hover a button to read what the workflow does. Three of them can start from this page: the posture diagnostic and the two posture reviews, of compliance and of access. Every other workflow needs details this page does not ask for, such as a framework or a question, and starting it from here is refused with a message naming what is missing.
+**{{ui:agents.runs.startWorkflow}}.** A row of buttons, one per workflow. Hover a button to read what the workflow does.
 
-**The list.** The 50 most recent runs, newest first. Each run shows:
+- **Start in one click:** the posture diagnostic and the two posture reviews, of compliance and of access.
+- **Open a form first:** audit preparation and framework onboarding ask for a framework; the workpaper narrative asks for a period; the discovered-agent review asks you to choose the agent.
+- **The ad-hoc question** is a link to the {{ui:agents.ask.title}} page, where questions are asked.
+- **Greyed out, with the reason on hover:** the agent recertification pack, which an agent access review starts when it prepares its reviewer packs, and the SAP transaction review, which a connected host system starts with the document facts it reviews.
 
-- **Its status**, as the code the run records:
+**The list.** The 50 most recent runs, newest first. When older runs exist, a notice above the list says so. Each run shows:
+
+- **Its status:**
 
 | Status | What it means |
 | --- | --- |
-| **RUNNING** | The run is working now |
-| **AWAITING_APPROVAL** | The run has stopped for a person to review what it did. The date its approval window closes is shown beside it |
-| **PAUSED** | The run was interrupted, for example when the service restarted |
-| **COMPLETED** | The run finished |
-| **ABORTED** | Somebody stopped it |
-| **FAILED** | It stopped on an error |
+| **{{ui:agents.runs.status.RUNNING}}** | The run is working now |
+| **{{ui:agents.runs.status.AWAITING_APPROVAL}}** | The run has stopped for a person to review what it did. The date its approval window closes is shown beside it |
+| **{{ui:agents.runs.status.PAUSED}}** | The run was interrupted when the service shut down. Nothing resumes it on its own |
+| **{{ui:agents.runs.status.COMPLETED}}** | The run finished |
+| **{{ui:agents.runs.status.ABORTED}}** | Somebody stopped it |
+| **{{ui:agents.runs.status.FAILED}}** | It stopped on an error |
+| **{{ui:agents.runs.status.EMPTY_CATALOGUE}}** | It could not start because its agent was given no tools |
 
 - **The engine** that ran it: {{ui:agents.runs.driver.STATIC}}, {{ui:agents.runs.driver.FLUE}}, or {{ui:agents.runs.driver.UNRECOGNISED}} for an engine this version of Inflect does not know.
-- **The workflow's short code**, linked to the run's own page.
+- **The workflow's name**, linked to the run's own page.
 - **How many steps** it took, roughly how many tokens it used, and when it started.
 - **A hint** under a run that is waiting for review. When it queued proposals, the hint links to the review queue and says to approve them, then resume. When it queued none, it reads **{{ui:agents.runs.awaitingApprovalNoProposals}}**
 - **The run's summary**, once it has one.
@@ -58,19 +65,23 @@ Use the page to see what agent workflows have done and what they are doing now, 
 
 ### Start a workflow
 
-Click the workflow's button under **{{ui:agents.runs.startWorkflow}}**. The new run appears at the top of the list. If it is refused, a red message under the buttons gives the reason, for example that the workspace's monthly token budget or its cap on runs at once has been reached.
+Click the workflow's button under **{{ui:agents.runs.startWorkflow}}**. A workflow that needs details opens the **Start** form: fill in each field, using the hint under it, and click **{{ui:agents.runs.startForm.submit}}**. For the discovered-agent review, choose the agent from the list, newest seen first; each entry shows when it was last seen, by which source, and the register entry it is linked to, if any. When the list does not hold every agent, a note under it says so.
+
+The new run appears at the top of the list. If it is refused, a red message gives the reason, for example that the workspace's monthly token budget or its cap on runs at once has been reached.
 
 ### Resume a run waiting for review
 
-A run marked **AWAITING_APPROVAL** offers **{{ui:agents.runs.resume}}**. First decide what it asked for: follow the hint to the review queue and approve or reject its proposals, or open the run to see why it stopped. Then click **{{ui:agents.runs.resume}}**. The run carries on from where it stopped.
+A run marked **{{ui:agents.runs.status.AWAITING_APPROVAL}}** offers **{{ui:agents.runs.resume}}**. First decide what it asked for: follow the hint to the review queue and approve or reject its proposals, or open the run to see why it stopped. Then click **{{ui:agents.runs.resume}}**. The run carries on from where it stopped.
 
 Resume before the approval window closes. After that the run cannot be resumed, and you start the workflow again.
 
-A **PAUSED** run offers only **{{ui:agents.runs.abort}}** on this page.
+### Resume a paused run
+
+A **{{ui:agents.runs.status.PAUSED}}** run also offers **{{ui:agents.runs.resume}}**, with a hint: {{ui:agents.runs.pausedHint}}
 
 ### Abort a run
 
-A run that is **RUNNING**, **AWAITING_APPROVAL** or **PAUSED** offers **{{ui:agents.runs.abort}}**. Click it, then confirm in the **{{ui:agents.runs.abortConfirmTitle}}** dialog. The run stops before its next step. Work it has already done is not undone, and an aborted run cannot be resumed: starting the workflow again begins a new run from the start.
+A run that is **{{ui:agents.runs.status.RUNNING}}**, **{{ui:agents.runs.status.AWAITING_APPROVAL}}** or **{{ui:agents.runs.status.PAUSED}}** offers **{{ui:agents.runs.abort}}**. Click it, then confirm in the **{{ui:agents.runs.abortConfirmTitle}}** dialog. The run stops before its next step. Work it has already done is not undone, and an aborted run cannot be resumed: starting the workflow again begins a new run from the start.
 
 ## What happens next
 
@@ -85,13 +96,13 @@ A run that is **RUNNING**, **AWAITING_APPROVAL** or **PAUSED** offers **{{ui:age
 | --- | --- | --- |
 | **{{ui:agents.runs.accessTitle}}** | Your role cannot read agent runs | Ask an Owner or Admin |
 | **{{ui:agents.runs.emptyTitle}}** | No workflow has run in this workspace | Start one, if your role can |
-| A message starting **Workflow** and naming what it requires | That workflow needs details this page does not supply | Start one of the three workflows this page can start |
+| **{{ui:agents.runs.startForm.discoveredFailed}}** or **{{ui:agents.runs.startForm.frameworksFailed}}** in the start form | The list to choose from could not be loaded | Close the form and open it again |
+| **{{ui:agents.runs.startForm.noDiscoveredAgents}}** in the start form | No harness scan has found an agent in this workspace yet | Nothing to review yet |
 | A message starting **approval_window_closed** after **{{ui:agents.runs.resume}}** | The run's approval window has closed | Start the workflow again |
 | **Run is COMPLETED, cannot resume**, or another status | The run is no longer waiting | Reload the page to see where it is |
 | A message starting **monthly_token_budget_exceeded**, or one about the cap on agent runs | The workspace's monthly token budget or its cap on runs at once refused the run | Wait, or ask an Owner, Admin or AI admin to raise the limit on the {{ui:agents.register.title}} |
 | **{{ui:agents.runs.startFailed}}**, **{{ui:agents.runs.resumeFailed}}** or **{{ui:agents.runs.abortFailed}}** | The action did not go through | Try again |
 
-After you start, resume or abort a run, the list reloads and a waiting run's hint can say nothing is queued even when proposals are waiting. Reload the page to see the right hint.
 
 ## Related
 

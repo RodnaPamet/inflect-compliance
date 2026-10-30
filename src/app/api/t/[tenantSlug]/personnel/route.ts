@@ -7,15 +7,19 @@ import { jsonResponse } from '@/lib/api-response';
 /**
  * PR-4 — personnel roster. GET lists employees (personnel.view); POST adds a
  * manual record (personnel.manage). HRIS-synced records arrive via hris-sync.
+ *
+ * GET answers `{ employees, truncated, total }` (#4470): the rows, whether the
+ * roster cap cut them, and how many match. `status` may repeat to ask for
+ * several statuses; `q` searches name and work email.
  */
 export const GET = withApiErrorHandling(
     requirePermission<{ tenantSlug: string }>('personnel.view', async (req, _routeArgs, ctx) => {
         const sp = req.nextUrl.searchParams;
-        const employees = await listEmployees(ctx, {
-            status: sp.get('status') ?? undefined,
+        const roster = await listEmployees(ctx, {
+            status: sp.getAll('status'),
             search: sp.get('q') ?? undefined,
         });
-        return jsonResponse({ employees });
+        return jsonResponse(roster);
     }),
 );
 

@@ -193,8 +193,8 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // Audit S6 (2026-05-22) — vendor re-assessment reminder cron.
         // Same shape as the evidence-stale-review-sweep above: sweeps
         // all tenants OR scopes to one; bounded WHERE clause; writes
-        // a Notification row per overdue vendor + bumps the vendor's
-        // nextReviewAt to silence the reminder until next cycle.
+        // a deduped Notification row per overdue vendor's owner. It no
+        // longer writes the vendor row at all (#4462).
         'vendor-reassessment-reminder.ts',
         // Regwatch 2A — the framework-version delta engine. Two of its
         // functions run WITHOUT a tenant RequestContext: `recordFrameworkVersionDiff`

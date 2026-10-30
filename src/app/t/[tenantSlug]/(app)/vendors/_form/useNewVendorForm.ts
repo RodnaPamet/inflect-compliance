@@ -19,6 +19,8 @@
  */
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useZodForm } from '@/lib/hooks/use-zod-form';
+import { apiErrorMessage } from '@/lib/api-error';
+import { isVendorNameTaken } from '@/lib/vendor-refusal-reasons';
 import {
     NewVendorFormSchema,
     type NewVendorFormValues,
@@ -52,6 +54,12 @@ export interface UseNewVendorFormOptions {
      * component and has no translator in scope.
      */
     fallbackErrorMessage: string;
+    /**
+     * Localised sentence for a refusal because another live vendor already
+     * has the name (`VENDOR_NAME_TAKEN`, #4462). The server's own sentence is
+     * English.
+     */
+    nameTakenMessage: string;
 }
 
 const INITIAL: NewVendorFormFields = {
@@ -62,7 +70,6 @@ const INITIAL: NewVendorFormFields = {
     country: '',
     description: '',
     criticality: 'MEDIUM',
-    status: 'ONBOARDING',
     dataAccess: '',
     isSubprocessor: false,
     nextReviewAt: '',
@@ -72,6 +79,7 @@ const INITIAL: NewVendorFormFields = {
 export function useNewVendorForm({
     onSuccess,
     fallbackErrorMessage,
+    nameTakenMessage,
 }: UseNewVendorFormOptions): NewVendorFormReturn {
     const apiUrl = useTenantApiUrl();
     const zod = useZodForm({
@@ -82,10 +90,11 @@ export function useNewVendorForm({
             // POST. The frontend schema's `default('')` produces
             // empty strings on optional fields; only forward the
             // non-empty ones to match the legacy POST body shape.
-            const body: { name: string; criticality: string; status: string; isSubprocessor: boolean; legalName?: string; websiteUrl?: string; domain?: string; country?: string; description?: string; dataAccess?: string; nextReviewAt?: string; contractRenewalAt?: string } = {
+            // No `status`: a new vendor starts ONBOARDING, the server
+            // default. ACTIVE needs a completed assessment review (#4462).
+            const body: { name: string; criticality: string; isSubprocessor: boolean; legalName?: string; websiteUrl?: string; domain?: string; country?: string; description?: string; dataAccess?: string; nextReviewAt?: string; contractRenewalAt?: string } = {
                 name: payload.name,
                 criticality: payload.criticality,
-                status: payload.status,
                 isSubprocessor: payload.isSubprocessor,
             };
             if (payload.legalName) body.legalName = payload.legalName;
@@ -105,11 +114,15 @@ export function useNewVendorForm({
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                // The server message is already localised and specific
-                // (plan limits, duplicate name, validation). The fallback was
-                // a hardcoded English string on an otherwise localised
-                // surface — now supplied by the caller.
-                throw new Error(err.error?.message || fallbackErrorMessage);
+                // A taken name gets the page's own sentence: the server's is
+                // English, and before #4462 the index's generic P2002 message
+                // did not say the name was the problem. Anything else shows
+                // the server's reason, falling back to the caller's sentence.
+                throw new Error(
+                    isVendorNameTaken(err)
+                        ? nameTakenMessage
+                        : apiErrorMessage(err, fallbackErrorMessage),
+                );
             }
             const vendor = await res.json();
             onSuccess(vendor);
@@ -125,7 +138,10 @@ export function useNewVendorForm({
         error: zod.error,
         canSubmit: zod.canSubmit,
         submit: async () => {
-            await zod.submit();
+            // A refusal is already in `error`, which the dialog shows. The
+            // rethrow reached only the dialog's `void form.submit()`, as an
+            // unhandled rejection.
+            await zod.submit().catch(() => undefined);
         },
         isDirty: zod.isDirty,
     };

@@ -652,6 +652,7 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
     'audit-pilot',
     'budget',
     'concurrency',
+    'discovered',
     'external-tools',
     'harness-acceptances',
     'harness-estates',

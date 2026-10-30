@@ -16,30 +16,8 @@ import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { isNotificationsEnabled } from '../notifications/settings';
 import { emitAutomationEvent } from '../automation';
 import { createTask, addTaskLink } from '../usecases/task';
-import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
-import { buildDelegatedJobContext } from '../context-system';
-
-/**
- * System context for an evidence-expiry reminder task, owned by the
- * resolved actor (evidence owner, else the tenant's first ACTIVE OWNER).
- * ADMIN permissions clear `assertCanWriteTasks`; the canonical createTask
- * then mints the TSK-N key + audit + automation event + assignee bell.
- */
-/**
- * `Evidence` owner's id has to stay: `Task.createdByUserId` is NOT NULL
- * with a foreign key to `User`, so a synthetic principal makes the insert
- * die on `Task_createdByUserId_fkey`. `actorType: 'JOB'` is the half that
- * IS fixable — the row now says a job raised the reminder rather than
- * claiming the owner did. See `buildDelegatedJobContext`.
- */
-function buildRetentionCtx(tenantId: string, actorUserId: string): RequestContext {
-    return buildDelegatedJobContext({
-        tenantId,
-        job: 'retention-notifications',
-        onBehalfOf: actorUserId,
-    });
-}
+import { buildTenantSystemJobContext } from '../context-system';
 
 /** Fire-and-forget automation trigger — never blocks the notification job. */
 function emitEvidenceTrigger(
@@ -99,13 +77,15 @@ export async function runEvidenceRetentionNotifications(
             satisfiable by evidence sitting in a workspace that had been removed,
             and with no `options.tenantId` this sweep visits every tenant there is.
 
-            What followed was not read-only. `tenantOwnerUserId` resolves an OWNER
-            from `TenantMembership`, and a tenant's memberships SURVIVE its removal
-            — 88 of production's 105 ACTIVE memberships belong to the seven tenants
-            removed in September. The resolved owner then gets a real Task minted
-            through the canonical `createTask`: a TSK key, an audit row, an
-            automation event and an assignee notification. So a removed workspace
-            gained work items and somebody was told about them.
+            What followed was not read-only. The sweep resolved an OWNER from
+            `TenantMembership` to write the task as (#4400 has since replaced that
+            with the tenant's SYSTEM user), and a tenant's memberships SURVIVE its
+            removal — 88 of production's 105 ACTIVE memberships belong to the seven
+            tenants removed in September. A real Task was then minted through the
+            canonical `createTask`: a TSK key, an audit row, an automation event and
+            an assignee notification. So a removed workspace gained work items and
+            somebody was told about them. Writing as the SYSTEM user changes none of
+            that, so this filter still holds the line.
 
             A RELATION FILTER HERE RATHER THAN A PRE-RESOLVED ID LIST, because this
             sweep does not group by tenant — it scans evidence and discovers tenants
@@ -138,31 +118,28 @@ export async function runEvidenceRetentionNotifications(
         controlId: ev.evidenceControlLinks[0]?.controlId ?? null,
     }));
 
-    // Cache of tenant-OWNER userId per tenant so we don't re-query for each
-    // evidence row. The fallback chain for `createdByUserId` (required NOT
-    // NULL on Task):
-    //   1. The evidence's own `ownerUserId` if set.
-    //   2. The tenant's first ACTIVE OWNER membership.
-    // If neither exists the evidence is skipped — better to lose a
-    // notification than to crash the whole sweep.
-    const tenantOwnerCache = new Map<string, string | null>();
-    async function tenantOwnerUserId(tenantId: string): Promise<string | null> {
-        if (tenantOwnerCache.has(tenantId)) {
-            return tenantOwnerCache.get(tenantId)!;
+    /*
+        The reminder is written as the tenant's SYSTEM user (#4400), one context
+        per tenant. `Task.createdByUserId` is NOT NULL with a foreign key to
+        `User`, so this job used to borrow a person to satisfy it: the
+        evidence's owner, else the tenant's oldest ACTIVE OWNER, under an
+        ADMIN-shaped context. The task and its audit rows then said that person
+        had raised it. And a tenant whose evidence had no owner and which had no
+        ACTIVE OWNER got no reminder at all, because there was nobody to borrow.
+        The owner is still the ASSIGNEE below; only the author changed.
+    */
+    const systemCtx = new Map<string, Promise<RequestContext>>();
+    function retentionCtx(tenantId: string): Promise<RequestContext> {
+        let ctx = systemCtx.get(tenantId);
+        if (!ctx) {
+            ctx = buildTenantSystemJobContext({ tenantId, job: 'retention-notifications' });
+            systemCtx.set(tenantId, ctx);
         }
-        const owner = await prisma.tenantMembership.findFirst({
-            where: { tenantId, role: 'OWNER', status: 'ACTIVE' },
-            select: { userId: true },
-            orderBy: { createdAt: 'asc' },
-        });
-        const id = owner?.userId ?? null;
-        tenantOwnerCache.set(tenantId, id);
-        return id;
+        return ctx;
     }
 
     let tasksCreated = 0;
     let skippedDuplicate = 0;
-    let skippedNoActor = 0;
 
     for (const ev of expiring) {
         // TP-5 — idempotency is keyed on the WORK SOURCE, not the task
@@ -192,24 +169,11 @@ export async function runEvidenceRetentionNotifications(
         // Create Task + link
         // retentionUntil is non-null: the where clause filters `retentionUntil: { not: null }`
         const daysLeft = Math.ceil((new Date(ev.retentionUntil!).getTime() - Date.now()) / 86_400_000);
-        // Background job has no actor — attribute to the evidence's own
-        // owner if available, else the tenant's first ACTIVE OWNER.
-        // Either way Task.createdByUserId is properly populated (no more
-        // `as`-cast; runtime crash that would have hit the legacy
-        // path on every run is now prevented). If neither resolves the
-        // row is skipped — better to lose ONE notification than crash
-        // the sweep.
-        const createdByUserId =
-            ev.ownerUserId ?? (await tenantOwnerUserId(ev.tenantId));
-        if (!createdByUserId) {
-            skippedNoActor++;
-            continue;
-        }
         // TP-1 — route through the canonical createTask so the reminder
         // task carries a TSK-N key + TASK_CREATED audit/automation event +
         // assignee bell/email, same as every other task (was a raw
         // prisma.task.create that produced a keyless, unaudited task).
-        const ctx = buildRetentionCtx(ev.tenantId, createdByUserId);
+        const ctx = await retentionCtx(ev.tenantId);
         const task = await createTask(ctx, {
             // TP-5 — a neutral TASK carrying the EVIDENCE_EXPIRY source
             // so it lands in the universal /tasks inbox and is filterable

@@ -10,7 +10,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/mailer';
-import { getTenantNotificationSettings } from './settings';
+import { getTenantNotificationSettings, tenantEmailEnvelope } from './settings';
 import { logger } from '@/lib/observability/logger';
 
 export interface ProcessOutboxOptions {
@@ -128,8 +128,9 @@ export async function processOutbox(
                 subject: row.subject,
                 text: row.bodyText,
                 html: row.bodyHtml || undefined,
-                from: `${settings.defaultFromName} <${settings.defaultFromEmail}>`,
-                bcc: settings.complianceMailbox || undefined,
+                // The workspace's sender and compliance BCC — the same
+                // definition the digest and scheduled reports use.
+                ...tenantEmailEnvelope(settings),
             });
 
             // Predicated on PENDING so this cannot resurrect a row that some

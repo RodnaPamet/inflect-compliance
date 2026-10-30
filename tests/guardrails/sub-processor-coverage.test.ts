@@ -131,7 +131,7 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // triaged on their own above — which is exactly why this flag must not be
     // read as covering them.
     AGENT_DRIVER_FLUE: 'operator feature flag selecting the in-process agent execution engine — an imported library, not an external endpoint, and not a sub-processor',
-    AGENT_DRIVER_TOOL_RUNNER: 'operator feature flag selecting the Tool Runner engine — an in-process loop over the existing Anthropic sub-processor, not an endpoint of its own; selects nothing until Step 2c turns the engine on and records its data category on the Anthropic row',
+    AGENT_DRIVER_TOOL_RUNNER: 'operator feature flag selecting the Tool Runner engine — an in-process loop over the existing Anthropic sub-processor, not an endpoint of its own; its data category ("tenant-authored agent instructions") is recorded on the Anthropic row since Step 2c',
     // Agent INTERACTIVE-RUN seam (#3868 step 2) — admits a new STARTER for a
     // run, a signed-in person in a browser, beside the job, credential and
     // automation-rule starters that already exist. It names no host, opens no
@@ -147,16 +147,15 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // a run may reach ever changes, that is a change to the inventory above,
     // not to this entry — so this flag must not be read as covering it.
     AGENT_INTERACTIVE_RUNS: 'operator feature flag admitting a browser-started agent run — a new starter for the existing engine, not an external endpoint, and not a sub-processor',
-    AGENT_PROFILES: 'operator feature flag exposing the agent profile surface — tables and routes in this deployment, not an external endpoint, and not a sub-processor; no engine sends profile instructions to a model until Step 2c records that data category',
+    AGENT_PROFILES: 'operator feature flag exposing the agent profile surface — tables and routes in this deployment, not an external endpoint, and not a sub-processor; the Tool Runner engine sends profile instructions to the Anthropic row, which names that data category since Step 2c',
     AGENT_PROFILES_TENANTS: 'operator allowlist of tenant slugs that opens the same agent profile surface to named tenants only — a list of this deployment\'s own tenants, not an external endpoint, and not a sub-processor',
     // Step 2a (#4148). The Tool Runner engine's two model pins and the SDK's
     // ambient-headers variable. The models are ids at the EXISTING Anthropic
-    // row, the same kind of value as AGENT_FLUE_MODEL, but no running path
-    // reads them yet: no engine is selectable until Step 2c, and 2c moves both
-    // into that row of docs/sub-processors.md when it names the data the
-    // engine sends. The headers variable is read only to REFUSE a client.
-    AGENT_TOOL_RUNNER_MODEL_BALANCED: 'model id the Tool Runner engine will name for a profile\'s balanced tier at the existing Anthropic sub-processor — read by no running path until Step 2c enables the engine and records it in docs/sub-processors.md; names no endpoint',
-    AGENT_TOOL_RUNNER_MODEL_DEEP: 'model id the Tool Runner engine will name for a profile\'s deep tier at the existing Anthropic sub-processor — read by no running path until Step 2c enables the engine and records it in docs/sub-processors.md; names no endpoint',
+    // row, the same kind of value as AGENT_FLUE_MODEL, named in that row's (d)
+    // entry of docs/sub-processors.md since Step 2c turned the engine on. The
+    // headers variable is read only to REFUSE a client.
+    AGENT_TOOL_RUNNER_MODEL_BALANCED: 'model id the Tool Runner engine names for a profile\'s balanced tier at the existing Anthropic sub-processor, recorded in docs/sub-processors.md (Step 2c); names no endpoint',
+    AGENT_TOOL_RUNNER_MODEL_DEEP: 'model id the Tool Runner engine names for a profile\'s deep tier at the existing Anthropic sub-processor, recorded in docs/sub-processors.md (Step 2c); names no endpoint',
     ANTHROPIC_CUSTOM_HEADERS: 'read only to refuse: while it is set, clientForRun builds no Anthropic client, because @anthropic-ai/sdk would add it to every request — it sends nothing anywhere',
     // AI sovereignty (DS-1) — the local/self-hosted LLM gateway. These configure
     // the TENANT'S OWN in-jurisdiction inference endpoint (Ollama / vLLM), the

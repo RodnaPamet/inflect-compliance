@@ -69,6 +69,7 @@ describeFn('Two-tenant isolation — 10-PR-wave features (GAP-1)', () => {
         await createEmployee(ctxA, { fullName: 'A Emp', workEmail: 'a@emp.local', status: 'ACTIVE' });
         await createEmployee(ctxB, { fullName: 'B Emp', workEmail: 'b@emp.local', status: 'ACTIVE' });
         const listB = await listEmployees(ctxB);
-        expect(listB.map((e) => e.workEmail)).toEqual(['b@emp.local']);
+        expect(listB.employees.map((e) => e.workEmail)).toEqual(['b@emp.local']);
+        expect(listB).toMatchObject({ truncated: false, total: 1 });
     });
 });

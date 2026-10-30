@@ -51,6 +51,8 @@ const mockState = {
     decisionRows: [] as Array<{ inputDigest: string }>,
     funnelCalls: [] as Array<{ name: string; args: unknown }>,
     settlement: null as MockSettlement | null,
+    /** What the run's mount is asked for (Step 2d), resolved by the real gate. */
+    skills: undefined as ConformanceRun['skills'],
 };
 
 // The run-settlement fake writes this from inside the driver, where the
@@ -193,8 +195,13 @@ jest.unstable_mockModule('@/lib/db-context', () => ({
 }));
 jest.unstable_mockModule('@/lib/audit', () => ({ appendAuditEntry: jest.fn(async () => undefined) }));
 
+// THE DATABASE READ of the skill mount, and nothing else (Step 2d): the run's
+// skills go through the real resolver and mount gate.
 jest.unstable_mockModule('@/lib/agentic/flue/skills/tenant-mount', () => ({
-    resolveRunSkillMount: jest.fn(async () => ({ documents: [], pins: [] })),
+    resolveRunSkillMount: jest.fn(async () => {
+        const { conformanceSkillMount } = await import('../helpers/driver-conformance-skills');
+        return conformanceSkillMount(mockState.skills);
+    }),
 }));
 jest.unstable_mockModule('@/lib/agentic/subagent-fanout-policy', () => ({ readFanOutCap: jest.fn(async () => 1) }));
 
@@ -274,6 +281,7 @@ async function runOnFlue(run: ConformanceRun): Promise<ConformanceObservation> {
     mockState.decisionRows = [];
     mockState.funnelCalls = [];
     mockState.settlement = null;
+    mockState.skills = run.skills;
 
     const modelInputs: string[] = [];
     let offeredTools: string[] = [];
@@ -317,7 +325,9 @@ async function runOnFlue(run: ConformanceRun): Promise<ConformanceObservation> {
         decisionRows: [...mockState.decisionRows],
         funnelCalls: [...mockState.funnelCalls],
         offeredTools,
-        reportedEngineTools: runtimeToolNamesFor({ skillsMounted: false }),
+        reportedEngineTools: runtimeToolNamesFor({
+            skillsMounted: (run.skills?.repository?.length ?? 0) + (run.skills?.tenant?.length ?? 0) > 0,
+        }),
     };
 }
 

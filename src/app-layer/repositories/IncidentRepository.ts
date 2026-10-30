@@ -21,7 +21,37 @@ const incidentListSelect = {
     },
 } as const;
 
+/**
+ * The register's KPI cards, counted over the tenant's WHOLE incident
+ * population — never derived from a capped list read, so they stay right
+ * when the list itself is truncated.
+ */
+export interface IncidentKpiCounts {
+    total: number;
+    /** Every incident not in the terminal CLOSED phase. */
+    open: number;
+    reportable: number;
+    /** Incidents with at least one Article 23 notification DUE or OVERDUE. */
+    deadlinesDueOrOverdue: number;
+}
+
 export class IncidentRepository {
+    static async kpiCounts(db: PrismaTx, ctx: RequestContext): Promise<IncidentKpiCounts> {
+        const where = { tenantId: ctx.tenantId };
+        const [total, open, reportable, deadlinesDueOrOverdue] = await Promise.all([
+            db.incident.count({ where }),
+            db.incident.count({ where: { ...where, phase: { not: 'CLOSED' } } }),
+            db.incident.count({ where: { ...where, reportable: true } }),
+            db.incident.count({
+                where: {
+                    ...where,
+                    notifications: { some: { status: { in: ['DUE', 'OVERDUE'] } } },
+                },
+            }),
+        ]);
+        return { total, open, reportable, deadlinesDueOrOverdue };
+    }
+
     static async list(
         db: PrismaTx,
         ctx: RequestContext,

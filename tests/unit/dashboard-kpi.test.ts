@@ -6,6 +6,11 @@
  * segments, and that an unknown key is rejected. The repository queries
  * are mocked (no DB) — this locks the DTO contract the dashboard's
  * <CustomKpiPanel> consumes.
+ *
+ * The DTO carries CODES, not English: each segment a `key` the client renders
+ * as `dashboard.customKpi.segments.<key>`, the subtitle a `{ key, count }` it
+ * renders as `dashboard.customKpi.subtitles.<key>`. The last block checks
+ * every code the usecase can return has a message in both locales.
  */
 
 // ─── Mock db-context so runInTenantContext calls straight through ───
@@ -17,7 +22,14 @@ jest.mock('@/lib/db-context', () => ({
     ),
 }));
 
-import { getDashboardKpi } from '@/app-layer/usecases/dashboard';
+import * as fs from 'fs';
+import * as path from 'path';
+
+import {
+    DASHBOARD_KPI_SEGMENT_KEYS,
+    DASHBOARD_KPI_SUBTITLE_KEYS,
+    getDashboardKpi,
+} from '@/app-layer/usecases/dashboard';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -55,11 +67,11 @@ describe('getDashboardKpi — assets', () => {
 
         expect(dto.key).toBe('assets');
         expect(dto.headline).toBe(10);
-        expect(dto.subtitle).toBe('3 high/critical');
+        expect(dto.subtitle).toEqual({ key: 'highCritical', count: 3 });
         // total - active - retired = 0 → no "Other" slice.
         expect(dto.segments).toEqual([
-            { label: 'Active', value: 6, color: '#22c55e' },
-            { label: 'Retired', value: 4, color: '#94a3b8' },
+            { key: 'active', value: 6, color: '#22c55e' },
+            { key: 'retired', value: 4, color: '#94a3b8' },
         ]);
     });
 
@@ -74,8 +86,8 @@ describe('getDashboardKpi — assets', () => {
         };
 
         const dto = await getDashboardKpi(makeCtx(), 'assets');
-        expect(dto.segments.map((s) => s.label)).toEqual(['Active', 'Retired', 'Other']);
-        expect(dto.segments.find((s) => s.label === 'Other')?.value).toBe(3);
+        expect(dto.segments.map((s) => s.key)).toEqual(['active', 'retired', 'other']);
+        expect(dto.segments.find((s) => s.key === 'other')?.value).toBe(3);
     });
 });
 
@@ -91,12 +103,12 @@ describe('getDashboardKpi — audits', () => {
 
         const dto = await getDashboardKpi(makeCtx(), 'audits');
         expect(dto.headline).toBe(7); // 2 + 1 + 0 (ready) + 4
-        expect(dto.subtitle).toBe('4 complete');
+        expect(dto.subtitle).toEqual({ key: 'complete', count: 4 });
         expect(dto.segments).toEqual([
-            { label: 'Planning', value: 2, color: '#94a3b8' },
-            { label: 'In Progress', value: 1, color: '#f59e0b' },
-            { label: 'Ready', value: 0, color: '#3b82f6' },
-            { label: 'Complete', value: 4, color: '#22c55e' },
+            { key: 'planning', value: 2, color: '#94a3b8' },
+            { key: 'inProgress', value: 1, color: '#f59e0b' },
+            { key: 'ready', value: 0, color: '#3b82f6' },
+            { key: 'complete', value: 4, color: '#22c55e' },
         ]);
     });
 });
@@ -113,38 +125,41 @@ describe('getDashboardKpi — tests', () => {
 
         const dto = await getDashboardKpi(makeCtx(), 'tests');
         expect(dto.headline).toBe(9); // 5 + 1 + 0 + 3
-        expect(dto.subtitle).toBe('5 passed');
-        expect(dto.segments.find((s) => s.label === 'Pending')?.value).toBe(3);
-        expect(dto.segments.find((s) => s.label === 'Inconclusive')?.value).toBe(0);
+        expect(dto.subtitle).toEqual({ key: 'passed', count: 5 });
+        expect(dto.segments.find((s) => s.key === 'pending')?.value).toBe(3);
+        expect(dto.segments.find((s) => s.key === 'inconclusive')?.value).toBe(0);
     });
 });
 
 describe('getDashboardKpi — evidence (folded from the Evidence Status card)', () => {
-    it('carves a disjoint 8–30d slice so the pie never double-counts urgent rows', async () => {
-        // getEvidenceExpiry issues 5 counts in order:
-        // overdue, dueSoon7d, dueSoon30d, noReviewDate, current.
+    it('sums the four DISJOINT review buckets', async () => {
+        // getEvidenceReviewBreakdown issues 4 counts in order:
+        // overdue, dueWithin7d, due8to30d, current. They are disjoint by
+        // construction — the real-DB proof of that is
+        // tests/integration/dashboard-board-figures.test.ts.
         mockTx.evidence = {
             count: jest
                 .fn()
                 .mockResolvedValueOnce(2) // overdue
-                .mockResolvedValueOnce(3) // dueSoon7d
-                .mockResolvedValueOnce(5) // dueSoon30d (INCLUDES the 3 due≤7d)
-                .mockResolvedValueOnce(1) // noReviewDate
-                .mockResolvedValueOnce(10), // current
+                .mockResolvedValueOnce(3) // due within 7d
+                .mockResolvedValueOnce(2) // due in 8–30d
+                .mockResolvedValueOnce(10), // current (approved, not due within 30d)
         };
 
         const dto = await getDashboardKpi(makeCtx(), 'evidence');
 
         expect(dto.key).toBe('evidence');
-        // 2 overdue + 3 due≤7d + (5-3) due8–30d + 10 current = 17.
+        // 2 + 3 + 2 + 10 = 17.
         expect(dto.headline).toBe(17);
-        expect(dto.subtitle).toBe('59% current'); // round(10/17*100)
+        expect(dto.subtitle).toEqual({ key: 'currentPercent', count: 59 }); // round(10/17*100)
         expect(dto.segments).toEqual([
-            { label: 'Overdue', value: 2, color: '#dc2626' },
-            { label: 'Due ≤7d', value: 3, color: '#f97316' },
-            { label: 'Due 8–30d', value: 2, color: '#f59e0b' },
-            { label: 'Current', value: 10, color: '#22c55e' },
+            { key: 'overdue', value: 2, color: '#dc2626' },
+            { key: 'dueWithin7d', value: 3, color: '#f97316' },
+            { key: 'due8to30d', value: 2, color: '#f59e0b' },
+            { key: 'current', value: 10, color: '#22c55e' },
         ]);
+        // The headline is the pie's total — nothing counted twice.
+        expect(dto.segments.reduce((n, s) => n + s.value, 0)).toBe(dto.headline);
     });
 });
 
@@ -167,13 +182,13 @@ describe('getDashboardKpi — exceptions (folded from the Exception Inventory ca
         expect(dto.key).toBe('exceptions');
         // activeApproved 10 + pending 2 + expired 3 = 15.
         expect(dto.headline).toBe(15);
-        expect(dto.subtitle).toBe('10 active');
+        expect(dto.subtitle).toEqual({ key: 'active', count: 10 });
         expect(dto.segments).toEqual([
-            { label: 'Active', value: 6, color: '#22c55e' }, // 10 - 4 expiring
-            { label: 'Expiring ≤7d', value: 1, color: '#f97316' },
-            { label: 'Expiring 8–30d', value: 3, color: '#f59e0b' }, // 4 - 1
-            { label: 'Pending', value: 2, color: '#3b82f6' },
-            { label: 'Expired', value: 3, color: '#dc2626' },
+            { key: 'active', value: 6, color: '#22c55e' }, // 10 - 4 expiring
+            { key: 'expiringWithin7d', value: 1, color: '#f97316' },
+            { key: 'expiring8to30d', value: 3, color: '#f59e0b' }, // 4 - 1
+            { key: 'pending', value: 2, color: '#3b82f6' },
+            { key: 'expired', value: 3, color: '#dc2626' },
         ]);
         // The segments partition the headline exactly.
         expect(dto.segments.reduce((n, s) => n + s.value, 0)).toBe(dto.headline);
@@ -198,11 +213,11 @@ describe('getDashboardKpi — treatmentPlans (folded from the Treatment-Plan car
 
         expect(dto.key).toBe('treatmentPlans');
         expect(dto.headline).toBe(15); // 8 on-track + 2 overdue + 5 completed
-        expect(dto.subtitle).toBe('1 due ≤7d');
+        expect(dto.subtitle).toEqual({ key: 'dueWithin7d', count: 1 });
         expect(dto.segments).toEqual([
-            { label: 'On track', value: 8, color: '#22c55e' },
-            { label: 'Overdue', value: 2, color: '#dc2626' },
-            { label: 'Completed', value: 5, color: '#3b82f6' },
+            { key: 'onTrack', value: 8, color: '#22c55e' },
+            { key: 'overdue', value: 2, color: '#dc2626' },
+            { key: 'completed', value: 5, color: '#3b82f6' },
         ]);
     });
 });
@@ -220,5 +235,30 @@ describe('getDashboardKpi — guards', () => {
             permissions: { canRead: false, canWrite: false, canAdmin: false, canAudit: false, canExport: false },
         });
         await expect(getDashboardKpi(ctx, 'assets')).rejects.toBeTruthy();
+    });
+});
+
+describe('getDashboardKpi — every code it returns has a message', () => {
+    // The client renders `t(`customKpi.segments.${key}`)`, a template-literal
+    // lookup the static i18n-keys guard cannot resolve, so the catalogue is
+    // checked against the usecase's own code lists here.
+    const ROOT = path.resolve(__dirname, '../..');
+    const locales = ['en', 'bg'].map((loc) => ({
+        loc,
+        customKpi: JSON.parse(
+            fs.readFileSync(path.join(ROOT, `messages/${loc}.json`), 'utf8'),
+        ).dashboard.customKpi as {
+            segments: Record<string, string>;
+            subtitles: Record<string, string>;
+        },
+    }));
+
+    it.each(locales)('$loc carries a label for every segment and subtitle code', ({ customKpi }) => {
+        for (const key of DASHBOARD_KPI_SEGMENT_KEYS) {
+            expect(typeof customKpi.segments[key]).toBe('string');
+        }
+        for (const key of DASHBOARD_KPI_SUBTITLE_KEYS) {
+            expect(customKpi.subtitles[key]).toContain('{count}');
+        }
     });
 });

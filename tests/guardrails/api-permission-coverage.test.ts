@@ -136,6 +136,10 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         why: 'Asset bulk mutations (status/assign/delete = assets.edit, import = assets.create) — gated so denials audit at the C.1 layer, matching the usecase asserts.',
     },
     {
+        relPath: 'src/app/api/t/[tenantSlug]/vulnerabilities',
+        why: 'Asset vulnerabilities (#4465) — reads on assets.view; triage, manual CVE link, the two conversions and the remediation task on assets.edit plus the create key of what they create. In scope as a WHOLE root: all six routes shipped with no route gate, so their refusals wrote no AUTHZ_DENIED row.',
+    },
+    {
         relPath: 'src/app/api/t/[tenantSlug]/assets/[id]/purge',
         why: 'Irreversible asset hard-delete — admin.manage, matching the usecase assertCanAdmin. Narrow leaf root so only the purge handler is in scope (its assets/[id] siblings are not).',
     },
@@ -224,8 +228,8 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         why: 'Undo of a policy soft-delete — admin.manage alone, for the same reason as its purge sibling.',
     },
     {
-        relPath: 'src/app/api/t/[tenantSlug]/vendors/bulk/delete',
-        why: 'Bulk delete of the vendor register — admin.manage, matching the assertCanAdmin bulkDeleteVendor was raised to. Narrow leaf root: the recoverable bulk/status + bulk/assign siblings stay at vendors.edit and are NOT in scope.',
+        relPath: 'src/app/api/t/[tenantSlug]/vendors/bulk',
+        why: 'Vendor bulk mutations. delete = admin.manage, matching the assertCanAdmin bulkDeleteVendor was raised to; status + assign = vendors.edit, the flag assertCanManageVendors reads. The two recoverable verbs had no route gate until #4462, so their refusals wrote no AUTHZ_DENIED row.',
     },
     {
         relPath: 'src/app/api/t/[tenantSlug]/tests/plans/bulk/delete',
@@ -331,38 +335,37 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
     // only their usecase's coarse `assertCanRead` / `assertCanWrite` while the
     // pages behind them refused EDITOR and READER. `agent-runs` is taken WHOLE:
     // every route in it now gates on `admin.view` OR `admin.agent_registry_view`,
-    // so the next one added there fails until somebody triages it. The proposal
-    // writes are LEAF roots, because `agent-proposals/` also holds `compose/` and
-    // `sample-audits/`, which were not triaged here; its collection GET cannot be
-    // a leaf root for the same reason, and is pinned by
-    // tests/unit/agent-runs-proposals-route-gates.test.ts instead.
+    // so the next one added there fails until somebody triages it.
+    // `agent-proposals` is taken WHOLE too, now that its last two untriaged
+    // directories (`compose/`, `sample-audits/`) take their pages' gates: the
+    // queue and its writes on the queue's two keys, compose on `admin.view`,
+    // the sample audits on `admin.agent_registry`.
     {
         relPath: 'src/app/api/t/[tenantSlug]/agent-runs',
         why: 'Agentic workflow runs — list, start, one run with its steps, the step feed, resume, abort, the live tail and the checkpoint read. Every one gates on the runs pages\' admin.view OR admin.agent_registry_view (mayReadAgentActivity); the writes add the role-tier write the usecases assert, which is what the page enables its buttons on.',
     },
     {
-        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals/[id]/approve',
-        why: 'Approving an agent proposal runs the real create-usecase — the proposals page\'s admin.view OR admin.agent_registry_view, plus the assertCanWrite the usecase holds.',
-    },
-    {
-        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals/[id]/reject',
-        why: 'Rejecting an agent proposal — gated as its approve sibling.',
-    },
-    {
-        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals/bulk/reject',
-        why: 'Rejecting a batch of agent proposals — gated exactly as the single reject, so the two paths agree about who may reject.',
+        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals',
+        why: 'The agent-proposal queue and the two surfaces filed beside it. The list, approve, reject and bulk reject take the proposals page\'s admin.view OR admin.agent_registry_view, the writes adding the assertCanWrite the usecases hold; compose takes the /agents/compose page\'s admin.view (then the write tier to send); the sample audits take /agents/review-quality\'s admin.agent_registry.',
     },
     // ── The employee manager field (#2492) ──────────────────────────
     // NARROW LEAF ROOT, and the narrowness is the whole reason it can be
-    // here at all. `personnel` as a directory is NOT privileged — its
-    // collection route's GET is gated on `personnel.view`, which every role
-    // holds — so taking the parent would pull that read in and force an
-    // exclusion entry for a route nobody set out to triage. The leaf is the
+    // here at all. `personnel` as a directory is NOT a root — its
+    // collection route's GET is gated on `personnel.view` (every role held
+    // it when this leaf was registered; OWNER/ADMIN only since 2026-10-29) —
+    // so taking the parent would pull that read in and force an exclusion
+    // entry for a route nobody set out to triage. The leaf is the
     // one handler this tranche examined: the single-column write that lets a
     // tenant with no HRIS feed give an employee a manager at all.
     {
         relPath: 'src/app/api/t/[tenantSlug]/personnel/[employeeId]/manager',
         why: 'Setting or clearing one employee\'s manager — personnel.manage, the same key createEmployee gates on, so a denial writes an AUTHZ_DENIED row rather than the silent usecase-layer forbidden(). In scope because this is the second writer of an Employee row and the org chart it edits decides who is told about a colleague\'s offboarding. Narrow leaf root: the /personnel collection route is not in scope and keeps its unregistered requirePermission.',
+    },
+    // #4469 — taken WHOLE: both routes under it are admin-only, and it sits
+    // outside `/admin/`, which is how it arrived with no route gate at all.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/notification-settings',
+        why: 'The workspace notification settings (sender, compliance BCC, email switch, in-app mutes) and the run-job trigger — admin.manage on every verb, matching the assertCanAdmin in each handler.',
     },
 ];
 

@@ -109,6 +109,9 @@ jest.mock('@/lib/agentic/flue/tools-adapter', () => ({
                     run: async () => '',
                 }],
                 omitted: [],
+                // See #3872 — part of the real `OfferedToolSet`; this suite
+                // offers no external tool, so empty is the honest value.
+                externalConnections: [],
             };
         },
     ),

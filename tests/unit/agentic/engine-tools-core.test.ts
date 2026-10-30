@@ -270,3 +270,81 @@ describe('5. an agent profile only narrows what is offered (#4143)', () => {
         expect(set.omitted).toEqual([{ name: 'propose_risks', reason: 'READ_ONLY_WORKFLOW' }]);
     });
 });
+
+describe('6. read-only stays read-only: a write tool on a DISABLED connection is never offered (#3872)', () => {
+    const names = (set: { tools: Array<{ tool: { name: string } }> }) => set.tools.map((t) => t.tool.name).sort();
+
+    /**
+     * An external tool as `adapterFor` builds it, with the two terms the offer
+     * reads. Both come from the same values `dispatchWrite` branches on, so a
+     * disagreement between the offer and the funnel is not representable here.
+     */
+    const external = (
+        name: string,
+        declaresWrite: boolean,
+        connectionRefusesWrites: boolean,
+        reachesBusinessSystem: boolean | null = null,
+    ): McpReadTool<unknown> =>
+        readTool(name, {
+            externalConnection: {
+                connectionId: 'conn-1',
+                connectionName: 'SAP sandbox',
+                declaresWrite,
+                connectionRefusesWrites,
+                reachesBusinessSystem,
+            },
+        });
+
+    it('withholds it and reports CONNECTION_READ_ONLY', () => {
+        mockLoadable.mockReturnValue([external('sap__post_journal_entry', true, true)]);
+        mockLoadablePropose.mockReturnValue([]);
+
+        const set = offerToolSet(invocation(), (offered) => offered, { sourcePrefix: 'probe-engine' });
+
+        expect(names(set)).toEqual([]);
+        expect(set.omitted).toEqual([
+            { name: 'sap__post_journal_entry', reason: 'CONNECTION_READ_ONLY' },
+        ]);
+    });
+
+    it('still offers a READ tool on that same read-only connection', () => {
+        // The control that stops the gate from being "withhold everything on a
+        // read-only connection", which would break every SAP read the M-route
+        // exists to make and would look identical in the assertion above.
+        mockLoadable.mockReturnValue([external('sap__read_journal_entry', false, true)]);
+        mockLoadablePropose.mockReturnValue([]);
+
+        const set = offerToolSet(invocation(), (offered) => offered, { sourcePrefix: 'probe-engine' });
+
+        expect(names(set)).toEqual(['sap__read_journal_entry']);
+        expect(set.omitted).toEqual([]);
+    });
+
+    it('offers a write tool when the connection is NOT at DISABLED', () => {
+        // The other control. At DRY_RUN, PROPOSE_ONLY and AUTOMATIC the dispatch
+        // has an outcome for a write — record the intent, queue a proposal, or
+        // send it — so withholding there would remove authority a human granted
+        // on the ladder. Only the rung that refuses with nothing sent withholds.
+        mockLoadable.mockReturnValue([external('sap__post_journal_entry', true, false)]);
+        mockLoadablePropose.mockReturnValue([]);
+
+        const set = offerToolSet(invocation(), (offered) => offered, { sourcePrefix: 'probe-engine' });
+
+        expect(names(set)).toEqual(['sap__post_journal_entry']);
+        expect(set.omitted).toEqual([]);
+    });
+
+    it('leaves an INTERNAL tool alone — absence of the field is not a default', () => {
+        // Every tool this build defines itself has no connection and no rung.
+        // Reading absence as either answer would be wrong in both directions:
+        // as "refuses writes" it would empty the internal read surface, and as
+        // a reason to skip the check it is what the optional field already does.
+        mockLoadable.mockReturnValue([readTool('list_risks')]);
+        mockLoadablePropose.mockReturnValue([]);
+
+        const set = offerToolSet(invocation(), (offered) => offered, { sourcePrefix: 'probe-engine' });
+
+        expect(names(set)).toEqual(['list_risks']);
+        expect(set.omitted).toEqual([]);
+    });
+});

@@ -86,6 +86,9 @@ import type {
     DashboardKpiCardDto,
     SwappableKpiKey,
 } from '@/app-layer/usecases/dashboard';
+import { buildKpiSparklines } from '@/lib/charts/kpi-trends';
+import { OPEN_RISK_STATUSES } from '@/app-layer/domain/risk-status';
+import type { DashboardQuickAddGates } from './dashboard-gates';
 // PR3 perf: lazy-load the heavy viz components (visx + motion) so their code
 // splits into separate chunks loaded after the KPI/hero shell. `ssr: false`
 // keeps the heavy chart JS off the server-render + initial critical path; a
@@ -114,7 +117,7 @@ import {
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref, usePermissions, useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { apiPost } from '@/lib/api-client';
+import { ApiClientError, apiPost } from '@/lib/api-client';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { HeroMetric } from '@/components/ui/HeroMetric';
@@ -129,7 +132,10 @@ import {
 } from './DashboardChartContext';
 
 import type { ExecutiveDashboardPayload } from '@/app-layer/repositories/DashboardRepository';
-import type { TrendPayload } from '@/app-layer/usecases/compliance-trends';
+import type {
+    TrendDataPoint,
+    TrendPayload,
+} from '@/app-layer/usecases/compliance-trends';
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 
@@ -190,8 +196,19 @@ interface DashboardClientProps {
      * yet) and is rendered into the dashboard tree by the parent
      * server page. Passing it through `children` preserves the
      * server boundary.
+     *
+     * Absent for a viewer who cannot read the audit log: the page does
+     * not render the card for them at all (owner decision 2026-10-29),
+     * and the next-step card then has the row to itself.
      */
     children?: React.ReactNode;
+    /**
+     * Which "Quick add" links this viewer may follow, computed by the
+     * server page from the same permissions the create routes check
+     * (`dashboardQuickAddGates`). Absent ⇒ no quick-add links: a link is
+     * offered only to a viewer the server would let create the record.
+     */
+    quickAdds?: DashboardQuickAddGates;
     /**
      * AGENTIC UI 1/4 (#2440) — `<AgenticGovernanceCard>`, also a Server
      * Component, also rendered by the parent page.
@@ -216,6 +233,7 @@ export default function DashboardClient({
     initialPostureSummary,
     children,
     agentic,
+    quickAdds: quickAddGates,
 }: DashboardClientProps) {
     const t = useTranslations('dashboard');
     const href = useTenantHref();
@@ -286,18 +304,29 @@ export default function DashboardClient({
     );
 
     const [regenerating, setRegenerating] = React.useState(false);
+    // A refused or failed regeneration used to be swallowed: the button went
+    // back to "Regenerate" with the old summary in place and nothing said why.
+    // The hero keeps the prior summary either way; this is the sentence that
+    // tells the reader it was not replaced — the server's own reason when it
+    // gave one, our sentence when it did not.
+    const [regenerateError, setRegenerateError] = React.useState<string | null>(null);
     const handleRegeneratePosture = React.useCallback(async () => {
         setRegenerating(true);
+        setRegenerateError(null);
         try {
             await apiPost(apiUrl('/dashboard/posture-summary/regenerate'), {});
             // Revalidate the cached GET so the hero picks up the fresh row.
             await mutatePosture();
-        } catch {
-            // Non-fatal — the hero keeps showing the prior summary.
+        } catch (error) {
+            setRegenerateError(
+                error instanceof ApiClientError && error.code !== 'UNKNOWN'
+                    ? error.message
+                    : t('hero.regenerateFailed'),
+            );
         } finally {
             setRegenerating(false);
         }
-    }, [apiUrl, mutatePosture]);
+    }, [apiUrl, mutatePosture, t]);
 
     // UI-15: the dashboard no longer surfaces a notifications button on a new
     // notification — the top-bar notifications bell is the single canonical
@@ -347,6 +376,7 @@ export default function DashboardClient({
                     canRegenerate={perms.controls.edit}
                     onRegenerate={handleRegeneratePosture}
                     regenerating={regenerating}
+                    regenerateError={regenerateError}
                     ratings={ratings}
                 />
             ) : (
@@ -367,10 +397,13 @@ export default function DashboardClient({
                             eyebrow={t('controls')}
                             value={exec.controlCoverage.coveragePercent}
                             format="percent"
-                            description={`${exec.controlCoverage.implemented} of ${exec.controlCoverage.applicable} controls implemented`}
+                            description={t('hero.coverageDescription', {
+                                implemented: exec.controlCoverage.implemented,
+                                applicable: exec.controlCoverage.applicable,
+                            })}
                             delta={coverageDelta}
                             deltaPolarity="up-good"
-                            deltaLabel="vs prev"
+                            deltaLabel={t('hero.vsPrevious')}
                             data-testid="dashboard-hero"
                         />
                         {/* The same ladder reading as the posture hero. Both
@@ -431,10 +464,10 @@ export default function DashboardClient({
                  A picker chooses a KPI from a catalog that isn't part of
                  the fixed executive payload (assets / audits / control
                  tests); the chosen KPI swaps BOTH its tile and the pie it
-                 renders. Loaded on demand. "Pie now, trends later" — the
-                 trend slot shows a collecting-data notice until snapshot
-                 history exists. */}
-            <CustomKpiPanel />
+                 renders. Loaded on demand. A third panel draws the KPI's
+                 trend where the daily snapshot stores its history, and is
+                 not rendered where it does not. */}
+            <CustomKpiPanel trends={trends ?? initialTrends} />
 
             {/* ─── Control Coverage + Risk Distribution ─── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-default">
@@ -446,17 +479,17 @@ export default function DashboardClient({
                         max={exec.controlCoverage.applicable || 1}
                         segments={[
                             {
-                                label: 'Implemented',
+                                label: t('coverageSegments.implemented'),
                                 value: exec.controlCoverage.implemented,
                                 color: 'bg-bg-success-emphasis',
                             },
                             {
-                                label: 'In Progress',
+                                label: t('coverageSegments.inProgress'),
                                 value: exec.controlCoverage.inProgress,
                                 color: 'bg-bg-warning-emphasis',
                             },
                             {
-                                label: 'Not Started',
+                                label: t('coverageSegments.notStarted'),
                                 value: exec.controlCoverage.notStarted,
                                 color: 'bg-border-emphasis',
                             },
@@ -469,7 +502,7 @@ export default function DashboardClient({
                             trendBundle?.coverage &&
                             trendBundle.coverage.length > 1
                                 ? {
-                                      label: 'Coverage (trend)',
+                                      label: t('coverageTrend'),
                                       points: trendBundle.coverage,
                                       colorClassName: 'text-content-success',
                                       format: '%',
@@ -491,12 +524,17 @@ export default function DashboardClient({
                     donutId="task-status-donut"
                     kpiKey="tasks"
                     title={t("taskStatus")}
-                    centerSub="Tasks"
+                    centerSub={t('donut.tasks')}
+                    // Every TaskStatus is in exactly one slice, so the pie's
+                    // total is the task count. IN_REVIEW was in none, which
+                    // left a task awaiting sign-off out of the pie while the
+                    // Open Tasks card beside it counted it.
                     segments={[
-                        { label: 'Open', value: exec.taskSummary.open, color: '#3b82f6', href: href('/tasks?status=OPEN,TRIAGED') },
-                        { label: 'In Progress', value: exec.taskSummary.inProgress, color: '#f59e0b', href: href('/tasks?status=IN_PROGRESS') },
-                        { label: 'Blocked', value: exec.taskSummary.blocked, color: '#dc2626', href: href('/tasks?status=BLOCKED') },
-                        { label: 'Resolved', value: exec.taskSummary.resolved, color: '#22c55e', href: href('/tasks?status=RESOLVED,CLOSED,CANCELED') },
+                        { label: t('taskSegments.open'), value: exec.taskSummary.open, color: '#3b82f6', href: href('/tasks?status=OPEN,TRIAGED') },
+                        { label: t('taskSegments.inProgress'), value: exec.taskSummary.inProgress, color: '#f59e0b', href: href('/tasks?status=IN_PROGRESS') },
+                        { label: t('taskSegments.inReview'), value: exec.taskSummary.inReview, color: '#8b5cf6', href: href('/tasks?status=IN_REVIEW') },
+                        { label: t('taskSegments.blocked'), value: exec.taskSummary.blocked, color: '#dc2626', href: href('/tasks?status=BLOCKED') },
+                        { label: t('taskSegments.resolved'), value: exec.taskSummary.resolved, color: '#22c55e', href: href('/tasks?status=RESOLVED,CLOSED,CANCELED') },
                     ]}
                 />
                 <StatusDonutSection
@@ -504,13 +542,13 @@ export default function DashboardClient({
                     donutId="policy-status-donut"
                     kpiKey="policies"
                     title={t("policyStatus")}
-                    centerSub="Policies"
+                    centerSub={t('donut.policies')}
                     segments={[
-                        { label: 'Draft', value: exec.policySummary.draft, color: '#94a3b8', href: href('/policies?status=DRAFT') },
-                        { label: 'In Review', value: exec.policySummary.inReview, color: '#f59e0b', href: href('/policies?status=IN_REVIEW') },
-                        { label: 'Approved', value: exec.policySummary.approved, color: '#3b82f6', href: href('/policies?status=APPROVED') },
-                        { label: 'Published', value: exec.policySummary.published, color: '#22c55e', href: href('/policies?status=PUBLISHED') },
-                        { label: 'Archived', value: exec.policySummary.archived, color: '#64748b', href: href('/policies?status=ARCHIVED') },
+                        { label: t('policySegments.draft'), value: exec.policySummary.draft, color: '#94a3b8', href: href('/policies?status=DRAFT') },
+                        { label: t('policySegments.inReview'), value: exec.policySummary.inReview, color: '#f59e0b', href: href('/policies?status=IN_REVIEW') },
+                        { label: t('policySegments.approved'), value: exec.policySummary.approved, color: '#3b82f6', href: href('/policies?status=APPROVED') },
+                        { label: t('policySegments.published'), value: exec.policySummary.published, color: '#22c55e', href: href('/policies?status=PUBLISHED') },
+                        { label: t('policySegments.archived'), value: exec.policySummary.archived, color: '#64748b', href: href('/policies?status=ARCHIVED') },
                     ]}
                 />
             </div>
@@ -535,8 +573,11 @@ export default function DashboardClient({
             {/* The Quick-Actions 6-button grid was retired in favour of
                 a state-driven decisive recommendation. The 3-link
                 "Quick add" row below the CTA preserves the most-used
-                create affordances without the 6-button noise. */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-default">
+                create affordances without the 6-button noise. Each link
+                opens its list with the create form already open
+                (`?create=1`), and is offered only to a viewer the server
+                would let create that record. */}
+            <div className={cn('grid grid-cols-1 gap-default', children && 'lg:grid-cols-2')}>
                 <NextBestActionCard
                     input={{
                         coveragePercent: exec.controlCoverage.coveragePercent,
@@ -546,29 +587,22 @@ export default function DashboardClient({
                     }}
                     tenantHref={href}
                     quickAdds={[
-                        { label: t('addRisk'), href: href('/risks') },
-                        { label: t('addEvidence'), href: href('/evidence') },
-                        { label: t('newPolicy'), href: href('/policies') },
+                        ...(quickAddGates?.risk
+                            ? [{ label: t('addRisk'), href: href('/risks?create=1') }]
+                            : []),
+                        ...(quickAddGates?.evidence
+                            ? [{ label: t('addEvidence'), href: href('/evidence?create=1') }]
+                            : []),
+                        ...(quickAddGates?.policy
+                            ? [{ label: t('newPolicy'), href: href('/policies?create=1') }]
+                            : []),
                     ]}
                 />
 
-                {/* RecentActivityCard remains a server component;
-                    rendered by the parent page and passed in here. */}
-                {children ?? (
-                    <Card className="space-y-compact">
-                        <Skeleton className="h-4 w-full sm:w-32" />
-                        <div className="space-y-tight">
-                            {Array.from({ length: 4 }).map((_, i) => (
-                                <div key={i} className="flex items-start gap-tight">
-                                    <Skeleton className="h-3 w-full sm:w-28 shrink-0" />
-                                    <Skeleton
-                                        className={`h-3 ${i % 2 === 0 ? 'w-full' : 'w-3/4'}`}
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                    </Card>
-                )}
+                {/* RecentActivityCard remains a server component, rendered
+                    by the parent page and passed in here — only for a
+                    viewer who can read the audit log. */}
+                {children}
             </div>
         </DashboardLayout>
         </DashboardChartProvider>
@@ -711,13 +745,16 @@ function KpiTile({
 // grid behaves consistently (click = focus, no surprise navigation).
 
 // Each KPI's owning chart, by DOM id, for the click-to-scroll below.
-// These are the topmost chart that the KPI lights up; `findings` has
-// no standalone chart so it anchors to its trend card (rendered only
-// when the trend section is present — the scroll is a no-op otherwise).
-const CHART_SCROLL_TARGETS: Record<DashboardKpiKey, string> = {
+// These are the topmost chart that the KPI lights up. `evidence` and
+// `findings` have no standalone chart (the Evidence Status card was folded
+// into the custom KPI), so they anchor to their trend tiles — rendered only
+// when the trend section is present; the scroll is a no-op otherwise.
+// Every id here must be one this file renders: `evidence` pointed at the
+// folded card's `evidence-status` for as long as it had been gone.
+export const CHART_SCROLL_TARGETS: Record<DashboardKpiKey, string> = {
     coverage: 'control-coverage',
     risks: 'risk-distribution',
-    evidence: 'evidence-status',
+    evidence: 'evidence-trend',
     tasks: 'task-status',
     policies: 'policy-status',
     findings: 'findings-trend',
@@ -776,7 +813,10 @@ function InteractiveKpiGrid({
                     format="percent"
                     icon={ShieldCheck}
                     gradient="from-emerald-500 to-teal-500"
-                    subtitle={`${exec.controlCoverage.implemented} of ${exec.controlCoverage.applicable} implemented`}
+                    subtitle={t('implementedOfApplicable', {
+                        implemented: exec.controlCoverage.implemented,
+                        applicable: exec.controlCoverage.applicable,
+                    })}
                     trend={trendBundle?.coverage}
                     trendVariant="success"
                     onClick={click('coverage')}
@@ -808,7 +848,7 @@ function InteractiveKpiGrid({
                     value={exec.stats.evidence}
                     icon={Paperclip}
                     gradient="from-purple-500 to-pink-500"
-                    subtitle={`${exec.evidenceExpiry.overdue} overdue`}
+                    subtitle={t('overdueCount', { count: exec.evidenceExpiry.overdue })}
                     trend={trendBundle?.evidence}
                     trendVariant="error"
                     onClick={click('evidence')}
@@ -823,7 +863,7 @@ function InteractiveKpiGrid({
                     value={exec.stats.openTasks}
                     icon={CheckCircle2}
                     gradient="from-indigo-500 to-blue-500"
-                    subtitle={`${exec.taskSummary.overdue} overdue`}
+                    subtitle={t('overdueCount', { count: exec.taskSummary.overdue })}
                     onClick={click('tasks')}
                     selected={isSelected('tasks')}
                 />
@@ -836,12 +876,12 @@ function InteractiveKpiGrid({
                     value={exec.policySummary.total}
                     icon={FileText}
                     gradient="from-sky-500 to-cyan-500"
-                    subtitle={`${exec.policySummary.published} published`}
+                    subtitle={t('publishedCount', { count: exec.policySummary.published })}
                     onClick={click('policies')}
                     selected={isSelected('policies')}
                 />
             </KpiTile>
-            <KpiTile drillHref={href('/findings')} drillLabel={t('openList', { label: t('openFindings') })}>
+            <KpiTile drillHref={href('/findings?status=OPEN,IN_PROGRESS,READY_FOR_VERIFICATION')} drillLabel={t('openList', { label: t('openFindings') })}>
                 <KpiCard
                     id="kpi-findings"
                     className="h-full"
@@ -866,16 +906,21 @@ function InteractiveKpiGrid({
 // (assets / audits / control tests) that lives OUTSIDE the fixed
 // executive payload; selecting one swaps both the tile and the pie it
 // renders, fetched on demand from `/dashboard/kpi/{key}`. The selection
-// persists in localStorage. Trends are deferred ("pie now, trends
-// later") — the third cell shows a collecting-data notice until the
-// daily snapshot series carries these entities.
+// persists in localStorage. A third cell draws the KPI's trend from the
+// daily snapshot where the snapshot stores that KPI's headline
+// (`SWAPPABLE_KPI_HISTORY`), and is not rendered otherwise — it used to
+// promise "trend history is still being collected" for every metric,
+// including ones that will never have any.
 
 const SWAPPABLE_KPI_META: Record<
     SwappableKpiKey,
     { icon: LucideIcon; gradient: string; drill: string }
 > = {
     assets: { icon: Boxes, gradient: 'from-cyan-500 to-blue-500', drill: '/assets' },
-    audits: { icon: ClipboardCheck, gradient: 'from-violet-500 to-purple-500', drill: '/audits' },
+    // The Audits metric counts audit CYCLES (`getAuditSummary` groups
+    // `auditCycle`), so it opens the cycles list, not the fieldwork audits
+    // at `/audits`.
+    audits: { icon: ClipboardCheck, gradient: 'from-violet-500 to-purple-500', drill: '/audits/cycles' },
     tests: { icon: FlaskConical, gradient: 'from-teal-500 to-emerald-500', drill: '/tests' },
     // Folded in from the ex-standalone dashboard cards. Exceptions drill to
     // /controls (they live on the control detail page) and treatment plans to
@@ -885,7 +930,19 @@ const SWAPPABLE_KPI_META: Record<
     treatmentPlans: { icon: ClipboardList, gradient: 'from-sky-500 to-indigo-500', drill: '/risks' },
 };
 
-function CustomKpiPanel() {
+/**
+ * The daily snapshot column that records each KPI's HEADLINE, where one
+ * exists. Only a column counting exactly what the tile counts belongs here:
+ * `assetsTotal` is written from the same `getAssetSummary().total` the tile
+ * shows. Audit cycles, control-test runs, exceptions and treatment plans have
+ * no snapshot column, and the evidence metric's headline is a partition the
+ * snapshot does not store, so those KPIs draw no trend.
+ */
+const SWAPPABLE_KPI_HISTORY: Partial<Record<SwappableKpiKey, (d: TrendDataPoint) => number>> = {
+    assets: (d) => d.assetsTotal,
+};
+
+function CustomKpiPanel({ trends }: { trends: TrendPayload | null | undefined }) {
     const t = useTranslations('dashboard');
     const href = useTenantHref();
     const router = useRouter();
@@ -917,9 +974,19 @@ function CustomKpiPanel() {
     // KPI's entity list.
     const segments = (data?.segments ?? []).map((seg) => ({
         ...seg,
+        label: t(`customKpi.segments.${seg.key}`),
         href: href(meta.drill),
     }));
     const total = segments.reduce((sum, seg) => sum + seg.value, 0);
+    // The trend, where the snapshot stores this KPI's history. Two points is
+    // the least a line can be drawn through — the same floor the Compliance
+    // Trends section uses. `buildKpiSparklines` trims the leading run of
+    // zero-defaulted days from before the column existed.
+    const pickHistory = SWAPPABLE_KPI_HISTORY[selected];
+    const trendPoints = pickHistory
+        ? buildKpiSparklines(trends?.dataPoints, pickHistory, { value: pickHistory }).value
+        : [];
+    const showTrend = trendPoints.length >= 2;
 
     return (
         <Card id="custom-kpi-panel" className="space-y-default">
@@ -947,7 +1014,12 @@ function CustomKpiPanel() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 items-stretch gap-default md:grid-cols-3">
+            <div
+                className={cn(
+                    'grid grid-cols-1 items-stretch gap-default',
+                    showTrend ? 'md:grid-cols-3' : 'md:grid-cols-2',
+                )}
+            >
                 {/* Tile — swaps with the selection. */}
                 <KpiTile
                     drillHref={href(meta.drill)}
@@ -962,7 +1034,13 @@ function CustomKpiPanel() {
                         loading={isLoading}
                         icon={meta.icon}
                         gradient={meta.gradient}
-                        subtitle={data?.subtitle}
+                        subtitle={
+                            data?.subtitle
+                                ? t(`customKpi.subtitles.${data.subtitle.key}`, {
+                                      count: data.subtitle.count,
+                                  })
+                                : undefined
+                        }
                     />
                 </KpiTile>
 
@@ -987,7 +1065,7 @@ function CustomKpiPanel() {
                             <div className="space-y-tight">
                                 {segments.map((seg) => (
                                     <DonutLegendRow
-                                        key={seg.label}
+                                        key={seg.key}
                                         label={seg.label}
                                         value={seg.value}
                                         dotColor={seg.color}
@@ -1003,19 +1081,20 @@ function CustomKpiPanel() {
                     )}
                 </div>
 
-                {/* Trend — deferred. Pie now, trends later. */}
-                <div
-                    className={cn(
-                        cardVariants({ density: 'none' }),
-                        'flex flex-col items-center justify-center gap-tight text-center',
-                    )}
-                    data-testid="custom-kpi-trend"
-                >
-                    <TrendingUp className="size-5 text-content-subtle" aria-hidden="true" />
-                    <p className="max-w-[24ch] text-xs text-content-muted">
-                        {t('customKpi.trendComing')}
-                    </p>
-                </div>
+                {/* Trend — only where daily history exists. */}
+                {showTrend && (
+                    <div
+                        className={cardVariants({ density: 'compact' })}
+                        data-testid="custom-kpi-trend"
+                    >
+                        <TrendCard
+                            label={t('kpiTrend30Day', { label: selectedLabel })}
+                            value={trendPoints[trendPoints.length - 1].value}
+                            points={trendPoints}
+                            colorClassName="text-content-info"
+                        />
+                    </div>
+                )}
             </div>
         </Card>
     );
@@ -1047,6 +1126,8 @@ function DonutLegendRow({
     dotColor?: string;
     href?: string;
 }) {
+    const t = useTranslations('dashboard');
+    const ariaLabel = t('legendRowAria', { label, value });
     const body = (
         <>
             <div className="flex items-center gap-1.5">
@@ -1070,7 +1151,7 @@ function DonutLegendRow({
         <Link
             href={href}
             className="group/legend flex items-center justify-between text-xs rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-            aria-label={`${label}: ${value} — open filtered list`}
+            aria-label={ariaLabel}
         >
             {body}
         </Link>
@@ -1092,18 +1173,16 @@ function RiskDistributionSection({
     // Severity → the risks list filtered by inherent-score range (the
     // same buckets the donut counts): Critical 15-25, High 10-14,
     // Medium 5-9, Low 1-4. `score=min|max` is the risks range token.
-    const severitySegments: DonutStatusSegment[] = [
-        { label: 'Critical', value: riskBySeverity.critical, color: '#dc2626', href: href('/risks?score=15|25') },
-        { label: 'High', value: riskBySeverity.high, color: '#f97316', href: href('/risks?score=10|14') },
-        { label: 'Medium', value: riskBySeverity.medium, color: '#f59e0b', href: href('/risks?score=5|9') },
-        { label: 'Low', value: riskBySeverity.low, color: '#22c55e', href: href('/risks?score=1|4') },
+    // The donut counts OPEN risks only, so each link also filters the list
+    // to the open statuses — otherwise a closed critical risk the slice
+    // leaves out would reappear in the list it opens.
+    const open = `status=${OPEN_RISK_STATUSES.join(',')}`;
+    const severitySegments: Array<DonutStatusSegment & { tone: string }> = [
+        { label: t('severity.critical'), value: riskBySeverity.critical, color: '#dc2626', tone: 'bg-bg-error-emphasis', href: href(`/risks?score=15|25&${open}`) },
+        { label: t('severity.high'), value: riskBySeverity.high, color: '#f97316', tone: 'bg-orange-500', href: href(`/risks?score=10|14&${open}`) },
+        { label: t('severity.medium'), value: riskBySeverity.medium, color: '#f59e0b', tone: 'bg-bg-warning-emphasis', href: href(`/risks?score=5|9&${open}`) },
+        { label: t('severity.low'), value: riskBySeverity.low, color: '#22c55e', tone: 'bg-bg-success-emphasis', href: href(`/risks?score=1|4&${open}`) },
     ];
-    const legendTone: Record<string, string> = {
-        Critical: 'bg-bg-error-emphasis',
-        High: 'bg-orange-500',
-        Medium: 'bg-bg-warning-emphasis',
-        Low: 'bg-bg-success-emphasis',
-    };
     return (
         <Card
             id="risk-distribution"
@@ -1133,7 +1212,7 @@ function RiskDistributionSection({
                             riskBySeverity.medium +
                             riskBySeverity.low,
                     )}
-                    centerSub="Total"
+                    centerSub={t('donut.total')}
                     showLegend={false}
                     onSegmentClick={(s) => s.href && router.push(s.href)}
                 />
@@ -1143,7 +1222,7 @@ function RiskDistributionSection({
                             key={item.label}
                             label={item.label}
                             value={item.value}
-                            dotClassName={legendTone[item.label]}
+                            dotClassName={item.tone}
                             href={item.href}
                         />
                     ))}
@@ -1271,7 +1350,7 @@ function TrendSection({ trends }: { trends: TrendPayload }) {
                     {t('complianceTrends')}
                 </Heading>
                 <span className="text-xs text-content-subtle">
-                    {trends.daysAvailable} day{trends.daysAvailable !== 1 ? 's' : ''} of data
+                    {t('daysOfData', { count: trends.daysAvailable })}
                 </span>
             </div>
             {/* B1 — each TrendCard subscribes to its corresponding KPI
@@ -1301,7 +1380,7 @@ function TrendSection({ trends }: { trends: TrendPayload }) {
                         colorClassName="text-content-warning"
                     />
                 </ChartFocusWrapper>
-                <ChartFocusWrapper kpiKey="evidence" className={trendTileClass}>
+                <ChartFocusWrapper kpiKey="evidence" id="evidence-trend" className={trendTileClass}>
                     <TrendCard
                         label={t("overdueEvidenceLabel")}
                         value={evidenceOverduePoints[evidenceOverduePoints.length - 1].value}

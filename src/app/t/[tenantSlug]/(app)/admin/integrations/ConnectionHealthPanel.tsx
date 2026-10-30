@@ -9,7 +9,6 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
 
 interface HealthRow {
     connectionId: string;
@@ -54,10 +53,15 @@ function humanizeAge(seconds: number | null): string {
 
 /**
  * GAP-3 — per-connection freshness. Seconds since each enabled connection's
- * last SUCCESSFUL (PASSED) execution, with a stale flag. Read-only view over
- * GET /admin/integrations/health.
+ * last activity — a run of any status, or a successful connection test — with
+ * a stale flag, beside the date of its last SUCCESSFUL execution. Read-only
+ * view over GET /admin/integrations/health.
+ *
+ * `providerLabel` turns a provider id into the name the catalogue shows. The
+ * health endpoint returns only the id, and the page that renders this panel
+ * already holds the names; without it the id is shown.
  */
-export function ConnectionHealthPanel() {
+export function ConnectionHealthPanel({ providerLabel }: { providerLabel?: (id: string) => string } = {}) {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const [data, setData] = useState<HealthResponse | null>(null);
@@ -97,7 +101,13 @@ export function ConnectionHealthPanel() {
     if (!loading && (!data || data.connections.length === 0)) return null;
 
     const cols = createColumns<HealthRow>([
-        { accessorKey: 'provider', header: t('integrations.colProvider'), cell: ({ getValue }) => <StatusBadge variant="info">{getValue()}</StatusBadge> },
+        {
+            accessorKey: 'provider', header: t('integrations.colProvider'),
+            cell: ({ getValue }) => {
+                const id = String(getValue());
+                return <StatusBadge variant="info">{providerLabel ? providerLabel(id) : id}</StatusBadge>;
+            },
+        },
         { accessorKey: 'name', header: t('integrations.colName'), cell: ({ getValue }) => <span className="font-medium">{getValue()}</span> },
         {
             id: 'lastSuccess', header: t('integrations.health.colLastSuccess'), accessorKey: 'lastSuccessAt',
@@ -153,20 +163,25 @@ export function ConnectionHealthPanel() {
                 </div>
             </div>
             <p className="text-sm text-content-subtle mb-3">{t('integrations.health.description')}</p>
-            {loading ? (
-                <div className="p-8 text-center text-content-subtle">
-                    <LoadingSpinner className="mx-auto mb-2" />
-                    <span className="sr-only">{t('integrations.fetching')}</span>
-                </div>
-            ) : (
-                <DataTable
-                    data={data?.connections ?? []}
-                    columns={cols}
-                    getRowId={(r) => r.connectionId}
-                    emptyState={t('integrations.emptyConfigured')}
-                    resourceName={(p) => p ? t('integrations.resourceConnections') : t('integrations.resourceConnection')}
-                />
-            )}
+            {/* `loading` on the table, not a spinner INSTEAD of it (#4482): the
+                overlay is `absolute inset-0` and a zero-row table reserves
+                `min-h-[400px]`, so this section no longer grows when the fetch
+                resolves and shifts everything below it.
+
+                The `sr-only` announcement is KEPT: it lived inside the spinner,
+                so removing that left a screen reader with no loading signal at
+                all. It is clipped, so it adds no height. */}
+            {loading && <span className="sr-only">{t('integrations.fetching')}</span>}
+            <DataTable
+                data={data?.connections ?? []}
+                columns={cols}
+                loading={loading}
+                getRowId={(r) => r.connectionId}
+                // Read-only: nothing acts on a selected row.
+                selectionEnabled={false}
+                emptyState={t('integrations.emptyConfigured')}
+                resourceName={(p) => p ? t('integrations.resourceConnections') : t('integrations.resourceConnection')}
+            />
         </div>
     );
 }

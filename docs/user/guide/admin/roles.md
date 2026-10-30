@@ -22,9 +22,9 @@ The pill beside it, **{{ui:admin.nav.rbac}}**, is a different page: it shows wha
 
 Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page.
 
-An Admin can put into a custom role only the permissions an Admin holds. The permission grid offers every permission to both roles, so an Admin who ticks an Owner-only one finds out when saving. An Admin also cannot save any change to a custom role that already holds one, even a new name.
+You can put into a custom role only the permissions you hold yourself. In the permission grid, a permission you do not hold is greyed out and cannot be switched on; for an Admin, these are the Owner-only ones. A custom role that already holds one, because an Owner built it, cannot be saved by an Admin while it keeps it, even with only a new name: the form names those permissions and keeps **{{ui:admin.roles.editSubmit}}** greyed out until they are switched off.
 
-An Admin whose membership carries a custom role can do only what that custom role allows. If it cannot manage the workspace's settings, the page still opens, but it lists no roles and shows the empty message, as if the workspace had none.
+An Admin whose membership carries a custom role can do only what that custom role allows. If it cannot manage the workspace's settings, the page still opens, but shows **{{ui:admin.roles.loadFailed}}** with the reason, **Permission denied**, in place of the list.
 
 ## What it is for
 
@@ -49,7 +49,7 @@ A few rules hold whatever your role:
 | Column | What it shows |
 | --- | --- |
 | {{ui:admin.roles.colName}} | The role's name |
-| {{ui:admin.roles.colBaseRole}} | The base role, as a code in capitals: ADMIN, EDITOR, AUDITOR or READER |
+| {{ui:admin.roles.colBaseRole}} | The base role: {{ui:roles.ADMIN}}, {{ui:roles.EDITOR}}, {{ui:roles.AUDITOR}} or {{ui:roles.READER}} |
 | {{ui:admin.roles.colDescription}} | What the role is for, or a dash |
 | {{ui:admin.roles.colMembers}} | How many memberships carry the role, deactivated ones included |
 | {{ui:admin.roles.colPermissions}} | How many of the grid's permissions the role grants, out of the total |
@@ -60,18 +60,22 @@ The pencil at the end of a row is **{{ui:admin.roles.editRole}}**, and the bin i
 
 | Field | What it sets |
 | --- | --- |
-| {{ui:admin.roles.nameLabel}} | The role's name, up to 100 characters. Required, and unique in the workspace |
+| {{ui:admin.roles.nameLabel}} | The role's name, up to 100 characters. Required, and unique among the workspace's custom roles. A deleted role's name can be used again |
 | {{ui:admin.roles.baseRoleLabel}} | Admin, Editor, Auditor or Reader, starting on Reader. The base role decides how members carrying the role count where a level of role is checked, as described above |
 | {{ui:admin.roles.descriptionLabel}} | An optional note, up to 500 characters |
 
-**{{ui:admin.roles.showGrid}}** opens the permission grid; **{{ui:admin.roles.hideGrid}}** closes it. The grid is open from the start when you edit a role. Each row is an area of the product, under **{{ui:admin.roles.gridResource}}**, and each column an action, such as view, create, edit or approve. Two areas, access reviews and identity reconciliation, are labelled with their internal names, and the action headings are not translated. A dash means the area has no such action. A green tick means the role grants it; click a cell to switch it. Beside **{{ui:admin.roles.presetFrom}}**, click a role's code to fill the whole grid with that built-in role's permissions.
+**{{ui:admin.roles.showGrid}}** opens the permission grid; **{{ui:admin.roles.hideGrid}}** closes it. The grid is open from the start when you edit a role. Each row is an area of the product, under **{{ui:admin.roles.gridResource}}**, and each column an action, such as {{ui:admin.roles.actions.view}}, {{ui:admin.roles.actions.create}}, {{ui:admin.roles.actions.edit}} or {{ui:admin.roles.actions.approve}}. A dash means the area has no such action. A green tick means the role grants it; click a cell to switch it. Point at a cell, or move to it with the keyboard, to see which permission it is and whether the role grants it.
+
+A permission you do not hold yourself is greyed out, and a note above the grid says so: you cannot switch it on. If the role already grants it, you can switch it off, but not back on.
+
+Beside **{{ui:admin.roles.presetFrom}}**, click a built-in role to fill the whole grid with that role's permissions, leaving out any you do not hold yourself.
 
 ## What you can do
 
 ### Create a custom role
 
 1. Click **{{ui:admin.roles.addRole}}**.
-2. Enter a name. Choose the base role. The grid then holds that role's permissions, as a starting point.
+2. Enter a name. Choose the base role. The grid then holds that role's permissions, as a starting point, less any you do not hold yourself.
 3. Click **{{ui:admin.roles.showGrid}}** and switch the permissions you want to add or take away.
 4. Click **{{ui:admin.roles.createSubmit}}**. It stays greyed out until the role has a name. **{{ui:admin.roles.cancel}}** closes the form without saving.
 
@@ -87,9 +91,9 @@ A change applies at once to every member who carries the role. Their pages show 
 
 ### Delete a custom role
 
-Click **{{ui:admin.roles.deleteRole}}**. Your browser asks you to confirm and, if members carry the role, says how many. Click OK.
+Click **{{ui:admin.roles.deleteRole}}**, the bin at the end of the role's row. A dialog asks you to confirm and, if members carry the role, says how many. In the dialog, click **{{ui:admin.roles.deleteConfirmLabel}}** to delete it, or **{{ui:common.cancel}}** to keep it.
 
-The role leaves the table, and every member who carried it goes back to their own built-in role: the one in the role column on the {{ui:admin.nav.members}} page, not the custom role's base role. The message says how many members changed. Deleting cannot be undone.
+The role leaves the table, and every member who carried it goes back to their own built-in role: the one in the role column on the {{ui:admin.nav.members}} page, not the custom role's base role. That role may allow more than the custom role did, or less. The message says how many members changed. Deleting cannot be undone, but the role's name is free again: a new role can take it.
 
 ### Give a member a custom role
 
@@ -98,17 +102,18 @@ On the {{ui:admin.nav.members}} page, open the member's role editor and choose t
 ## What happens next
 
 - Creating, changing and deleting a custom role each add an entry to the workspace's audit log, naming who did it. So does giving a member a custom role, or taking one away. Open the log from **{{ui:admin.auditLog}}** on the {{ui:admin.title}} page.
-- A deleted role's name stays taken. A new role, or a renamed one, cannot use it.
+- A deleted role's name is free again. A new role, or a renamed one, can use it.
 
 ## Empty and error states
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
-| **{{ui:admin.roles.emptyState}}** | The workspace has no custom roles. The page also shows this when the list did not load, without saying so | Click **{{ui:admin.roles.addRole}}**. If you expected roles, reload the page |
-| **{{ui:admin.roles.loadFailed}}** | The page could not reach Inflect | Reload the page |
-| A message that a custom role with that name already exists | Another role has the name, possibly one that was deleted | Choose another name |
-| A message that starts **Cannot grant permissions you do not hold** | The role holds a permission only an Owner has | Ask an Owner to make the change |
+| A message that no custom roles are defined yet, in place of the table | The workspace has no custom roles | Click **{{ui:admin.roles.addRole}}** |
+| **{{ui:admin.roles.loadFailed}}**, in place of the table, with the reason below it | The list did not load. **Permission denied** means your custom role cannot manage the workspace's settings | Click **{{ui:common.error.tryAgain}}**. If the reason is **Permission denied**, ask an Owner or Admin |
+| A message that a custom role with that name already exists | Another custom role in the workspace has the name. A deleted role's name does not count | Choose another name |
+| A note in the form that the role grants permissions you do not hold yourself, and **{{ui:admin.roles.editSubmit}}** greyed out | The role was built by someone who holds more than you, such as an Owner | Switch those permissions off in the grid, or ask an Owner to make the change |
+| A message that you cannot give a role permissions you do not hold yourself, naming them | Your own permissions, or the role, changed since the page loaded | Reload the page and try again, or ask an Owner to make the change |
 | **Custom role not found.** | Someone deleted the role since the page loaded | Reload the page |
 | **{{ui:admin.roles.createFailed}}**, **{{ui:admin.roles.updateFailed}}** or **{{ui:admin.roles.deleteFailed}}** | The change did not go through | Reload the page and try again |
 

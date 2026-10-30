@@ -145,6 +145,44 @@ describe('updateFinding', () => {
         ).rejects.toThrow();
     });
 
+    // #4461 — the register's edit form can empty a due date or the analysis.
+    // Both collapsed `null` to "untouched", so neither could be removed.
+    describe('three-state nullable fields', () => {
+        beforeEach(() => {
+            mockGetById.mockResolvedValue({ id: 'find-1', status: 'OPEN' } as never);
+            mockUpdate.mockResolvedValue({ id: 'find-1' } as never);
+        });
+        const repoArgs = () => mockUpdate.mock.calls[0][3];
+
+        it('a null dueDate clears it', async () => {
+            await updateFinding(makeRequestContext('EDITOR'), 'find-1', { dueDate: null });
+            expect(repoArgs().dueDate).toBeNull();
+        });
+
+        it('an absent dueDate leaves it alone', async () => {
+            await updateFinding(makeRequestContext('EDITOR'), 'find-1', { severity: 'LOW' });
+            expect(repoArgs().dueDate).toBeUndefined();
+        });
+
+        it('a dueDate string sets it', async () => {
+            await updateFinding(makeRequestContext('EDITOR'), 'find-1', { dueDate: '2026-12-01' });
+            expect(repoArgs().dueDate).toEqual(new Date('2026-12-01'));
+        });
+
+        it('a null analysis clears it, an absent one leaves it alone', async () => {
+            await updateFinding(makeRequestContext('EDITOR'), 'find-1', { analysis: null });
+            expect(repoArgs().analysis).toBeNull();
+            mockUpdate.mockClear();
+            await updateFinding(makeRequestContext('EDITOR'), 'find-1', { severity: 'LOW' });
+            expect(repoArgs().analysis).toBeUndefined();
+        });
+
+        it('a new analysis is still sanitised', async () => {
+            await updateFinding(makeRequestContext('EDITOR'), 'find-1', { analysis: '<b>x</b>' });
+            expect(repoArgs().analysis).toBe('SANITISED(<b>x</b>)');
+        });
+    });
+
     it('rejects when the finding does not exist for this tenant', async () => {
         mockGetById.mockResolvedValue(null);
         await expect(

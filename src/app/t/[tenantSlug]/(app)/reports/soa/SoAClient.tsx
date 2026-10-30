@@ -571,8 +571,10 @@ function SoARow({
                         <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                             {entry.applicable === null && (
                                 <Tooltip content={t('soaView.mapControl')}>
+                                    {/* A row action, so secondary: a row's button is not
+                                        the page's primary action (R7-PR1). */}
                                     <Button
-                                        variant="primary"
+                                        variant="secondary"
                                         size="xs"
                                         onClick={onMap}
                                         aria-label={t('soaView.mapControl')}

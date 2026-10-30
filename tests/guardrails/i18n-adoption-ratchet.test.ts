@@ -326,7 +326,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/admin/billing/page.tsx': 1, // partial, 1 jsx
     'src/app/t/[tenantSlug]/(app)/admin/entra/page.tsx': 8, // partial, 7 jsx + 1 prop
     'src/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page.tsx': 2, // partial, 2 prop
-    'src/app/t/[tenantSlug]/(app)/admin/notifications/page.tsx': 2, // partial, 2 prop
     'src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx': 9, // partial, 9 prop
     'src/app/t/[tenantSlug]/(app)/admin/trust-center/TrustCenterAdminClient.tsx': 3, // partial, 3 prop
     'src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx': 1, // partial, 1 prop
@@ -334,7 +333,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/audits/nis2-gap/Nis2GapLifecycleClient.tsx': 7, // partial, 2 jsx + 5 prop
     'src/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx': 2, // partial, 1 jsx + 1 prop
-    'src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx': 17, // partial, 17 prop
     'src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/incidents/[incidentId]/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/PolicySharePointSection.tsx': 1, // partial, 1 jsx
@@ -361,7 +359,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/ui/FrameworkMinimap.tsx': 1, // intl wired #3209; 1 jsx remains
     'src/components/ui/FreshnessBadge.tsx': 4, // no-intl, 4 prop
     'src/components/ui/GraphExplorer.tsx': 1, // no-intl, 1 jsx
-    'src/components/ui/NextBestActionCard.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/OnboardingTour.tsx': 1, // no-intl, 1 prop
     'src/components/ui/RichTextEditor.tsx': 1, // partial, 1 jsx
     'src/components/ui/SankeyChart.tsx': 2, // intl wired #3209; 1 jsx + 1 prop remain
