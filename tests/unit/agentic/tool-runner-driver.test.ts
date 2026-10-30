@@ -708,3 +708,32 @@ describe('Step 2d: skills on the Tool Runner engine', () => {
         expect(wire.bodies).toHaveLength(0);
     });
 });
+
+// ─── What went over the wire, on each MODEL_CALL step (2H evidence on the run page) ──
+
+describe('each MODEL_CALL step records its request by shape', () => {
+    it('names the path and the body keys, says no thread member was sent, and carries no value', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [{ toolCalls: [{ name: 'list_risks', args: {} }] }, { text: 'done' }] });
+        const modelSteps = mockState.ledger.filter((s) => s.kind === 'MODEL_CALL');
+        // Positive control: two calls were made, so there are two shapes to read.
+        expect(modelSteps).toHaveLength(2);
+        for (const step of modelSteps) {
+            const wire = (step.rec.input as { wire?: unknown }).wire;
+            expect(wire).toEqual({
+                method: 'POST',
+                path: '/v1/messages',
+                bodyKeys: expect.arrayContaining(['messages', 'model', 'system', 'tools']),
+                threadMember: 'absent',
+            });
+            expect((wire as { bodyKeys: string[] }).bodyKeys).not.toContain('thread');
+        }
+        // Names only: the system prompt went out, and is in no step's wire record.
+        const sentSystem = JSON.stringify(wire0System());
+        expect(sentSystem).toContain('Inflect, a compliance platform');
+        expect(JSON.stringify(modelSteps.map((s) => (s.rec.input as { wire?: unknown }).wire))).not.toContain('Inflect, a compliance platform');
+    });
+});
+
+function wire0System(): unknown {
+    return wire.bodies[0]?.system;
+}

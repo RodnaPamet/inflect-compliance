@@ -201,11 +201,26 @@ export function requestRefusal(request: { method?: string; url: string; body?: u
  * Runs before every request a run's client sends, retries included: logs the
  * request's shape (names only) and refuses what `requestRefusal` refuses.
  */
-function messagesOnlyFor(run: { readonly runId?: string }): Middleware {
+/**
+ * The last request each run client sent, by shape: the run's MODEL_CALL step
+ * records it, so the run's page shows what went over the wire (method, path,
+ * body key names, whether a `thread` member was there) without anyone reading
+ * the worker's log. Keyed by the client, which is the run's alone, and held
+ * weakly, so it goes when the client does.
+ */
+const LAST_REQUEST = new WeakMap<Anthropic, { shape: RequestShape | null }>();
+
+/** The shape of the last request `client` sent, or null before its first. */
+export function lastRequestShape(client: Anthropic): RequestShape | null {
+    return LAST_REQUEST.get(client)?.shape ?? null;
+}
+
+function messagesOnlyFor(run: { readonly runId?: string }, sent: { shape: RequestShape | null }): Middleware {
     return async (request, next) => {
         // Read off named objects, so every logged value is judged by what its
         // property says it is (`local/no-raw-prompt-logging`).
         const inspected = inspectRequest(request);
+        sent.shape = inspected.shape;
         logger.info('tool-runner: request', {
             component: 'agentic',
             runId: run.runId,
@@ -240,6 +255,7 @@ export function clientForRun(
     if (!apiKey) return { ok: false, reason: 'EXTERNAL_CREDENTIAL_NOT_CONFIGURED' };
     if (env.ANTHROPIC_CUSTOM_HEADERS?.trim()) return { ok: false, reason: 'SDK_AMBIENT_HEADERS_SET' };
 
+    const sent: { shape: RequestShape | null } = { shape: null };
     const client = new Anthropic({
         apiKey,
         baseURL: ANTHROPIC_API_BASE_URL,
@@ -249,8 +265,9 @@ export function clientForRun(
         logLevel: 'warn',
         logger: sdkLogger,
         openTelemetry: { propagation: false, traces: { enabled: true, contentMode: 'metadata_only' } },
-        middleware: [messagesOnlyFor(opts)],
+        middleware: [messagesOnlyFor(opts, sent)],
     });
+    LAST_REQUEST.set(client, sent);
     return { ok: true, residency: 'EXTERNAL', client };
 }
 
