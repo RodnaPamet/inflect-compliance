@@ -92,6 +92,7 @@ export async function getTenantCtx(
         tenantId: ctx.tenant.id,
         tenantSlug: ctx.tenant.slug,
         role: ctx.role,
+        membershipRole: ctx.membership.role,
         permissions: ctx.permissions,
         appPermissions: ctx.appPermissions,
     };
@@ -129,6 +130,7 @@ export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
         tenantId: ctx.tenant.id,
         tenantSlug: ctx.tenant.slug,
         role: ctx.role,
+        membershipRole: ctx.membership.role,
         permissions: ctx.permissions,
         appPermissions: ctx.appPermissions,
     };

@@ -198,7 +198,8 @@ async function render(
     role: string,
     searchParams?: Record<string, string | string[] | undefined>,
 ): Promise<Element> {
-    currentCtx = makeRequestContext(role, { tenantSlug: 'acme' });
+    // A built-in membership: its own role is the role the edge reads (#4581 B).
+    currentCtx = makeRequestContext(role, { tenantSlug: 'acme', membershipRole: role as RequestContext['role'] });
     const params = Promise.resolve({ tenantSlug: 'acme', assessmentId: 'a-1', templateId: 't-1' });
     // Next hands every page `searchParams`; the personnel page reads it, and
     // the audit log reads its cursor from it.
