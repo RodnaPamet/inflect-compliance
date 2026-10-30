@@ -25,11 +25,17 @@
  * The real-database half (save and assignment, two tenants) is
  * `tests/integration/custom-role-carriage.test.ts`.
  */
+import { strictMock } from '../helpers/strict-mock';
+
 jest.mock('@/lib/db-context', () => ({ runInTenantContext: jest.fn() }));
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn().mockResolvedValue(undefined) }));
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntry: jest.fn().mockResolvedValue({ id: 'a', entryHash: 'h', previousHash: null }),
-}));
+// `strictMock`: `@/lib/audit` is a guarded barrel (see partial-mock-of-a-guarded-barrel).
+jest.mock('@/lib/audit', () =>
+    strictMock('@/lib/audit', jest.requireActual('@/lib/audit'), {
+        appendAuditEntry: jest.fn().mockResolvedValue({ id: 'a', entryHash: 'h', previousHash: null }),
+        appendAuditEntryOrQueue: jest.fn().mockResolvedValue({ recorded: 'chain', auditId: 'a' }),
+    }),
+);
 const prismaMock = {
     tenantInvite: { updateMany: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
     tenantMembership: { findMany: jest.fn() },

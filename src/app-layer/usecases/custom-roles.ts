@@ -539,7 +539,7 @@ export async function assertCustomRoleCarriageInTx(
     before: MembershipCarriage | null,
     asked: 'assign-custom-role' | 'change-role' | 'invite',
 ): Promise<void> {
-    if (after.customRoleId === null || after.role === 'ADMIN') return;
+    if (!after.customRoleId || after.role === 'ADMIN') return;
     const ids = [...new Set([after.customRoleId, before?.customRoleId].filter((id): id is string => !!id))];
     const rows = await db.tenantCustomRole.findMany({
         where: { tenantId, id: { in: ids } },

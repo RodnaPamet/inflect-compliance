@@ -424,7 +424,8 @@ describe('redeemInvite — atomic claim + email binding', () => {
         const upsertSpy = jest.fn().mockResolvedValue({ id: 'membership-1' });
         mockTransaction.mockImplementationOnce(async (fn: any) =>
             fn({
-                tenantMembership: { upsert: upsertSpy },
+                // The redemption reads the membership's custom role (2026-10-30); here there is none.
+                tenantMembership: { upsert: upsertSpy, findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: {
                     findUnique: jest.fn().mockResolvedValue({ slug: 'acme' }),
                 },
