@@ -214,7 +214,75 @@ absent from both VMs and is presented out of band by a person.
 [ ] `openshell-gateway --version` prints 0.1.6 on the VM.
 [ ] openshell-idle-shutdown.timer enabled — it is the cost control, not a
     convenience. See the cost section below.
+[ ] `npm run openshell:digest -- --check` passes, and the app's environment
+    carries SANDBOX_RUNTIME_CONFIG_DIGEST from config-digest.txt plus
+    SANDBOX_RUNTIME_APPLIED_AT stamped at apply time.
+[ ] SANDBOX_RUNTIME_HEALTH_URL points at the gateway's health port, or is
+    absent — absent means "not probed", which the admin page reports
+    differently from "did not answer".
 ```
+
+### The digest, and why the admin page shows provenance instead of state
+
+Effective gateway configuration is **unobservable from outside the process**.
+0.1a established there is no configuration read API: `config`, `configz`,
+`version` and `/api/v1/config` all answer 404, and only `healthz` and `readyz`
+exist. So the admin page cannot truthfully say
+
+> Telemetry: off
+
+and instead says what is true — what was **sent**, and what **answered**:
+
+> declared, digest `sha256:b9dccbef…`, applied 2026-10-30T06:39Z — gateway
+> reachable, reporting version 0.1.6
+
+Two pieces make that possible.
+
+**The digest is committed, not only computed at deploy.** A digest computed at
+apply time is unfalsifiable: whatever was applied hashes to whatever it hashes
+to, and nothing can disagree. `deploy/openshell/config-digest.txt` gives it
+something to be wrong against — editing `gateway.toml` without re-running
+`npm run openshell:digest -- --write` fails a guard in CI. That is what makes
+the number on the page a claim rather than a decoration, and it gives 5.2
+(#3972) a second anchor to compare: a digest that changes without a deploy is
+drift by definition.
+
+**`openshell-gateway config preflight` validates a configuration without
+starting the service**, so the digest can be checked before it is ever applied.
+Measured on 0.1.6, all four arms:
+
+```
+valid config                        exit 0, silent
+compute_driver = "not-a-driver"     exit 1, category=malformed
+malformed TOML                      exit 1
+allow_unauthenticated_users = true  exit 0   <-- NOT caught
+```
+
+That last arm matters: **preflight validates the SHAPE of a configuration, not
+whether its choices are ones we permit.** It is not a substitute for the
+assertion in `sandbox-runtime-channels-match-the-runtime` that forbids the
+escape hatch. The digest script runs preflight where the binary exists and
+skips it **with a message** where it does not — CI has no gateway binary, and a
+silent skip would let the check pass while reporting nothing.
+
+**The reachability probe reads `/readyz`, not `/healthz`.** Measured: only one
+of them carries a version.
+
+```
+GET /readyz   200  {"status":"healthy","version":"0.1.6","checks":{...}}
+GET /healthz  200  (empty body)
+GET /livez    404
+GET /version  404
+```
+
+A probe pointed at `/healthz` would establish reachability and report no
+version — indistinguishable from an unreachable gateway. And the version comes
+from that body or from nowhere: never from the pin, the digest or an env var,
+because a version this product already knows is not an observation.
+
+**Unreachable is the normal case.** The VM is stopped most of the time by
+design — the cap is a runtime budget — so the page will usually say "did not
+answer", and that is the honest reading rather than an alarm.
 
 ## The VM, and the 5 USD/month cap it runs under
 

@@ -41,6 +41,7 @@
     "db:check-migration-drift": "node scripts/check-applied-migration-drift.mjs",
     "db:check-failed-migration": "node scripts/check-failed-migration.mjs",
     "db:test:catchup": "tsx scripts/catchup-test-db.ts",
+    "openshell:digest": "tsx scripts/openshell-config-digest.ts",
     "openshell:prove": "tsx scripts/openshell-prove.ts",
     "db:check-schema-drift": "node scripts/check-fresh-db-schema-drift.mjs",
     "db:test:reap": "tsx scripts/reap-test-databases.ts",

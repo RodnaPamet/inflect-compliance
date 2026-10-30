@@ -1,0 +1,5 @@
+sha256:b9dccbef43e4c8df1f9292c1487624d76f0ac524e0ff12920df5a7a886bb851b  gateway.toml
+# Recorded by `npm run openshell:digest -- --write` at 2026-10-30T06:39:54.305Z.
+# The deploy exports this as SANDBOX_RUNTIME_CONFIG_DIGEST and stamps
+# SANDBOX_RUNTIME_APPLIED_AT at apply time. Editing gateway.toml without
+# re-running this fails `--check`, which is what makes the digest a claim.
