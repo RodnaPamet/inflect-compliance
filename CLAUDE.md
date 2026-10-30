@@ -3170,6 +3170,14 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.
 - **Integration tests**: Use `prismaTestClient()` and `resetDatabase()` from `tests/helpers/db.ts`. Hit a real DB — do not mock Prisma in integration tests.
+- **No never-cleared timer at module scope in server code** (#4613). The `Test`
+  shards run in-band, and every test file loads its own copy of each module, so a
+  module-level `setInterval` (or a long `setTimeout`) that nothing clears keeps
+  that test file's whole module graph alive until the shard ends —
+  `TimersList → Timeout → _onTimeout → module scope`. `src/lib/security/rate-limit.ts`
+  did this for every file that touched the limiter; it now sweeps stale keys on
+  a caller's turn. Sweep lazily, or give the module a stop function a suite's
+  teardown calls.
 - **Guard tests** (`tests/guards/`): Static analysis tests that enforce architectural rules (no `as any`, no unsafe patterns). These are regular Jest tests that scan source files with regex.
 - **A source scan's population comes from git.** Use `repoFiles()` /
   `repoRelativeFiles()` from `tests/helpers/repo-files.ts` — backed by
