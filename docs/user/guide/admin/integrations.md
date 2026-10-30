@@ -59,11 +59,11 @@ A connection lets Inflect collect from another system without anyone copying dat
 | {{ui:admin.integrations.colExecutions}} | How many runs the connection has recorded, whatever their result |
 | {{ui:admin.integrations.colActions}} | **{{ui:admin.integrations.syncNow}}**, **{{ui:admin.integrations.viewOutcomes}}**, **{{ui:admin.integrations.testConnection}}**, **{{ui:admin.integrations.editConnection}}** and **{{ui:admin.integrations.disableIntegration}}**. A disabled connection has **{{ui:admin.integrations.enableIntegration}}** in place of **{{ui:admin.integrations.disableIntegration}}**, and no **{{ui:admin.integrations.syncNow}}**. An **{{ui:admin.integrations.providerLabels.mcp-server}}** connection also has **{{ui:admin.integrations.authorizeEntra}}** |
 
-**{{ui:admin.integrations.health.title}}.** A second table, shown while at least one connection is enabled. It lists each enabled connection's **{{ui:admin.integrations.health.colLastSuccess}}** date, or **{{ui:admin.integrations.health.testedOk}}** or **{{ui:admin.integrations.health.neverSucceeded}}**; its **{{ui:admin.integrations.health.colFreshness}}**, the time since its last run or successful test, such as 3h or 2d; and a status:
+**{{ui:admin.integrations.health.title}}.** A second table, shown while at least one connection is enabled. It lists each enabled connection's **{{ui:admin.integrations.health.colLastSuccess}}** date, or **{{ui:admin.integrations.health.testedOk}}** or **{{ui:admin.integrations.health.neverSucceeded}}**; its **{{ui:admin.integrations.health.colFreshness}}**, the time since its last successful run or passed connection test, such as 3h or 2d; and a status:
 
 - **{{ui:admin.integrations.health.blocked}}**, with the reason, when a scheduled sync has no one it can run as.
-- **{{ui:admin.integrations.health.stale}}**, when the connection has had no run and no successful test for 48 hours.
-- **{{ui:admin.integrations.health.fresh}}** otherwise. A run counts whatever its result, so a connection whose runs fail can read **{{ui:admin.integrations.health.fresh}}**. Compare **{{ui:admin.integrations.health.colLastSuccess}}**.
+- **{{ui:admin.integrations.health.stale}}**, when the connection has had no successful run and no passed test for 48 hours. A failed run does not count, so a connection whose runs keep failing, for example on a revoked credential, goes stale. For a cloud posture connection, a run that reads the account counts even when it finds failing checks.
+- **{{ui:admin.integrations.health.fresh}}** otherwise.
 
 The header counts the connections that are stale or not syncing.
 

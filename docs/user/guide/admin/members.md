@@ -35,7 +35,7 @@ A few rules hold whatever your role:
 - This page never makes anyone an Owner. Owner is not offered in either list of roles.
 - An Owner or an AI admin never carries a custom role.
 - You can give a member a custom role only if you hold every permission it grants.
-- Only an Admin member can carry a custom role built on Admin, or one that grants a permission only the admin pages use. See [{{ui:admin.roles.title}}](roles.md). A member who carries one cannot be moved from Admin to another role until the custom role is changed or taken away.
+- Only an Admin member can carry a custom role built on Admin, or one that grants one of the admin permissions kept for Admins. See [{{ui:admin.roles.title}}](roles.md). A member who carries one cannot be moved from Admin to another role until the custom role is changed or taken away.
 
 ## What it is for
 

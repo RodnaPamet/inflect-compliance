@@ -484,7 +484,20 @@ describe('custom roles page — writes offered only where the server takes them'
  * it: against the role as stored.
  */
 describe('custom roles page — a role carried by members who are not Admins', () => {
-    const ADMIN_ONLY = ['sso', 'agent_tool_exposure', 'agent_policy_card', 'agent_ownership', 'agent_skill_review', 'agent_skill_author'];
+    // All ten (owner decisions, 2026-10-30): the six only the admin API reads,
+    // and the four refused by decision although they are live elsewhere.
+    const ADMIN_ONLY = [
+        'sso',
+        'agent_tool_exposure',
+        'agent_policy_card',
+        'agent_ownership',
+        'agent_skill_review',
+        'agent_skill_author',
+        'scim',
+        'compliance_dsar_manage',
+        'agent_harness_ingest',
+        'agent_external_tools',
+    ];
 
     async function editRole(extra: Partial<Record<string, unknown>>, base: Role = 'READER') {
         mount({ list: ok([role('cr-1', 'Carried', base, extra)]) });
@@ -504,7 +517,7 @@ describe('custom roles page — a role carried by members who are not Admins', (
             fireEvent.click(cell);
             expect(cell).toHaveAttribute('aria-pressed', 'false');
         }
-        // A key that works outside the admin API stays switchable.
+        // An admin key not on the list stays switchable.
         const view = byId('perm-admin-agent_registry_view')!;
         expect(view).not.toHaveAttribute('aria-disabled');
         fireEvent.click(view);

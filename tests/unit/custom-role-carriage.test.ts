@@ -2,10 +2,11 @@
  * Which custom roles only an ADMIN membership may carry (owner decision,
  * 2026-10-30) — THE RULE, as the pure predicate every writer asks.
  *
- *   1. On any membership but ADMIN, a custom role may not grant one of the
- *      admin keys consumed only behind the admin API
- *      (`ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS`). The other admin keys are left
- *      alone: they work outside the admin API, and nobody loses them.
+ *   1. On any membership but ADMIN, a custom role may not grant one of ten
+ *      admin keys (`ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS`): six consumed only behind
+ *      the admin API, and four refused by decision because such a membership
+ *      reached them around the edge's role gate. The other nine admin keys are
+ *      left alone.
  *   2. A custom role built on ADMIN may only be carried by an ADMIN
  *      membership: its base sets the coarse tier everywhere but the edge.
  *
@@ -15,7 +16,9 @@
  * is held by `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`.
  */
 import {
+    ADMIN_API_ONLY_KEYS,
     ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS,
+    SIDE_DOOR_ADMIN_KEYS,
     CUSTOM_ROLE_ADMIN_BASE_REFUSAL,
     CUSTOM_ROLE_ADMIN_KEYS_REFUSAL,
     TENANT_ROLES,
@@ -39,8 +42,9 @@ function role(base: string, admin: Partial<PermissionSet['admin']> = {}): Custom
 const on = (membershipRole: string, customRole: CustomRoleForCarriage | null) => ({ membershipRole, customRole });
 
 describe('the list', () => {
-    it('is exactly the six keys the owner ruled dead, and each is a real admin key', () => {
-        expect([...ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS]).toEqual([
+    it('is exactly the ten keys the owner ruled on, and each is a real admin key', () => {
+        // Six because only the admin API reads them…
+        expect([...ADMIN_API_ONLY_KEYS]).toEqual([
             'sso',
             'agent_tool_exposure',
             'agent_policy_card',
@@ -48,6 +52,15 @@ describe('the list', () => {
             'agent_skill_review',
             'agent_skill_author',
         ]);
+        // …and four by decision, although they are live outside it.
+        expect([...SIDE_DOOR_ADMIN_KEYS]).toEqual([
+            'scim',
+            'compliance_dsar_manage',
+            'agent_harness_ingest',
+            'agent_external_tools',
+        ]);
+        expect([...ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS]).toEqual([...ADMIN_API_ONLY_KEYS, ...SIDE_DOOR_ADMIN_KEYS]);
+        expect(new Set(ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS).size).toBe(10);
         for (const key of ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS) expect(PERMISSION_SCHEMA.admin).toContain(key);
     });
 
@@ -79,7 +92,7 @@ describe('rule 1 — the admin-membership-only keys', () => {
         // tenant_lifecycle and owner_management are OWNER-only grants, but the
         // carriage rule does not judge them: `permissionsExceeding` decides who
         // may hand them out.
-        expect(others).toHaveLength(13);
+        expect(others).toHaveLength(9);
         const grantsEveryOther = role('READER', Object.fromEntries(others.map((k) => [k, true])));
         for (const carrier of NON_ADMIN_CARRIERS) {
             expect(customRoleCarriageRefusal(on(carrier, grantsEveryOther), null)).toBeNull();
@@ -107,6 +120,10 @@ describe('rule 1 — the admin-membership-only keys', () => {
             'agent_policy_card',
             'agent_skill_review',
             'agent_skill_author',
+            'scim',
+            'compliance_dsar_manage',
+            'agent_harness_ingest',
+            'agent_external_tools',
         ]);
         // ...and on a READER base, it grants none.
         expect(customRoleCarriageOffence(on('READER', { baseRole: 'READER', permissionsJson: {} })).adminKeys).toEqual([]);
@@ -141,7 +158,7 @@ describe('rule 2 — an ADMIN base', () => {
 });
 
 describe('only what a change ADDS is refused — existing rows are not trapped', () => {
-    const legacy = role('ADMIN', { agent_ownership: true }); // base + six keys
+    const legacy = role('ADMIN', { agent_ownership: true }); // base + all ten keys
 
     it('clearing the custom role, or replacing it with one that offends less, passes', () => {
         expect(customRoleCarriageRefusal(on('EDITOR', null), on('EDITOR', legacy))).toBeNull();

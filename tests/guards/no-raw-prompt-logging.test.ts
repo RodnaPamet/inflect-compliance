@@ -837,7 +837,23 @@ const SINK_FLOOR = 30;
 //
 // Still TIGHTENS `HOLES_PER_SINK_CEILING`: (215+6)/124 = 1.7823 becomes
 // (216+6)/125 = 1.7760, because the sink is counted alongside the hole.
-const MEASURED_HOLES = 216;
+// 216 → 217: OPENSHELL 5.1 (#3971). One hole in a sink already listed — the
+// executor's `logger.error` for a lifecycle decision that could not be
+// recorded. Its fields were NARROWED first, from a spread of the whole
+// `SandboxDecision` to named scalars, which closed one of the two this change
+// first opened; what remains is the pair of computed expressions the rule
+// cannot follow, `'sandboxId' in decision ? … : null` and the usual
+// `e instanceof Error ? e.message : String(e)`.
+//
+// Nothing at that sink can carry a prompt, and the type is what says so:
+// `SandboxDecision` is a closed union of a kind, a sandbox id, a closed refusal
+// reason, the gateway's deletion outcome and a boolean. There is no free-text
+// member to leak, and adding one would have to pass the exhaustiveness
+// assertions in `openshell-audit-bridge.ts` first.
+//
+// Still tightens HOLES_PER_SINK_CEILING, since the sink is counted beside the
+// hole.
+const MEASURED_HOLES = 217;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field

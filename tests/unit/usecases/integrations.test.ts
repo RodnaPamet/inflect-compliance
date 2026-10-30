@@ -678,9 +678,11 @@ describe('getConnectionsHealth', () => {
             expect(row.hasEverSucceeded).toBe(false);
             expect(row.lastSuccessAt).toBeNull();
             expect(row.secondsSinceLastSuccess).toBeNull();
-            // P1's activity signal is untouched — the run DID happen, it just
-            // was not a success for this provider.
+            // The run DID happen, and is still reported, but it was not a
+            // success for this provider, so it does not vouch for the
+            // connection's freshness (#4581 D).
             expect(row.lastRunAt).toBe(minsAgo(30).toISOString());
+            expect(row.isStale).toBe(true);
         }
     });
 

@@ -18,7 +18,7 @@ A member's role decides what they can see and do in this workspace. Change it wh
 - You cannot change your own role. The one exception: an Owner can move to Admin while another active Owner remains.
 - If a member is the workspace's only Admin, you cannot move them to another role. Make another member an Admin first.
 - Owners and AI admins never have a custom role. Remove a member's custom role before you make them an AI admin.
-- A custom role built on Admin, or one that grants a permission only the admin pages use, can be given only to an Admin. Change or remove such a custom role before you move its member off Admin.
+- A custom role built on Admin, or one that grants one of the admin permissions kept for Admins, can be given only to an Admin. Change or remove such a custom role before you move its member off Admin.
 
 ## Steps
 

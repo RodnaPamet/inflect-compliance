@@ -1,17 +1,28 @@
 /**
- * The admin keys only an ADMIN membership's custom role may grant are consumed
- * nowhere but behind the admin API (owner decision, 2026-10-30).
+ * Six of the admin keys only an ADMIN membership's custom role may grant are
+ * consumed nowhere but behind the admin API (owner decision, 2026-10-30).
  *
  * `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` (`src/lib/roles.ts`) is refused on every
- * EDITOR, READER and AUDITOR membership's custom role. That costs nobody
- * anything only while each key is DEAD for those memberships: consumed by a
- * route under `src/app/api/t/[tenantSlug]/admin/`, which the edge
- * (`checkAdminAccess`) refuses to them by their built-in role, or by code only
- * such a route reaches. The day one of them gains a consumer anywhere else, the
- * rule starts taking away something a custom role could do — so this file fails
- * first, and the key either leaves the list or the consumer moves.
+ * EDITOR, READER and AUDITOR membership's custom role. It has two parts, and
+ * this file holds the claim each part makes:
  *
- * What it asks, statically:
+ *   - `ADMIN_API_ONLY_KEYS`, the six. Refusing them costs nobody anything only
+ *     while each is DEAD for those memberships: consumed by a route under
+ *     `src/app/api/t/[tenantSlug]/admin/`, which the edge (`checkAdminAccess`)
+ *     refuses to them by their built-in role, or by code only such a route
+ *     reaches. The day one gains a consumer anywhere else, the rule starts
+ *     taking something away without anybody deciding it should — so rules 1 to
+ *     4 below fail first, and the key either moves to the second part by a
+ *     decision or the consumer moves.
+ *   - `SIDE_DOOR_ADMIN_KEYS`, the four refused BY DECISION (owner decision,
+ *     2026-10-30): `scim`, `compliance_dsar_manage`, `agent_harness_ingest` and
+ *     `agent_external_tools`. They are NOT dead elsewhere, and rules 1 to 4 do
+ *     not ask about them. Rule 5 holds the opposite claim — that each is still
+ *     reached outside the admin API's role gate — so the docblock saying the
+ *     rule takes them away stays true, and a key that has gone dead is noticed
+ *     and can move to the first part.
+ *
+ * What it asks, statically (in rules 1 to 4, "a listed key" is one of the six):
  *
  *   1. ROUTES. Every exported handler of every `src/app/api/**\/route.ts`
  *      outside the admin API, and every declaration its call graph reaches
@@ -54,7 +65,7 @@ import * as path from 'path';
 import { createAnalyzer } from '../helpers/route-authorization-graph';
 import { repoRelativeFiles } from '../helpers/repo-files';
 import { codeOf } from '../helpers/source-blocks';
-import { ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS } from '@/lib/roles';
+import { ADMIN_API_ONLY_KEYS, ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS, SIDE_DOOR_ADMIN_KEYS } from '@/lib/roles';
 import { PERMISSION_SCHEMA } from '@/lib/permissions';
 import { VALID_SCOPES, scopesToPermissions } from '@/lib/auth/api-key-auth';
 
@@ -99,7 +110,7 @@ function readsOf(key: string): RegExp[] {
     return [...quoted, property, ...bare];
 }
 
-const DETECTORS = ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS.map((key) => ({ key, patterns: readsOf(key) }));
+const DETECTORS = ADMIN_API_ONLY_KEYS.map((key) => ({ key, patterns: readsOf(key) }));
 
 /** The listed keys `code` reads. */
 function keysRead(code: string): string[] {
@@ -143,7 +154,7 @@ describe('1. no route outside the admin API reaches a listed key', () => {
         const route = 'src/app/api/t/[tenantSlug]/billing/events/route.ts';
         const source = fs.readFileSync(path.join(REPO_ROOT, route), 'utf8');
         expect(findings(route, 'handlers')).toEqual([]);
-        for (const key of ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS) {
+        for (const key of ADMIN_API_ONLY_KEYS) {
             const planted = source.replace("requirePermission('admin.manage'", `requirePermission('admin.${key}'`);
             expect(planted).not.toBe(source);
             expect(findings(route, 'handlers', planted).map((h) => h.split(' ')[0])).toEqual([key]);
@@ -212,7 +223,7 @@ describe('3. no machine surface names a listed key', () => {
 describe('4. no bearer token carries a listed agent key, and nothing reads admin.sso', () => {
     it.each(VALID_SCOPES)('scope %s carries none of the five agent keys', (scope) => {
         const admin = scopesToPermissions([scope]).admin;
-        const carried = ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS.filter((k) => k !== 'sso' && admin[k]);
+        const carried = ADMIN_API_ONLY_KEYS.filter((k) => k !== 'sso' && admin[k]);
         expect(carried).toEqual([]);
     });
 
@@ -229,6 +240,41 @@ describe('4. no bearer token carries a listed agent key, and nothing reads admin
 
     it('every definition module still exists and every listed key is in the permission model', () => {
         for (const f of Object.keys(DEFINITION_MODULES)) expect(fs.existsSync(path.join(REPO_ROOT, f))).toBe(true);
-        for (const key of ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS) expect(PERMISSION_SCHEMA.admin).toContain(key);
+        for (const key of ADMIN_API_ONLY_KEYS) expect(PERMISSION_SCHEMA.admin).toContain(key);
     });
+});
+
+/**
+ * The four refused by decision are refused BECAUSE they are live outside the
+ * admin API's role gate. If one stops being reached that way, the docblock in
+ * `src/lib/roles.ts` that says the rule takes it away is wrong, and the key
+ * belongs in the first part, where rules 1 to 4 would hold it.
+ */
+describe('5. the four refused by decision are live elsewhere, and the list is exactly six plus four', () => {
+    it('the list is the two parts, disjoint, and nothing else', () => {
+        expect([...ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS].sort()).toEqual([...ADMIN_API_ONLY_KEYS, ...SIDE_DOOR_ADMIN_KEYS].sort());
+        expect(new Set<string>([...ADMIN_API_ONLY_KEYS, ...SIDE_DOOR_ADMIN_KEYS]).size).toBe(
+            ADMIN_API_ONLY_KEYS.length + SIDE_DOOR_ADMIN_KEYS.length,
+        );
+        expect(SIDE_DOOR_ADMIN_KEYS).toEqual(['scim', 'compliance_dsar_manage', 'agent_harness_ingest', 'agent_external_tools']);
+    });
+
+    it.each(SIDE_DOOR_ADMIN_KEYS)(
+        'admin.%s is carried by some API-key scope, so a key acting for the membership reaches it past the edge',
+        (key) => {
+            const carriers = VALID_SCOPES.filter((scope) => scopesToPermissions([scope]).admin[key]);
+            expect(carriers.length).toBeGreaterThan(0);
+        },
+    );
+
+    it.each(['agent_harness_ingest', 'agent_external_tools'] as const)(
+        'admin.%s is named by the tool funnel, which acts for a membership through no edge',
+        (key) => {
+            const pattern = new RegExp(`(['"\`])admin\\.${key}\\1`);
+            const naming = files
+                .filter((f) => f.startsWith('src/lib/mcp/') && /\.tsx?$/.test(f))
+                .filter((f) => pattern.test(codeOf(fs.readFileSync(path.join(REPO_ROOT, f), 'utf8'))));
+            expect(naming.length).toBeGreaterThan(0);
+        },
+    );
 });
