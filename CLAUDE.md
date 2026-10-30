@@ -875,6 +875,33 @@ new tenant-membership creation path).
   never BUILT on OWNER or AI_ADMIN either, because a carrier resolves to the
   role's base. Same NOT VALID shape; `deleteCustomRole` moves a legacy row's
   base to READER in the soft-delete write, or the deletion would fail it.
+- **Only an ADMIN membership carries a custom role built on ADMIN, or one
+  granting an admin key consumed only behind the admin API** (owner decision,
+  2026-10-30). The edge admits `/api/t/:slug/admin/**` by the membership's
+  BUILT-IN role, so on an EDITOR, READER or AUDITOR membership such a custom
+  role granted nothing but buttons the edge refused; and an ADMIN base sets the
+  coarse tier (`effectiveRole`) everywhere else. The six keys are
+  `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` in `src/lib/roles.ts` (`sso` and the
+  tool-exposure, policy-card, ownership and two skill keys), each with why it
+  is dead elsewhere. NOT on it, though they look dead from the browser: `scim`,
+  `compliance_dsar_manage` and `agent_harness_ingest` (an agent-bound API key
+  acting for the membership skips the edge, and their admin routes check the
+  key alone), and `agent_external_tools` (every tool call made for the
+  membership). The other admin keys work outside the admin API and are left
+  alone. ONE predicate, `customRoleCarriageRefusal(after, before)`, refuses only
+  what a change ADDS — so rows from before the rule are never trapped (a save
+  that narrows, a clear, a move among EDITOR/READER/AUDITOR all pass) — with a
+  409 and `CUSTOM_ROLE_ADMIN_BASE_NEEDS_ADMIN_MEMBERSHIP` /
+  `CUSTOM_ROLE_ADMIN_KEYS_NEED_ADMIN_MEMBERSHIP` (`keys`, a save's
+  `blockingMemberships`). Every writer asks it: a custom role save, assignment,
+  the members-page role change, invite creation and redemption, the Entra group
+  sync (`custom_role_held`); `tests/unit/custom-role-carriage-writers.test.ts`
+  is the census, and verifies the writers that cannot make the combination
+  (a campaign MODIFY clears the custom role; a transfer writes OWNER and ADMIN).
+  No DB CHECK: the rule reads `permissionsJson` over a base role's defaults.
+  `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`
+  fails when a listed key gains a consumer outside the admin API — then the key
+  leaves the list, or the consumer moves.
 - **An access-review campaign does no OWNER-tier work** (#3727). Closing one
   writes its decisions under `access_reviews.close`, which an ADMIN holds, so it
   holds the members page's rules itself: a MODIFY never sets OWNER

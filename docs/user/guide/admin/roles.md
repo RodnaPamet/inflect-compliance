@@ -36,7 +36,12 @@ A few rules hold whatever your role:
 
 - An Owner or an AI admin never carries a custom role, and no custom role is built on either of them. Their permissions are always the built-in set.
 - Each custom role is built on a base role: Admin, Editor, Auditor or Reader. Wherever Inflect checks a level of role rather than a single permission, a member carrying the custom role counts as its base role. A custom role that grants an action its base role lacks may therefore be refused when that action is used, so choose the base role closest to what the role grants.
-- Only Owner and Admin members reach the admin pages. A custom role that gives admin permissions to an Editor, Auditor or Reader can show them the admin pages, but most of those pages cannot load or save anything for them. Make them an Admin instead.
+- Only Owner and Admin members can use the admin pages' controls, whatever custom role they carry. So two kinds of custom role can be carried only by an Admin member, and are refused for an Editor, Auditor or Reader:
+  - a role built on Admin, because members carrying it would count as Admins everywhere except the admin pages;
+  - a role that grants any of {{ui:admin.roles.actions.sso}}, {{ui:admin.roles.actions.agent_tool_exposure}}, {{ui:admin.roles.actions.agent_policy_card}}, {{ui:admin.roles.actions.agent_ownership}}, {{ui:admin.roles.actions.agent_skill_review}} or {{ui:admin.roles.actions.agent_skill_author}}. Each of these is used only on the admin pages, so on anyone but an Admin it would grant nothing.
+
+  The other admin permissions can be given to anyone in a custom role, because each also works outside the admin pages: reading the agent register, for example. A custom role that Editors, Auditors or Readers already carry cannot be changed into one of the two kinds while they carry it.
+- A custom role given to an Editor, Auditor or Reader before these rules applied keeps working as it did. You can still rename it, switch permissions off, choose a lower base role, or take it away; you cannot add another of the permissions above to it, or build it on Admin.
 
 ## What you see
 
@@ -97,7 +102,7 @@ The role leaves the table, and every member who carried it goes back to their ow
 
 ### Give a member a custom role
 
-On the {{ui:admin.nav.members}} page, open the member's role editor and choose the custom role from the second list. You can give a role only if you hold every permission it grants. See [{{ui:admin.members.title}}](members.md).
+On the {{ui:admin.nav.members}} page, open the member's role editor and choose the custom role from the second list. You can give a role only if you hold every permission it grants, and a role built on Admin, or granting a permission only an Admin member can use, only to an Admin. See [{{ui:admin.members.title}}](members.md).
 
 ## What happens next
 
@@ -114,6 +119,7 @@ On the {{ui:admin.nav.members}} page, open the member's role editor and choose t
 | A message that a custom role with that name already exists | Another custom role in the workspace has the name. A deleted role's name does not count | Choose another name |
 | A note in the form that the role grants permissions you do not hold yourself, and **{{ui:admin.roles.editSubmit}}** greyed out | The role was built by someone who holds more than you, such as an Owner | Switch those permissions off in the grid, or ask an Owner to make the change |
 | A message that you cannot give a role permissions you do not hold yourself, naming them | Your own permissions, or the role, changed since the page loaded | Reload the page and try again, or ask an Owner to make the change |
+| A message that the role can only be carried by an Admin membership, saying how many members carrying it hold another role | You built the role on Admin, or switched on one of the permissions only an Admin member can use, while Editors, Auditors or Readers carry it | Switch the permission off or choose another base role. Or, on the {{ui:admin.nav.members}} page, make those members Admins or give them another custom role first |
 | **Custom role not found.** | Someone deleted the role since the page loaded | Reload the page |
 | **{{ui:admin.roles.createFailed}}**, **{{ui:admin.roles.updateFailed}}** or **{{ui:admin.roles.deleteFailed}}** | The change did not go through | Reload the page and try again |
 
