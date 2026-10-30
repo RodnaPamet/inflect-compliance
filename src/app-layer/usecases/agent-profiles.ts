@@ -54,7 +54,8 @@ import { AppError, ConflictError, ValidationError } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { scanSkillText } from '@/lib/agentic/flue/skills/text-scan';
-import { repositorySkillNames } from '@/lib/agentic/flue/skills/resolve';
+import { namedSkillsCatalogBytes, repositorySkillNames } from '@/lib/agentic/flue/skills/resolve';
+import { MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import {
     agentProfilesEnabledFor,
     PROFILE_INSTRUCTIONS_MAX_CHARS,
@@ -83,6 +84,7 @@ export type AgentProfileRefusal =
     | 'INSTRUCTIONS_REFUSED'
     | 'TOOL_NOT_GRANTED'
     | 'SKILL_UNKNOWN'
+    | 'SKILL_CATALOGUE_OVER_BUDGET'
     | 'NOT_DRAFT'
     | 'NOT_SUBMITTED'
     | 'ALREADY_RETIRED'
@@ -111,6 +113,7 @@ const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     INSTRUCTIONS_REFUSED: 400,
     TOOL_NOT_GRANTED: 400,
     SKILL_UNKNOWN: 400,
+    SKILL_CATALOGUE_OVER_BUDGET: 400,
     NOT_DRAFT: 409,
     NOT_SUBMITTED: 409,
     ALREADY_RETIRED: 409,
@@ -275,16 +278,25 @@ async function assertToolsGranted(db: PrismaTx, ctx: RequestContext, agentId: st
 
 /**
  * Every skill must be one the product ships or one of the tenant's APPROVED
- * skills. Mounting goes through the existing mount gate when a run is admitted
- * by an engine that runs profiles; this is the save-time refusal.
+ * skills, and together they must fit the per-run catalogue budget. Mounting
+ * goes through the existing mount gate when a run is admitted by an engine that
+ * runs profiles; this is the refusal at save and again at approval.
+ *
+ * THE BUDGET (#4523) is the one `resolveRunSkills` applies at admission: one
+ * `name: description` line per named skill, repository and tenant together,
+ * against `MAX_CATALOG_BYTES`. Without it a version naming too many skills was
+ * saved, submitted and approved, and then every run of it was refused. The run
+ * still applies the budget, because a later deploy can lengthen a shipped
+ * skill's description and a tenant skill's next approved version can lengthen
+ * its own.
  */
-async function assertSkillsKnown(db: PrismaTx, ctx: RequestContext, refs: readonly ProfileSkillRef[]): Promise<void> {
+async function assertSkillsMountable(db: PrismaTx, ctx: RequestContext, refs: readonly ProfileSkillRef[]): Promise<void> {
     const repository = repositorySkillNames();
     const tenantNames = refs.filter((r) => r.origin === 'tenant').map((r) => r.name);
     const approved = tenantNames.length
         ? await db.tenantSkillVersion.findMany({
               where: { tenantId: ctx.tenantId, status: 'APPROVED', skill: { name: { in: tenantNames } } },
-              select: { skill: { select: { name: true } } },
+              select: { description: true, skill: { select: { name: true } } },
               take: tenantNames.length,
           })
         : [];
@@ -294,6 +306,18 @@ async function assertSkillsKnown(db: PrismaTx, ctx: RequestContext, refs: readon
         .map((r) => `${r.origin}:${r.name}`);
     if (unknown.length > 0) {
         throw refuse('SKILL_UNKNOWN', `No skill the agent may mount is called ${unknown.join(', ')}.`, { skills: unknown });
+    }
+    const bytes = namedSkillsCatalogBytes(
+        refs.filter((r) => r.origin === 'repository').map((r) => r.name),
+        approved.map((a) => ({ name: a.skill.name, description: a.description })),
+    );
+    if (bytes > MAX_CATALOG_BYTES) {
+        throw refuse(
+            'SKILL_CATALOGUE_OVER_BUDGET',
+            `These skills' catalogue is ${bytes} bytes, over the ${MAX_CATALOG_BYTES}-byte budget a run can mount. ` +
+                'Every run pays for it on every turn, so name fewer skills.',
+            { bytes, budgetBytes: MAX_CATALOG_BYTES },
+        );
     }
 }
 
@@ -351,7 +375,7 @@ export async function createAgentProfile(
             });
             if (existing) throw refuse('PROFILE_EXISTS', 'This agent already has a profile; edit it to write a new version.');
             await assertToolsGranted(db, ctx, agentId, prepared.toolNames);
-            await assertSkillsKnown(db, ctx, prepared.skillRefs);
+            await assertSkillsMountable(db, ctx, prepared.skillRefs);
             const profile = await db.agentProfile.create({
                 data: { tenantId: ctx.tenantId, agentId, createdByUserId: ctx.userId },
                 select: { id: true },
@@ -424,7 +448,7 @@ export async function createAgentProfileVersion(
             assertAgentNotRetired(agent);
             const profile = await findProfile(db, ctx, agentId);
             await assertToolsGranted(db, ctx, agentId, prepared.toolNames);
-            await assertSkillsKnown(db, ctx, prepared.skillRefs);
+            await assertSkillsMountable(db, ctx, prepared.skillRefs);
             const latest = await db.agentProfileVersion.findFirst({
                 where: { tenantId: ctx.tenantId, profileId: profile.id },
                 orderBy: { version: 'desc' },
@@ -491,6 +515,7 @@ const VERSION_SELECT = {
     instructions: true,
     instructionsHash: true,
     toolNames: true,
+    skillRefs: true,
     authoredByUserId: true,
 } as const;
 
@@ -577,6 +602,10 @@ export async function approveAgentProfileVersion(
             );
         }
         await assertToolsGranted(db, ctx, agentId, v.toolNames);
+        // Again at approval: a tenant skill named at save may have been retired
+        // or lengthened since, and a version saved before the budget check
+        // existed was never measured (#4523).
+        await assertSkillsMountable(db, ctx, viewSkillRefs(v.skillRefs));
 
         const now = new Date();
         const inForce = await db.agentProfileVersion.findFirst({

@@ -93,7 +93,11 @@ Inflect would host it in the worker, the same way it hosts Flue.
   Flue alike; the conformance scenario `refused-skill-never-reaches-the-model`
   holds both. The catalogue, one `name: description` line per skill (exactly
   what the 2 KiB per-run budget measures), sits in the system prompt after the
-  preamble and before the operator's instructions. `activate_skill`
+  preamble and before the operator's instructions. A profile version is
+  measured against the same budget when it is saved and again when it is
+  approved (`SKILL_CATALOGUE_OVER_BUDGET`, with the byte count, #4523), so a
+  version that could never run is refused before a reviewer passes it; the run
+  still measures, because a deploy can lengthen a shipped skill's description. `activate_skill`
   (`tool-runner/skills.ts`) is Inflect's own tool, offered only beside a
   catalogue and after the empty-catalogue check. It returns a mounted skill's
   instructions, fenced with its pin, after re-hashing them against the row's

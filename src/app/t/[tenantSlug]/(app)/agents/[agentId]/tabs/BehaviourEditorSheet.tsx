@@ -60,6 +60,7 @@ const FIELD_OF_REFUSAL: Readonly<Record<string, Field>> = {
     INSTRUCTIONS_REFUSED: 'instructions',
     TOOL_NOT_GRANTED: 'tools',
     SKILL_UNKNOWN: 'skills',
+    SKILL_CATALOGUE_OVER_BUDGET: 'skills',
 };
 
 const skillKey = (s: ProfileSkillRef) => `${s.origin}:${s.name}`;

@@ -377,6 +377,20 @@ describe('the editor', () => {
         expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
     });
 
+    it('a catalogue over the run budget is refused beside the skills field (#4523)', async () => {
+        renderTab(view([version()]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        const message = "These skills' catalogue is 3187 bytes, over the 2048-byte budget a run can mount.";
+        fetchMock.mockResolvedValue(refused('SKILL_CATALOGUE_OVER_BUDGET', message));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(document.getElementById('behaviour-skills-error')?.textContent).toBe(message);
+        expect(document.getElementById('behaviour-tools-error')).toBeNull();
+        expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
+    });
+
     it('starts from the open version and says that saving retires it', async () => {
         renderTab(view([SUBMITTED(), version()]));
         fireEvent.click(screen.getByTestId('behaviour-write'));

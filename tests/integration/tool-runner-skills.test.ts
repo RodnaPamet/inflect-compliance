@@ -42,7 +42,12 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { executeQueuedWorkflowRun } from '@/app-layer/usecases/workflow-runs';
-import { createAgentProfile, startAgentProfileTestRun, submitAgentProfileVersion } from '@/app-layer/usecases/agent-profiles';
+import {
+    createAgentProfile,
+    retireAgentProfileVersion,
+    startAgentProfileTestRun,
+    submitAgentProfileVersion,
+} from '@/app-layer/usecases/agent-profiles';
 import {
     approveTenantSkillVersion,
     attachTenantSkillEvaluation,
@@ -230,13 +235,23 @@ describeFn('skills on the Tool Runner engine (real DB, fake model)', () => {
 
         await createAgentProfile(authorB(), AGENTS.main, version());
         await submitAgentProfileVersion(authorB(), AGENTS.main, 1);
-        // Every shipped skill at once: over the per-run catalogue budget.
-        await createAgentProfile(
-            authorB(),
-            AGENTS.everySkill,
-            version({ skillRefs: loadSkillCorpus().skills.map((s) => ({ origin: 'repository' as const, name: s.name })) }),
+        // Every shipped skill at once: over the per-run catalogue budget. The
+        // save refuses that since #4523, so the version is written below the
+        // usecase, as one saved before the check existed was; the run must
+        // still refuse it, because a deploy can lengthen a description.
+        const fits = await createAgentProfile(authorB(), AGENTS.everySkill, version());
+        await retireAgentProfileVersion(authorB(), AGENTS.everySkill, fits.version);
+        await prisma.$executeRawUnsafe(
+            `INSERT INTO "AgentProfileVersion" ("id", "tenantId", "profileId", "version", "instructions", "instructionsHash",
+                 "toolNames", "skillRefs", "modelTier", "effort", "maxTurns", "outputKind", "allowedTriggers", "authoredByUserId")
+             SELECT $1, "tenantId", "profileId", 2, "instructions", "instructionsHash",
+                 "toolNames", $2::jsonb, "modelTier", "effort", "maxTurns", "outputKind", "allowedTriggers", "authoredByUserId"
+             FROM "AgentProfileVersion" WHERE "id" = $3`,
+            `apv-every-${SUITE}`,
+            JSON.stringify(loadSkillCorpus().skills.map((s) => ({ origin: 'repository', name: s.name }))),
+            fits.versionId,
         );
-        await submitAgentProfileVersion(authorB(), AGENTS.everySkill, 1);
+        await submitAgentProfileVersion(authorB(), AGENTS.everySkill, 2);
     });
 
     afterAll(async () => {
@@ -325,7 +340,7 @@ describeFn('skills on the Tool Runner engine (real DB, fake model)', () => {
 
     it('a catalogue over the per-run budget is refused before the run row exists', async () => {
         const before = await prisma.workflowRun.count({ where: { tenantId: TB } });
-        expect(await reasonOf(startAgentProfileTestRun(reviewerB(), AGENTS.everySkill, 1))).toMatch(
+        expect(await reasonOf(startAgentProfileTestRun(reviewerB(), AGENTS.everySkill, 2))).toMatch(
             /^skill_not_mountable: Skill "<catalog>": the always-present catalog is \d+ bytes, over the 2048 budget/,
         );
         expect(await prisma.workflowRun.count({ where: { tenantId: TB } })).toBe(before);

@@ -77,6 +77,7 @@ import { resolveRunDefinition } from '@/app-layer/usecases/agent-profile-runs';
 import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile.schemas';
 import { profileRunKey } from '@/lib/agentic/agent-profile';
 import { SKILL_TEXT_RULES } from '@/lib/agentic/flue/skills/text-scan';
+import { catalogBytes, loadSkillCorpus, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import { registerWorkflow } from '@/lib/agentic/workflow-registry';
 import type { RequestContext } from '@/app-layer/types';
 import { makeRequestContext } from '../helpers/make-context';
@@ -347,6 +348,54 @@ describeFn('agent profiles (real DB)', () => {
                 reason: 'SKILL_UNKNOWN',
                 skills: ['repository:no-such-skill', 'tenant:not-approved'],
             });
+        });
+
+        it('SKILL_CATALOGUE_OVER_BUDGET names the byte count at save, and nothing is stored (#4523)', async () => {
+            await ensureA2Profile();
+            const corpus = loadSkillCorpus().skills;
+            const every = corpus.map((s) => ({ origin: 'repository' as const, name: s.name }));
+            // The fixture is only a fixture while the shipped corpus is over budget.
+            expect(catalogBytes(corpus)).toBeGreaterThan(MAX_CATALOG_BYTES);
+            const before = await prisma.agentProfileVersion.count({ where: { tenantId: TA } });
+            const err = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: every })).catch((e) => e);
+            expect(err.details).toEqual({
+                reason: 'SKILL_CATALOGUE_OVER_BUDGET',
+                bytes: catalogBytes(corpus),
+                budgetBytes: MAX_CATALOG_BYTES,
+            });
+            expect(await prisma.agentProfileVersion.count({ where: { tenantId: TA } })).toBe(before);
+            // One shipped skill fits, and saves.
+            const one = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: every.slice(0, 1) }));
+            expect(one.version).toBeGreaterThan(0);
+        });
+
+        it('approval measures again, so a version stored over the budget is never approved (#4523)', async () => {
+            await ensureA2Profile();
+            const every = loadSkillCorpus().skills.map((s) => ({ origin: 'repository' as const, name: s.name }));
+            const base = await createAgentProfileVersion(authorA(), AGENTS.a2, version());
+            await retireAgentProfileVersion(authorA(), AGENTS.a2, base.version);
+            // Written below the usecase, as a version saved before the check
+            // existed was: the same ciphertext and hash, every shipped skill.
+            const id = `apv-over-${SUITE}`;
+            await prisma.$executeRawUnsafe(
+                `INSERT INTO "AgentProfileVersion" ("id", "tenantId", "profileId", "version", "instructions", "instructionsHash",
+                     "toolNames", "skillRefs", "modelTier", "effort", "maxTurns", "outputKind", "allowedTriggers", "authoredByUserId")
+                 SELECT $1, "tenantId", "profileId", "version" + 1, "instructions", "instructionsHash",
+                     "toolNames", $2::jsonb, "modelTier", "effort", "maxTurns", "outputKind", "allowedTriggers", "authoredByUserId"
+                 FROM "AgentProfileVersion" WHERE "id" = $3`,
+                id,
+                JSON.stringify(every),
+                base.versionId,
+            );
+            await submitAgentProfileVersion(authorA(), AGENTS.a2, base.version + 1);
+            expect(
+                await reasonOf(
+                    approveAgentProfileVersion(reviewerA(), AGENTS.a2, base.version + 1, { instructionsHash: base.instructionsHash }),
+                ),
+            ).toBe('SKILL_CATALOGUE_OVER_BUDGET');
+            const row = await prisma.agentProfileVersion.findUniqueOrThrow({ where: { id }, select: { status: true } });
+            expect(row.status).toBe('SUBMITTED');
+            await retireAgentProfileVersion(authorA(), AGENTS.a2, base.version + 1);
         });
 
         it('NOT_DRAFT, NOT_SUBMITTED, ALREADY_RETIRED', async () => {
@@ -669,12 +718,13 @@ describeFn('agent profiles (real DB)', () => {
             expect(view.limits).toEqual({ instructionsMaxChars: 16_000, maxTurns: 50, rejectionReasonMaxChars: 1_000 });
 
             // The pickers offer what the save accepts: every option round-trips.
-            const v = await createAgentProfile(
-                authorA(),
-                AGENTS.fresh,
-                version({ toolNames: view.options.tools, skillRefs: view.options.skills.slice(0, 32) }),
-            );
+            // Each skill on its own: together the shipped skills are over the
+            // per-run catalogue budget, which the save applies too (#4523).
+            const v = await createAgentProfile(authorA(), AGENTS.fresh, version({ toolNames: view.options.tools }));
             expect(v.version).toBe(1);
+            for (const skill of view.options.skills) {
+                await createAgentProfileVersion(authorA(), AGENTS.fresh, version({ toolNames: view.options.tools, skillRefs: [skill] }));
+            }
         });
 
         it('says why a test run cannot start on an engine that does not run profiles, naming it (Step 2c)', async () => {

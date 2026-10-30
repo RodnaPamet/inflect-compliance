@@ -274,6 +274,24 @@ export function workflowsOverBudget(
 }
 
 /**
+ * What the catalogue of a run that mounts exactly these skills costs per turn
+ * (#4523): the named repository skills' lines and the given tenant skills'
+ * lines, which is the sum `resolveRunSkills` measures at admission. An agent
+ * profile's save and approval refuse a version this puts over
+ * `MAX_CATALOG_BYTES`, so a reviewer learns before a run does. A repository name
+ * the corpus does not hold, or holds refused, adds nothing here: the save
+ * refuses an unknown name on its own, and a run refuses a refused one.
+ */
+export function namedSkillsCatalogBytes(
+    repositoryNames: readonly string[],
+    tenantSkills: readonly Pick<TenantCatalogueEntry, 'name' | 'description'>[],
+): number {
+    const c = shippedCorpus();
+    const repository = repositoryNames.flatMap((name) => c.skills.filter((s) => s.name === name));
+    return catalogBytes([...repository, ...tenantSkills]);
+}
+
+/**
  * Every workflow's declared skills must be mountable and fit the per-turn
  * budget. The budget binds here and at run time (`resolveSkillsFor`), never on
  * the corpus as a whole: the corpus may hold more than any one prompt pays for.
