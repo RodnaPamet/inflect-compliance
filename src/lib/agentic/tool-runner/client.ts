@@ -59,7 +59,7 @@
  *
  * The SDK reaches every Anthropic API: files, skills, batches, server-held
  * threads, Managed Agents. An agent run needs one of them. Every client built
- * here carries `messagesOnly`, a middleware that runs before each request
+ * here carries `messagesOnlyFor`'s middleware, which runs before each request
  * leaves the process and refuses (`requestRefusal`) anything that is not:
  *
  *   • a POST to `/v1/messages` on the pinned origin; and
@@ -118,7 +118,7 @@ export const MESSAGES_PATH = '/v1/messages';
 /** Body members that ask Anthropic to hold state or call out on the run's behalf. */
 const REFUSED_BODY_MEMBERS = ['thread', 'container', 'mcp_servers'] as const;
 
-/** Why `messagesOnly` refused a request. */
+/** Why `messagesOnlyFor`'s middleware refused a request. */
 export type ToolRunnerRequestRefusal =
     | 'NOT_THE_PINNED_ORIGIN'
     | 'NOT_A_MESSAGES_CALL'
@@ -127,22 +127,56 @@ export type ToolRunnerRequestRefusal =
     | 'SERVER_TOOL';
 
 /**
- * The reason a request may not leave a run's client, or null when it may.
- * Pure, so every branch is unit-tested without a network.
+ * What one outbound request carried, as the run's log records it (Step 2H): the
+ * method, the path and the body's top-level member NAMES. Never a value, so no
+ * prompt text, tool output or key reaches the log. `threadMember` is the
+ * production evidence that no request asked Anthropic to hold the conversation.
  */
-export function requestRefusal(request: { method?: string; url: string; body?: unknown }): ToolRunnerRequestRefusal | null {
+export interface RequestShape {
+    readonly method: string;
+    readonly path: string;
+    /** The JSON body's top-level member names, sorted. Empty when the body is not a JSON object. */
+    readonly bodyKeys: readonly string[];
+    readonly threadMember: 'absent' | 'present';
+}
+
+/**
+ * The refusal and the shape of one request, from ONE parse of its body. Pure,
+ * so every branch is unit-tested without a network.
+ */
+export function inspectRequest(request: { method?: string; url: string; body?: unknown }): {
+    refusal: ToolRunnerRequestRefusal | null;
+    shape: RequestShape;
+} {
     const url = new URL(request.url);
-    if (url.origin !== ANTHROPIC_API_BASE_URL) return 'NOT_THE_PINNED_ORIGIN';
-    if (request.method?.toUpperCase() !== 'POST' || url.pathname !== MESSAGES_PATH) return 'NOT_A_MESSAGES_CALL';
-    if (typeof request.body !== 'string') return 'BODY_UNREADABLE';
+    const method = (request.method ?? 'GET').toUpperCase();
     let body: unknown;
-    try {
-        body = JSON.parse(request.body);
-    } catch {
-        return 'BODY_UNREADABLE';
+    let parsed = false;
+    if (typeof request.body === 'string') {
+        try {
+            body = JSON.parse(request.body);
+            parsed = true;
+        } catch {
+            parsed = false;
+        }
     }
-    if (body === null || typeof body !== 'object' || Array.isArray(body)) return 'BODY_UNREADABLE';
-    const members = body as Record<string, unknown>;
+    const isObject = parsed && body !== null && typeof body === 'object' && !Array.isArray(body);
+    const members = isObject ? (body as Record<string, unknown>) : null;
+    const bodyKeys = members ? Object.keys(members).sort() : [];
+    const shape: RequestShape = {
+        method,
+        path: url.pathname,
+        bodyKeys,
+        threadMember: bodyKeys.includes('thread') ? 'present' : 'absent',
+    };
+    return { refusal: refusalOf(url, method, members), shape };
+}
+
+/** The reason a request may not leave, given its parsed parts. */
+function refusalOf(url: URL, method: string, members: Record<string, unknown> | null): ToolRunnerRequestRefusal | null {
+    if (url.origin !== ANTHROPIC_API_BASE_URL) return 'NOT_THE_PINNED_ORIGIN';
+    if (method !== 'POST' || url.pathname !== MESSAGES_PATH) return 'NOT_A_MESSAGES_CALL';
+    if (!members) return 'BODY_UNREADABLE';
     // `null` is the explicit "none", the same as leaving the member out.
     if (REFUSED_BODY_MEMBERS.some((name) => members[name] != null)) return 'SERVER_HELD_STATE';
     const tools = members.tools;
@@ -158,21 +192,45 @@ export function requestRefusal(request: { method?: string; url: string; body?: u
     return null;
 }
 
-/** Runs before every request a run's client sends, retries included, and refuses what `requestRefusal` refuses. */
-const messagesOnly: Middleware = async (request, next) => {
-    const reason = requestRefusal(request);
-    if (reason) {
-        throw forbidden('An agent run\'s Anthropic client sends Messages API calls only.', { reason });
-    }
-    return next(request);
-};
+/** The reason a request may not leave a run's client, or null when it may. */
+export function requestRefusal(request: { method?: string; url: string; body?: unknown }): ToolRunnerRequestRefusal | null {
+    return inspectRequest(request).refusal;
+}
+
+/**
+ * Runs before every request a run's client sends, retries included: logs the
+ * request's shape (names only) and refuses what `requestRefusal` refuses.
+ */
+function messagesOnlyFor(run: { readonly runId?: string }): Middleware {
+    return async (request, next) => {
+        // Read off named objects, so every logged value is judged by what its
+        // property says it is (`local/no-raw-prompt-logging`).
+        const inspected = inspectRequest(request);
+        logger.info('tool-runner: request', {
+            component: 'agentic',
+            runId: run.runId,
+            method: inspected.shape.method,
+            path: inspected.shape.path,
+            bodyKeys: inspected.shape.bodyKeys,
+            threadMember: inspected.shape.threadMember,
+            refused: inspected.refusal,
+        });
+        if (inspected.refusal) {
+            throw forbidden('An agent run\'s Anthropic client sends Messages API calls only.', { reason: inspected.refusal });
+        }
+        return next(request);
+    };
+}
 
 /**
  * A new client for one run, chosen from its residency, or the named reason
  * there is none. Never cached: call it once per run and hold the result for
  * that run only.
  */
-export function clientForRun(selection?: ToolRunnerResidencyTerms): ToolRunnerClientChoice {
+export function clientForRun(
+    selection?: ToolRunnerResidencyTerms,
+    opts: { readonly runId?: string } = {},
+): ToolRunnerClientChoice {
     // ── HARD residency invariant, checked before anything external ──────────
     if (selection?.residency === 'LOCAL_ONLY') {
         return { ok: false, reason: 'TOOL_RUNNER_LOCAL_ONLY_UNSERVED' };
@@ -191,7 +249,7 @@ export function clientForRun(selection?: ToolRunnerResidencyTerms): ToolRunnerCl
         logLevel: 'warn',
         logger: sdkLogger,
         openTelemetry: { propagation: false, traces: { enabled: true, contentMode: 'metadata_only' } },
-        middleware: [messagesOnly],
+        middleware: [messagesOnlyFor(opts)],
     });
     return { ok: true, residency: 'EXTERNAL', client };
 }
