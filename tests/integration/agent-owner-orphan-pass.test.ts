@@ -26,6 +26,7 @@ import { makeRequestContext } from '../helpers/make-context';
 import { hashForLookup } from '@/lib/security/encryption';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { ORPHAN_PASS_ACTOR } from '@/lib/agentic/owner-orphan';
+import { tenantSystemUserId } from '@/lib/tenant-system-user';
 import { runAgentOwnerOrphanPass } from '@/app-layer/usecases/agent-owner-orphan-pass';
 import { setAgentOrphanPassMode } from '@/app-layer/usecases/agent-owner-orphan-policy';
 import { engageKillSwitch, liftKillSwitch, listKillSwitches } from '@/app-layer/usecases/agent-kill-switch';
@@ -259,7 +260,7 @@ async function clearOwnRows(): Promise<void> {
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, TENANTS);
     });
     const allUsers = Object.values(users).flatMap((byPerson) => Object.values(byPerson)) as string[];
-    await prisma.user.deleteMany({ where: { id: { in: allUsers } } });
+    await prisma.user.deleteMany({ where: { id: { in: [...allUsers, ...TENANTS.map(tenantSystemUserId)] } } });
     await prisma.tenant.deleteMany({ where: { id: { in: TENANTS } } });
 }
 
@@ -448,6 +449,14 @@ describe('AUTOMATIC — each orphan suspended and killed, as the system actor', 
         expect(tasks).toHaveLength(1);
         const [task] = tasks;
         expect(task.assigneeUserId).toBe(users[T1].manager);
+        // #4400 — written as the tenant's SYSTEM user. It used to name the
+        // manager as its author, under an ADMIN-shaped context.
+        expect(task.createdByUserId).toBe(tenantSystemUserId(T1));
+        const created = await prisma.auditLog.findFirstOrThrow({
+            where: { tenantId: T1, action: 'TASK_CREATED', entityId: task.id },
+        });
+        expect(created.userId).toBe(tenantSystemUserId(T1));
+        expect(created.actorType).toBe('JOB');
         expect(task.metadataJson).toMatchObject({
             kind: 'AGENT_OWNERSHIP_TRANSFER',
             agentId: agents[T1].hrOwner,

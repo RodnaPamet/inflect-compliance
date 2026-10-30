@@ -197,9 +197,9 @@ export function buildSystemContext(input: {
  * **Where the id is borrowed ONLY for the foreign key, use
  * `buildTenantSystemJobContext` instead** (#4400): it writes as the
  * tenant's SYSTEM user, so the row names no person. The policy review
- * reminder and the evidence retention notifications have moved; the other
- * callers move one per pull request, each with a test that the row no
- * longer names a person.
+ * reminder, the evidence retention notifications and the agent owner-orphan
+ * pass's transfer task have moved; the other callers move one per pull
+ * request, each with a test that the row no longer names a person.
  */
 export function buildDelegatedJobContext(input: {
     tenantId: string;
@@ -282,6 +282,8 @@ export async function buildTenantSystemJobContext(input: {
     job: string;
     tenantSlug?: string;
     discriminator?: string;
+    /** Keep the calling pass's request id, so its rows and the task's correlate. */
+    requestId?: string;
 }): Promise<RequestContext> {
     return buildSystemContext({ ...input, principal: await ensureTenantSystemUser(input.tenantId) });
 }
