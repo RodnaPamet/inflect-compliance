@@ -38,6 +38,7 @@ Use the page to see what agent workflows have done and what they are doing now, 
 - **Open a form first:** audit preparation and framework onboarding ask for a framework; the workpaper narrative asks for a period; the discovered-agent review asks you to choose the agent.
 - **The ad-hoc question** is a link to the {{ui:agents.ask.title}} page, where questions are asked.
 - **Greyed out, with the reason on hover:** the agent recertification pack, which an agent access review starts when it prepares its reviewer packs, and the SAP transaction review, which a connected host system starts with the document facts it reviews.
+- **Greyed out for some custom roles:** audit preparation and framework onboarding when your role cannot view frameworks, and the discovered-agent review when it cannot read the agent inventory. The reason is shown on hover.
 
 **The list.** The 50 most recent runs, newest first. When older runs exist, a notice above the list says so. Each run shows:
 
@@ -59,7 +60,7 @@ Use the page to see what agent workflows have done and what they are doing now, 
 - **A hint** under a run that is waiting for review. When it queued proposals, the hint links to the review queue and says to approve them, then resume. When it queued none, it reads **{{ui:agents.runs.awaitingApprovalNoProposals}}**
 - **The run's summary**, once it has one.
 
-**A run's own page.** Opening a run shows its status, engine, steps, tokens and start time, then every step in order: what kind of step it was, such as {{ui:agents.runs.detail.kind.READ}}, {{ui:agents.runs.detail.kind.PROPOSE}} or {{ui:agents.runs.detail.kind.HUMAN_CHECKPOINT}}, its {{ui:agents.runs.detail.inputLabel}} and {{ui:agents.runs.detail.outputLabel}}, the tokens it used and the proposals it queued. It also lists **{{ui:agents.runs.detail.skillsTitle}}**. The run's page is for reading only: its buttons step through the timeline and change nothing.
+**A run's own page.** Opening a run shows its status, engine, steps, tokens and start time, then every step in order: what kind of step it was, such as {{ui:agents.runs.detail.kind.READ}}, {{ui:agents.runs.detail.kind.PROPOSE}} or {{ui:agents.runs.detail.kind.HUMAN_CHECKPOINT}}, its {{ui:agents.runs.detail.inputLabel}} and {{ui:agents.runs.detail.outputLabel}}, the tokens it used and the proposals it queued. Each step's status reads **{{ui:agents.runs.detail.stepStatus.PENDING}}**, **{{ui:agents.runs.detail.stepStatus.RUNNING}}**, **{{ui:agents.runs.detail.stepStatus.DONE}}**, **{{ui:agents.runs.detail.stepStatus.FAILED}}** or **{{ui:agents.runs.detail.stepStatus.SKIPPED}}**, and each proposal names its kind and where its review stands, such as {{ui:agents.proposals.kind.RISK}} · {{ui:agents.runs.detail.proposalStatus.PENDING}}. It also lists **{{ui:agents.runs.detail.skillsTitle}}**. The run's page is for reading only: its buttons step through the timeline and change nothing.
 
 ## What you can do
 

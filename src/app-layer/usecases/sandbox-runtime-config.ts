@@ -19,6 +19,10 @@ export {
     REPORTING_CHANNELS,
     parseDeclaredChannels,
 } from '@/lib/sandbox-runtime/declarations';
+import {
+    probeSandboxRuntime,
+    type ProbeOutcome,
+} from '@/lib/sandbox-runtime/health-probe';
 export type {
     ReportingChannel,
     ReportingChannelKey,
@@ -67,6 +71,36 @@ export function readSandboxRuntimeDeclaration(): SandboxRuntimeDeclaration {
         appliedAt,
         reachableVersion: null,
         channels: parseDeclaredChannels(env.SANDBOX_RUNTIME_CHANNELS, configured),
+    };
+}
+
+/**
+ * The same declaration, with the reachability probe's answer in it — 5.6e (#4000).
+ *
+ * ═══ WHY A SECOND FUNCTION RATHER THAN CHANGING THE FIRST ═══
+ *
+ * `readSandboxRuntimeDeclaration` is synchronous and reads only this process's
+ * own environment, which is what makes it safe to call from anywhere. Probing
+ * is a network call with a timeout, and folding it in would make every caller
+ * async for a field most do not read.
+ *
+ * It also keeps the two sources of truth apart in the type system: everything
+ * the sync reader returns is DECLARED, and the one field this adds is OBSERVED.
+ * The note on `reachableVersion` above says populating it from the environment
+ * "would dress a DECLARED value in an OBSERVED one's clothes" — so the observed
+ * value arrives through a different door, and only from the gateway's own body.
+ */
+export async function readSandboxRuntimeDeclarationWithProbe(
+    fetchImpl?: typeof fetch,
+): Promise<SandboxRuntimeDeclaration & { readonly probeOutcome: ProbeOutcome }> {
+    const declared = readSandboxRuntimeDeclaration();
+    const probe = await probeSandboxRuntime(env.SANDBOX_RUNTIME_HEALTH_URL, fetchImpl);
+    return {
+        ...declared,
+        // The ONLY field the probe may set. A probe that answered must not be
+        // able to change what this deploy declared.
+        reachableVersion: probe.reachableVersion,
+        probeOutcome: probe.outcome,
     };
 }
 

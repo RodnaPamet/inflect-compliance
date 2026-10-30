@@ -32,6 +32,8 @@ import { NumberStepper } from '@/components/ui/number-stepper';
 import { CopyText } from '@/components/ui/copy-text';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { normaliseHref } from '@/lib/security/safe-url';
+import { apiErrorMessage, validationIssueMessages } from '@/lib/api-error';
+import { isVendorActivationNeedsReview, isVendorNameTaken } from '@/lib/vendor-refusal-reasons';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { Heading } from '@/components/ui/typography';
@@ -259,6 +261,8 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     const [docs, setDocs] = useState<VendorDocRow[]>([]);
     const [assessments, setAssessments] = useState<VendorAssessmentRow[]>([]);
     const [editing, setEditing] = useState(false);
+    const [editSaving, setEditSaving] = useState(false);
+    const [editError, setEditError] = useState<{ field: 'name' | null; message: string } | null>(null);
     const [editForm, setEditForm] = useState<VendorEditForm>({
         name: '', legalName: '', websiteUrl: '', domain: '',
         country: '', description: '', criticality: '', status: '',
@@ -506,18 +510,43 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { if (tab === 'subprocessors') { fetchSubs(); fetchChain(); } }, [tab, fetchSubs, fetchChain]);
 
+    // A refused save keeps the form open and says why (#4534). It used to
+    // handle `res.ok` alone, so a taken name, an activation without a review
+    // or a validation error did nothing at all: no message, form still open.
     const saveEdit = async () => {
-        const res = await fetch(apiUrl(`/vendors/${params.vendorId}`), {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            // residualRisk + dataAccess are nullable: an empty selection clears
-            // each one (send null rather than '', which the schema would reject).
-            body: JSON.stringify({
-                ...editForm,
-                residualRisk: editForm.residualRisk || null,
-                dataAccess: editForm.dataAccess || null,
-            }),
-        });
-        if (res.ok) { setVendor(await res.json()); setEditing(false); }
+        setEditSaving(true);
+        setEditError(null);
+        try {
+            const res = await fetch(apiUrl(`/vendors/${params.vendorId}`), {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                // residualRisk + dataAccess are nullable: an empty selection clears
+                // each one (send null rather than '', which the schema would reject).
+                body: JSON.stringify({
+                    ...editForm,
+                    residualRisk: editForm.residualRisk || null,
+                    dataAccess: editForm.dataAccess || null,
+                }),
+            });
+            if (res.ok) { setVendor(await res.json()); setEditing(false); return; }
+            const err = await res.json().catch(() => ({}));
+            // The two named refusals get the page's own sentence: the
+            // server's is English. Anything else shows the server's reason.
+            if (isVendorNameTaken(err)) {
+                setEditError({ field: 'name', message: tx('form.nameTaken') });
+            } else if (isVendorActivationNeedsReview(err)) {
+                setEditError({ field: null, message: tx('detail.activationNeedsReview') });
+            } else {
+                const issues = validationIssueMessages(err);
+                setEditError({
+                    field: null,
+                    message: issues.length > 0 ? issues.join(' ') : apiErrorMessage(err, tx('detail.saveFailed')),
+                });
+            }
+        } catch {
+            setEditError({ field: null, message: tx('detail.saveFailed') });
+        } finally {
+            setEditSaving(false);
+        }
     };
 
     const addDoc = async (e: React.FormEvent) => {
@@ -766,7 +795,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                             <Button
                                 variant="secondary"
                                 size="icon"
-                                onClick={() => setEditing(true)}
+                                onClick={() => { setEditError(null); setEditing(true); }}
                                 id="edit-vendor-btn"
                                 aria-label={tx('detail.editVendor')}
                             >
@@ -835,8 +864,8 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             {tab === 'overview' && editing && canWrite && (
                 <div className={cn(cardVariants(), 'space-y-default')}>
                     <div className="grid grid-cols-2 gap-default">
-                        <FormField label={tx('detail.name')}>
-                            <Input value={editForm.name} onChange={e => setEditForm((p) => ({ ...p, name: e.target.value }))} />
+                        <FormField label={tx('detail.name')} error={editError?.field === 'name' ? editError.message : undefined}>
+                            <Input id="vendor-edit-name" value={editForm.name} onChange={e => setEditForm((p) => ({ ...p, name: e.target.value }))} />
                         </FormField>
                         <FormField label={tx('detail.legalName')}>
                             <Input value={editForm.legalName} onChange={e => setEditForm((p) => ({ ...p, legalName: e.target.value }))} />
@@ -900,9 +929,12 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                         <label className="block text-sm text-content-muted mb-1">{tx('detail.description')}</label>
                         <Textarea className="w-full h-20" value={editForm.description} onChange={e => setEditForm((p) => ({ ...p, description: e.target.value }))} />
                     </div>
+                    {editError && editError.field === null && (
+                        <p role="alert" id="vendor-edit-error" className="text-sm text-content-error">{editError.message}</p>
+                    )}
                     <div className="flex gap-compact">
-                        <Button variant="primary" onClick={saveEdit} id="save-vendor-btn">{tx('detail.save')}</Button>
-                        <Button variant="secondary" onClick={() => setEditing(false)}>{tx('detail.cancel')}</Button>
+                        <Button variant="primary" onClick={saveEdit} id="save-vendor-btn" loading={editSaving} disabled={editSaving}>{tx('detail.save')}</Button>
+                        <Button variant="secondary" onClick={() => { setEditing(false); setEditError(null); }}>{tx('detail.cancel')}</Button>
                     </div>
                 </div>
             )}

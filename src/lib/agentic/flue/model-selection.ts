@@ -196,13 +196,10 @@ export function resolveFlueModel(sel?: FlueModelSelection): FlueModelChoice {
         // instead of having to remember it.
         const gateway = resolveLocalGateway(sel.localBaseUrl);
         if (!gateway.served) {
-            return {
-                ok: false,
-                reason:
-                    gateway.reason === 'NOT_SERVED'
-                        ? 'LOCAL_GATEWAY_NOT_SERVED'
-                        : 'LOCAL_GATEWAY_NOT_CONFIGURED',
-            };
+            // The shared rule speaks Flue's own vocabulary, so this passes the
+            // reason through rather than translating it. A translation table
+            // here would be a second place for the two to disagree.
+            return { ok: false, reason: gateway.reason };
         }
         const model = sel.localModel || env.AI_LOCAL_MODEL;
         if (!model) return { ok: false, reason: 'LOCAL_MODEL_NOT_CONFIGURED' };

@@ -23,6 +23,7 @@ import {
     type StartField,
 } from '@/lib/agentic/workflow-start-plan';
 import { apiErrorMessage } from '@/lib/api-error';
+import { runStatusLabelKey } from '@/lib/agentic/run-labels';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 
@@ -99,28 +100,8 @@ const STATUS_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'error' | 
     EMPTY_CATALOGUE: 'error',
 };
 
-/**
- * The run statuses with a label under `agents.runs.status` (#4472) — every
- * value of `WorkflowRunStatus`, pinned to the generated enum and to both
- * catalogues by `tests/rendered/agent-runs-list.test.tsx`.
- *
- * A local set rather than a `t.has()` probe, for the reason
- * `entity-prev-next-nav.tsx` gives: most hand-rolled `next-intl` mocks
- * implement `t` alone. A status this build does not know (a rollback) shows
- * its stored code, which is the truth, rather than a guessed label.
- */
-export const LABELLED_RUN_STATUSES: ReadonlySet<string> = new Set([
-    'RUNNING',
-    'AWAITING_APPROVAL',
-    'PAUSED',
-    'COMPLETED',
-    'ABORTED',
-    'FAILED',
-    'EMPTY_CATALOGUE',
-]);
-
 /** No picker and no other-page link — what a caller is offered when the page passes no abilities. */
-const NO_START_ABILITIES: StartAbilities = { discoveredAgents: false, askPage: false };
+const NO_START_ABILITIES: StartAbilities = { discoveredAgents: false, askPage: false, frameworks: false };
 
 /** The statuses a run can be resumed from — the two `resumeWorkflowRun` accepts. */
 const RESUMABLE = new Set(['AWAITING_APPROVAL', 'PAUSED']);
@@ -266,8 +247,12 @@ export function AgentRunsClient({
         }
     }
 
-    const statusLabel = (status: string) =>
-        LABELLED_RUN_STATUSES.has(status) ? t(`runs.status.${status}`) : status;
+    // Every `WorkflowRunStatus` has a label (`@/lib/agentic/run-labels`); one
+    // this build does not know shows its stored code.
+    const statusLabel = (status: string) => {
+        const key = runStatusLabelKey(status);
+        return key ? t(key) : status;
+    };
 
     const abortTarget = runs.find((r) => r.id === confirmAbort) ?? null;
     const startBusy = busy === 'start' || refreshing;

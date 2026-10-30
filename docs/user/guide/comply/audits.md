@@ -16,11 +16,12 @@ Open **{{ui:nav.audits}}** under **{{ui:nav.comply}}** in the sidebar. The bread
 | --- | --- |
 | Open the page, the list of audits, and an audit's checklist and findings | Every role: Owner, Admin, Editor, Reader, Auditor and AI admin |
 | Create an audit | Owner, Admin, Editor |
-| Edit an audit, or raise a finding on it | Owner, Admin, Editor |
-| Move an audit forward or back a step, cancel it, or record a checklist result | Owner, Admin, Editor |
+| Edit an audit, or raise a finding on it, while it is {{ui:audits.planned}} or {{ui:audits.inProgress}} | Owner, Admin, Editor |
+| Move an audit forward or back a step, or cancel it | Owner, Admin, Editor |
+| Record a checklist result, while the audit is {{ui:audits.planned}} or {{ui:audits.inProgress}} | Owner, Admin, Editor |
 | Open the pages the header and **{{ui:audits.hub.lifecycleTitle}}** link to | Every role. Each page has its own rules for what you can change there |
 
-The **{{ui:audits.newAudit}}** button, the status buttons, **{{ui:audits.detail.cancelAudit}}**, **{{ui:audits.editModal.trigger}}**, **{{ui:audits.findingModal.trigger}}** and the checklist result lists appear only for Owners, Admins and Editors. Readers, Auditors and AI admins see each audit read-only, with each checklist item's result shown as a badge.
+The **{{ui:audits.newAudit}}** button, the status buttons, **{{ui:audits.detail.cancelAudit}}**, **{{ui:audits.editModal.trigger}}**, **{{ui:audits.findingModal.trigger}}** and the checklist result lists appear only for Owners, Admins and Editors. Readers, Auditors and AI admins see each audit read-only, with each checklist item's result shown as a badge. A {{ui:audits.completed}} or {{ui:audits.cancelled}} audit is read-only for everyone; see [Move an audit on](#move-an-audit-on).
 
 If your workspace uses custom roles, these changes follow the built-in role your custom role is based on, not the custom role's own permissions.
 
@@ -80,7 +81,7 @@ The audit starts as {{ui:audits.planned}} and opens beside the list, with its ch
 - With a framework, one item per requirement of the framework, up to 100, each asking you to verify that requirement's implementation and evidence.
 - Without one, or for a framework with no requirements, one item for each of up to 15 of the workspace's controls.
 
-The page cannot add, reword or remove checklist items. If you close the form after typing, it asks **{{ui:audits.newModal.discardConfirm}}**
+The page cannot add, reword or remove checklist items. If you close the form after typing, it asks **{{ui:audits.newModal.discardTitle}}** Click **{{ui:audits.newModal.discardConfirmLabel}}** to close it, or **{{ui:audits.newModal.discardCancelLabel}}** to go back to what you typed.
 
 ### Record checklist results
 
@@ -103,7 +104,7 @@ Click one, and a message confirms the new status. Use a back button to correct a
 
 **{{ui:audits.detail.cancelAudit}}** first asks **{{ui:audits.detail.cancelConfirm.title}}** Click **{{ui:audits.detail.cancelConfirm.confirm}}** to mark the audit {{ui:audits.cancelled}}, or **{{ui:audits.detail.cancelConfirm.keep}}** to leave it as it is. Its checklist results and findings are kept. The page cannot reopen a cancelled audit. If the change is refused, the question stays open and a message says why.
 
-A completed or cancelled audit can still be edited, its checklist results changed and findings raised on it.
+A {{ui:audits.completed}} or {{ui:audits.cancelled}} audit is read-only. It offers no **{{ui:audits.editModal.trigger}}**, no result lists and no **{{ui:audits.findingModal.trigger}}**, and a notice says why. To change a completed audit, click **{{ui:audits.detail.backToInProgress}}** first. A cancelled audit cannot be changed at all.
 
 ### Edit an audit
 
@@ -134,6 +135,8 @@ Click **{{ui:audits.findingModal.trigger}}** in the audit's findings. The **{{ui
 | **{{ui:audits.detail.checklistError}}**, or the reason the server gave | The result was not saved | Follow the reason given, or reload the page and try again |
 | **{{ui:audits.editModal.saveFailed}}**, or the reason the server gave | The changes were not saved, and the form stays open | Follow the reason given, then try again |
 | **{{ui:audits.findingModal.createFailed}}**, or the reason the server gave | The finding was not created | Follow the reason given, then try again |
+| **{{ui:audits.detail.readOnlyCompleted}}** | The audit is completed, so it is read-only. As a message after a change, somebody completed it while you had it open | Click **{{ui:audits.detail.backToInProgress}}**, then make the change |
+| **{{ui:audits.detail.readOnlyCancelled}}** | The audit is cancelled, so it is read-only. As a message after a change, somebody cancelled it while you had it open | Nothing; a cancelled audit cannot be changed |
 | A banner saying only the first 5,000 results are shown | The workspace has more than 5,000 audits. While the workspace has cycles and none is chosen, the banner adds **{{ui:audits.hub.truncatedHint}}** | Choose a cycle to narrow the list |
 
 ## Related

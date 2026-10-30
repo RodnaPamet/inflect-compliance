@@ -52,7 +52,7 @@ import { env } from '@/env';
 /** Why a nominated local gateway will not be dialled. */
 export type LocalGatewayRefusal =
     /** Neither the deployment nor the tenant names a gateway. */
-    | 'NOT_CONFIGURED'
+    | 'LOCAL_GATEWAY_NOT_CONFIGURED'
     /**
      * The tenant nominated a gateway this deployment does not serve.
      *
@@ -62,7 +62,7 @@ export type LocalGatewayRefusal =
      * gateway it did not nominate — the one outcome that setting exists to
      * prevent.
      */
-    | 'NOT_SERVED';
+    | 'LOCAL_GATEWAY_NOT_SERVED';
 
 export type LocalGatewayResolution =
     | { readonly served: true; readonly baseUrl: string }
@@ -92,18 +92,27 @@ export function resolveLocalGateway(
     // comparison admits more strings, and every string it newly admits is one a
     // tenant admin typed.
     if (tenantBaseUrl && tenantBaseUrl !== deployment) {
-        return { served: false, reason: 'NOT_SERVED' };
+        return { served: false, reason: 'LOCAL_GATEWAY_NOT_SERVED' };
     }
     if (!deployment) {
-        return { served: false, reason: 'NOT_CONFIGURED' };
+        return { served: false, reason: 'LOCAL_GATEWAY_NOT_CONFIGURED' };
     }
     return { served: true, baseUrl: deployment };
 }
 
 /** One sentence per refusal, for the operator reading a log line. */
+/**
+ * One sentence per refusal, for the operator reading a log line.
+ *
+ * The WORDING and the REASON CODES are #4556's, kept verbatim: that fix shipped
+ * first and its sentences are what the logs, its own tests and any alert keyed
+ * on `reason` already carry. A refactor that unifies two copies of a rule must
+ * not also reword the output — that would make a behaviour-preserving change
+ * look like a behavioural one, and quietly break whatever reads the old string.
+ * The codes are Flue's vocabulary too, so `resolveFlueModel` now passes the
+ * reason straight through instead of translating it.
+ */
 export const LOCAL_GATEWAY_REFUSAL_MESSAGE: Record<LocalGatewayRefusal, string> = {
-    NOT_CONFIGURED:
-        'no local AI gateway is configured (AI_LOCAL_BASE_URL unset, and no tenant override)',
-    NOT_SERVED:
-        'the workspace nominated a local AI gateway this deployment does not serve, so it was not dialled and AI_LOCAL_API_KEY was not sent',
+    LOCAL_GATEWAY_NOT_CONFIGURED: 'Local AI gateway not configured (AI_LOCAL_BASE_URL)',
+    LOCAL_GATEWAY_NOT_SERVED: 'Tenant local AI gateway is not one this deployment serves',
 };

@@ -2,7 +2,8 @@ import { RequestContext } from '../types';
 import { AuditRepository } from '../repositories/AuditRepository';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
+import { auditWriteRefusal, type AuditReadOnlyReason } from '@/lib/audit-lifecycle';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { AuditStatus } from '@prisma/client';
@@ -224,10 +225,26 @@ export async function createAudit(ctx: RequestContext, data: z.infer<typeof Crea
     });
 }
 
+/** The sentence for each read-only refusal; the reason rides `details.reason`. */
+const READ_ONLY_MESSAGE: Record<AuditReadOnlyReason, string> = {
+    AUDIT_COMPLETED_READ_ONLY:
+        'This audit is completed and can no longer be changed. Move it back to In Progress to change it.',
+    AUDIT_CANCELLED_READ_ONLY: 'This audit is cancelled and can no longer be changed.',
+};
+
 export async function updateAudit(ctx: RequestContext, id: string, data: z.infer<typeof UpdateAuditSchema>) {
     assertCanWrite(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // A COMPLETED audit accepts only the move back to IN_PROGRESS, and a
+        // CANCELLED one nothing (#4531, owner decision). Checked FIRST, under
+        // a row lock, so no field, checklist result or FAIL cascade reaches a
+        // closed audit — including through a concurrent cancel.
+        const current = await AuditRepository.lockStatus(db, ctx, id);
+        if (!current) throw notFound('Audit not found');
+        const refusal = auditWriteRefusal(current.status, data);
+        if (refusal) throw new ConflictError(READ_ONLY_MESSAGE[refusal], { reason: refusal });
+
         // Same tenant-scoping `createAudit` applies: an audit must never point
         // at a cycle it cannot see. `undefined` means "not being changed";
         // an explicit `null` detaches the audit from its cycle, which needs no

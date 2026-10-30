@@ -107,43 +107,16 @@ describe('LOCAL_ONLY residency invariant', () => {
         },
     );
 
-    /**
-     * THIS CASE USED TO ASSERT THE OPPOSITE, AND THAT WAS THE FINDING (#4545).
-     *
-     * It read "a per-tenant local base URL overrides the env default" and
-     * passed `http://tenant-gw:9000` — a host the deployment does not serve —
-     * expecting a `LocalRiskSuggestionProvider` built on it. So the hole was
-     * written down as the contract: `aiLocalBaseUrl` is writable by any
-     * `admin.manage` holder, and the provider dials it with a bare `fetch`
-     * carrying `AI_LOCAL_API_KEY` as a bearer.
-     *
-     * The assertion the case actually EXISTED for — that no external provider
-     * is constructed — is kept in both halves below. Only the claim about
-     * whose host gets dialled is inverted.
-     */
-    it('a per-tenant local base URL is honoured when it names the served gateway', () => {
-        const provider = getProvider({
-            residency: 'LOCAL_ONLY',
-            localBaseUrl: 'http://local-gateway:8080',
-            localModel: 'mistral',
-        });
-        expect(provider).toBeInstanceOf(LocalRiskSuggestionProvider);
+    it('a tenant gateway address that is not the deployment\'s is never dialled: the stub, and nothing external (#4545)', () => {
+        const provider = getProvider({ residency: 'LOCAL_ONLY', localBaseUrl: 'http://tenant-gw:9000', localModel: 'mistral' });
+        expect(provider).not.toBeInstanceOf(LocalRiskSuggestionProvider);
         expectNoExternalConstruction();
     });
 
-    it('a per-tenant local base URL this deployment does NOT serve is refused, not dialled', () => {
-        const provider = getProvider({
-            residency: 'LOCAL_ONLY',
-            localBaseUrl: 'http://tenant-gw:9000',
-            localModel: 'mistral',
-        });
-        // The stub, which opens no socket at all — so the tenant's host is
-        // unreachable from here and the deployment's key cannot leave for it.
-        expect(provider).not.toBeInstanceOf(LocalRiskSuggestionProvider);
-        // And still never external: the residency invariant this case was
-        // written to protect is unaffected by the refusal.
+    it('a tenant gateway address that restates the deployment\'s is honoured', () => {
+        const provider = getProvider({ residency: 'LOCAL_ONLY', localBaseUrl: 'http://local-gateway:8080', localModel: 'mistral' });
+        expect(provider).toBeInstanceOf(LocalRiskSuggestionProvider);
         expectNoExternalConstruction();
-        expect(EXTERNAL_CTORS.map(([n]) => n)).not.toContain(provider.providerName);
     });
 
     it.each(EXTERNAL_CTORS.map(([name]) => name))(

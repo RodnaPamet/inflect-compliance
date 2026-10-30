@@ -54,9 +54,9 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 
 import {
     AgentRunsClient,
-    LABELLED_RUN_STATUSES,
     type RunRow,
 } from '@/app/t/[tenantSlug]/(app)/agents/runs/AgentRunsClient';
+import { RUN_STATUSES } from '@/lib/agentic/run-labels';
 
 type Catalogue = Record<string, unknown>;
 const EN = jest.requireActual('../../messages/en.json') as Catalogue;
@@ -187,8 +187,8 @@ describe('labels, not codes', () => {
     });
 
     it('the labelled set is exactly the generated enum, with a label in both catalogues', () => {
-        expect([...LABELLED_RUN_STATUSES].sort()).toEqual([...Object.values(WorkflowRunStatus)].sort());
-        for (const s of LABELLED_RUN_STATUSES) {
+        expect([...RUN_STATUSES].sort()).toEqual([...Object.values(WorkflowRunStatus)].sort());
+        for (const s of RUN_STATUSES) {
             expect({ s, en: typeof at(EN, `agents.runs.status.${s}`), bg: typeof at(BG, `agents.runs.status.${s}`) }).toEqual({
                 s,
                 en: 'string',

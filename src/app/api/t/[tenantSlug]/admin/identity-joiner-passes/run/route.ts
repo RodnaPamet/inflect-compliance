@@ -115,6 +115,11 @@ export const POST = withApiErrorHandling(
                 // line below. `ctx.userId` was already known here and was
                 // written to `details` as prose — which an operator can read
                 // but no artefact can join on.
+                //
+                // The permission above is checked NOW, and the pass asks it
+                // again when it RUNS (#4400): it acts as this user only if
+                // they still hold it, and otherwise runs as the 04:30 pass
+                // does and records the refusal.
                 { tenantId: ctx.tenantId, provider, requestedByUserId: ctx.userId },
                 { jobId },
             );

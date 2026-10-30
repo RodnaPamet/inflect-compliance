@@ -1,21 +1,25 @@
 import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { getFinding, updateFinding } from '@/app-layer/usecases/finding';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import { UpdateFindingSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
-export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const finding = await getFinding(ctx, params.id);
-    return jsonResponse(finding);
-});
+/** One finding (#4535): `findings.view` to read it, `findings.edit` to change it. */
+export const GET = withApiErrorHandling(
+    requirePermission<{ tenantSlug: string; id: string }>('findings.view', async (_req: NextRequest, { params }, ctx) => {
+        const { id } = await params;
+        const finding = await getFinding(ctx, id);
+        return jsonResponse(finding);
+    }),
+);
 
-export const PUT = withApiErrorHandling(withValidatedBody(UpdateFindingSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> }, body) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const finding = await updateFinding(ctx, params.id, body);
-    return jsonResponse({ success: true, finding });
-}));
+export const PUT = withApiErrorHandling(
+    requirePermission<{ tenantSlug: string; id: string }>('findings.edit', async (req: NextRequest, { params }, ctx) => {
+        const { id } = await params;
+        const body = await parseJsonBody(req, UpdateFindingSchema);
+        const finding = await updateFinding(ctx, id, body);
+        return jsonResponse({ success: true, finding });
+    }),
+);

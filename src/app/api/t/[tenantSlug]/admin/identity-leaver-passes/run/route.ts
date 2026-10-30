@@ -187,6 +187,11 @@ export const POST = withApiErrorHandling(
                     // actually reads both asserted nobody asked. Putting the id
                     // in the payload is what lets the pass write the truth in
                     // the places it already writes.
+                    //
+                    // The permission above is checked NOW, and the pass asks it
+                    // again when it RUNS (#4400): it acts as this user only if
+                    // they still hold it, and otherwise runs as the 05:00 pass
+                    // does and records the refusal.
                     requestedByUserId: ctx.userId,
                 },
                 { jobId },

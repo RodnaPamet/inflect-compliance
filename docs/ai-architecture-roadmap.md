@@ -183,8 +183,8 @@ request touching Flue re-checks them.
   only when a credential exists; the socket re-checks the specifier
   (`assistant/turn-provider.ts`, `tool-runner/client.ts`). Tenant setting
   `aiResidency ∈ { EXTERNAL, LOCAL_ONLY }` (default EXTERNAL); local route
-  `AI_LOCAL_BASE_URL` (OpenAI-compatible: Ollama / vLLM) with per-tenant
-  `aiLocalBaseUrl`.
+  `AI_LOCAL_BASE_URL` (OpenAI-compatible: Ollama / vLLM); a tenant's stored
+  `aiLocalBaseUrl` is honoured only when it is that address (#4545).
 - **Supervisor/worker exists as subagents** (fan-out capped, tokens charged
   to the parent); there is no *role* in model selection — a subagent uses its
   parent's model.

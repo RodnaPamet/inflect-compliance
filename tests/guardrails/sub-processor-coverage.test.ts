@@ -87,6 +87,16 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     SANDBOX_RUNTIME_APPLIED_AT:
         'Timestamp recording when that configuration was applied (#3995). ' +
         'Local provenance only; names no service.',
+    SANDBOX_RUNTIME_HEALTH_URL:
+        'Base URL of OUR OWN gateway\'s unauthenticated health port, probed for ' +
+        'a version string (#4000). It does name an endpoint, which is why the ' +
+        'triage has to be stated rather than assumed: the host is the ' +
+        'openshell-gateway VM in this project\'s own VPC, reached on the ' +
+        'INTERNAL address, and a firewall rule admits only the app VM. No third ' +
+        'party is involved and nothing is SENT — the probe is a GET that ' +
+        'deliberately carries no credentials, and the only thing read back is ' +
+        'the gateway\'s own version. If this ever points outside the VPC it ' +
+        'becomes an inventory entry, not an allowlist one.',
     SANDBOX_EXECUTION_ENABLED:
         'Deployment feature flag for whether agent tool calls run inside the ' +
         'sandbox runtime (#3995/#3996). Chooses a LOCAL execution path; no ' +

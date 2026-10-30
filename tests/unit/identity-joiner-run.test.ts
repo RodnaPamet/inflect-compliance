@@ -45,6 +45,14 @@ const mockDb = {
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn(mockDb)),
 }));
+// The requester's membership, which the pass re-reads when it runs (#4400).
+// Spread over the real module so `buildSystemContext` is the builder the
+// scheduled pass really uses; only the membership read is replaced.
+const resolveMember = jest.fn();
+jest.mock('@/app-layer/context-system', () => ({
+    ...jest.requireActual('@/app-layer/context-system'),
+    resolveMemberContextWithReason: (...a: unknown[]) => resolveMember(...a),
+}));
 jest.mock('@/lib/observability/logger', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
@@ -55,6 +63,8 @@ import {
     JOINER_PASS_AUTOMATION_SUFFIX,
 } from '@/app-layer/usecases/identity-joiner-run';
 import { JOINER_PREDICTION_LIMITS_NO_TIMEZONE } from '../helpers/joiner-prediction-limits';
+import { runInTenantContext } from '@/lib/db-context';
+import { getPermissionsForRole } from '@/lib/permissions';
 
 const TENANT = 'tenant-1';
 const PROVIDER = 'entra-id';
@@ -111,6 +121,11 @@ beforeEach(() => {
     mockDb.identityAccountLink.findMany.mockResolvedValue([]);
     mockDb.connectedIdentityAccount.findMany.mockResolvedValue([]);
     mockDb.integrationExecution.create.mockResolvedValue({ id: 'exec-1' });
+    // An OWNER who still holds the key, unless a test says otherwise.
+    resolveMember.mockImplementation(async (a: { tenantId: string; userId: string }) => ({
+        ok: true,
+        ctx: { tenantId: a.tenantId, userId: a.userId, role: 'OWNER', appPermissions: getPermissionsForRole('OWNER') },
+    }));
 });
 
 /** The single execution row a pass wrote, or null. */
@@ -191,24 +206,118 @@ describe('the execution row says who asked — #2895', () => {
         await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
 
         expect(rowData().triggeredBy).toBe('scheduled');
+        // No request block, so a scheduled row is the row it always was.
+        expect((rowData() as unknown as { resultJson: object }).resultJson).not.toHaveProperty('request');
+        expect(resolveMember).not.toHaveBeenCalled();
     });
 
     it('reads the requester, not the actor TYPE, which cannot tell them apart', async () => {
-        // `buildSystemContext` and `buildDelegatedJobContext` both set
-        // actorType 'JOB'. A derivation off that would label every run the
-        // same, and the two runs above would agree.
+        // Every context a pass runs under says actorType 'JOB'. A derivation
+        // off that would label every run the same, and the two runs above
+        // would agree.
         await runIdentityJoinerPass({
             tenantId: TENANT,
             provider: PROVIDER,
             requestedByUserId: 'user-42',
             now: NOW,
         });
-        const delegated = rowData().triggeredBy;
+        const requested = rowData().triggeredBy;
 
         mockDb.integrationExecution.create.mockClear();
         await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
 
-        expect(delegated).not.toBe(rowData().triggeredBy);
+        expect(requested).not.toBe(rowData().triggeredBy);
+    });
+});
+
+describe("a requester's authority is re-read when the pass RUNS — #4400", () => {
+    // The route asserts `admin.tenant_lifecycle` at enqueue. The pass used to
+    // trust that, building an ADMIN-shaped context in the requester's name, so
+    // a pass queued by somebody since demoted or removed still ran with full
+    // ADMIN under their name — at AUTOMATIC, creating accounts journalled as
+    // theirs. These pin what reaches the reads and writes now.
+
+    const row = () =>
+        (mockDb.integrationExecution.create.mock.calls[0][0] as {
+            data: { status: string; triggeredBy: string; resultJson: Record<string, unknown> };
+        }).data;
+    /** Every read and write the pass made, and the context it made it under. */
+    const contexts = () =>
+        (runInTenantContext as jest.Mock).mock.calls.map((c) => c[0] as { userId: string; role: string; actorType?: string });
+
+    it('a requester who still holds the key: the pass acts as THEM, with their real role', async () => {
+        resolveMember.mockResolvedValue({
+            ok: true,
+            ctx: { tenantId: TENANT, userId: 'user-owner', role: 'OWNER', appPermissions: getPermissionsForRole('OWNER') },
+        });
+
+        await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, requestedByUserId: 'user-owner', now: NOW });
+
+        expect(resolveMember).toHaveBeenCalledWith(expect.objectContaining({ tenantId: TENANT, userId: 'user-owner' }));
+        expect(contexts().length).toBeGreaterThan(0);
+        for (const ctx of contexts()) {
+            expect(ctx.userId).toBe('user-owner');
+            // Their membership's role, not the ADMIN every requester used to get.
+            expect(ctx.role).toBe('OWNER');
+            expect(ctx.actorType).toBe('JOB');
+        }
+        expect(row().triggeredBy).toBe('manual');
+        expect(row().resultJson.request).toEqual({ requestedByUserId: 'user-owner', authority: 'REQUESTER' });
+    });
+
+    it.each([
+        ['removed', { ok: false, reason: 'NOT_A_MEMBER' }, { refusal: 'REQUESTER_NOT_A_MEMBER' }],
+        [
+            'deactivated',
+            { ok: false, reason: 'NOT_ACTIVE', status: 'DEACTIVATED' },
+            { refusal: 'REQUESTER_NOT_ACTIVE', membershipStatus: 'DEACTIVATED' },
+        ],
+        [
+            'demoted to ADMIN',
+            {
+                ok: true,
+                ctx: { tenantId: TENANT, userId: 'user-x', role: 'ADMIN', appPermissions: getPermissionsForRole('ADMIN') },
+            },
+            { refusal: 'REQUESTER_LACKS_PERMISSION' },
+        ],
+    ])('a requester %s since: the pass still runs, as the job, naming nobody', async (_l, resolution, refusal) => {
+        resolveMember.mockResolvedValue(resolution);
+
+        const r = await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, requestedByUserId: 'user-x', now: NOW });
+
+        // It RAN, and decided every starter, exactly as the 04:30 pass would.
+        expect(r.status).not.toBe('ERROR');
+        expect(r.decisions).toBe(POPULATION.length);
+        for (const ctx of contexts()) {
+            // The scheduled pass's own context: no person, so nothing the
+            // pass writes as an actor can name them.
+            expect(ctx.userId).toBe('system');
+        }
+        // A person DID ask, so 'manual' — read off the request, not the context.
+        expect(row().triggeredBy).toBe('manual');
+        expect(row().resultJson.request).toEqual({ requestedByUserId: 'user-x', authority: 'JOB', ...refusal });
+    });
+
+    it('and the ERROR row of a pass that threw', async () => {
+        resolveMember.mockResolvedValue({ ok: false, reason: 'NOT_A_MEMBER' });
+        mockDb.employee.findMany.mockRejectedValue(new Error('connection reset'));
+
+        const r = await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, requestedByUserId: 'user-gone', now: NOW });
+
+        expect(r.status).toBe('ERROR');
+        expect(row().status).toBe('ERROR');
+        expect(row().triggeredBy).toBe('manual');
+        expect(row().resultJson.request).toMatchObject({ authority: 'JOB', refusal: 'REQUESTER_NOT_A_MEMBER' });
+    });
+
+    it('a membership that cannot be read does not throw out of the pass', async () => {
+        resolveMember.mockRejectedValue(new Error('connection reset'));
+
+        const r = await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, requestedByUserId: 'user-x', now: NOW });
+
+        expect(r.status).not.toBe('ERROR');
+        expect(contexts().every((c) => c.userId === 'system')).toBe(true);
+        expect(row().resultJson.request).toMatchObject({ authority: 'JOB', refusal: 'REQUESTER_UNRESOLVED' });
     });
 });
 

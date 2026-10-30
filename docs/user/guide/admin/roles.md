@@ -36,6 +36,7 @@ A few rules hold whatever your role:
 
 - An Owner or an AI admin never carries a custom role, and no custom role is built on either of them. Their permissions are always the built-in set.
 - Each custom role is built on a base role: Admin, Editor, Auditor or Reader. Wherever Inflect checks a level of role rather than a single permission, a member carrying the custom role counts as its base role. A custom role that grants an action its base role lacks may therefore be refused when that action is used, so choose the base role closest to what the role grants.
+- **{{ui:admin.resourceLabels.personnel}}** / **{{ui:admin.roles.actions.manage}}** can be part only of a custom role based on Admin. On any other base its cell is greyed out, a preset does not switch it on, and moving a role off Admin switches it off. A role saved with it on another base before this rule existed has had it switched off; such a role cannot be saved again while it keeps it.
 - Only Owner and Admin members reach the admin pages. A custom role that gives admin permissions to an Editor, Auditor or Reader can show them the admin pages, but most of those pages cannot load or save anything for them. Make them an Admin instead.
 
 ## What you see
