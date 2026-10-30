@@ -129,6 +129,9 @@ export default function AssetDetailPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { permissions, appPermissions, tenantSlug } = useTenantContext();
+    const canConvertVuln = permissions.canWrite && appPermissions.assets.edit;
+    const canConvertToRisk = canConvertVuln && appPermissions.risks.create;
+    const canConvertToFinding = canConvertVuln && appPermissions.findings.create;
     const t = useTranslations('assets');
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
@@ -737,28 +740,37 @@ export default function AssetDetailPage() {
                                     />
                                 ),
                             },
-                            ...(permissions.canWrite
+                            // Each button follows its route's keys (#4535):
+                            // convert-to-risk asks assets.edit + risks.create,
+                            // convert-to-finding assets.edit + findings.create.
+                            // Built-in roles hold all or none of them; a custom
+                            // role is offered only the conversion it can make.
+                            ...(canConvertToRisk || canConvertToFinding
                                 ? [{
                                       id: 'actions',
                                       header: t('detail.vuln.actions'),
                                       cell: ({ row }: { row: { original: AssetVulnRow } }) => (
                                           <div className="flex items-center gap-compact">
-                                              <Button
-                                                  variant="secondary"
-                                                  size="sm"
-                                                  disabled={convertingId === row.original.id}
-                                                  onClick={() => convertVuln(row.original.id, 'risk')}
-                                              >
-                                                  {t('detail.vuln.convertToRisk')}
-                                              </Button>
-                                              <Button
-                                                  variant="secondary"
-                                                  size="sm"
-                                                  disabled={convertingId === row.original.id}
-                                                  onClick={() => convertVuln(row.original.id, 'finding')}
-                                              >
-                                                  {t('detail.vuln.convertToFinding')}
-                                              </Button>
+                                              {canConvertToRisk && (
+                                                  <Button
+                                                      variant="secondary"
+                                                      size="sm"
+                                                      disabled={convertingId === row.original.id}
+                                                      onClick={() => convertVuln(row.original.id, 'risk')}
+                                                  >
+                                                      {t('detail.vuln.convertToRisk')}
+                                                  </Button>
+                                              )}
+                                              {canConvertToFinding && (
+                                                  <Button
+                                                      variant="secondary"
+                                                      size="sm"
+                                                      disabled={convertingId === row.original.id}
+                                                      onClick={() => convertVuln(row.original.id, 'finding')}
+                                                  >
+                                                      {t('detail.vuln.convertToFinding')}
+                                                  </Button>
+                                              )}
                                           </div>
                                       ),
                                   }]

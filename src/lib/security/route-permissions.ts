@@ -1328,6 +1328,37 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: 'List / detail incident reads — compliance visibility for every member.',
     },
 
+    // ── Findings register (#4535) ───────────────────────────────────
+    // Findings were the one register with no key of their own. The defaults
+    // reproduce the coarse tiers the usecases still assert (view = every role,
+    // create/edit = OWNER/ADMIN/EDITOR), so no built-in role moves; what the
+    // keys add is a custom role that can be given or refused findings, and an
+    // AUTHZ_DENIED row on a refusal.
+    {
+        path: new RegExp(`^${T}\\/findings$`),
+        methods: ['GET'],
+        permission: 'findings.view',
+        note: 'The findings register — a read every built-in role holds.',
+    },
+    {
+        path: new RegExp(`^${T}\\/findings$`),
+        methods: ['POST'],
+        permission: 'findings.create',
+        note: 'Raise a finding — OWNER, ADMIN and EDITOR by default, as the coarse write tier gave.',
+    },
+    {
+        path: new RegExp(`^${T}\\/findings\\/[^/]+$`),
+        methods: ['GET'],
+        permission: 'findings.view',
+        note: 'One finding — the register read.',
+    },
+    {
+        path: new RegExp(`^${T}\\/findings\\/[^/]+$`),
+        methods: ['PUT'],
+        permission: 'findings.edit',
+        note: 'Edit a finding, its status included — OWNER, ADMIN and EDITOR by default.',
+    },
+
     // ── Report export surface (reports.export) ──────────────────────
     // The UI gates these three export actions with
     // <RequirePermission resource="reports" action="export"> — the API
@@ -1423,8 +1454,8 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     {
         path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/convert-to-finding$`),
         methods: ['POST'],
-        permission: 'assets.edit',
-        note: 'Converting a vulnerability into a finding writes onto the vulnerability; findings have no key of their own.',
+        permission: ['assets.edit', 'findings.create'],
+        note: 'Converting a vulnerability into a finding writes onto the vulnerability and creates a finding (#4535).',
     },
     {
         path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/remediation-task$`),
