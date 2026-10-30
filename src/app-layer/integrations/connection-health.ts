@@ -117,10 +117,12 @@ export async function clearAuthFailure(
  * ## Why not an IntegrationExecution row
  *
  * It would have made the page read BETTER while the connection got worse.
- * `getConnectionsHealth` takes `lastActivity` from the most recent execution of
- * ANY status — deliberately, so a connection that runs and fails still counts as
- * live — so a row written every four hours for a connection that never syncs
- * would clear its stale flag. The signal would have cancelled itself.
+ * `getConnectionsHealth` took `lastActivity` from the most recent execution of
+ * ANY status when this was written, so a row written every four hours for a
+ * connection that never syncs would have cleared its stale flag. The signal
+ * would have cancelled itself. Freshness now counts successes only (#4581 D),
+ * which closes that particular route, but a row recording a sync that did not
+ * happen would still be a false execution in the connection's history.
  *
  * ## Why its own pair of columns
  *

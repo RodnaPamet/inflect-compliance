@@ -66,6 +66,7 @@ import {
 import { readSandboxExecutionPlatformEnabled } from '@/app-layer/usecases/sandbox-runtime-config';
 import { scrubSecrets } from './powerpipe-core';
 import type { PowerpipeCliResult } from './powerpipe-exit';
+import type { SandboxDecision } from '@/lib/agentic/openshell/sandbox-decisions';
 
 /** Exit status a shell gives for a binary that is not there. */
 const EXIT_COMMAND_NOT_FOUND = 127;
@@ -85,6 +86,15 @@ export interface SandboxedCollectorDeps {
     readonly providerName: string;
     readonly timeoutMs?: number;
     readonly maxOutputBytes?: number;
+    /**
+     * Record each sandbox lifecycle decision — 5.1 (#3971).
+     *
+     * Optional, and the default of NOT recording is deliberate rather than
+     * lazy: a caller without a tenant context has nothing to file a row
+     * against, and a row written under a guessed tenant is worse than no row.
+     * `sandboxDecisionRecorder(db, ctx)` builds one where a context exists.
+     */
+    readonly onDecision?: (decision: SandboxDecision) => Promise<void>;
 }
 
 /** A failed result in the one shape the collectors' classifier reads. */
@@ -134,6 +144,10 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
                         signal,
                     });
                 },
+                // Forwarded, not wrapped: the executor is what knows the
+                // lifecycle, and it already isolates a recording failure so one
+                // cannot discard a collection that ran.
+                onDecision: deps.onDecision,
             });
             // NOTE the absent `env`: credentials reach the sandbox through the
             // attached provider and through nothing else.
