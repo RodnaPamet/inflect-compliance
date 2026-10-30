@@ -347,12 +347,37 @@ export function catalogBytes(skills: readonly Pick<LoadedSkill, 'name' | 'descri
     return skills.reduce((n, s) => n + Buffer.byteLength(`${s.name}: ${s.description}\n`, 'utf8'), 0);
 }
 
-export function assertCatalogWithinBudget(skills: readonly Pick<LoadedSkill, 'name' | 'description'>[]): void {
+/**
+ * THE ONE COMPARISON WITH THE PER-RUN BUDGET (#4523). A run is refused on it
+ * (`assertCatalogWithinBudget`), and so are a workflow's declared set, a tenant
+ * skill's approval and an agent profile version's save and approval, each
+ * through `measureCatalog`. A second `> MAX_CATALOG_BYTES` anywhere is a second
+ * rule that can drift from this one.
+ */
+export function withinCatalogBudget(bytes: number): boolean {
+    return bytes <= MAX_CATALOG_BYTES;
+}
+
+/** A catalogue measured against the per-run budget. */
+export interface CatalogMeasure {
+    /** What every turn pays: one `name: description` line per skill (`catalogBytes`). */
+    readonly bytes: number;
+    readonly budgetBytes: number;
+    readonly withinBudget: boolean;
+}
+
+/** These skills' catalogue, measured against the per-run budget. */
+export function measureCatalog(skills: readonly Pick<LoadedSkill, 'name' | 'description'>[]): CatalogMeasure {
     const bytes = catalogBytes(skills);
-    if (bytes > MAX_CATALOG_BYTES) {
+    return { bytes, budgetBytes: MAX_CATALOG_BYTES, withinBudget: withinCatalogBudget(bytes) };
+}
+
+export function assertCatalogWithinBudget(skills: readonly Pick<LoadedSkill, 'name' | 'description'>[]): void {
+    const { bytes, budgetBytes, withinBudget } = measureCatalog(skills);
+    if (!withinBudget) {
         throw new SkillLoadError(
             '<catalog>',
-            `the always-present catalog is ${bytes} bytes, over the ${MAX_CATALOG_BYTES} budget — `
+            `the always-present catalog is ${bytes} bytes, over the ${budgetBytes} budget — `
                 + 'this cost is paid on every turn of every run, so shorten a description or mount fewer skills',
         );
     }

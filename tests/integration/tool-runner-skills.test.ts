@@ -14,7 +14,11 @@
  *   • a tenant skill whose stored text no longer hashes to its pin is refused
  *     before the model is asked anything;
  *   • a profile whose catalogue is over the per-run budget is refused before
- *     its run row exists.
+ *     its run row exists. Its save and approval refuse such a version too
+ *     (#4523), so the version here was saved within the budget and a tenant
+ *     skill it names was then approved again with a longer description: the
+ *     tenant skill's approval measures the workflows it names, never the
+ *     profiles, and the run's own check is what remains.
  */
 const envOverride: Record<string, string | undefined> = {
     AGENT_PROFILES: '1',
@@ -47,10 +51,11 @@ import {
     approveTenantSkillVersion,
     attachTenantSkillEvaluation,
     createTenantSkill,
+    createTenantSkillVersion,
     submitTenantSkillVersion,
 } from '@/app-layer/usecases/tenant-skills';
 import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile.schemas';
-import { loadSkill, loadSkillCorpus } from '@/lib/agentic/flue/skills';
+import { catalogBytes, loadSkill, loadSkillCorpus, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import { skillContentHash } from '@/lib/agentic/flue/skills/evaluation-record';
 import { resolveRunSkillMount } from '@/lib/agentic/flue/skills/tenant-mount';
 import type { RequestContext } from '@/app-layer/types';
@@ -72,11 +77,23 @@ const USERS = {
     authorB: `ub-author-${SUITE}`,
     reviewerB: `ub-reviewer-${SUITE}`,
 };
-const AGENTS = { main: `ag-main-${SUITE}`, everySkill: `ag-every-${SUITE}` };
+const AGENTS = { main: `ag-main-${SUITE}`, grown: `ag-grown-${SUITE}` };
 
 const REPO_SKILL = loadSkill('nhi-ownership-attribution');
 const SKILL_A = `acme-a-${SUITE}`;
 const SKILL_B = `acme-b-${SUITE}`;
+/** B's skill that a later version lengthens past what the `grown` agent's profile can carry. */
+const SKILL_G = `acme-g-${SUITE}`;
+/** Shipped skills up to 1,400 catalogue bytes: room for SKILL_G as written, not for SKILL_G grown. */
+const GROWN_REPO: string[] = [];
+let grownRepoBytes = 0;
+for (const s of loadSkillCorpus().skills) {
+    const b = catalogBytes([s]);
+    if (grownRepoBytes + b > 1_400) continue;
+    GROWN_REPO.push(s.name);
+    grownRepoBytes += b;
+}
+const LONG_DESCRIPTION = `${'Check a joiner request against the access policy and propose what to grant. '.repeat(14).slice(0, 999)}x`;
 /** Tenant A's text, marked so its absence from every request to B's model can be checked. */
 const MARKER_A = `TENANT-A-ONLY-${SUITE}`;
 const INSTRUCTIONS_A = `${TENANT_SKILL_INSTRUCTIONS}\n\nReference ${MARKER_A}.`;
@@ -101,7 +118,7 @@ const version = (over: Partial<AgentProfileVersionInput> = {}): AgentProfileVers
     ...over,
 });
 
-/** Create, evaluate, submit and approve a tenant skill; returns its version id. */
+/** Create, evaluate, submit and approve a tenant skill; returns its skill and version ids. */
 async function approvedTenantSkill(tenantId: string, author: string, reviewer: string, name: string, instructions: string) {
     const authorCtx = ctx(tenantId, 'OWNER', author);
     const created = await createTenantSkill(authorCtx, { name, ...tenantSkillFields({ instructions }) });
@@ -112,7 +129,7 @@ async function approvedTenantSkill(tenantId: string, author: string, reviewer: s
     await approveTenantSkillVersion(ctx(tenantId, 'ADMIN', reviewer), created.skillId, created.versionId, {
         contentHash: created.contentHash,
     });
-    return created.versionId;
+    return created;
 }
 
 // ─── The fake model ─────────────────────────────────────────────────
@@ -186,6 +203,7 @@ async function cleanup(): Promise<void> {
 
 describeFn('skills on the Tool Runner engine (real DB, fake model)', () => {
     let versionB = '';
+    let skillG = '';
 
     beforeAll(async () => {
         await prisma.$connect();
@@ -202,7 +220,8 @@ describeFn('skills on the Tool Runner engine (real DB, fake model)', () => {
             await prisma.tenantMembership.create({ data: { tenantId, userId: id, role, status: 'ACTIVE' } });
         }
         await approvedTenantSkill(TA, USERS.authorA, USERS.reviewerA, SKILL_A, INSTRUCTIONS_A);
-        versionB = await approvedTenantSkill(TB, USERS.authorB, USERS.reviewerB, SKILL_B, TENANT_SKILL_INSTRUCTIONS);
+        versionB = (await approvedTenantSkill(TB, USERS.authorB, USERS.reviewerB, SKILL_B, TENANT_SKILL_INSTRUCTIONS)).versionId;
+        skillG = (await approvedTenantSkill(TB, USERS.authorB, USERS.reviewerB, SKILL_G, TENANT_SKILL_INSTRUCTIONS)).skillId;
 
         for (const id of Object.values(AGENTS)) {
             const sys = await prisma.aiSystem.create({ data: { tenantId: TB, name: `sys-${id}` } });
@@ -230,13 +249,18 @@ describeFn('skills on the Tool Runner engine (real DB, fake model)', () => {
 
         await createAgentProfile(authorB(), AGENTS.main, version());
         await submitAgentProfileVersion(authorB(), AGENTS.main, 1);
-        // Every shipped skill at once: over the per-run catalogue budget.
+        // Within the per-run catalogue budget when saved and submitted.
         await createAgentProfile(
             authorB(),
-            AGENTS.everySkill,
-            version({ skillRefs: loadSkillCorpus().skills.map((s) => ({ origin: 'repository' as const, name: s.name })) }),
+            AGENTS.grown,
+            version({
+                skillRefs: [
+                    ...GROWN_REPO.map((name) => ({ origin: 'repository' as const, name })),
+                    { origin: 'tenant' as const, name: SKILL_G },
+                ],
+            }),
         );
-        await submitAgentProfileVersion(authorB(), AGENTS.everySkill, 1);
+        await submitAgentProfileVersion(authorB(), AGENTS.grown, 1);
     });
 
     afterAll(async () => {
@@ -324,8 +348,15 @@ describeFn('skills on the Tool Runner engine (real DB, fake model)', () => {
     });
 
     it('a catalogue over the per-run budget is refused before the run row exists', async () => {
+        // SKILL_G's next version is long enough to put the profile over.
+        expect(grownRepoBytes + catalogBytes([{ name: SKILL_G, description: LONG_DESCRIPTION }])).toBeGreaterThan(MAX_CATALOG_BYTES);
+        const grown = await createTenantSkillVersion(authorB(), skillG, tenantSkillFields({ description: LONG_DESCRIPTION }));
+        await attachTenantSkillEvaluation(authorB(), skillG, grown.versionId, { record: passingRecordFor(SKILL_G, grown.version) });
+        await submitTenantSkillVersion(authorB(), skillG, grown.versionId);
+        await approveTenantSkillVersion(reviewerB(), skillG, grown.versionId, { contentHash: grown.contentHash });
+
         const before = await prisma.workflowRun.count({ where: { tenantId: TB } });
-        expect(await reasonOf(startAgentProfileTestRun(reviewerB(), AGENTS.everySkill, 1))).toMatch(
+        expect(await reasonOf(startAgentProfileTestRun(reviewerB(), AGENTS.grown, 1))).toMatch(
             /^skill_not_mountable: Skill "<catalog>": the always-present catalog is \d+ bytes, over the 2048 budget/,
         );
         expect(await prisma.workflowRun.count({ where: { tenantId: TB } })).toBe(before);

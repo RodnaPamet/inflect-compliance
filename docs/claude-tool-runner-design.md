@@ -88,8 +88,12 @@ Inflect would host it in the worker, the same way it hosts Flue.
   admission, where they are pinned on the row, and again at each segment, where
   they must match the pins (`skill_pin_drift`). A profile's run mounts the
   skills its version names. A tenant skill is read BY NAME in the run's own
-  tenant, and a name with no approved version refuses the run. A refusal settles
-  the run `skill_not_mountable: …` before any model call, on this engine and on
+  tenant, and a name with no approved version refuses the run. A version whose
+  skills are over the catalogue budget is refused when saved and when approved
+  (#4523), so at a run that refusal catches only what changed since: a tenant
+  skill approved again with a longer description, or a deploy that lengthened a
+  shipped one. A refusal settles the run `skill_not_mountable: …` before any
+  model call, on this engine and on
   Flue alike; the conformance scenario `refused-skill-never-reaches-the-model`
   holds both. The catalogue, one `name: description` line per skill (exactly
   what the 2 KiB per-run budget measures), sits in the system prompt after the

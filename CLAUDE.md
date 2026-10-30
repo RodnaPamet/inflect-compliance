@@ -2307,7 +2307,9 @@ leaves the older suggestion in place, labelled with its own run.
 
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,
-`resolveSkillsFor`), never the corpus as a whole (owner decision, 2026-10-17):
+`resolveSkillsFor`), and on an agent profile version at save and approval by the
+run's own measure (`runCatalogue`, #4523), never the corpus as a whole (owner
+decision, 2026-10-17):
 do not restore a corpus-wide check, which capped the product at about seven
 skills whatever any run mounted. An evaluation SET (cases and expectations) is
 authored with a skill and tied to its instructions by hash; only an evaluation
@@ -2839,6 +2841,18 @@ edit from being undone:
     engine passes `def.profile.toolNames` to `offerToolSet` as `profileTools`,
     which offers the intersection with the current grants and records each lost
     tool as `PROFILE_TOOL_NOT_GRANTED`. An empty list offers nothing.
+  - **A version's skills fit its run's catalogue budget** (#4523). Save and
+    approval refuse a set whose catalogue would put a run over
+    `MAX_CATALOG_BYTES` (`SKILL_CATALOGUE_OVER_BUDGET`, with `catalogueBytes`
+    and `budgetBytes`), measured by `runCatalogue`: the lines
+    `resolveRunSkills` mounts for the same names, through `measureCatalog`, the
+    one comparison the run is refused by. Do not give the save a measure of its
+    own: two would drift, and a version could again be approved that no run of
+    it can mount. Approval measures again, because a tenant skill can be
+    approved again with a longer description (its own approval measures only
+    the workflows it names), and admission a third time, because a deploy can
+    lengthen a shipped description. A version stored over the budget before the
+    check reads and is superseded as usual, and can be neither approved nor run.
   - **`agent-profile:<id>@v<n>` resolves only inside the caller's tenant**, and
     only the APPROVED version in force; a malformed key is refused, never read
     as a registered workflow key.
@@ -2890,7 +2904,11 @@ edit from being undone:
     read.** The pickers list the view's `options` (the agent's current grants
     and mountable skills). Approve and Reject follow each version's
     `canDecide`. Compute neither in the client. Instructions and reasons render
-    as React text, never through markdown or `innerHTML`.
+    as React text, never through markdown or `innerHTML`. The skills picker
+    adds up each option's server-measured `catalogueBytes` to show a total
+    against `limits.skillCatalogueBudgetBytes`; it informs and never holds Save
+    back, and a `SKILL_CATALOGUE_OVER_BUDGET` refusal is worded by the tab from
+    its figures.
 
 **Every Anthropic client an agent run uses comes from `clientForRun`**
 (`src/lib/agentic/tool-runner/client.ts`, Step 2a, #4148). Rules that are each

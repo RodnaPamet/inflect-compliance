@@ -15,7 +15,15 @@
  * the starting version named and the agent has since lost is left out and
  * named in a notice rather than dropped silently. The server still decides
  * everything (sanitising, the size cap, the text scan, every tool against the
- * current grants) and its refusal is shown beside the field it concerns.
+ * current grants, the skills against the per-run catalogue budget) and its
+ * refusal is shown beside the field it concerns.
+ *
+ * THE CATALOGUE TOTAL (#4523). Under the skills picker, the chosen skills'
+ * catalogue bytes against the per-run budget, so an author sees a set that
+ * cannot run before saving it. Each skill's bytes and the budget are the
+ * server's figures from the view; this sheet only adds the chosen ones up, and
+ * does not hold Save back on the sum: the save measures again and decides, and
+ * its refusal is worded here from the figures it carries.
  *
  * The actions sit at the end of the body, not in a `Sheet.Footer`: a footer's
  * last action must be a primary (`modal-action-order`) and the product-wide
@@ -49,7 +57,7 @@ import {
     type ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
 
-import { refusalReason, type ProfileVersionView, type ProfileView } from './behaviour-types';
+import { catalogueOverBudget, refusalReason, type ProfileVersionView, type ProfileView } from './behaviour-types';
 
 type Field = 'instructions' | 'tools' | 'skills';
 
@@ -60,6 +68,7 @@ const FIELD_OF_REFUSAL: Readonly<Record<string, Field>> = {
     INSTRUCTIONS_REFUSED: 'instructions',
     TOOL_NOT_GRANTED: 'tools',
     SKILL_UNKNOWN: 'skills',
+    SKILL_CATALOGUE_OVER_BUDGET: 'skills',
 };
 
 const skillKey = (s: ProfileSkillRef) => `${s.origin}:${s.name}`;
@@ -117,6 +126,13 @@ export function BehaviourEditorSheet({
         [view.options.skills, t],
     );
 
+    // Display only: the server's per-skill figures, added up. The save decides.
+    const catalogueBudget = view.limits.skillCatalogueBudgetBytes;
+    const catalogueUsed = view.options.skills
+        .filter((s) => skillKeys.includes(skillKey(s)))
+        .reduce((n, s) => n + s.catalogueBytes, 0);
+    const catalogueOver = catalogueUsed > catalogueBudget;
+
     const max = view.limits.instructionsMaxChars;
     const canSave =
         !busy && instructions.trim().length > 0 && instructions.length <= max && toolNames.length > 0 && triggers.length > 0;
@@ -130,7 +146,9 @@ export function BehaviourEditorSheet({
         const body = {
             instructions,
             toolNames,
-            skillRefs: view.options.skills.filter((s) => skillKeys.includes(skillKey(s))),
+            skillRefs: view.options.skills
+                .filter((s) => skillKeys.includes(skillKey(s)))
+                .map((s) => ({ origin: s.origin, name: s.name })),
             modelTier,
             effort,
             maxTurns,
@@ -147,7 +165,10 @@ export function BehaviourEditorSheet({
             if (!res.ok) {
                 const payload = await res.json().catch(() => null);
                 const reason = refusalReason(payload);
-                const message = apiErrorMessage(payload, t('editor.failed'));
+                const over = catalogueOverBudget(payload);
+                const message = over
+                    ? t('refusal.SKILL_CATALOGUE_OVER_BUDGET', { used: over.catalogueBytes, budget: over.budgetBytes })
+                    : apiErrorMessage(payload, t('editor.failed'));
                 setError({ field: (reason !== null ? FIELD_OF_REFUSAL[reason] : undefined) ?? null, message });
                 toast.error(message);
                 return;
@@ -228,7 +249,24 @@ export function BehaviourEditorSheet({
                         />
                     </FormField>
 
-                    <FormField label={t('field.skills')} description={t('editor.skillsHint')} error={fieldError('skills')}>
+                    <FormField
+                        label={t('field.skills')}
+                        description={
+                            <>
+                                {t('editor.skillsHint')}{' '}
+                                <span
+                                    className={catalogueOver ? 'text-content-warning' : undefined}
+                                    data-testid="behaviour-editor-catalogue"
+                                >
+                                    {t(catalogueOver ? 'editor.catalogueOver' : 'editor.catalogue', {
+                                        used: catalogueUsed,
+                                        budget: catalogueBudget,
+                                    })}
+                                </span>
+                            </>
+                        }
+                        error={fieldError('skills')}
+                    >
                         <Combobox<true, unknown>
                             multiple
                             id="behaviour-skills"

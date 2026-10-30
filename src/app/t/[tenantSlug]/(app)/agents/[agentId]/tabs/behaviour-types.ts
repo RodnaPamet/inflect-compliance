@@ -43,21 +43,47 @@ export interface ProfileVersionView {
     canDecide: boolean;
 }
 
+/**
+ * A skill the editor may offer, with the bytes its catalogue line costs every
+ * prompt of a run, as the server measured it (#4523).
+ */
+export interface ProfileSkillOption extends ProfileSkillRef {
+    catalogueBytes: number;
+}
+
 export interface ProfileView {
     profile: { profileId: string; currentApprovedVersion: number | null; runKey: string | null } | null;
     versions: ProfileVersionView[];
-    options: { tools: string[]; skills: ProfileSkillRef[] };
+    options: { tools: string[]; skills: ProfileSkillOption[] };
     /** The server's `ProfileTestRunState` (Step 2c): available, or why not. */
     testRun:
         | { available: true }
         | { available: false; reason: 'ENGINE_DOES_NOT_RUN_PROFILES'; engine: 'STATIC' | 'FLUE' }
         | { available: false; reason: 'ENGINE_NOT_IN_FORCE' }
         | { available: false; reason: 'AGENT_NOT_READY' };
-    limits: { instructionsMaxChars: number; maxTurns: number; rejectionReasonMaxChars: number };
+    limits: {
+        instructionsMaxChars: number;
+        maxTurns: number;
+        rejectionReasonMaxChars: number;
+        /** The per-run catalogue budget a version's skills are held to. */
+        skillCatalogueBudgetBytes: number;
+    };
 }
 
 /** The refusal reason a profile route's error body carries, if any. */
 export function refusalReason(body: unknown): string | null {
     const reason = (body as { error?: { details?: { reason?: unknown } } } | null)?.error?.details?.reason;
     return typeof reason === 'string' ? reason : null;
+}
+
+/**
+ * The figures of a `SKILL_CATALOGUE_OVER_BUDGET` refusal (#4523), which the tab
+ * words itself in the reader's language, or null for any other body. Both
+ * figures are the server's: the tab adds nothing up to say it.
+ */
+export function catalogueOverBudget(body: unknown): { catalogueBytes: number; budgetBytes: number } | null {
+    if (refusalReason(body) !== 'SKILL_CATALOGUE_OVER_BUDGET') return null;
+    const details = (body as { error: { details: { catalogueBytes?: unknown; budgetBytes?: unknown } } }).error.details;
+    const { catalogueBytes, budgetBytes } = details;
+    return typeof catalogueBytes === 'number' && typeof budgetBytes === 'number' ? { catalogueBytes, budgetBytes } : null;
 }

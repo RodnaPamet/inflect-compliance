@@ -11130,6 +11130,8 @@
         "toolsEmpty": "This agent is granted no tools. Grant one on the Tools tab first.",
         "skillsHint": "Only the skills this agent can mount.",
         "skillsPlaceholder": "Choose skills",
+        "catalogue": "Together they add {used} of {budget} bytes to every prompt a run sends.",
+        "catalogueOver": "Together they add {used} bytes to every prompt a run sends, over the limit of {budget}. A run of this version would be refused: choose fewer skills.",
         "skillOption": {
           "repository": "{name}",
           "tenant": "{name} (this workspace)"
@@ -11151,6 +11153,9 @@
         "reason": "Reason",
         "reasonHint": "Say what has to change, so the author can act on it.",
         "confirm": "Reject version {version}"
+      },
+      "refusal": {
+        "SKILL_CATALOGUE_OVER_BUDGET": "These skills add {used} bytes to every prompt a run sends, over the limit of {budget} bytes, so a run of this version would be refused. Choose fewer skills, or skills with shorter descriptions."
       }
     }
   },

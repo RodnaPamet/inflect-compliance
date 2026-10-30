@@ -236,7 +236,10 @@ profile run key is refused at admission.
 - **At save and again at approval:**
   - the instructions are sanitised, capped at 16,000 characters and scanned by
     the skill text scan. They are refused by rule id, never stored;
-  - every tool must be granted now, or it is refused by name.
+  - every tool must be granted now, or it is refused by name;
+  - every skill must be one the agent may mount, and together their catalogue
+    lines must fit the per-run budget, measured by the same measure a run of
+    the version is refused by (`SKILL_CATALOGUE_OVER_BUDGET`, #4523).
 - **Admission.** `startWorkflowRun` asks `resolveRunDefinition`, and only that
   one call changed:
   - a key that does not ask for a profile behaves exactly as before;

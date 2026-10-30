@@ -38,9 +38,11 @@ import {
     loadSkillCorpus,
     assertCatalogWithinBudget,
     catalogBytes,
-    MAX_CATALOG_BYTES,
+    measureCatalog,
+    withinCatalogBudget,
     SkillLoadError,
     SkillTextRefusedError,
+    type CatalogMeasure,
     type LoadedSkill,
     type SkillCorpus,
 } from './index';
@@ -234,20 +236,66 @@ export function workflowCatalogs(
 ): WorkflowCatalog[] {
     const c = shippedCorpus();
     return defs.map((d) => {
-        const declared: { name: string; description: string }[] = [];
-        const refused: string[] = [];
-        for (const name of d.skills ?? []) {
-            if (c.refused.some((r) => r.name === name)) {
-                refused.push(name);
-                continue;
-            }
-            declared.push(lookup(c, name, `declared by workflow "${d.key}" but not in the shipped corpus`));
-        }
+        const { lines, refused } = repositoryLines(c, d.skills ?? [], `declared by workflow "${d.key}" but not in the shipped corpus`);
         // The tenant's approved skills that name this workflow pay the same
         // per-turn price as the repository's (#3680).
-        for (const t of tenantSkills) if (t.workflowKeys.includes(d.key)) declared.push(t);
-        return { key: d.key, bytes: catalogBytes(declared), refused };
+        for (const t of tenantSkills) if (t.workflowKeys.includes(d.key)) lines.push(t);
+        return { key: d.key, bytes: catalogBytes(lines), refused };
     });
+}
+
+/** A skill's line in the always-present catalogue: its name and the description every turn carries. */
+export interface CatalogueLine {
+    readonly name: string;
+    readonly description: string;
+}
+
+/**
+ * The catalogue lines of these repository skills, from the shipped corpus, and
+ * the names the text scan refused. A refused skill costs nothing: no run that
+ * names it gets far enough to mount it. A name the corpus does not hold throws,
+ * as a run would.
+ */
+function repositoryLines(
+    c: SkillCorpus,
+    names: readonly string[],
+    unknownReason: string,
+): { lines: CatalogueLine[]; refused: string[] } {
+    const lines: CatalogueLine[] = [];
+    const refused: string[] = [];
+    for (const name of names) {
+        if (c.refused.some((r) => r.name === name)) {
+            refused.push(name);
+            continue;
+        }
+        const skill = lookup(c, name, unknownReason);
+        lines.push({ name: skill.name, description: skill.description });
+    }
+    return { lines, refused };
+}
+
+/** What a run naming these skills pays on every turn, against the per-run budget. */
+export interface RunCatalogue extends CatalogMeasure {
+    /** Named repository skills the text scan refused: they cost nothing, and a run naming one fails closed. */
+    readonly refused: readonly string[];
+}
+
+/**
+ * THE CATALOGUE OF A RUN THAT NAMES ITS SKILLS DIRECTLY — an agent profile's
+ * (#4523). The lines are the ones `resolveRunSkills` mounts for the same
+ * names: each repository skill's from the shipped corpus, each tenant skill's
+ * from its approved version. They are measured by `measureCatalog`, the one
+ * comparison the run itself is refused by, so a profile version's save and
+ * approval cannot hold a different budget from its admission.
+ *
+ * Without the mount gate. This asks "would these skills fit", which is all a
+ * version's save and approval ask; "may each one mount" is admission's
+ * question, asked of every run, because a skill's record or text can change
+ * after the version is approved.
+ */
+export function runCatalogue(repositoryNames: readonly string[], tenantLines: readonly CatalogueLine[]): RunCatalogue {
+    const { lines, refused } = repositoryLines(shippedCorpus(), repositoryNames, 'named by the run but not in the shipped corpus');
+    return { ...measureCatalog([...lines, ...tenantLines]), refused };
 }
 
 /** The catalogue line of a tenant skill and the workflows it mounts on. */
@@ -269,7 +317,7 @@ export function workflowsOverBudget(
     tenantSkills: readonly TenantCatalogueEntry[],
 ): { key: string; bytes: number }[] {
     return workflowCatalogs(defs, tenantSkills)
-        .filter((w) => w.bytes > MAX_CATALOG_BYTES)
+        .filter((w) => !withinCatalogBudget(w.bytes))
         .map((w) => ({ key: w.key, bytes: w.bytes }));
 }
 
