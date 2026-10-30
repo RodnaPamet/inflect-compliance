@@ -33,8 +33,11 @@
  * The instructions are sanitised (`sanitizePlainText`), held to a size cap and
  * scanned by the skill text scan, and text the scan refuses is refused by rule
  * id and never stored (owner decision 2). Every tool must be one the agent is
- * granted now: an ungranted tool is refused BY NAME, never dropped. Approval
- * asks both again, because a grant can be revoked while a version waits.
+ * granted now: an ungranted tool is refused BY NAME, never dropped. Every
+ * skill must be one a run could mount, and together they must fit the per-run
+ * catalogue budget (`assertSkillsKnownAndWithinBudget`). Approval asks all of
+ * it again, because a grant can be revoked, and a skill can stop mounting or
+ * cost more, while a version waits.
  *
  * ── THE FLAG ────────────────────────────────────────────────────────────────
  *
@@ -310,6 +313,9 @@ async function assertToolsGranted(db: PrismaTx, ctx: RequestContext, agentId: st
  * skill may take none of those names; but a refused skill cannot mount, so a
  * profile naming one could be saved and approved and then never run. It is
  * refused here as `SKILL_UNKNOWN`, by name, and the picker does not offer it.
+ * The same holds for a shipped skill the mount gate refuses, for want of a
+ * passing evaluation record for its text (owner decision, 2026-10-30): the
+ * catalogue asks the gate's cached verdict, as a run's mount does.
  */
 async function assertSkillsKnownAndWithinBudget(
     db: PrismaTx,
@@ -896,7 +902,8 @@ async function memberLabels(db: PrismaTx, ctx: RequestContext, userIds: string[]
 
 /**
  * The skills a profile may mount, each with what its catalogue line costs: the
- * MOUNTABLE shipped skills (a refused one is absent, #4590) and the tenant's
+ * MOUNTABLE shipped skills (one the text scan refused or the mount gate
+ * refuses is absent, #4590) and the tenant's
  * APPROVED skills. Exactly the population `assertSkillsKnownAndWithinBudget`
  * accepts, priced by the same `catalogBytes`, so the editor's running total is
  * the figure the save checks.

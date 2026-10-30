@@ -44,6 +44,8 @@ import { SkillNotMountableError } from '@/lib/agentic/flue/skills/mount-gate';
 import {
     assertWorkflowCatalogsWithinBudget,
     assertWorkflowSkillsMountable,
+    repositorySkillCatalogue,
+    repositorySkillNames,
     resetSkillCache,
     resolveSkillPins,
     resolveSkillsFor,
@@ -106,6 +108,18 @@ describe('the workflow checks', () => {
     it('fails CI for a workflow that declares a refused skill', () => {
         expect(() => assertWorkflowCatalogsWithinBudget([{ key: 'review-prep', skills: ['bad-skill'] }]))
             .toThrow(SkillTextRefusedError);
+    });
+});
+
+describe('the shipped skills an agent profile may choose (#4590; the gate, owner decision 2026-10-30)', () => {
+    it('leave out the refused skill and the unevaluated one, each of which the mount path refuses a run for', () => {
+        expect([...repositorySkillCatalogue().keys()]).toEqual(['good-skill']);
+        expect(() => resolveSkillsFor(['bad-skill'])).toThrow(SkillTextRefusedError);
+        expect(() => resolveSkillsFor(['unrecorded-skill'])).toThrow(SkillNotMountableError);
+    });
+
+    it('do not narrow the names a tenant skill may not take, which still include both', () => {
+        expect([...repositorySkillNames()].sort()).toEqual(['bad-skill', 'good-skill', 'unrecorded-skill']);
     });
 });
 

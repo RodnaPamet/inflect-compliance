@@ -204,16 +204,24 @@ export function repositorySkillNames(): ReadonlySet<string> {
 /**
  * The catalogue-line fields of every MOUNTABLE repository skill, by name.
  *
+ * Mountable is what `mountable` asks of a run, from the same cache: the text
+ * scan did not refuse the skill (it is in the corpus's `skills`, not its
+ * `refused`), AND the mount gate passes it (`verdictFor`, the cached
+ * `checkSkillMountable` verdict: a passing evaluation record for this exact
+ * text). A skill that fails either never mounts, so it is absent here, and the
+ * agent profile surface, the only caller, neither offers it nor accepts it
+ * (#4590; the gate, owner decision 2026-10-30).
+ *
  * Deliberately NOT the same population as `repositorySkillNames` above, which
- * includes the refused. A refused skill has no description and cannot mount, so
- * it has no catalogue line to price — it is absent here, and a caller pricing a
- * catalogue must not read that absence as "costs nothing to mount". It costs a
- * refusal. See #4523 for the save-time budget this feeds, and the separate hole
- * that a profile naming a refused skill still saves.
+ * includes the refused. A skill absent here has no catalogue line to price, and
+ * a caller pricing a catalogue must not read that absence as "costs nothing to
+ * mount". It costs a refusal.
  */
 export function repositorySkillCatalogue(): ReadonlyMap<string, { readonly name: string; readonly description: string }> {
     const c = shippedCorpus();
-    return new Map(c.skills.map((s) => [s.name, { name: s.name, description: s.description }]));
+    return new Map(
+        c.skills.filter((s) => verdictFor(s).ok).map((s) => [s.name, { name: s.name, description: s.description }]),
+    );
 }
 
 /** Test seam: drop the cache so a suite can vary the corpus. */

@@ -52,7 +52,13 @@ import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 
 import { BehaviourEditorSheet } from './BehaviourEditorSheet';
 import { BehaviourRejectModal } from './BehaviourRejectModal';
-import type { ProfilePerson, ProfileVersionStatus, ProfileVersionView, ProfileView } from './behaviour-types';
+import {
+    catalogueOverBudget,
+    type ProfilePerson,
+    type ProfileVersionStatus,
+    type ProfileVersionView,
+    type ProfileView,
+} from './behaviour-types';
 import type { BehaviourTabProps } from './types';
 
 const STATUS_VARIANT: Record<ProfileVersionStatus, StatusBadgeVariant> = {
@@ -111,7 +117,14 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                const message = apiErrorMessage(await res.json().catch(() => null), t('actionFailed'));
+                const payload = await res.json().catch(() => null);
+                // Approval prices the skills again (#4589): a catalogue that got
+                // dearer since the save is refused, and worded here, in the
+                // reader's language, from its figures.
+                const over = catalogueOverBudget(payload);
+                const message = over
+                    ? t('refusal.SKILL_CATALOGUE_OVER_BUDGET', { used: over.bytes, budget: over.budget })
+                    : apiErrorMessage(payload, t('actionFailed'));
                 toast.error(message);
                 return message;
             }

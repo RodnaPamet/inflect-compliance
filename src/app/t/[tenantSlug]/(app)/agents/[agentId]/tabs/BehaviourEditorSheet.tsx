@@ -15,7 +15,11 @@
  * the starting version named and the agent has since lost is left out and
  * named in a notice rather than dropped silently. The server still decides
  * everything (sanitising, the size cap, the text scan, every tool against the
- * current grants) and its refusal is shown beside the field it concerns.
+ * current grants, the skills against the per-run catalogue budget) and its
+ * refusal is shown beside the field it concerns. An over-budget refusal is
+ * worded here, in the reader's language, from the figures it carries: the
+ * running total keeps Save shut over the budget, so it arrives only when the
+ * skills cost more than the view said.
  *
  * The actions sit at the end of the body, not in a `Sheet.Footer`: a footer's
  * last action must be a primary (`modal-action-order`) and the product-wide
@@ -49,7 +53,7 @@ import {
     type ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
 
-import { refusalReason, type ProfileVersionView, type ProfileView } from './behaviour-types';
+import { catalogueOverBudget, refusalReason, type ProfileVersionView, type ProfileView } from './behaviour-types';
 
 type Field = 'instructions' | 'tools' | 'skills';
 
@@ -163,7 +167,10 @@ export function BehaviourEditorSheet({
             if (!res.ok) {
                 const payload = await res.json().catch(() => null);
                 const reason = refusalReason(payload);
-                const message = apiErrorMessage(payload, t('editor.failed'));
+                const over = catalogueOverBudget(payload);
+                const message = over
+                    ? t('refusal.SKILL_CATALOGUE_OVER_BUDGET', { used: over.bytes, budget: over.budget })
+                    : apiErrorMessage(payload, t('editor.failed'));
                 setError({ field: (reason !== null ? FIELD_OF_REFUSAL[reason] : undefined) ?? null, message });
                 toast.error(message);
                 return;

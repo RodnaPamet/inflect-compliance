@@ -11575,6 +11575,9 @@
         "reason": "Reason",
         "reasonHint": "Say what has to change, so the author can act on it.",
         "confirm": "Reject version {version}"
+      },
+      "refusal": {
+        "SKILL_CATALOGUE_OVER_BUDGET": "These skills' descriptions total {used} bytes, over the {budget}-byte budget a run can mount, so a run of this version would be refused. Choose fewer skills, or skills with shorter descriptions."
       }
     }
   },

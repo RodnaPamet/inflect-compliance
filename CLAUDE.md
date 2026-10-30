@@ -2365,7 +2365,9 @@ leaves the older suggestion in place, labelled with its own run.
 
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,
-`resolveSkillsFor`), never the corpus as a whole (owner decision, 2026-10-17):
+`resolveSkillsFor`), and on an agent profile version at save and approval
+(`assertSkillsKnownAndWithinBudget`, #4589), never the corpus as a whole (owner
+decision, 2026-10-17):
 do not restore a corpus-wide check, which capped the product at about seven
 skills whatever any run mounted. An evaluation SET (cases and expectations) is
 authored with a skill and tied to its instructions by hash; only an evaluation
@@ -2897,7 +2899,22 @@ edit from being undone:
     engine passes `def.profile.toolNames` to `offerToolSet` as `profileTools`,
     which offers the intersection with the current grants and records each lost
     tool as `PROFILE_TOOL_NOT_GRANTED`. An empty list offers nothing.
-  - **`agent-profile:<id>@v<n>` resolves only inside the caller's tenant**, and
+  - **A version's skills must mount, and must fit the per-run catalogue
+    budget** (#4523: #4589, #4599 and the gate, owner decision 2026-10-30).
+    `assertSkillsKnownAndWithinBudget` runs at create, at a new version and at
+    approve. A shipped skill counts only if `repositorySkillCatalogue()` holds
+    it. That map asks what a run's mount asks, from the run's own cache: the
+    text scan did not refuse the skill, and the mount gate's verdict
+    (`verdictFor`, a passing evaluation record for this exact text) is a pass.
+    Any other name, and a tenant skill with no approved version, is
+    `SKILL_UNKNOWN`, by name and first. Then the named lines are priced with
+    the run's `catalogBytes`: over `MAX_CATALOG_BYTES` is
+    `SKILL_CATALOGUE_OVER_BUDGET`, a 409 carrying `bytes`, `budget` and the
+    `skills` priced. Approval asks again because a deploy can refuse or
+    lengthen a shipped skill and a tenant skill's approval does not consider
+    the profiles naming it; admission asks a third time. Do not price or gate
+    from `repositorySkillNames()`: it keeps refused names on purpose, because
+    a tenant skill may take none of them.
     only the APPROVED version in force; a malformed key is refused, never read
     as a registered workflow key.
   - **Only the Tool Runner runs a profile** (Step 2c, #4150). `runsProfiles` is
@@ -2952,9 +2969,12 @@ edit from being undone:
     for its one line, the view's `limits.skillCatalogueBudgetBytes` is the
     per-run budget, and the editor shows their running total and will not save
     over it. "Mountable" means `repositorySkillCatalogue()`, never
-    `repositorySkillNames()`: a refused shipped skill keeps its name reserved
-    and is neither offered nor saved. Instructions and reasons render
-    as React text, never through markdown or `innerHTML`.
+    `repositorySkillNames()`: a shipped skill the text scan refused or the
+    mount gate refuses keeps its name reserved and is neither offered nor
+    saved. A `SKILL_CATALOGUE_OVER_BUDGET` refusal, at save beside the skills
+    field or in the approval notice, is worded by the tab from its `bytes` and
+    `budget`, never shown as the server's English sentence. Instructions and
+    reasons render as React text, never through markdown or `innerHTML`.
 
 **Every Anthropic client an agent run uses comes from `clientForRun`**
 (`src/lib/agentic/tool-runner/client.ts`, Step 2a, #4148). Rules that are each

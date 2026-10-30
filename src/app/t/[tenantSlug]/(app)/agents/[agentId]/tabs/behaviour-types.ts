@@ -67,3 +67,15 @@ export function refusalReason(body: unknown): string | null {
     const reason = (body as { error?: { details?: { reason?: unknown } } } | null)?.error?.details?.reason;
     return typeof reason === 'string' ? reason : null;
 }
+
+/**
+ * The figures of a `SKILL_CATALOGUE_OVER_BUDGET` refusal (the 409 the save and
+ * the approval answer, #4589: `details.bytes` and `details.budget`), or null
+ * for any other body. The tab words the refusal itself, in the reader's
+ * language, from these figures; both are the server's.
+ */
+export function catalogueOverBudget(body: unknown): { bytes: number; budget: number } | null {
+    if (refusalReason(body) !== 'SKILL_CATALOGUE_OVER_BUDGET') return null;
+    const { bytes, budget } = (body as { error: { details: { bytes?: unknown; budget?: unknown } } }).error.details;
+    return typeof bytes === 'number' && typeof budget === 'number' ? { bytes, budget } : null;
+}
