@@ -50,6 +50,32 @@ and what starts the accumulation part-way through a run, were not identified.
 NODE_OPTIONS refuses, so the step runs `node --no-compilation-cache
 node_modules/jest/bin/jest.js` instead of `npx jest`.
 
+**With the flag, every shard** (peak heapUsed in MB; main is the median of 15
+push runs on 2026-10-30):
+
+```
+shard                      1      2      3      4      5      6      7
+main, cache on          1902   8523   1597   1813   2053   1802   2147
+run 41091345707 (CI)    1781   1524    998   1538   2028   2052   1403
+run 41091775053 (diag)  1912   1561   1591   3761   1938   1713   1477
+```
+
+The live context count in the diagnostic run stayed between 2 and 26 in every
+shard, against ~240 on shard 2/7 with the cache on. Shard 4/7's 3.8 GB there
+was pre-GC: it kept 1.1 GB after a forced gc() and held at most 23 contexts.
+
+Shard 2/7's accumulation happened in every run with the cache on (unless gc()
+was forced every 25 files) and in none with it off, so that half is settled.
+Shard 7/7's runaway came in about one run
+in seven; it ran four times with the flag (1386-1809 MB) and never ran away,
+which is evidence but not proof — at that rate four clean runs happen about
+half the time by chance. If it returns, the trail names the file range.
+
+The cost is time. Against six runs of the same shards from the same hour
+without the flag, the `Test` step took about 10% longer (3,717 s across the
+seven shards against 3,377 s of medians), and the slowest shard, 3/7, took 758 s and
+779 s against 607-751 s.
+
 ## Files
 
 | File | Role |
@@ -72,7 +98,9 @@ node_modules/jest/bin/jest.js` instead of `npx jest`.
   needs `--expose-gc`, it works by changing when V8 collects rather than by
   removing what holds the contexts, and ten forced collections at the end of a
   run freed nothing once the contexts were held. The flag removes the
-  retainer.
+  retainer. The forced collections were also faster on that shard (356-365 s
+  against 406-556 s without), so if the flag's ~10% ever matters more than
+  knowing why it works, that is the measured alternative.
 - **Marks on `heapUsed`, from 4 GB, every 2 GB.** A normal shard 7/7 run peaks
   at 3.5 GB at most (155 main runs), so 4 GB is quiet on a healthy run; the
   death comes near 10 GB under `--max-old-space-size=12288`, so 4/6/8/10 gives
