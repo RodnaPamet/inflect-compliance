@@ -19,13 +19,19 @@ the key and the surface, not on the key alone. Nine admin keys are consumed
 outside the admin API (the agent pages, `/agent-runs`, billing events, the
 server-rendered admin pages, which the edge does not refuse), so the owner's
 first rule ("admin keys only on Owner/Admin") would have taken working access
-away. The owner then ruled (2026-10-30), with that survey in front of them:
+away. The owner then ruled (2026-10-30), with that survey in front of them,
+and ruled again the same day on what the survey found:
 
-1. **Dead keys only.** On any membership but ADMIN, a custom role may not grant
-   a key consumed only behind the admin API: `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS`
-   in `src/lib/roles.ts`.
+1. **Ten keys only on ADMIN.** On any membership but ADMIN, a custom role may
+   not grant one of `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` in `src/lib/roles.ts`:
+   the six consumed only behind the admin API (`ADMIN_API_ONLY_KEYS`), and four
+   that are live elsewhere but reached only through a side door around the
+   edge's role gate (`SIDE_DOOR_ADMIN_KEYS`).
 2. **ADMIN base only on ADMIN.** A custom role's base is its carrier's role
    everywhere but the edge (`effectiveRole` in `resolveTenantContext`).
+3. **The stored roles are settled once.** A migration states the ten `false`
+   in every custom role that only non-ADMIN memberships carry.
+4. **Refusals stay unaudited.**
 
 The predicate compares two carriages, before and after a change:
 
@@ -43,35 +49,67 @@ or blob, asks it with what it read and what it is about to write.
 
 | File | Role |
 | --- | --- |
-| `src/lib/roles.ts` | The list, the two reasons, the pure predicate, its details and messages |
+| `src/lib/roles.ts` | The list in its two parts, the two reasons, the pure predicate, its details and messages |
 | `src/app-layer/usecases/custom-roles.ts` | `assertCustomRoleCarriageInTx` (the usecase half), the save check over every carrier (`groupBy` role), the assignment |
 | `src/app-layer/usecases/tenant-admin.ts` | The members-page role change, and the role with its custom role saved together |
 | `src/app-layer/usecases/tenant-invites.ts` | Invite creation, the token redemption's backstop, the sign-in redemption's pre-claim skip |
 | `src/lib/auth/entra-group-sync.ts` | A mapping that would move such an ADMIN off ADMIN is held (`custom_role_held`) |
 | `tests/helpers/route-authorization-graph.ts` | `reachedBodies`: the analyser's call graph, without stopping at a decision |
-| `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts` | Fails when a listed key gains a consumer outside the admin API |
+| `prisma/migrations/20261030150000_admin_membership_only_keys_off_for_non_admin_custom_roles/` | The ten stated `false` in roles only non-ADMIN memberships carry |
+| `tests/integration/admin-membership-only-keys-migration.test.ts` | Runs that migration's SQL against a real database |
+| `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts` | Fails when one of the six gains a consumer outside the admin API, or one of the four loses its last |
 | `tests/unit/custom-role-carriage-writers.test.ts` | The census of writers, and each writer's refusal |
 
 ## Decisions
 
-- **Six keys, not the ten first proposed.** Looked at closer, four of the ten
-  are reachable by such a membership another way, and were left off:
-  `scim`, `compliance_dsar_manage` and `agent_harness_ingest` through an
-  agent-bound API key acting for the membership (an `iflk_` bearer skips the
-  edge's role gate, its context is the creator's permissions intersected with
-  its scopes, and those admin routes check the key alone), and
-  `agent_external_tools` through every tool call made for the membership (a run
-  it starts at `/agent-runs` checks the starter's permissions; a key at
-  `/api/mcp` its creator's). `admin.sso` stays: `admin:write` carries it, but
-  no code reads it at all.
-- **Only what a change adds is refused.** "Existing rows are not migrated or
-  trapped" is a property of the predicate rather than of each writer: a clear,
-  a narrowing save, a rename, a lower base, and a move among EDITOR, READER and
-  AUDITOR (which the rule treats alike) never add an offence. A legacy row
-  keeps working until somebody changes it, and nothing it already does is
-  refused.
-- **The base refusal comes first.** An ADMIN base grants five of the six keys by
+- **Ten keys, in two parts, and the second part takes something away.** Looked
+  at closer, four of the ten first proposed are reachable by such a membership
+  another way: `scim`, `compliance_dsar_manage` and `agent_harness_ingest`
+  through an agent-bound API key acting for the membership (an `iflk_` bearer
+  skips the edge's role gate, its context is the creator's permissions
+  intersected with its scopes, and those admin routes check the key alone), and
+  `agent_external_tools` and `agent_harness_ingest` through tool calls made for
+  the membership (a run it starts at `/agent-runs` checks the starter's
+  permissions; a key at `/api/mcp` its creator's). They were first left off.
+  The owner then refused them too, because that path is a side door around the
+  edge's role gate. So the earlier claim, that the rule costs nobody anything
+  they could use, holds for the six only: going forward, a non-ADMIN membership
+  cannot be given these four through a custom role, and the migration removed
+  them where only such memberships carried the role. `admin.sso` is among the
+  six: `admin:write` carries it, but no code reads it at all.
+- **The guardrail holds both claims.** Rules 1 to 4 ask that the six stay dead
+  outside the admin API. Rule 5 asks the opposite of the four, that each is
+  still reached (a scope carries it; for the two agent keys, the tool funnel
+  names it), so the docblock saying the rule takes them away stays true, and a
+  key that has gone dead is noticed.
+- **Only what a change adds is refused.** "Existing rows are not trapped" is a
+  property of the predicate rather than of each writer: a clear, a narrowing
+  save, a rename, a lower base, and a move among EDITOR, READER and AUDITOR
+  (which the rule treats alike) never add an offence. No writer refuses a row
+  for what it already carries; what stored roles carry was settled by the
+  migration instead.
+- **The migration switches keys off, and nothing else.** It touches a role only
+  if at least one membership carries it and none of its carriers, of any
+  status, is ADMIN, and only if the role still grants one of the ten as a
+  request reads it: one stated `true` on a READER, EDITOR or AUDITOR base, or
+  any not stated `false` on an ADMIN base, whose defaults grant nine of them.
+  It states all ten `false` rather than removing them, because a removed key
+  reads its base default or derives from another key (`agent_skill_author`
+  from `agent_skill_review`). It never changes a base: an ADMIN-built role
+  carried by Readers keeps its base and its other admin keys, and the writers
+  refuse any new carrier. The base filter is an allowlist for #4520's reason,
+  so a legacy OWNER- or AI_ADMIN-based row under the NOT VALID #3734 CHECK is
+  left alone rather than failing the deploy. A role with any ADMIN carrier
+  keeps its keys for its other carriers too; that is the owner's scope.
+- **The base refusal comes first.** An ADMIN base grants nine of the ten keys by
   default, so the base is the change that decides what the keys are.
+- **#4536's refusal is asked before this one on a save.** Both can refuse one
+  custom role update: Personnel / manage on a base other than ADMIN (400,
+  `PERSONNEL_MANAGE_NEEDS_ADMIN_BASE`) and a base or key the carriers may not
+  take (409). The personnel check reads only the request, the carriage check
+  reads every carrier, so the cheap one runs first and wins. They never ask for
+  contradictory fixes: with non-ADMIN carriers the base cannot become ADMIN,
+  and the only change that satisfies both is to switch Personnel / manage off.
 - **A legacy OWNER base is judged as admin-tier.** No writer makes one
   (`VALID_BASE_ROLES`, a NOT VALID CHECK); the rule reads the tier, not the
   name, so one left over is not mistaken for harmless.
