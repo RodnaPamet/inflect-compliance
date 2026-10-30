@@ -2570,7 +2570,8 @@
         "ERROR": "Error",
         "NOT_APPLICABLE": "N/A",
         "PENDING": "Pending",
-        "RUNNING": "Running"
+        "RUNNING": "Running",
+        "PARTIAL": "Partial"
       },
       "verdict": {
         "HEALTHY": "Healthy",
@@ -3898,6 +3899,11 @@
       "colCriticality": "Criticality",
       "colOwner": "Owner",
       "colReviewed": "Reviewed",
+      "colRto": "RTO",
+      "colRpo": "RPO",
+      "colMtpd": "MTPD",
+      "truncatedHint": "They are the first in recovery order, and the criticality filter applies to these only.",
+      "rankIncompleteHint": "The register holds more than {count, number} analyses; the recovery order and the counts above cover the first {count, number}.",
       "reviewOverdue": "Review overdue",
       "resourceAnalyses": "analyses",
       "resourceAnalysis": "analysis",
@@ -9858,7 +9864,8 @@
       "ERROR": "Error",
       "NOT_APPLICABLE": "N/A",
       "PENDING": "Pending",
-      "RUNNING": "Running"
+      "RUNNING": "Running",
+      "PARTIAL": "Partial"
     },
     "checksList": {
       "colCheck": "Check",
