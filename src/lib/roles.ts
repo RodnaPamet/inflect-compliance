@@ -523,3 +523,27 @@ export function customRoleCarriageMessage(
             return `${why} Change the member to ADMIN first, or choose another custom role.`;
     }
 }
+
+/** A carriage refusal as an API error body carries it (`error.details`), for a page to re-say in its language. */
+export interface CustomRoleCarriageRefusalBody {
+    reason: typeof CUSTOM_ROLE_ADMIN_BASE_REFUSAL | typeof CUSTOM_ROLE_ADMIN_KEYS_REFUSAL;
+    /** The offending permission keys (`admin.<key>`); empty for a base refusal. */
+    keys: string[];
+    /** The offending base; `null` for a keys refusal. */
+    baseRole: string | null;
+    /** A save's count of carriers holding it back; `0` for any other refusal. */
+    blockingMemberships: number;
+}
+
+/** The carriage refusal in an API error body, or `null` when the body carries another error. */
+export function customRoleCarriageRefusalOf(body: unknown): CustomRoleCarriageRefusalBody | null {
+    const details = (body as { error?: { details?: Record<string, unknown> } } | null)?.error?.details;
+    const reason = details?.reason;
+    if (reason !== CUSTOM_ROLE_ADMIN_BASE_REFUSAL && reason !== CUSTOM_ROLE_ADMIN_KEYS_REFUSAL) return null;
+    return {
+        reason,
+        keys: Array.isArray(details?.keys) ? details.keys.filter((k): k is string => typeof k === 'string') : [],
+        baseRole: typeof details?.baseRole === 'string' ? details.baseRole : null,
+        blockingMemberships: typeof details?.blockingMemberships === 'number' ? details.blockingMemberships : 0,
+    };
+}

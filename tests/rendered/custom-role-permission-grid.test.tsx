@@ -48,6 +48,9 @@ const TENANT_CTX = {
     tenantSlug: 'acme-corp',
     tenantName: 'Acme Corp',
     role: 'OWNER' as const,
+    // The membership's own role (#4587): the page offers its create form only
+    // where the edge admits it, and a missing role is not admitted.
+    membershipRole: 'OWNER' as const,
     permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
     appPermissions: getPermissionsForRole('OWNER'),
     modules: { processCanvas: false },

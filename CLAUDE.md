@@ -933,6 +933,20 @@ new tenant-membership creation path).
   `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`
   fails when one of the six gains a consumer outside the admin API, and when
   one of the four stops having one.
+- **An admin page offers a write only where the server takes it** (#4467,
+  #4466, generalised from #4471's agent register). Three gates, each asked as
+  the server asks it: the edge (#4587's `membershipOpensAdminConsole` over
+  `TenantContextValue.membershipRole`, the same answer the admin layout and the
+  sidebar give, a missing role not admitted; the agent register, whose subtree
+  also admits AI_ADMIN, asks `checkAdminAccess` for it on the server), the
+  route's key, and the usecase's floor (`offersAdminApiWrite` in
+  `src/lib/auth/admin-api-affordances.ts`; a client page calls
+  `useOffersAdminApiWrite` from `src/lib/auth/use-offers-admin-api-write.ts`).
+  Never AND a key with a role in a page, and never copy the edge's role table:
+  a custom role is not the membership role. Keep the hook OFF the tenant
+  context provider: every tenant page loads the provider, so its runtime
+  imports ship in every route's First Load JS, and the bundle-size budget
+  failed the day the hook lived there.
 - **An access-review campaign does no OWNER-tier work** (#3727). Closing one
   writes its decisions under `access_reviews.close`, which an ADMIN holds, so it
   holds the members page's rules itself: a MODIFY never sets OWNER

@@ -12,6 +12,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useOffersAdminApiWrite } from '@/lib/auth/use-offers-admin-api-write';
 import { apiErrorMessage } from '@/lib/api-error';
 import Link from 'next/link';
 import { useToastWithUndo } from '@/components/ui/hooks';
@@ -41,6 +42,10 @@ export function SharePointCard() {
     const searchParams = useSearchParams();
     const triggerUndoToast = useToastWithUndo();
     const t = useTranslations('admin');
+    // Every SharePoint call passes the edge, `admin.manage` and the service's
+    // `assertCanAdmin`; the card offers its controls only where all three would
+    // let the request through (#4466 finding 9).
+    const canConfigure = useOffersAdminApiWrite({ key: 'admin.manage', floor: 'canAdmin' });
 
     const [connections, setConnections] = useState<SpConnection[]>([]);
     const [busy, setBusy] = useState(false);
@@ -198,7 +203,7 @@ export function SharePointCard() {
                             {t('sharepoint.syncHealth')}
                         </Link>
                     )}
-                    {connections.length === 0 && (
+                    {canConfigure && connections.length === 0 && (
                         <Button variant="primary" onClick={connect} disabled={busy}>
                             {busy ? t('sharepoint.connecting') : t('sharepoint.connect')}
                         </Button>
@@ -229,18 +234,20 @@ export function SharePointCard() {
                         <span className="text-xs text-content-muted">
                             {t('sharepoint.sitesAllowed', { count: conn.configJson?.allowedSiteIds?.length ?? 0 })}
                         </span>
-                        <div className="ml-auto flex gap-tight">
-                            {/* Test and Sites can only fail on a disabled connection,
-                                so it is offered Disconnect alone — after which
-                                Connect is back. */}
-                            {conn.isEnabled && (
-                                <>
-                                    <Button variant="ghost" size="sm" onClick={() => test(conn.id)}>{t('sharepoint.test')}</Button>
-                                    <Button variant="ghost" size="sm" onClick={() => openSites(conn)}>{t('sharepoint.sites')}</Button>
-                                </>
-                            )}
-                            <Button variant="ghost" size="sm" onClick={() => disconnect(conn)}>{t('sharepoint.disconnect')}</Button>
-                        </div>
+                        {canConfigure && (
+                            <div className="ml-auto flex gap-tight">
+                                {/* Test and Sites can only fail on a disabled connection,
+                                    so it is offered Disconnect alone — after which
+                                    Connect is back. */}
+                                {conn.isEnabled && (
+                                    <>
+                                        <Button variant="ghost" size="sm" onClick={() => test(conn.id)}>{t('sharepoint.test')}</Button>
+                                        <Button variant="ghost" size="sm" onClick={() => openSites(conn)}>{t('sharepoint.sites')}</Button>
+                                    </>
+                                )}
+                                <Button variant="ghost" size="sm" onClick={() => disconnect(conn)}>{t('sharepoint.disconnect')}</Button>
+                            </div>
+                        )}
                     </div>
                     {!conn.isEnabled && (
                         <p className="text-xs text-content-muted">{t('sharepoint.disabledHint')}</p>

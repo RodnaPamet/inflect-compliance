@@ -650,6 +650,34 @@ describe('listCustomRoles — permissionsJson normalisation', () => {
         return partial;
     }
 
+    it('counts the members carrying each role whose built-in role is not ADMIN (2026-10-30)', async () => {
+        seedRoleRow(getPermissionsForRole('READER'));
+        mockTx.tenantMembership = {
+            groupBy: jest.fn(async () => [
+                { customRoleId: 'cr-1', role: 'EDITOR', _count: { _all: 2 } },
+                { customRoleId: 'cr-1', role: 'AUDITOR', _count: { _all: 1 } },
+                { customRoleId: 'cr-1', role: 'ADMIN', _count: { _all: 5 } },
+                { customRoleId: 'cr-other', role: 'READER', _count: { _all: 9 } },
+            ]),
+        };
+
+        const roles = await listCustomRoles(makeCtx('ADMIN'));
+
+        expect(roles[0].nonAdminCarriers).toBe(3);
+        expect(mockTx.tenantMembership.groupBy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                by: ['customRoleId', 'role'],
+                where: { tenantId: 'tenant-1', customRoleId: { not: null } },
+            }),
+        );
+    });
+
+    it('a role nobody carries counts no non-ADMIN carrier', async () => {
+        seedRoleRow(getPermissionsForRole('READER'));
+        const roles = await listCustomRoles(makeCtx('ADMIN'));
+        expect(roles[0].nonAdminCarriers).toBe(0);
+    });
+
     it('returns every PERMISSION_SCHEMA domain even when the stored JSON omits some', async () => {
         seedRoleRow(legacyBlob(), 'EDITOR');
 

@@ -26,6 +26,13 @@
  * either. This module only ASKS; it widens nothing, and it is not an
  * authority — every write still passes all three gates on its own.
  *
+ * The three-gate rule is every admin page's since #4467: this module is the
+ * agent register's use of `offersAdminApiWrite`
+ * (`src/lib/auth/admin-api-affordances.ts`). Its edge verdict is NOT the admin
+ * pages' `membershipOpensAdminConsole` (OWNER and ADMIN, #4587): the agent
+ * subtree also admits AI_ADMIN, so it asks `checkAdminAccess` for that subtree
+ * directly, on the server, from the session's membership claims.
+ *
  * Pure: the session's claims are read by the server page and handed in, so a
  * unit test can drive every role without a request.
  */
@@ -34,6 +41,7 @@ import {
     meetsAgentGovernanceAdmin,
     meetsAgentGovernanceWrite,
 } from '@/app-layer/policies/agent-governance.policies';
+import { offersAdminApiWrite } from '@/lib/auth/admin-api-affordances';
 import { checkAdminAccess } from '@/lib/auth/guard';
 
 /** The two JWT claims the edge's admin gate reads. */
@@ -84,9 +92,15 @@ export function agentRegisterAffordances(
     ctx: RequestContext,
     edgeAdmits: boolean,
 ): AgentRegisterAffordances {
-    const holdsKey = ctx.appPermissions?.admin?.agent_registry === true;
+    const viewer = { edgeAdmits, appPermissions: ctx.appPermissions, permissions: ctx.permissions };
     return {
-        canManage: edgeAdmits && holdsKey && meetsAgentGovernanceWrite(ctx, 'agent_registry'),
-        canAdminister: edgeAdmits && holdsKey && meetsAgentGovernanceAdmin(ctx, 'agent_registry'),
+        canManage: offersAdminApiWrite(viewer, {
+            key: 'admin.agent_registry',
+            floor: meetsAgentGovernanceWrite(ctx, 'agent_registry'),
+        }),
+        canAdminister: offersAdminApiWrite(viewer, {
+            key: 'admin.agent_registry',
+            floor: meetsAgentGovernanceAdmin(ctx, 'agent_registry'),
+        }),
     };
 }
