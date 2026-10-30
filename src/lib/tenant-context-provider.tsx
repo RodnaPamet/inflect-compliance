@@ -20,6 +20,14 @@ export interface TenantContextValue {
     /** RQ3-OB-A — display currency for monetary surfaces (default €). */
     currencySymbol?: string;
     role: Role;
+    /**
+     * The role on the user's own membership row, before any custom role. `role`
+     * is a custom role's base when the membership carries one; this is what the
+     * edge's admin gate reads, so the admin layout and the sidebar's admin link
+     * read it too (#4581 B). The tenant layout always sets it; absent reads as
+     * "may not open the admin console".
+     */
+    membershipRole?: Role;
     plan?: string;
     permissions: {
         canRead: boolean;

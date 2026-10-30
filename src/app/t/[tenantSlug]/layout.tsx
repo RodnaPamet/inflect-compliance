@@ -65,6 +65,7 @@ export default async function TenantLayout({
             tenantName: serverCtx.tenant.name,
             currencySymbol: serverCtx.tenant.currencySymbol,
             role: serverCtx.role,
+            membershipRole: serverCtx.membershipRole,
             plan,
             permissions: serverCtx.permissions,
             appPermissions: serverCtx.appPermissions,

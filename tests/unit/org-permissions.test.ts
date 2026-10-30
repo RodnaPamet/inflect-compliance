@@ -9,8 +9,8 @@
 import { getOrgPermissions, type OrgPermissionSet } from '@/lib/permissions';
 
 describe('Epic O-2 — getOrgPermissions', () => {
-    it('ORG_ADMIN is granted every portfolio capability', () => {
-        const p = getOrgPermissions('ORG_ADMIN');
+    it('ORG_OWNER is granted every capability, the owner-only ones included (#4576)', () => {
+        const p = getOrgPermissions('ORG_OWNER');
         expect(p).toEqual<OrgPermissionSet>({
             canViewPortfolio: true,
             canDrillDown: true,
@@ -21,6 +21,24 @@ describe('Epic O-2 — getOrgPermissions', () => {
             canSetThreatLevel: true,
             canSetMaturity: true,
             canManageAgentSwitches: true,
+            canManageOwners: true,
+        });
+    });
+
+    it('ORG_ADMIN is granted every capability but the owner-only ones', () => {
+        const p = getOrgPermissions('ORG_ADMIN');
+        expect(p).toEqual<OrgPermissionSet>({
+            canViewPortfolio: true,
+            canDrillDown: true,
+            canExportReports: true,
+            // Owner-only since #4576 (owner decision, 2026-10-30).
+            canManageTenants: false,
+            canManageMembers: true,
+            canConfigureDashboard: true,
+            canSetThreatLevel: true,
+            canSetMaturity: true,
+            canManageAgentSwitches: true,
+            canManageOwners: false,
         });
     });
 
@@ -36,6 +54,7 @@ describe('Epic O-2 — getOrgPermissions', () => {
             canSetThreatLevel: false,
             canSetMaturity: false,
             canManageAgentSwitches: false,
+            canManageOwners: false,
         });
     });
 
@@ -46,10 +65,11 @@ describe('Epic O-2 — getOrgPermissions', () => {
         expect(getOrgPermissions('ORG_READER').canDrillDown).toBe(false);
     });
 
-    it('ORG_ADMIN canManageTenants AND canManageMembers (not split)', () => {
-        const p = getOrgPermissions('ORG_ADMIN');
-        expect(p.canManageTenants).toBe(true);
-        expect(p.canManageMembers).toBe(true);
+    it('tenant management is the owner\'s; member management is the admin\'s too (#4576)', () => {
+        expect(getOrgPermissions('ORG_OWNER').canManageTenants).toBe(true);
+        expect(getOrgPermissions('ORG_ADMIN').canManageTenants).toBe(false);
+        expect(getOrgPermissions('ORG_ADMIN').canManageMembers).toBe(true);
+        expect(getOrgPermissions('ORG_ADMIN').canManageOwners).toBe(false);
     });
 
     it('ORG_READER cannot manage tenants OR members', () => {

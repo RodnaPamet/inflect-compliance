@@ -5,6 +5,8 @@
  */
 import { NextResponse } from 'next/server';
 
+import { EDGE_ADMIN_ROLES } from './edge-admin-roles';
+
 // ─── Public path allowlist ───
 
 const PUBLIC_PATH_PREFIXES = [
@@ -533,8 +535,12 @@ export function checkTenantAccess(
 
 // ── Admin-path gate ──────────────────────────────────────────────────
 
-/** The built-in roles the edge admits to an admin path. OWNER is strictly superior to ADMIN. */
-export const EDGE_ADMIN_ROLES: ReadonlySet<string> = new Set(['ADMIN', 'OWNER']);
+/**
+ * The built-in roles the edge admits to an admin path. OWNER is strictly
+ * superior to ADMIN. Defined in `./edge-admin-roles` so the admin pages, which
+ * are client components, apply the same set (#4581 B).
+ */
+export { EDGE_ADMIN_ROLES };
 
 /**
  * The ONLY admin paths the edge admits an `AI_ADMIN` to (#3699) — tenant

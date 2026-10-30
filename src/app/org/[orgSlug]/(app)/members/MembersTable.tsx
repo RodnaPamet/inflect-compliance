@@ -274,6 +274,7 @@ export function MembersTable({ orgSlug, currentUserId, viewerRole, rows, invites
 
             <ChangeRoleModal
                 orgSlug={orgSlug}
+                viewerIsOwner={isOrgOwner(viewerRole)}
                 target={roleTarget}
                 onClose={() => setRoleTarget(null)}
                 onSuccess={useCallback(() => {
@@ -597,6 +598,8 @@ function RemoveMemberModal({
 
 interface ChangeRoleModalProps {
     orgSlug: string;
+    /** Only an owner is offered Owner (#4576). */
+    viewerIsOwner: boolean;
     target: MemberRow | null;
     onClose: () => void;
     onSuccess: () => void;
@@ -604,6 +607,7 @@ interface ChangeRoleModalProps {
 
 function ChangeRoleModal({
     orgSlug,
+    viewerIsOwner,
     target,
     onClose,
     onSuccess,
@@ -670,7 +674,7 @@ function ChangeRoleModal({
         }
     };
 
-    const isPromotion = target?.role === 'ORG_READER' && chosen === 'ORG_ADMIN';
+    const isPromotion = target?.role === 'ORG_READER' && isOrgAdminTier(chosen);
     const isDemotion = isOrgAdminTier(target?.role) && chosen === 'ORG_READER';
     const isNoOp = target !== null && chosen !== null && target.role === chosen;
 
@@ -702,7 +706,13 @@ function ChangeRoleModal({
                         <legend className="text-sm font-medium text-content-emphasis">
                             {t('members.newRole')}
                         </legend>
-                        {(['ORG_ADMIN', 'ORG_READER'] as const).map((opt) => {
+                        {/* Owner is offered only to an owner (#4576): only an
+                            owner makes another one, and the server refuses
+                            anybody else. */}
+                        {(viewerIsOwner
+                            ? (['ORG_OWNER', 'ORG_ADMIN', 'ORG_READER'] as const)
+                            : (['ORG_ADMIN', 'ORG_READER'] as const)
+                        ).map((opt) => {
                             const id = `org-change-role-${opt}`;
                             const checked = chosen === opt;
                             return (
@@ -730,9 +740,11 @@ function ChangeRoleModal({
                                             {t(ROLE_LABEL_KEY[opt])}
                                         </p>
                                         <p className="text-xs text-content-muted">
-                                            {opt === 'ORG_ADMIN'
-                                                ? t('members.orgAdminDesc')
-                                                : t('members.orgReaderDesc')}
+                                            {opt === 'ORG_OWNER'
+                                                ? t('members.orgOwnerDesc')
+                                                : opt === 'ORG_ADMIN'
+                                                  ? t('members.orgAdminDesc')
+                                                  : t('members.orgReaderDesc')}
                                         </p>
                                     </div>
                                 </label>
