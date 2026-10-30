@@ -50,6 +50,12 @@ export default async function ProcessesPage({
             // is today.
             canReviewCheckpoints={ctx.appPermissions.admin.view}
             canOperateCheckpoints={ctx.permissions.canWrite}
+            // What each write behind the page takes on the server (#4640):
+            // map writes `processes.edit` plus the write tier, delete and every
+            // rule write the Admin tier, cancelling a stuck run the write tier.
+            canEditMaps={ctx.permissions.canWrite && ctx.appPermissions.processes.edit}
+            canDeleteMaps={ctx.permissions.canAdmin}
+            canManageRules={ctx.permissions.canAdmin}
         />
     );
 }

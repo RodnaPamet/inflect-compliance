@@ -149,6 +149,8 @@ async function mountPage(): Promise<HTMLElement> {
                     activeId="map-1"
                     onActiveIdChange={() => {}}
                     onProcessesChange={() => {}}
+                    canEdit
+                    canDelete
                 />
             </TenantProvider>
         </div>,

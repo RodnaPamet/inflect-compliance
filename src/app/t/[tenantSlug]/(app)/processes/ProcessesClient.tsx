@@ -83,6 +83,12 @@ interface ProcessesClientProps {
      */
     canReviewCheckpoints?: boolean;
     canOperateCheckpoints?: boolean;
+    /** May the viewer change maps? Without it the canvas is read-only. */
+    canEditMaps?: boolean;
+    /** May the viewer delete a map? */
+    canDeleteMaps?: boolean;
+    /** May the viewer create, change, toggle or archive automation rules? */
+    canManageRules?: boolean;
 }
 
 export function ProcessesClient({
@@ -90,6 +96,9 @@ export function ProcessesClient({
     initialProcesses,
     canReviewCheckpoints = false,
     canOperateCheckpoints = false,
+    canEditMaps = false,
+    canDeleteMaps = false,
+    canManageRules = false,
 }: ProcessesClientProps) {
     // The full list is owned here so a save can refresh the
     // selected map's metadata (version, updatedAt) without a full
@@ -178,11 +187,11 @@ export function ProcessesClient({
             </nav>
             <div className="flex min-h-0 flex-1 flex-col pt-3">
                 {tab === "rules" ? (
-                    <RulesTab tenantSlug={tenantSlug} />
+                    <RulesTab tenantSlug={tenantSlug} canManage={canManageRules} />
                 ) : tab === "analytics" ? (
                     <AnalyticsTab />
                 ) : tab === "monitor" ? (
-                    <MonitorTab />
+                    <MonitorTab canCancel={canOperateCheckpoints} />
                 ) : (
                     <CanvasWorkspace
                         tenantSlug={tenantSlug}
@@ -192,6 +201,8 @@ export function ProcessesClient({
                         setProcesses={setProcesses}
                         canReviewCheckpoints={canReviewCheckpoints}
                         canOperateCheckpoints={canOperateCheckpoints}
+                        canEdit={canEditMaps}
+                        canDelete={canDeleteMaps}
                     />
                 )}
             </div>
@@ -207,6 +218,8 @@ function CanvasWorkspace({
     setProcesses,
     canReviewCheckpoints,
     canOperateCheckpoints,
+    canEdit,
+    canDelete,
 }: {
     tenantSlug: string;
     processes: ProcessMapSummary[];
@@ -216,6 +229,8 @@ function CanvasWorkspace({
     /** #3472 — see `ProcessesClientProps`; passed through, never re-derived. */
     canReviewCheckpoints: boolean;
     canOperateCheckpoints: boolean;
+    canEdit: boolean;
+    canDelete: boolean;
 }) {
     // Mobile PR-5 — the xyflow canvas (pan/zoom/drag of a node graph) is
     // unusable on a phone. Below `md` we render a read-only LIST of the
@@ -261,6 +276,8 @@ function CanvasWorkspace({
                         onProcessesChange={setProcesses}
                         canReviewCheckpoints={canReviewCheckpoints}
                         canOperateCheckpoints={canOperateCheckpoints}
+                        canEdit={canEdit}
+                        canDelete={canDelete}
                     />
                 </CanvasModeProvider>
             </WorkspaceShell.Body>

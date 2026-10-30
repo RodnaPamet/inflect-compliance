@@ -137,6 +137,8 @@ async function mount() {
                     activeId="map-1"
                     onActiveIdChange={() => {}}
                     onProcessesChange={() => {}}
+                    canEdit
+                    canDelete
                 />,
             </TenantProvider>
         );
