@@ -23,6 +23,10 @@ import {
     probeSandboxRuntime,
     type ProbeOutcome,
 } from '@/lib/sandbox-runtime/health-probe';
+import {
+    classifyVersionDrift,
+    type VersionDriftFinding,
+} from '@/lib/agentic/openshell/pinned-release';
 export type {
     ReportingChannel,
     ReportingChannelKey,
@@ -92,7 +96,12 @@ export function readSandboxRuntimeDeclaration(): SandboxRuntimeDeclaration {
  */
 export async function readSandboxRuntimeDeclarationWithProbe(
     fetchImpl?: typeof fetch,
-): Promise<SandboxRuntimeDeclaration & { readonly probeOutcome: ProbeOutcome }> {
+): Promise<
+    SandboxRuntimeDeclaration & {
+        readonly probeOutcome: ProbeOutcome;
+        readonly versionDrift: VersionDriftFinding;
+    }
+> {
     const declared = readSandboxRuntimeDeclaration();
     const probe = await probeSandboxRuntime(env.SANDBOX_RUNTIME_HEALTH_URL, fetchImpl);
     return {
@@ -101,6 +110,23 @@ export async function readSandboxRuntimeDeclarationWithProbe(
         // able to change what this deploy declared.
         reachableVersion: probe.reachableVersion,
         probeOutcome: probe.outcome,
+        /*
+            5.2's SECOND anchor, narrowed to what a running gateway can
+            actually be asked — #4567.
+
+            The classification is computed here rather than by the renderer
+            because it is a comparison between an OBSERVED value and a
+            COMMITTED one, and only this function holds both. A renderer given
+            just the version would have to import the pin to say anything about
+            it, which is the second-pin problem the guard exists to prevent.
+
+            Computed on every outcome, not only `answered`: a probe that could
+            not read a version yields `unverifiable`, which is a reportable
+            finding rather than silence. The gateway is stopped most of the
+            time by design (#4571), so that is the common reading, and it must
+            not be indistinguishable from a verified match.
+        */
+        versionDrift: classifyVersionDrift({ reported: probe.reachableVersion }),
     };
 }
 

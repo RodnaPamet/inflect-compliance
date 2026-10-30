@@ -36,6 +36,32 @@
  * a known artefact, so a live policy whose hash is the default's is a fallback
  * rather than an arbitrary edit. That requires the default's hash to be
  * recorded, which is the one input this module cannot derive and must be given.
+ *
+ * ═══ THE CONFIG AXIS: WHY IT IS STILL NARROWER THAN #4000 PROMISED ═══
+ *
+ * #4000 recorded a committed config digest and framed it as unlocking a second
+ * anchor here: "a digest that changes without a deploy is drift by definition".
+ * That half is real and it is the half this module cannot use, because the
+ * comparison needs the OTHER side — what the running gateway was actually
+ * started with — and the gateway will not say.
+ *
+ * Measured in phase 0.1a, over HTTP: `config`, `configz`, `version` and
+ * `/api/v1/config` all answer 404. So the digest has nothing to be compared
+ * against and a one-sided comparison is not a check.
+ *
+ * REFINED while investigating #4561, and the refinement matters: the 404s were
+ * measured over HTTP, and the gRPC service `openshell.v1.OpenShell` carries
+ * `GetGatewayConfig` among its 95 methods. So the obstacle is not "the gateway
+ * cannot be asked" but "this product has no gRPC client to ask with" — a
+ * smaller and differently-shaped blocker, tracked on #4561. Nothing here should
+ * be written as though the capability were missing upstream.
+ *
+ * What IS implementable today is narrower and lives in
+ * `./pinned-release`: `/readyz` carries the release, so the version a gateway
+ * reports can be compared with the release every recorded fact was verified
+ * against (#4567). That is a weaker signal than a config digest — a gateway can
+ * run the pinned release against an edited config — but it is a real one, it
+ * needs no client, and it is not satisfied vacuously.
  */
 import { createHash } from 'node:crypto';
 

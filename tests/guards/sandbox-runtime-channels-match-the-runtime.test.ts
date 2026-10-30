@@ -30,6 +30,7 @@
  */
 import { REPORTING_CHANNELS } from '@/app-layer/usecases/sandbox-runtime-config';
 import { collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
+import { PINNED_GATEWAY_RELEASE } from '@/lib/agentic/openshell/pinned-release';
 import { REPO_ROOT, repoRelativeFiles } from '../helpers/repo-files';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -147,7 +148,21 @@ describe('the reporting channels match the runtime that has them', () => {
  * re-measures and re-records — which is precisely the "re-verify the phase 0.1
  * facts" bullet, enforced instead of requested.
  */
-const PINNED_RELEASE = '0.1.6';
+/*
+    IMPORTED, not declared — #4567.
+
+    This was its own literal, and `src/` recorded the same release in eight
+    docblocks and nowhere a machine could read. So nothing in the product could
+    answer "is the gateway running the release we verified against": there was
+    no expected value to compare a reported one with.
+
+    The constant now lives in `src/lib/agentic/openshell/pinned-release.ts` and
+    this file reads it. Two pins that can disagree are worse than one — each
+    looks authoritative alone and the disagreement is visible only to somebody
+    comparing them, which is the same reasoning the vendored-skills assertion
+    below already applies to VENDORED.md.
+*/
+const PINNED_RELEASE: string = PINNED_GATEWAY_RELEASE;
 
 /** `0.1.5` -> [0,1,5], so releases compare as numbers and not as strings. */
 const semver = (v: string): number[] => v.replace(/^v/, '').split('.').map((n) => Number(n));
