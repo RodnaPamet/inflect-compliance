@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { getTenantCtx } from '@/app-layer/context';
 import { getRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { agentProfilesOn } from '@/app-layer/usecases/agent-profiles';
+import { getInteractiveAgentDesignation } from '@/app-layer/usecases/interactive-agent-designation';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';
 import { NotFoundError } from '@/lib/errors/types';
@@ -83,10 +84,13 @@ export default async function AgentDetailPage({
     // Best-effort, and separately: a reader who may amend the agent but not list
     // vendors still gets the form, with the supplier field disabled rather than
     // the whole page failing.
-    const [owners, vendors, session] = await Promise.all([
+    const [owners, vendors, session, interactiveAgentId] = await Promise.all([
         listAssignableUsers(ctx).catch(() => []),
         listVendors(ctx, {}, { take: 200 }).catch(() => []),
         auth(),
+        // Which agent answers on Ask (#4629). Best-effort: a failed read shows
+        // no badge and offers "Use for Ask", which is the safe direction.
+        getInteractiveAgentDesignation(ctx).catch(() => null),
     ]);
 
     // The register writes this reader is offered, asked of the same three
@@ -122,6 +126,7 @@ export default async function AgentDetailPage({
                 ownerUserId: agent.ownerUserId,
                 vendorId: agent.vendorId ?? null,
                 registrationEnforced: agent.registrationEnforced,
+                isInteractiveAgent: interactiveAgentId === agent.id,
             }}
             owners={owners.map((m: { id: string; name: string | null; email: string }) => ({
                 id: m.id,
