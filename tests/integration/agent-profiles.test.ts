@@ -16,21 +16,18 @@
  *      force; a profile is refused on the static engine and on every engine
  *      that cannot run one, before any `WorkflowRun` row exists; a run that is
  *      admitted pins the version and its hash, write-once.
- *   9. THE CATALOGUE BUDGET (#4523). A version whose skills would put a run
- *      over the per-run catalogue budget is refused at save and at approval,
- *      at the byte, by the same measure admission refuses the run by; a
- *      version saved before the check still reads and is superseded.
- *  10. A SKILL NO RUN COULD MOUNT (owner decisions, 2026-10-30): a shipped
+ *   9. A SKILL NO RUN COULD MOUNT (owner decisions, 2026-10-30): a shipped
  *      skill the text scan refused, a shipped skill the mount gate refuses for
  *      want of a passing evaluation record, and an approved tenant skill the
  *      tenant mount gate now refuses. None is offered, a save naming one is
- *      refused by name and stores nothing, and a version stored naming one
- *      before the check cannot be approved. The shipped cases are planted on a
- *      real shipped skill without touching the files on disk: the refusal by
- *      moving it to the corpus's `refused` list, as the scan would; the
- *      missing record by pointing the real gate at a copy of its directory
- *      that holds its evaluation set and no record. The tenant case swaps an
- *      approved version's stored record for one written against other text.
+ *      refused by name on both paths and stores nothing, a version stored
+ *      naming one cannot be approved, and admission refuses its run. The
+ *      shipped cases are planted on a real shipped skill without touching the
+ *      files on disk: the refusal by moving it to the corpus's `refused` list,
+ *      as the scan would; the missing record by pointing the real gate at a
+ *      copy of its directory that holds its evaluation set and no record. The
+ *      tenant case swaps an approved version's stored record for one written
+ *      against other text.
  *
  * The driver decision, the registration gate and the queue are mocked at their
  * module boundary, as `tenant-skills.test.ts` does; the usecases, the resolver
@@ -61,11 +58,46 @@ jest.mock('@/lib/agentic/agent-profile', () => ({
     ...jest.requireActual('@/lib/agentic/agent-profile'),
     runsProfiles: jest.fn(() => engineRunsProfiles),
 }));
+/**
+ * A LONGER SHIPPED CORPUS, on demand (#4523).
+ *
+ * The approve-time budget check exists because the catalogue a version names
+ * can get MORE EXPENSIVE after the version is saved — a deploy lengthens a
+ * shipped skill's description, or a tenant skill it names is approved with a
+ * longer one. The stored `skillRefs` cannot change (the
+ * `IMMUTABLE_AGENT_PROFILE_VERSION` trigger freezes a version's settings at
+ * EVERY status, not only once decided), so growing the row is not a way to
+ * reach that case. Growing the descriptions is, and this is that.
+ */
+let inflateCatalogue = false;
+/**
+ * A shipped skill the load-time text scan REFUSED, on demand (#4590). A refused
+ * skill stays in `repositorySkillNames()` (a tenant skill may not take its
+ * name) and is absent from `repositorySkillCatalogue()` (it cannot mount). No
+ * shipped skill is refused today, so this drops a real one from the catalogue
+ * while the names keep it, which is exactly that state.
+ */
+let refusedName: string | null = null;
+jest.mock('@/lib/agentic/flue/skills/resolve', () => {
+    const actual = jest.requireActual('@/lib/agentic/flue/skills/resolve') as {
+        repositorySkillCatalogue: () => ReadonlyMap<string, { name: string; description: string }>;
+    };
+    return {
+        ...actual,
+        repositorySkillCatalogue: () => {
+            const real = new Map([...actual.repositorySkillCatalogue()].filter(([k]) => k !== refusedName));
+            if (!inflateCatalogue) return real;
+            return new Map(
+                [...real].map(([k, v]) => [k, { ...v, description: `${v.description} ${'detail '.repeat(140)}` }]),
+            );
+        },
+    };
+});
 jest.mock('@/lib/agentic/agent-registration-gate', () => ({
     ...jest.requireActual('@/lib/agentic/agent-registration-gate'),
     evaluateAgentRegistration: jest.fn(async () => ({ standing: 'vouched' })),
 }));
-// Section 10 plants a refused shipped skill: the named skills move from the
+// Section 9 plants a refused shipped skill: the named skills move from the
 // corpus's `skills` to its `refused`, which is what the text scan does to a
 // skill it refuses. Empty, the corpus is exactly the shipped one.
 let mockRefusedShipped: string[] = [];
@@ -83,7 +115,7 @@ jest.mock('@/lib/agentic/flue/skills', () => {
         },
     };
 });
-// Section 10 also plants a shipped skill with no evaluation record. The gate
+// Section 9 also plants a shipped skill with no evaluation record. The gate
 // itself answers for it, read against a copy of the skill's directory that
 // holds its evaluation set and no `evaluation-record.json` — the directory as
 // it would ship without one. Every other skill reads its own directory.
@@ -130,14 +162,12 @@ import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile
 import { profileRunKey } from '@/lib/agentic/agent-profile';
 import { SKILL_TEXT_RULES } from '@/lib/agentic/flue/skills/text-scan';
 import { catalogBytes, loadSkillCorpus, MAX_CATALOG_BYTES, skillDirectory } from '@/lib/agentic/flue/skills';
-import { resetSkillCache, runCatalogue } from '@/lib/agentic/flue/skills/resolve';
+import { repositorySkillNames, resetSkillCache } from '@/lib/agentic/flue/skills/resolve';
 import { resolveRunSkillMount } from '@/lib/agentic/flue/skills/tenant-mount';
 import {
     approveTenantSkillVersion,
     attachTenantSkillEvaluation,
     createTenantSkill,
-    createTenantSkillVersion,
-    retireTenantSkillVersion,
     submitTenantSkillVersion,
 } from '@/app-layer/usecases/tenant-skills';
 import { passingRecordFor, TENANT_SKILL_INSTRUCTIONS, tenantSkillFields } from '../helpers/tenant-skill-fixture';
@@ -170,16 +200,13 @@ const AGENTS = {
     scan: `ag-scan-${SUITE}`,
     retired: `ag-ret-${SUITE}`,
     b: `ag-b-${SUITE}`,
-    budgetSave: `ag-bsave-${SUITE}`,
-    budgetFirst: `ag-bfirst-${SUITE}`,
-    budgetApprove: `ag-bappr-${SUITE}`,
-    legacy: `ag-legacy-${SUITE}`,
+    priced: `ag-priced-${SUITE}`,
 };
 
-/** Section 10's three kinds of skill no run could mount. */
+/** Section 9's kinds of skill no run could mount. */
 const UNMOUNTABLE_KINDS = ['refused', 'unrecorded', 'tenant'] as const;
 type UnmountableKind = (typeof UNMOUNTABLE_KINDS)[number];
-/** Section 10's agents: one per kind for a first version, a later version and an approval. */
+/** Section 9's agents: one per kind for a first version, a later version and an approval. */
 const unmountableAgent = (kind: UnmountableKind, use: 'first' | 'save' | 'approve') => `ag-${kind}-${use}-${SUITE}`;
 
 const ctx = (tenantId: string, role: Role, userId: string, over: Partial<RequestContext> = {}): RequestContext =>
@@ -298,17 +325,14 @@ describeFn('agent profiles (real DB)', () => {
         await agent(TA, AGENTS.a3, USERS.authorA, 'ACTIVE', ['list_risks']);
         await agent(TA, AGENTS.fresh, USERS.authorA, 'ACTIVE', ['list_risks', 'list_controls']);
         await agent(TA, AGENTS.scan, USERS.authorA, 'ACTIVE', ['list_risks']);
+        await agent(TA, AGENTS.priced, USERS.authorA, 'ACTIVE', ['list_risks']);
+        for (const kind of UNMOUNTABLE_KINDS) {
+            for (const use of ['first', 'save', 'approve'] as const) {
+                await agent(TA, unmountableAgent(kind, use), USERS.authorA, 'ACTIVE', ['list_risks']);
+            }
+        }
         await agent(TA, AGENTS.retired, USERS.authorA, 'RETIRED', []);
         await agent(TB, AGENTS.b, USERS.authorB, 'ACTIVE', ['list_risks']);
-        for (const id of [
-            AGENTS.budgetSave,
-            AGENTS.budgetFirst,
-            AGENTS.budgetApprove,
-            AGENTS.legacy,
-            ...UNMOUNTABLE_KINDS.flatMap((k) => (['first', 'save', 'approve'] as const).map((use) => unmountableAgent(k, use))),
-        ]) {
-            await agent(TA, id, USERS.authorA, 'ACTIVE', ['list_risks']);
-        }
         registerWorkflow({
             key: WF,
             name: 'Registered',
@@ -432,6 +456,128 @@ describeFn('agent profiles (real DB)', () => {
                 reason: 'SKILL_UNKNOWN',
                 skills: ['repository:no-such-skill', 'tenant:not-approved'],
             });
+        });
+
+        it('SKILL_CATALOGUE_OVER_BUDGET: the whole shipped corpus is refused at save, with the byte count', async () => {
+            await ensureA2Profile();
+            // The shipped corpus ALONE is over budget (11 skills, 3,187 bytes
+            // against 2,048), so this is two clicks away in the picker — which
+            // is why #4523 moved the refusal here from the run.
+            const all = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills
+                .filter((sk) => sk.origin === 'repository');
+            expect(all.length).toBeGreaterThan(1);
+
+            const before = await prisma.agentProfileVersion.count({ where: { tenantId: TA } });
+            const err = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: all })).catch((e) => e);
+            expect(err.details).toMatchObject({ reason: 'SKILL_CATALOGUE_OVER_BUDGET', budget: 2_048 });
+            // The COUNT is the actionable part: "shorten a description" needs a number.
+            expect(err.details.bytes).toBeGreaterThan(2_048);
+            expect(err.details.skills).toEqual(all.map((sk) => `repository:${sk.name}`));
+            expect(await prisma.agentProfileVersion.count({ where: { tenantId: TA } })).toBe(before);
+        });
+
+        it('a selection within the budget is accepted, so the budget is the only new bar', async () => {
+            await ensureA2Profile();
+            // Guards against the obvious over-correction: refusing every
+            // skillRefs set, which would pass the case above and break the
+            // feature. A vacuous refusal is not a fix.
+            const one = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills
+                .filter((sk) => sk.origin === 'repository')
+                .slice(0, 2);
+            const v = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: one }));
+            expect(v.version).toBeGreaterThan(0);
+        });
+
+        it('an UNKNOWN name is reported ahead of the budget, because a name is more useful than a size', async () => {
+            await ensureA2Profile();
+            // Ordering matters: an unknown skill has no catalogue line, so
+            // pricing it first would price it at zero AND hide the real fault.
+            const all = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills
+                .filter((sk) => sk.origin === 'repository');
+            const err = await createAgentProfileVersion(
+                authorA(),
+                AGENTS.a2,
+                version({ skillRefs: [...all, { origin: 'repository', name: 'no-such-skill' }] }),
+            ).catch((e) => e);
+            expect(err.details).toMatchObject({ reason: 'SKILL_UNKNOWN', skills: ['repository:no-such-skill'] });
+        });
+
+        it('is re-priced at APPROVAL, so a catalogue that got dearer after save cannot be approved', async () => {
+            await ensureA2Profile();
+            // Saved while the catalogue was cheap: two skills, well inside budget.
+            const two = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills
+                .filter((sk) => sk.origin === 'repository')
+                .slice(0, 2);
+            const v = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: two }));
+            await submitAgentProfileVersion(authorA(), AGENTS.a2, v.version);
+
+            // Then a deploy lengthens those skills' descriptions. The version's
+            // own row is unchanged and unchangeable; what it costs is not.
+            inflateCatalogue = true;
+            try {
+                expect(
+                    await reasonOf(
+                        approveAgentProfileVersion(reviewerA(), AGENTS.a2, v.version, { instructionsHash: v.instructionsHash }),
+                    ),
+                ).toBe('SKILL_CATALOGUE_OVER_BUDGET');
+            } finally {
+                inflateCatalogue = false;
+            }
+
+            // Still SUBMITTED: the refusal lands before any status write, so a
+            // reviewer can act on it rather than finding it in force and broken.
+            expect(
+                (await prisma.agentProfileVersion.findFirstOrThrow({
+                    where: { tenantId: TA, version: v.version, instructionsHash: v.instructionsHash },
+                    select: { status: true },
+                })).status,
+            ).toBe('SUBMITTED');
+
+            // And with the corpus back to its real size it approves, so the
+            // refusal was the budget and not something this test broke.
+            await approveAgentProfileVersion(reviewerA(), AGENTS.a2, v.version, { instructionsHash: v.instructionsHash });
+        });
+
+        it('the picker prices each option as the save does, so its running total is the save\'s figure (#4590)', async () => {
+            await ensureA2Profile();
+            const options = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills.filter(
+                (sk) => sk.origin === 'repository',
+            );
+            const corpus = new Map(loadSkillCorpus().skills.map((s) => [s.name, s]));
+            // Each option carries its own line's cost, priced by the run's function.
+            for (const o of options) expect(o.catalogueBytes).toBe(catalogBytes([corpus.get(o.name)!]));
+            // And the lines add: the save prices the whole set at the options' sum.
+            const total = options.reduce((n, o) => n + o.catalogueBytes, 0);
+            expect(total).toBeGreaterThan(MAX_CATALOG_BYTES);
+            const err = await createAgentProfileVersion(
+                authorA(),
+                AGENTS.a2,
+                version({ skillRefs: options.map(({ origin, name }) => ({ origin, name })) }),
+            ).catch((e) => e);
+            expect(err.details).toMatchObject({ reason: 'SKILL_CATALOGUE_OVER_BUDGET', bytes: total });
+        });
+
+        it('a refused shipped skill is neither offered nor saved, though its name stays reserved (#4590)', async () => {
+            await ensureA2Profile();
+            const name = loadSkillCorpus().skills[0].name;
+            refusedName = name;
+            try {
+                const offered = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills.map((sk) => sk.name);
+                expect(offered).not.toContain(name);
+                // Still a reserved name: a tenant skill may not take it.
+                expect(repositorySkillNames().has(name)).toBe(true);
+                const err = await createAgentProfileVersion(
+                    authorA(),
+                    AGENTS.a2,
+                    version({ skillRefs: [{ origin: 'repository', name }] }),
+                ).catch((e) => e);
+                expect(err.details).toMatchObject({ reason: 'SKILL_UNKNOWN', skills: [`repository:${name}`] });
+            } finally {
+                refusedName = null;
+            }
+            // Mountable again, it is offered and saves.
+            const back = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: [{ origin: 'repository', name }] }));
+            expect(back.version).toBeGreaterThan(0);
         });
 
         it('NOT_DRAFT, NOT_SUBMITTED, ALREADY_RETIRED', async () => {
@@ -758,20 +904,59 @@ describeFn('agent profiles (real DB)', () => {
                 skillCatalogueBudgetBytes: MAX_CATALOG_BYTES,
             });
 
-            // The pickers offer what the save accepts: every option round-trips,
-            // as many together as the view's own per-skill figures say fit the
-            // per-run catalogue budget (#4523). The shipped corpus as a whole
-            // does not fit, and section 9 holds that refusal at the byte.
-            const fits: Array<{ origin: 'repository' | 'tenant'; name: string }> = [];
-            let used = 0;
-            for (const s of view.options.skills) {
-                if (used + s.catalogueBytes > view.limits.skillCatalogueBudgetBytes) continue;
-                fits.push({ origin: s.origin, name: s.name });
-                used += s.catalogueBytes;
+            // The pickers offer what the save accepts, PER OPTION — every tool
+            // and every skill is individually a valid choice.
+            //
+            // It no longer holds for the whole set AT ONCE, and that is
+            // deliberate (#4523): the skill catalogue is a BUDGET, not a
+            // per-item check, and the shipped corpus alone exceeds it. So this
+            // takes a within-budget slice, and the refusals block proves the
+            // full set is refused by name with its byte count. The picker still
+            // offers a selection the save will refuse once it grows too large,
+            // which is a client affordance filed separately — the server's
+            // answer is now the early one either way.
+            const v = await createAgentProfile(
+                authorA(),
+                AGENTS.fresh,
+                version({ toolNames: view.options.tools, skillRefs: view.options.skills.slice(0, 2) }),
+            );
+            expect(v.version).toBe(1);
+        });
+
+        it('prices a tenant skill option as the save prices it, so it adds up with the shipped ones to the save\'s figure', async () => {
+            // One approved tenant skill, so both kinds of catalogue line are priced.
+            const name = `priced-${SUITE}`;
+            const fields = tenantSkillFields();
+            const created = await createTenantSkill(authorA(), { name, ...fields });
+            await attachTenantSkillEvaluation(authorA(), created.skillId, created.versionId, { record: passingRecordFor(name, 1) });
+            await submitTenantSkillVersion(authorA(), created.skillId, created.versionId);
+            await approveTenantSkillVersion(reviewerA(), created.skillId, created.versionId, { contentHash: created.contentHash });
+
+            const view = await getAgentProfile(reviewerA(), AGENTS.priced);
+            const tenantOption = view.options.skills.find((sk) => sk.origin === 'tenant' && sk.name === name);
+            expect(tenantOption?.catalogueBytes).toBe(catalogBytes([{ name, description: fields.description }]));
+            const ref = (sk: { origin: 'repository' | 'tenant'; name: string }) => ({ origin: sk.origin, name: sk.name });
+            const total = (sks: typeof view.options.skills) => sks.reduce((n, sk) => n + sk.catalogueBytes, 0);
+
+            // Every shipped skill and the tenant one: over the budget, and the
+            // save refuses at exactly the options' sum.
+            const every = view.options.skills.filter((sk) => sk.origin === 'repository' || sk.name === name);
+            expect(total(every)).toBeGreaterThan(view.limits.skillCatalogueBudgetBytes);
+            const before = await prisma.agentProfileVersion.count({ where: { tenantId: TA } });
+            expect(await createAgentProfile(authorA(), AGENTS.priced, version({ skillRefs: every.map(ref) })).catch((e) => e.details)).toMatchObject({
+                reason: 'SKILL_CATALOGUE_OVER_BUDGET',
+                bytes: total(every),
+                budget: view.limits.skillCatalogueBudgetBytes,
+            });
+            expect(await prisma.agentProfileVersion.count({ where: { tenantId: TA } })).toBe(before);
+
+            // As many as the options say fit, the tenant one first: the save accepts them.
+            const fits: typeof view.options.skills = [];
+            for (const sk of [tenantOption!, ...every.filter((o) => o !== tenantOption)]) {
+                if (total([...fits, sk]) <= view.limits.skillCatalogueBudgetBytes) fits.push(sk);
             }
             expect(fits.length).toBeGreaterThan(1);
-            const v = await createAgentProfile(authorA(), AGENTS.fresh, version({ toolNames: view.options.tools, skillRefs: fits }));
-            expect(v.version).toBe(1);
+            expect((await createAgentProfile(authorA(), AGENTS.priced, version({ skillRefs: fits.map(ref) }))).version).toBe(1);
         });
 
         it('says why a test run cannot start on an engine that does not run profiles, naming it (Step 2c)', async () => {
@@ -931,221 +1116,7 @@ describeFn('agent profiles (real DB)', () => {
         });
     });
 
-    // ── 9. The per-run catalogue budget (#4523) ───────────────────────
-
-    describe('the per-run catalogue budget (#4523)', () => {
-        type Ref = { origin: 'repository' | 'tenant'; name: string };
-
-        // Shipped skills taken from the corpus up to 1,400 bytes of catalogue,
-        // so one tenant skill of a few hundred bytes decides the total. The
-        // figure follows the corpus rather than a pinned number.
-        const corpus = loadSkillCorpus().skills;
-        const repo: string[] = [];
-        let repoBytes = 0;
-        for (const s of corpus) {
-            const b = catalogBytes([s]);
-            if (repoBytes + b > 1_400) continue;
-            repo.push(s.name);
-            repoBytes += b;
-        }
-        const repoRefs: Ref[] = repo.map((name) => ({ origin: 'repository', name }));
-        const tenantRef = (name: string): Ref => ({ origin: 'tenant', name });
-
-        // Three tenant skills with names of one length.
-        const AT = `bud-at-${SUITE}`;
-        const OVER = `bud-ov-${SUITE}`;
-        const GROWS = `bud-gr-${SUITE}`;
-        let growsSkillId = '';
-
-        /** The description that puts `repo` and a skill called `name` at exactly `total` catalogue bytes. */
-        const descriptionFor = (name: string, total: number): string => {
-            const n = total - repoBytes - Buffer.byteLength(`${name}: \n`, 'utf8');
-            if (n < 2 || n > 1_024) throw new Error(`the fixture cannot reach ${total} bytes with a description of ${n} characters`);
-            // Prose, so the text scan has nothing to say, ending on a letter so nothing is trimmed.
-            return `${'Review the access request against the policy and say what to grant. '.repeat(20).slice(0, n - 1)}x`;
-        };
-
-        /** A tenant skill in A, created, evaluated, submitted and approved, with this description. */
-        const approvedTenantSkill = async (name: string, description: string) => {
-            const created = await createTenantSkill(authorA(), { name, ...tenantSkillFields({ description }) });
-            await attachTenantSkillEvaluation(authorA(), created.skillId, created.versionId, { record: passingRecordFor(name, 1) });
-            await submitTenantSkillVersion(authorA(), created.skillId, created.versionId);
-            await approveTenantSkillVersion(reviewerA(), created.skillId, created.versionId, { contentHash: created.contentHash });
-            return created;
-        };
-
-        /** A refusal's details, or NO_REFUSAL. */
-        const detailsOf = async (p: Promise<unknown>): Promise<unknown> => {
-            try {
-                await p;
-            } catch (err) {
-                return (err as { details?: unknown }).details ?? `THREW:${(err as Error).message}`;
-            }
-            return 'NO_REFUSAL';
-        };
-        const overBudget = (catalogueBytes: number) => ({
-            reason: 'SKILL_CATALOGUE_OVER_BUDGET',
-            catalogueBytes,
-            budgetBytes: MAX_CATALOG_BYTES,
-        });
-
-        /** What a run of a profile naming these skills mounts, through admission's own read and resolver. */
-        const admission = async (skillRefs: Ref[]): Promise<{ mounted: number } | { refused: string }> => {
-            try {
-                const mount = await resolveRunSkillMount(authorA(), { key: 'agent-profile:budget@v1', profile: { skillRefs } });
-                return { mounted: catalogBytes(mount.documents) };
-            } catch (err) {
-                return { refused: (err as Error).message };
-            }
-        };
-        const refusedAt = (bytes: number) => ({
-            refused: expect.stringContaining(`catalog is ${bytes} bytes, over the ${MAX_CATALOG_BYTES} budget`),
-        });
-
-        beforeAll(async () => {
-            await approvedTenantSkill(AT, descriptionFor(AT, MAX_CATALOG_BYTES));
-            await approvedTenantSkill(OVER, descriptionFor(OVER, MAX_CATALOG_BYTES + 1));
-            growsSkillId = (await approvedTenantSkill(GROWS, descriptionFor(GROWS, MAX_CATALOG_BYTES))).skillId;
-        });
-
-        it('exactly at the budget the save accepts and admission mounts; a byte over, both refuse at the same figure', async () => {
-            const at = [...repoRefs, tenantRef(AT)];
-            const over = [...repoRefs, tenantRef(OVER)];
-
-            expect(await createAgentProfile(authorA(), AGENTS.budgetSave, version({ skillRefs: at }))).toMatchObject({ version: 1 });
-            expect(await admission(at)).toEqual({ mounted: MAX_CATALOG_BYTES });
-
-            const before = await prisma.agentProfileVersion.count({ where: { tenantId: TA } });
-            expect(await detailsOf(createAgentProfileVersion(authorA(), AGENTS.budgetSave, version({ skillRefs: over })))).toEqual(
-                overBudget(MAX_CATALOG_BYTES + 1),
-            );
-            expect(await admission(over)).toEqual(refusedAt(MAX_CATALOG_BYTES + 1));
-
-            // The refused save stored nothing and retired nothing: version 1 is still the open draft.
-            expect(await prisma.agentProfileVersion.count({ where: { tenantId: TA } })).toBe(before);
-            const view = await getAgentProfile(reviewerA(), AGENTS.budgetSave);
-            expect(view.versions.map((v) => [v.version, v.status])).toEqual([[1, 'DRAFT']]);
-        });
-
-        it('the first version of a profile is held to it too, and a refused one creates no profile', async () => {
-            expect(await detailsOf(createAgentProfile(authorA(), AGENTS.budgetFirst, version({ skillRefs: [...repoRefs, tenantRef(OVER)] })))).toEqual(
-                overBudget(MAX_CATALOG_BYTES + 1),
-            );
-            expect(await prisma.agentProfile.count({ where: { tenantId: TA, agentId: AGENTS.budgetFirst } })).toBe(0);
-        });
-
-        it('approval measures again: a tenant skill grown by one byte while the version waited is refused, and one retired is unknown', async () => {
-            const skillRefs = [...repoRefs, tenantRef(GROWS)];
-            // Exactly at the budget, approval accepts.
-            const v1 = await createAgentProfile(authorA(), AGENTS.budgetApprove, version({ skillRefs }));
-            await submitAgentProfileVersion(authorA(), AGENTS.budgetApprove, 1);
-            await approveAgentProfileVersion(reviewerA(), AGENTS.budgetApprove, 1, { instructionsHash: v1.instructionsHash });
-
-            const v2 = await createAgentProfileVersion(authorA(), AGENTS.budgetApprove, version({ skillRefs, instructions: `${INSTRUCTIONS} v2` }));
-            await submitAgentProfileVersion(authorA(), AGENTS.budgetApprove, v2.version);
-
-            // The tenant skill's next version is one byte longer. Its own
-            // approval measures the workflows it names, not the profiles.
-            const grown = await createTenantSkillVersion(
-                authorA(),
-                growsSkillId,
-                tenantSkillFields({ description: descriptionFor(GROWS, MAX_CATALOG_BYTES + 1) }),
-            );
-            await attachTenantSkillEvaluation(authorA(), growsSkillId, grown.versionId, { record: passingRecordFor(GROWS, grown.version) });
-            await submitTenantSkillVersion(authorA(), growsSkillId, grown.versionId);
-            await approveTenantSkillVersion(reviewerA(), growsSkillId, grown.versionId, { contentHash: grown.contentHash });
-
-            expect(
-                await detailsOf(approveAgentProfileVersion(reviewerA(), AGENTS.budgetApprove, v2.version, { instructionsHash: v2.instructionsHash })),
-            ).toEqual(overBudget(MAX_CATALOG_BYTES + 1));
-            expect(await admission(skillRefs)).toEqual(refusedAt(MAX_CATALOG_BYTES + 1));
-            let view = await getAgentProfile(reviewerA(), AGENTS.budgetApprove);
-            expect(view.profile?.currentApprovedVersion).toBe(1);
-            expect(view.versions.find((v) => v.version === v2.version)?.status).toBe('SUBMITTED');
-
-            // Retired, the skill has no approved version to measure, and no run could mount it.
-            await retireTenantSkillVersion(reviewerA(), growsSkillId, grown.versionId);
-            expect(
-                await detailsOf(approveAgentProfileVersion(reviewerA(), AGENTS.budgetApprove, v2.version, { instructionsHash: v2.instructionsHash })),
-            ).toEqual({ reason: 'SKILL_UNKNOWN', skills: [`tenant:${GROWS}`] });
-            view = await getAgentProfile(reviewerA(), AGENTS.budgetApprove);
-            expect(view.profile?.currentApprovedVersion).toBe(1);
-        });
-
-        it('a version stored over the budget before the check still reads, is refused approval and admission, and is superseded', async () => {
-            const allRefs: Ref[] = corpus.map((s) => ({ origin: 'repository', name: s.name }));
-            const allBytes = runCatalogue(corpus.map((s) => s.name), []).bytes;
-            expect(allBytes).toBeGreaterThan(MAX_CATALOG_BYTES);
-
-            const first = await createAgentProfile(authorA(), AGENTS.legacy, version());
-            await retireAgentProfileVersion(authorA(), AGENTS.legacy, 1);
-            // Written as a save before #4523 would have written it: no check at all.
-            const legacy = await prisma.agentProfileVersion.create({
-                data: {
-                    tenantId: TA,
-                    profileId: first.profileId,
-                    version: 2,
-                    instructions: INSTRUCTIONS,
-                    instructionsHash: profileInstructionsHash(INSTRUCTIONS),
-                    toolNames: ['list_risks'],
-                    skillRefs: allRefs,
-                    modelTier: 'balanced',
-                    effort: 'medium',
-                    maxTurns: 10,
-                    outputKind: 'ANSWER_ONLY',
-                    allowedTriggers: ['TEST_RUN'],
-                    authoredByUserId: USERS.authorA,
-                },
-                select: { id: true },
-            });
-            await submitAgentProfileVersion(authorA(), AGENTS.legacy, 2);
-            expect(
-                await detailsOf(approveAgentProfileVersion(reviewerA(), AGENTS.legacy, 2, { instructionsHash: profileInstructionsHash(INSTRUCTIONS) })),
-            ).toEqual(overBudget(allBytes));
-
-            // As an approval before #4523 would have left it: in force.
-            await prisma.$executeRawUnsafe(
-                `UPDATE "AgentProfileVersion" SET "status" = 'APPROVED', "decidedAt" = now(), "decidedByUserId" = $2 WHERE "id" = $1`,
-                legacy.id,
-                USERS.reviewerA,
-            );
-            await prisma.agentProfile.update({ where: { id: first.profileId }, data: { currentApprovedVersion: 2 } });
-
-            // It reads, as it was stored.
-            let view = await getAgentProfile(reviewerA(), AGENTS.legacy);
-            expect(view.profile?.runKey).toBe(profileRunKey(first.profileId, 2));
-            expect(view.versions[0]).toMatchObject({ version: 2, status: 'APPROVED', skillRefs: allRefs });
-
-            // Admission refuses its run, as it always did.
-            const { def } = await resolveRunDefinition(authorA({ agentId: AGENTS.legacy }), profileRunKey(first.profileId, 2));
-            expect(await detailsOf(resolveRunSkillMount(authorA(), def))).toMatch(
-                new RegExp(`^THREW:.*catalog is ${allBytes} bytes, over the ${MAX_CATALOG_BYTES} budget`),
-            );
-
-            // A version that fits supersedes it through the ordinary lifecycle.
-            const next = await createAgentProfileVersion(authorA(), AGENTS.legacy, version({ skillRefs: repoRefs }));
-            expect(next.version).toBe(3);
-            await submitAgentProfileVersion(authorA(), AGENTS.legacy, 3);
-            const approved = await approveAgentProfileVersion(reviewerA(), AGENTS.legacy, 3, { instructionsHash: next.instructionsHash });
-            expect(approved.supersededVersion).toBe(2);
-            view = await getAgentProfile(reviewerA(), AGENTS.legacy);
-            expect(view.versions.map((v) => [v.version, v.status])).toEqual([
-                [3, 'APPROVED'],
-                [2, 'RETIRED'],
-                [1, 'RETIRED'],
-            ]);
-        });
-
-        it('offers each skill with the bytes the save measures it by', async () => {
-            const view = await getAgentProfile(reviewerA(), AGENTS.fresh);
-            const option = (name: string) => view.options.skills.find((s) => s.name === name)?.catalogueBytes;
-            expect(option(repo[0])).toBe(catalogBytes([corpus.find((s) => s.name === repo[0])!]));
-            expect(option(AT)).toBe(MAX_CATALOG_BYTES - repoBytes);
-            expect(repo.reduce((n, name) => n + option(name)!, 0) + option(AT)!).toBe(MAX_CATALOG_BYTES);
-        });
-    });
-
-    // ── 10. A skill no run could mount (owner decisions, 2026-10-30) ──
+    // ── 9. A skill no run could mount (owner decisions, 2026-10-30) ───
 
     type UnmountableRef = { origin: 'repository' | 'tenant'; name: string };
     const refKey = (r: UnmountableRef) => `${r.origin}:${r.name}`;

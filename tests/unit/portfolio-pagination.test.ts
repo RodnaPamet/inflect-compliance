@@ -59,6 +59,7 @@ function ctxFor(): OrgContext {
             canSetThreatLevel: true,
             canSetMaturity: true,
             canManageAgentSwitches: true,
+            canManageOwners: false,
         },
     };
 }

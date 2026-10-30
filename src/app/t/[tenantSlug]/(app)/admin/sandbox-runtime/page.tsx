@@ -54,6 +54,10 @@ export default async function SandboxRuntimePage({
         configDigest: declaration.configDigest,
         reachableVersion: declaration.reachableVersion,
         probeOutcome: declaration.probeOutcome,
+        // WHEN the probe answered. The verdict may be reused for up to
+        // PROBE_CACHE_TTL_MS, so the page states its age rather than implying
+        // the check was just taken (#4572).
+        probedAtIso: declaration.probedAtIso,
         channels: declaration.channels,
         appliedAtIso: declaration.appliedAt === null ? null : declaration.appliedAt.toISOString(),
     };

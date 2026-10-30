@@ -38,11 +38,9 @@ import {
     loadSkillCorpus,
     assertCatalogWithinBudget,
     catalogBytes,
-    measureCatalog,
-    withinCatalogBudget,
+    MAX_CATALOG_BYTES,
     SkillLoadError,
     SkillTextRefusedError,
-    type CatalogMeasure,
     type LoadedSkill,
     type SkillCorpus,
 } from './index';
@@ -237,11 +235,11 @@ export function tenantVersionMount(v: TenantSkillVersionForMount): TenantVersion
  * The catalogue lines of the tenant versions a run could mount, each asked by
  * `tenantVersionMount`; a version a run would refuse is left out. An agent
  * profile's picker offers these, and its save and approval accept these and
- * refuse any other tenant name as unknown (owner decision, 2026-10-30, the
- * third follow-up to #4523). The caller reads the versions with the columns
- * the gate reads (`TENANT_SKILL_MOUNT_SELECT` in `tenant-mount.ts`).
+ * refuse any other tenant name as unknown (owner decision, 2026-10-30). The
+ * caller reads the versions with the columns the gate reads
+ * (`TENANT_SKILL_MOUNT_SELECT` in `tenant-mount.ts`).
  */
-export function mountableTenantSkillLines(versions: readonly TenantSkillVersionForMount[]): CatalogueLine[] {
+export function mountableTenantSkillLines(versions: readonly TenantSkillVersionForMount[]): { name: string; description: string }[] {
     return versions.flatMap((v) => {
         const mounted = tenantVersionMount(v);
         return mounted.ok ? [{ name: mounted.document.name, description: mounted.document.description }] : [];
@@ -252,8 +250,6 @@ export function mountableTenantSkillLines(versions: readonly TenantSkillVersionF
  * Every name the shipped corpus holds, refused skills included: a tenant skill
  * may take none of them (the usecase refuses at creation; the resolver refuses
  * again, because a later deploy may add a repository skill of that name).
- *
- * Not the list a person CHOOSES from: that is `mountableRepositorySkillNames`.
  */
 export function repositorySkillNames(): ReadonlySet<string> {
     const c = shippedCorpus();
@@ -261,28 +257,26 @@ export function repositorySkillNames(): ReadonlySet<string> {
 }
 
 /**
- * THE SHIPPED SKILLS A PERSON MAY CHOOSE: every one a run could mount, asked
- * exactly as `mountable` asks it for a run. Two questions, both answered by
- * what the run itself reads, never by a copy:
+ * The catalogue-line fields of every MOUNTABLE repository skill, by name.
  *
- *   - the text scan did not refuse it: the corpus's own split
- *     (`SkillCorpus.skills` beside `.refused`), from the same cached corpus
- *     `lookup` refuses a run by;
- *   - the mount gate passes it: `verdictFor`, the cached `checkSkillMountable`
- *     verdict `mountable` refuses a run by (a passing evaluation record
- *     beside the skill, for this exact text).
+ * Mountable is what `mountable` asks of a run, from the same cache: the text
+ * scan did not refuse the skill (it is in the corpus's `skills`, not its
+ * `refused`), AND the mount gate passes it (`verdictFor`, the cached
+ * `checkSkillMountable` verdict: a passing evaluation record for this exact
+ * text). A skill that fails either never mounts, so it is absent here, and the
+ * agent profile surface, the only caller, neither offers it nor accepts it
+ * (#4590; the gate, owner decision 2026-10-30).
  *
- * An agent profile's picker offers these, and its save and approval accept
- * these and refuse any other shipped name as unknown (owner decisions,
- * 2026-10-30, the follow-ups to #4523). A skill that fails either question
- * never mounts, so offering it would offer a version no run of it can mount.
- *
- * What it cannot answer is the future: both questions read files in the
- * deployed build, so a deploy between a version's save and its run can change
- * either answer. Approval asks again, and admission a third time.
+ * Deliberately NOT the same population as `repositorySkillNames` above, which
+ * includes the refused. A skill absent here has no catalogue line to price, and
+ * a caller pricing a catalogue must not read that absence as "costs nothing to
+ * mount". It costs a refusal.
  */
-export function mountableRepositorySkillNames(): ReadonlySet<string> {
-    return new Set(shippedCorpus().skills.filter((s) => verdictFor(s).ok).map((s) => s.name));
+export function repositorySkillCatalogue(): ReadonlyMap<string, { readonly name: string; readonly description: string }> {
+    const c = shippedCorpus();
+    return new Map(
+        c.skills.filter((s) => verdictFor(s).ok).map((s) => [s.name, { name: s.name, description: s.description }]),
+    );
 }
 
 /** Test seam: drop the cache so a suite can vary the corpus. */
@@ -318,68 +312,20 @@ export function workflowCatalogs(
 ): WorkflowCatalog[] {
     const c = shippedCorpus();
     return defs.map((d) => {
-        const { lines, refused } = repositoryLines(c, d.skills ?? [], `declared by workflow "${d.key}" but not in the shipped corpus`);
+        const declared: { name: string; description: string }[] = [];
+        const refused: string[] = [];
+        for (const name of d.skills ?? []) {
+            if (c.refused.some((r) => r.name === name)) {
+                refused.push(name);
+                continue;
+            }
+            declared.push(lookup(c, name, `declared by workflow "${d.key}" but not in the shipped corpus`));
+        }
         // The tenant's approved skills that name this workflow pay the same
         // per-turn price as the repository's (#3680).
-        for (const t of tenantSkills) if (t.workflowKeys.includes(d.key)) lines.push(t);
-        return { key: d.key, bytes: catalogBytes(lines), refused };
+        for (const t of tenantSkills) if (t.workflowKeys.includes(d.key)) declared.push(t);
+        return { key: d.key, bytes: catalogBytes(declared), refused };
     });
-}
-
-/** A skill's line in the always-present catalogue: its name and the description every turn carries. */
-export interface CatalogueLine {
-    readonly name: string;
-    readonly description: string;
-}
-
-/**
- * The catalogue lines of these repository skills, from the shipped corpus, and
- * the names the text scan refused. A refused skill costs nothing: no run that
- * names it gets far enough to mount it. A name the corpus does not hold throws,
- * as a run would.
- */
-function repositoryLines(
-    c: SkillCorpus,
-    names: readonly string[],
-    unknownReason: string,
-): { lines: CatalogueLine[]; refused: string[] } {
-    const lines: CatalogueLine[] = [];
-    const refused: string[] = [];
-    for (const name of names) {
-        if (c.refused.some((r) => r.name === name)) {
-            refused.push(name);
-            continue;
-        }
-        const skill = lookup(c, name, unknownReason);
-        lines.push({ name: skill.name, description: skill.description });
-    }
-    return { lines, refused };
-}
-
-/** What a run naming these skills pays on every turn, against the per-run budget. */
-export interface RunCatalogue extends CatalogMeasure {
-    /** Named repository skills the text scan refused: they cost nothing, and a run naming one fails closed. */
-    readonly refused: readonly string[];
-}
-
-/**
- * THE CATALOGUE OF A RUN THAT NAMES ITS SKILLS DIRECTLY — an agent profile's
- * (#4523). The lines are the ones `resolveRunSkills` mounts for the same
- * names: each repository skill's from the shipped corpus, each tenant skill's
- * from its approved version. They are measured by `measureCatalog`, the one
- * comparison the run itself is refused by, so a profile version's save and
- * approval cannot hold a different budget from its admission.
- *
- * Without the mount gate. This asks only "would these skills fit". Whether
- * each one may mount is asked before it: a profile's save and approval accept
- * only `mountableRepositorySkillNames` and refuse the rest by name, so a
- * skill the text scan or the gate refuses never reaches this measure from a
- * profile. Admission asks every run again, because a skill's record or text
- * can change after the version is approved.
- */
-export function runCatalogue(repositoryNames: readonly string[], tenantLines: readonly CatalogueLine[]): RunCatalogue {
-    const { lines, refused } = repositoryLines(shippedCorpus(), repositoryNames, 'named by the run but not in the shipped corpus');
-    return { ...measureCatalog([...lines, ...tenantLines]), refused };
 }
 
 /** The catalogue line of a tenant skill and the workflows it mounts on. */
@@ -401,7 +347,7 @@ export function workflowsOverBudget(
     tenantSkills: readonly TenantCatalogueEntry[],
 ): { key: string; bytes: number }[] {
     return workflowCatalogs(defs, tenantSkills)
-        .filter((w) => !withinCatalogBudget(w.bytes))
+        .filter((w) => w.bytes > MAX_CATALOG_BYTES)
         .map((w) => ({ key: w.key, bytes: w.bytes }));
 }
 

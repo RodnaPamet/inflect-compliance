@@ -25,6 +25,8 @@ jest.mock('node:dns', () => ({
 }));
 
 import { assertPublicAddress, isPrivateAddress, SsrfBlockedError } from '@/app-layer/automation/webhook-safety';
+import { functionBodyOf } from '../helpers/source-blocks';
+import { repoRelativeFiles } from '../helpers/repo-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -275,5 +277,123 @@ describe('SSRF — the OIDC client reaches the identity provider only through sa
 
     it("hands jose's key-set fetch to safeFetch, not jose's default global fetch", () => {
         expect(oidcKeySetFetchesThroughTheGuard()).toBe(true);
+    });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ *  THE LOCAL AI GATEWAY — the sink that must NOT route through safeFetch
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `TenantSecuritySettings.aiLocalBaseUrl` is a URL any `admin.manage` holder
+ * writes through `PUT /api/t/:slug/admin/security-settings`, validated as
+ * `z.string().url()` and nothing more. Two things used to ride on it from
+ * `ai/risk-assessment`: a bare `fetch`, and `AI_LOCAL_API_KEY` as a bearer —
+ * so a workspace admin could aim the server at `169.254.169.254` and collect
+ * the deployment's own gateway credential (#4545).
+ *
+ * IT IS NOT IN `SINKS` ABOVE, AND MUST NOT BE ADDED THERE. `assertPublicAddress`
+ * refuses private, loopback and link-local addresses, and a local inference
+ * gateway is *supposed* to be on one — `http://localhost:11434` for Ollama, an
+ * internal host for vLLM. Putting this behind the public-address check would
+ * delete the feature rather than harden it.
+ *
+ * So the defence is upstream of the dial, and this section asserts the shape of
+ * it: the tenant value is resolved by ONE function, `resolveLocalGateway`, which
+ * honours it only when it names the gateway this deployment already serves.
+ * With that in place there is no tenant-controlled URL left to guard.
+ *
+ * WHY THE POPULATION IS DERIVED RATHER THAN LISTED. The failure this catches is
+ * a THIRD reader of `env.AI_LOCAL_BASE_URL` appearing beside a tenant value and
+ * comparing it by hand — which is exactly how the two subsystems came to
+ * disagree in the first place: Flue had the rule, the risk factory did not, and
+ * nothing anywhere could tell you that. A curated list cannot catch its own
+ * omission, so the set of readers is read off the tree and asserted by exact
+ * equality against a classified set.
+ */
+const AI_LOCAL_BASE_URL_READERS: Record<string, string> = {
+    'src/env.ts': 'The declaration itself.',
+    'src/lib/ai/local-gateway.ts':
+        'THE one resolver. Every tenant value is decided here and nowhere else.',
+    'src/lib/agentic/flue/runtime-start.ts':
+        'Boot-time provider registration from the DEPLOYMENT value alone — no tenant ' +
+        'value is in scope, which is precisely why `resolveFlueModel` must refuse a ' +
+        'tenant gateway this registration cannot serve.',
+    'src/lib/agentic/flue/providers.ts':
+        'A string LITERAL naming the variable in a credential-source label, not a read.',
+    'src/app-layer/usecases/tenant-security-settings.ts':
+        'PRESENCE ONLY — `Boolean(env.AI_LOCAL_BASE_URL)` at two sites, reported to the ' +
+        'residency control as `deploymentHasLocalGateway` so the page can say what ' +
+        'LOCAL_ONLY will mean on this deployment. The address itself is never returned, ' +
+        'nothing is dialled, and no tenant value is compared against it — so the rule in ' +
+        '`local-gateway.ts` does not apply. Classified 2026-10-30: this guard caught the ' +
+        'reader when #4551 added it, which is what it is for.',
+};
+
+/** Both callers that resolve a TENANT-supplied gateway, and must share the rule. */
+const LOCAL_GATEWAY_CONSUMERS: { file: string; fn: string }[] = [
+    { file: 'src/app-layer/ai/risk-assessment/index.ts', fn: 'buildLocalProvider' },
+    { file: 'src/lib/agentic/flue/model-selection.ts', fn: 'resolveFlueModel' },
+];
+
+describe('SSRF — the local AI gateway is resolved in one place', () => {
+    it('exactly the classified files read env.AI_LOCAL_BASE_URL', () => {
+        // `repoRelativeFiles()` is git-backed, so the denominator is the tree
+        // rather than a hand-maintained skip list — the
+        // `source-scan-population` rule, and the reason a `.claude/worktrees`
+        // checkout once got scanned as if it were the repo.
+        const found = repoRelativeFiles()
+            .filter((f) => f.startsWith('src/') && /\.tsx?$/.test(f))
+            // The local `codeOf` reads the file AND strips comments: prose
+            // naming the variable is not a read of it.
+            .filter((f) => codeOf(f).includes('AI_LOCAL_BASE_URL'));
+
+        // Exact equality in BOTH directions. A new reader fails until somebody
+        // classifies it; a stale entry fails so the list cannot rot into
+        // describing files that no longer read it.
+        expect(found.sort()).toEqual(Object.keys(AI_LOCAL_BASE_URL_READERS).sort());
+    });
+
+    for (const { file, fn } of LOCAL_GATEWAY_CONSUMERS) {
+        describe(`${fn} in ${file}`, () => {
+            // Bound to the FUNCTION body, not the file. A whole-file needle here
+            // would be satisfied by the import line alone — the
+            // called-versus-imported hole `ai-guard-coverage`'s enforcement
+            // check turned out to have.
+            const body = () => functionBodyOf(codeOf(file), fn);
+
+            it('resolves the tenant gateway through the shared rule', () => {
+                expect(body()).toContain('resolveLocalGateway(');
+            });
+
+            it('never compares the tenant URL against the env var by hand', () => {
+                // A re-inlined comparison is how the two copies of this rule
+                // would drift apart again, and a drifted copy disagrees in the
+                // direction that grants access.
+                expect(body()).not.toContain('env.AI_LOCAL_BASE_URL');
+            });
+        });
+    }
+
+    it('the risk factory dials the RESOLVED url, never the tenant string', () => {
+        // The sharpest assertion in this section. Calling the resolver and then
+        // constructing the provider from `sel.localBaseUrl` anyway would satisfy
+        // every check above and leave the hole exactly as it was.
+        const body = functionBodyOf(
+            codeOf('src/app-layer/ai/risk-assessment/index.ts'),
+            'buildLocalProvider',
+        );
+        expect(body).toContain('new LocalRiskSuggestionProvider(\n        gateway.baseUrl,');
+        expect(body).not.toContain('new LocalRiskSuggestionProvider(\n        sel');
+    });
+
+    it('the resolver returns the deployment url, so no tenant string flows through', () => {
+        // `resolveLocalGateway` hands back `deployment`, not the tenant value,
+        // even in the equal case — so no caller can come to depend on the tenant
+        // string flowing through, and narrowing the rule later cannot silently
+        // change what is dialled.
+        const body = functionBodyOf(codeOf('src/lib/ai/local-gateway.ts'), 'resolveLocalGateway');
+        expect(body).toContain('return { served: true, baseUrl: deployment };');
+        expect(body).not.toContain('baseUrl: tenantBaseUrl');
     });
 });

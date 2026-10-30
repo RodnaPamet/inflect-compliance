@@ -13,6 +13,9 @@ import * as path from 'node:path';
 import { assertWidgetTypedShape } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 import { DEFAULT_ORG_DASHBOARD_PRESET } from '@/app-layer/usecases/org-dashboard-presets';
 import { codeOf } from '../helpers/source-blocks';
+import { OrgRole } from '@prisma/client';
+import { getOrgPermissions } from '@/lib/permissions';
+import { isOrgAdminTier } from '@/lib/org-roles';
 
 const ROOT = path.resolve(__dirname, '../..');
 /** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
@@ -70,11 +73,14 @@ describe('ORG_THREAT_LEVEL — set action (permission + audit)', () => {
         expect(usecase).toMatch(/sanitizePlainText/);
     });
 
-    it('canSetThreatLevel is an ORG_ADMIN-only permission flag', () => {
+    it('canSetThreatLevel is granted to the org admin tier and to no other role', () => {
         const perms = read('src/lib/permissions.ts');
         expect(perms).toMatch(/canSetThreatLevel: boolean/);
-        // ORG_ADMIN arm grants it; the others deny it.
-        expect((perms.match(/canSetThreatLevel: true/g) ?? []).length).toBe(1);
+        // Resolved, not counted in the source: ORG_OWNER and ORG_ADMIN are
+        // separate arms since #4576, and both grant it.
+        for (const role of Object.values(OrgRole)) {
+            expect([role, getOrgPermissions(role).canSetThreatLevel]).toEqual([role, isOrgAdminTier(role)]);
+        }
     });
 });
 

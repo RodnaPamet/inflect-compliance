@@ -70,7 +70,7 @@ export class LegacyMcpProvider implements IntegrationProvider {
     readonly id = LEGACY_MCP_PROVIDER_ID;
     readonly displayName = 'Legacy application (MCP)';
     readonly description =
-        'A read-only view of a legacy application\'s access tables, exposed through an MCP '
+        'A read-only view of a legacy application\'s access tables, exposed through a tool '
         + 'server the customer runs in front of it. Connecting one does not recertify '
         + 'anything: the accounts it exposes are reconciled against HR and a person confirms '
         + 'every link.';
@@ -89,7 +89,7 @@ export class LegacyMcpProvider implements IntegrationProvider {
     readonly mappingVerifiedBy = null;
 
     readonly setupGuide =
-        'Enter the HTTPS endpoint of the MCP server you run in front of the legacy '
+        'Enter the HTTPS endpoint of the tool server you run in front of the legacy '
         + 'application, and the bearer token it expects. Testing the connection performs a '
         + 'real handshake and reads the manifest, which tells you whether the server speaks '
         + 'the inflect-legacy-access/1 contract. The endpoint must be reachable on a public '
@@ -101,12 +101,14 @@ export class LegacyMcpProvider implements IntegrationProvider {
         configFields: [
             {
                 key: 'endpointUrl',
-                label: 'MCP server URL',
+                // Operator-facing: the product's word for the server, never the
+                // transport acronym (`agentic-naming-vocabulary.test.ts`, #4581).
+                label: 'Tool server URL',
                 type: 'string',
                 required: true,
                 description:
-                    'HTTPS endpoint of your MCP server, e.g. https://legacy-mcp.example.com/rpc',
-                placeholder: 'https://legacy-mcp.example.com/rpc',
+                    'HTTPS endpoint of your tool server, e.g. https://legacy-tools.example.com/rpc',
+                placeholder: 'https://legacy-tools.example.com/rpc',
             },
             {
                 key: 'applicationName',
@@ -141,7 +143,7 @@ export class LegacyMcpProvider implements IntegrationProvider {
 
         // Shape first, and separately, so an operator who left a field blank is told
         // which one rather than being sent to look at their server.
-        if (!url) return { valid: false, error: 'MCP server URL is required.' };
+        if (!url) return { valid: false, error: 'Tool server URL is required.' };
         if (!token) return { valid: false, error: 'Bearer token is required.' };
 
         try {

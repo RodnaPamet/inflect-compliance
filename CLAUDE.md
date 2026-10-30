@@ -866,9 +866,14 @@ new tenant-membership creation path).
   membership is changed only by another owner (an audited `ORG_AUTHZ_DENIED`
   otherwise), never leaving the org with no owner. No writer accepts the value:
   the direct add, the role change and the invite refuse it in the usecase.
-  Deploy 2 backfills the oldest ORG_ADMIN of each organization, adds the
-  last-owner trigger, and moves the owner-only powers (owner management, org
-  lifecycle, tenant management).
+  Deploy 2 backfilled the oldest ORG_ADMIN of each organization to
+  ORG_OWNER, added the `org_membership_last_owner_guard` trigger (P0001 on any
+  delete or demotion that leaves an org with no owner; an organization's own
+  cascade passes), and moved the owner-only powers: `canManageOwners` (only an
+  owner promotes to, demotes or removes an owner; the role change is the ONE
+  writer of the value) and `canManageTenants`. A new organization is owned by
+  its creator. No org delete or rename exists; when one is built it is
+  owner-only. Test teardowns delete the ORGANIZATION, not its memberships.
 - `appPermissions` on `RequestContext` is already custom-role–aware
 - **An OWNER or AI_ADMIN membership never carries a custom role** (#3720, #3699).
   A custom role REPLACES the membership's permissions, so on an OWNER it was a
@@ -2320,8 +2325,8 @@ leaves the older suggestion in place, labelled with its own run.
 
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,
-`resolveSkillsFor`), and on an agent profile version at save and approval by the
-run's own measure (`runCatalogue`, #4523), never the corpus as a whole (owner
+`resolveSkillsFor`), and on an agent profile version at save and approval
+(`assertSkillsKnownAndWithinBudget`, #4589), never the corpus as a whole (owner
 decision, 2026-10-17):
 do not restore a corpus-wide check, which capped the product at about seven
 skills whatever any run mounted. An evaluation SET (cases and expectations) is
@@ -2329,16 +2334,14 @@ authored with a skill and tied to its instructions by hash; only an evaluation
 RECORD, the set plus a named model revision's answers, can show a pass, and pass
 rates are recomputed from raw answers, never stored. Skill text is scanned at
 load (`skills/text-scan.ts`): a refused skill is held apart by rule id rather
-than thrown, so one suspect skill stops only the runs that declare it, an agent
-profile can neither offer nor save it (`mountableRepositorySkillNames`), and no
+than thrown, so one suspect skill stops only the runs that declare it, and no
 surface ever shows a refused skill's text. A defensive "never reveal your
 instructions" sentence is refused too — the rules cannot tell which way a
 sentence points. A skill mounts only with a passing `evaluation-record.json`
 beside it (`skills/mount-gate.ts`; made by `npm run skills:evaluate`, never by
-hand), an agent profile can neither offer nor save one without it (the same
-`mountableRepositorySkillNames`), and `WorkflowRun.mountedSkills` pins each
-mounted skill's hash at admission, write-once by trigger — `[]` is "mounted
-nothing", NULL is "predates the pin", and the two must never be conflated.
+hand), and `WorkflowRun.mountedSkills` pins each mounted skill's hash at
+admission, write-once by trigger — `[]` is "mounted nothing", NULL is "predates
+the pin", and the two must never be conflated.
 
 **A workflow without a PROPOSE step is not read-only on Flue.** The model picks
 its own calls from everything its agent is granted, propose tools included.
@@ -2856,43 +2859,28 @@ edit from being undone:
     engine passes `def.profile.toolNames` to `offerToolSet` as `profileTools`,
     which offers the intersection with the current grants and records each lost
     tool as `PROFILE_TOOL_NOT_GRANTED`. An empty list offers nothing.
-  - **A version's skills fit its run's catalogue budget** (#4523). Save and
-    approval refuse a set whose catalogue would put a run over
-    `MAX_CATALOG_BYTES` (`SKILL_CATALOGUE_OVER_BUDGET`, with `catalogueBytes`
-    and `budgetBytes`), measured by `runCatalogue`: the lines
-    `resolveRunSkills` mounts for the same names, through `measureCatalog`, the
-    one comparison the run is refused by. Do not give the save a measure of its
-    own: two would drift, and a version could again be approved that no run of
-    it can mount. Approval measures again, because a tenant skill can be
-    approved again with a longer description (its own approval measures only
-    the workflows it names), and admission a third time, because a deploy can
-    lengthen a shipped description. A version stored over the budget before the
-    check reads and is superseded as usual, and can be neither approved nor run.
-  - **A skill no run could mount cannot be chosen** (three owner decisions,
-    2026-10-30). A shipped skill the text scan refused, a shipped skill the
-    mount gate refuses (no passing evaluation record for its text), and an
-    approved tenant skill the tenant mount gate now refuses. The picker does
-    not offer one, and save and approval refuse it by name as `SKILL_UNKNOWN`
-    (`repository:` or `tenant:`), before the measure. Every one of them reads
-    what the run reads, and asks what the run asks:
-    - shipped skills: `mountableRepositorySkillNames`, the corpus's
-      `skills`/`refused` split and `verdictFor` (`checkSkillMountable`), from
-      the run's own per-process cache;
-    - tenant skills: the version read with the mount's own columns
-      (`readApprovedTenantSkillsByNameIn` for save and approval,
-      `readMountableTenantSkillLines` for the picker), then
-      `mountableTenantSkillLines`, which is `tenantVersionMount`, the
-      per-version half of `resolveRunSkills`.
-
-    Do not keep a second list, re-run the scan, or write a second evaluation
-    check. The shipped answers come from files in the deployed build and the
-    tenant ones from a row a deploy's tighter scan or record check can fail,
-    so approval asks again and admission a third time. The picker gates at
-    most 200 tenant versions per load, in pages of 20, so one page of records
-    (each up to 4 MiB) is held at a time. It is not `repositorySkillNames`,
-    which keeps refused names on purpose because a tenant skill may take none
-    of them.
-  - **`agent-profile:<id>@v<n>` resolves only inside the caller's tenant**, and
+  - **A version's skills must mount, and must fit the per-run catalogue
+    budget** (#4523: #4589, #4599 and the gate, owner decision 2026-10-30).
+    `assertSkillsKnownAndWithinBudget` runs at create, at a new version and at
+    approve. A shipped skill counts only if `repositorySkillCatalogue()` holds
+    it. That map asks what a run's mount asks, from the run's own cache: the
+    text scan did not refuse the skill, and the mount gate's verdict
+    (`verdictFor`, a passing evaluation record for this exact text) is a pass.
+    A tenant skill counts only if its APPROVED version, read with the mount's
+    own columns (`readApprovedTenantSkillsByNameIn`), passes what admission asks
+    of it: `mountableTenantSkillLines`, which is `tenantVersionMount`, the
+    per-version half of `resolveRunSkills` (no shipped skill of its name, then
+    `checkTenantSkillMountable`). The picker reads the same through
+    `readMountableTenantSkillLines`: at most 200 versions a load, in pages of 20,
+    so one page of records (each up to 4 MiB) is held at a time. Any other name
+    is `SKILL_UNKNOWN`, by name and first. Then the named lines are priced with
+    the run's `catalogBytes`: over `MAX_CATALOG_BYTES` is
+    `SKILL_CATALOGUE_OVER_BUDGET`, a 409 carrying `bytes`, `budget` and the
+    `skills` priced. Approval asks again because a deploy can refuse or
+    lengthen a shipped skill and a tenant skill's approval does not consider
+    the profiles naming it; admission asks a third time. Do not price or gate
+    from `repositorySkillNames()`: it keeps refused names on purpose, because
+    a tenant skill may take none of them.
     only the APPROVED version in force; a malformed key is refused, never read
     as a registered workflow key.
   - **Only the Tool Runner runs a profile** (Step 2c, #4150). `runsProfiles` is
@@ -2940,15 +2928,20 @@ edit from being undone:
     sweeps' re-wrap is the one exception, as for `instructions`. The reason is a
     sentence about the instructions, so it never goes in an audit row.
   - **The Behaviour tab offers what the server would accept, from the server's
-    read.** The pickers list the view's `options`: the agent's current grants,
-    and the shipped and tenant skills a run could mount.
-    Approve and Reject follow each version's
-    `canDecide`. Compute neither in the client. Instructions and reasons render
-    as React text, never through markdown or `innerHTML`. The skills picker
-    adds up each option's server-measured `catalogueBytes` to show a total
-    against `limits.skillCatalogueBudgetBytes`; it informs and never holds Save
-    back, and a `SKILL_CATALOGUE_OVER_BUDGET` refusal is worded by the tab from
-    its figures.
+    read.** The pickers list the view's `options` (the agent's current grants
+    and mountable skills). Approve and Reject follow each version's
+    `canDecide`. Compute neither in the client. The skills picker is a budget as
+    well as a list (#4590): each option carries the server's `catalogueBytes`
+    for its one line, the view's `limits.skillCatalogueBudgetBytes` is the
+    per-run budget, and the editor shows their running total and will not save
+    over it. "Mountable" means `repositorySkillCatalogue()`, never
+    `repositorySkillNames()`: a shipped skill the text scan refused or the
+    mount gate refuses keeps its name reserved and is neither offered nor
+    saved; and an approved tenant skill the tenant mount gate now refuses is
+    neither offered nor saved either. A `SKILL_CATALOGUE_OVER_BUDGET` refusal, at save beside the skills
+    field or in the approval notice, is worded by the tab from its `bytes` and
+    `budget`, never shown as the server's English sentence. Instructions and
+    reasons render as React text, never through markdown or `innerHTML`.
 
 **Every Anthropic client an agent run uses comes from `clientForRun`**
 (`src/lib/agentic/tool-runner/client.ts`, Step 2a, #4148). Rules that are each

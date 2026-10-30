@@ -59,6 +59,16 @@ async function main(): Promise<void> {
 
         let orgMembershipId: string | null = null;
         if (org) {
+            // #4576: never demote an owner (the last-owner trigger would refuse
+            // it anyway), and an organization with no owner gets this person
+            // as its owner rather than another admin.
+            const hasOwner =
+                (await prisma.orgMembership.count({ where: { organizationId: org.id, role: 'ORG_OWNER' } })) > 0;
+            const current = await prisma.orgMembership.findUnique({
+                where: { organizationId_userId: { organizationId: org.id, userId: user.id } },
+                select: { role: true },
+            });
+            const role = current?.role === 'ORG_OWNER' || !hasOwner ? 'ORG_OWNER' : 'ORG_ADMIN';
             const om = await prisma.orgMembership.upsert({
                 where: {
                     organizationId_userId: {
@@ -66,11 +76,11 @@ async function main(): Promise<void> {
                         userId: user.id,
                     },
                 },
-                update: { role: 'ORG_ADMIN' },
+                update: { role },
                 create: {
                     organizationId: org.id,
                     userId: user.id,
-                    role: 'ORG_ADMIN',
+                    role,
                 },
             });
             orgMembershipId = om.id;

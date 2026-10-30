@@ -222,10 +222,12 @@ async function main() {
         create: {
             organizationId: organization.id,
             userId: ciso.id,
-            role: 'ORG_ADMIN',
+            role: 'ORG_OWNER',
         },
     });
-    console.log('✅ Org membership created (CISO as ORG_ADMIN)');
+    // The seeded organization's owner (#4576): tenant management under the
+    // org is owner-only, and an organization is never left without one.
+    console.log('✅ Org membership created (CISO as ORG_OWNER)');
 
     // Auto-provisioned AUDITOR fan-out. In production this is the
     // job of `provisionOrgAdminToTenants` (Epic O-2); the seed

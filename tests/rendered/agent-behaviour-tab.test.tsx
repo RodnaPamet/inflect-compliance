@@ -12,10 +12,7 @@
  *   • the tool picker offers exactly the tools the agent is granted;
  *   • Test run (Step 2c) starts the version's run and opens the Runs tab when
  *     it can, and otherwise is disabled, says why, and starts nothing;
- *   • a refusal from the save is shown beside the field it concerns;
- *   • the skills picker shows the chosen skills' catalogue bytes against the
- *     per-run budget, from the server's figures, and a refusal on that budget,
- *     at save or at approval, is worded by the tab from its figures (#4523).
+ *   • a refusal from the save is shown beside the field it concerns.
  */
 import * as React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -78,6 +75,7 @@ import { BehaviourTab } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/B
 import type { ProfileVersionView, ProfileView } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/behaviour-types';
 
 const EN = jest.requireActual('../../messages/en.json') as { agents: { behaviour: Record<string, unknown> } };
+const EDITOR = EN.agents.behaviour.editor as Record<string, string>;
 const copy = (path: string, params: Record<string, string | number> = {}): string => {
     let v = path.split('.').reduce<unknown>(
         (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
@@ -383,6 +381,129 @@ describe('the editor', () => {
         expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
     });
 
+    describe('the skill catalogue budget (#4590)', () => {
+        const SKILLS = [
+            { origin: 'repository' as const, name: 'risk-register-review', catalogueBytes: 1_500 },
+            { origin: 'tenant' as const, name: 'our-own-skill', catalogueBytes: 1_000 },
+        ];
+        const withSkills = (skillRefs: ProfileVersionView['skillRefs']) =>
+            view([version({ skillRefs })], { options: { tools: ['list_controls', 'list_risks'], skills: SKILLS } });
+
+        it('shows the running total of the chosen skills against the budget', async () => {
+            renderTab(withSkills([{ origin: 'repository', name: 'risk-register-review' }]));
+            fireEvent.click(screen.getByTestId('behaviour-write'));
+            await screen.findByTestId('behaviour-editor');
+            expect(screen.getByTestId('behaviour-skills-budget').textContent).toBe(
+                EDITOR.skillsBudget.replace('{used}', '1500').replace('{budget}', '2048'),
+            );
+            expect(screen.getByTestId('behaviour-editor-save')).toBeEnabled();
+        });
+
+        it('over the budget, says so beside the skills field and does not let the save happen', async () => {
+            renderTab(
+                withSkills([
+                    { origin: 'repository', name: 'risk-register-review' },
+                    { origin: 'tenant', name: 'our-own-skill' },
+                ]),
+            );
+            fireEvent.click(screen.getByTestId('behaviour-write'));
+            const editor = await screen.findByTestId('behaviour-editor');
+            expect(document.getElementById('behaviour-skills-error')?.textContent).toBe(
+                EDITOR.skillsOverBudget.replace('{used}', '2500').replace('{budget}', '2048'),
+            );
+            expect(within(editor).getByTestId('behaviour-editor-save')).toBeDisabled();
+            await act(async () => {
+                fireEvent.submit(editor);
+            });
+            expect(fetchMock).not.toHaveBeenCalled();
+        });
+
+        it('sends each chosen skill as its ref only, never the cost the view carried', async () => {
+            renderTab(withSkills([{ origin: 'tenant', name: 'our-own-skill' }]));
+            fireEvent.click(screen.getByTestId('behaviour-write'));
+            const editor = await screen.findByTestId('behaviour-editor');
+            fetchMock.mockResolvedValue(ok({ profileId: 'prof-1', versionId: 'ver-9', version: 9 }));
+            await act(async () => {
+                fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+            });
+            expect(JSON.parse(fetchMock.mock.calls[0][1].body).skillRefs).toEqual([{ origin: 'tenant', name: 'our-own-skill' }]);
+        });
+
+        it('a server refusal over the budget is shown beside the skills field', async () => {
+            renderTab(withSkills([]));
+            fireEvent.click(screen.getByTestId('behaviour-write'));
+            const editor = await screen.findByTestId('behaviour-editor');
+            const message = 'These 2 skills would cost 2500 bytes of catalogue on every turn, over the 2048 budget.';
+            fetchMock.mockResolvedValue(refused('SKILL_CATALOGUE_OVER_BUDGET', message, 409));
+            await act(async () => {
+                fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+            });
+            expect(document.getElementById('behaviour-skills-error')?.textContent).toBe(message);
+            expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
+        });
+
+        /** #4589's refusal as the server sends it: a 409 whose details carry the figures. */
+        const SERVER_SENTENCE = 'These 2 skills would cost 2600 bytes of catalogue on every turn, over the 2048 budget.';
+        const overBudget = () => ({
+            ok: false,
+            status: 409,
+            json: async () => ({
+                error: {
+                    code: 'CONFLICT',
+                    message: SERVER_SENTENCE,
+                    details: {
+                        reason: 'SKILL_CATALOGUE_OVER_BUDGET',
+                        bytes: 2_600,
+                        budget: 2_048,
+                        skills: ['repository:risk-register-review', 'tenant:our-own-skill'],
+                    },
+                },
+            }),
+        });
+        const TRANSLATED = copy('refusal.SKILL_CATALOGUE_OVER_BUDGET', { used: 2_600, budget: 2_048 });
+
+        it('a save the server refuses over the budget is worded from its figures, beside the skills field', async () => {
+            // Within the budget by the view's figures, so Save is open: the
+            // skills cost more by the time the save prices them.
+            renderTab(withSkills([{ origin: 'tenant', name: 'our-own-skill' }]));
+            fireEvent.click(screen.getByTestId('behaviour-write'));
+            const editor = await screen.findByTestId('behaviour-editor');
+            fetchMock.mockResolvedValue(overBudget());
+            await act(async () => {
+                fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+            });
+            expect(TRANSLATED).toContain('2600');
+            expect(TRANSLATED).toContain('2048');
+            expect(document.getElementById('behaviour-skills-error')?.textContent).toBe(TRANSLATED);
+            expect(screen.queryByText(SERVER_SENTENCE)).toBeNull();
+            expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
+            expect(toastError).toHaveBeenCalledWith(TRANSLATED);
+        });
+
+        it('an approval the server refuses over the budget is worded from its figures', async () => {
+            renderTab(
+                view([SUBMITTED({ skillRefs: [{ origin: 'tenant', name: 'our-own-skill' }] }), version()], {
+                    options: { tools: ['list_controls', 'list_risks'], skills: SKILLS },
+                }),
+            );
+            fetchMock.mockResolvedValue(overBudget());
+            await act(async () => {
+                fireEvent.click(screen.getByTestId('behaviour-approve'));
+            });
+            expect(screen.getByTestId('behaviour-act-error').textContent).toBe(TRANSLATED);
+            expect(screen.queryByText(SERVER_SENTENCE)).toBeNull();
+            expect(toastError).toHaveBeenCalledWith(TRANSLATED);
+        });
+
+        it('the Bulgarian refusal words the same figures', () => {
+            const BG = jest.requireActual('../../messages/bg.json') as { agents: { behaviour: { refusal: Record<string, string> } } };
+            const text = BG.agents.behaviour.refusal.SKILL_CATALOGUE_OVER_BUDGET;
+            expect(text.length).toBeGreaterThan(0);
+            expect(text).not.toBe(copy('refusal.SKILL_CATALOGUE_OVER_BUDGET'));
+            expect(text.includes('{used}') && text.includes('{budget}')).toBe(true);
+        });
+    });
+
     it('starts from the open version and says that saving retires it', async () => {
         renderTab(view([SUBMITTED(), version()]));
         fireEvent.click(screen.getByTestId('behaviour-write'));
@@ -400,88 +521,6 @@ describe('the editor', () => {
         expect(screen.queryByTestId('behaviour-editor-supersedes')).toBeNull();
         // No tool chosen yet: nothing can be saved.
         expect((screen.getByTestId('behaviour-editor-save') as HTMLButtonElement).disabled).toBe(true);
-    });
-});
-
-describe('the catalogue budget (#4523)', () => {
-    const SKILLS: ProfileView['options']['skills'] = [
-        { origin: 'repository', name: 'alpha-skill', catalogueBytes: 900 },
-        { origin: 'repository', name: 'beta-skill', catalogueBytes: 1_000 },
-        { origin: 'tenant', name: 'gamma-skill', catalogueBytes: 200 },
-    ];
-    const withSkills = (versions: ProfileVersionView[]) => view(versions, { options: { tools: ['list_risks'], skills: SKILLS } });
-    const ALPHA_BETA = [
-        { origin: 'repository' as const, name: 'alpha-skill' },
-        { origin: 'repository' as const, name: 'beta-skill' },
-    ];
-    /** The server's English sentence, which the tab must not show for this refusal. */
-    const SERVER_SENTENCE = 'These skills put 2049 bytes in every prompt of a run, over the 2048-byte budget.';
-    const overBudget = (status = 400) => ({
-        ok: false,
-        status,
-        json: async () => ({
-            error: {
-                code: 'BAD_REQUEST',
-                message: SERVER_SENTENCE,
-                details: { reason: 'SKILL_CATALOGUE_OVER_BUDGET', catalogueBytes: 2_049, budgetBytes: 2_048 },
-            },
-        }),
-    });
-    const TRANSLATED = copy('refusal.SKILL_CATALOGUE_OVER_BUDGET', { used: 2_049, budget: 2_048 });
-
-    it('the picker shows the chosen skills\' bytes against the budget, from the server\'s figures, and says when they are over', async () => {
-        const user = userEvent.setup();
-        renderTab(withSkills([version({ skillRefs: ALPHA_BETA })]));
-        await user.click(screen.getByTestId('behaviour-write'));
-        await screen.findByTestId('behaviour-editor');
-        expect(screen.getByTestId('behaviour-editor-catalogue').textContent).toBe(copy('editor.catalogue', { used: 1_900, budget: 2_048 }));
-
-        await user.click(document.getElementById('behaviour-skills') as HTMLElement);
-        const listbox = await screen.findByRole('listbox');
-        await user.click(within(listbox).getByRole('option', { name: copy('editor.skillOption.tenant', { name: 'gamma-skill' }) }));
-        expect(screen.getByTestId('behaviour-editor-catalogue').textContent).toBe(
-            copy('editor.catalogueOver', { used: 2_100, budget: 2_048 }),
-        );
-        // The total informs; the save decides. Save is not held back on it.
-        expect((screen.getByTestId('behaviour-editor-save') as HTMLButtonElement).disabled).toBe(false);
-    });
-
-    it('a save refused on the budget is worded from its figures, beside the skills, and posts only names', async () => {
-        renderTab(withSkills([version({ skillRefs: ALPHA_BETA })]));
-        fireEvent.click(screen.getByTestId('behaviour-write'));
-        const editor = await screen.findByTestId('behaviour-editor');
-        fetchMock.mockResolvedValue(overBudget());
-        await act(async () => {
-            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
-        });
-        expect(JSON.parse(fetchMock.mock.calls[0][1].body).skillRefs).toEqual(ALPHA_BETA);
-        expect(document.getElementById('behaviour-skills-error')?.textContent).toBe(TRANSLATED);
-        expect(TRANSLATED).toContain('2049');
-        expect(TRANSLATED).toContain('2048');
-        expect(screen.queryByText(SERVER_SENTENCE)).toBeNull();
-        expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
-        expect(toastError).toHaveBeenCalledWith(TRANSLATED);
-    });
-
-    it('an approval refused on the budget is worded from its figures', async () => {
-        renderTab(withSkills([SUBMITTED({ skillRefs: ALPHA_BETA }), version()]));
-        fetchMock.mockResolvedValue(overBudget());
-        await act(async () => {
-            fireEvent.click(screen.getByTestId('behaviour-approve'));
-        });
-        expect(screen.getByTestId('behaviour-act-error').textContent).toBe(TRANSLATED);
-        expect(screen.queryByText(SERVER_SENTENCE)).toBeNull();
-    });
-
-    it('the Bulgarian catalogue words the same figures', () => {
-        const BG = jest.requireActual('../../messages/bg.json') as { agents: { behaviour: Record<string, Record<string, string>> } };
-        const texts = [
-            BG.agents.behaviour.refusal.SKILL_CATALOGUE_OVER_BUDGET,
-            BG.agents.behaviour.editor.catalogue,
-            BG.agents.behaviour.editor.catalogueOver,
-        ];
-        expect(texts.every((text) => typeof text === 'string' && text.length > 0)).toBe(true);
-        expect(texts.filter((text) => !text.includes('{used}') || !text.includes('{budget}'))).toEqual([]);
     });
 });
 

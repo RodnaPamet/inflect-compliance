@@ -4833,10 +4833,10 @@
       "colPermissions": "Permissions",
       "editRole": "Edit role",
       "deleteRole": "Delete role",
-      "nameLabel": "Role Name *",
+      "nameLabel": "Role name",
       "namePlaceholder": "e.g. Compliance Lead",
-      "baseRoleLabel": "Base Role (fallback)",
-      "baseRoleHint": "Used for coarse authorization when custom permissions don't apply.",
+      "baseRoleLabel": "Base role",
+      "baseRoleHint": "Members carrying this role count as this role wherever Inflect checks a level of role rather than a single permission. The grid starts from its permissions.",
       "descriptionLabel": "Description",
       "descriptionPlaceholder": "Optional — describe what this role is for",
       "showGrid": "Show Permission Grid",
@@ -6032,6 +6032,404 @@
         "mcp-server": "External tool server",
         "a2a-peer": "A2A peer agent (outbound)",
         "sharepoint": "Microsoft SharePoint"
+      },
+      "providerText": {
+        "github": {
+          "description": "GitHub repository compliance checks — branch protection, security settings",
+          "fields": {
+            "owner": {
+              "label": "Repository Owner",
+              "description": "GitHub organization or user name"
+            },
+            "repo": {
+              "label": "Repository",
+              "description": "Repository name to check"
+            },
+            "branch": {
+              "label": "Branch",
+              "description": "Branch to verify protection rules on (default: main)"
+            },
+            "token": {
+              "label": "Personal Access Token",
+              "description": "GitHub PAT with repo scope"
+            },
+            "webhookSecret": {
+              "label": "Webhook Secret",
+              "description": "Optional: webhook signing secret for incoming events"
+            }
+          }
+        },
+        "aws-posture": {
+          "description": "AWS configuration-compliance evidence via the Powerpipe steampipe-mod-aws-compliance benchmark (read-only).",
+          "setupGuide": "Runs Powerpipe + the AWS CLI on the collector host — both must be installed there, with `aws configure` set to a read-only role. Pick the benchmark (SOC 2 or CIS) to select which Powerpipe checks run. Test connection performs a live `aws sts get-caller-identity`.",
+          "fields": {
+            "benchmark": {
+              "label": "Benchmark",
+              "description": "Powerpipe benchmark to run"
+            },
+            "region": {
+              "label": "Primary AWS region"
+            },
+            "accountId": {
+              "label": "AWS account id"
+            },
+            "roleArn": {
+              "label": "Read-only role ARN",
+              "description": "Preferred: an assume-role ARN with a read-only policy"
+            },
+            "externalId": {
+              "label": "External ID",
+              "description": "External id for the assume-role trust policy"
+            },
+            "accessKeyId": {
+              "label": "Access key id",
+              "description": "Alternative to role: a read-only access key"
+            },
+            "secretAccessKey": {
+              "label": "Secret access key"
+            },
+            "sessionToken": {
+              "label": "Session token"
+            }
+          }
+        },
+        "okta": {
+          "description": "Sync the Okta directory and verify MFA enrolment, dormant admins, admin count, and SSO federation.",
+          "setupGuide": "Create an API token in Okta (Security → API → Tokens) scoped to a read-only admin, and paste it below with your org URL (https://your-org.okta.com). Test connection performs a live directory ping. This connector runs directory/posture checks — it is separate from Okta SSO login.",
+          "fields": {
+            "orgUrl": {
+              "label": "Okta org URL"
+            },
+            "maxAdmins": {
+              "label": "Max active admins",
+              "description": "Threshold for admin_count_within_threshold (default 5)."
+            },
+            "dormantDays": {
+              "label": "Dormant admin threshold (days)",
+              "description": "Admin considered dormant after this many days idle (default 90)."
+            },
+            "enrichPerUser": {
+              "label": "Per-user MFA + admin enrichment",
+              "description": "Fetch each user’s factors + roles so MFA / admin checks measure real signals. Disable on very large directories (default on)."
+            },
+            "apiToken": {
+              "label": "API token (SSWS)",
+              "description": "A read-only Okta API token."
+            }
+          }
+        },
+        "google-workspace": {
+          "description": "Sync the Google Workspace directory and verify 2-Step Verification, dormant admins, admin count, and SSO.",
+          "setupGuide": "Create a service account, enable domain-wide delegation, and authorise its client ID in the Admin console for the Directory + (optional) inbound-SSO read-only scopes. Paste the whole service-account key JSON below and the super-admin it impersonates above. Test connection performs a live token exchange and directory read, so it fails if the delegation has been revoked or the scopes are not authorised.",
+          "fields": {
+            "domain": {
+              "label": "Primary domain"
+            },
+            "adminEmail": {
+              "label": "Admin to impersonate",
+              "description": "A super-admin the service account impersonates via domain-wide delegation."
+            },
+            "maxAdmins": {
+              "label": "Max active admins",
+              "description": "Threshold for admin_count_within_threshold (default 5)."
+            },
+            "dormantDays": {
+              "label": "Dormant admin threshold (days)",
+              "description": "Admin considered dormant after this many days idle (default 90)."
+            },
+            "enrichSso": {
+              "label": "SAML SSO enrichment",
+              "description": "Read inbound SAML assignments so the SSO check reflects real coverage (default on; needs the cloud-identity.inboundsso.readonly scope)."
+            },
+            "serviceAccountJson": {
+              "label": "Service-account JSON",
+              "description": "A domain-wide-delegated service-account key (JSON) — paste the whole file."
+            }
+          }
+        },
+        "entra-id": {
+          "description": "Sync the Microsoft Entra ID (Azure AD) directory — including on-prem AD identities synced via Azure AD Connect — and verify MFA registration, dormant admins, admin count, and SSO federation.",
+          "setupGuide": "In the Microsoft Entra admin center, register an application and grant it the application (not delegated) Microsoft Graph permissions User.Read.All, Directory.Read.All, and AuditLog.Read.All (the last enables MFA-registration + last-sign-in signals; without it those checks report Not applicable). Create a client secret, then paste the Directory (tenant) ID and Application (client) ID below with the secret. Test connection performs a live directory ping. On-prem Active Directory synced to Entra via Azure AD Connect is READ here for posture checks, but accounts mastered on-prem cannot be disabled through Graph — those writes are reverted by the next sync cycle, so offboarding them needs the separate on-prem Active Directory (LDAPS) connector. This connector runs directory/posture checks; it is separate from Entra SSO login. If you also want leaver offboarding to DISABLE accounts here, turn on \"Allow offboarding writes\" and grant the application permission User.EnableDisableAccount.All — none of the three read permissions above permits a write, Directory.Read.All included, and client-credentials tokens carry exactly what an administrator has already consented, so an existing connection keeps failing every disable until that consent is granted. If you want joiner onboarding to CREATE accounts here, turn on \"Allow joiner credential issuance\" and grant User.ReadWrite.All and Policy.Read.All: the joining credential is a Temporary Access Pass, which is governed by the authentication-methods policy and cannot be minted without reading it. The two switches are separate and neither implies the other — consenting the permissions alone changes nothing until the matching switch is on.",
+          "fields": {
+            "tenantId": {
+              "label": "Directory (tenant) ID"
+            },
+            "clientId": {
+              "label": "Application (client) ID"
+            },
+            "maxAdmins": {
+              "label": "Max active admins",
+              "description": "Threshold for admin_count_within_threshold (default 5)."
+            },
+            "dormantDays": {
+              "label": "Dormant admin threshold (days)",
+              "description": "Admin considered dormant after this many days idle (default 90)."
+            },
+            "enrichMfa": {
+              "label": "MFA registration enrichment",
+              "description": "Read the authentication-methods registration report so the MFA check reflects real enrolment (default on; needs AuditLog.Read.All)."
+            },
+            "enrichFederation": {
+              "label": "SSO federation enrichment",
+              "description": "Derive per-user SSO from each domain’s authentication type so the SSO check reflects real federation (default on)."
+            },
+            "writesEnabled": {
+              "label": "Allow offboarding writes",
+              "description": "Let leaver offboarding DISABLE accounts in this directory. Off by default. Additionally requires an administrator to consent the application permission User.EnableDisableAccount.All — the three read permissions above do not permit a write."
+            },
+            "joinerWritesEnabled": {
+              "label": "Allow joiner credential issuance",
+              "description": "Let joiner onboarding CREATE accounts here and mint their first credential as a Temporary Access Pass. Off by default. Additionally requires an administrator to consent the application permissions User.ReadWrite.All (to create) and Policy.Read.All (a Temporary Access Pass is governed by the authentication-methods policy, which cannot be minted without reading it). Never a password and never a password fallback: if Temporary Access Pass is disabled by policy the pass refuses, because a silent downgrade is a different security posture from the one you configured."
+            },
+            "clientSecret": {
+              "label": "Client secret",
+              "description": "A client secret for the app registration."
+            }
+          }
+        },
+        "active-directory": {
+          "description": "Bind to an on-premises Active Directory domain controller over LDAPS and verify dormant admins and admin count. For MFA / SSO posture on AD, use the Microsoft Entra ID connector.",
+          "setupGuide": "Provide an LDAPS URL for a reachable domain controller (ldaps://dc.corp.example.com:636), the search base DN (DC=corp,DC=example,DC=com), and a read-only service-account bind DN + password. The app must be able to reach the DC over TLS (public LDAPS or a VPN/tunnel). On-prem AD exposes no MFA or SSO-federation attribute, so those two checks report Not applicable — use the Entra ID connector for MFA/SSO posture. If your AD is synced to Entra via Azure AD Connect, prefer the Entra ID connector instead.",
+          "fields": {
+            "url": {
+              "label": "LDAPS URL"
+            },
+            "baseDN": {
+              "label": "Base DN",
+              "description": "Search base for the user enumeration."
+            },
+            "adminGroups": {
+              "label": "Admin groups",
+              "description": "Comma-separated group names treated as admin (default: Domain Admins, Enterprise Admins, Administrators, Schema Admins). Direct membership only."
+            },
+            "maxAdmins": {
+              "label": "Max active admins",
+              "description": "Threshold for admin_count_within_threshold (default 5)."
+            },
+            "dormantDays": {
+              "label": "Dormant admin threshold (days)",
+              "description": "Admin considered dormant after this many days idle (default 90)."
+            },
+            "allowSelfSignedTls": {
+              "label": "Allow self-signed TLS",
+              "description": "Skip TLS certificate verification for an internal/enterprise CA (default off — verification on)."
+            },
+            "writesEnabled": {
+              "label": "Allow offboarding writes",
+              "description": "Let leaver offboarding DISABLE accounts in this directory. Off by default: connecting a directory grants reading only, and this is the separate, per-connection decision that it may also be written to. It does NOT permit creating accounts."
+            },
+            "createOU": {
+              "label": "Creation OU",
+              "description": "Where a joiner create lands. Must sit under the base DN above — an account created outside that scope cannot be found by the leaver pass, so it could be provisioned and never offboarded. Leave empty and creates are refused."
+            },
+            "bindDN": {
+              "label": "Bind DN (service account)",
+              "description": "A read-only service account DN or userPrincipalName, e.g. CN=svc-inflect,OU=Service,DC=corp,DC=example,DC=com."
+            },
+            "bindPassword": {
+              "label": "Bind password",
+              "description": "Password for the bind service account."
+            },
+            "writeBindDN": {
+              "label": "Write bind DN (optional)",
+              "description": "Separate service account used only for offboarding writes. Needs Write permission on the userAccountControl property of user objects, delegated at the OU holding them — NOT Account Operators and NOT Domain Admins. Leave blank to reuse the read bind."
+            },
+            "writeBindPassword": {
+              "label": "Write bind password (optional)",
+              "description": "Password for the write service account. Required if a write bind DN is set."
+            }
+          }
+        },
+        "legacy-mcp": {
+          "description": "A read-only view of a legacy application's access tables, exposed through a tool server the customer runs in front of it. Connecting one does not recertify anything: the accounts it exposes are reconciled against HR and a person confirms every link.",
+          "setupGuide": "Enter the HTTPS endpoint of the tool server you run in front of the legacy application, and the bearer token it expects. Testing the connection performs a real handshake and reads the manifest, which tells you whether the server speaks the inflect-legacy-access/1 contract. The endpoint must be reachable on a public address over HTTPS: private, loopback and link-local addresses are refused, redirects are not followed, and changing the endpoint later requires re-entering the token.",
+          "fields": {
+            "endpointUrl": {
+              "label": "Tool server URL",
+              "description": "HTTPS endpoint of your tool server, e.g. https://legacy-tools.example.com/rpc"
+            },
+            "applicationName": {
+              "label": "Application name",
+              "description": "What to call this application in reviews and findings. Defaults to the name the server reports in its manifest."
+            },
+            "bearerToken": {
+              "label": "Bearer token",
+              "description": "Sent as an Authorization: Bearer header. It is encrypted at rest and is never returned by the API, shown in a validation message, written to a log line or recorded in an audit row."
+            }
+          }
+        },
+        "azure-posture": {
+          "description": "Run a CIS / SOC 2 benchmark against an Azure subscription (read-only) and collect per-control evidence.",
+          "setupGuide": "Runs Powerpipe on the collector host against an Azure subscription. Register an app (service principal) with the Reader role on the subscription, and provide its tenant id, subscription id, client id + secret. Test connection validates field shape only — it does not call Azure live.",
+          "fields": {
+            "benchmark": {
+              "label": "Benchmark"
+            },
+            "tenantId": {
+              "label": "Azure AD tenant id"
+            },
+            "subscriptionId": {
+              "label": "Subscription id"
+            },
+            "clientId": {
+              "label": "Service-principal client id"
+            },
+            "clientSecret": {
+              "label": "Service-principal client secret"
+            }
+          }
+        },
+        "gcp-posture": {
+          "description": "Run a CIS / SOC 2 benchmark against a GCP project (read-only) and collect per-control evidence.",
+          "setupGuide": "Runs Powerpipe on the collector host against a GCP project. Create a read-only service account, grant it the security-reviewer role on the project, and paste its key JSON below. Test connection validates the JSON shape only — it does not call GCP live.",
+          "fields": {
+            "benchmark": {
+              "label": "Benchmark"
+            },
+            "projectId": {
+              "label": "GCP project id"
+            },
+            "serviceAccountJson": {
+              "label": "Service-account JSON",
+              "description": "A read-only service-account key (JSON) — paste the whole file."
+            }
+          }
+        },
+        "bamboohr": {
+          "description": "Sync the employee roster from BambooHR into the personnel hub.",
+          "setupGuide": "Generate a BambooHR API key (your profile → API Keys) and provide it with your company subdomain (the part before .bamboohr.com). Test connection validates field shape only — it does not call BambooHR live.",
+          "fields": {
+            "subdomain": {
+              "label": "BambooHR company subdomain"
+            },
+            "apiKey": {
+              "label": "API key",
+              "description": "A read-only BambooHR API key."
+            }
+          }
+        },
+        "workday": {
+          "description": "Sync the worker roster from Workday into the personnel hub.",
+          "setupGuide": "In Workday, register an API Client for Integrations with the Staffing scope and a redirect URI, then publish the Inflect roster report as a RaaS custom report. Provide the tenant host, tenant name, report path, and the client id + secret. Test connection performs a real token exchange against your tenant.",
+          "fields": {
+            "host": {
+              "label": "Workday host"
+            },
+            "tenant": {
+              "label": "Workday tenant"
+            },
+            "reportPath": {
+              "label": "RaaS report path"
+            },
+            "clientId": {
+              "label": "API client id"
+            },
+            "clientSecret": {
+              "label": "API client secret",
+              "description": "The secret from the Workday API Client for Integrations."
+            }
+          }
+        },
+        "orangehrm": {
+          "description": "An OrangeHRM directory, read for the HRIS roster. Supports the OAuth2 client-credentials grant against an instance on a host covered by ORANGEHRM_HOSTS.",
+          "setupGuide": "Stand up an OrangeHRM instance on a host covered by ORANGEHRM_HOSTS, register an API client for the OAuth2 client-credentials grant, and provide the instance URL with the client id and secret. Test connection performs a real token exchange against the instance.",
+          "fields": {
+            "baseUrl": {
+              "label": "OrangeHRM instance URL"
+            },
+            "clientId": {
+              "label": "API client id"
+            },
+            "writeBackEnabled": {
+              "label": "Allow HRIS write-back",
+              "description": "Let the JML write-back preflight use this connection. Off by default, and separate from directory write consent. No HRIS write exists yet — turning this on permits a read-only check that the stored credential can reach the record and the field a future write would target."
+            },
+            "clientSecret": {
+              "label": "API client secret",
+              "description": "The secret from the OrangeHRM API client."
+            }
+          }
+        },
+        "personnel": {
+          "description": "Internal checks over the personnel roster: offboarded access, onboarding SLA, manager coverage."
+        },
+        "device": {
+          "description": "Internal checks over the device inventory: disk encryption, screen lock, antivirus, password manager."
+        },
+        "training": {
+          "description": "Internal checks over security-awareness training completion and background-check status."
+        },
+        "servicenow": {
+          "description": "Change-management evidence from ServiceNow — approvals on production changes.",
+          "setupGuide": "Create a dedicated ServiceNow integration user with read access to the change_request table (a scoped read-only role is enough — this connection never writes). Provide the instance host, the table, and how far back each run should look. Test connection performs a real authenticated read of that table, so an integration user without an ACL on it is reported at setup rather than at 05:00.",
+          "fields": {
+            "instance": {
+              "label": "ServiceNow instance"
+            },
+            "table": {
+              "label": "Table"
+            },
+            "windowDays": {
+              "label": "Look-back window (days)",
+              "description": "How far back each run reads. Should be at least as long as the control period."
+            },
+            "username": {
+              "label": "Integration user"
+            },
+            "password": {
+              "label": "Integration user password",
+              "description": "The password for the dedicated read-only integration user."
+            }
+          }
+        },
+        "mcp-server": {
+          "description": "An external Model Context Protocol server an agent can be granted tools on. Connecting one does not grant anything: its tools must be reviewed and pinned, then granted to a specific registered agent, before any run can call them.",
+          "setupGuide": "Enter the server's HTTPS endpoint, then choose how it authenticates. A server behind Microsoft Entra takes the tenant ID, client ID and client secret, plus EITHER a refresh token (delegated — every token carries a named person's privileges, so an agent can never see more than that person) OR a token scope (app-only — no such ceiling, and the scope must name your server's own audience). Anything else takes a static Authorization header value, which works but expires with the token you paste. Testing the connection performs a real handshake with the tool server and reports how many tools it advertises. Those tools are NOT usable yet: an administrator reviews and approves them, and they must then be granted to a registered agent. The server must be reachable on a public address over HTTPS — private and link-local addresses are refused, and redirects are not followed.",
+          "fields": {
+            "url": {
+              "label": "Server URL",
+              "description": "HTTPS endpoint of the tool server, e.g. https://tools.example.com/rpc"
+            },
+            "tenantId": {
+              "label": "Entra tenant ID",
+              "description": "For a server behind Microsoft Entra. Leave blank for a server that takes a static credential."
+            },
+            "clientId": {
+              "label": "Application (client) ID",
+              "description": "The app registration authorized against this tool server."
+            },
+            "scope": {
+              "label": "Token scope (audience)",
+              "description": "The resource this server's token is for, e.g. https://tools.example.com/.default. REQUIRED for app-only access (client secret, no refresh token) — there is no safe default, because a token minted for the wrong audience is refused as an invalid token rather than as a bad secret. Optional for delegated access, which defaults to the tool-server resource Microsoft Entra provides."
+            },
+            "authorization": {
+              "label": "Authorization header",
+              "description": "Sent verbatim as the Authorization header, e.g. \"Bearer …\". Leave blank for a server that needs no credential, or use the Entra fields below — a pasted token expires and the connection stops working with it."
+            },
+            "clientSecret": {
+              "label": "Client secret",
+              "description": "The app registration's secret. Required with the Entra fields."
+            },
+            "refreshToken": {
+              "label": "Refresh token",
+              "description": "Obtained once, interactively. Exchanged for a short-lived access token on demand, so the connection keeps working — the access token is never stored. Supplying it selects DELEGATED access, where every token carries a named person's privileges and an agent can never see more than that person. Leave it blank, with a scope set, for APP-ONLY access, which has no such ceiling."
+            }
+          }
+        },
+        "a2a-peer": {
+          "description": "The route an agent's task to a registered A2A peer agent is sent through. Connecting one grants nothing: the send is offered to an agent only once it is granted the tool, this connection is above DISABLED on the external write ladder, and the peer's agent card is pinned by a person and still matches its pin.",
+          "setupGuide": "Register and pin the peer first, under Agents → Peers. Then name it here by its peer id. If the peer issued Inflect a credential, paste it as the Authorization header value (for example \"Bearer …\"); it is encrypted at rest and sent only to the endpoint in that peer's pinned card. The connection starts at DISABLED on the external write ladder and is widened one rung at a time by an owner.",
+          "fields": {
+            "peerId": {
+              "label": "Peer id",
+              "description": "The id of the registered A2A peer this connection sends to."
+            },
+            "authorization": {
+              "label": "Authorization header",
+              "description": "The credential the peer issued this workspace, sent verbatim as the Authorization header. Leave blank for a peer that relies on signatures alone."
+            }
+          }
+        }
       },
       "colName": "Name",
       "colStatus": "Status",
@@ -7430,7 +7828,8 @@
       "reachabilityNotProbed": "no health endpoint configured — not probed",
       "reachabilityUnreachable": "did not answer",
       "reachabilityAnswered": "reachable, reporting version {version}",
-      "reachabilityNoVersion": "answered, but reported no version"
+      "reachabilityNoVersion": "answered, but reported no version",
+      "probedAtLabel": "Checked"
     },
     "aiResidency": {
       "title": "Where AI runs",
@@ -11153,8 +11552,8 @@
         "toolsEmpty": "This agent is granted no tools. Grant one on the Tools tab first.",
         "skillsHint": "Only the skills this agent can mount.",
         "skillsPlaceholder": "Choose skills",
-        "catalogue": "Together they add {used} of {budget} bytes to every prompt a run sends.",
-        "catalogueOver": "Together they add {used} bytes to every prompt a run sends, over the limit of {budget}. A run of this version would be refused: choose fewer skills.",
+        "skillsBudget": "{used} of {budget} bytes of skill descriptions chosen. A run pays for them on every turn.",
+        "skillsOverBudget": "These skills' descriptions total {used} bytes, over the {budget}-byte budget a run can mount. Choose fewer skills.",
         "skillOption": {
           "repository": "{name}",
           "tenant": "{name} (this workspace)"
@@ -11178,7 +11577,7 @@
         "confirm": "Reject version {version}"
       },
       "refusal": {
-        "SKILL_CATALOGUE_OVER_BUDGET": "These skills add {used} bytes to every prompt a run sends, over the limit of {budget} bytes, so a run of this version would be refused. Choose fewer skills, or skills with shorter descriptions."
+        "SKILL_CATALOGUE_OVER_BUDGET": "These skills' descriptions total {used} bytes, over the {budget}-byte budget a run can mount, so a run of this version would be refused. Choose fewer skills, or skills with shorter descriptions."
       }
     }
   },
@@ -12795,7 +13194,8 @@
       "failedRevokeInvite": "Failed to revoke invite ({status}).",
       "unexpectedRevokeInvite": "Unexpected error revoking invite.",
       "roleOrgOwner": "Org owner",
-      "ownerNeedsOwner": "Only an organization owner can change an owner's membership"
+      "ownerNeedsOwner": "Only an organization owner can change an owner's membership",
+      "orgOwnerDesc": "Everything an org admin can do, plus managing owners and the tenants under the organization. An organization always keeps at least one owner."
     },
     "audit": {
       "title": "Audit Log",

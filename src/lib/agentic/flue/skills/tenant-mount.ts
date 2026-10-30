@@ -35,13 +35,7 @@ import { recordTenantSkillMount } from '@/lib/observability/integration-metrics'
 
 import { SkillLoadError, SkillTextRefusedError } from './index';
 import { SkillNotMountableError } from './mount-gate';
-import {
-    mountableTenantSkillLines,
-    resolveRunSkills,
-    type CatalogueLine,
-    type DeclaresSkills,
-    type RunSkillMount,
-} from './resolve';
+import { mountableTenantSkillLines, resolveRunSkills, type DeclaresSkills, type RunSkillMount } from './resolve';
 import type { TenantSkillVersionForMount } from './tenant-skill';
 
 /** The columns the mount gate reads. Nothing else is selected. */
@@ -135,25 +129,14 @@ export async function readApprovedTenantSkills(
 }
 
 /**
- * Which rows a profile's tenant skills are: this tenant's APPROVED version of
- * each skill named. The mount below reads by it, and so does a profile
- * version's save and approval (`agent-profiles.ts`, #4523), through
- * `readApprovedTenantSkillsByNameIn`: one read, so the two cannot read
- * different versions of the same skill, or different columns of one.
- */
-export function approvedTenantSkillsByNameWhere(tenantId: string, names: readonly string[]) {
-    return { tenantId, status: 'APPROVED' as const, skill: { name: { in: [...names] } } };
-}
-
-/**
  * This tenant's APPROVED versions of the skills named here, keyed by the
  * skill's name rather than by a workflow (Step 2d): what an agent profile
  * names. One per name at most, because a skill holds one APPROVED version (a
  * partial unique index), so `take` is the number of names.
  *
  * Read through `db`, a transaction already bound to `tenantId`. Admission
- * reads by it (below), and so do a profile version's save and approval, so
- * the gate is asked of the same columns of the same rows.
+ * reads by it (below), and so do a profile version's save and approval, so the
+ * gate is asked of the same columns of the same rows.
  */
 export async function readApprovedTenantSkillsByNameIn(
     db: PrismaTx,
@@ -162,7 +145,7 @@ export async function readApprovedTenantSkillsByNameIn(
 ): Promise<TenantSkillVersionForMount[]> {
     if (names.length === 0) return [];
     const rows = await db.tenantSkillVersion.findMany({
-        where: approvedTenantSkillsByNameWhere(tenantId, names),
+        where: { tenantId, status: 'APPROVED', skill: { name: { in: [...names] } } },
         select: TENANT_SKILL_MOUNT_SELECT,
         orderBy: { createdAt: 'asc' },
         take: names.length,
@@ -200,8 +183,8 @@ export async function readMountableTenantSkillLines(
     db: PrismaTx,
     tenantId: string,
     limit: number,
-): Promise<CatalogueLine[]> {
-    const lines: CatalogueLine[] = [];
+): Promise<{ name: string; description: string }[]> {
+    const lines: { name: string; description: string }[] = [];
     let cursor: string | undefined;
     for (let read = 0; read < limit; ) { // guardrail-allow: n+1 — one query per PAGE of versions, at most limit / page of them
         const take = Math.min(MOUNTABLE_TENANT_SKILL_PAGE, limit - read);
@@ -236,8 +219,7 @@ interface NamesProfileSkills {
  * name. A name with no approved version in this tenant REFUSES the run, as an
  * unknown repository name does: a profile run is never taught less than its
  * version names. The save-time check (`agent-profiles.ts`) refused the same
- * name when it was written, and its approval again; this one catches a skill
- * retired since.
+ * name when it was written; this one catches a skill retired since.
  */
 async function readRunSkillInputs(
     ctx: RequestContext,

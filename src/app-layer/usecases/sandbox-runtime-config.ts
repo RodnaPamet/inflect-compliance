@@ -20,8 +20,10 @@ export {
     parseDeclaredChannels,
 } from '@/lib/sandbox-runtime/declarations';
 import {
+    PROBE_CACHE_TTL_MS,
     probeSandboxRuntime,
     type ProbeOutcome,
+    type ProbeResult,
 } from '@/lib/sandbox-runtime/health-probe';
 export type {
     ReportingChannel,
@@ -90,17 +92,55 @@ export function readSandboxRuntimeDeclaration(): SandboxRuntimeDeclaration {
  * "would dress a DECLARED value in an OBSERVED one's clothes" — so the observed
  * value arrives through a different door, and only from the gateway's own body.
  */
+/**
+ * The probe's last answer, reused for `PROBE_CACHE_TTL_MS` — #4572.
+ *
+ * Module-level, so PER PROCESS rather than shared. That is the right scope: it
+ * is a latency optimisation and not a correctness mechanism, so a second
+ * instance probing independently is harmless. Keyed by URL so that changing
+ * `SANDBOX_RUNTIME_HEALTH_URL` cannot be answered from a cache built against
+ * the old one.
+ */
+let probeCache: { readonly at: number; readonly url: string; readonly result: ProbeResult } | null =
+    null;
+
+/** Exported for the test that proves the cache is actually consulted. */
+export function resetProbeCacheForTests(): void {
+    probeCache = null;
+}
+
 export async function readSandboxRuntimeDeclarationWithProbe(
     fetchImpl?: typeof fetch,
-): Promise<SandboxRuntimeDeclaration & { readonly probeOutcome: ProbeOutcome }> {
+    nowMs: () => number = Date.now,
+): Promise<
+    SandboxRuntimeDeclaration & {
+        readonly probeOutcome: ProbeOutcome;
+        /** When the probe answered. Rendered, so a reused verdict is visible as one. */
+        readonly probedAtIso: string;
+    }
+> {
     const declared = readSandboxRuntimeDeclaration();
-    const probe = await probeSandboxRuntime(env.SANDBOX_RUNTIME_HEALTH_URL, fetchImpl);
+    const url = env.SANDBOX_RUNTIME_HEALTH_URL ?? '';
+    const now = nowMs();
+
+    // The DECLARATION is never cached — that is what `force-dynamic` is for, and
+    // it is read from this process's own environment so it costs nothing. Only
+    // the network observation is reused.
+    if (probeCache === null || probeCache.url !== url || now - probeCache.at >= PROBE_CACHE_TTL_MS) {
+        probeCache = {
+            at: now,
+            url,
+            result: await probeSandboxRuntime(env.SANDBOX_RUNTIME_HEALTH_URL, fetchImpl),
+        };
+    }
+
     return {
         ...declared,
         // The ONLY field the probe may set. A probe that answered must not be
         // able to change what this deploy declared.
-        reachableVersion: probe.reachableVersion,
-        probeOutcome: probe.outcome,
+        reachableVersion: probeCache.result.reachableVersion,
+        probeOutcome: probeCache.result.outcome,
+        probedAtIso: new Date(probeCache.at).toISOString(),
     };
 }
 

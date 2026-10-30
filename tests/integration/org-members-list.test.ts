@@ -52,6 +52,7 @@ describeFn('Epic O-4 — listOrgMembers usecase (DB-backed)', () => {
             canSetThreatLevel: true,
             canSetMaturity: true,
             canManageAgentSwitches: true,
+            canManageOwners: false,
             },
         };
     }

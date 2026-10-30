@@ -150,3 +150,117 @@ describe('the provenance row', () => {
         ]);
     });
 });
+
+describe('the probe answer is reused, and its age is visible', () => {
+    /*
+        #4572. The admin page is `force-dynamic` and the gateway is TERMINATED
+        most of the time by design, so every load was paying the full 2-second
+        timeout to learn the same thing.
+
+        The assertions that matter are about COUNTING calls, not about speed: a
+        cache that is never consulted and a cache that works both render the
+        same page.
+    */
+    const realUrl = 'http://10.132.0.28:8081';
+
+    beforeEach(() => {
+        jest.resetModules();
+        process.env.SANDBOX_RUNTIME_HEALTH_URL = realUrl;
+        process.env.SANDBOX_RUNTIME_CONFIG_DIGEST = 'sha256:' + 'a'.repeat(64);
+    });
+
+    const load = async (): Promise<{
+        read: (f?: typeof fetch, now?: () => number) => Promise<{ probeOutcome: string; probedAtIso: string }>;
+        reset: () => void;
+    }> => {
+        const mod = await import('@/app-layer/usecases/sandbox-runtime-config');
+        return {
+            read: mod.readSandboxRuntimeDeclarationWithProbe as never,
+            reset: mod.resetProbeCacheForTests,
+        };
+    };
+
+    it('probes ONCE across loads inside the TTL', async () => {
+        const { read, reset } = await load();
+        reset();
+        let calls = 0;
+        const fetchImpl = (async () => {
+            calls += 1;
+            return { ok: true, json: async () => ({ status: 'healthy', version: '0.1.6' }) } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        const t0 = 1_000_000;
+        await read(fetchImpl, () => t0);
+        await read(fetchImpl, () => t0 + 5_000);
+        await read(fetchImpl, () => t0 + 29_999);
+        expect(calls).toBe(1);
+    });
+
+    it('probes AGAIN once the TTL has passed', async () => {
+        const { read, reset } = await load();
+        reset();
+        let calls = 0;
+        const fetchImpl = (async () => {
+            calls += 1;
+            return { ok: true, json: async () => ({ status: 'healthy', version: '0.1.6' }) } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        const t0 = 2_000_000;
+        await read(fetchImpl, () => t0);
+        await read(fetchImpl, () => t0 + 30_000);
+        expect(calls).toBe(2);
+    });
+
+    it('caches a FAILED probe too — the case that costs the timeout', async () => {
+        // Caching only successes would leave the stall exactly where it hurts:
+        // a stopped VM is the common case and the one that waits 2 seconds.
+        const { read, reset } = await load();
+        reset();
+        let calls = 0;
+        const refuses = (async () => {
+            calls += 1;
+            throw new Error('ECONNREFUSED');
+        }) as unknown as typeof fetch;
+
+        const t0 = 3_000_000;
+        const first = await read(refuses, () => t0);
+        const second = await read(refuses, () => t0 + 1_000);
+        expect(first.probeOutcome).toBe('unreachable');
+        expect(second.probeOutcome).toBe('unreachable');
+        expect(calls).toBe(1);
+    });
+
+    it('does not answer a NEW url from a cache built against the old one', async () => {
+        const { read, reset } = await load();
+        reset();
+        const seen: string[] = [];
+        const fetchImpl = (async (u: string) => {
+            seen.push(String(u));
+            return { ok: true, json: async () => ({ status: 'healthy', version: '0.1.6' }) } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        const t0 = 4_000_000;
+        await read(fetchImpl, () => t0);
+        process.env.SANDBOX_RUNTIME_HEALTH_URL = 'http://10.132.0.99:8081';
+        jest.resetModules();
+        // Same module instance keeps the cache; the URL key is what invalidates.
+        await read(fetchImpl, () => t0 + 1_000);
+        expect(seen.length).toBe(2);
+        expect(seen[0]).not.toBe(seen[1]);
+    });
+
+    it('reports WHEN it answered, so a reused verdict is visible as one', async () => {
+        const { read, reset } = await load();
+        reset();
+        const fetchImpl = (async () =>
+            ({ ok: true, json: async () => ({ status: 'healthy', version: '0.1.6' }) }) as unknown as Response) as typeof fetch;
+
+        const t0 = 5_000_000;
+        const first = await read(fetchImpl, () => t0);
+        const reused = await read(fetchImpl, () => t0 + 10_000);
+        // The SAME timestamp, not the second call's clock — which is the whole
+        // point: the page must not imply the check was just taken.
+        expect(reused.probedAtIso).toBe(first.probedAtIso);
+        expect(reused.probedAtIso).toBe(new Date(t0).toISOString());
+    });
+});
