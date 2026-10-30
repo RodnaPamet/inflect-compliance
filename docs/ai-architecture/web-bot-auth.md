@@ -19,7 +19,7 @@ inflect · ai architecture · web bot auth · roadmap v1 · 2026-10-30
 | Layer · box | 1 — Security, guards & alignment · an added box, "Web Bot Auth" (agent identity at the HTTP boundary) |
 | Wave | 1 for Phases 0–2 (no dependency, zero GPU, and it fixes a live blind spot in vendor monitoring); 3 for Phase 3 |
 | Depends on | nothing for Phases 0–2; Phase 3 waits on Phase 1's verifier pieces |
-| Unblocks | vendor monitoring that can tell "refused" from "unreachable"; registration as a verified bot; a signed-agent label on the public trust center |
+| Unblocks | vendor monitoring that can tell "refused" from "unreachable"; registration as a verified bot; a signed-agent label on the public trust center; [`mastercard-agent-pay.md`](./mastercard-agent-pay.md) Phase 2, whose Know Your Agent check validates a customer agent's key directory with Phase 3's verifier |
 | Owner decisions | **D-L1-5** (the signing identity is the deployment, never a tenant), **D-L1-6** (outbound conduct: honest User-Agent, bot page, robots.txt, Cloudflare registration), **D-L1-7** (inbound verification: label only, never authorization) |
 
 ## At a glance
@@ -35,10 +35,12 @@ flowchart LR
   P3["Phase 3 · verify at the door<br/>trust center labels signed agents<br/>never authorization"]:::todo
   REC["Conformance record<br/>reference verifier + vectors"]:::eval
   IAM["agentic IAM<br/>a web tool signs here"]:::ext
+  AP["mastercard-agent-pay P2<br/>agent key directories"]:::ext
   P0 --> P1 --> P2 --> REG
   P1 --> P3
   REC -.->|gates| P2
   P2 -.->|rule for| IAM
+  P3 -.->|verifier for| AP
 
   classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
   classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a

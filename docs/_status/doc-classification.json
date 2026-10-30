@@ -74,6 +74,9 @@
         "docs/ai-architecture/langfuse.md": {
             "class": "living"
         },
+        "docs/ai-architecture/mastercard-agent-pay.md": {
+            "class": "living"
+        },
         "docs/ai-architecture/modal-inference.md": {
             "class": "living"
         },
