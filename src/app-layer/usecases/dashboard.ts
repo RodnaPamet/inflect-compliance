@@ -258,17 +258,43 @@ export async function getDashboardRecentActivity(
     );
 }
 
+/** The audit-log rows `getDashboardData` returns, when it returns any. */
+type DashboardAuditRows = Awaited<ReturnType<typeof DashboardRepository.getRecentActivity>>;
+
 /**
- * Original dashboard data — used by the current dashboard page.
- * Backward-compatible; do not modify the return shape.
+ * The tenant's entity counts and the audit log's ten latest rows: the payload
+ * of `GET /api/t/:slug/dashboard` (and its legacy `/api/dashboard` twin) and of
+ * the agent tool `get_tenant_context`. The Board page reads neither; it reads
+ * `getExecutiveDashboard` and `getDashboardRecentActivity`.
+ *
+ * `stats` goes to anyone who can read. `recentActivity` holds rows only for a
+ * caller that can read the audit log: `canAudit`, the gate `listAuditLogs`
+ * asserts (owner decision, 2026-10-30, following the Board's own Recent
+ * Activity card of 2026-10-29). The rows ARE the audit log's head, so a caller
+ * the audit-log route refuses must not read them here. For anyone else they are
+ * not queried and the array is empty. The whole response is not refused: the
+ * counts were never the audit log's.
+ *
+ * EMPTY, NOT ABSENT. The shape stays `{ stats, recentActivity: [] }` so an
+ * existing client that iterates the array keeps working; the field was always
+ * present and nothing documents it as optional.
+ *
+ * `canAudit` is read off the context as built, so it is one rule for every
+ * caller. A person: their role, a custom role by its base (Owner, Admin,
+ * Auditor). An API key: the role its scopes resolve to, which is ADMIN only for
+ * `*` or `admin:write` (`keyAuthorityFromScopes`), intersected with its
+ * creator's role where the context narrows a key by its principal (an
+ * agent-bound key at `/api/t/**`, every key at `/api/mcp`, a run a key started).
  */
 export async function getDashboardData(ctx: RequestContext) {
     assertCanRead(ctx);
+    const mayReadAuditLog = ctx.permissions.canAudit;
 
     return runInTenantContext(ctx, async (db) => {
+        const noRows: DashboardAuditRows = [];
         const [stats, recentActivity] = await Promise.all([
             DashboardRepository.getStats(db, ctx),
-            DashboardRepository.getRecentActivity(db, ctx),
+            mayReadAuditLog ? DashboardRepository.getRecentActivity(db, ctx) : noRows,
         ]);
 
         return {
