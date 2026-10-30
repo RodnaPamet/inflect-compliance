@@ -11690,6 +11690,7 @@
     "newTaskOnDay": "New task on this day",
     "ganttEmpty": "No deadlines in this window.",
     "clickDay": "Click a day to see events on that date.",
+    "clickDayTimeline": "The timeline has no days to click. Switch to Month or Heatmap to open a day.",
     "eventsEmptyDay": "No events on this day.",
     "heatmapWindowLabel": "Past year + next 6 months",
     "ganttWindowLabel": "12-month timeline (fixed window)",
@@ -11721,7 +11722,9 @@
       "treatment-milestone-due": "Milestone",
       "treatment-plan-target": "Plan target",
       "finding-due": "Finding due",
-      "agent-harness-acceptance-expiry": "Harness acceptance expires"
+      "agent-harness-acceptance-expiry": "Harness acceptance expires",
+      "vulnerability-remediation-due": "Vulnerability fix due",
+      "audit-scheduled": "Audit scheduled"
     },
     "category": {
       "evidence": "Evidence",
@@ -11758,7 +11761,9 @@
       "finding": "Findings",
       "treatment-milestone": "Treatment milestones",
       "treatment-plan": "Treatment plans",
-      "agent-harness-acceptance": "Harness acceptances"
+      "agent-harness-acceptance": "Harness acceptances",
+      "asset-vulnerability": "Asset vulnerabilities",
+      "audit": "Audits"
     },
     "filterAria": "Filter deadlines by category",
     "myDeadlines": "My deadlines",

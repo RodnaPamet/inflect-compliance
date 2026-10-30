@@ -4,7 +4,7 @@ route: /t/[tenantSlug]/calendar
 
 # {{ui:calendar.title}}
 
-The {{ui:calendar.title}} puts every dated obligation in the workspace on one calendar: evidence and policy reviews, vendor renewals, audit cycles, control reviews and tests, task due dates, risk reviews, findings and more. It answers "what is due, and when".
+The {{ui:calendar.title}} puts every dated obligation in the workspace on one calendar: evidence and policy reviews, vendor renewals, audit cycles and scheduled audits, control reviews and tests, task due dates, risk reviews, findings, asset vulnerability fix dates and more. It answers "what is due, and when".
 
 ## Where to find it
 
@@ -47,7 +47,7 @@ Use the calendar to plan the weeks ahead and to catch what is late. Every entry 
 
 - **{{ui:calendar.viewMonth}}** is a grid of weeks. Each day shows up to three entries as coloured dots with their titles, and a **+** count for the rest. Today's day is ringed. Click an entry to open its record, or click the day, or its count, to list everything on it in the side panel.
 - **{{ui:calendar.viewHeatmap}}** shows one square per day, darker the more is due that day, with month separators. Click a day to list its entries in the side panel.
-- **{{ui:calendar.viewTimeline}}** shows one row per entry along a time axis, with a line for today. An audit cycle is drawn as a bar from its start to its end, and every other entry as a one-day mark. Click a row to open its record. This view has no days to click, so the side panel keeps its first message.
+- **{{ui:calendar.viewTimeline}}** shows one row per entry along a time axis, with a line for today. An audit cycle is drawn as a bar from its start to its end, and every other entry as a one-day mark. Click a row to open its record. This view has no days to click, so the side panel says **{{ui:calendar.clickDayTimeline}}**
 
 Each entry has a category, shown by its colour, and a status:
 
@@ -94,7 +94,7 @@ Other entries, such as a policy review or a vendor renewal, cannot be changed fr
 
 When nothing is due in the range you are looking at, a bar names the date of the next deadline within the coming two years, with **{{ui:calendar.offscreenJump}}**. Click it to open that month in **{{ui:calendar.viewMonth}}** and select the day.
 
-The date is the next deadline of any category, even while the filter hides some. The jump also returns the filter to what it was when you opened the page. If you opened the page from a link to **{{ui:calendar.viewHeatmap}}** or **{{ui:calendar.viewTimeline}}**, it stays on that view; click **{{ui:calendar.viewMonth}}** to see the day.
+The date is the next deadline that passes the filter. The jump keeps the filter and **{{ui:calendar.myDeadlines}}** as they are, and always switches to **{{ui:calendar.viewMonth}}**, where the chosen day is shown.
 
 ## What happens next
 
@@ -113,8 +113,8 @@ The date is the next deadline of any category, even while the filter hides some.
 | A yellow note that only the nearest deadlines are shown for some sources | One kind has more deadlines in the range than the calendar shows at once, so the furthest are left out | Look at a shorter range, such as a single month |
 | **{{ui:calendar.eventsEmptyDay}}** | The chosen day has nothing due, or nothing that passes your filter | Choose another day, or clear the filter |
 | **{{ui:calendar.ganttEmpty}}** | Nothing is due in the timeline's window, or nothing that passes your filter | Clear the filter, or use **{{ui:calendar.viewMonth}}** to look further ahead |
-| **{{ui:calendar.taskForbidden}}** | The task was not changed. You may lack permission, or the task needs its reviewer's sign-off | Open the task to see why |
-| **{{ui:calendar.taskActionError}}** | The task was not changed | Open the task and make the change there, where the reason is shown |
+| The reason the task could not be changed, such as that it needs its reviewer's sign-off | The task was not changed | Follow the reason given; for a task with a reviewer, open the task and use its review steps |
+| **{{ui:calendar.taskForbidden}}** or **{{ui:calendar.taskActionError}}** | The task was not changed, and no reason was given | Open the task and make the change there |
 
 ## Related
 
