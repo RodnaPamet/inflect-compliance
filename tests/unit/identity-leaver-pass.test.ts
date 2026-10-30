@@ -28,14 +28,21 @@ jest.mock('@/lib/db-context', () => ({
 // compared 'system' against undefined, called every scheduled run ATTENDED,
 // and wrote `triggeredBy: 'manual'` on the 05:00 job. A partial barrel mock
 // does not fail loudly — it hands you a plausible wrong answer.
+//
+// The pass reaches this module through `identity-pass-requester` since #4400,
+// which builds the system context and resolves a requester's membership.
+// `buildDelegatedJobContext` is deliberately ABSENT: the pass no longer calls
+// it, and a call would now throw rather than quietly fabricate an ADMIN.
+const resolveMember = jest.fn();
 jest.mock('@/app-layer/context-system', () => ({
     SYSTEM_PRINCIPAL: 'system',
-    buildSystemContext: jest.fn((a: { tenantId: string }) => ({ tenantId: a.tenantId, userId: 'system' })),
-    buildDelegatedJobContext: jest.fn((a: { tenantId: string; onBehalfOf: string }) => ({
+    buildSystemContext: jest.fn((a: { tenantId: string }) => ({
         tenantId: a.tenantId,
-        userId: a.onBehalfOf,
+        userId: 'system',
         actorType: 'JOB',
+        role: 'ADMIN',
     })),
+    resolveMemberContextWithReason: (...a: unknown[]) => resolveMember(...a),
 }));
 const getPolicy = jest.fn();
 jest.mock('@/app-layer/usecases/identity-write-policy', () => ({
@@ -71,6 +78,7 @@ import {
     MAX_REPORTED_DECISIONS,
 } from '@/app-layer/usecases/identity-leaver-pass';
 import { LADDER, isAboveClamp } from '@/lib/identity/write-ladder';
+import { getPermissionsForRole } from '@/lib/permissions';
 import { OBSERVATION_FRESHNESS_MS } from '@/app-layer/usecases/identity-write-target';
 
 const mockDb = {
@@ -507,11 +515,27 @@ describe('the artefacts say WHO asked — #2843', () => {
     // execution rows said 'scheduled', and all 3 journal rows said 'system',
     // including runs a named admin fired by hand.
 
+    beforeEach(() => {
+        // An OWNER who still holds the key, unless a test says otherwise.
+        resolveMember.mockImplementation(async (a: { tenantId: string; userId: string }) => ({
+            ok: true,
+            ctx: {
+                tenantId: a.tenantId,
+                userId: a.userId,
+                role: 'OWNER',
+                appPermissions: getPermissionsForRole('OWNER'),
+            },
+        }));
+    });
+
     it("says 'scheduled' when nobody asked — the 05:00 dispatch is unchanged", async () => {
         findCandidates.mockResolvedValue([]);
         await runIdentityLeaverPass({ tenantId: 't1', provider: 'entra-id', now: NOW });
         const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
         expect(data.triggeredBy).toBe('scheduled');
+        // No request block, so a scheduled row is the row it always was.
+        expect(data.resultJson).not.toHaveProperty('request');
+        expect(resolveMember).not.toHaveBeenCalled();
     });
 
     it("says 'manual' when a human asked, and the row is otherwise identical", async () => {
@@ -524,6 +548,7 @@ describe('the artefacts say WHO asked — #2843', () => {
         });
         const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
         expect(data.triggeredBy).toBe('manual');
+        expect(data.resultJson.request).toEqual({ requestedByUserId: 'user-42', authority: 'REQUESTER' });
         // Same job, same automation key — a manual run must not look like a
         // different automation, only a differently-triggered one.
         expect(data.automationKey).toBe('entra-id.leaver_pass');
@@ -542,6 +567,118 @@ describe('the artefacts say WHO asked — #2843', () => {
         });
         const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
         expect(data.triggeredBy).toBe('scheduled');
+    });
+});
+
+describe("a requester's authority is re-read when the pass RUNS — #4400", () => {
+    // The route asserts `admin.tenant_lifecycle` at enqueue. The pass used to
+    // trust that, building an ADMIN-shaped context in the requester's name, so
+    // a pass queued by somebody since demoted or removed still ran with full
+    // ADMIN under their name. These pin what reaches the writes now.
+
+    function ctxOfWrites() {
+        // Every write below the ladder takes its context from here.
+        return {
+            policy: getPolicy.mock.calls[0][0],
+            batch: disableBatch.mock.calls[0][0],
+            row: mockDb.integrationExecution.create.mock.calls[0][0].data,
+        };
+    }
+
+    it('a requester who still holds the key: the pass acts as THEM, with their real role', async () => {
+        resolveMember.mockResolvedValue({
+            ok: true,
+            ctx: { tenantId: 't1', userId: 'user-owner', role: 'OWNER', appPermissions: getPermissionsForRole('OWNER') },
+        });
+
+        await run({ requestedByUserId: 'user-owner' });
+
+        expect(resolveMember).toHaveBeenCalledWith(
+            expect.objectContaining({ tenantId: 't1', userId: 'user-owner' }),
+        );
+        const { policy, batch, row } = ctxOfWrites();
+        for (const ctx of [policy, batch]) {
+            expect(ctx.userId).toBe('user-owner');
+            // Their membership's role, not the ADMIN every requester used to get.
+            expect(ctx.role).toBe('OWNER');
+            expect(ctx.actorType).toBe('JOB');
+        }
+        expect(row.triggeredBy).toBe('manual');
+        expect(row.resultJson.request).toEqual({ requestedByUserId: 'user-owner', authority: 'REQUESTER' });
+    });
+
+    it.each([
+        ['removed', { ok: false, reason: 'NOT_A_MEMBER' }, { refusal: 'REQUESTER_NOT_A_MEMBER' }],
+        [
+            'deactivated',
+            { ok: false, reason: 'NOT_ACTIVE', status: 'DEACTIVATED' },
+            { refusal: 'REQUESTER_NOT_ACTIVE', membershipStatus: 'DEACTIVATED' },
+        ],
+        [
+            'demoted to ADMIN',
+            {
+                ok: true,
+                ctx: { tenantId: 't1', userId: 'user-x', role: 'ADMIN', appPermissions: getPermissionsForRole('ADMIN') },
+            },
+            { refusal: 'REQUESTER_LACKS_PERMISSION' },
+        ],
+    ])('a requester %s since: the pass still runs, as the job, naming nobody', async (_l, resolution, refusal) => {
+        resolveMember.mockResolvedValue(resolution);
+
+        const r = await run({ requestedByUserId: 'user-x' });
+
+        // It RAN: refusing would leave a departed employee's accounts enabled.
+        expect(r.status).toBe('PASSED');
+        expect(disableBatch).toHaveBeenCalledTimes(1);
+        const { policy, batch, row } = ctxOfWrites();
+        for (const ctx of [policy, batch]) {
+            // The scheduled pass's own context: no person, so the journal row
+            // the batch writes cannot name them.
+            expect(ctx.userId).toBe('system');
+        }
+        // A person DID ask, so 'manual' — read off the request, not the context.
+        expect(row.triggeredBy).toBe('manual');
+        expect(row.resultJson.request).toEqual({ requestedByUserId: 'user-x', authority: 'JOB', ...refusal });
+    });
+
+    it('a refusal reaches a refusal row too, not only a completed pass', async () => {
+        resolveMember.mockResolvedValue({ ok: false, reason: 'NOT_A_MEMBER' });
+        findCandidates.mockResolvedValue([]);
+
+        await run({ requestedByUserId: 'user-gone' });
+
+        const row = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(row.resultJson.refusal).toBe('NO_FRESH_LINKS');
+        expect(row.triggeredBy).toBe('manual');
+        expect(row.resultJson.request).toEqual({
+            requestedByUserId: 'user-gone',
+            authority: 'JOB',
+            refusal: 'REQUESTER_NOT_A_MEMBER',
+        });
+    });
+
+    it('and the ERROR row of a pass that threw', async () => {
+        resolveMember.mockResolvedValue({ ok: false, reason: 'NOT_A_MEMBER' });
+        getPolicy.mockRejectedValue(new Error('policy read failed'));
+
+        const r = await run({ requestedByUserId: 'user-gone' });
+
+        expect(r.status).toBe('ERROR');
+        const row = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(row.status).toBe('ERROR');
+        expect(row.triggeredBy).toBe('manual');
+        expect(row.resultJson.request).toMatchObject({ authority: 'JOB', refusal: 'REQUESTER_NOT_A_MEMBER' });
+    });
+
+    it('a membership that cannot be read does not throw out of the pass', async () => {
+        resolveMember.mockRejectedValue(new Error('connection reset'));
+
+        const r = await run({ requestedByUserId: 'user-x' });
+
+        expect(r.status).toBe('PASSED');
+        const { batch, row } = ctxOfWrites();
+        expect(batch.userId).toBe('system');
+        expect(row.resultJson.request).toMatchObject({ authority: 'JOB', refusal: 'REQUESTER_UNRESOLVED' });
     });
 });
 

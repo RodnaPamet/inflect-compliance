@@ -76,7 +76,7 @@
  */
 import { logger } from '@/lib/observability/logger';
 import { runInTenantContext } from '@/lib/db-context';
-import { SYSTEM_PRINCIPAL, buildDelegatedJobContext, buildSystemContext } from '@/app-layer/context-system';
+import { passRequestRecord, resolvePassActor, type PassTrigger } from './identity-pass-requester';
 import type { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { resolveDirectoryWriter, type WriterRefusal } from '../integrations/identity-writer-factory';
@@ -266,6 +266,7 @@ export const LEAVER_PASS_AUTOMATION_SUFFIX = PASS_AUTOMATION_SUFFIX.leaver;
  */
 async function recordPassExecution(
     ctx: RequestContext,
+    trigger: PassTrigger,
     provider: string,
     candidates: readonly DisableAccountInput[],
     results: readonly LeaverDisableResult[],
@@ -339,7 +340,7 @@ async function recordPassExecution(
 
     // Why each status: see `leaverPassStatus`. The choice is made there because
     // the value handed back to the job has to make the identical one.
-    await writeExecutionRow(ctx, provider, leaverPassStatus(refused, results.length), {
+    await writeExecutionRow(ctx, trigger, provider, leaverPassStatus(refused, results.length), {
         ...summary,
         ...(refused ? { refusal: 'BATCH_REFUSED' } : {}),
         decisions,
@@ -368,12 +369,13 @@ async function recordPassExecution(
  */
 async function recordRefusedPass(
     ctx: RequestContext,
+    trigger: PassTrigger,
     provider: string,
     refusal: LeaverPassRefusal,
     detail: string,
     summary: Record<string, unknown>,
 ): Promise<void> {
-    await writeExecutionRow(ctx, provider, 'NOT_APPLICABLE', { ...summary, refusal, detail });
+    await writeExecutionRow(ctx, trigger, provider, 'NOT_APPLICABLE', { ...summary, refusal, detail });
 }
 
 /**
@@ -385,13 +387,14 @@ async function recordRefusedPass(
  */
 async function safeRecordRefusal(
     ctx: RequestContext,
+    trigger: PassTrigger,
     provider: string,
     refusal: LeaverPassRefusal,
     detail: string,
     summary: Record<string, unknown>,
 ): Promise<void> {
     try {
-        await recordRefusedPass(ctx, provider, refusal, detail, summary);
+        await recordRefusedPass(ctx, trigger, provider, refusal, detail, summary);
     } catch (err) {
         logger.error('leaver pass refused but its record could not be written', {
             component: 'identity-leaver-pass',
@@ -410,7 +413,7 @@ async function safeRecordRefusal(
  * function's parameter type deliberately cannot express.
  */
 /**
- * Did a HUMAN ask for this pass, or did the schedule? — #2843.
+ * Did a HUMAN ask for this pass, or did the schedule? — #2843, #4400.
  *
  * Both durable records of a directory write used to assert "unattended" for an
  * attended one: the execution row hardcoded `triggeredBy: 'scheduled'`, and
@@ -419,29 +422,32 @@ async function safeRecordRefusal(
  * row that DID name them (`IDENTITY_LEAVER_PASS_REQUESTED`) is reachable only
  * by a timestamp+provider join nothing documents.
  *
- * READ OFF `ctx.userId`, which is the fact rather than a proxy for it: a
- * delegated context carries a real `User.id`, a system context carries
- * `SYSTEM_PRINCIPAL`. `actorType` would NOT do — `buildSystemContext` and
- * `buildDelegatedJobContext` both set `'JOB'`, so it cannot tell them apart.
+ * READ OFF THE REQUEST (`PassTrigger`), not off `ctx.userId`. It was the
+ * context until #4400, when a manual pass whose requester has lost the key
+ * began running under the scheduled pass's system context: a `ctx.userId`
+ * check would record that pass as `scheduled`, which is false. The journal
+ * still reads `ctx.userId`, because there the question is whose AUTHORITY the
+ * write carried, and a refused requester's is not.
  *
- * Derived in ONE place, because the execution row and the journal must not be
- * able to disagree about who asked.
+ * The request block (`passRequestRecord`) goes on every row a manual pass
+ * writes, the error row included, so the row says who asked, whose authority
+ * the pass carried, and why it was not theirs when it was refused. A scheduled
+ * pass's row carries no such block and is otherwise unchanged.
  */
-function triggeredByOf(ctx: RequestContext): 'scheduled' | 'manual' {
-    return ctx.userId && ctx.userId !== SYSTEM_PRINCIPAL ? 'manual' : 'scheduled';
-}
-
 async function writeExecutionRow(
     ctx: RequestContext,
+    trigger: PassTrigger,
     provider: string,
     status: LeaverPassRanStatus,
-    // `Prisma.InputJsonValue`, not `Record<string, unknown>`. The two callers
+    // `Prisma.InputJsonObject`, not `Record<string, unknown>`. The two callers
     // used to pass object LITERALS, which Prisma accepted because their inferred
     // types were concrete; hoisting the create into one helper widened the
     // parameter and broke assignability. Typing it as Prisma's own input type
-    // keeps the single-writer refactor without a cast at either call site.
-    resultJson: Prisma.InputJsonValue,
+    // keeps the single-writer refactor without a cast at either call site, and
+    // an OBJECT so the request block can be added here rather than by each.
+    resultJson: Prisma.InputJsonObject,
 ): Promise<void> {
+    const request = passRequestRecord(trigger);
     await runInTenantContext(ctx, (db) =>
         db.integrationExecution.create({
             data: {
@@ -449,9 +455,9 @@ async function writeExecutionRow(
                 provider,
                 automationKey: `${provider}${LEAVER_PASS_AUTOMATION_SUFFIX}`,
                 status,
-                triggeredBy: triggeredByOf(ctx),
+                triggeredBy: trigger.triggeredBy,
                 completedAt: new Date(),
-                resultJson,
+                resultJson: request ? { ...resultJson, request } : resultJson,
             },
         }),
     );
@@ -470,9 +476,11 @@ async function writeExecutionRow(
  */
 async function writeErrorExecutionRow(
     ctx: RequestContext,
+    trigger: PassTrigger,
     provider: string,
-    resultJson: Prisma.InputJsonValue,
+    resultJson: Prisma.InputJsonObject,
 ): Promise<void> {
+    const request = passRequestRecord(trigger);
     await runInTenantContext(ctx, (db) =>
         db.integrationExecution.create({
             data: {
@@ -480,9 +488,9 @@ async function writeErrorExecutionRow(
                 provider,
                 automationKey: `${provider}${LEAVER_PASS_AUTOMATION_SUFFIX}`,
                 status: 'ERROR',
-                triggeredBy: triggeredByOf(ctx),
+                triggeredBy: trigger.triggeredBy,
                 completedAt: new Date(),
-                resultJson,
+                resultJson: request ? { ...resultJson, request } : resultJson,
             },
         }),
     );
@@ -517,11 +525,12 @@ async function writeErrorExecutionRow(
  */
 async function safeRecordErroredPass(
     ctx: RequestContext,
+    trigger: PassTrigger,
     provider: string,
     detail: string,
 ): Promise<void> {
     try {
-        await writeErrorExecutionRow(ctx, provider, {
+        await writeErrorExecutionRow(ctx, trigger, provider, {
             mode: 'unknown',
             refusal: null,
             detail: redactDirectoryIdentifiers(detail, undefined),
@@ -962,37 +971,34 @@ export async function runIdentityLeaverPass(input: {
     now?: Date;
     /**
      * A REAL `User.id` when a human asked for this pass off-schedule; absent
-     * for the 05:00 dispatch. See `IdentityLeaverPassPayload` (#2843).
+     * for the 05:00 dispatch. See `IdentityLeaverPassPayload` (#2843). A claim
+     * about who asked, never a grant: their authority is re-read below.
      */
     requestedByUserId?: string;
 }): Promise<LeaverPassResult> {
     const now = input.now ?? new Date();
-    // `context-system`, never `context` — the latter reaches @/lib/auth -> @/auth
-    // and dies in the worker, which has no Next request to hang a session on.
+    // WHOSE AUTHORITY, decided now rather than at enqueue (#4400, owner
+    // decision 2026-10-30). The route asserts `admin.tenant_lifecycle` when the
+    // pass is queued, and that check used to be the only one: the pass then
+    // acted as an ADMIN-shaped context attributed to the requester, so a pass
+    // queued by somebody since demoted or removed still ran with full ADMIN
+    // under their name.
     //
-    // DELEGATED when somebody asked, so the artefacts can say who. That is not
-    // cosmetic: `IdentityWriteJournal.actorUserId` documents non-null as
-    // meaning a human, and it held 'system' for every row in production —
-    // including rows a named admin caused. `buildDelegatedJobContext` exists
-    // for exactly this shape of work, and every write below inherits the
-    // attribution without another parameter to forget.
-    // ACCEPTED, NOT OVERLOOKED (#4388, owner decision 2026-10-26). The route
-    // that queues this asserts `admin.tenant_lifecycle`, so no under-privileged
-    // user reaches it. But that check happens at ENQUEUE and is never repeated
-    // HERE: a pass queued by somebody since demoted or removed still runs, with
-    // full ADMIN, attributed to them. `resolveMemberContext` is the primitive
-    // that would close it and refuse instead -- and refusing a leaver pass
-    // leaves a departing employee's accounts enabled, which is the quiet
-    // compliance miss this codebase treats as worse than the over-grant.
-    // Closing it properly needs the per-tenant SYSTEM `User` row (#4400), so
-    // the borrow is unnecessary at all and the refusal costs nothing.
-    const ctx = input.requestedByUserId
-        ? buildDelegatedJobContext({
-              tenantId: input.tenantId,
-              job: 'identity-leaver-pass',
-              onBehalfOf: input.requestedByUserId,
-          })
-        : buildSystemContext({ tenantId: input.tenantId, job: 'identity-leaver-pass' });
+    // Now the requester's real membership is resolved. If it is ACTIVE and
+    // still holds the key, the pass acts with THEIR authority and the journal
+    // names them. If not, the pass still runs, on the job's own authority, as
+    // the 05:00 pass does: refusing it would leave a departed employee's
+    // accounts enabled, and the schedule would run the same pass anyway. It
+    // names nobody, and its row records the request and why it was refused.
+    // See `identity-pass-requester.ts` for the fallback's justification.
+    //
+    // Resolved BEFORE the try, so the catch below has a context to record the
+    // error under; `resolvePassActor` never throws.
+    const { ctx, trigger } = await resolvePassActor({
+        tenantId: input.tenantId,
+        job: 'identity-leaver-pass',
+        requestedByUserId: input.requestedByUserId,
+    });
 
     try {
         // ── 0. What did an earlier pass leave unconfirmed? Read FIRST, so it is
@@ -1089,7 +1095,7 @@ export async function runIdentityLeaverPass(input: {
         if (terminated.length === 0) {
             recordLeaverPassOutcome({ provider: input.provider, outcome: 'no_terminated' });
             const detail = 'No worker is marked TERMINATED in the HR feed.';
-            await safeRecordRefusal(ctx, input.provider, 'NO_TERMINATED_WORKERS', detail, {
+            await safeRecordRefusal(ctx, trigger, input.provider, 'NO_TERMINATED_WORKERS', detail, {
                 mode,
                 terminatedWorkers: 0,
             });
@@ -1117,7 +1123,7 @@ export async function runIdentityLeaverPass(input: {
             // silent-nothing failure: terminated workers present, nobody
             // offboarded, and a green pass. An operator watching the seven days
             // needs it to appear as a run that happened.
-            await safeRecordRefusal(ctx, input.provider, 'NO_FRESH_LINKS', detail, {
+            await safeRecordRefusal(ctx, trigger, input.provider, 'NO_FRESH_LINKS', detail, {
                 mode,
                 terminatedWorkers: terminated.length,
             });
@@ -1173,6 +1179,7 @@ export async function runIdentityLeaverPass(input: {
             recordLeaverPassOutcome({ provider: input.provider, outcome: 'writer_refused' });
             await safeRecordRefusal(
                 ctx,
+                trigger,
                 input.provider,
                 `WRITER_${resolution.refusal}`,
                 resolution.detail,
@@ -1273,6 +1280,7 @@ export async function runIdentityLeaverPass(input: {
             try {
                 await recordPassExecution(
                     ctx,
+                    trigger,
                     input.provider,
                     candidates,
                     results,
@@ -1375,7 +1383,7 @@ export async function runIdentityLeaverPass(input: {
         // tenant-visible trace of a crashed pass was the absence of one — the
         // same artefact a pass that never fired leaves. `ctx` is built before
         // the try, so it is in scope here without restructuring.
-        await safeRecordErroredPass(ctx, input.provider, detail);
+        await safeRecordErroredPass(ctx, trigger, input.provider, detail);
         return {
             status: 'ERROR',
             mode: 'unknown',
