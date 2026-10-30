@@ -2991,6 +2991,36 @@ jobs:
           ls -lh /tmp/image-${{ github.sha }}.tar
           df -h /
 
+      # ── READING THE LOG BELOW: IT SAYS `trivy image .` AND THAT IS FINE ──
+      #
+      # trivy-action passes `input:` through the ENVIRONMENT (`TRIVY_INPUT`),
+      # not on the command line, and its "Running Trivy with options:" line
+      # prints only the argv. With no `image-ref:` the argv positional falls
+      # back to the action's own `scan-ref` default of `.`, so the line reads
+      #
+      #     Running Trivy with options: trivy image .
+      #
+      # while the scan target is the tar. `TRIVY_INPUT` wins; the positional is
+      # ignored. Do not "fix" that line by restoring `image-ref:` — that is the
+      # daemon read this job removed, and it brings back the third copy of the
+      # image that ran the disk out.
+      #
+      # CONFIRM THE TARGET FROM THE REPORT SUMMARY, NOT THAT LINE. The summary
+      # names the tar and the paths inside it:
+      #
+      #     │ /tmp/image-<sha>.tar (alpine 3.24.3) │ alpine   │ 0 │
+      #     │ app/node_modules/.prisma/client/…    │ node-pkg │ 0 │
+      #
+      # Measured equivalence against the last daemon-read run (41110447287):
+      # same OS (alpine 3.24.3), same `pkg_num=20`, same 1187 node-pkg targets.
+      # So this is the same scan of the same bytes, not a cheaper one.
+      #
+      # This matters because the misreading is cheap and the failure is silent:
+      # a filesystem scan of the checkout finds no OS packages and exits 0, so
+      # "it scanned nothing" and "it found nothing" look identical from the
+      # tick. If that line ever needs checking again, grep the summary for
+      # `Detected OS` — a repo checkout has none.
+
       # ── Trivy scan: BLOCKING on CRITICAL,HIGH ──
       # Container-image scan against OS packages + bundled libraries.
       # Dropping HIGH from the severity list (CRITICAL-only) is a
