@@ -4894,7 +4894,13 @@
         "agent_ownership": "Own agents",
         "agent_skill_review": "Review agent skills",
         "agent_skill_author": "Author agent skills"
-      }
+      },
+      "manageRefusedNotice": "Only an Owner, or an Admin whose role lets them manage the workspace, can create, change or delete custom roles. Your role here, or the custom role you carry, does not allow it.",
+      "adminMembershipOnlyNotice": "{count, plural, one {# member carrying this role is not an Admin} other {# members carrying this role are not Admins}}. While they carry it, it cannot be built on {admin} or grant {permissions}: only an Admin member can carry such a role. Those are locked below. A permission the role already grants can still be switched off.",
+      "cellAdminMembershipOnly": "{permission}: not granted. Members who are not Admins carry this role, and only an Admin member can carry a role that grants it.",
+      "baseAdminMembershipOnly": "Members who are not Admins carry this role, and only an Admin member can carry a role built on Admin.",
+      "carriageRefusedKeys": "Only an Admin member can carry a role that grants {permissions}, and {count, plural, one {# member carrying this role is not an Admin} other {# members carrying this role are not Admins}}. Switch it off, or on the Members & Roles page make them Admins or give them another custom role first.",
+      "carriageRefusedBase": "Only an Admin member can carry a role built on {base}, and {count, plural, one {# member carrying this role is not an Admin} other {# members carrying this role are not Admins}}. Choose another base role, or on the Members & Roles page make them Admins or give them another custom role first."
     },
     "members": {
       "crumbSelf": "Members & Roles",
@@ -4990,7 +4996,11 @@
       },
       "lineOfDefenceFailed": "The line of defence could not be changed.",
       "lineOfDefenceUpdated": "Line of defence updated for {email}",
-      "lineOfDefenceUpdatedWithFindings": "Line of defence updated for {email}. It broke an auditor agent's independence, and {count} finding(s) were raised."
+      "lineOfDefenceUpdatedWithFindings": "Line of defence updated for {email}. It broke an auditor agent's independence, and {count} finding(s) were raised.",
+      "customRoleAdminMembershipOnly": "Only an Admin member can carry this custom role.",
+      "customRoleNeedsAdminMembership": "{customRole} can only be carried by an Admin member. Choose another custom role or none, then change the role.",
+      "carriageRefusedKeys": "Only an Admin member can carry a custom role that grants {permissions}.",
+      "carriageRefusedBase": "Only an Admin member can carry a custom role built on {base}."
     },
     "security": {
       "crumbSelf": "Security & MFA",
@@ -6409,7 +6419,9 @@
         "writeUnpaired": "Write, no pairing"
       },
       "agentEnginesMoved": "The agent engine setting is on the AI features page.",
-      "agentEnginesLink": "Open agent engines →"
+      "agentEnginesLink": "Open agent engines →",
+      "manageRefusedNotice": "Only an Owner, or an Admin whose role lets them manage the workspace, can connect, change or remove integrations. Your role here, or the custom role you carry, does not allow it.",
+      "emptyConfiguredReadOnly": "No integrations configured."
     },
     "forbidden": {
       "title": "Admin Access Required",

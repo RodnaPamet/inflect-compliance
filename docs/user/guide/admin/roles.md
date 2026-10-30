@@ -20,7 +20,7 @@ The pill beside it, **{{ui:admin.nav.rbac}}**, is a different page: it shows wha
 | Create, change and delete a custom role | Owner, Admin |
 | Put a permission only an Owner holds into a custom role: deleting the workspace and rotating its encryption keys, managing Owners, and owning agents | Owner |
 
-Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page.
+Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. Someone who can open the page but whose changes would be refused is not offered **{{ui:admin.roles.addRole}}**, **{{ui:admin.roles.editRole}}** or **{{ui:admin.roles.deleteRole}}**, and a note says why: only an Owner, or an Admin whose role counts as Admin and lets them manage the workspace's settings, changes custom roles.
 
 You can put into a custom role only the permissions you hold yourself. In the permission grid, a permission you do not hold is greyed out and cannot be switched on; for an Admin, these are the Owner-only ones. A custom role that already holds one, because an Owner built it, cannot be saved by an Admin while it keeps it, even with only a new name: the form names those permissions and keeps **{{ui:admin.roles.editSubmit}}** greyed out until they are switched off.
 
@@ -72,6 +72,8 @@ The pencil at the end of a row is **{{ui:admin.roles.editRole}}**, and the bin i
 **{{ui:admin.roles.showGrid}}** opens the permission grid; **{{ui:admin.roles.hideGrid}}** closes it. The grid is open from the start when you edit a role. Each row is an area of the product, under **{{ui:admin.roles.gridResource}}**, and each column an action, such as {{ui:admin.roles.actions.view}}, {{ui:admin.roles.actions.create}}, {{ui:admin.roles.actions.edit}} or {{ui:admin.roles.actions.approve}}. A dash means the area has no such action. A green tick means the role grants it; click a cell to switch it. Point at a cell, or move to it with the keyboard, to see which permission it is and whether the role grants it.
 
 A permission you do not hold yourself is greyed out, and a note above the grid says so: you cannot switch it on. If the role already grants it, you can switch it off, but not back on.
+
+While members who are not Admins carry the role you are editing, a note above the grid says how many, and the permissions only an Admin member can use are greyed out: {{ui:admin.roles.actions.sso}}, {{ui:admin.roles.actions.agent_tool_exposure}}, {{ui:admin.roles.actions.agent_policy_card}}, {{ui:admin.roles.actions.agent_ownership}}, {{ui:admin.roles.actions.agent_skill_review}} and {{ui:admin.roles.actions.agent_skill_author}}. {{ui:roles.ADMIN}} cannot be chosen as the base role either; point at it to see why. One the role already grants, from before this rule, can still be switched off, and on again.
 
 Beside **{{ui:admin.roles.presetFrom}}**, click a built-in role to fill the whole grid with that role's permissions, leaving out any you do not hold yourself.
 

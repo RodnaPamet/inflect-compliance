@@ -107,19 +107,37 @@ async function findLiveCustomRoleByName(
 export async function listCustomRoles(ctx: RequestContext) {
     assertCanManageMembers(ctx);
 
-    const rows = await runInTenantContext(ctx, (db) =>
-        db.tenantCustomRole.findMany({
+    const { rows, carriers } = await runInTenantContext(ctx, async (db) => ({
+        rows: await db.tenantCustomRole.findMany({
             where: { tenantId: ctx.tenantId },
             include: {
                 _count: { select: { memberships: true } },
             },
             orderBy: { createdAt: 'asc' },
-        })
-    );
+        }),
+        // Who carries each role, by built-in role: one row per (role, built-in
+        // role), however many members there are.
+        carriers: await db.tenantMembership.groupBy({
+            by: ['customRoleId', 'role'],
+            where: { tenantId: ctx.tenantId, customRoleId: { not: null } },
+            _count: { _all: true },
+        }),
+    }));
+
+    // Members carrying each role whose built-in role is not ADMIN. While there
+    // are any, the role may not become one only an ADMIN membership carries
+    // (`customRoleCarriageRefusal`, owner decision 2026-10-30), and the roles
+    // page locks what a save would be refused for.
+    const nonAdminCarriers = new Map<string, number>();
+    for (const group of carriers) {
+        if (!group.customRoleId || group.role === 'ADMIN') continue;
+        nonAdminCarriers.set(group.customRoleId, (nonAdminCarriers.get(group.customRoleId) ?? 0) + group._count._all);
+    }
 
     return rows.map((row) => ({
         ...row,
         permissionsJson: parsePermissionsJson(row.permissionsJson, row.baseRole),
+        nonAdminCarriers: nonAdminCarriers.get(row.id) ?? 0,
     }));
 }
 

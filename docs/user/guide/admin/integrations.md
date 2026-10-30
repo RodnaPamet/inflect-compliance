@@ -24,6 +24,8 @@ The SSO, SCIM and Entra pages link here too. The strip under their titles, **{{u
 
 Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. An Admin whose membership carries a custom role can do only what that custom role allows. If it cannot manage the workspace's settings, the page still opens, but it shows the refusal in place of the connections, and no catalogue.
 
+The page offers each button only to someone whose change would go through. Connecting, editing, enabling, disabling and authorizing a connection, connecting SharePoint, and turning on the internal checks need an Owner or an Admin whose role counts as Admin. An Admin whose custom role is built on Editor, Auditor or Reader can still see, test and sync the connections, if the custom role lets them manage the workspace's settings. For anyone who cannot make changes, the page says so in a note above the connections, and offers none of those buttons.
+
 ## What it is for
 
 A connection lets Inflect collect from another system without anyone copying data by hand. Depending on the system, it runs automated control checks and records their results as evidence, reads the accounts in an identity directory, reads the employee roster from an HR system, reads a legacy application's access table for review, or imports documents from SharePoint. The health panel tells you when a connection has stopped collecting, which a green **{{ui:admin.integrations.statusActive}}** badge alone does not.

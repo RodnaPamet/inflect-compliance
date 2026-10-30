@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { getTenantServerContext } from '@/lib/server/tenant-context.server';
 import { TenantProvider } from '@/lib/tenant-context-provider';
 import { getTenantPlan } from '@/lib/entitlements-server';
+import { edgeAdmitsAdminApi } from '@/lib/auth/admin-api-edge';
 
 /**
  * This layout depends on auth cookies and database queries — it can never be statically generated.
@@ -67,6 +68,11 @@ export default async function TenantLayout({
             plan,
             permissions: serverCtx.permissions,
             appPermissions: serverCtx.appPermissions,
+            // The edge's verdict on this session's admin-API writes, from its
+            // own `checkAdminAccess` and the session's membership claims — so
+            // an admin page offers a control only where the edge would let its
+            // request through (#4467).
+            edgeAdmitsAdminApi: edgeAdmitsAdminApi(tenantSlug, session.user),
             modules: serverCtx.modules,
         }}>
             {children}

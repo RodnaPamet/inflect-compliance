@@ -94,6 +94,8 @@ Click the member's role, or **{{ui:admin.members.changeRole}}** in the row's men
 
 If your workspace has custom roles, a second list appears below the first. A custom role gives the member its own permissions in place of the built-in role's. To take one away, click the selected custom role again; the list then reads {{ui:admin.members.customRolePlaceholder}}. The second list does not appear when the role is Owner or AI admin.
 
+A custom role that only an Admin member can carry is greyed out in the second list unless the role you chose is {{ui:roles.ADMIN}}; point at it to see why. If the member carries such a custom role and you choose another role than {{ui:roles.ADMIN}}, a note names the custom role and **{{ui:admin.members.save}}** is greyed out until you choose another custom role, or none. Both changes are then saved together.
+
 When you change both the role and the custom role, they are saved together. If either is refused, neither changes: the red message gives the reason, and the row shows what the member holds.
 
 If the member carries a custom role and you choose {{ui:roles.AI_ADMIN}}, a note says that role cannot carry a custom role and **{{ui:admin.members.save}}** is greyed out. Remove the custom role and save first, then change the role. An Owner or AI admin who was given a custom role before that rule applied shows a note and a **{{ui:admin.members.removeCustomRole}}** button. Click it to restore the full built-in role.

@@ -26,6 +26,11 @@
  * either. This module only ASKS; it widens nothing, and it is not an
  * authority — every write still passes all three gates on its own.
  *
+ * The three-gate rule is every admin page's since #4467: this module is the
+ * agent register's use of `offersAdminApiWrite`
+ * (`src/lib/auth/admin-api-affordances.ts`), with its edge verdict from
+ * `edgeAdmitsAdminApi` (`src/lib/auth/admin-api-edge.ts`).
+ *
  * Pure: the session's claims are read by the server page and handed in, so a
  * unit test can drive every role without a request.
  */
@@ -34,15 +39,10 @@ import {
     meetsAgentGovernanceAdmin,
     meetsAgentGovernanceWrite,
 } from '@/app-layer/policies/agent-governance.policies';
-import { checkAdminAccess } from '@/lib/auth/guard';
+import { offersAdminApiWrite } from '@/lib/auth/admin-api-affordances';
+import { edgeAdmitsAdminApi, type EdgeAdminClaims } from '@/lib/auth/admin-api-edge';
 
-/** The two JWT claims the edge's admin gate reads. */
-export interface EdgeAdminClaims {
-    /** The primary membership's role — read only for a path that names no tenant. */
-    role?: string | null;
-    /** Every membership the session carries, each with its built-in role. */
-    memberships?: ReadonlyArray<{ slug: string; role: string }> | null;
-}
+export type { EdgeAdminClaims };
 
 /**
  * Would the edge admit this session's WRITE to the agent admin API of
@@ -54,14 +54,7 @@ export function edgeAdmitsAgentAdminWrite(
     tenantSlug: string,
     claims: EdgeAdminClaims | null | undefined,
 ): boolean {
-    return (
-        checkAdminAccess(
-            `/api/t/${tenantSlug}/admin/agents`,
-            claims?.role ?? null,
-            claims?.memberships ?? null,
-            'POST',
-        ) !== 'deny'
-    );
+    return edgeAdmitsAdminApi(tenantSlug, claims, '/agents', 'POST');
 }
 
 export interface AgentRegisterAffordances {
@@ -84,9 +77,15 @@ export function agentRegisterAffordances(
     ctx: RequestContext,
     edgeAdmits: boolean,
 ): AgentRegisterAffordances {
-    const holdsKey = ctx.appPermissions?.admin?.agent_registry === true;
+    const viewer = { edgeAdmits, appPermissions: ctx.appPermissions, permissions: ctx.permissions };
     return {
-        canManage: edgeAdmits && holdsKey && meetsAgentGovernanceWrite(ctx, 'agent_registry'),
-        canAdminister: edgeAdmits && holdsKey && meetsAgentGovernanceAdmin(ctx, 'agent_registry'),
+        canManage: offersAdminApiWrite(viewer, {
+            key: 'admin.agent_registry',
+            floor: meetsAgentGovernanceWrite(ctx, 'agent_registry'),
+        }),
+        canAdminister: offersAdminApiWrite(viewer, {
+            key: 'admin.agent_registry',
+            floor: meetsAgentGovernanceAdmin(ctx, 'agent_registry'),
+        }),
     };
 }

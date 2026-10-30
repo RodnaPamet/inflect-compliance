@@ -3,6 +3,7 @@
 import { createContext, useContext, useCallback } from 'react';
 import type { Role } from '@prisma/client';
 import type { PermissionSet } from '@/lib/permissions';
+import { offersAdminApiWrite, type AdminApiGate } from '@/lib/auth/admin-api-affordances';
 
 // ─── Tenant context ───
 
@@ -29,6 +30,19 @@ export interface TenantContextValue {
         canExport: boolean;
     };
     appPermissions: PermissionSet;
+    /**
+     * Whether the EDGE admits this session's writes to this tenant's admin API
+     * outside the agent subtree — `checkAdminAccess`, which reads the
+     * membership's BUILT-IN role and never a custom role (#4467). Asked on the
+     * server by the tenant layout (`edgeAdmitsAdminApi`), so a client page can
+     * offer an admin control only where the edge lets its request through
+     * (`useOffersAdminApiWrite`).
+     *
+     * Optional so a provider built without it (a test) keeps every control: an
+     * absent verdict is read as admitted. The server stays the authority either
+     * way; the tenant layout always asks.
+     */
+    edgeAdmitsAdminApi?: boolean;
     /**
      * Which optional modules this tenant has.
      *
@@ -84,6 +98,19 @@ export function useTenantContext(): TenantContextValue {
  */
 export function usePermissions(): PermissionSet {
     return useTenantContext().appPermissions;
+}
+
+/**
+ * Whether this viewer is offered the admin-API write `gate` describes — the
+ * edge, the route's key and the usecase's floor, each as the server asks it
+ * (`offersAdminApiWrite`). The edge's verdict is the tenant layout's.
+ */
+export function useOffersAdminApiWrite(gate: AdminApiGate): boolean {
+    const ctx = useTenantContext();
+    return offersAdminApiWrite(
+        { edgeAdmits: ctx.edgeAdmitsAdminApi ?? true, appPermissions: ctx.appPermissions, permissions: ctx.permissions },
+        gate,
+    );
 }
 
 /**

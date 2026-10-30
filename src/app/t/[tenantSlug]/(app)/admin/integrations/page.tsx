@@ -12,7 +12,7 @@ import { summariseSync, type SyncConnectionResponse } from '@/lib/integrations/s
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiErrorMessage } from '@/lib/api-error';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useOffersAdminApiWrite, useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { Trash2, CheckCircle, XCircle, Loader2, Link2, Eye, EyeOff, RefreshCw, Activity, Pencil, KeyRound } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -102,6 +102,14 @@ export default function AdminIntegrationsPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const t = useTranslations('admin');
+    // Every request here passes the edge (an Owner or Admin MEMBERSHIP) and
+    // the routes' `admin.manage`. Saving, enabling, disabling, removing and
+    // authorizing a connection also pass the usecases' `canAdmin` — the coarse
+    // tier of a custom role's base — while listing, testing and syncing do not
+    // (#4466 finding 9). Each control is offered where its request would be
+    // accepted, and nowhere else.
+    const canConfigure = useOffersAdminApiWrite({ key: 'admin.manage', floor: 'canAdmin' });
+    const canOperate = useOffersAdminApiWrite({ key: 'admin.manage' });
     const searchParams = useSearchParams();
     // The consent callback (`/api/integrations/mcp-server/callback`) always
     // returns here with `?mcp=connected|declined|error`. Nothing read it, so a
@@ -658,17 +666,19 @@ export default function AdminIntegrationsPage() {
                                             )}
                                         </div>
                                     )}
-                                    <div className="mt-auto pt-2">
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            icon={<Link2 className="w-3.5 h-3.5" />}
-                                            onClick={() => handleConnect(p.id)}
-                                            id={`connect-${p.id}-btn`}
-                                        >
-                                            {t('integrations.connect')}
-                                        </Button>
-                                    </div>
+                                    {canConfigure && (
+                                        <div className="mt-auto pt-2">
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                icon={<Link2 className="w-3.5 h-3.5" />}
+                                                onClick={() => handleConnect(p.id)}
+                                                id={`connect-${p.id}-btn`}
+                                            >
+                                                {t('integrations.connect')}
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
                                 ))}
                                 </div>
@@ -677,6 +687,12 @@ export default function AdminIntegrationsPage() {
                         })}
                         </div>
                     </div>
+                )}
+
+                {!canConfigure && (
+                    <InlineNotice variant="info" data-testid="integrations-manage-refused">
+                        {t('integrations.manageRefusedNotice')}
+                    </InlineNotice>
                 )}
 
                 {/* Message banner — the last action's result. */}
@@ -704,7 +720,7 @@ export default function AdminIntegrationsPage() {
                     <div className="flex justify-between items-center mb-3">
                         <Heading level={2}>{t('integrations.configuredConnections')}</Heading>
                         <div className="flex items-center gap-tight">
-                            {internalProviders.length > 0 && !allInternalEnabled && (
+                            {canConfigure && internalProviders.length > 0 && !allInternalEnabled && (
                                 <Button variant="secondary" size="sm" onClick={handleEnableInternal} id="enable-internal-checks-btn">
                                     {t('integrations.enableInternal')}
                                 </Button>
@@ -733,14 +749,16 @@ export default function AdminIntegrationsPage() {
                                     {t('writeLadder.linkLabel')}
                                 </Link>
                             </RequirePermission>
-                            <Button
-                                variant="primary"
-                                icon={<Plus className="-ml-0.5 -mr-2.5" />}
-                                onClick={() => { resetForm(); setShowForm(true); }}
-                                id="add-integration-btn"
-                            >
-                                {t('integrations.addButton')}
-                            </Button>
+                            {canConfigure && (
+                                <Button
+                                    variant="primary"
+                                    icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                                    onClick={() => { resetForm(); setShowForm(true); }}
+                                    id="add-integration-btn"
+                                >
+                                    {t('integrations.addButton')}
+                                </Button>
+                            )}
                         </div>
                     </div>
 
@@ -832,7 +850,7 @@ export default function AdminIntegrationsPage() {
                                             {/* Not offered on a disabled connection, which the
                                                 sync refuses ("not found or disabled") — the row's
                                                 Enable action is the way back (#4466). */}
-                                            {row.original.isEnabled && (
+                                            {canOperate && row.original.isEnabled && (
                                                 <Tooltip content={t('integrations.syncNow')}>
                                                     <Button variant="secondary" size="xs" onClick={() => handleSyncNow(row.original.id)} disabled={syncingId === row.original.id} aria-label={t('integrations.syncNow')} id={`sync-${row.original.id}-btn`}>
                                                         <RefreshCw className={cn('w-3.5 h-3.5', syncingId === row.original.id && 'animate-spin')} />
@@ -844,24 +862,28 @@ export default function AdminIntegrationsPage() {
                                                     <Activity className="w-3.5 h-3.5" />
                                                 </Link>
                                             </Tooltip>
-                                            <Tooltip content={t('integrations.testConnection')}>
-                                                <Button variant="secondary" size="xs" onClick={() => handleTest(row.original)} disabled={testing === row.original.id} aria-label={t('integrations.testConnection')}>
-                                                    {testing === row.original.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-                                                </Button>
-                                            </Tooltip>
-                                            {row.original.provider === 'mcp-server' && (
+                                            {canOperate && (
+                                                <Tooltip content={t('integrations.testConnection')}>
+                                                    <Button variant="secondary" size="xs" onClick={() => handleTest(row.original)} disabled={testing === row.original.id} aria-label={t('integrations.testConnection')}>
+                                                        {testing === row.original.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+                                                    </Button>
+                                                </Tooltip>
+                                            )}
+                                            {canConfigure && row.original.provider === 'mcp-server' && (
                                                 <Tooltip content={t('integrations.authorizeEntra')}>
                                                     <Button variant="secondary" size="xs" onClick={() => handleAuthorize(row.original)} disabled={authorizing === row.original.id} aria-label={t('integrations.authorizeEntra')}>
                                                         {authorizing === row.original.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
                                                     </Button>
                                                 </Tooltip>
                                             )}
-                                            <Tooltip content={t('integrations.editConnection')}>
-                                                <Button variant="secondary" size="xs" onClick={() => handleEdit(row.original)} aria-label={t('integrations.editConnection')}>
-                                                    <Pencil className="w-3.5 h-3.5" />
-                                                </Button>
-                                            </Tooltip>
-                                            {row.original.isEnabled ? (
+                                            {canConfigure && (
+                                                <Tooltip content={t('integrations.editConnection')}>
+                                                    <Button variant="secondary" size="xs" onClick={() => handleEdit(row.original)} aria-label={t('integrations.editConnection')}>
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </Button>
+                                                </Tooltip>
+                                            )}
+                                            {!canConfigure ? null : row.original.isEnabled ? (
                                                 <Tooltip content={t('integrations.disableIntegration')}>
                                                     <Button variant="destructive" size="xs" onClick={() => handleDisable(row.original.id)} aria-label={t('integrations.disableIntegration')}>
                                                         <Trash2 className="w-3.5 h-3.5" />
@@ -886,7 +908,7 @@ export default function AdminIntegrationsPage() {
                                     getRowId={(c) => c.id}
                                     // Every action is per row; nothing acts on a selection.
                                     selectionEnabled={false}
-                                    emptyState={t('integrations.emptyConfigured')}
+                                    emptyState={t(canConfigure ? 'integrations.emptyConfigured' : 'integrations.emptyConfiguredReadOnly')}
                                     resourceName={(p) => p ? t('integrations.resourceConnections') : t('integrations.resourceConnection')}
                                     data-testid="integrations-table"
                                 />

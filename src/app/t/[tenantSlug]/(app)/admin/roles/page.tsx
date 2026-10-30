@@ -31,7 +31,17 @@ import { useTranslations } from 'next-intl';
 import { apiErrorMessage } from '@/lib/api-error';
 import { grantExceedingKeys } from '@/lib/custom-role-grant-refusal';
 import { Card, cardVariants } from '@/components/ui/card';
-import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
+import {
+    useTenantApiUrl,
+    useTenantHref,
+    usePermissions,
+    useOffersAdminApiWrite,
+} from '@/lib/tenant-context-provider';
+import {
+    ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS,
+    CUSTOM_ROLE_ADMIN_BASE_REFUSAL,
+    customRoleCarriageRefusalOf,
+} from '@/lib/roles';
 import {
     getPermissionsForRole,
     permissionsExceeding,
@@ -70,6 +80,13 @@ interface CustomRole {
     createdAt: string;
     updatedAt: string;
     _count: { memberships: number };
+    /**
+     * Members carrying the role whose built-in role is not ADMIN. While there
+     * are any, the role may not be built on ADMIN or gain an admin key only an
+     * ADMIN membership may carry (owner decision, 2026-10-30), so the form
+     * locks both. Absent from an older server's list: read as none.
+     */
+    nonAdminCarriers?: number;
 }
 
 // ─── Labels ───
@@ -169,6 +186,30 @@ function withinHeld(perms: PermissionSet, held: PermissionSet): PermissionSet {
     return out as unknown as PermissionSet;
 }
 
+/**
+ * The admin keys the form may not switch ON for a role that members who are
+ * not Admins carry: every `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` key the stored
+ * role does not already grant. The server refuses exactly what a save ADDS
+ * (`customRoleCarriageRefusal`), so a key the role already grants stays
+ * switchable — off, and back on.
+ */
+function adminOnlyLockedKeys(initial: CustomRole | undefined): ReadonlySet<string> {
+    if (!initial || (initial.nonAdminCarriers ?? 0) === 0) return new Set();
+    return new Set(
+        ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS.filter((key) => initial.permissionsJson.admin?.[key] !== true).map(
+            (key) => `admin.${key}`,
+        ),
+    );
+}
+
+/** `perms` with every locked key off — a preset or a base role's defaults start inside the rule. */
+function withoutLocked(perms: PermissionSet, locked: ReadonlySet<string>): PermissionSet {
+    if (locked.size === 0) return perms;
+    const admin = { ...perms.admin } as Record<string, boolean>;
+    for (const key of locked) admin[key.slice('admin.'.length)] = false;
+    return { ...perms, admin: admin as PermissionSet['admin'] };
+}
+
 // ─── Permission Grid Component ───
 
 /**
@@ -182,16 +223,20 @@ function PermissionGrid({
     permissions,
     onChange,
     held,
+    adminOnlyLocked,
 }: {
     permissions: PermissionSet;
     onChange: (p: PermissionSet) => void;
     held: PermissionSet;
+    /** `domain.action` keys this role may not gain while non-Admin members carry it. */
+    adminOnlyLocked: ReadonlySet<string>;
 }) {
     const labels = useRolesPageText();
     const { t } = labels;
     const toggle = (resource: keyof PermissionSet, action: string) => {
         const current = (permissions[resource] as Record<string, boolean>)[action] ?? false;
         if (!current && !holdsPermission(held, resource, action)) return;
+        if (!current && adminOnlyLocked.has(`${resource}.${action}`)) return;
         const updated = {
             ...permissions,
             [resource]: {
@@ -234,11 +279,16 @@ function PermissionGrid({
                                     }
                                     const granted = (permissions[resource] as Record<string, boolean>)[action] ?? false;
                                     const holds = holdsPermission(held, resource, action);
-                                    const locked = !granted && !holds;
+                                    const carriageLocked = !granted && adminOnlyLocked.has(`${resource}.${action}`);
+                                    const locked = (!granted && !holds) || carriageLocked;
                                     const permission = labels.permission(`${resource}.${action}`);
                                     const hint = granted
                                         ? t(holds ? 'roles.cellGranted' : 'roles.cellGrantedNotHeld', { permission })
-                                        : t(holds ? 'roles.cellNotGranted' : 'roles.cellNotHeld', { permission });
+                                        : !holds
+                                          ? t('roles.cellNotHeld', { permission })
+                                          : carriageLocked
+                                            ? t('roles.cellAdminMembershipOnly', { permission })
+                                            : t('roles.cellNotGranted', { permission });
                                     return (
                                         <td key={action} className="text-center">
                                             <Tooltip content={hint}>
@@ -299,9 +349,21 @@ function RoleForm({
     // request's tenant (custom-role aware). The server refuses a role that
     // grants more than these (`assertGrantWithinOwnAuthority`).
     const held = usePermissions();
+    // While members who are not Admins carry the role, it may not be built on
+    // ADMIN or gain an admin key only an ADMIN membership carries (owner
+    // decision, 2026-10-30). Locked as the server judges it: against the role
+    // as stored, so a legacy role can still be narrowed.
+    const nonAdminCarriers = initial?.nonAdminCarriers ?? 0;
+    const lockedKeys = useMemo(() => adminOnlyLockedKeys(initial), [initial]);
+    const baseAdminLocked = nonAdminCarriers > 0 && initial?.baseRole !== 'ADMIN';
     const baseRoleOptions: ComboboxOption[] = useMemo(
-        () => BASE_ROLES.map((r) => ({ value: r, label: roleLabel(r) })),
-        [roleLabel],
+        () =>
+            BASE_ROLES.map((r) => ({
+                value: r,
+                label: roleLabel(r),
+                ...(r === 'ADMIN' && baseAdminLocked ? { disabledTooltip: t('roles.baseAdminMembershipOnly') } : {}),
+            })),
+        [roleLabel, baseAdminLocked, t],
     );
     const [name, setName] = useState(initial?.name ?? '');
     const [description, setDescription] = useState(initial?.description ?? '');
@@ -316,6 +378,11 @@ function RoleForm({
     // editor turn them off but not on, and the server refuses the save while
     // any remain, so the form says so and holds the button.
     const exceeding = permissionsExceeding(permissions, held);
+    // A locked key switched on, or the ADMIN base chosen, while locked. The
+    // grid and the base list never get there; held here so the button agrees.
+    const breaksCarriage =
+        (baseAdminLocked && baseRole === 'ADMIN') ||
+        [...lockedKeys].some((key) => permissions.admin?.[key.slice('admin.'.length) as keyof PermissionSet['admin']] === true);
     // Whether the grid will grey anything out for this editor at all.
     const holdsLessThanAll = useMemo(
         () => permissionsExceeding(getPermissionsForRole('OWNER'), held).length > 0,
@@ -379,6 +446,16 @@ function RoleForm({
                 />
             </div>
 
+            {nonAdminCarriers > 0 && (
+                <InlineNotice variant="info" id="role-admin-membership-only">
+                    {t('roles.adminMembershipOnlyNotice', {
+                        count: nonAdminCarriers,
+                        admin: roleLabel('ADMIN'),
+                        permissions: ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS.map((k) => labels.permission(`admin.${k}`)).join(', '),
+                    })}
+                </InlineNotice>
+            )}
+
             {exceeding.length > 0 && (
                 <InlineNotice variant="warning" id="role-exceeds-held">
                     {t('roles.exceedsHeldNotice', {
@@ -408,7 +485,7 @@ function RoleForm({
                                     <button
                                         key={r}
                                         type="button"
-                                        onClick={() => setPermissions(withinHeld(getPermissionsForRole(r), held))}
+                                        onClick={() => setPermissions(withoutLocked(withinHeld(getPermissionsForRole(r), held), lockedKeys))}
                                         className="text-[10px] px-2 py-0.5 rounded bg-bg-elevated/50 text-content-default hover:bg-bg-muted/50 transition"
                                         id={`preset-${r}`}
                                     >
@@ -422,7 +499,12 @@ function RoleForm({
                                 {t('roles.notHeldHint')}
                             </p>
                         )}
-                        <PermissionGrid permissions={permissions} onChange={setPermissions} held={held} />
+                        <PermissionGrid
+                            permissions={permissions}
+                            onChange={setPermissions}
+                            held={held}
+                            adminOnlyLocked={lockedKeys}
+                        />
                     </div>
                 )}
             </div>
@@ -432,7 +514,7 @@ function RoleForm({
                     variant="primary"
                     type="button"
                     onClick={() => onSubmit({ name: name.trim(), description: description.trim(), baseRole, permissionsJson: permissions })}
-                    disabled={submitting || !name.trim() || exceeding.length > 0}
+                    disabled={submitting || !name.trim() || exceeding.length > 0 || breaksCarriage}
                     loading={submitting}
                     id="role-submit-btn"
                 >
@@ -453,6 +535,11 @@ export default function CustomRolesPage() {
     const { t, roleLabel } = labels;
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    // Create, change and delete pass the edge (an Owner or Admin MEMBERSHIP),
+    // the routes' `admin.manage` and the usecases' `assertCanManageMembers`
+    // (the coarse admin tier of a custom role's base). Offered only where all
+    // three let it through (#4467 findings 6 and 9).
+    const canManage = useOffersAdminApiWrite({ key: 'admin.manage', floor: 'canAdmin' });
 
     const [roles, setRoles] = useState<CustomRole[]>([]);
     const [loading, setLoading] = useState(true);
@@ -504,6 +591,20 @@ export default function CustomRolesPage() {
         const exceeded = grantExceedingKeys(body);
         if (exceeded && exceeded.length > 0) {
             return t('roles.grantRefused', { permissions: exceeded.map(labels.permission).join(', ') });
+        }
+        // Only an ADMIN membership carries a role built on ADMIN or granting an
+        // admin-membership-only key (2026-10-30): said with the grid's labels.
+        const carriage = customRoleCarriageRefusalOf(body);
+        if (carriage) {
+            return carriage.reason === CUSTOM_ROLE_ADMIN_BASE_REFUSAL
+                ? t('roles.carriageRefusedBase', {
+                      base: roleLabel(carriage.baseRole ?? 'ADMIN'),
+                      count: carriage.blockingMemberships,
+                  })
+                : t('roles.carriageRefusedKeys', {
+                      permissions: carriage.keys.map(labels.permission).join(', '),
+                      count: carriage.blockingMemberships,
+                  });
         }
         return apiErrorMessage(body, fallback);
     };
@@ -672,6 +773,7 @@ export default function CustomRolesPage() {
                 header: '',
                 cell: ({ row }) => {
                     const role = row.original;
+                    if (!canManage) return null;
                     return (
                         <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
                             <Tooltip content={t('roles.editRole')}>
@@ -707,7 +809,7 @@ export default function CustomRolesPage() {
                 },
             },
         ]),
-        [t, roleLabel],
+        [t, roleLabel, canManage],
     );
 
     // The back link and breadcrumb, in every state — they rendered only while
@@ -762,7 +864,7 @@ export default function CustomRolesPage() {
                             </p>
                         )}
                     </div>
-                    {!showCreate && !editingId && (
+                    {canManage && !showCreate && !editingId && (
                         <Button
                             variant="primary"
                             icon={<Plus className="-ml-0.5 -mr-2.5" />}
@@ -776,6 +878,11 @@ export default function CustomRolesPage() {
             </ListPageShell.Header>
 
             <ListPageShell.Filters className="space-y-default">
+                {!canManage && (
+                    <InlineNotice variant="info" id="roles-manage-refused">
+                        {t('roles.manageRefusedNotice')}
+                    </InlineNotice>
+                )}
                 {/* Messages */}
                 {error && (
                     <InlineNotice
