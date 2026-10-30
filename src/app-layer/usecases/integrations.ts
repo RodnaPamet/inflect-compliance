@@ -1575,10 +1575,17 @@ export async function getIntegrationDiagnostics(ctx: RequestContext) {
  * GAP-3 — per-connection freshness for the admin integrations-health view.
  *
  * For every ENABLED connection, the seconds since its last SUCCESSFUL
- * IntegrationExecution. A connection whose collector has silently died — or
- * that has never once succeeded — surfaces as `isStale`. Two bounded queries
- * (enabled connections + a grouped max-per-connection over any status);
- * never a per-connection query in a loop.
+ * IntegrationExecution or passed connection test. A connection whose collector
+ * has silently died, that keeps failing, or that has never once succeeded
+ * surfaces as `isStale`. Bounded queries (enabled connections + a grouped
+ * max-per-connection over the successful statuses + one over any status for
+ * `lastRunAt`); never a per-connection query in a loop.
+ *
+ * Freshness counts successes only (owner decision 2026-10-30, #4581 D). It
+ * used to count a run of ANY status, so a connection whose nightly runs all
+ * errored on a revoked credential read Fresh, and only Last success showed it.
+ * A failed run is still reported, as `lastRunAt`; it just no longer vouches for
+ * the connection.
  *
  * WHAT COUNTS AS A SUCCESS is provider-dependent, and the split is deliberate:
  * cloud-posture providers (`isPostureProvider`) count PASSED **or** FAILED,
@@ -1643,9 +1650,10 @@ export async function getConnectionsHealth(ctx: RequestContext) {
             where: { tenantId: ctx.tenantId, OR: succeededWhere },
             _max: { completedAt: true, executedAt: true },
         });
-        // P1 — latest run of ANY status. Freshness must reflect activity, not
-        // only success, and a connection that's been tested OK but not yet run
-        // a check should read healthy — not "Never succeeded / Stale".
+        // Latest run of ANY status, reported as `lastRunAt` so a failing
+        // connection still shows that it ran. It does NOT feed freshness
+        // (#4581 D): a failed run proves the job is scheduled, not that the
+        // connection works.
         const groupedAny = await db.integrationExecution.groupBy({
             by: ['connectionId'],
             where: { tenantId: ctx.tenantId, connectionId: { in: connIds } },
@@ -1666,11 +1674,13 @@ export async function getConnectionsHealth(ctx: RequestContext) {
 
         const rows = connections.map((c) => {
             const lastSuccess = lastSuccessByConn.get(c.id) ?? null;
-            // "Activity" = the most recent of any run OR a successful connection
-            // test. Either is proof the connection is live.
+            // "Activity" = the most recent SUCCESSFUL run (by the provider's
+            // own allowlist above) or passed connection test. Either is proof
+            // the connection works; a run that failed is not (#4581 D). A
+            // connection tested OK but not yet run still reads fresh.
             const lastRun = lastRunByConn.get(c.id) ?? null;
             const testOk = c.lastTestStatus === 'ok' ? c.lastTestedAt ?? null : null;
-            const lastActivity = [lastRun, testOk].filter((d): d is Date => d != null)
+            const lastActivity = [lastSuccess, testOk].filter((d): d is Date => d != null)
                 .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
             const secondsSinceLastSuccess = lastSuccess ? Math.max(0, Math.round((now - lastSuccess.getTime()) / 1000)) : null;
             const secondsSinceActivity = lastActivity ? Math.max(0, Math.round((now - lastActivity.getTime()) / 1000)) : null;
