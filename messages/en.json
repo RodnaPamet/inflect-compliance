@@ -3566,7 +3566,10 @@
     "newModal": {
       "description": "Plan a new internal audit. Its checklist is generated from the chosen framework's requirements, or from your controls if you choose none. You record a result against each item; the items themselves are fixed once the audit is created.",
       "creating": "Creating…",
-      "discardConfirm": "Discard audit? Any details you entered will be lost.",
+      "discardTitle": "Discard audit?",
+      "discardConfirm": "Any details you entered will be lost.",
+      "discardConfirmLabel": "Discard draft",
+      "discardCancelLabel": "Keep editing",
       "framework": "Framework",
       "noFramework": "No framework",
       "cycle": "Audit cycle",
@@ -4163,6 +4166,8 @@
       "passRate": "{pct}% pass rate"
     },
     "detail": {
+      "readOnlyCompleted": "This audit is completed, so it can't be changed. Move it back to In Progress to change it.",
+      "readOnlyCancelled": "This audit is cancelled and can't be changed.",
       "loadError": "Could not load the audit.",
       "checklistError": "Could not update the checklist item.",
       "checklistSaved": "Checklist item updated.",
