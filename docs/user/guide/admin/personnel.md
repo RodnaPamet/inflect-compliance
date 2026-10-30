@@ -16,7 +16,7 @@ Click **{{ui:nav.admin}}**, the gear icon at the bottom of the sidebar. The {{ui
 | --- | --- |
 | Open the roster and filter it | Owner, Admin |
 
-Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. An Admin whose membership carries a custom role can open it only if the custom role can both use the admin pages and view personnel. Custom roles built on Reader, Editor or Auditor had the permission to view personnel switched off when it became an Owner and Admin permission; an Owner or Admin can tick it again for a role on the {{ui:admin.roles.title}} page.
+Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. An Admin whose membership carries a custom role can open it only if the custom role can both use the admin pages and view personnel. Custom roles built on Reader, Editor or Auditor had the permission to view personnel switched off when it became an Owner and Admin permission; an Owner or Admin can tick it again for a role on the {{ui:admin.roles.title}} page. The permission to manage personnel is for custom roles based on Admin only, and was switched off on every other custom role.
 
 The page only reads. It has no button to add, change or remove a person.
 
