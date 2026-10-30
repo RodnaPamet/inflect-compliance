@@ -61,8 +61,8 @@ flowchart LR
   specifier where the id is `inflect-external` (Anthropic direct via
   `ANTHROPIC_API_KEY`, or OpenRouter) or `inflect-local`
   (`AI_LOCAL_BASE_URL` — "an OpenAI-compatible endpoint (Ollama / vLLM / …)"
-  inside the operator's perimeter, with a per-tenant `aiLocalBaseUrl`
-  override). `flue/providers.ts` registers providers once from deployment
+  inside the operator's perimeter; a tenant's stored `aiLocalBaseUrl` is
+  honoured only when it is that same address, and refused otherwise, #4545). `flue/providers.ts` registers providers once from deployment
   config through pi-ai's `anthropicMessagesApi` and `openAICompletionsApi`,
   and "a deployment with no external credential registers no external
   provider AT ALL". The socket boundary re-checks the specifier

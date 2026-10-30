@@ -74,6 +74,13 @@ import { RunsTab } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/RunsTa
  */
 const EN = jest.requireActual('../../messages/en.json') as {
     admin: { agentDetail: { runs: Record<string, string> } };
+    agents: { runs: { status: Record<string, string> } };
+};
+/** A run status's label, as the runs list shows it (#4532). */
+const statusText = (status: string): string => {
+    const v = EN.agents.runs.status[status];
+    if (typeof v !== 'string') throw new Error(`messages/en.json has no agents.runs.status.${status}`);
+    return v;
 };
 const copy = (key: string): string => {
     const v = EN.admin.agentDetail.runs[key];
@@ -120,7 +127,10 @@ describe('the agent Runs tab', () => {
         renderTab({ data: [run()], isLoading: false, error: null });
         const link = screen.getByTestId('agent-run-link-run-1');
         expect(link).toHaveAttribute('href', '/t/acme/agents/runs/run-1');
-        expect(link).toHaveTextContent('audit-prep');
+        // The workflow's NAME, as the runs list and the run's own page show it
+        // (#4532) — not its key.
+        expect(link).toHaveTextContent('Audit prep');
+        expect(link).not.toHaveTextContent('audit-prep');
     });
 
     it('shows the pending-proposal badge only when there IS one', () => {
@@ -141,7 +151,7 @@ describe('the agent Runs tab', () => {
             error: null,
         });
         const list = screen.getByTestId('agent-runs-list');
-        expect(list).toHaveTextContent('AWAITING_APPROVAL');
+        expect(list).toHaveTextContent(statusText('AWAITING_APPROVAL'));
         expect(list).not.toHaveTextContent(badge);
     });
 
@@ -182,7 +192,26 @@ describe('the agent Runs tab', () => {
             error: null,
         });
         const list = screen.getByTestId('agent-runs-list');
-        expect(list).toHaveTextContent('FAILED');
-        expect(list).toHaveTextContent('ABORTED');
+        expect(list).toHaveTextContent(statusText('FAILED'));
+        expect(list).toHaveTextContent(statusText('ABORTED'));
+    });
+
+    it('names each status in words, never the stored code (#4532)', () => {
+        const statuses = ['RUNNING', 'AWAITING_APPROVAL', 'PAUSED', 'COMPLETED', 'ABORTED', 'FAILED', 'EMPTY_CATALOGUE'];
+        renderTab({
+            data: statuses.map((status) => run({ id: `r-${status}`, status })),
+            isLoading: false,
+            error: null,
+        });
+        const list = screen.getByTestId('agent-runs-list');
+        for (const status of statuses) {
+            expect(list).toHaveTextContent(statusText(status));
+            if (statusText(status) !== status) expect(screen.queryByText(status)).toBeNull();
+        }
+    });
+
+    it('a status this build does not know shows its stored code', () => {
+        renderTab({ data: [run({ status: 'HALTED' })], isLoading: false, error: null });
+        expect(screen.getByText('HALTED')).toBeInTheDocument();
     });
 });

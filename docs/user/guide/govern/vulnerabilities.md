@@ -28,7 +28,7 @@ The breadcrumb reads **{{ui:vulnerabilities.crumbDashboard}}** › **{{ui:vulner
 
 Readers, Auditors and AI admins see every value as plain text, with no buttons.
 
-If your workspace uses custom roles, each control needs the built-in role your custom role is based on to be able to make changes, and the custom role's own permissions as well: to edit assets for triage, linking and To Finding; to edit assets and create risks for To Risk; and to edit assets and to create and edit tasks for a remediation task. A control your role cannot use is not shown.
+If your workspace uses custom roles, each control needs the built-in role your custom role is based on to be able to make changes, and the custom role's own permissions as well: to edit assets for triage and linking; to edit assets and create findings for To Finding; to edit assets and create risks for To Risk; and to edit assets and to create and edit tasks for a remediation task. A control your role cannot use is not shown.
 
 ## What it is for
 

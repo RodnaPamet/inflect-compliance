@@ -15,6 +15,8 @@ import { useTenantHref } from '@/lib/tenant-context-provider';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { delegationSpans, delegatesClaiming } from '@/lib/agentic/delegation-spans';
+import { proposalKindLabelKey } from '@/lib/agentic/proposal-labels';
+import { proposalStatusLabelKey, runStatusLabelKey, stepStatusLabelKey } from '@/lib/agentic/run-labels';
 import type { RunStepFeedRow } from '@/lib/agentic/run-step-projection';
 import type { RecordedRunDriver } from '@/lib/agentic/agent-driver';
 
@@ -271,6 +273,10 @@ export function AgentRunDetailClient({
 }) {
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
+    // A stored code's name, or the code itself when this build does not know
+    // it (#4532). The keys come from `run-labels` / `proposal-labels`, which
+    // pin each list to its enum and to both catalogues.
+    const label = (key: string | null, stored: string) => (key ? t(key) : stored);
     // NULL is the initial state, and that is deliberate: the page's first paint
     // is the whole timeline with nothing singled out, which is what somebody
     // arriving from a link wants. Defaulting to step 1 would emphasise a step
@@ -312,7 +318,7 @@ export function AgentRunDetailClient({
                         {
                             kind: 'status',
                             label: t('runs.detail.metaStatus'),
-                            value: run.status,
+                            value: label(runStatusLabelKey(run.status), run.status),
                             variant: STATUS_VARIANT[run.status] ?? 'neutral',
                         },
                         {
@@ -538,7 +544,7 @@ export function AgentRunDetailClient({
                                         </span>
                                     )}
                                     <StatusBadge variant={STEP_STATUS_VARIANT[s.status] ?? 'neutral'}>
-                                        {s.status}
+                                        {label(stepStatusLabelKey(s.status), s.status)}
                                     </StatusBadge>
                                     <span className="text-sm font-medium text-content-emphasis">
                                         {t(`runs.detail.kind.${s.kind}`)}
@@ -652,8 +658,8 @@ export function AgentRunDetailClient({
                                                     href={`${tenantHref('/agents/proposals')}#proposal-${p.id}`}
                                                 >
                                                     {t('runs.detail.proposal', {
-                                                        kind: p.kind,
-                                                        status: p.status,
+                                                        kind: label(proposalKindLabelKey(p.kind), p.kind),
+                                                        status: label(proposalStatusLabelKey(p.status), p.status),
                                                     })}
                                                 </a>
                                             </li>

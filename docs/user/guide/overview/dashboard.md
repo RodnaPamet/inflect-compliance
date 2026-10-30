@@ -43,7 +43,7 @@ Use the dashboard to see at a glance how far the workspace is from audit-ready, 
 | --- | --- |
 | {{ui:dashboard.hero.radarAxes.controls}} | Implemented controls, out of every control that has not been scoped out |
 | {{ui:dashboard.hero.radarAxes.evidence}} | Approved evidence not past its review date, out of that plus unapproved evidence past its review date |
-| {{ui:dashboard.hero.radarAxes.risk}} | Open risks scoring below 10, out of every open risk. Closed and accepted risks are left out |
+| {{ui:dashboard.hero.radarAxes.risk}} | Open and mitigating risks scoring below 10, out of every open or mitigating risk. Mitigated, accepted and closed risks are left out, so with no open or mitigating risk the area reads **{{ui:dashboard.hero.ladderNoEstate}}** |
 | {{ui:dashboard.hero.radarAxes.policies}} | Policies not past their review date, out of every policy |
 | {{ui:dashboard.hero.radarAxes.tasks}} | Tasks that are finished or not past their due date, out of every task |
 | {{ui:dashboard.hero.radarAxes.vendors}} | Vendors not past their review date, out of every vendor |
@@ -57,7 +57,7 @@ Until a summary has been written for the workspace, the card shows the share of 
 | Card | What it shows | The arrow opens |
 | --- | --- | --- |
 | {{ui:dashboard.controls}} | The share of controls implemented, and how many out of how many | {{ui:nav.controls}} |
-| {{ui:dashboard.risks}} | Every risk, and how many open risks score 10 or more: the High and Critical bands of **{{ui:dashboard.riskDistribution}}** | {{ui:nav.risks}} |
+| {{ui:dashboard.risks}} | Every risk, and how many open or mitigating risks score 10 or more: the High and Critical bands of **{{ui:dashboard.riskDistribution}}** | {{ui:nav.risks}} |
 | {{ui:dashboard.evidence}} | Every piece of evidence, and how many are overdue for review | {{ui:nav.evidence}} |
 | {{ui:dashboard.openTasks}} | Tasks that are not resolved, closed or canceled, and how many are past due | {{ui:nav.tasks}}, filtered to those tasks |
 | {{ui:dashboard.policies}} | Every policy, and how many are published | {{ui:nav.policies}} |
@@ -79,7 +79,7 @@ Four cards carry a 30-day trend line once the workspace has two days of history.
 **Status charts.** Four cards, in two rows. Click a slice of a pie, or its row in the legend, to open the list filtered to it.
 
 - **{{ui:dashboard.controlCoverage}}**: a bar of implemented, in-progress and not-started controls, with a trend line once history exists.
-- **{{ui:dashboard.riskDistribution}}**: open risks by score, Critical 15 to 25, High 10 to 14, Medium 5 to 9 and Low 1 to 4, and the count of open and mitigating risks beside **{{ui:dashboard.openMitigating}}**. Closed and accepted risks are in no band.
+- **{{ui:dashboard.riskDistribution}}**: open and mitigating risks by score, Critical 15 to 25, High 10 to 14, Medium 5 to 9 and Low 1 to 4, and the count of each beside **{{ui:dashboard.openMitigating}}**. Mitigated, accepted and closed risks are in no band. A mitigated risk has had its treatment and waits only for the decision to accept it, so it no longer counts as exposure here. Its review dates still appear in the compliance calendar and in deadline reminders.
 - **{{ui:dashboard.taskStatus}}**: tasks that are open, in progress, in review, blocked, and resolved, closed or canceled. Every task is in one slice.
 - **{{ui:dashboard.policyStatus}}**: policies by status.
 
@@ -87,7 +87,7 @@ Four cards carry a 30-day trend line once the workspace has two days of history.
 
 **{{ui:dashboard.complianceTrends}}.** Four 30-day trend lines: **{{ui:dashboard.coverage}}**, **{{ui:dashboard.openRisks}}**, **{{ui:dashboard.overdueEvidenceLabel}}** and **{{ui:dashboard.openFindings}}**, with the number of days of history in the corner.
 
-**The next step.** A card recommends one thing to do, the first that applies: refresh overdue evidence, resolve overdue tasks, review open risks scoring 10 or more, improve control coverage while it is under 80%, and otherwise run a readiness check. Its button opens the page for that work. Below it, **{{ui:dashboard.addRisk}}** and **{{ui:dashboard.newPolicy}}** open the {{ui:nav.risks}} and {{ui:nav.policies}} lists with the form for a new one already open, and **{{ui:dashboard.addEvidence}}** opens the {{ui:nav.evidence}} list with its menu of ways to add evidence. Each link appears only for a role that can create that record.
+**The next step.** A card recommends one thing to do, the first that applies: refresh overdue evidence, resolve overdue tasks, review open or mitigating risks scoring 10 or more, improve control coverage while it is under 80%, and otherwise run a readiness check. Its button opens the page for that work. Below it, **{{ui:dashboard.addRisk}}** and **{{ui:dashboard.newPolicy}}** open the {{ui:nav.risks}} and {{ui:nav.policies}} lists with the form for a new one already open, and **{{ui:dashboard.addEvidence}}** opens the {{ui:nav.evidence}} list with its menu of ways to add evidence. Each link appears only for a role that can create that record.
 
 **{{ui:dashboard.recentActivity}}.** For Owners, Admins and Auditors, the roles that can read the audit log. The ten latest entries in the workspace's audit log: when, who, what they did and to which item. The item is a link when it has its own page. Changes made by Inflect itself are shown as **{{ui:dashboard.activity.systemActor}}**. **{{ui:dashboard.activity.viewAuditLog}}**, under the list, opens the full audit log.
 
@@ -95,7 +95,7 @@ Four cards carry a 30-day trend line once the workspace has two days of history.
 
 ### Follow a figure to its list
 
-Click a card's arrow, a slice of a pie, a legend row or the next-step button. The list opens filtered where the dashboard knows how: tasks and policies by status, and risks by score range and open status. The next-step button opens evidence past its review date, overdue tasks, or open risks scoring 10 or more. The custom metric's pie opens its page unfiltered.
+Click a card's arrow, a slice of a pie, a legend row or the next-step button. The list opens filtered where the dashboard knows how: tasks and policies by status, and risks by score range with the open and mitigating statuses. The next-step button opens evidence past its review date, overdue tasks, or open and mitigating risks scoring 10 or more. The custom metric's pie opens its page unfiltered.
 
 ### Refresh the posture summary
 

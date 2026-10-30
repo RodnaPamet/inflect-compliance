@@ -75,6 +75,8 @@ function dbWithAudit(opts: { cycleIds?: string[] } = {}) {
         },
         auditChecklistItem: { findMany: jest.fn(async () => []), updateMany: jest.fn() },
         auditLog: { create: jest.fn(), findFirst: jest.fn(async () => null) },
+        // `AuditRepository.lockStatus` (#4531) — the audit is PLANNED, so open.
+        $queryRaw: jest.fn(async () => [{ status: EXISTING.status }]),
     };
     return writes;
 }

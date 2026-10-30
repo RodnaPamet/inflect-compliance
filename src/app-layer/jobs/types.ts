@@ -1095,6 +1095,11 @@ export interface IdentityLeaverPassPayload {
      * It carries the user id rather than a bare `'manual'` flag because the
      * journal's `actorUserId` has the same hole and the same answer: the id
      * fixes both, a flag would fix neither.
+     *
+     * A claim about who ASKED, never a grant (#4400). The pass re-reads this
+     * member's authority when it runs and acts as them only while they still
+     * hold the key the route asserted; otherwise it runs as the scheduled pass
+     * does and records the refusal (`resolvePassActor`).
      */
     requestedByUserId?: string;
 }

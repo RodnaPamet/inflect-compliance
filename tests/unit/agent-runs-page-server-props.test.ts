@@ -36,7 +36,7 @@ import AgentRunsPage from '@/app/t/[tenantSlug]/(app)/agents/runs/page';
 import { makeRequestContext } from '../helpers/make-context';
 
 type ClientProps = {
-    startAbilities: { discoveredAgents: boolean; askPage: boolean };
+    startAbilities: { discoveredAgents: boolean; askPage: boolean; frameworks: boolean };
     runs: Array<{ id: string; workflowKey: string; workflowName: string; pendingProposals: number }>;
     truncated: boolean;
     workflows: Array<{ key: string; name: string; requiredInput?: readonly string[] }>;
@@ -166,5 +166,21 @@ describe('what the start forms may offer this caller (#4472)', () => {
             }),
         );
         expect((await render()).startAbilities.askPage).toBe(false);
+    });
+
+    it('offers the framework picker exactly when frameworks.view, the catalogue’s only check, is held (#4533)', async () => {
+        listWorkflowRunsMock.mockResolvedValue([]);
+        // The roles the page admits; every built-in role holds frameworks.view.
+        for (const role of ['OWNER', 'ADMIN', 'AI_ADMIN', 'AUDITOR'] as const) {
+            getTenantCtxMock.mockResolvedValue(makeRequestContext(role));
+            expect({ role, frameworks: (await render()).startAbilities.frameworks }).toEqual({ role, frameworks: true });
+        }
+        const base = makeRequestContext('ADMIN');
+        getTenantCtxMock.mockResolvedValue(
+            makeRequestContext('ADMIN', {
+                appPermissions: { ...base.appPermissions, frameworks: { ...base.appPermissions.frameworks, view: false } },
+            }),
+        );
+        expect((await render()).startAbilities.frameworks).toBe(false);
     });
 });

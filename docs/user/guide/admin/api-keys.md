@@ -44,7 +44,7 @@ Give each system its own key, with only the access that system needs, and revoke
 
 | Area | Choices |
 | --- | --- |
-| {{ui:admin.scopeGroup.controls}}, {{ui:admin.scopeGroup.evidence}}, {{ui:admin.scopeGroup.tasks}}, {{ui:admin.scopeGroup.risks}}, {{ui:admin.scopeGroup.assets}}, {{ui:admin.scopeGroup.vendors}}, {{ui:admin.scopeGroup.tests}}, {{ui:admin.scopeGroup.frameworks}}, {{ui:admin.scopeGroup.reports}} | **Read**, **Write** |
+| {{ui:admin.scopeGroup.controls}}, {{ui:admin.scopeGroup.evidence}}, {{ui:admin.scopeGroup.tasks}}, {{ui:admin.scopeGroup.risks}}, {{ui:admin.scopeGroup.assets}}, {{ui:admin.scopeGroup.vendors}}, {{ui:admin.scopeGroup.findings}}, {{ui:admin.scopeGroup.tests}}, {{ui:admin.scopeGroup.frameworks}}, {{ui:admin.scopeGroup.reports}} | **Read**, **Write** |
 | {{ui:admin.scopeGroup.policies}}, {{ui:admin.scopeGroup.access_reviews}} | **Read**, **Write**, **Admin** |
 | {{ui:admin.scopeGroup.incidents}}, {{ui:admin.scopeGroup.personnel}}, {{ui:admin.scopeGroup.identity_reconciliation}} | **Read**, **Admin** |
 | {{ui:admin.scopeGroup.continuity}}, {{ui:admin.scopeGroup.processes}} | **Write** |

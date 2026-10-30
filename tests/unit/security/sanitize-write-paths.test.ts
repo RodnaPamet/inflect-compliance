@@ -155,6 +155,8 @@ jest.mock('@/app-layer/repositories/AuditRepository', () => ({
         create: (...a: unknown[]) => mockAuditCreate(...a),
         update: (...a: unknown[]) => mockAuditUpdate(...a),
         updateChecklistItem: (...a: unknown[]) => mockAuditChecklistUpdate(...a),
+        // An open audit: the read-only rule (#4531) is not what this file tests.
+        lockStatus: async () => ({ status: 'IN_PROGRESS' }),
     },
 }));
 
