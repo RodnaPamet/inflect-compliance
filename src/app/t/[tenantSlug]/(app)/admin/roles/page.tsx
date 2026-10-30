@@ -32,12 +32,8 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { grantExceedingKeys } from '@/lib/custom-role-grant-refusal';
 import { isPersonnelManageRefusal, mayHoldPersonnelManage } from '@/lib/personnel-manage-rule';
 import { Card, cardVariants } from '@/components/ui/card';
-import {
-    useTenantApiUrl,
-    useTenantHref,
-    usePermissions,
-    useOffersAdminApiWrite,
-} from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
+import { useOffersAdminApiWrite } from '@/lib/auth/use-offers-admin-api-write';
 import {
     ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS,
     CUSTOM_ROLE_ADMIN_BASE_REFUSAL,

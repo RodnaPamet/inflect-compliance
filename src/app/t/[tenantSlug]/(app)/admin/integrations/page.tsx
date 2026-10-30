@@ -12,7 +12,8 @@ import { summariseSync, type SyncConnectionResponse } from '@/lib/integrations/s
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiErrorMessage } from '@/lib/api-error';
-import { useOffersAdminApiWrite, useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useOffersAdminApiWrite } from '@/lib/auth/use-offers-admin-api-write';
 import { Trash2, CheckCircle, XCircle, Loader2, Link2, Eye, EyeOff, RefreshCw, Activity, Pencil, KeyRound } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';

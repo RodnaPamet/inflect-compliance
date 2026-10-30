@@ -46,8 +46,9 @@ jest.mock('next/navigation', () => ({ useSearchParams: () => search }));
 
 /**
  * The viewer the page's write gates are asked of (#4466 finding 9): the REAL
- * `offersAdminApiWrite`, over a viewer a test may replace. An Owner, whom the
- * edge admits, unless a test says otherwise.
+ * `useOffersAdminApiWrite` and `offersAdminApiWrite`, over a tenant context a
+ * test may replace. An Owner, whom the edge admits, unless a test says
+ * otherwise.
  */
 const mockViewer: {
     edgeAdmits: boolean;
@@ -57,16 +58,16 @@ const mockViewer: {
 jest.mock('@/lib/tenant-context-provider', () => {
     const apiUrl = (p: string) => `/api/t/acme${p}`;
     const href = (p: string) => `/t/acme${p}`;
-    const { offersAdminApiWrite } = jest.requireActual('@/lib/auth/admin-api-affordances');
     const { getPermissionsForRole } = jest.requireActual('@/lib/permissions');
     return {
         useTenantApiUrl: () => apiUrl,
         useTenantHref: () => href,
-        useOffersAdminApiWrite: (gate: unknown) =>
-            offersAdminApiWrite(
-                { ...mockViewer, appPermissions: mockViewer.appPermissions ?? getPermissionsForRole('OWNER') },
-                gate,
-            ),
+        // Read by `@/lib/auth/use-offers-admin-api-write`, which is not mocked.
+        useTenantContext: () => ({
+            edgeAdmitsAdminApi: mockViewer.edgeAdmits,
+            appPermissions: mockViewer.appPermissions ?? getPermissionsForRole('OWNER'),
+            permissions: mockViewer.permissions,
+        }),
     };
 });
 
