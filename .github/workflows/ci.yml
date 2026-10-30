@@ -2896,9 +2896,13 @@ jobs:
     needs: [docker]
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # The image is built ONCE in the `docker` job and handed over as a
-    # tarball artifact — this job `docker load`s it instead of doing a
-    # second ~7.5-min rebuild (locked by
+    # tarball artifact — this job scans THAT TAR in place instead of
+    # doing a second ~7.5-min rebuild (locked by
     # tests/guardrails/trivy-no-rebuild.test.ts).
+    #
+    # It used to `docker load` the tar and scan the daemon tag. #4647
+    # removed that: see the step comments below for why three copies of
+    # one 10.5 GB image on a 34 GB disk is what `image-ref:` cost.
     #
     # 12 → 25 on 2026-08-03, after the job was cancelled at 12m18s on
     # `main` (35f3d3970) and took main red. The "12 min is ample
