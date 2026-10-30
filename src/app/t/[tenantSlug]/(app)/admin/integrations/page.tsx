@@ -8,6 +8,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { buildConnectionBody } from '@/lib/integrations/config-form-values';
 import { LABELLED_CHECKS } from '@/lib/integrations/check-labels';
 import { LABELLED_PROVIDERS } from '@/lib/integrations/provider-labels';
+import { providerFieldTextKey, providerTextKey } from '@/lib/integrations/provider-text';
 import { summariseSync, type SyncConnectionResponse } from '@/lib/integrations/sync-outcome';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -250,6 +251,33 @@ export default function AdminIntegrationsPage() {
                 : serverNames.get(id) ?? id,
         [serverNames, t],
     );
+
+    /**
+     * A provider's description and setup guide, and each field's label and
+     * help, from the catalogues for a labelled provider, the server's English
+     * otherwise (#4581). Read only when the server sent the English, so for
+     * every registered provider the catalogue has the entry
+     * (`provider-text.test.ts`). A server newer than this build can still send
+     * a field the catalogue lacks; `next-intl` answers a missing key with the
+     * key's path, so that answer falls back to the English too.
+     */
+    const catalogued = (key: string, english: string | undefined): string | undefined => {
+        if (!english) return english;
+        const said = (t as unknown as (k: string) => string)(key);
+        return said && !said.includes(key) ? said : english;
+    };
+    const providerText = (p: ProviderInfo, part: 'description' | 'setupGuide'): string | undefined =>
+        LABELLED_PROVIDERS.has(p.id) ? catalogued(providerTextKey(p.id, part), p[part]) : p[part];
+    const fieldText = (p: ProviderInfo, field: ConfigFieldInfo, part: 'label' | 'description'): string | undefined =>
+        LABELLED_PROVIDERS.has(p.id) ? catalogued(providerFieldTextKey(p.id, field.key, part), field[part]) : field[part];
+
+    /**
+     * A connection's name. One still called by its provider's English
+     * `displayName` was named for us, not by the admin (Enable internal checks
+     * does that), so it reads as the provider's label (#4581).
+     */
+    const connectionName = (c: { provider: string; name: string }) =>
+        c.name === serverNames.get(c.provider) ? providerLabel(c.provider) : c.name;
 
     /** A check's label when the catalogues carry one, its id otherwise. */
     const checkLabel = (check: string) =>
@@ -579,7 +607,7 @@ export default function AdminIntegrationsPage() {
                 return (
                     <label className="flex items-center gap-tight text-sm text-content-default">
                         <Checkbox id={fid} checked={value === 'true'} onCheckedChange={(c) => setValue(c ? 'true' : 'false')} />
-                        {field.placeholder ?? field.label}
+                        {field.placeholder ?? (selectedProvider ? fieldText(selectedProvider, field, 'label') : field.label)}
                     </label>
                 );
             case 'number':
@@ -655,7 +683,7 @@ export default function AdminIntegrationsPage() {
                                 <div key={p.id} className={cn(cardVariants(), 'flex flex-col gap-compact')}>
                                     <div>
                                         <Heading level={3}>{providerLabel(p.id)}</Heading>
-                                        <p className="text-xs text-content-subtle mt-0.5 line-clamp-2">{p.description}</p>
+                                        <p className="text-xs text-content-subtle mt-0.5 line-clamp-2">{providerText(p, 'description')}</p>
                                     </div>
                                     {p.supportedChecks.length > 0 && (
                                         <div className="flex flex-wrap gap-1">
@@ -805,7 +833,7 @@ export default function AdminIntegrationsPage() {
                         (() => {
                             const connCols = createColumns<ConnectionDTO>([
                                 { accessorKey: 'provider', header: t('integrations.colProvider'), cell: ({ getValue }) => <StatusBadge variant="info">{providerLabel(String(getValue()))}</StatusBadge> },
-                                { accessorKey: 'name', header: t('integrations.colName'), cell: ({ getValue }) => <span className="font-medium">{getValue()}</span> },
+                                { accessorKey: 'name', header: t('integrations.colName'), cell: ({ row }) => <span className="font-medium">{connectionName(row.original)}</span> },
                                 {
                                     id: 'status', header: t('integrations.colStatus'), accessorKey: 'isEnabled',
                                     cell: ({ row }) => <StatusBadge variant={row.original.isEnabled ? 'success' : 'error'}>{row.original.isEnabled ? t('integrations.statusActive') : t('integrations.statusDisabled')}</StatusBadge>,
@@ -921,7 +949,7 @@ export default function AdminIntegrationsPage() {
 
                 {/* GAP-3 — per-connection freshness (self-renders only when
                     there is at least one enabled connection). */}
-                <ConnectionHealthPanel providerLabel={providerLabel} />
+                <ConnectionHealthPanel providerLabel={providerLabel} connectionName={connectionName} />
 
                 {/* Add/Edit Form */}
                 {showForm && (
@@ -947,7 +975,7 @@ export default function AdminIntegrationsPage() {
                                 matchTriggerWidth
                             />
                             {selectedProvider && (
-                                <p className="text-xs text-content-subtle mt-1">{selectedProvider.description}</p>
+                                <p className="text-xs text-content-subtle mt-1">{providerText(selectedProvider, 'description')}</p>
                             )}
                         </div>
 
@@ -967,7 +995,7 @@ export default function AdminIntegrationsPage() {
                         {/* P2 — per-provider setup guidance (what it needs + where to get it). */}
                         {selectedProvider?.setupGuide && (
                             <div className="p-3 rounded-lg border border-border-info bg-bg-info text-sm text-content-info" data-testid="provider-setup-guide">
-                                {selectedProvider.setupGuide}
+                                {providerText(selectedProvider, 'setupGuide')}
                             </div>
                         )}
 
@@ -978,11 +1006,11 @@ export default function AdminIntegrationsPage() {
                                 {selectedProvider.configSchema.configFields.map(field => (
                                     <div key={field.key}>
                                         <label className="block text-xs text-content-muted mb-1">
-                                            {field.label} {field.required && <RequiredMarker />}
+                                            {fieldText(selectedProvider, field, 'label')} {field.required && <RequiredMarker />}
                                         </label>
                                         {renderField(field, false)}
                                         {field.description && (
-                                            <p className="text-xs text-content-subtle mt-0.5">{field.description}</p>
+                                            <p className="text-xs text-content-subtle mt-0.5">{fieldText(selectedProvider, field, 'description')}</p>
                                         )}
                                     </div>
                                 ))}
@@ -1011,11 +1039,11 @@ export default function AdminIntegrationsPage() {
                                 {selectedProvider.configSchema.secretFields.map(field => (
                                     <div key={field.key}>
                                         <label className="block text-xs text-content-muted mb-1">
-                                            {field.label} {field.required && <RequiredMarker />}
+                                            {fieldText(selectedProvider, field, 'label')} {field.required && <RequiredMarker />}
                                         </label>
                                         {renderField(field, true)}
                                         {field.description && (
-                                            <p className="text-xs text-content-subtle mt-0.5">{field.description}</p>
+                                            <p className="text-xs text-content-subtle mt-0.5">{fieldText(selectedProvider, field, 'description')}</p>
                                         )}
                                         {/* P2 — edit mode: blank keeps the stored secret. */}
                                         {editingId && (

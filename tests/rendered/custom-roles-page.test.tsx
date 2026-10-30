@@ -781,3 +781,20 @@ describe('custom roles page — the Admin-base-only permissions (#4536, #4581 A)
         }
     });
 });
+
+describe('custom roles page — the form fields are labelled (#4581)', () => {
+    it('each label names its control, and the name is marked required', async () => {
+        mount();
+        await loaded();
+        fireEvent.click(byId('create-role-btn')!);
+        await waitForId('role-name-input');
+        const nameInput = screen.getByLabelText(new RegExp(`^${R.nameLabel}`));
+        expect(nameInput).toBe(byId('role-name-input'));
+        expect(nameInput).toHaveAttribute('aria-required', 'true');
+        expect(screen.getByLabelText(R.descriptionLabel)).toBe(byId('role-description-input'));
+        // The base role's help says what it does, in words a reader uses.
+        expect(screen.getByText(R.baseRoleHint)).toBeInTheDocument();
+        expect(R.baseRoleLabel).not.toMatch(/fallback/i);
+        expect(R.baseRoleHint).not.toMatch(/coarse|authori[sz]ation/i);
+    });
+});
