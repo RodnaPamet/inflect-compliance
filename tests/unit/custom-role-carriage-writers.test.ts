@@ -256,7 +256,7 @@ const ROLES: Record<string, { id: string; tenantId: string; baseRole: string; pe
 };
 
 const customRoleTable = () => ({
-    findFirst: jest.fn(async (a: any) => ROLES[a.where.id] ?? null),
+    findFirst: jest.fn(async (a: any): Promise<(typeof ROLES)[string] | null> => ROLES[a.where.id] ?? null),
     findMany: jest.fn(async (a: any) => (a.where.id.in as string[]).map((id) => ROLES[id]).filter(Boolean)),
     update: jest.fn(async (a: any) => ({ id: a.where.id, name: 'R', ...a.data })),
 });
