@@ -31,6 +31,9 @@ interface RecentActivityCardProps {
  * The rows are the audit log's head, so they are read through
  * `getDashboardRecentActivity`, which asserts the audit log's own gate. The
  * page renders this card only for a viewer that gate admits.
+ *
+ * So the card also links to the full log. An Auditor has no other way in:
+ * the sidebar gear and the Admin landing page both need `admin.view`.
  */
 export default async function RecentActivityCard({
     tenantSlug,
@@ -121,6 +124,13 @@ export default async function RecentActivityCard({
                     <p className="text-content-subtle text-xs">{noActivityLabel}</p>
                 )}
             </div>
+            <Link
+                href={`/t/${tenantSlug}/admin/audit-log`}
+                id="recent-activity-audit-log-link"
+                className="mt-3 inline-block text-xs text-content-link hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            >
+                {t('viewAuditLog')}
+            </Link>
         </Card>
     );
 }

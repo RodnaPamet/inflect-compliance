@@ -89,7 +89,7 @@ Four cards carry a 30-day trend line once the workspace has two days of history.
 
 **The next step.** A card recommends one thing to do, the first that applies: refresh overdue evidence, resolve overdue tasks, review open risks scoring 10 or more, improve control coverage while it is under 80%, and otherwise run a readiness check. Its button opens the page for that work. Below it, **{{ui:dashboard.addRisk}}** and **{{ui:dashboard.newPolicy}}** open the {{ui:nav.risks}} and {{ui:nav.policies}} lists with the form for a new one already open, and **{{ui:dashboard.addEvidence}}** opens the {{ui:nav.evidence}} list with its menu of ways to add evidence. Each link appears only for a role that can create that record.
 
-**{{ui:dashboard.recentActivity}}.** For Owners, Admins and Auditors, the roles that can read the audit log. The ten latest entries in the workspace's audit log: when, who, what they did and to which item. The item is a link when it has its own page. Changes made by Inflect itself are shown as **{{ui:dashboard.activity.systemActor}}**.
+**{{ui:dashboard.recentActivity}}.** For Owners, Admins and Auditors, the roles that can read the audit log. The ten latest entries in the workspace's audit log: when, who, what they did and to which item. The item is a link when it has its own page. Changes made by Inflect itself are shown as **{{ui:dashboard.activity.systemActor}}**. **{{ui:dashboard.activity.viewAuditLog}}**, under the list, opens the full audit log.
 
 ## What you can do
 

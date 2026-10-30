@@ -609,6 +609,7 @@
     },
     "activity": {
       "systemActor": "System",
+      "viewAuditLog": "View the audit log",
       "verb": {
         "CREATED": "created",
         "UPDATED": "updated",
