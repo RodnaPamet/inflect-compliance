@@ -42,7 +42,12 @@ describe('the prover translation carries what it can and names what it cannot', 
         expect(toProverPolicyV1(base()).policy.version).toBe(1);
     });
 
-    it('maps rootReadOnly and the scratch dir onto read_only / read_write', () => {
+    it('writes read_only unconditionally and maps the scratch dir onto read_write', () => {
+        // NAME CORRECTED with #4573. It said "maps rootReadOnly onto read_only",
+        // and after the dead branch was removed nothing maps: `read_only` is
+        // `['/']` for every input the type admits, because `rootReadOnly` is the
+        // literal `true`. The assertion is unchanged and still pins the value —
+        // only the claim in the name was wrong.
         const { policy } = toProverPolicyV1(base());
         expect(policy.filesystem_policy.read_only).toEqual(['/']);
         expect(policy.filesystem_policy.read_write).toEqual(['/var/tmp/powerpipe']);

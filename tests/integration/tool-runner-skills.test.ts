@@ -29,6 +29,38 @@ jest.mock('@/env', () => {
         }),
     };
 });
+/**
+ * THE SAVE-TIME CATALOGUE BUDGET, STOOD DOWN FOR SETUP ONLY (#4523).
+ *
+ * This suite needs a stored profile whose catalogue is OVER the per-run budget,
+ * so it can prove the RUN refuses it before a run row exists. Since #4523 the
+ * save refuses that set too, which is the point of #4523 — a reviewer should
+ * not be able to approve a version no run can mount.
+ *
+ * The two are not in conflict, because what the run prices and what the save
+ * prices come from different reads: the run prices the live corpus through
+ * `shippedCorpus()`, while the save prices `repositorySkillCatalogue()`. So
+ * reporting a cheap catalogue HERE models exactly the case the run-time check
+ * exists for and the save-time one cannot catch — a version saved while its
+ * skills were cheap, whose descriptions a later deploy lengthened. The run
+ * still sees the real 3,187 bytes and still refuses.
+ *
+ * Scoped to `beforeAll`: every assertion below runs with the real pricing.
+ */
+let priceSaveCatalogueAtZero = false;
+jest.mock('@/lib/agentic/flue/skills/resolve', () => {
+    const actual = jest.requireActual('@/lib/agentic/flue/skills/resolve') as {
+        repositorySkillCatalogue: () => ReadonlyMap<string, { name: string; description: string }>;
+    };
+    return {
+        ...actual,
+        repositorySkillCatalogue: () => {
+            const real = actual.repositorySkillCatalogue();
+            if (!priceSaveCatalogueAtZero) return real;
+            return new Map([...real].map(([k, v]) => [k, { ...v, description: '' }]));
+        },
+    };
+});
 jest.mock('@/app-layer/jobs/queue', () => ({
     ...jest.requireActual('@/app-layer/jobs/queue'),
     enqueue: jest.fn(async () => undefined),
@@ -231,11 +263,20 @@ describeFn('skills on the Tool Runner engine (real DB, fake model)', () => {
         await createAgentProfile(authorB(), AGENTS.main, version());
         await submitAgentProfileVersion(authorB(), AGENTS.main, 1);
         // Every shipped skill at once: over the per-run catalogue budget.
-        await createAgentProfile(
-            authorB(),
-            AGENTS.everySkill,
-            version({ skillRefs: loadSkillCorpus().skills.map((s) => ({ origin: 'repository' as const, name: s.name })) }),
-        );
+        //
+        // Saved with the save-time budget priced at zero — see the mock above.
+        // This models a version stored while its skills were cheap; the run
+        // below prices the real corpus and refuses it.
+        priceSaveCatalogueAtZero = true;
+        try {
+            await createAgentProfile(
+                authorB(),
+                AGENTS.everySkill,
+                version({ skillRefs: loadSkillCorpus().skills.map((s) => ({ origin: 'repository' as const, name: s.name })) }),
+            );
+        } finally {
+            priceSaveCatalogueAtZero = false;
+        }
         await submitAgentProfileVersion(authorB(), AGENTS.everySkill, 1);
     });
 

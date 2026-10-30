@@ -821,3 +821,56 @@ describe('Custom Roles — the Admin-base-only permissions need an ADMIN base (#
         ).resolves.toBeDefined();
     });
 });
+
+// ─── A name lost to a race is a 400, not a 500 (#4581) ───
+
+describe('Custom Roles — the live-name index answering a race', () => {
+    /** The error the pg driver adapter raises for the partial name index, as observed on a real database. */
+    const nameIndexError = (index = 'TenantCustomRole_tenantId_name_key') =>
+        Object.assign(new Error('Unique constraint failed'), {
+            code: 'P2002',
+            meta: {
+                modelName: 'TenantCustomRole',
+                driverAdapterError: { cause: { kind: 'UniqueConstraintViolation', constraint: { index } } },
+            },
+        });
+
+    it('a create that loses the race gets the duplicate sentence', async () => {
+        mockTx.tenantCustomRole = { findFirst: jest.fn(async () => null), create: jest.fn(async () => { throw nameIndexError(); }) };
+        await expect(
+            createCustomRole(makeCtx(), { name: 'Raced', baseRole: 'READER', permissionsJson: getPermissionsForRole('READER') }),
+        ).rejects.toMatchObject({ status: 400, message: 'A custom role named "Raced" already exists in this tenant.' });
+    });
+
+    it('a rename that loses the race gets the duplicate sentence', async () => {
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn()
+                .mockResolvedValueOnce({ id: 'cr-1', tenantId: 'tenant-1', name: 'Old', baseRole: 'READER', isActive: true, permissionsJson: getPermissionsForRole('READER') })
+                .mockResolvedValueOnce(null),
+            update: jest.fn(async () => { throw nameIndexError(); }),
+        };
+        await expect(updateCustomRole(makeCtx(), 'cr-1', { name: 'Raced' })).rejects.toMatchObject({
+            status: 400,
+            message: 'A custom role named "Raced" already exists.',
+        });
+    });
+
+    it('another unique index is not reported as a name clash', async () => {
+        const other = nameIndexError('TenantCustomRole_id_tenantId_key');
+        mockTx.tenantCustomRole = { findFirst: jest.fn(async () => null), create: jest.fn(async () => { throw other; }) };
+        await expect(
+            createCustomRole(makeCtx(), { name: 'R', baseRole: 'READER', permissionsJson: getPermissionsForRole('READER') }),
+        ).rejects.toBe(other);
+    });
+
+    it('the lookup for an edit or a delete asks for a LIVE role', async () => {
+        const findFirst = jest.fn(async () => null);
+        mockTx.tenantCustomRole = { findFirst };
+        await expect(updateCustomRole(makeCtx(), 'cr-1', { name: 'X' })).rejects.toMatchObject({ status: 404 });
+        await expect(deleteCustomRole(makeCtx(), 'cr-1')).rejects.toMatchObject({ status: 404 });
+        for (const call of findFirst.mock.calls as unknown as Array<[{ where: Record<string, unknown> }]>) {
+            expect(call[0].where).toMatchObject({ id: 'cr-1', tenantId: 'tenant-1', isActive: true });
+        }
+        expect(findFirst).toHaveBeenCalledTimes(2);
+    });
+});
