@@ -153,8 +153,13 @@ describe('Progressive rate-limit primitive', () => {
     });
 
     describe('lockout expiry', () => {
+        // The primitive reads `Date.now()`. On the real clock a 10 ms lockout
+        // could expire between the third failure and the first check on a
+        // loaded runner, so the clock is faked and moved explicitly.
+        afterEach(() => jest.useRealTimers());
+
         it('after the lockout window elapses, the counter resets to zero', () => {
-            // Use a tiny policy so the test runs synchronously.
+            jest.useFakeTimers();
             const policy: ProgressiveRateLimitPolicy = {
                 tiers: [{ atFailures: 2, delayMs: 1 }],
                 lockoutAtFailures: 3,
@@ -165,20 +170,20 @@ describe('Progressive rate-limit primitive', () => {
             for (let i = 0; i < 3; i++) recordProgressiveFailure(k, policy);
             expect(evaluateProgressiveRateLimit(k, policy).allowed).toBe(false);
 
-            return new Promise<void>((resolve) => {
-                setTimeout(() => {
-                    const decision = evaluateProgressiveRateLimit(k, policy);
-                    expect(decision.allowed).toBe(true);
-                    expect(decision.delayMs).toBe(0);
-                    expect(decision.failureCount).toBe(0);
-                    resolve();
-                }, 30);
-            });
+            jest.advanceTimersByTime(30);
+            const decision = evaluateProgressiveRateLimit(k, policy);
+            expect(decision.allowed).toBe(true);
+            expect(decision.delayMs).toBe(0);
+            expect(decision.failureCount).toBe(0);
         });
     });
 
     describe('window expiry', () => {
+        // Same race as the lockout case: a 20 ms window on the real clock.
+        afterEach(() => jest.useRealTimers());
+
         it('failures older than windowMs stop contributing', () => {
+            jest.useFakeTimers();
             const policy: ProgressiveRateLimitPolicy = {
                 tiers: [{ atFailures: 2, delayMs: 1 }],
                 lockoutAtFailures: 5,
@@ -191,14 +196,10 @@ describe('Progressive rate-limit primitive', () => {
                 evaluateProgressiveRateLimit(k, policy).failureCount,
             ).toBe(3);
 
-            return new Promise<void>((resolve) => {
-                setTimeout(() => {
-                    expect(
-                        evaluateProgressiveRateLimit(k, policy).failureCount,
-                    ).toBe(0);
-                    resolve();
-                }, 40);
-            });
+            jest.advanceTimersByTime(40);
+            expect(
+                evaluateProgressiveRateLimit(k, policy).failureCount,
+            ).toBe(0);
         });
     });
 });
