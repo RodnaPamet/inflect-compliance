@@ -19,6 +19,8 @@
  */
 import { execFile } from 'node:child_process';
 import { collectorExecForDeploy } from './cloud-posture/sandboxed-collector-exec';
+import type { CollectorExec } from './cloud-posture/sandboxed-collector-exec';
+import { sandboxDecisionRecorderForScan } from './openshell-audit-bridge';
 import { logger } from '@/lib/observability/logger';
 import {
     childExitFromCliResult,
@@ -395,16 +397,62 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
      */
     private readonly exec?: AwsCollectorExec;
 
+    /**
+     * Whether `exec` came from the DEPLOY rather than a caller — #4563.
+     *
+     * Only the deploy's runner is sandboxed, so only it has lifecycle
+     * decisions to record. An injected double has none and the on-host `runCli`
+     * path has none.
+     */
+    private readonly execFromDeploy: boolean;
+
     constructor(deps: { exec?: AwsCollectorExec } = {}) {
         if (deps.exec) {
             this.exec = deps.exec;
+            this.execFromDeploy = false;
         } else {
             const sandboxed = collectorExecForDeploy();
-            this.exec = sandboxed
-                ? (file, args, env, secrets) =>
-                      sandboxed(file, args, env, secretValues(secrets), AWS_CREDENTIAL_PATTERNS)
-                : undefined;
+            this.exec = sandboxed ? this.adapt(sandboxed) : undefined;
+            this.execFromDeploy = sandboxed !== null;
         }
+    }
+
+    /**
+     * Wrap the shared runner in this file's own argument shape.
+     *
+     * Extracted from the constructor unchanged so `execForScan` can build a
+     * second one per scan without restating the redaction. The redaction is
+     * the reason the adapter exists at all: it hands the bridge BOTH the secret
+     * VALUES and `AWS_CREDENTIAL_PATTERNS`, so passing only the values would be
+     * the difference between redacting an access key and printing it.
+     */
+    private adapt(sandboxed: CollectorExec): AwsCollectorExec {
+        return (file, args, env, secrets) =>
+            sandboxed(file, args, env, secretValues(secrets), AWS_CREDENTIAL_PATTERNS);
+    }
+
+    /**
+     * The runner for THIS scan.
+     *
+     * When the DEPLOY supplied it, rebuilt with an audit recorder bound to this
+     * scan's tenant — the threading #4563 asks for. An injected double and the
+     * on-host path are returned unchanged.
+     *
+     * Per scan and not per instance because `bootstrap.ts` registers this
+     * provider as a module-level singleton that `automation-runner` dispatches
+     * for every tenant; see the recorder's note on why a constructor-bound
+     * tenant is worse than none.
+     */
+    private execForScan(input: CheckInput): AwsCollectorExec | undefined {
+        if (!this.execFromDeploy) return this.exec;
+        const sandboxed = collectorExecForDeploy({
+            onDecision: sandboxDecisionRecorderForScan({
+                tenantId: input.tenantId,
+                job: 'aws-posture-collect',
+                discriminator: input.jobRunId,
+            }),
+        });
+        return sandboxed ? this.adapt(sandboxed) : undefined;
     }
 
     readonly id = 'aws-posture';
@@ -513,7 +561,7 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         // `validateConnection` is left alone deliberately: it is a different
         // binary, run at CONFIG time to tell an admin their credential works,
         // and sandboxing it would make saving a connection depend on a gateway.
-        const res = await (this.exec ?? runCli)(
+        const res = await (this.execForScan(input) ?? runCli)(
             'powerpipe',
             ['benchmark', 'run', benchmark, '--output', 'json'],
             env,
