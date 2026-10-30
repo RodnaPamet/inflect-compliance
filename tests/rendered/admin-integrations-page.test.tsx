@@ -61,10 +61,31 @@ jest.mock('next/navigation', () => ({
     useSearchParams: () => search,
 }));
 
+/**
+ * The viewer the page's write gates are asked of (#4466 finding 9): the REAL
+ * `useOffersAdminApiWrite` and `offersAdminApiWrite`, over a tenant context a
+ * test may replace. An Owner membership, which the edge admits (#4587's
+ * `membershipRole`), unless a test says otherwise.
+ */
+const mockViewer: {
+    membershipRole: string | undefined;
+    appPermissions: unknown;
+    permissions: { canAdmin: boolean; canWrite: boolean };
+} = { membershipRole: 'OWNER', appPermissions: null, permissions: { canAdmin: true, canWrite: true } };
 jest.mock('@/lib/tenant-context-provider', () => {
     const apiUrl = (p: string) => `/api/t/acme${p}`;
     const href = (p: string) => `/t/acme${p}`;
-    return { useTenantApiUrl: () => apiUrl, useTenantHref: () => href };
+    const { getPermissionsForRole } = jest.requireActual('@/lib/permissions');
+    return {
+        useTenantApiUrl: () => apiUrl,
+        useTenantHref: () => href,
+        // Read by `@/lib/auth/use-offers-admin-api-write`, which is not mocked.
+        useTenantContext: () => ({
+            membershipRole: mockViewer.membershipRole,
+            appPermissions: mockViewer.appPermissions ?? getPermissionsForRole('OWNER'),
+            permissions: mockViewer.permissions,
+        }),
+    };
 });
 
 // The children, stubbed — see the file docstring.
@@ -444,3 +465,79 @@ describe('creating a connection', () => {
         expect(message()).not.toHaveTextContent('They cannot be retrieved');
     });
 });
+
+// ─── offered only where the server takes it (#4466 finding 9) ────────────
+
+describe('the controls offered, by who is asking', () => {
+    const okta = conn({ id: 'c-okta' });
+    const tools = conn({ id: 'c-mcp', provider: 'mcp-server', name: 'SAP tools' });
+    const off = conn({ id: 'c-off', name: 'Old directory', isEnabled: false });
+    const named = (name: string) => screen.queryAllByRole('button', { name });
+    const asAdmin = () => {
+        const { getPermissionsForRole } = jest.requireActual('@/lib/permissions');
+        return getPermissionsForRole('ADMIN');
+    };
+
+    afterEach(() => {
+        mockViewer.membershipRole = 'OWNER';
+        mockViewer.appPermissions = null;
+        mockViewer.permissions = { canAdmin: true, canWrite: true };
+    });
+
+    it('an Owner is offered every control, and no notice', async () => {
+        serve([okta, tools, off]);
+        await renderPage();
+        expect(screen.queryByTestId('integrations-manage-refused')).toBeNull();
+        expect(byIdOrNull('add-integration-btn')).not.toBeNull();
+        expect(byIdOrNull('connect-okta-btn')).not.toBeNull();
+        expect(named('Sync now')).toHaveLength(2);
+        expect(named('Test connection')).toHaveLength(3);
+        expect(named('Edit connection')).toHaveLength(3);
+        expect(named('Authorize with Microsoft Entra')).toHaveLength(1);
+        expect(named('Disable integration')).toHaveLength(2);
+        expect(named('Enable integration')).toHaveLength(1);
+    });
+
+    it('an Admin membership on a Reader-based custom role granting Manage tests and syncs, and changes nothing', async () => {
+        // The edge and the route admit it; the save, enable, disable and
+        // authorize usecases ask the coarse admin tier, which its base lacks.
+        mockViewer.appPermissions = asAdmin();
+        mockViewer.permissions = { canAdmin: false, canWrite: false };
+        serve([okta, tools, off]);
+        await renderPage();
+        expect(screen.getByTestId('integrations-manage-refused')).toHaveTextContent(
+            'Only an Owner, or an Admin whose role lets them manage the workspace, can connect, change or remove integrations.',
+        );
+        expect(named('Sync now')).toHaveLength(2);
+        expect(named('Test connection')).toHaveLength(3);
+        for (const control of ['Edit connection', 'Authorize with Microsoft Entra', 'Disable integration', 'Enable integration']) {
+            expect({ control, offered: named(control).length }).toEqual({ control, offered: 0 });
+        }
+        expect(byIdOrNull('add-integration-btn')).toBeNull();
+        expect(byIdOrNull('connect-okta-btn')).toBeNull();
+    });
+
+    it('an Editor membership whose custom role grants Manage — the edge refuses it — is offered nothing', async () => {
+        mockViewer.membershipRole = 'EDITOR';
+        mockViewer.appPermissions = asAdmin();
+        serve([okta, tools, off]);
+        await renderPage();
+        expect(screen.getByTestId('integrations-manage-refused')).toBeInTheDocument();
+        for (const control of ['Sync now', 'Test connection', 'Edit connection', 'Disable integration']) {
+            expect({ control, offered: named(control).length }).toEqual({ control, offered: 0 });
+        }
+        expect(byIdOrNull('add-integration-btn')).toBeNull();
+    });
+
+    it('the empty state names no button when none is offered', async () => {
+        mockViewer.permissions = { canAdmin: false, canWrite: false };
+        serve([]);
+        await renderPage();
+        expect(screen.getByText('No integrations configured.')).toBeInTheDocument();
+        expect(screen.queryByText(/Add an integration to get started/)).toBeNull();
+    });
+});
+
+function byIdOrNull(id: string) {
+    return document.getElementById(id);
+}

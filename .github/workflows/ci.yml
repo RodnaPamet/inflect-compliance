@@ -850,7 +850,23 @@ jobs:
           # token 'export'", shard 4/4, cascading to `Test` and `Coverage`.
           # The flag cannot simply be added here either: it breaks five
           # node-project suites (see the `flue` job for that measurement).
-          npx jest --runInBand --coverage --coverageReporters=json \
+          #
+          # `--no-compilation-cache` (#4613). With V8's compilation cache on,
+          # shard 2/7 kept the contexts of finished test files: the count of
+          # live V8 contexts rose by about one per file to ~240, holding
+          # 8.1-8.4 GB that ten forced gc() calls in a row did not free. With
+          # it off, the same 352 files peaked at 1.5-2.1 GB and kept 1.0-1.1
+          # GB (diagnostic runs 41089355501 and 41088386042). Shard 7/7's
+          # intermittent climb to ~10 GB ("Ineffective mark-compacts near heap
+          # limit", exit 134) is the same accumulation, caught once (34 live
+          # contexts at file 100, 205 at file 300) where a normal run of the
+          # same files holds ~20; with the cache off it stayed under 2 GB in
+          # every run measured. See
+          # docs/implementation-notes/2026-10-30-shard-heap-runaway.md. It is a V8
+          # flag that NODE_OPTIONS refuses ("not allowed in NODE_OPTIONS"), so
+          # node runs jest's bin directly instead of through npx.
+          # tests/guards/in-band-shard-heap-bound.test.ts holds the flag here.
+          node --no-compilation-cache node_modules/jest/bin/jest.js --runInBand --coverage --coverageReporters=json \
             --selectProjects node jsdom \
             --shard=${{ matrix.shard }}/${{ matrix.total }}
 

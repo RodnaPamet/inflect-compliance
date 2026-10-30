@@ -16,15 +16,18 @@
  *      force; a profile is refused on the static engine and on every engine
  *      that cannot run one, before any `WorkflowRun` row exists; a run that is
  *      admitted pins the version and its hash, write-once.
- *   9. A SHIPPED SKILL NO RUN COULD MOUNT (owner decisions, 2026-10-30): one
- *      the text scan refused, and one the mount gate refuses for want of a
- *      passing evaluation record. Neither is offered, a save naming one is
+ *   9. A SKILL NO RUN COULD MOUNT (owner decisions, 2026-10-30): a shipped
+ *      skill the text scan refused, a shipped skill the mount gate refuses for
+ *      want of a passing evaluation record, and an approved tenant skill the
+ *      tenant mount gate now refuses. None is offered, a save naming one is
  *      refused by name on both paths and stores nothing, a version stored
- *      naming one cannot be approved, and admission refuses its run. Both are
- *      planted on a real shipped skill without touching the files on disk: the
- *      refusal by moving it to the corpus's `refused` list, as the scan would;
- *      the missing record by pointing the real gate at a copy of its directory
- *      that holds its evaluation set and no record.
+ *      naming one cannot be approved, and admission refuses its run. The
+ *      shipped cases are planted on a real shipped skill without touching the
+ *      files on disk: the refusal by moving it to the corpus's `refused` list,
+ *      as the scan would; the missing record by pointing the real gate at a
+ *      copy of its directory that holds its evaluation set and no record. The
+ *      tenant case swaps an approved version's stored record for one written
+ *      against other text.
  *
  * The driver decision, the registration gate and the queue are mocked at their
  * module boundary, as `tenant-skills.test.ts` does; the usecases, the resolver
@@ -167,7 +170,7 @@ import {
     createTenantSkill,
     submitTenantSkillVersion,
 } from '@/app-layer/usecases/tenant-skills';
-import { passingRecordFor, tenantSkillFields } from '../helpers/tenant-skill-fixture';
+import { passingRecordFor, TENANT_SKILL_INSTRUCTIONS, tenantSkillFields } from '../helpers/tenant-skill-fixture';
 import { registerWorkflow } from '@/lib/agentic/workflow-registry';
 import type { RequestContext } from '@/app-layer/types';
 import { makeRequestContext } from '../helpers/make-context';
@@ -201,7 +204,7 @@ const AGENTS = {
 };
 
 /** Section 9's kinds of skill no run could mount. */
-const UNMOUNTABLE_KINDS = ['refused', 'unrecorded'] as const;
+const UNMOUNTABLE_KINDS = ['refused', 'unrecorded', 'tenant'] as const;
 type UnmountableKind = (typeof UNMOUNTABLE_KINDS)[number];
 /** Section 9's agents: one per kind for a first version, a later version and an approval. */
 const unmountableAgent = (kind: UnmountableKind, use: 'first' | 'save' | 'approve') => `ag-${kind}-${use}-${SUITE}`;
@@ -1113,7 +1116,7 @@ describeFn('agent profiles (real DB)', () => {
         });
     });
 
-    // ── 9. A shipped skill no run could mount (owner decisions, 2026-10-30)
+    // ── 9. A skill no run could mount (owner decisions, 2026-10-30) ───
 
     type UnmountableRef = { origin: 'repository' | 'tenant'; name: string };
     const refKey = (r: UnmountableRef) => `${r.origin}:${r.name}`;
@@ -1123,6 +1126,27 @@ describeFn('agent profiles (real DB)', () => {
     const shippedNames = loadSkillCorpus().skills.map((s) => s.name);
     const [SHIPPED_PLANTED, SHIPPED_CLEAN] = shippedNames;
     const shippedRef = (name: string): UnmountableRef => ({ origin: 'repository', name });
+
+    // Two approved tenant skills: the planted one's stored evaluation record is
+    // swapped for one written against other instructions, so the tenant gate
+    // recomputes it and finds it no longer matches (HASH_MISMATCH). The table
+    // owner may rewrite that encrypted column, for the DEK rotation sweep.
+    const TENANT_PLANTED = `unm-pl-${SUITE}`;
+    const TENANT_CLEAN = `unm-cl-${SUITE}`;
+    let tenantPlantedVersionId = '';
+    let tenantPlantedRecord: string | null = null;
+    const swappedRecord = () =>
+        JSON.stringify(passingRecordFor(TENANT_PLANTED, 1, `${TENANT_SKILL_INSTRUCTIONS}\nOther instructions this record was written for.`));
+    const setTenantRecord = (value: string | null) =>
+        prisma.$executeRawUnsafe(`UPDATE "TenantSkillVersion" SET "evaluationRecordJson" = $1 WHERE "id" = $2`, value, tenantPlantedVersionId);
+    /** A tenant skill in A, created, evaluated, submitted and approved. */
+    const approvedTenantVersion = async (name: string): Promise<string> => {
+        const created = await createTenantSkill(authorA(), { name, ...tenantSkillFields() });
+        await attachTenantSkillEvaluation(authorA(), created.skillId, created.versionId, { record: passingRecordFor(name, 1) });
+        await submitTenantSkillVersion(authorA(), created.skillId, created.versionId);
+        await approveTenantSkillVersion(reviewerA(), created.skillId, created.versionId, { contentHash: created.contentHash });
+        return created.versionId;
+    };
 
     describe.each([
         {
@@ -1157,6 +1181,28 @@ describeFn('agent profiles (real DB)', () => {
                 resetSkillCache();
             },
             teardown: async () => fs.rmSync(mockUnrecordedDir, { recursive: true, force: true }),
+        },
+        {
+            kind: 'tenant' as const,
+            title: 'an approved tenant skill the tenant mount gate now refuses, its record no longer matching',
+            planted: { origin: 'tenant' as const, name: TENANT_PLANTED },
+            clean: { origin: 'tenant' as const, name: TENANT_CLEAN },
+            runRefusal: `Skill "${TENANT_PLANTED}": cannot be mounted: HASH_MISMATCH`,
+            setup: async () => {
+                tenantPlantedVersionId = await approvedTenantVersion(TENANT_PLANTED);
+                await approvedTenantVersion(TENANT_CLEAN);
+                // The stored ciphertext, put back whenever the plant is lifted.
+                tenantPlantedRecord = (
+                    await prisma.tenantSkillVersion.findUniqueOrThrow({
+                        where: { id: tenantPlantedVersionId },
+                        select: { evaluationRecordJson: true },
+                    })
+                ).evaluationRecordJson;
+            },
+            plant: async (on: boolean) => {
+                await setTenantRecord(on ? swappedRecord() : tenantPlantedRecord);
+            },
+            teardown: async () => {},
         },
     ])('$title cannot be chosen (owner decisions, 2026-10-30)', ({ kind, planted, clean, runRefusal, setup, plant, teardown }) => {
         const unknown = { reason: 'SKILL_UNKNOWN', skills: [refKey(planted)] };

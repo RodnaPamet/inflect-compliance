@@ -44,6 +44,8 @@
  */
 
 import { logEvent } from '@/app-layer/events/audit';
+import { buildSystemContext } from '@/app-layer/context-system';
+import { prisma } from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
 import type { PrismaTx } from '@/lib/db-context';
 import type { SandboxDecision } from '@/lib/agentic/openshell/sandbox-decisions';
@@ -157,4 +159,62 @@ export function sandboxDecisionRecorder(
     ctx: RequestContext,
 ): (decision: SandboxDecision) => Promise<void> {
     return (decision) => recordSandboxDecision(db, ctx, decision);
+}
+
+
+/**
+ * The recorder for ONE posture scan, bound to that scan's tenant — #4563.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PER SCAN, NEVER PER PROVIDER INSTANCE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `bootstrap.ts` registers the posture providers as MODULE-LEVEL SINGLETONS,
+ * and `automation-runner` dispatches those same instances for every tenant.
+ * So a recorder built in a provider's constructor would be bound to whichever
+ * tenant happened to be in scope at import time — which is none — and any
+ * later attempt to "fix" that by threading a tenant into the constructor would
+ * bind the FIRST tenant permanently and file every other tenant's sandbox
+ * decisions under it.
+ *
+ * #4563 is explicit that this is the failure to avoid: the audit log is
+ * per-tenant and hash-chained, so "a row filed against the wrong tenant is
+ * worse than an absent one". That is also why `onDecision` defaults to not
+ * recording rather than to a guess. This function is the other half of that
+ * decision — the place a tenant that REALLY is known becomes a recorder.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY THE `db` ARGUMENT IS THE GLOBAL CLIENT AND NOT A TRANSACTION
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Because `logEvent` ignores it, and says so: "the `db` parameter is accepted
+ * for API compatibility but the actual insert uses the global prisma client via
+ * `appendAuditEntry()` to ensure advisory lock isolation". The audit row is
+ * therefore written on the global client whatever is passed here, and threading
+ * a scan transaction would read as a promise this path cannot keep — the row
+ * would survive that transaction rolling back either way.
+ *
+ * Passing the global client states that plainly instead. What it must NOT be is
+ * a stub: the argument is inert TODAY, and a fake would become a silent defect
+ * the moment `logEvent` started using it.
+ *
+ * `actorType` comes out of `buildSystemContext` as `'JOB'`, which is the true
+ * answer — a scheduled collection has no user behind it, and the alternative
+ * default would make every row claim a person created the sandbox.
+ */
+export function sandboxDecisionRecorderForScan(input: {
+    readonly tenantId: string;
+    /** Stable, greppable job identity — e.g. `gcp-posture-collect`. */
+    readonly job: string;
+    /** A durable run id where the caller has one, so rows group by run. */
+    readonly discriminator?: string;
+}): (decision: SandboxDecision) => Promise<void> {
+    return sandboxDecisionRecorder(
+        prisma,
+        buildSystemContext({
+            tenantId: input.tenantId,
+            job: input.job,
+            discriminator: input.discriminator,
+        }),
+    );
 }

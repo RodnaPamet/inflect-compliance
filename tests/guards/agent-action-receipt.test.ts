@@ -351,6 +351,11 @@ describe('D4 — OpenShell carries no MCP rules, pipelock stays the only mediato
         'src/lib/agentic/openshell/sandbox-decisions.ts',
         // 5.3 (#3973): the v2->v1 prover policy translation.
         'src/lib/agentic/openshell/prover-policy.ts',
+        // 5.2 (#4567): the pinned release, and the comparison between it and
+        // the version a running gateway reports. Three times now this test has
+        // been the thing that made somebody read the rule for a new file, which
+        // is the argument for the constant list rather than a walk.
+        'src/lib/agentic/openshell/pinned-release.ts',
         'src/lib/agentic/openshell/transport.ts',
     ] as const;
 

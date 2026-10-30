@@ -77,6 +77,13 @@ interface Mount {
     viewer?: 'OWNER' | 'ADMIN';
     /** The viewer's resolved permissions, when a custom role sets them. */
     held?: PermissionSet;
+    /**
+     * The membership's own role (#4587), which the edge reads. Defaults to
+     * `viewer`; `null` leaves it out, which is not admitted.
+     */
+    membershipRole?: Role | null;
+    /** The coarse admin tier — a custom role's BASE decides it. */
+    canAdmin?: boolean;
 }
 
 function mount(answers: Mount = {}) {
@@ -103,8 +110,15 @@ function mount(answers: Mount = {}) {
                     tenantSlug: 'acme',
                     tenantName: 'Acme',
                     role: viewer,
-                    permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
+                    permissions: {
+                        canRead: true,
+                        canWrite: true,
+                        canAdmin: answers.canAdmin ?? true,
+                        canAudit: true,
+                        canExport: true,
+                    },
                     appPermissions: answers.held ?? getPermissionsForRole(viewer),
+                    ...(answers.membershipRole === null ? {} : { membershipRole: answers.membershipRole ?? viewer }),
                     modules: { processCanvas: false },
                 }}
             >
@@ -424,6 +438,265 @@ describe('custom roles page — Delete', () => {
         expect(R.deleteMemberWarning).not.toMatch(/base role/i);
         expect(bg.admin.roles.deleteMemberWarning).toMatch(/ролята на собственото си членство/);
         expect(bg.admin.roles.deleteMemberWarning).not.toMatch(/базов/i);
+    });
+});
+
+/**
+ * #4467 findings 6 and 9 — create, change and delete are offered only where
+ * every gate would let the request through: the edge (an Owner or Admin
+ * MEMBERSHIP), the routes' `admin.manage`, and the usecases' coarse admin tier
+ * (a custom role's base).
+ */
+describe('custom roles page — writes offered only where the server takes them', () => {
+    const listed = () => ok([role('cr-1', 'Compliance Lead', 'EDITOR')]);
+
+    it('an Owner is offered create, edit and delete, and sees no notice', async () => {
+        mount({ list: listed() });
+        await screen.findByText('Compliance Lead');
+        expect(byId('create-role-btn')).not.toBeNull();
+        expect(byId('edit-role-cr-1')).not.toBeNull();
+        expect(byId('delete-role-cr-1')).not.toBeNull();
+        expect(byId('roles-manage-refused')).toBeNull();
+    });
+
+    it('an Editor membership whose custom role grants admin.manage — the edge refuses it — is offered none', async () => {
+        mount({ list: listed(), membershipRole: 'EDITOR', held: getPermissionsForRole('ADMIN') });
+        await screen.findByText('Compliance Lead');
+        expect(byId('create-role-btn')).toBeNull();
+        expect(byId('edit-role-cr-1')).toBeNull();
+        expect(byId('delete-role-cr-1')).toBeNull();
+        expect(byId('roles-manage-refused')).toHaveTextContent(R.manageRefusedNotice);
+    });
+
+    it('an Admin membership on a Reader-based custom role granting admin.manage — the usecase refuses it — is offered none', async () => {
+        mount({ list: listed(), membershipRole: 'ADMIN', held: getPermissionsForRole('ADMIN'), canAdmin: false });
+        await screen.findByText('Compliance Lead');
+        expect(byId('create-role-btn')).toBeNull();
+        expect(byId('delete-role-cr-1')).toBeNull();
+        expect(byId('roles-manage-refused')).not.toBeNull();
+    });
+
+    it('a viewer without admin.manage — the route refuses it — is offered none', async () => {
+        const admin = getPermissionsForRole('ADMIN');
+        mount({ list: listed(), membershipRole: 'ADMIN', held: { ...admin, admin: { ...admin.admin, manage: false } } });
+        await screen.findByText('Compliance Lead');
+        expect(byId('create-role-btn')).toBeNull();
+        expect(byId('roles-manage-refused')).not.toBeNull();
+    });
+
+    it('a context with no membership role is offered none: absent is not admitted (#4587)', async () => {
+        mount({ list: listed(), membershipRole: null });
+        await screen.findByText('Compliance Lead');
+        expect(byId('create-role-btn')).toBeNull();
+        expect(byId('edit-role-cr-1')).toBeNull();
+        expect(byId('roles-manage-refused')).not.toBeNull();
+    });
+});
+
+/**
+ * Owner decision, 2026-10-30 — while members who are not Admins carry a role, it
+ * may not be built on Admin or grant an admin key only an Admin membership may
+ * carry. The form locks what a save would be refused for, as the server judges
+ * it: against the role as stored.
+ */
+describe('custom roles page — a role carried by members who are not Admins', () => {
+    // All ten (owner decisions, 2026-10-30): the six only the admin API reads,
+    // and the four refused by decision although they are live elsewhere.
+    const ADMIN_ONLY = [
+        'sso',
+        'agent_tool_exposure',
+        'agent_policy_card',
+        'agent_ownership',
+        'agent_skill_review',
+        'agent_skill_author',
+        'scim',
+        'compliance_dsar_manage',
+        'agent_harness_ingest',
+        'agent_external_tools',
+    ];
+
+    async function editRole(extra: Partial<Record<string, unknown>>, base: Role = 'READER') {
+        mount({ list: ok([role('cr-1', 'Carried', base, extra)]) });
+        await screen.findByText('Carried');
+        fireEvent.click(byId('edit-role-cr-1')!);
+        await waitForId('perm-admin-sso');
+    }
+
+    it('says why, naming the permissions by their labels, and locks each one', async () => {
+        await editRole({ nonAdminCarriers: 2 });
+        const notice = byId('role-admin-membership-only')!;
+        for (const key of ADMIN_ONLY) expect(notice).toHaveTextContent(permissionLabel('admin', key));
+        expect(notice).not.toHaveTextContent('admin.agent');
+        for (const key of ADMIN_ONLY) {
+            const cell = byId(`perm-admin-${key}`)!;
+            expect(cell).toHaveAttribute('aria-disabled', 'true');
+            fireEvent.click(cell);
+            expect(cell).toHaveAttribute('aria-pressed', 'false');
+        }
+        // An admin key not on the list stays switchable.
+        const view = byId('perm-admin-agent_registry_view')!;
+        expect(view).not.toHaveAttribute('aria-disabled');
+        fireEvent.click(view);
+        expect(view).toHaveAttribute('aria-pressed', 'true');
+        expect(byId('role-submit-btn')).not.toBeDisabled();
+    });
+
+    it("a locked cell's hint says only an Admin member can carry a role that grants it", async () => {
+        await editRole({ nonAdminCarriers: 1 });
+        const user = userEvent.setup();
+        await user.hover(byId('perm-admin-agent_policy_card')!);
+        const tip = await screen.findByRole('tooltip');
+        expect(tip).toHaveTextContent(
+            R.cellAdminMembershipOnly.replace('{permission}', permissionLabel('admin', 'agent_policy_card')),
+        );
+    });
+
+    /**
+     * The two role rules lock different cells — the Admin-base-only permissions
+     * need an Admin base (#4536, #4581 A), the admin-membership-only keys need
+     * Admin carriers — but on a role non-Admins carry they meet: the base that
+     * would free an Admin-base-only cell is locked too. Its hint says both,
+     * rather than send the editor to a base they cannot pick.
+     */
+    /**
+     * Hovers `id` and waits for an open hint saying `expected`. Each hint names
+     * its own permission, so a hint left open by an earlier hover cannot
+     * satisfy a later one.
+     */
+    async function expectHint(id: string, expected: string): Promise<void> {
+        const user = userEvent.setup();
+        await user.hover(byId(id)!);
+        await waitFor(() =>
+            expect({ id, hints: screen.queryAllByRole('tooltip').map((t) => t.textContent ?? '') }).toEqual({
+                id,
+                hints: expect.arrayContaining([expect.stringContaining(expected)]),
+            }),
+        );
+    }
+
+    it('every Admin-base-only cell on a carried role names both rules in its hint', async () => {
+        await editRole({ nonAdminCarriers: 1 });
+        for (const key of ADMIN_BASE_ONLY_PERMISSIONS) {
+            const [domain, action] = key.split('.');
+            const id = `perm-${domain}-${action}`;
+            expect({ id, disabled: byId(id)!.getAttribute('aria-disabled') }).toEqual({ id, disabled: 'true' });
+            await expectHint(id, R.cellNeedsAdminBaseCarried.replace('{permission}', permissionLabel(domain, action)));
+        }
+    });
+
+    it('on a role only Admins carry the same cells name the base rule alone', async () => {
+        await editRole({ nonAdminCarriers: 0 });
+        await expectHint('perm-personnel-manage', R.cellNeedsAdminBase.replace('{permission}', permissionLabel('personnel', 'manage')));
+        await expectHint('perm-admin-manage', R.cellNeedsAdminBase.replace('{permission}', permissionLabel('admin', 'manage')));
+    });
+
+    it('a permission the editor does not hold says so first, whatever else locks it', async () => {
+        const admin = getPermissionsForRole('ADMIN');
+        mount({
+            list: ok([role('cr-1', 'Carried', 'READER', { nonAdminCarriers: 1 })]),
+            held: {
+                ...admin,
+                personnel: { ...admin.personnel, manage: false },
+                admin: { ...admin.admin, agent_policy_card: false },
+            },
+        });
+        await screen.findByText('Carried');
+        fireEvent.click(byId('edit-role-cr-1')!);
+        await waitForId('perm-admin-sso');
+        await expectHint('perm-personnel-manage', R.cellNotHeld.replace('{permission}', permissionLabel('personnel', 'manage')));
+    });
+
+    it('…for an admin-membership-only key too', async () => {
+        const admin = getPermissionsForRole('ADMIN');
+        mount({
+            list: ok([role('cr-1', 'Carried', 'READER', { nonAdminCarriers: 1 })]),
+            held: { ...admin, admin: { ...admin.admin, agent_policy_card: false } },
+        });
+        await screen.findByText('Carried');
+        fireEvent.click(byId('edit-role-cr-1')!);
+        await waitForId('perm-admin-sso');
+        await expectHint('perm-admin-agent_policy_card', R.cellNotHeld.replace('{permission}', permissionLabel('admin', 'agent_policy_card')));
+    });
+
+    it('the Admin base is not choosable, with its reason; the others are', async () => {
+        await editRole({ nonAdminCarriers: 1 });
+        const picks = await waitFor(() => {
+            if (document.querySelectorAll('[role="option"]').length === 0) fireEvent.click(byId('role-base-select')!);
+            const shown = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'));
+            if (shown.length === 0) throw new Error('no options');
+            return Object.fromEntries(shown.map((o) => [o.textContent?.trim(), o.getAttribute('aria-disabled') !== 'true']));
+        });
+        expect(picks).toMatchObject({
+            [en.roles.ADMIN]: false,
+            [en.roles.EDITOR]: true,
+            [en.roles.AUDITOR]: true,
+            [en.roles.READER]: true,
+        });
+    });
+
+    it('the Admin preset leaves the locked permissions off', async () => {
+        await editRole({ nonAdminCarriers: 1 });
+        fireEvent.click(byId('preset-ADMIN')!);
+        for (const key of ADMIN_ONLY) expect(byId(`perm-admin-${key}`)).toHaveAttribute('aria-pressed', 'false');
+        // An admin key neither rule keeps from a Reader base still lands.
+        expect(byId('perm-admin-view')).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('a role that already grants one (from before the rule) can switch it off — and back on, which adds nothing', async () => {
+        const legacy = getPermissionsForRole('READER');
+        await editRole({
+            nonAdminCarriers: 1,
+            permissionsJson: { ...legacy, admin: { ...legacy.admin, agent_policy_card: true } },
+        });
+        const cell = byId('perm-admin-agent_policy_card')!;
+        expect(cell).toHaveAttribute('aria-pressed', 'true');
+        expect(cell).not.toHaveAttribute('aria-disabled');
+        fireEvent.click(cell);
+        expect(cell).toHaveAttribute('aria-pressed', 'false');
+        fireEvent.click(cell);
+        expect(cell).toHaveAttribute('aria-pressed', 'true');
+        expect(byId('perm-admin-sso')).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('nothing is locked for a role only Admins carry', async () => {
+        await editRole({ nonAdminCarriers: 0 });
+        expect(byId('role-admin-membership-only')).toBeNull();
+        for (const key of ADMIN_ONLY) expect(byId(`perm-admin-${key}`)).not.toHaveAttribute('aria-disabled');
+    });
+
+    it('nothing is locked for a new role, which nobody carries yet', async () => {
+        mount();
+        await openCreateGrid();
+        expect(byId('role-admin-membership-only')).toBeNull();
+        for (const key of ADMIN_ONLY) expect(byId(`perm-admin-${key}`)).not.toHaveAttribute('aria-disabled');
+    });
+
+    it("the server's refusal is re-said with labels and the count, not keys", async () => {
+        mount({
+            list: ok([role('cr-1', 'Carried', 'READER')]),
+            patch: {
+                ok: false,
+                status: 409,
+                body: {
+                    error: {
+                        code: 'CONFLICT',
+                        message: 'A custom role granting admin.agent_skill_author can only be carried by an ADMIN membership.',
+                        details: {
+                            reason: 'CUSTOM_ROLE_ADMIN_KEYS_NEED_ADMIN_MEMBERSHIP',
+                            keys: ['admin.agent_skill_author'],
+                            blockingMemberships: 3,
+                        },
+                    },
+                },
+            },
+        });
+        await screen.findByText('Carried');
+        fireEvent.click(byId('edit-role-cr-1')!);
+        fireEvent.click(await waitForId('role-submit-btn'));
+        const notice = await waitForId('roles-error');
+        expect(notice).toHaveTextContent(permissionLabel('admin', 'agent_skill_author'));
+        expect(notice).toHaveTextContent(R.carriageRefusedKeys.split('{permissions}')[0].trim());
+        expect(notice).not.toHaveTextContent('admin.agent_skill_author');
     });
 });
 

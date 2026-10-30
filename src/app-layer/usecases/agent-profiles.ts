@@ -34,8 +34,10 @@
  * scanned by the skill text scan, and text the scan refuses is refused by rule
  * id and never stored (owner decision 2). Every tool must be one the agent is
  * granted now: an ungranted tool is refused BY NAME, never dropped. Every
- * skill must be one a run could mount, and together they must fit the per-run
- * catalogue budget (`assertSkillsKnownAndWithinBudget`). Approval asks all of
+ * skill must be one a run could mount (a shipped skill the text scan or the
+ * mount gate refuses, and an approved tenant skill the tenant mount gate now
+ * refuses, are not), and together they must fit the per-run catalogue budget
+ * (`assertSkillsKnownAndWithinBudget`). Approval asks all of
  * it again, because a grant can be revoked, and a skill can stop mounting or
  * cost more, while a version waits.
  *
@@ -56,7 +58,8 @@ import { AppError, ConflictError, ValidationError } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { scanSkillText } from '@/lib/agentic/flue/skills/text-scan';
-import { repositorySkillCatalogue } from '@/lib/agentic/flue/skills/resolve';
+import { mountableTenantSkillLines, repositorySkillCatalogue } from '@/lib/agentic/flue/skills/resolve';
+import { readApprovedTenantSkillsByNameIn, readMountableTenantSkillLines } from '@/lib/agentic/flue/skills/tenant-mount';
 import { catalogBytes, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import { agentProfilesOnFor } from '@/lib/agentic/agent-switches-policy';
 import {
@@ -316,6 +319,15 @@ async function assertToolsGranted(db: PrismaTx, ctx: RequestContext, agentId: st
  * The same holds for a shipped skill the mount gate refuses, for want of a
  * passing evaluation record for its text (owner decision, 2026-10-30): the
  * catalogue asks the gate's cached verdict, as a run's mount does.
+ *
+ * And for an APPROVED tenant skill the tenant mount gate now refuses (owner
+ * decision, 2026-10-30). Its version is read as admission reads it
+ * (`readApprovedTenantSkillsByNameIn`, the mount's own columns) and asked what
+ * admission asks (`mountableTenantSkillLines`: the tenant mount gate, and no
+ * shipped skill of its name). Its approval passed that gate once, but a deploy
+ * can tighten the scan or the record check, and the pinned hash is recomputed
+ * from the stored text. One read of the named versions, so the cost is the
+ * number of tenant skills named.
  */
 async function assertSkillsKnownAndWithinBudget(
     db: PrismaTx,
@@ -324,14 +336,8 @@ async function assertSkillsKnownAndWithinBudget(
 ): Promise<void> {
     const shipped = repositorySkillCatalogue();
     const tenantNames = refs.filter((r) => r.origin === 'tenant').map((r) => r.name);
-    const approved = tenantNames.length
-        ? await db.tenantSkillVersion.findMany({
-              where: { tenantId: ctx.tenantId, status: 'APPROVED', skill: { name: { in: tenantNames } } },
-              select: { description: true, skill: { select: { name: true } } },
-              take: tenantNames.length,
-          })
-        : [];
-    const approvedByName = new Map(approved.map((a) => [a.skill.name, a.description]));
+    const mountable = mountableTenantSkillLines(await readApprovedTenantSkillsByNameIn(db, ctx.tenantId, tenantNames));
+    const approvedByName = new Map(mountable.map((l) => [l.name, l.description]));
     const unknown = refs
         .filter((r) => (r.origin === 'repository' ? !shipped.has(r.name) : !approvedByName.has(r.name)))
         .map((r) => `${r.origin}:${r.name}`);
@@ -903,20 +909,22 @@ async function memberLabels(db: PrismaTx, ctx: RequestContext, userIds: string[]
 /**
  * The skills a profile may mount, each with what its catalogue line costs: the
  * MOUNTABLE shipped skills (one the text scan refused or the mount gate
- * refuses is absent, #4590) and the tenant's
- * APPROVED skills. Exactly the population `assertSkillsKnownAndWithinBudget`
- * accepts, priced by the same `catalogBytes`, so the editor's running total is
- * the figure the save checks.
+ * refuses is absent, #4590) and the tenant's APPROVED skills a run could mount
+ * (one the tenant mount gate refuses is absent). Exactly the population
+ * `assertSkillsKnownAndWithinBudget` accepts, priced by the same
+ * `catalogBytes`, so the editor's running total is the figure the save checks.
+ *
+ * THE COST of the tenant half, per load: at most `PICKER_TENANT_VERSIONS`
+ * approved versions, read in pages of `MOUNTABLE_TENANT_SKILL_PAGE` (so at
+ * most ten queries), each version's two encrypted columns decrypted, its
+ * instructions hashed and scanned, and its evaluation record parsed and
+ * recomputed. One page of records is held at a time.
  */
 async function mountableSkills(db: PrismaTx, ctx: RequestContext): Promise<ProfileSkillOption[]> {
-    const tenant = await db.tenantSkillVersion.findMany({
-        where: { tenantId: ctx.tenantId, status: 'APPROVED' },
-        select: { description: true, skill: { select: { name: true } } },
-        take: 200,
-    });
+    const tenant = await readMountableTenantSkillLines(db, ctx.tenantId, PICKER_TENANT_VERSIONS);
     const byName = (a: { name: string }, b: { name: string }) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
     const shipped = [...repositorySkillCatalogue().values()].sort(byName);
-    const own = [...new Map(tenant.map((t) => [t.skill.name, t.description])).entries()]
+    const own = [...new Map(tenant.map((t) => [t.name, t.description])).entries()]
         .map(([name, description]) => ({ name, description }))
         .sort(byName);
     return [
@@ -924,6 +932,9 @@ async function mountableSkills(db: PrismaTx, ctx: RequestContext): Promise<Profi
         ...own.map((s) => ({ origin: 'tenant' as const, name: s.name, catalogueBytes: catalogBytes([s]) })),
     ];
 }
+
+/** At most this many approved tenant versions are read, and gated, for one picker. */
+const PICKER_TENANT_VERSIONS = 200;
 
 /** The stored skill refs, read back; anything malformed is dropped from the VIEW only. */
 function viewSkillRefs(raw: unknown): ProfileSkillRef[] {

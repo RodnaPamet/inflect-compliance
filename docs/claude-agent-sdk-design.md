@@ -239,7 +239,8 @@ profile run key is refused at admission.
   - every tool must be granted now, or it is refused by name;
   - every skill must be one a run could mount, or it is refused by name
     (`SKILL_UNKNOWN`): a shipped skill the text scan refused or the mount gate
-    refuses is not one;
+    refuses is not one, and nor is an approved tenant skill the tenant mount
+    gate now refuses;
   - together the skills' catalogue lines must fit the per-run budget, priced
     with the `catalogBytes` a run of the version is refused by
     (`SKILL_CATALOGUE_OVER_BUDGET`, a 409, #4589).

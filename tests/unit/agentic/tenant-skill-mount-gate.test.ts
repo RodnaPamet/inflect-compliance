@@ -22,6 +22,7 @@ import {
     type MountedSkillPin,
 } from '@/lib/agentic/flue/skills/mount-gate';
 import {
+    mountableTenantSkillLines,
     resolveRunSkills,
     resetSkillCache,
     skillPinDrift,
@@ -210,6 +211,30 @@ describe('the resolver mounts repository and tenant skills together', () => {
         expect(elsewhere).toBe(before);
         expect(workflowsOverBudget([def], [entry])).toEqual([]);
         expect(workflowsOverBudget([def], [{ ...entry, description: 'D'.repeat(MAX_CATALOG_BYTES) }]).map((w) => w.key)).toEqual([def.key]);
+    });
+});
+
+describe('what an agent profile offers and accepts asks what the run asks (owner decision, 2026-10-30)', () => {
+    it('keeps a version a run would mount, and leaves out each one a run would refuse', () => {
+        const swapped = `${TENANT_SKILL_INSTRUCTIONS}\nOther instructions.`;
+        const kept = version({ name: 'acme-kept' });
+        const refused = [
+            version({ name: 'acme-in-review', status: 'IN_REVIEW' }),
+            // The record no longer matches the text: HASH_MISMATCH.
+            version({ name: 'acme-stale-record', evaluationRecordJson: JSON.stringify(passingRecordFor('acme-stale-record', 1, swapped)) }),
+            // The stored text no longer hashes to its pin: PIN_MISMATCH.
+            version({
+                name: 'acme-swapped-text',
+                instructions: swapped,
+                contentHash: skillContentHash(TENANT_SKILL_INSTRUCTIONS),
+                approvedContentHash: skillContentHash(TENANT_SKILL_INSTRUCTIONS),
+            }),
+            // A shipped skill's name, which the run refuses before the gate.
+            version({ name: 'soa-authoring' }),
+        ];
+        for (const v of refused) expect(() => resolveRunSkills([], [v])).toThrow(SkillLoadError);
+        expect(() => resolveRunSkills([], [kept])).not.toThrow();
+        expect(mountableTenantSkillLines([kept, ...refused])).toEqual([{ name: 'acme-kept', description: kept.description }]);
     });
 });
 

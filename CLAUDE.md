@@ -933,6 +933,20 @@ new tenant-membership creation path).
   `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`
   fails when one of the six gains a consumer outside the admin API, and when
   one of the four stops having one.
+- **An admin page offers a write only where the server takes it** (#4467,
+  #4466, generalised from #4471's agent register). Three gates, each asked as
+  the server asks it: the edge (#4587's `membershipOpensAdminConsole` over
+  `TenantContextValue.membershipRole`, the same answer the admin layout and the
+  sidebar give, a missing role not admitted; the agent register, whose subtree
+  also admits AI_ADMIN, asks `checkAdminAccess` for it on the server), the
+  route's key, and the usecase's floor (`offersAdminApiWrite` in
+  `src/lib/auth/admin-api-affordances.ts`; a client page calls
+  `useOffersAdminApiWrite` from `src/lib/auth/use-offers-admin-api-write.ts`).
+  Never AND a key with a role in a page, and never copy the edge's role table:
+  a custom role is not the membership role. Keep the hook OFF the tenant
+  context provider: every tenant page loads the provider, so its runtime
+  imports ship in every route's First Load JS, and the bundle-size budget
+  failed the day the hook lived there.
 - **An access-review campaign does no OWNER-tier work** (#3727). Closing one
   writes its decisions under `access_reviews.close`, which an ADMIN holds, so it
   holds the members page's rules itself: a MODIFY never sets OWNER
@@ -2906,8 +2920,14 @@ edit from being undone:
     it. That map asks what a run's mount asks, from the run's own cache: the
     text scan did not refuse the skill, and the mount gate's verdict
     (`verdictFor`, a passing evaluation record for this exact text) is a pass.
-    Any other name, and a tenant skill with no approved version, is
-    `SKILL_UNKNOWN`, by name and first. Then the named lines are priced with
+    A tenant skill counts only if its APPROVED version, read with the mount's
+    own columns (`readApprovedTenantSkillsByNameIn`), passes what admission asks
+    of it: `mountableTenantSkillLines`, which is `tenantVersionMount`, the
+    per-version half of `resolveRunSkills` (no shipped skill of its name, then
+    `checkTenantSkillMountable`). The picker reads the same through
+    `readMountableTenantSkillLines`: at most 200 versions a load, in pages of 20,
+    so one page of records (each up to 4 MiB) is held at a time. Any other name
+    is `SKILL_UNKNOWN`, by name and first. Then the named lines are priced with
     the run's `catalogBytes`: over `MAX_CATALOG_BYTES` is
     `SKILL_CATALOGUE_OVER_BUDGET`, a 409 carrying `bytes`, `budget` and the
     `skills` priced. Approval asks again because a deploy can refuse or
@@ -2971,7 +2991,8 @@ edit from being undone:
     over it. "Mountable" means `repositorySkillCatalogue()`, never
     `repositorySkillNames()`: a shipped skill the text scan refused or the
     mount gate refuses keeps its name reserved and is neither offered nor
-    saved. A `SKILL_CATALOGUE_OVER_BUDGET` refusal, at save beside the skills
+    saved; and an approved tenant skill the tenant mount gate now refuses is
+    neither offered nor saved either. A `SKILL_CATALOGUE_OVER_BUDGET` refusal, at save beside the skills
     field or in the approval notice, is worded by the tab from its `bytes` and
     `budget`, never shown as the server's English sentence. Instructions and
     reasons render as React text, never through markdown or `innerHTML`.
@@ -3226,6 +3247,18 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
   See `docs/implementation-notes/2026-05-21-e2e-isolation.md` and
   `tests/e2e/fixtures.ts`.
 - `SKIP_ENV_VALIDATION=1` is set in `jest.setup.js` to prevent env loader crash in unit tests.
+- **Reading a shard's heap**: each `Test` shard prints a `heap trail (#4613)`
+  line the first time `heapUsed` passes 4 GB and every 2 GB above, and a
+  `heap summary (#3977)` block at the end. `heapUsed` is pre-GC, so a mark is
+  not proof of a leak, and under `--max-old-space-size=12288` V8 aborts near
+  10 GB, not 12. See `tests/reporters/heap-summary-reporter.js`.
+- **The `Test` shards run Jest under `node --no-compilation-cache`** (#4613),
+  not `npx jest`. With V8's compilation cache on, a shard kept the vm context
+  of almost every finished test file — shard 2/7 ended each run near 8.5 GB of
+  live heap, and shard 7/7 intermittently climbed to its exit 134 the same way.
+  NODE_OPTIONS refuses the flag, so it stays on the command line;
+  `tests/guards/in-band-shard-heap-bound.test.ts` holds both. See
+  `docs/implementation-notes/2026-10-30-shard-heap-runaway.md`.
 - Coverage floors live in `jest.thresholds.json` (five keys: `global` +
   `usecases/` / `policies/` / `events/` / `lib/`), with the reasoning in
   `docs/coverage-policy.md`. A path key REMOVES its files from `global`,

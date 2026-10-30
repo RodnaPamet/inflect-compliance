@@ -23,7 +23,13 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl, useTenantHref, usePermissions, useTenantContext } from '@/lib/tenant-context-provider';
-import { isOwnerManagedRole, mayCarryCustomRole } from '@/lib/roles';
+import {
+    CUSTOM_ROLE_ADMIN_BASE_REFUSAL,
+    customRoleCarriageRefusal,
+    customRoleCarriageRefusalOf,
+    isOwnerManagedRole,
+    mayCarryCustomRole,
+} from '@/lib/roles';
 import {
     Users, UserPlus, ChevronDown, Shield, XCircle,
     MoreVertical, UserMinus, Mail, Monitor, Trash2,
@@ -54,6 +60,12 @@ interface CustomRoleOption {
     id: string;
     name: string;
     baseRole: string;
+    /**
+     * The role's grant, as the list returns it. Read with its base by
+     * `customRoleCarriageRefusal`: only an ADMIN membership carries a role
+     * built on ADMIN or granting an admin-membership-only key (2026-10-30).
+     */
+    permissionsJson: unknown;
 }
 
 interface Member {
@@ -342,6 +354,32 @@ export default function MembersAdminPage() {
     }
 
     /**
+     * A refused role or custom-role change, in the viewer's language. Only an
+     * ADMIN membership carries a custom role built on ADMIN or granting an
+     * admin-membership-only key (owner decision, 2026-10-30); that refusal names
+     * keys, so it is re-said with the permission grid's labels. Any other
+     * refusal is the server's own sentence.
+     */
+    function roleChangeError(body: unknown): string {
+        const carriage = customRoleCarriageRefusalOf(body);
+        if (carriage?.reason === CUSTOM_ROLE_ADMIN_BASE_REFUSAL) {
+            return t('members.carriageRefusedBase', { base: roleLabel(carriage.baseRole ?? 'ADMIN') });
+        }
+        if (carriage) {
+            const permissions = carriage.keys
+                .map((key) =>
+                    t('roles.permissionLabel', {
+                        resource: t('resourceLabels.admin'),
+                        action: t(`roles.actions.${key.slice('admin.'.length)}`),
+                    }),
+                )
+                .join(', ');
+            return t('members.carriageRefusedKeys', { permissions });
+        }
+        return apiErrorMessage(body, t('members.roleChangeFailed'));
+    }
+
+    /**
      * Clear the custom role of a member whose role carries none (OWNER, AI_ADMIN
      * — #3720, #3699). No writer can create that combination any more, so this
      * only ever repairs a legacy row; for an OWNER it needs `admin.owner_management`,
@@ -401,7 +439,7 @@ export default function MembersAdminPage() {
 
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ error: t('members.roleChangeFailed') }));
-                setError(apiErrorMessage(err, t('members.roleChangeFailed')));
+                setError(roleChangeError(err));
                 // The server applies a role and a custom role together or not
                 // at all, but the row is re-read either way, so it never shows
                 // a state the server does not hold.
@@ -736,6 +774,21 @@ export default function MembersAdminPage() {
                     // predates the rule. The only change it takes is the clear.
                     const legacyCustomRole =
                         !mayCarryCustomRole(m.role) && Boolean(m.customRoleId) && pendingRole === m.role;
+                    // Only an ADMIN membership carries a custom role built on
+                    // ADMIN or granting an admin-membership-only key (owner
+                    // decision, 2026-10-30), asked as the server asks it: what
+                    // the change ADDS to what the member carries now, so a
+                    // legacy row is never held back from a change that adds
+                    // nothing.
+                    const shapeOf = (id: string | null) =>
+                        (id ? customRoles.find((cr) => cr.id === id) : undefined) ?? null;
+                    const carriageRefused = (role: string, customRoleId: string | null) =>
+                        customRoleCarriageRefusal(
+                            { membershipRole: role, customRole: shapeOf(customRoleId) },
+                            { membershipRole: m.role, customRole: shapeOf(m.customRoleId) },
+                        ) !== null;
+                    const pendingBreaksCarriage =
+                        !builtInScopeOnly && carriageRefused(pendingRole, pendingCustomRoleId);
                     if (editingRoleId === m.id) {
                         return (
                             <div className="space-y-1">
@@ -758,7 +811,7 @@ export default function MembersAdminPage() {
                                         variant="secondary"
                                         size="xs"
                                         onClick={() => handleRoleChange(m.id)}
-                                        disabled={changingRole || customRoleBlocksPromotion}
+                                        disabled={changingRole || customRoleBlocksPromotion || pendingBreaksCarriage}
                                         loading={changingRole}
                                         id={`role-save-${m.id}`}
                                     >
@@ -794,13 +847,27 @@ export default function MembersAdminPage() {
                                         </Button>
                                     </div>
                                 )}
+                                {pendingBreaksCarriage && (
+                                    <p id={`role-custom-role-admin-only-${m.id}`} className="text-xs text-content-warning">
+                                        {t('members.customRoleNeedsAdminMembership', {
+                                            customRole: shapeOf(pendingCustomRoleId)?.name ?? '',
+                                        })}
+                                    </p>
+                                )}
                                 {customRoles.length > 0 && !builtInScopeOnly && (
                                     <Combobox
                                         hideSearch
                                         id={`custom-role-select-${m.id}`}
                                         selected={customRoles.map(cr => ({ value: cr.id, label: cr.name })).find(o => o.value === (pendingCustomRoleId ?? '')) ?? null}
                                         setSelected={(opt) => setPendingCustomRoleId(opt?.value || null)}
-                                        options={customRoles.map(cr => ({ value: cr.id, label: cr.name }))}
+                                        options={customRoles.map((cr) => ({
+                                            value: cr.id,
+                                            label: cr.name,
+                                            // Offered, but not choosable, with the reason.
+                                            ...(carriageRefused(pendingRole, cr.id)
+                                                ? { disabledTooltip: t('members.customRoleAdminMembershipOnly') }
+                                                : {}),
+                                        }))}
                                         placeholder={t('members.customRolePlaceholder')}
                                         matchTriggerWidth
                                         buttonProps={{ className: 'text-xs py-1 px-2 w-full sm:w-48' }}

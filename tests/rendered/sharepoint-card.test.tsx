@@ -44,10 +44,31 @@ jest.mock('next-intl', () => {
 const search = new URLSearchParams();
 jest.mock('next/navigation', () => ({ useSearchParams: () => search }));
 
+/**
+ * The viewer the page's write gates are asked of (#4466 finding 9): the REAL
+ * `useOffersAdminApiWrite` and `offersAdminApiWrite`, over a tenant context a
+ * test may replace. An Owner membership, which the edge admits (#4587's
+ * `membershipRole`), unless a test says otherwise.
+ */
+const mockViewer: {
+    membershipRole: string | undefined;
+    appPermissions: unknown;
+    permissions: { canAdmin: boolean; canWrite: boolean };
+} = { membershipRole: 'OWNER', appPermissions: null, permissions: { canAdmin: true, canWrite: true } };
 jest.mock('@/lib/tenant-context-provider', () => {
     const apiUrl = (p: string) => `/api/t/acme${p}`;
     const href = (p: string) => `/t/acme${p}`;
-    return { useTenantApiUrl: () => apiUrl, useTenantHref: () => href };
+    const { getPermissionsForRole } = jest.requireActual('@/lib/permissions');
+    return {
+        useTenantApiUrl: () => apiUrl,
+        useTenantHref: () => href,
+        // Read by `@/lib/auth/use-offers-admin-api-write`, which is not mocked.
+        useTenantContext: () => ({
+            membershipRole: mockViewer.membershipRole,
+            appPermissions: mockViewer.appPermissions ?? getPermissionsForRole('OWNER'),
+            permissions: mockViewer.permissions,
+        }),
+    };
 });
 
 import { SharePointCard } from '@/app/t/[tenantSlug]/(app)/admin/integrations/SharePointCard';
@@ -149,5 +170,46 @@ describe('choosing sites', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Save sites' }));
 
         await waitFor(() => expect(screen.queryByRole('button', { name: 'Save sites' })).not.toBeInTheDocument());
+    });
+});
+
+// Every SharePoint call passes the edge, `admin.manage` and the service's
+// `assertCanAdmin` (#4466 finding 9): the card offers no control a viewer who
+// fails one of them would only be refused.
+describe('the controls offered, by who is asking', () => {
+    afterEach(() => {
+        mockViewer.membershipRole = 'OWNER';
+        mockViewer.permissions = { canAdmin: true, canWrite: true };
+    });
+
+    it('an Owner is offered Connect (and, above, Test, Sites and Disconnect on a connection)', async () => {
+        serve([]);
+        render(<SharePointCard />);
+        expect(await screen.findByRole('button', { name: 'Connect' })).toBeInTheDocument();
+    });
+
+    it.each([
+        ['an Admin membership on a Reader-based custom role', () => (mockViewer.permissions = { canAdmin: false, canWrite: false })],
+        ['an Editor membership the edge refuses', () => (mockViewer.membershipRole = 'EDITOR')],
+    ])('%s is not offered Connect', async (_who, as) => {
+        as();
+        serve([]);
+        render(<SharePointCard />);
+        await screen.findByRole('heading', { level: 2 });
+        await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+        expect(screen.queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ['an Admin membership on a Reader-based custom role', () => (mockViewer.permissions = { canAdmin: false, canWrite: false })],
+        ['an Editor membership the edge refuses', () => (mockViewer.membershipRole = 'EDITOR')],
+    ])('%s is offered none of them', async (_who, as) => {
+        as();
+        serve([sp()]);
+        render(<SharePointCard />);
+        const row = await screen.findByTestId('sp-connection-sp-1');
+        for (const name of ['Test', 'Sites', 'Disconnect']) {
+            expect({ name, offered: within(row).queryAllByRole('button', { name }).length }).toEqual({ name, offered: 0 });
+        }
     });
 });

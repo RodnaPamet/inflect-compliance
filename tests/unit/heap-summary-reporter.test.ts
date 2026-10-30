@@ -102,3 +102,81 @@ describe('heap summary — the shape verdict', () => {
         }
     });
 });
+
+/**
+ * THE TRAIL MUST EXIST WHEN THE RUN DOES NOT FINISH (#4613).
+ *
+ * Shard 7/7 died three times on 2026-10-30 at ~10.2 GB and printed nothing: the
+ * summary above is written by `onRunComplete`, and an `exit 134` never gets
+ * there. These drive `onTestResult` ALONE — no `onRunComplete` — which is the
+ * crash, and assert what is on stderr at that point.
+ */
+function trailFor(heapSeriesMb: number[]): string[] {
+    const MB = 1024 * 1024;
+    const real = process.memoryUsage;
+    let i = 0;
+    process.memoryUsage = (() => {
+        const heapUsed = (heapSeriesMb[Math.min(i, heapSeriesMb.length - 1)] ?? 0) * MB;
+        i += 1;
+        return { rss: heapUsed + 900 * MB, heapUsed, heapTotal: heapUsed, external: 0, arrayBuffers: 0 };
+    }) as never;
+
+    const written: string[] = [];
+    const realWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+        written.push(String(chunk));
+        return true;
+    }) as never;
+
+    try {
+        const reporter = new HeapSummaryReporter({ maxWorkers: 1 });
+        heapSeriesMb.forEach((_, n) =>
+            reporter.onTestResult({}, { testFilePath: `${process.cwd()}/tests/unit/f${n}.test.ts` }),
+        );
+        // Deliberately no onRunComplete(): the process is assumed dead here.
+    } finally {
+        process.memoryUsage = real;
+        process.stderr.write = realWrite;
+    }
+    return written
+        .join('')
+        .split('\n')
+        .filter((l) => l.startsWith('heap trail (#4613)'));
+}
+
+const marksOf = (lines: string[]) => lines.map((l) => l.match(/passed (\d+) GB/)?.[1]);
+
+describe('heap trail — written per file, before any crash', () => {
+    it('prints nothing for a run that stays at its usual ~2 GB', () => {
+        // The shape of a normal shard 7 on main: up to ~2.3 GB heapUsed, receding.
+        expect(trailFor([300, 1400, 2300, 1700, 2100, 1900, 3900])).toEqual([]);
+    });
+
+    it('prints one line at 4 GB and at each 2 GB above it, with no onRunComplete', () => {
+        // Marks are binary GB: 4096, 6144, 8192 and 10240 MB.
+        const series = [700, 1800, 3000, 4100, 4500, 5200, 6300, 7000, 8200, 10300];
+        const lines = trailFor(series);
+
+        expect(marksOf(lines)).toEqual(['4', '6', '8', '10']);
+        // Each names the file that had just finished and its 1-based index…
+        expect(lines[0]).toContain('after tests/unit/f3.test.ts — file 4,');
+        expect(lines[1]).toContain('after tests/unit/f6.test.ts — file 7,');
+        // …and how many files ran since the previous mark: the range to bisect.
+        expect(lines[0]).toContain('4 files since the previous mark');
+        expect(lines[1]).toContain('3 files since the previous mark');
+        expect(lines[2]).toContain('2 files since the previous mark');
+        expect(lines[3]).toContain('1 file since the previous mark');
+        // The step that landed the mark, and the clock V8's GC trace uses.
+        expect(lines[1]).toContain('step +1100 MB');
+        expect(lines[1]).toMatch(/at \d+ s$/);
+    });
+
+    it('names only the highest mark a single step jumps to, and never repeats a mark', () => {
+        // +6.3 GB in one file (4 and 6 jumped over, 8 reached), then a dip and
+        // a climb back over 8 that must not print 8 again.
+        const lines = trailFor([1000, 2000, 8300, 6000, 8500, 9900, 10300]);
+        expect(marksOf(lines)).toEqual(['8', '10']);
+        expect(lines[0]).toContain('step +6300 MB');
+        expect(lines[1]).toContain('4 files since the previous mark');
+    });
+});

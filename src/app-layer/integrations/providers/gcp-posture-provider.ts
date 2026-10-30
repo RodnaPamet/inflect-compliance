@@ -23,6 +23,7 @@ import type {
 } from '../types';
 import { runPowerpipeBenchmark, type RunBenchmarkInput } from '../cloud-posture/powerpipe-core';
 import { collectorExecForDeploy } from '../cloud-posture/sandboxed-collector-exec';
+import { sandboxDecisionRecorderForScan } from '../openshell-audit-bridge';
 
 export interface GcpPostureConfig {
     benchmark?: string;
@@ -109,12 +110,52 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
     };
 
     private readonly exec?: RunBenchmarkInput['exec'];
+    /**
+     * Whether `exec` came from the DEPLOY rather than from a caller — #4563.
+     *
+     * The discriminator matters because only the deploy's runner is sandboxed,
+     * and only a sandboxed runner has lifecycle decisions to record. An
+     * injected test double has none, and the on-host `execFile` path has none.
+     */
+    private readonly execFromDeploy: boolean;
+
     constructor(deps: { exec?: RunBenchmarkInput['exec'] } = {}) {
         // An explicitly injected runner always wins, so every existing test
         // double behaves exactly as before. Otherwise the deploy decides, and
         // with the platform switch off — its default — this stays `undefined`
         // and the on-host `execFile` path is untouched (4.1, #3961).
-        this.exec = deps.exec ?? collectorExecForDeploy() ?? undefined;
+        // `collectorExecForDeploy()` is consulted ONCE here so the constructor's
+        // answer to "is sandboxing in play" is stable, and again per scan in
+        // `execForScan` so the recorder can be bound to that scan's tenant.
+        const deployed = deps.exec ? null : collectorExecForDeploy();
+        this.exec = deps.exec ?? deployed ?? undefined;
+        this.execFromDeploy = deployed !== null;
+    }
+
+    /**
+     * The runner for THIS scan.
+     *
+     * Identical to the constructor's `exec` except in one respect: when the
+     * DEPLOY supplied it, it is rebuilt with an audit recorder bound to this
+     * scan's tenant, which is the threading #4563 asks for. An injected double
+     * and the on-host path are returned unchanged.
+     *
+     * Per scan and not per instance because this provider is registered as a
+     * module-level singleton in `bootstrap.ts` and dispatched for every tenant
+     * — see the recorder's own note on why a constructor-bound tenant would be
+     * worse than none.
+     */
+    private execForScan(input: CheckInput): RunBenchmarkInput['exec'] {
+        if (!this.execFromDeploy) return this.exec;
+        return (
+            collectorExecForDeploy({
+                onDecision: sandboxDecisionRecorderForScan({
+                    tenantId: input.tenantId,
+                    job: 'gcp-posture-collect',
+                    discriminator: input.jobRunId,
+                }),
+            }) ?? undefined
+        );
     }
 
     static benchmarkId(shorthand: string | undefined): string {
@@ -139,6 +180,13 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
         const benchmarkId = GcpPostureProvider.benchmarkId(cfg.benchmark ?? input.parsed.checkType);
         const saJson = cfg.serviceAccountJson ?? '';
         const secretValues = saJson ? [saJson] : [];
+        // Resolved ONCE per scan, and the same value decides both whether the
+        // key goes to disk below and what actually runs the benchmark. Reading
+        // the two from different places is how they could disagree — and the
+        // disagreement that matters is "no runner here, so skip the key" next
+        // to "on-host runner there", which would run the collector with no
+        // credential at all.
+        const exec = this.execForScan(input);
 
         // Write the SA key to a restricted temp file for the GCP plugin.
         let credPath: string | null = null;
@@ -146,7 +194,7 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
         const env: NodeJS.ProcessEnv = { ...process.env };
         if (cfg.projectId) env.CLOUDSDK_CORE_PROJECT = cfg.projectId;
         try {
-            // `!this.exec` means "the on-host execFile path", which is the
+            // `!exec` means "the on-host execFile path", which is the
             // ONLY consumer that needs the key where a child can read it. A
             // test double does not, and neither does a sandboxed runner: there
             // the gateway injects the credential as an attached provider, which
@@ -154,13 +202,13 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
             // correct after #3961 defaulted `exec` — but it is named here,
             // because reading it as "no runner configured" would invite
             // somebody to write the key for the sandboxed path too.
-            if (saJson && !this.exec) {
+            if (saJson && !exec) {
                 dir = await mkdtemp(join(tmpdir(), 'gcp-posture-'));
                 credPath = join(dir, 'sa.json');
                 await writeFile(credPath, saJson, { mode: 0o600 });
                 env.GOOGLE_APPLICATION_CREDENTIALS = credPath;
             }
-            const { summaryObj: _s, ...result } = await runPowerpipeBenchmark({ benchmarkId, env, secretValues, patterns: GCP_CREDENTIAL_PATTERNS, exec: this.exec });
+            const { summaryObj: _s, ...result } = await runPowerpipeBenchmark({ benchmarkId, env, secretValues, patterns: GCP_CREDENTIAL_PATTERNS, exec });
             return result;
         } finally {
             // Unlink FIRST, then remove the directory. The two are not

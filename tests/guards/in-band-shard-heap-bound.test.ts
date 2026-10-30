@@ -49,11 +49,17 @@ const workflow = yaml.load(
     fs.readFileSync(path.join(ROOT, '.github/workflows/ci.yml'), 'utf8'),
 ) as Workflow;
 
+/**
+ * How a step starts jest: through npx, or — the shard, since #4613 — through
+ * node itself, because a V8 flag the shard needs is refused in NODE_OPTIONS.
+ */
+const JEST_INVOCATION = /npx\s+jest\b|\bnode\b[^\n]*\snode_modules\/jest\/bin\/jest\.js\b/;
+
 /** The one step that runs the sharded jest invocation, found by its own fields. */
 function shardStep(): Step {
     const steps = Object.values(workflow.jobs)
         .flatMap((job) => job.steps ?? [])
-        .filter((s) => typeof s.run === 'string' && /npx\s+jest/.test(s.run) && /--shard=/.test(s.run));
+        .filter((s) => typeof s.run === 'string' && JEST_INVOCATION.test(s.run) && /--shard=/.test(s.run));
     // Exactly one, so a second sharded invocation appearing elsewhere has to
     // come through here rather than silently splitting the property in two.
     expect(steps).toHaveLength(1);
@@ -71,6 +77,31 @@ describe('the in-band shard carries an explicit heap ceiling', () => {
         expect(shardStep().env?.NODE_OPTIONS).toContain(
             `--max-old-space-size=${DOCUMENTED_SHARD_HEAP_MB}`,
         );
+    });
+});
+
+describe("the in-band shard runs without V8's compilation cache (#4613)", () => {
+    /** The shard step's command lines, its comments dropped. */
+    const commandLines = (): string[] =>
+        (shardStep().run ?? '')
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0 && !l.startsWith('#'));
+
+    it('node is started with --no-compilation-cache, on the line that runs jest', () => {
+        // The cache held the heap of finished test files: shard 2/7 kept
+        // 8.1-8.4 GB through a forced gc() with it, 1.0-1.1 GB without it.
+        // Read off the command line itself, because ci.yml explains the flag
+        // in a comment just above it, and a comment must not stand in for it.
+        const jestLine = commandLines().find((l) => JEST_INVOCATION.test(l));
+        expect(jestLine).toBeDefined();
+        expect(jestLine).toMatch(/^node\s+(?:--[\w-]+(?:=\S+)?\s+)*--no-compilation-cache\s/);
+    });
+
+    it('and not through NODE_OPTIONS, which refuses the flag and would stop node starting', () => {
+        // Moving it beside the heap ceiling looks tidier and fails every shard
+        // at startup: "--no-compilation-cache is not allowed in NODE_OPTIONS".
+        expect(shardStep().env?.NODE_OPTIONS ?? '').not.toContain('compilation-cache');
     });
 });
 
