@@ -157,6 +157,7 @@ function mount(role: 'OWNER' | 'EDITOR') {
                     <Nis2GapLifecycleClient
                         tenantSlug="acme-corp"
                         canWrite
+                        canStartRun={role === 'OWNER'}
                         canManage={perms.admin.manage}
                     />
                 </TooltipProvider>
@@ -194,7 +195,7 @@ describe('NIS2 gap delegation panel — permission gate', () => {
         // Wait for the page itself to render, so this is not just asserting
         // against an empty tree that has not loaded yet.
         await waitFor(() =>
-            expect(container.querySelector('#nis2-gap-rerun-btn')).toBeTruthy(),
+            expect(container.querySelector('#nis2-gap-history-table')).toBeTruthy(),
         );
         expect(container.querySelector('#nis2-gap-dispatch-btn')).toBeNull();
     });
@@ -202,10 +203,23 @@ describe('NIS2 gap delegation panel — permission gate', () => {
     it('never requests the admin-only assignments endpoint for an EDITOR', async () => {
         const { container } = mount('EDITOR');
         await waitFor(() =>
-            expect(container.querySelector('#nis2-gap-rerun-btn')).toBeTruthy(),
+            expect(container.querySelector('#nis2-gap-history-table')).toBeTruthy(),
         );
         // The point of the gate: no denied read, so no AUTHZ_DENIED row.
         expect(requestedUrls.filter((u) => u.includes('/assignments'))).toHaveLength(0);
+    });
+
+    it('offers "Re-run assessment" to an admin and not to an EDITOR (#4633)', async () => {
+        // Starting a run takes the Admin tier on the server, so an Editor's
+        // click was a 403 behind a button the page showed them.
+        const owner = mount('OWNER');
+        await waitFor(() => expect(owner.container.querySelector('#nis2-gap-history-table')).toBeTruthy());
+        expect(owner.container.querySelector('#nis2-gap-rerun-btn')).toBeTruthy();
+        owner.unmount();
+
+        const editor = mount('EDITOR');
+        await waitFor(() => expect(editor.container.querySelector('#nis2-gap-history-table')).toBeTruthy());
+        expect(editor.container.querySelector('#nis2-gap-rerun-btn')).toBeNull();
     });
 
     it('does request it for an admin', async () => {

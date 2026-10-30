@@ -29,6 +29,9 @@ export default async function Nis2GapPage({
         <Nis2GapLifecycleClient
             tenantSlug={tenantSlug}
             canWrite={canWrite}
+            // Starting a re-assessment takes the Admin tier on the server
+            // (`assertCanManageOnboarding`), not the write tier (#4633).
+            canStartRun={ctx.permissions.canAdmin}
             canManage={canManage}
         />
     );
