@@ -28,6 +28,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // CC BY 4.0 attribution — carries everywhere derived NIS2 content renders.
 const NIS2_ATTRIBUTION =
@@ -61,8 +62,16 @@ function critVariant(c: string): 'error' | 'warning' | 'info' | 'neutral' {
     if (c === 'MEDIUM') return 'info';
     return 'neutral';
 }
-function kindLabel(k: Suggestion['kind']): string {
-    return k === 'RISK' ? 'Risk' : k === 'TASK' ? 'Task' : k === 'CONTROL_LINK' ? 'Link control' : 'New control';
+type Translate = ReturnType<typeof useTranslations>;
+
+/**
+ * The label for a stored code, from `audits.nis2Gap.<group>.<code>`, or the
+ * code itself when the catalogue has none — a value the bank adds later still
+ * shows, rather than a message path.
+ */
+function codeLabel(tx: Translate, group: string, code: string): string {
+    const key = `nis2Gap.${group}.${code}`;
+    return tx.has(key) ? tx(key) : code;
 }
 
 /**
@@ -70,24 +79,14 @@ function kindLabel(k: Suggestion['kind']): string {
  * and the delegation panel's one (fired by two buttons). Four hand-rolled
  * `fetch` + `res.ok` + error blocks is how error handling drifts apart.
  *
- * The two surfaces disagree about WHICH message the user sees, and that
- * disagreement is deliberate rather than drift, so it is an argument instead
- * of a second copy of the request: the assignments endpoints return an
- * actionable server message ("run already finalized", "not every respondent
- * has submitted") that the panel has always surfaced, while the nis2-gap
- * writes have always shown their own localized fallback.
+ * Every write shows the server's reason when it gives one, and the caller's
+ * localized fallback otherwise. The nis2-gap writes used to show only their
+ * fallback, so a refused re-run and a validation error read the same (#4633).
  */
-async function send(
-    url: string,
-    init: RequestInit,
-    fallbackMessage: string,
-    opts: { preferServerMessage?: boolean } = {},
-) {
+async function send(url: string, init: RequestInit, fallbackMessage: string) {
     const res = await fetch(url, init);
     if (!res.ok) {
-        if (!opts.preferServerMessage) throw new Error(fallbackMessage);
-        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        throw new Error(body?.error?.message ?? fallbackMessage);
+        throw new Error(apiErrorMessage(await res.json().catch(() => null), fallbackMessage));
     }
     return res.json().catch(() => null);
 }
@@ -95,10 +94,17 @@ async function send(
 export function Nis2GapLifecycleClient({
     tenantSlug,
     canWrite,
+    canStartRun,
     canManage,
 }: {
     tenantSlug: string;
     canWrite: boolean;
+    /**
+     * May the viewer start a re-assessment? `startStandaloneNis2Assessment`
+     * takes the Admin tier (`assertCanManageOnboarding`), so an Editor is not
+     * offered a button that ends in a refusal (#4633).
+     */
+    canStartRun: boolean;
     /**
      * `admin.manage` — the delegation capability, deliberately separate from
      * `canWrite`. Assign / dispatch / finalize are all admin-gated at the API,
@@ -253,7 +259,7 @@ export function Nis2GapLifecycleClient({
             { accessorKey: 'overall', header: tx('nis2Gap.colScore'), cell: ({ row }) => <span className="tabular-nums">{row.original.overall}</span> },
             { accessorKey: 'gapCount', header: tx('nis2Gap.colGaps'), cell: ({ row }) => <span className="tabular-nums text-content-muted">{row.original.gapCount}</span> },
             { id: 'answered', header: tx('nis2Gap.colAnswered'), cell: ({ row }) => <span className="tabular-nums text-content-muted">{row.original.answered}/{row.original.total}</span> },
-            { accessorKey: 'status', header: tx('nis2Gap.colStatus'), cell: ({ row }) => <span className="text-content-muted">{row.original.status}</span> },
+            { accessorKey: 'status', header: tx('nis2Gap.colStatus'), cell: ({ row }) => <span className="text-content-muted">{codeLabel(tx, 'runStatus', row.original.status)}</span> },
             { id: 'date', header: tx('nis2Gap.colDate'), cell: ({ row }) => <span className="text-content-muted">{formatDate(new Date(row.original.createdAt))}</span> },
         ]),
         [tx],
@@ -262,18 +268,18 @@ export function Nis2GapLifecycleClient({
     const gapColumns = useMemo(
         () => createColumns<Gap>([
             { accessorKey: 'plainText', header: tx('nis2Gap.gapCol'), cell: ({ row }) => <span>{row.original.plainText?.[lang]}</span> },
-            { accessorKey: 'criticality', header: tx('nis2Gap.gapCrit'), cell: ({ row }) => <StatusBadge variant={critVariant(row.original.criticality)} size="sm">{row.original.criticality}</StatusBadge> },
+            { accessorKey: 'criticality', header: tx('nis2Gap.gapCrit'), cell: ({ row }) => <StatusBadge variant={critVariant(row.original.criticality)} size="sm">{codeLabel(tx, 'crit', row.original.criticality)}</StatusBadge> },
             {
                 id: 'liability', header: tx('nis2Gap.gapLiability'), cell: ({ row }) => (
                     row.original.consequence === 'PERSONAL_LIABILITY'
                         ? <StatusBadge variant="error" size="sm">{tx('nis2Gap.personalLiability')}</StatusBadge>
                         : row.original.fineExposure
                             ? <StatusBadge variant="warning" size="sm">{tx('nis2Gap.fineExposure')}</StatusBadge>
-                            : <span className="text-content-muted text-xs">{row.original.consequence}</span>
+                            : <span className="text-content-muted text-xs">{codeLabel(tx, 'consequence', row.original.consequence)}</span>
                 ),
             },
-            { accessorKey: 'answer', header: tx('nis2Gap.gapAnswer'), cell: ({ row }) => <span className="text-content-muted">{row.original.answer}</span> },
-            { accessorKey: 'timeToFix', header: tx('nis2Gap.gapEffort'), cell: ({ row }) => <span className="text-content-muted">{row.original.timeToFix}</span> },
+            { accessorKey: 'answer', header: tx('nis2Gap.gapAnswer'), cell: ({ row }) => <span className="text-content-muted">{codeLabel(tx, 'answer', row.original.answer)}</span> },
+            { accessorKey: 'timeToFix', header: tx('nis2Gap.gapEffort'), cell: ({ row }) => <span className="text-content-muted">{codeLabel(tx, 'effort', row.original.timeToFix)}</span> },
             { accessorKey: 'legalBasis', header: tx('nis2Gap.gapLegalBasis'), cell: ({ row }) => <span className="text-xs text-content-muted">{row.original.legalBasis}</span> },
         ]),
         [lang, tx],
@@ -301,7 +307,7 @@ export function Nis2GapLifecycleClient({
                         >
                             {tx('nis2Gap.viewCoverage')}
                         </Link>
-                        {canWrite ? (
+                        {canStartRun ? (
                             <Button variant="secondary" onClick={handleRerun} disabled={rerunning} id="nis2-gap-rerun-btn">
                                 {rerunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                                 {tx('nis2Gap.rerun')}
@@ -390,10 +396,9 @@ export function Nis2GapLifecycleClient({
                         an EDITOR the panel rendered a control surface where each
                         action 403s and the mount-time read wrote a denied-access
                         audit row. The baseline CTA goes with it — its whole
-                        purpose is to reach delegation. EDITORs keep the
-                        "Re-run assessment" action in the header, which is
-                        separately gated on `canWrite`, so no capability they
-                        actually had is removed here. */}
+                        purpose is to reach delegation — and also needs
+                        `canStartRun`, because the run it starts takes the
+                        Admin tier, as the header's "Re-run assessment" does. */}
                     {canManage && data.history[0]?.status !== 'COMPLETED' && (
                         data.history[0]?.source === 'STANDALONE' ? (
                             <Nis2AssignmentsPanel
@@ -401,7 +406,7 @@ export function Nis2GapLifecycleClient({
                                 assessmentId={data.history[0].id}
                                 onChanged={() => { void load(); }}
                             />
-                        ) : data.history[0]?.source === 'WIZARD_BASELINE' ? (
+                        ) : data.history[0]?.source === 'WIZARD_BASELINE' && canStartRun ? (
                             <div className={cn(cardVariants({ density: 'comfortable' }))}>
                                 <EmptyState
                                     variant="missing-prereqs"
@@ -446,10 +451,10 @@ export function Nis2GapLifecycleClient({
                                         />
                                         <div className="min-w-0 flex-1 space-y-tight">
                                             <div className="flex items-center gap-tight flex-wrap">
-                                                <StatusBadge variant="info" size="sm">{kindLabel(s.kind)}</StatusBadge>
-                                                <StatusBadge variant={critVariant(s.criticality)} size="sm">{s.criticality}</StatusBadge>
-                                                {s.consequence === 'PERSONAL_LIABILITY' && <StatusBadge variant="error" size="sm">Personal liability</StatusBadge>}
-                                                {s.fineExposure && <StatusBadge variant="warning" size="sm">Fine exposure</StatusBadge>}
+                                                <StatusBadge variant="info" size="sm">{codeLabel(tx, 'kind', s.kind)}</StatusBadge>
+                                                <StatusBadge variant={critVariant(s.criticality)} size="sm">{codeLabel(tx, 'crit', s.criticality)}</StatusBadge>
+                                                {s.consequence === 'PERSONAL_LIABILITY' && <StatusBadge variant="error" size="sm">{tx('nis2Gap.personalLiability')}</StatusBadge>}
+                                                {s.fineExposure && <StatusBadge variant="warning" size="sm">{tx('nis2Gap.fineExposure')}</StatusBadge>}
                                                 <span className="text-sm font-medium text-content-emphasis">{s.title}</span>
                                             </div>
                                             <p className="text-xs text-content-muted">{tx('nis2Gap.reasonLegal', { reason: s.reason, legalBasis: s.legalBasis })}</p>
@@ -484,13 +489,8 @@ export function Nis2GapLifecycleClient({
 
 // ─── Owner delegation panel (multi-respondent async collection, Prompt 2) ───
 
-const RESPONDENT_ROLES: Array<{ role: string; label: string }> = [
-    { role: 'CEO', label: 'CEO — scoping & governance' },
-    { role: 'IT', label: 'IT — technical & cryptography' },
-    { role: 'HR', label: 'HR — training & awareness' },
-    { role: 'PROCUREMENT', label: 'Procurement — supply chain' },
-    { role: 'ANYONE', label: 'General' },
-];
+/** The bank's respondent groups, in the order the panel lists them; labels in `nis2Gap.respondentRole`. */
+const RESPONDENT_ROLES = ['CEO', 'IT', 'HR', 'PROCUREMENT', 'ANYONE'] as const;
 
 interface AssignmentRow {
     id: string;
@@ -576,10 +576,6 @@ function Nis2AssignmentsPanel({
                 url,
                 { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
                 fallbackMessage,
-                // These endpoints answer with an actionable message ("run
-                // already finalized", "not every respondent has submitted")
-                // that the panel has always shown over its own fallback.
-                { preferServerMessage: true },
             ),
     });
     const busy = actionMutation.isMutating;
@@ -616,8 +612,9 @@ function Nis2AssignmentsPanel({
             </div>
             {err && <p className="text-sm text-content-error">{err}</p>}
             <ul className="space-y-tight">
-                {RESPONDENT_ROLES.map(({ role, label }) => {
+                {RESPONDENT_ROLES.map((role) => {
                     const a = byRole.get(role);
+                    const label = codeLabel(tx, 'respondentRole', role);
                     return (
                         <li key={role} className={cn(cardVariants({ density: 'compact' }), 'flex items-center gap-default flex-wrap')}>
                             <span className="text-sm font-medium text-content-emphasis w-full sm:w-56 sm:shrink-0">{label}</span>
@@ -634,7 +631,7 @@ function Nis2AssignmentsPanel({
                             </div>
                             {a && (
                                 <StatusBadge variant={a.status === 'SUBMITTED' ? 'success' : a.status === 'IN_PROGRESS' ? 'info' : 'neutral'} size="sm">
-                                    {tx('nis2Gap.assignStatus', { status: a.status, count: a.questionIds.length })}
+                                    {tx('nis2Gap.assignStatus', { status: codeLabel(tx, 'assignmentStatus', a.status), count: a.questionIds.length })}
                                 </StatusBadge>
                             )}
                         </li>

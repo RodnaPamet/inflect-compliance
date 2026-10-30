@@ -27,7 +27,7 @@
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
-import { badRequest, forbidden, notFound } from '@/lib/errors/types';
+import { badRequest, conflict, forbidden, notFound } from '@/lib/errors/types';
 import { Nis2GapAssessmentRepository } from '../repositories/Nis2GapAssessmentRepository';
 import { NIS2_ANSWER } from '@/lib/schemas/nis2-gap-assessment';
 import { logEvent } from '../events/audit';
@@ -211,33 +211,58 @@ export async function getAssignmentForRespondent(ctx: RequestContext, assignment
         if (!isAssignee && !isAdmin) throw forbidden('This assignment belongs to another member.');
 
         const bucket = new Set(assignment.questionIds);
-        const [allQuestions, domains, existingAnswers] = await Promise.all([
+        const [allQuestions, domains, existingAnswers, assessment] = await Promise.all([
             Nis2GapAssessmentRepository.listQuestions(db),
             Nis2GapAssessmentRepository.listDomains(db),
             Nis2GapAssessmentRepository.listAnswers(db, ctx, assignment.assessmentId),
+            db.nis2SelfAssessment.findFirst({
+                where: { id: assignment.assessmentId, tenantId: ctx.tenantId },
+                select: { status: true },
+            }),
         ]);
         const questions = allQuestions.filter((q) => bucket.has(q.id));
         const answers = existingAnswers
             .filter((a) => bucket.has(a.questionId))
             .map((a) => ({ questionId: a.questionId, answer: a.answer, note: a.note ?? null }));
-        return { assignment, questions, domains, answers };
+        // The respond page offers Submit (and re-submit) only while this is
+        // false; the submit itself refuses the same state.
+        const finalized = isFinalizedRun(assessment?.status ?? null);
+        return { assignment, questions, domains, answers, finalized };
     });
 }
 
 // ─── Submit (assignee-scoped, data-layer authz) ─────────────────────
+
+/** A run in one of these states no longer takes answers. */
+const FINALIZED_RUN_STATUSES: ReadonlySet<string> = new Set(['COMPLETED', 'ARCHIVED']);
+
+/** Unknown or missing counts as finalised: refuse rather than rewrite. */
+function isFinalizedRun(status: string | null): boolean {
+    return status === null || FINALIZED_RUN_STATUSES.has(status);
+}
 
 /**
  * Write ONLY answers whose ids are in this assignment's bucket into the parent
  * answer table; REJECT any id outside the bucket (authorization at the data
  * layer). Sets the assignment SUBMITTED. Concurrent submits of disjoint buckets
  * are safe — each answer is its own row.
+ *
+ * WHO: the assignee, whatever their role, or an Owner or Admin (#4633 owner
+ * decision, 2026-10-30). The assignment IS the grant: an admin chose this
+ * person for these questions, and the picker lists every member. This used to
+ * call `assertCanWrite` first, so a Reader, Auditor or AI admin who was
+ * assigned questions could open them and never submit.
+ *
+ * WHEN: until the run is finalised, re-submits included. A finalised run is a
+ * COMPLETED record with a readiness snapshot taken from these answers, so a
+ * late submit is refused (409) rather than rewriting it.
  */
 export async function submitAssignmentAnswers(
     ctx: RequestContext,
     assignmentId: string,
     answers: Array<{ questionId: string; answer: string; note?: string | null }>,
 ): Promise<{ written: number }> {
-    assertCanWrite(ctx);
+    assertCanRead(ctx);
     // Validate the answer enum up front.
     for (const a of answers) {
         if (!(NIS2_ANSWER as readonly string[]).includes(a.answer)) {
@@ -252,6 +277,11 @@ export async function submitAssignmentAnswers(
         const isAssignee = assignment.assigneeUserId != null && assignment.assigneeUserId === ctx.userId;
         const isAdmin = ctx.role === 'OWNER' || ctx.role === 'ADMIN';
         if (!isAssignee && !isAdmin) throw forbidden('This assignment belongs to another member.');
+
+        const run = await Nis2GapAssessmentRepository.lockAssessmentStatusForShare(db, ctx, assignment.assessmentId);
+        if (isFinalizedRun(run?.status ?? null)) {
+            throw conflict('This assessment has been finalised, so its answers can no longer change.');
+        }
 
         // DATA-LAYER AUTHORIZATION: every answered id MUST be in this bucket.
         const bucket = new Set(assignment.questionIds);
