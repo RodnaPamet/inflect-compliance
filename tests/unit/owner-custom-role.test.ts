@@ -128,6 +128,8 @@ function membershipDb(membership: { role: string; customRoleId?: string | null }
                 permissionsJson: {},
                 isActive: true,
             }),
+            // The carriage check reads the role for its base and blob (2026-10-30).
+            findMany: jest.fn().mockResolvedValue([{ id: 'cr-1', baseRole: 'READER', permissionsJson: {} }]),
         },
     };
     mockRunInTx.mockImplementation(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(db));
@@ -366,6 +368,10 @@ describe('invites redeemed as OWNER onto a membership carrying a custom role', (
         const db = {
             user: { findUnique: jest.fn().mockResolvedValue(existing ? { id: 'u-1' } : null) },
             tenantMembership: { findUnique: jest.fn().mockResolvedValue(existing) },
+            // The carriage check reads the custom role (2026-10-30); a READER-based one breaks nothing.
+            tenantCustomRole: {
+                findMany: jest.fn().mockResolvedValue([{ id: 'cr-1', baseRole: 'READER', permissionsJson: {} }]),
+            },
             tenantInvite: {
                 upsert: jest.fn(async (a: any) => ({ id: 'inv-1', token: 't', ...a.create })),
             },
@@ -402,8 +408,12 @@ describe('invites redeemed as OWNER onto a membership carrying a custom role', (
     function redemptionTx(existingCustomRoleId: string | null) {
         const tx = {
             tenantMembership: {
-                findUnique: jest.fn().mockResolvedValue({ customRoleId: existingCustomRoleId }),
+                findUnique: jest.fn().mockResolvedValue({ role: 'EDITOR', customRoleId: existingCustomRoleId }),
                 upsert: jest.fn().mockResolvedValue({ id: 'm-1' }),
+            },
+            // The carriage check reads the custom role (2026-10-30); a READER-based one breaks nothing.
+            tenantCustomRole: {
+                findMany: jest.fn().mockResolvedValue([{ id: 'cr-1', baseRole: 'READER', permissionsJson: {} }]),
             },
             tenant: { findUnique: jest.fn().mockResolvedValue({ slug: 'acme' }) },
         };
@@ -429,11 +439,19 @@ describe('invites redeemed as OWNER onto a membership carrying a custom role', (
         expect(tx.tenantMembership.upsert).toHaveBeenCalledTimes(1);
     });
 
-    it('a non-OWNER invite reads no custom role at all', async () => {
-        claimed('EDITOR');
+    it('an ADMIN invite reads no custom role at all — an ADMIN membership may carry any', async () => {
+        claimed('ADMIN');
         const tx = redemptionTx('cr-1');
         await redeemInvite({ token: 't', userId: 'u-1', userEmail: 'x@example.com' });
         expect(tx.tenantMembership.findUnique).not.toHaveBeenCalled();
+        expect(tx.tenantMembership.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('an EDITOR invite onto a membership carrying a custom role it may carry redeems (since 2026-10-30 it reads it)', async () => {
+        claimed('EDITOR');
+        const tx = redemptionTx('cr-1');
+        await redeemInvite({ token: 't', userId: 'u-1', userEmail: 'x@example.com' });
+        expect(tx.tenantMembership.findUnique).toHaveBeenCalledTimes(1);
         expect(tx.tenantMembership.upsert).toHaveBeenCalledTimes(1);
     });
 
@@ -446,9 +464,11 @@ describe('invites redeemed as OWNER onto a membership carrying a custom role', (
         prismaMock.tenantInvite.updateMany.mockResolvedValue({ count: 1 });
         redemptionTx(null);
         const redeemed = await redeemPendingInvitesByEmail({ userId: 'u-1', userEmail: 'x@example.com' });
+        // Every non-ADMIN invite's tenant is read since 2026-10-30, because the
+        // carriage rule can refuse an EDITOR invite too.
         expect(prismaMock.tenantMembership.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
-                where: { userId: 'u-1', tenantId: { in: ['tenant-1'] }, customRoleId: { not: null } },
+                where: { userId: 'u-1', tenantId: { in: ['tenant-1', 'tenant-2'] }, customRoleId: { not: null } },
             }),
         );
         expect(prismaMock.tenantInvite.updateMany).toHaveBeenCalledTimes(1);

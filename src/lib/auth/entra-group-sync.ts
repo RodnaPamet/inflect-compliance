@@ -28,7 +28,11 @@
  * It is one of the two writers of `AI_ADMIN` (#3699 deploy 2), and it holds the
  * role's one structural rule as the members page does: a membership carrying a
  * custom role is never moved into it (`mayCarryCustomRole`). Such a sync
- * changes nothing and records `custom_role_held`.
+ * changes nothing and records `custom_role_held`. It holds the same way for a
+ * custom role only an ADMIN membership may carry — one built on ADMIN, or
+ * granting an admin-membership-only key (owner decision, 2026-10-30;
+ * `customRoleCarriageRefusal`): a mapping never moves such an ADMIN to another
+ * role with it kept.
  *
  * Runs inside the NextAuth `jwt` callback, which uses the privileged Prisma
  * client (RLS `superuser_bypass`), so reads/writes go direct — consistent with
@@ -40,7 +44,7 @@ import { appendAuditEntry } from '@/lib/audit';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { recordEntraRoleSync } from '@/lib/observability/metrics';
 import { resolveRoleFromGroups } from './entra-role-mapping';
-import { mayCarryCustomRole } from '@/lib/roles';
+import { customRoleCarriageRefusal, mayCarryCustomRole } from '@/lib/roles';
 import { parseEntraConfig } from '@/app-layer/schemas/entra-provider.schemas';
 
 export interface EntraRoleSyncResult {
@@ -61,7 +65,12 @@ export interface EntraSyncDb {
         findMany: (args: unknown) => Promise<Array<{ aadGroupId: string; role: Role; priority: number }>>;
     };
     tenantMembership: {
-        findFirst: (args: unknown) => Promise<{ id: string; role: Role; customRoleId?: string | null } | null>;
+        findFirst: (args: unknown) => Promise<{
+            id: string;
+            role: Role;
+            customRoleId?: string | null;
+            customRole?: { baseRole: Role; permissionsJson: unknown } | null;
+        } | null>;
         update: (args: unknown) => Promise<unknown>;
     };
 }
@@ -113,7 +122,12 @@ export async function syncEntraMembershipRole(
 
     const membership = await db.tenantMembership.findFirst({
         where: { userId, tenantId, status: 'ACTIVE' },
-        select: { id: true, role: true, customRoleId: true },
+        select: {
+            id: true,
+            role: true,
+            customRoleId: true,
+            customRole: { select: { baseRole: true, permissionsJson: true } },
+        },
     });
 
     // OWNER is immune — never demoted, never gate-locked-out.
@@ -213,6 +227,27 @@ export async function syncEntraMembershipRole(
             component: 'entra',
             tenantId,
             reason: 'custom_role_on_built_in_scope_role',
+            mappedRole,
+        });
+        return { effectiveRole: membership.role, changed: false, gateDenied: false };
+    }
+
+    // Only an ADMIN membership carries a custom role built on ADMIN or
+    // granting an admin-membership-only key (owner decision, 2026-10-30). A
+    // mapping that would move such an ADMIN to another role with it kept
+    // changes nothing, like the rule above, and leaves the custom role to a
+    // person. Only what the move ADDS is held: a membership already in breach
+    // (data from before the rule) still follows its mappings.
+    const carriage = customRoleCarriageRefusal(
+        { membershipRole: mappedRole, customRole: membership.customRole ?? null },
+        { membershipRole: membership.role, customRole: membership.customRole ?? null },
+    );
+    if (membership.customRoleId && carriage) {
+        recordEntraRoleSync({ outcome: 'custom_role_held' });
+        edgeLogger.warn('Entra role mapping refused: membership carries a custom role only an ADMIN may carry', {
+            component: 'entra',
+            tenantId,
+            reason: carriage.reason,
             mappedRole,
         });
         return { effectiveRole: membership.role, changed: false, gateDenied: false };

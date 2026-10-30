@@ -38,6 +38,15 @@ A few rules hold whatever your role:
 - Each custom role is built on a base role: Admin, Editor, Auditor or Reader. Wherever Inflect checks a level of role rather than a single permission, a member carrying the custom role counts as its base role. A custom role that grants an action its base role lacks may therefore be refused when that action is used, so choose the base role closest to what the role grants.
 - Five permissions can be part only of a custom role based on Admin: **{{ui:admin.resourceLabels.admin}}** / **{{ui:admin.roles.actions.manage}}**, **{{ui:admin.roles.actions.members}}**, **{{ui:admin.roles.actions.owner_management}}** and **{{ui:admin.roles.actions.tenant_lifecycle}}**, and **{{ui:admin.resourceLabels.personnel}}** / **{{ui:admin.roles.actions.manage}}**. Each needs the Admin level wherever it is used, so on another base it would let a member start an action and then refuse it. On any other base their cells are greyed out, a preset does not switch them on, and moving a role off Admin switches them off. A role saved with one of them on another base before this rule existed has had it switched off; such a role cannot be saved again while it keeps one.
 - Only Owner and Admin members reach the admin pages. A custom role that gives admin permissions to an Editor, Auditor or Reader does not open them: that member sees no admin link and is refused the admin pages. An Auditor can still open the audit log. To give someone the admin pages, make them an Admin.
+- For the same reason, two kinds of custom role can be carried only by an Admin member, and are refused for an Editor, Auditor or Reader:
+  - a role built on Admin, because members carrying it would count as Admins everywhere except the admin pages;
+  - a role that grants any of these ten admin permissions:
+    - {{ui:admin.roles.actions.sso}}, {{ui:admin.roles.actions.agent_tool_exposure}}, {{ui:admin.roles.actions.agent_policy_card}}, {{ui:admin.roles.actions.agent_ownership}}, {{ui:admin.roles.actions.agent_skill_review}} and {{ui:admin.roles.actions.agent_skill_author}}. Each is used only on the admin pages, so on anyone but an Admin it would grant nothing.
+    - {{ui:admin.roles.actions.scim}}, {{ui:admin.roles.actions.compliance_dsar_manage}}, {{ui:admin.roles.actions.agent_harness_ingest}} and {{ui:admin.roles.actions.agent_external_tools}}. These do work outside the admin pages: through an API key acting for the member, or an agent run the member starts. That is a way around the admin pages' own rule, so they too are kept for Admins.
+
+  An admin permission in neither list can be given to anyone in a custom role, because it also works outside the admin pages: reading the agent register, for example. A custom role that Editors, Auditors or Readers already carry cannot be changed into one of the two kinds while they carry it, so it cannot hold any of the five permissions above that need a role based on Admin either.
+- When these rules came in, the ten permissions above were switched off in every custom role that only Editors, Auditors or Readers carried. Members carrying such a role lost any of the ten they had, including the four that worked outside the admin pages; an API key acting for them, or an agent run they start, is now refused what needs one. A role that an Admin also carried kept them, and so did a role nobody carried. No role's base role was changed.
+- Otherwise a custom role given to an Editor, Auditor or Reader before these rules applied keeps working as it did. You can still rename it, switch permissions off, choose a lower base role, or take it away; you cannot add one of the ten permissions to it, or build it on Admin. To give one back, first make its members Admins or give them another custom role on the {{ui:admin.nav.members}} page.
 
 ## What you see
 
@@ -98,7 +107,7 @@ The role leaves the table, and every member who carried it goes back to their ow
 
 ### Give a member a custom role
 
-On the {{ui:admin.nav.members}} page, open the member's role editor and choose the custom role from the second list. You can give a role only if you hold every permission it grants. See [{{ui:admin.members.title}}](members.md).
+On the {{ui:admin.nav.members}} page, open the member's role editor and choose the custom role from the second list. You can give a role only if you hold every permission it grants, and a role built on Admin, or granting a permission only an Admin member can use, only to an Admin. See [{{ui:admin.members.title}}](members.md).
 
 ## What happens next
 
@@ -115,6 +124,7 @@ On the {{ui:admin.nav.members}} page, open the member's role editor and choose t
 | A message that a custom role with that name already exists | Another custom role in the workspace has the name. A deleted role's name does not count | Choose another name |
 | A note in the form that the role grants permissions you do not hold yourself, and **{{ui:admin.roles.editSubmit}}** greyed out | The role was built by someone who holds more than you, such as an Owner | Switch those permissions off in the grid, or ask an Owner to make the change |
 | A message that you cannot give a role permissions you do not hold yourself, naming them | Your own permissions, or the role, changed since the page loaded | Reload the page and try again, or ask an Owner to make the change |
+| A message that the role can only be carried by an Admin membership, saying how many members carrying it hold another role | You built the role on Admin, or switched on one of the permissions only an Admin member can use, while Editors, Auditors or Readers carry it | Switch the permission off or choose another base role. Or, on the {{ui:admin.nav.members}} page, make those members Admins or give them another custom role first |
 | **Custom role not found.** | Someone deleted the role since the page loaded | Reload the page |
 | **{{ui:admin.roles.createFailed}}**, **{{ui:admin.roles.updateFailed}}** or **{{ui:admin.roles.deleteFailed}}** | The change did not go through | Reload the page and try again |
 

@@ -23,9 +23,16 @@
  * list, `BUILT_IN_SCOPE_ROLES`: `AI_ADMIN` since #3699, and `OWNER` since
  * #3720. Its census is `tests/unit/owner-custom-role.test.ts`.
  *
+ * Which custom roles only an ADMIN membership may carry is a third rule
+ * (owner decisions, 2026-10-30): one granting one of ten admin keys
+ * (`ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS`), and one built on ADMIN
+ * (`customRoleCarriageRefusal`). Its census is
+ * `tests/unit/custom-role-carriage-writers.test.ts`.
+ *
  * Client-safe: the only Prisma dependency is an `import type`.
  */
 import type { Role } from '@prisma/client';
+import { parsePermissionsJson, type PermissionSet } from '@/lib/permissions';
 
 /**
  * Every built-in tenant role, in the `Role` enum's declaration order (which is
@@ -263,4 +270,256 @@ export function unassignableRoleMessage(role: string): string {
         'member on the members page, or an Entra group mapping does; invite the person ' +
         'with another role first.'
     );
+}
+
+// ─── Which custom roles only an ADMIN membership may carry ─────────────────
+
+/**
+ * The `admin.*` keys a custom role may grant only on an ADMIN membership, part
+ * one: the six consumed ONLY behind the admin API (owner decision, 2026-10-30).
+ *
+ * The rule is the edge's, not a new one. `checkAdminAccess` admits
+ * `/api/t/:slug/admin/**` by the membership's BUILT-IN role — OWNER and ADMIN,
+ * AI_ADMIN on the agent paths, AUDITOR on five inventory GETs — and a custom
+ * role never enters that check. Each key below is consumed ONLY behind that
+ * surface: by a route under it, by a usecase only such a route reaches, or by a
+ * page that turns it into a button whose request goes there. So on an EDITOR,
+ * READER or AUDITOR membership a custom role granting one of them granted
+ * nothing: the pages offered a control and the edge answered every press with
+ * a 403. Refusing these six takes away nothing such a membership could use.
+ *
+ *   - `sso` — no code consults it at all. SSO configuration takes
+ *     `admin.manage`; the key is in `PermissionSet` and `admin:write` and
+ *     nothing reads it.
+ *   - `agent_tool_exposure` — granting and revoking an agent's tools, and
+ *     reading its grants: `…/admin/agents/[agentId]/tools` only. An access
+ *     review's narrowing deletes a grant through the repository under
+ *     `access_reviews.decide`, not this key.
+ *   - `agent_policy_card` — reading and writing an agent's policy card:
+ *     `…/admin/agents/[agentId]/policy-card` only.
+ *   - `agent_ownership` — the two-step agent ownership transfer:
+ *     `…/admin/agents/[agentId]/ownership-transfer` only. Its recipient check
+ *     (`TRANSFER_RECIPIENT_MEMBERSHIP_ROLES`) already refuses an EDITOR,
+ *     READER or AUDITOR membership whatever custom role it carries.
+ *   - `agent_skill_review` and `agent_skill_author` — a tenant skill's review
+ *     and authoring: `…/admin/agents/skills/tenant/**` only.
+ *
+ * None of the five agent keys can be carried by a bearer token either
+ * (`scopesToPermissions` subtracts them from `*` and no scope maps to them),
+ * so a key acting for such a membership, which skips the edge's role gate,
+ * cannot reach them. `admin.sso` can be, through `admin:write`, and nothing
+ * reads it there either.
+ *
+ * `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`
+ * fails when one of these six gains a consumer outside the admin API.
+ */
+export const ADMIN_API_ONLY_KEYS = [
+    'sso',
+    'agent_tool_exposure',
+    'agent_policy_card',
+    'agent_ownership',
+    'agent_skill_review',
+    'agent_skill_author',
+] as const satisfies readonly (keyof PermissionSet['admin'])[];
+
+/**
+ * Part two: four keys refused BY DECISION (owner decision, 2026-10-30). Unlike
+ * the six above they are NOT dead outside the admin API. A custom role on an
+ * EDITOR, READER or AUDITOR membership reached each of them by a path that goes
+ * around the edge's role gate, and that side door is the reason they are
+ * refused: the edge says such a membership does no admin work, and a custom
+ * role should not buy it back through a credential or a run.
+ *
+ *   - `scim` — the SCIM token and settings at `…/admin/scim`, through an
+ *     agent-bound API key acting for the membership with `admin:write`, `admin:*`
+ *     or `*`. The edge lets an `iflk_` bearer through, and the route checks the
+ *     key's permissions, which are the membership's intersected with the
+ *     scopes.
+ *   - `compliance_dsar_manage` — the DSAR register's writes at
+ *     `…/admin/dsar-requests`, the same way, through a key with `*`.
+ *   - `agent_harness_ingest` — posting a harness scan at
+ *     `…/admin/agents/harness-scans` through a key with `admin:harness_ingest`,
+ *     `admin:*` or `*`; and reading the register through the
+ *     `get_harness_register` tool at `/api/mcp`.
+ *   - `agent_external_tools` — every external tool call made for the
+ *     membership: a run it starts at `/agent-runs`, which checks the starter's
+ *     permissions, a key at `/api/mcp` with `admin:external_tools`, `admin:*` or
+ *     `*`, and an agent's A2A send.
+ *
+ * So for these four the rule DOES take something away. Going forward, a
+ * membership that is not ADMIN cannot be given a custom role granting one, and
+ * migration `20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles`
+ * switched them off in every stored role that only such memberships carried.
+ * The paths above then refuse it as they refuse any member without the key:
+ * the key's request answers 403, the run's or the tool call's is refused. The
+ * nine other admin keys are consumed outside the admin API too, and keep
+ * working as they did.
+ */
+export const SIDE_DOOR_ADMIN_KEYS = [
+    'scim',
+    'compliance_dsar_manage',
+    'agent_harness_ingest',
+    'agent_external_tools',
+] as const satisfies readonly (keyof PermissionSet['admin'])[];
+
+/**
+ * Every `admin.*` key a custom role may grant only on an ADMIN membership: the
+ * six only the admin API reads, and the four refused by decision. Writers, the
+ * migration and the pages read this list; only the guardrail reads the parts.
+ */
+export const ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS = [
+    ...ADMIN_API_ONLY_KEYS,
+    ...SIDE_DOOR_ADMIN_KEYS,
+] as const satisfies readonly (keyof PermissionSet['admin'])[];
+
+export type AdminMembershipOnlyAdminKey = (typeof ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS)[number];
+
+/**
+ * The base roles whose coarse tier is the admin tier. A custom role's base IS
+ * the role its carrier resolves to everywhere but the edge (`effectiveRole` in
+ * `resolveTenantContext`), so a custom role built on one of these makes every
+ * `assertCanAdmin` pass for a membership the edge treats as non-admin. No
+ * writer builds a custom role on OWNER (`VALID_BASE_ROLES`, and the CHECK
+ * `TenantCustomRole_base_role_not_built_in_scope`); it is here so a legacy one
+ * is judged by its tier, not by its name.
+ */
+export const ADMIN_TIER_BASE_ROLES = ['ADMIN', 'OWNER'] as const satisfies readonly Role[];
+
+/** The named reason a custom role granting an `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` key is refused with. */
+export const CUSTOM_ROLE_ADMIN_KEYS_REFUSAL = 'CUSTOM_ROLE_ADMIN_KEYS_NEED_ADMIN_MEMBERSHIP' as const;
+
+/** The named reason a custom role built on ADMIN is refused with. */
+export const CUSTOM_ROLE_ADMIN_BASE_REFUSAL = 'CUSTOM_ROLE_ADMIN_BASE_NEEDS_ADMIN_MEMBERSHIP' as const;
+
+/** The custom role as the rule reads it: its base and its stored blob. */
+export interface CustomRoleForCarriage {
+    baseRole: Role | string;
+    permissionsJson: unknown;
+}
+
+/** A membership's built-in role and the custom role it carries (`null` for none). */
+export interface CustomRoleCarriage {
+    membershipRole: Role | string;
+    customRole: CustomRoleForCarriage | null;
+}
+
+/** What a carriage breaks of the rule — empty when it breaks nothing. */
+export interface CustomRoleCarriageOffence {
+    /** The custom role's base, when it is an admin-tier base on a non-ADMIN membership. */
+    adminBase: string | null;
+    /** The `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` it grants on a non-ADMIN membership, in list order. */
+    adminKeys: AdminMembershipOnlyAdminKey[];
+}
+
+/** The keys of `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` that `permissions` grants. */
+export function adminMembershipOnlyKeysGranted(
+    permissions: Pick<PermissionSet, 'admin'>,
+): AdminMembershipOnlyAdminKey[] {
+    return ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS.filter((key) => permissions.admin?.[key] === true);
+}
+
+/**
+ * What `carriage` breaks of the rule. Only an ADMIN membership may carry a
+ * custom role built on an admin-tier base or granting an
+ * `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` key; on any other membership both are
+ * offences. The keys are the custom role's EFFECTIVE grant — its blob parsed
+ * over its base (`parsePermissionsJson`), exactly as a request resolves it —
+ * so a legacy blob missing a key is judged by its base's default for it.
+ *
+ * OWNER and AI_ADMIN memberships carry no custom role at all
+ * (`mayCarryCustomRole`); that rule is asked first and separately, and this one
+ * judges them like any other non-ADMIN membership.
+ */
+export function customRoleCarriageOffence(carriage: CustomRoleCarriage): CustomRoleCarriageOffence {
+    const none: CustomRoleCarriageOffence = { adminBase: null, adminKeys: [] };
+    const { membershipRole, customRole } = carriage;
+    if (!customRole || membershipRole === 'ADMIN') return none;
+    const base = String(customRole.baseRole);
+    return {
+        adminBase: (ADMIN_TIER_BASE_ROLES as readonly string[]).includes(base) ? base : null,
+        adminKeys: adminMembershipOnlyKeysGranted(
+            parsePermissionsJson(customRole.permissionsJson, customRole.baseRole as Role),
+        ),
+    };
+}
+
+/** A refusal of the rule: its reason and what it names. */
+export type CustomRoleCarriageRefusal =
+    | { reason: typeof CUSTOM_ROLE_ADMIN_BASE_REFUSAL; baseRole: string }
+    | { reason: typeof CUSTOM_ROLE_ADMIN_KEYS_REFUSAL; keys: AdminMembershipOnlyAdminKey[] };
+
+/**
+ * THE PREDICATE every writer asks: does moving a membership from `before` to
+ * `after` ADD an offence (`customRoleCarriageOffence`)? `null` when it may.
+ *
+ * Only what is NEW is refused, so existing rows are never trapped. A change
+ * that keeps or shrinks a membership's offence — clearing or replacing its
+ * custom role, removing keys from the role, lowering its base, renaming it, or
+ * moving the member between EDITOR, READER and AUDITOR (the rule treats the
+ * three alike) — always passes, and no writer refuses a row for what it
+ * already carried. (What a stored role carried was settled once, by the
+ * migration that switched the ten keys off where only non-ADMIN memberships
+ * carried the role; a role with an ADMIN carrier kept them.) `before` is
+ * `null` for a membership that does not exist yet.
+ *
+ * The base refusal is returned first when both apply: a custom role built on
+ * ADMIN grants nine of the ten keys by default, so fixing the base is the
+ * change that decides what the keys are.
+ */
+export function customRoleCarriageRefusal(
+    after: CustomRoleCarriage,
+    before: CustomRoleCarriage | null,
+): CustomRoleCarriageRefusal | null {
+    const now = customRoleCarriageOffence(after);
+    const was = before ? customRoleCarriageOffence(before) : { adminBase: null, adminKeys: [] };
+    if (now.adminBase !== null && was.adminBase === null) {
+        return { reason: CUSTOM_ROLE_ADMIN_BASE_REFUSAL, baseRole: now.adminBase };
+    }
+    const added = now.adminKeys.filter((key) => !was.adminKeys.includes(key));
+    if (added.length > 0) return { reason: CUSTOM_ROLE_ADMIN_KEYS_REFUSAL, keys: added };
+    return null;
+}
+
+/** The `ConflictError.details` of a refusal: the reason, and what it names. */
+export function customRoleCarriageDetails(
+    refusal: CustomRoleCarriageRefusal,
+    extra: { blockingMemberships?: number } = {},
+): Record<string, unknown> {
+    return refusal.reason === CUSTOM_ROLE_ADMIN_BASE_REFUSAL
+        ? { reason: refusal.reason, baseRole: refusal.baseRole, ...extra }
+        : { reason: refusal.reason, keys: refusal.keys.map((k) => `admin.${k}`), ...extra };
+}
+
+/**
+ * The refusal, worded for the change that was asked for: assigning the custom
+ * role, changing the member's role while they carry it, inviting them back
+ * into a membership that carries it, or saving the custom role while members
+ * carry it (`blockingMemberships` of them).
+ */
+export function customRoleCarriageMessage(
+    refusal: CustomRoleCarriageRefusal,
+    asked: 'assign-custom-role' | 'change-role' | 'invite' | 'save-custom-role',
+    blockingMemberships = 0,
+): string {
+    const what =
+        refusal.reason === CUSTOM_ROLE_ADMIN_BASE_REFUSAL
+            ? `A custom role built on ${refusal.baseRole}`
+            : `A custom role granting ${refusal.keys.map((k) => `admin.${k}`).join(', ')}`;
+    const why = `${what} can only be carried by an ADMIN membership.`;
+    switch (asked) {
+        case 'change-role':
+            return `${why} Remove or change this member's custom role first, then change the role.`;
+        case 'invite':
+            return (
+                `${why} This person's existing membership carries such a custom role. Invite them as ADMIN, ` +
+                'or remove the custom role once they have joined.'
+            );
+        case 'save-custom-role':
+            return (
+                `${why} ${blockingMemberships} member(s) carrying this role hold another role. ` +
+                'Change their role to ADMIN or give them another custom role first.'
+            );
+        default:
+            return `${why} Change the member to ADMIN first, or choose another custom role.`;
+    }
 }

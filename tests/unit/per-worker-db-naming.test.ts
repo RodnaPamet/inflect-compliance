@@ -1,4 +1,4 @@
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 /**
  * Per-worker test databases must not collide across CHECKOUTS.
  *
@@ -23,6 +23,7 @@ import {
     tagForRoot,
     checkoutTag,
     perWorkerDbName,
+    perWorkerMarkerPath,
     selectReapableWorkerDbs,
 } from '../helpers/db';
 
@@ -56,17 +57,189 @@ describe('the tag separates checkouts', () => {
         // routes — one through .env.test, the other through this helper's own
         // default. Two checkouts CAN legitimately hold identical URLs, so a
         // URL-derived tag agrees precisely when it must not.
-        // #2246 — masked; the slice anchor below is CODE
-        // (`export function tagForRoot`), and codeOf preserves offsets.
-        const src = codeOf(
-            require('node:fs').readFileSync(
-                path.resolve(__dirname, '../helpers/db.ts'),
-                'utf8',
-            ),
+        //
+        // `tagForRoot` lives in the CommonJS module jest.setup.js also
+        // requires (2026-10-30). `functionBodyOf` throws if it is not there,
+        // so a move cannot leave this reading an empty slice and passing.
+        const src = require('node:fs').readFileSync(
+            path.resolve(__dirname, '../helpers/test-db-checkout.js'),
+            'utf8',
         );
-        const fn = src.slice(src.indexOf('export function tagForRoot'));
-        const body = fn.slice(0, fn.indexOf('\n}'));
+        const body = codeOf(functionBodyOf(src, 'tagForRoot'));
+        expect(body).toMatch(/createHash/);
         expect(body).not.toMatch(/DATABASE_URL|getBaseTestDatabaseUrl|getDbName/);
+    });
+});
+
+/**
+ * The per-worker MARKER must not be shared across checkouts either
+ * (2026-10-30).
+ *
+ * globalSetup records the mode and the exact database names it created in a
+ * marker under `node_modules/.cache/`. Workers read it to find their
+ * database; teardown reads it to know what to drop. Its name used to be the
+ * same in every checkout, and worktrees on the dev machine SYMLINK
+ * `node_modules` to the main checkout's, so every worktree read and wrote
+ * ONE file. Two worktrees running Jest at once: the later globalSetup
+ * overwrote the record, the earlier run's tests connected to the other
+ * checkout's databases, and the earlier run's teardown dropped the other
+ * run's databases `WITH (FORCE)`. The tag in each database NAME did nothing
+ * while the record carrying those names was shared.
+ *
+ * The shape that matters is the worktree's: two roots, ONE directory holding
+ * both markers. A test that compared two path strings would pass on the old
+ * scheme too whenever the roots differed, which they always do; the
+ * directory is what was shared.
+ */
+describe('the per-worker marker is per checkout', () => {
+    const fsx: typeof import('node:fs') = require('node:fs');
+    const os: typeof import('node:os') = require('node:os');
+    const { execFileSync }: typeof import('node:child_process') = require('node:child_process');
+
+    const REAL_ROOT = path.resolve(__dirname, '../..');
+    let sandbox: string;
+
+    beforeEach(() => {
+        sandbox = fsx.mkdtempSync(path.join(os.tmpdir(), 'inflect-marker-per-checkout-'));
+    });
+    afterEach(() => {
+        fsx.rmSync(sandbox, { recursive: true, force: true });
+    });
+
+    /**
+     * A checkout that shares its marker directory with another, as a worktree
+     * on the dev machine does: its own root, with the `.cache` the marker
+     * lives in reaching a directory another checkout also reaches. A worktree
+     * gets there by symlinking all of `node_modules`; linking `.cache` alone
+     * gives the marker the same shared directory without building a path
+     * into the installed-package tree (`dependency-paths-are-resolved`).
+     *
+     * It carries REAL copies of the two files under test, jest.setup.js and
+     * the helper it requires, at their real relative paths, so what runs
+     * below is the code in this branch and not a paraphrase of it.
+     */
+    function checkout(name: string, sharedCache: string): string {
+        const root = path.join(sandbox, name);
+        fsx.mkdirSync(path.join(root, 'tests', 'helpers'), { recursive: true });
+        for (const rel of ['jest.setup.js', 'tests/helpers/test-db-checkout.js']) {
+            fsx.copyFileSync(path.join(REAL_ROOT, rel), path.join(root, rel));
+        }
+        const cacheLink = path.join(root, 'node_modules', '.cache');
+        fsx.mkdirSync(path.dirname(cacheLink), { recursive: true });
+        fsx.symlinkSync(sharedCache, cacheLink, 'dir');
+        return root;
+    }
+
+    /** A directory two checkouts' marker directories both resolve to. */
+    function sharedCacheDir(): string {
+        const shared = path.join(sandbox, 'shared-cache');
+        fsx.mkdirSync(shared);
+        return shared;
+    }
+
+    /** Run a snippet in a clean child `node`, with no ambient DB settings. */
+    function node(script: string, env: Record<string, string> = {}): string {
+        return execFileSync(process.execPath, ['-e', script], {
+            env: { PATH: process.env.PATH ?? '', NODE_ENV: 'test', ...env },
+            encoding: 'utf8',
+        }).trim();
+    }
+
+    /**
+     * What globalSetup does at its end, run from inside `root` and through
+     * THAT checkout's own copy of the helper: write the record of the
+     * databases this checkout created, at this checkout's marker path.
+     */
+    function recordAsGlobalSetup(root: string, workerDbs: string[]): void {
+        const marker = {
+            perWorker: true,
+            count: workerDbs.length,
+            baseName: 'inflect_test',
+            baseUrl: 'postgresql://test:test@127.0.0.1:5434/inflect_test?schema=public',
+            workerDbs,
+        };
+        node(
+            `const fs = require('fs'); const path = require('path');
+             const { PER_WORKER_MARKER } = require(${JSON.stringify(
+                 path.join(root, 'tests/helpers/test-db-checkout.js'),
+             )});
+             fs.mkdirSync(path.dirname(PER_WORKER_MARKER), { recursive: true });
+             fs.writeFileSync(PER_WORKER_MARKER, ${JSON.stringify(JSON.stringify(marker))});`,
+        );
+    }
+
+    /** The database a worker of `root` connects the APP to, per its jest.setup.js. */
+    function appDatabaseOfWorker(root: string, workerId: number): string {
+        const url = node(
+            `require(${JSON.stringify(path.join(root, 'jest.setup.js'))});
+             process.stdout.write(process.env.DATABASE_URL);`,
+            { JEST_WORKER_ID: String(workerId) },
+        );
+        return new URL(url).pathname.slice(1);
+    }
+
+    it('has a different FILE NAME for different repo roots', () => {
+        // Same examples as the tag's own test above: both real layouts. The
+        // NAME, not the full path: two full paths under different roots
+        // differ even on the old fixed-name scheme, so comparing them would
+        // pass on the very bug. A shared directory leaves only the name to
+        // tell two checkouts' markers apart.
+        const name = (root: string) => path.basename(perWorkerMarkerPath(root));
+        expect(name('/home/dev/git/inflect-compliance')).not.toBe(
+            name('/home/dev/inflect-compliance'),
+        );
+        expect(name('/a/inflect-compliance')).not.toBe(name('/b/inflect-compliance'));
+    });
+
+    it('has a stable name for one root, so one checkout reads what it wrote', () => {
+        expect(perWorkerMarkerPath('/some/checkout')).toBe(perWorkerMarkerPath('/some/checkout'));
+    });
+
+    it('is a different FILE for two checkouts whose marker directory is one directory', () => {
+        const shared = sharedCacheDir();
+        const a = checkout('worktree-a', shared);
+        const b = checkout('worktree-b', shared);
+
+        const dirA = path.dirname(perWorkerMarkerPath(a));
+        const dirB = path.dirname(perWorkerMarkerPath(b));
+
+        // The premise, checked rather than assumed: the two checkouts really
+        // do reach ONE directory. Without this the assertion below could pass
+        // because the fixture failed to share anything.
+        expect(fsx.realpathSync(dirA)).toBe(fsx.realpathSync(dirB));
+
+        // And yet two files in it.
+        const fileA = path.join(fsx.realpathSync(dirA), path.basename(perWorkerMarkerPath(a)));
+        const fileB = path.join(fsx.realpathSync(dirB), path.basename(perWorkerMarkerPath(b)));
+        expect(fileA).not.toBe(fileB);
+    });
+
+    it("a worker reads its own checkout's record after another checkout's globalSetup has run", () => {
+        // The bug, end to end, with the real files: A's run records its
+        // databases, B's run starts later and records its own into the SAME
+        // shared directory, and then a worker of A's run starts a test file.
+        const shared = sharedCacheDir();
+        const a = checkout('worktree-a', shared);
+        const b = checkout('worktree-b', shared);
+
+        recordAsGlobalSetup(a, ['inflect_test_aaaa_w1', 'inflect_test_aaaa_w2']);
+        recordAsGlobalSetup(b, ['inflect_test_bbbb_w1', 'inflect_test_bbbb_w2']);
+
+        // On the shared file this was `inflect_test_bbbb_w2`: A's tests in
+        // B's database, which B's teardown would then drop under them.
+        expect(appDatabaseOfWorker(a, 2)).toBe('inflect_test_aaaa_w2');
+        expect(appDatabaseOfWorker(b, 2)).toBe('inflect_test_bbbb_w2');
+    });
+
+    it('is the marker globalSetup, teardown and the test client use', () => {
+        // They import PER_WORKER_MARKER from tests/helpers/db.ts. A second
+        // definition there, or a literal, would split them from
+        // jest.setup.js again.
+        const db = require('../helpers/db');
+        const shared = require('../helpers/test-db-checkout');
+        expect(db.PER_WORKER_MARKER).toBe(shared.PER_WORKER_MARKER);
+        expect(db.PER_WORKER_MARKER).toBe(perWorkerMarkerPath(REAL_ROOT));
+        expect(path.basename(db.PER_WORKER_MARKER)).toContain(checkoutTag());
     });
 });
 

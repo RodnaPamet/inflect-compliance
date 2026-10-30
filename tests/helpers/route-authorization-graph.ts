@@ -209,9 +209,31 @@ interface ResolvedDecl {
 
 type Decision = 'strong' | 'presence' | null;
 
+/** One declaration body the call graph reaches, and the module it lives in. */
+export interface ReachedBody {
+    /** Absolute path of the module declaring it. */
+    file: string;
+    /** `GET/purgeEvidence/purgeEntity` — how it was reached. */
+    trail: string;
+    /** The declaration's source text, comments included (strip them with `codeOf`). */
+    text: string;
+}
+
 export interface Analyzer {
     /** Classify each exported HTTP handler of one route file. */
     classify(routeFile: string): HandlerVerdict[];
+    /**
+     * Every declaration body reachable from `file` within `MAX_MODULE_HOPS`,
+     * by the same resolution `classify` uses, without stopping at a decision.
+     * Roots: the exported HTTP handlers of a route file, or — with
+     * `roots: 'all'`, for a page or a layout — every top-level declaration of
+     * the module. `source` overrides `file`'s text (a detector proof).
+     *
+     * The same limits as the classifier: syntactic, calls only (a JSX element
+     * is not a call, so a component a page renders is not reached), `@/…` and
+     * relative specifiers only, and no `import()`.
+     */
+    reachedBodies(file: string, opts?: { roots?: 'handlers' | 'all'; source?: string }): ReachedBody[];
     /**
      * Re-classify with an in-memory source override. Used by the mutation
      * regression proof: strip a gate from a route's SOURCE TEXT and assert
@@ -725,9 +747,80 @@ export function createAnalyzer(repoRoot: string): Analyzer {
         });
     }
 
+    // ── reachability (no decision, no early exit) ───────────────────
+
+    function collectReached(info: ModuleInfo, roots: Array<[string, ts.Node]>): ReachedBody[] {
+        const out: ReachedBody[] = [];
+        // A node is walked again only when reached with MORE hops left than
+        // before: reached first at the edge of the budget, its callees would
+        // otherwise never be followed from a shallower path.
+        const bestHops = new Map<ts.Node, number>();
+
+        const walkSymbol = (file: string, symbol: string, hops: number, trail: string): void => {
+            const r = resolveDecl(file, symbol, REEXPORT_BUDGET);
+            if (!r) return;
+            for (const node of r.nodes) walkBody(r.info, node, hops, trail);
+        };
+
+        const walkBody = (mod: ModuleInfo, node: ts.Node, hops: number, trail: string): void => {
+            const before = bestHops.get(node);
+            if (before !== undefined && before >= hops) return;
+            bestHops.set(node, hops);
+            if (before === undefined) out.push({ file: mod.file, trail, text: node.getText() });
+
+            const { names, nsRefs } = collectCallRefs(node, mod);
+            for (const name of names) {
+                for (const decl of mod.decls.get(name) ?? []) {
+                    if (decl !== node) walkBody(mod, decl, hops, `${trail}/${name}`);
+                }
+            }
+            if (hops <= 0) return;
+            for (const name of names) {
+                const imp = mod.imports.get(name);
+                if (!imp) continue;
+                const target = resolveSpec(imp.spec, mod.file);
+                if (target) walkSymbol(target, imp.imported, hops - 1, `${trail}/${name}`);
+            }
+            for (const [spec, prop] of nsRefs) {
+                const target = resolveSpec(spec, mod.file);
+                if (target) walkSymbol(target, prop, hops - 1, `${trail}/${prop}`);
+            }
+        };
+
+        for (const [label, node] of roots) walkBody(info, node, MAX_MODULE_HOPS, label);
+        return out;
+    }
+
+    function reachedFrom(info: ModuleInfo, rootsKind: 'handlers' | 'all'): ReachedBody[] {
+        const roots: Array<[string, ts.Node]> = [];
+        if (rootsKind === 'all') {
+            for (const [name, nodes] of info.decls) for (const n of nodes) roots.push([name, n]);
+        } else {
+            for (const method of handlersOf(info)) {
+                const decl = resolveDecl(info.file, method, REEXPORT_BUDGET);
+                if (!decl) continue;
+                for (const n of decl.nodes) roots.push([method, n]);
+            }
+        }
+        return collectReached(info, roots);
+    }
+
     return {
         classify(routeFile: string): HandlerVerdict[] {
             return classifyInfo(loadModule(routeFile));
+        },
+
+        reachedBodies(file: string, opts: { roots?: 'handlers' | 'all'; source?: string } = {}): ReachedBody[] {
+            const rootsKind = opts.roots ?? 'handlers';
+            if (opts.source === undefined) return reachedFrom(loadModule(file), rootsKind);
+            const previous = moduleCache.get(file);
+            moduleCache.set(file, parseModule(file, opts.source));
+            try {
+                return reachedFrom(loadModule(file), rootsKind);
+            } finally {
+                if (previous) moduleCache.set(file, previous);
+                else moduleCache.delete(file);
+            }
         },
 
         classifyWithSource(routeFile: string, source: string): HandlerVerdict[] {

@@ -18,6 +18,7 @@ A member's role decides what they can see and do in this workspace. Change it wh
 - You cannot change your own role. The one exception: an Owner can move to Admin while another active Owner remains.
 - If a member is the workspace's only Admin, you cannot move them to another role. Make another member an Admin first.
 - Owners and AI admins never have a custom role. Remove a member's custom role before you make them an AI admin.
+- A custom role built on Admin, or one that grants one of the admin permissions kept for Admins, can be given only to an Admin. Change or remove such a custom role before you move its member off Admin.
 
 ## Steps
 
@@ -70,6 +71,7 @@ You cannot deactivate or remove yourself, or the last active Owner, and your own
 | A note under the role says it cannot carry a custom role, and **{{ui:admin.members.save}}** is greyed out | The member has a custom role, and AI admin cannot have one | Choose their current role again and click the selected custom role to clear it. Click **{{ui:admin.members.save}}**, then change the role |
 | On an Owner or AI admin, a note says the role cannot carry a custom role, with a **{{ui:admin.members.removeCustomRole}}** button | The member was given a custom role before that rule applied | Click **{{ui:admin.members.removeCustomRole}}** to restore the full built-in role |
 | A message that starts **Cannot grant permissions you do not hold** | The custom role includes permissions you do not have yourself | Ask someone who holds those permissions to assign it |
+| A message that the custom role can only be carried by an Admin membership | The custom role is built on Admin, or grants a permission only an Admin member can use, and the member is not, or would no longer be, an Admin | Choose another custom role, or keep the member an Admin. To move them off Admin, change or remove the custom role first |
 | A member you raised to Admin or AI admin finds their admin pages empty or failing | Their current sign-in still carries their old role | Ask them to sign out and sign in again |
 | Their role changes back after they sign in with Microsoft | A group mapping on the {{ui:admin.nav.entra}} page set it again | Change the mapping, or the member's groups in Microsoft Entra ID |
 | {{ui:admin.members.roleChangeFailed}}, {{ui:admin.members.deactivationFailed}} or {{ui:admin.members.removalFailed}} | The change did not go through. Nothing was saved, and the row shows what the member holds | Reload the page and try again |

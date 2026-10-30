@@ -83,8 +83,9 @@ export function getBaseTestDatabaseUrl(): string {
 // connection: a suite that never got to speak, in a file unrelated to
 // whatever either checkout was changing.
 //
-// The marker below is repo-local while the databases were global, so each
-// side kept a private record asserting ownership of a shared resource.
+// Each checkout's marker then recorded the same names as its own, so two
+// records claimed one set of databases. (Whether the marker itself is per
+// checkout turned out to be a separate question; see the next section.)
 //
 // The tag is derived from the REPO ROOT, deliberately, and not from the
 // URL: two checkouts can reach the same database by different routes
@@ -100,16 +101,40 @@ export function getBaseTestDatabaseUrl(): string {
 // checkout, which stays on the base DB. Parallel-vs-parallel — the case
 // that actually bites, since `npm test` is parallel — is fully isolated.
 
-/**
- * Cross-process marker written by globalSetup describing the DB mode.
- * Repo-local (NOT os.tmpdir): a predictable name in the world-writable
- * temp dir is a symlink-race vector (CodeQL js/insecure-temporary-file).
- * node_modules/.cache is repo-scoped + gitignored.
- */
-export const PER_WORKER_MARKER = path.resolve(
-    __dirname,
-    '../../node_modules/.cache/inflect-test-perworker.json',
-);
+// ─── Why the marker's FILE NAME carries the tag too (2026-10-30) ──────
+//
+// PER_WORKER_MARKER is the cross-process record globalSetup writes: the DB
+// mode and the exact names it created. Workers read it to find their
+// database, and teardown reads it to know what to drop. It lives under
+// `node_modules/.cache/`, and it used to have one fixed name.
+//
+// Worktrees on the dev machine SYMLINK `node_modules` to the main
+// checkout's, so that fixed name was one file for every worktree. Two
+// worktrees running Jest at once: the later globalSetup overwrote the
+// record, the earlier run's tests then connected to the OTHER checkout's
+// databases, and the earlier run's teardown dropped the other run's
+// databases `WITH (FORCE)` mid-run. The tag above kept the database NAMES
+// apart and did nothing while the record carrying them was shared. Now the
+// tag is in the marker's file name, so each checkout has its own record even
+// in a shared directory.
+//
+// It is not in os.tmpdir(): a predictable name in the world-writable temp
+// dir is a symlink-race vector (CodeQL js/insecure-temporary-file).
+//
+// ONE DEFINITION. The tag, the checkout root and the marker path live in
+// `./test-db-checkout.js`, plain CommonJS, so that `jest.setup.js` (which
+// must not load this file) requires the very same code. They are re-exported
+// here so every existing importer keeps its spelling. Its header has the
+// rest, including the residual: the marker is per checkout, not per run.
+import {
+    CHECKOUT_ROOT,
+    tagForRoot,
+    checkoutTag,
+    perWorkerMarkerPath,
+    PER_WORKER_MARKER,
+} from './test-db-checkout';
+
+export { CHECKOUT_ROOT, tagForRoot, checkoutTag, perWorkerMarkerPath, PER_WORKER_MARKER };
 
 export interface PerWorkerInfo {
     perWorker: boolean;
@@ -124,26 +149,6 @@ export interface PerWorkerInfo {
      * before 2026-08-19; readers fall back to recomputing.
      */
     workerDbs?: string[];
-}
-
-/**
- * A short, stable tag for THIS checkout, folded into every per-worker
- * database name so two checkouts on one machine never derive the same
- * one. Derived from the repo root path — see the section comment above
- * for why not from the connection URL.
- */
-export function checkoutTag(): string {
-    return tagForRoot(path.resolve(__dirname, '../..'));
-}
-
-/**
- * The pure half of `checkoutTag`, split out so the property that matters —
- * two different roots never collide — is directly testable. Testing it
- * through `checkoutTag()` alone could only ever assert that one checkout
- * agrees with itself, which is the one thing that was never broken.
- */
-export function tagForRoot(repoRoot: string): string {
-    return crypto.createHash('sha256').update(repoRoot).digest('hex').slice(0, 8);
 }
 
 /**
@@ -292,8 +297,13 @@ export function adminConnectionString(): string {
 // database names are built from, so the lock is contended precisely when the
 // names would collide.
 //   - NOT the tag alone: a second run pointed at another base via
-//     DATABASE_URL_TEST collides with nothing, and refusing it would make the
-//     escape hatch the refusal message offers a lie.
+//     DATABASE_URL_TEST collides with no DATABASE, and refusing it would make
+//     the escape hatch the refusal message offers a lie. It does still share
+//     this checkout's per-worker MARKER, which is keyed on the checkout and
+//     not the base (`test-db-checkout.js`, the residual in its header). While
+//     the first run is in progress, the second run's globalSetup overwrites
+//     the first run's record and its teardown deletes it, so the first run's
+//     later test files leave their own databases. Not fixed here.
 //   - NOT the base alone: separate git worktrees derive different tags and
 //     therefore different databases. They are the workflow this repo actually
 //     uses to run agents in parallel, and refusing them would be a
@@ -351,16 +361,28 @@ export const RUN_LOCK_LABEL_PREFIX = 'inflect-jest-run:';
  * both, and the int4 pair keeps the key out of JS `BigInt` entirely.
  */
 export function testDbRunLockKey(repoRoot: string, baseName: string): TestDbRunLockKey {
+    return testDbRunLockKeyForTag(tagForRoot(repoRoot), baseName);
+}
+
+/**
+ * The same key from a checkout TAG rather than its root. A per-worker
+ * database name carries the tag and not the root, so this is the form
+ * `scripts/reap-test-databases.ts` needs to ask whether a run of the checkout
+ * that owns `<base>_<tag>_w<N>` is live, including a checkout it could not
+ * find on disk. The string hashed is unchanged, so every checkout, on any
+ * branch, derives the same key for the same pair.
+ */
+export function testDbRunLockKeyForTag(tag: string, baseName: string): TestDbRunLockKey {
     const digest = crypto
         .createHash('sha256')
-        .update(`inflect-test-db-run-lock ${tagForRoot(repoRoot)} ${baseName}`)
+        .update(`inflect-test-db-run-lock ${tag} ${baseName}`)
         .digest();
     return [digest.readInt32BE(0), digest.readInt32BE(4)];
 }
 
 /** `testDbRunLockKey` for THIS checkout and the base DB it would use. */
 export function currentTestDbRunLockKey(): TestDbRunLockKey {
-    return testDbRunLockKey(path.resolve(__dirname, '../..'), currentBaseNameOrUnknown());
+    return testDbRunLockKey(CHECKOUT_ROOT, currentBaseNameOrUnknown());
 }
 
 function currentBaseNameOrUnknown(): string {
