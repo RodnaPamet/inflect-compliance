@@ -11,6 +11,11 @@ import {
     residencyTermsFrom,
     type FlueModelSelection,
 } from './model-selection';
+import {
+    EXTERNAL_AI_ACK_SELECT,
+    acknowledgementFrom,
+    type ExternalAiAcknowledgement,
+} from '../external-residency-gate';
 
 /**
  * The tenant's AI-residency posture — the SAME three columns
@@ -25,14 +30,36 @@ import {
  * `resolveFlueModel` reads as EXTERNAL — the same default
  * `tenant-security-settings.ts` applies when the row is absent.
  */
-async function residencyTermsFor(ctx: RequestContext): Promise<FlueModelSelection> {
+/**
+ * The two per-tenant postures a Flue run needs, read together.
+ *
+ * A named type rather than an inline object literal in the return position:
+ * `Promise<{ … }>` puts a brace in the SIGNATURE, which the test helpers that
+ * extract a function body key on, so an inline shape makes
+ * `functionBodyOf(src, 'posturesFor')` return the type instead of the code.
+ * `tests/guards/business-data-transfer-gate-is-wired` found that.
+ */
+interface FlueRunPostures {
+    readonly residency: FlueModelSelection;
+    readonly acknowledgement: ExternalAiAcknowledgement;
+}
+
+async function posturesFor(ctx: RequestContext): Promise<FlueRunPostures> {
+    // ONE read, two postures. The business-data acknowledgement (#3872) lives on
+    // this same row, and its select is kept separate from `RESIDENCY_SELECT`
+    // rather than appended to it: that constant is shared by six sites and its
+    // own docstring warns what a fourth column does to them. Spreading both here
+    // widens this query alone.
     const settings = await runInTenantContext(ctx, (db) =>
         db.tenantSecuritySettings.findUnique({
             where: { tenantId: ctx.tenantId },
-            select: RESIDENCY_SELECT,
+            select: { ...RESIDENCY_SELECT, ...EXTERNAL_AI_ACK_SELECT },
         }),
     );
-    return residencyTermsFrom(settings);
+    return {
+        residency: residencyTermsFrom(settings),
+        acknowledgement: acknowledgementFrom(settings),
+    };
 }
 
 /**
@@ -68,7 +95,8 @@ export async function runFlueDriver(
     fromSeq: number,
     runStartMs: number,
 ): Promise<RunDriverOutcome> {
-    const plan = planFlueRun(def, fromSeq, await residencyTermsFor(ctx));
+    const postures = await posturesFor(ctx);
+    const plan = planFlueRun(def, fromSeq, postures.residency);
 
     if (!plan.ok) {
         // SETTLED, not thrown. The run row already exists — `createSealedRun`
@@ -96,5 +124,11 @@ export async function runFlueDriver(
     });
 
     const { executeFlueRun } = await import('./execute');
-    return executeFlueRun(ctx, runId, def, fromSeq, runStartMs, plan.modelSpecifier);
+    return executeFlueRun(ctx, runId, def, fromSeq, runStartMs, plan.modelSpecifier, {
+        // The acknowledgement travels WITH the run rather than being re-read
+        // inside the engine, for the reason the policy-card version does: the
+        // question is "what permitted this run", not "what is set now", and
+        // between the two an admin can have withdrawn it mid-run.
+        externalAiAcknowledgement: postures.acknowledgement,
+    });
 }

@@ -59,6 +59,8 @@ jest.mock('@/lib/agentic/flue/tools-adapter', () => ({
     flueToolsFor: jest.fn(() => ({
         tools: [{ name: 'get_discovered_agent', description: 'stub', input: undefined, run: async () => '' }],
         omitted: [],
+        // See #3872 — part of the real `OfferedToolSet`; no external tool here.
+        externalConnections: [],
     })),
     guardDelegateAnswer: jest.fn(async () => undefined),
 }));

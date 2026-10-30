@@ -1712,6 +1712,39 @@ model TenantSecuritySettings {
   /// (else the AI_LOCAL_* env defaults). aiLocalBaseUrl is an internal URL, not
   /// a secret — not encrypted.
   aiResidency                  AiResidency       @default(EXTERNAL)
+  /// #3872 (M5) — the tenant's acknowledgement that data read over a connection
+  /// marked `reachesBusinessSystem` may be routed to `inflect-external`.
+  ///
+  /// A run that reads third-party business or personal data out of an ERP and
+  /// hands it to an external model provider is a TRANSFER, and the roadmap's
+  /// Phase 0 item 6 settled that it is a decision somebody makes rather than a
+  /// default: `inflect-local` exists for exactly this. So the gate refuses such
+  /// a run unless this is set, and setting it is a deliberate act recorded with
+  /// its author.
+  ///
+  /// NULL means nobody has said — which REFUSES, because the fail-closed
+  /// direction for a transfer is not to make it. Two columns rather than one
+  /// boolean: an acknowledgement nobody can attribute is not an
+  /// acknowledgement, and `false` would be indistinguishable from unasked.
+  /// Both are written together, so "set but unattributable" is unrepresentable.
+  ///
+  /// NO foreign key to `User`, following this table's own precedent
+  /// (`recertificationOwnerUserId` carries none either). A `SET NULL` would make
+  /// an employee's deletion withdraw the tenant's consent, and a company's
+  /// decision to transfer data does not lapse because the person who recorded it
+  /// left; the hash-chained audit row is what preserves who it was. `RESTRICT`
+  /// would be worse still — it would block a GDPR erasure.
+  ///
+  /// Written only by `acknowledgeExternalAiBusinessData` behind `admin.manage` —
+  /// the same key that chooses `aiResidency` itself, because this accepts the
+  /// consequence of that choice rather than a separate one. Withdrawable: a
+  /// transfer somebody consented to can be un-consented, and every change is
+  /// audited. NOT reset when `reachesBusinessSystem` is flipped on a
+  /// connection — the acknowledgement is tenant-wide and about the DESTINATION,
+  /// so a new ERP connection is covered by it, which is what "tenant
+  /// acknowledgement" means and is why it is not per-connection.
+  externalAiBusinessDataAckAt       DateTime?
+  externalAiBusinessDataAckByUserId String?
   /// Step 6c — model adjudication of the reconciliation residue. OFF by
   /// default, and written ONLY through `updateTenantSecurityConfig`, which
   /// refuses the combinations that cannot be honoured: LOCAL_ONLY without

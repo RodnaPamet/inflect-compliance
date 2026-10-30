@@ -339,6 +339,29 @@ export function requiresHumanApproval(mode: ExternalWriteMode): boolean {
     return mode === 'PROPOSE_ONLY';
 }
 
+/**
+ * Does this rung do NOTHING with a write — the fourth rung's predicate (#3872).
+ *
+ * The three above cover `AUTOMATIC`, `DRY_RUN` and `PROPOSE_ONLY`, which is
+ * every rung that does something: send it, record the intent, or ask a person.
+ * `DISABLED` was the one with no predicate, and it is the one an OFFER has to
+ * ask about: at every other rung a write-classified tool has an outcome worth
+ * offering, and at this one the dispatch's fall-through refuses it with nothing
+ * sent.
+ *
+ * So this is "the connection is read-only", and it exists as a function beside
+ * its three siblings rather than as `mode === 'DISABLED'` at the call site,
+ * because a second definition of read-only would eventually disagree with the
+ * dispatch in the direction that offers a tool the funnel refuses.
+ *
+ * Callers must pass an already-coerced mode — `coerceStoredMode` maps `null`,
+ * `undefined` and any unrecognised rung to `DISABLED`, so an unset column is
+ * read-only here too, which is the fail-closed direction.
+ */
+export function refusesEveryWrite(mode: ExternalWriteMode): boolean {
+    return mode === 'DISABLED';
+}
+
 /** The current state of one connection's ladder, as stored. */
 export interface ExternalWriteState {
     /** Already coerced — callers must not pass a raw column through. */

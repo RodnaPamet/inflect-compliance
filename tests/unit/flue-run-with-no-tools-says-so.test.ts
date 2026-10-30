@@ -57,7 +57,14 @@ jest.mock('@/lib/agentic/flue/run-binding', () => ({
 jest.mock('@/lib/agentic/flue/runtime-start', () => ({ ensureFlueRuntime: jest.fn(async () => []) }));
 jest.mock('@/lib/agentic/flue/providers', () => ({ flueModelIsRegistered: jest.fn(() => true) }));
 jest.mock('@/lib/agentic/flue/tools-adapter', () => ({
-    flueToolsFor: jest.fn(() => ({ tools: offeredTools, omitted: [] })),
+    // `externalConnections` is part of the real `OfferedToolSet` since #3872 —
+    // the connection facts of the EXTERNAL tools that survived the narrowing,
+    // which the transfer gate ranges over. Stated here rather than defaulted
+    // in the engine: a `?? []` at the read site would make a future engine
+    // that forgot to populate it see an empty list and refuse nothing, which
+    // is the fail-OPEN direction. This suite offers no external tool, so the
+    // honest value is empty.
+    flueToolsFor: jest.fn(() => ({ tools: offeredTools, omitted: [], externalConnections: [] })),
 }));
 jest.mock('@/lib/mcp/tools/propose-tools', () => ({
     isProposeTool: () => false,

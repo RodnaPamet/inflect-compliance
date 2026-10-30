@@ -6,6 +6,7 @@ import {
     TYPESAFE_SUBPROCESSOR_ACTIVE,
 } from '@/lib/legacy-access/adjudication-mode';
 import { badRequest, forbidden } from '@/lib/errors/types';
+import { isPersonContext } from '@/app-layer/request-context-kind';
 import { checkWebhookUrl } from '@/app-layer/automation/webhook-safety';
 import {
     isPermittedRotationDays,
@@ -697,6 +698,138 @@ export async function updateTenantSecurityConfig(
             recertificationOwnerUserId: row?.recertificationOwnerUserId ?? null,
             // Null is "no setting": the pass applies the product default.
             apiKeyRotationDays: row?.apiKeyRotationDays ?? null,
+        };
+    });
+}
+
+/**
+ * ACCEPT, OR WITHDRAW, THE TRANSFER OF BUSINESS DATA TO AN EXTERNAL MODEL
+ * (M5, #3872).
+ *
+ * A run that reads third-party business or personal data out of a system of
+ * record and hands it to a model provider outside the deployment is a data
+ * TRANSFER. `external-residency-gate.ts` refuses such a run unless this has
+ * been recorded; this is the only thing that records it.
+ *
+ * ── WHY IT IS ITS OWN WRITER ────────────────────────────────────────────────
+ *
+ * The file's patch semantics exist because two writers that send a full row
+ * clobber each other. The same argument makes this a third writer rather than
+ * two more keys on `updateTenantSecurityConfig`: the acknowledgement is not a
+ * configuration value an admin tunes, it is a dated act with an author, and
+ * putting it in a patch body would let it be set as a side effect of saving an
+ * unrelated form.
+ *
+ * ── WHO ─────────────────────────────────────────────────────────────────────
+ *
+ * `admin.manage`, the same key that chooses `aiResidency`, because this accepts
+ * the consequence of that choice rather than a separate one. AND a PERSON: a
+ * credential, an agent or a job cannot accept a data transfer on a company's
+ * behalf, and `*`-scoped API keys exist. That is a narrowing of the settings
+ * key, never a widening — the same shape as
+ * `assertCanGovernAgentEnforcement` above.
+ *
+ * ── WITHDRAWABLE, AND BOTH COLUMNS MOVE TOGETHER ────────────────────────────
+ *
+ * A transfer somebody consented to can be un-consented, so this clears as well
+ * as sets, and every change is audited with its before and after. Both columns
+ * are always written together: a CHECK refuses the half-set row, and the gate
+ * treats an unattributable acknowledgement as absent, so the two agree.
+ *
+ * The audit row carries the DATES and the acting user id — no connection name,
+ * no tenant content. `detailsJson` streams to the tenant's SIEM.
+ */
+export async function setExternalAiBusinessDataAcknowledgement(
+    ctx: RequestContext,
+    input: { acknowledged: boolean },
+): Promise<{ acknowledgedAt: Date | null; acknowledgedByUserId: string | null }> {
+    assertCanManageSecuritySettings(ctx);
+    if (!isPersonContext(ctx)) {
+        throw forbidden(
+            'Accepting the transfer of business data to an external model provider is an act '
+                + 'a person performs, never a credential, an agent or a job.',
+            { reason: 'NOT_A_PERSON' },
+        );
+    }
+    // A person context has a user id by construction; asserted rather than
+    // coerced, because writing the row with a null author would produce exactly
+    // the unattributable acknowledgement the CHECK and the gate both refuse.
+    const userId = ctx.userId;
+    if (!userId) throw forbidden('An acknowledgement needs an author.', { reason: 'NOT_A_PERSON' });
+
+    return runInTenantContext(ctx, async (db) => {
+        const before = await db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: {
+                externalAiBusinessDataAckAt: true,
+                externalAiBusinessDataAckByUserId: true,
+            },
+        });
+        const priorAt = before?.externalAiBusinessDataAckAt ?? null;
+        const priorBy = before?.externalAiBusinessDataAckByUserId ?? null;
+
+        const nextAt = input.acknowledged ? new Date() : null;
+        const nextBy = input.acknowledged ? userId : null;
+
+        // Idempotent in the direction that matters: re-acknowledging an already
+        // acknowledged workspace re-stamps the date and the author, which is
+        // correct — it is a fresh act by whoever performed it — but a WITHDRAWAL
+        // of an absent acknowledgement changes nothing and is not audited as a
+        // change, because no transfer stopped being permitted.
+        if (priorAt === null && nextAt === null) {
+            return { acknowledgedAt: null, acknowledgedByUserId: null };
+        }
+
+        const row = await db.tenantSecuritySettings.upsert({
+            where: { tenantId: ctx.tenantId },
+            create: {
+                tenantId: ctx.tenantId,
+                externalAiBusinessDataAckAt: nextAt,
+                externalAiBusinessDataAckByUserId: nextBy,
+            },
+            update: {
+                externalAiBusinessDataAckAt: nextAt,
+                externalAiBusinessDataAckByUserId: nextBy,
+            },
+            select: {
+                externalAiBusinessDataAckAt: true,
+                externalAiBusinessDataAckByUserId: true,
+            },
+        });
+
+        await logEvent(db, ctx, {
+            action: input.acknowledged
+                ? 'EXTERNAL_AI_BUSINESS_DATA_ACKNOWLEDGED'
+                : 'EXTERNAL_AI_BUSINESS_DATA_ACKNOWLEDGEMENT_WITHDRAWN',
+            entityType: 'TenantSecuritySettings',
+            entityId: ctx.tenantId,
+            details: input.acknowledged
+                ? 'Acknowledged that data read over connections marked as carrying business '
+                  + 'data may be sent to an external model provider'
+                : 'Withdrew the acknowledgement permitting business data to be sent to an '
+                  + 'external model provider — agent runs over such connections now refuse',
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'TenantSecuritySettings',
+                operation: 'updated',
+                changedFields: [
+                    'externalAiBusinessDataAckAt',
+                    'externalAiBusinessDataAckByUserId',
+                ],
+                before: {
+                    acknowledgedAt: priorAt?.toISOString() ?? null,
+                    acknowledgedByUserId: priorBy,
+                },
+                after: {
+                    acknowledgedAt: row.externalAiBusinessDataAckAt?.toISOString() ?? null,
+                    acknowledgedByUserId: row.externalAiBusinessDataAckByUserId,
+                },
+            },
+        });
+
+        return {
+            acknowledgedAt: row.externalAiBusinessDataAckAt,
+            acknowledgedByUserId: row.externalAiBusinessDataAckByUserId,
         };
     });
 }

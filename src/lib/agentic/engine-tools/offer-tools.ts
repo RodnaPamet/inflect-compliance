@@ -24,7 +24,7 @@ import {
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import { loadableReadTools } from '@/lib/mcp/tools/registry';
 import { loadableProposeTools } from '@/lib/mcp/tools/propose-tools';
-import type { McpReadTool } from '@/lib/mcp/tools/types';
+import type { ExternalConnectionFacts, McpReadTool } from '@/lib/mcp/tools/types';
 
 import { ReviewLatch, type GuardObserver } from './review-latch';
 import { runGuardedTool } from './run-guarded-tool';
@@ -61,13 +61,17 @@ export function asToolArgs(data: unknown): Record<string, unknown> {
  * declares `readOnly` (#3749). `PROFILE_TOOL_NOT_GRANTED` is a tool an agent
  * profile names that the agent's current grants no longer reach, typically a
  * grant revoked after the profile version was approved (#4143).
+ * `CONNECTION_READ_ONLY` is an EXTERNAL write-classified tool whose connection
+ * sits at the ladder's `DISABLED` rung, where the dispatch would refuse it with
+ * nothing sent (#3872).
  */
 export type ToolOmissionReason =
     | 'SCOPE'
     | 'AUTONOMY'
     | 'UNCONVERTIBLE_SCHEMA'
     | 'READ_ONLY_WORKFLOW'
-    | 'PROFILE_TOOL_NOT_GRANTED';
+    | 'PROFILE_TOOL_NOT_GRANTED'
+    | 'CONNECTION_READ_ONLY';
 
 /**
  * One tool that survived the narrowing, handed to the engine to put in its own
@@ -107,6 +111,19 @@ export interface OfferedToolSet<T> {
      * incapable when it is actually under-provisioned.
      */
     omitted: Array<{ name: string; reason: ToolOmissionReason }>;
+    /**
+     * The connection facts of every EXTERNAL tool that survived the narrowing
+     * (#3872), in offer order.
+     *
+     * Returned because a gate above the engine has to reason about what the
+     * model can actually reach, and the engine's own tool shape does not carry
+     * these through its `build` mapping. The OFFERED set is the right
+     * population: a tool withheld above transfers nothing, because the model
+     * never sees it and cannot call it.
+     *
+     * Empty for an invocation with no external tools, which is most of them.
+     */
+    externalConnections: ExternalConnectionFacts[];
     /**
      * ONE latch for the whole tool set, shared by every `run` closure below.
      *
@@ -158,7 +175,7 @@ export type OriginResolver = (toolCallId: string) => { runId: string; stepSeq: n
 
 export type OfferableTool = Pick<
     McpReadTool<unknown>,
-    'name' | 'description' | 'inputSchema' | 'resourceScope' | 'authorize'
+    'name' | 'description' | 'inputSchema' | 'resourceScope' | 'authorize' | 'externalConnection'
 >;
 
 
@@ -179,9 +196,10 @@ function offerTools<T>(
     build: ToolBuilder<T>,
     sourcePrefix: string,
     originFor?: OriginResolver,
-): Pick<OfferedToolSet<T>, 'tools' | 'omitted'> {
+): Pick<OfferedToolSet<T>, 'tools' | 'omitted' | 'externalConnections'> {
     const tools: T[] = [];
     const omitted: OfferedToolSet<T>['omitted'] = [];
+    const externalConnections: ExternalConnectionFacts[] = [];
 
     for (const tool of candidates) {
         if (!holdsScope(inv.ctx, tool)) {
@@ -201,6 +219,26 @@ function offerTools<T>(
             continue;
         }
 
+        // ── READ-ONLY STAYS READ-ONLY (#3872) ───────────────────────────────
+        //
+        // The same argument as the AUTONOMY probe directly above, one axis
+        // over: there, a tool whose required rung exceeds the AGENT's ceiling;
+        // here, a write-classified tool whose CONNECTION sits at the ladder's
+        // `DISABLED` rung. `dispatchWrite` handles `DRY_RUN`, `PROPOSE_ONLY`
+        // and `AUTOMATIC` and falls through to a refusal that sends nothing, so
+        // offering it advertises a tool every call to which is refused.
+        //
+        // Both terms were read at invocation-build time from the same values
+        // the dispatch branches on (`external-tools.ts::adapterFor`), so the
+        // offer cannot form a different opinion about whether a tool is a write
+        // or whether its connection takes one. Internal tools carry no
+        // `externalConnection` at all, which is why absence skips this entirely
+        // rather than defaulting either way.
+        if (tool.externalConnection?.declaresWrite && tool.externalConnection.connectionRefusesWrites) {
+            omitted.push({ name: tool.name, reason: 'CONNECTION_READ_ONLY' });
+            continue;
+        }
+
         const built = build({
             tool,
             capability,
@@ -217,9 +255,13 @@ function offerTools<T>(
             continue;
         }
         tools.push(built);
+        // AFTER the build, so a tool dropped for an unconvertible schema does
+        // not count as offered. The gate above reasons about what the model can
+        // reach, and a tool that was never handed over cannot be reached.
+        if (tool.externalConnection) externalConnections.push(tool.externalConnection);
     }
 
-    return { tools, omitted };
+    return { tools, omitted, externalConnections };
 }
 
 /**
@@ -273,10 +315,13 @@ export function offerToolSet<T>(
     // The origin resolver reaches only the propose surface, because only a
     // propose call writes a row that can carry one. Passing it to both would
     // read as though a read were being attributed somewhere.
-    const propose: Pick<OfferedToolSet<T>, 'tools' | 'omitted'> = opts.readOnly
+    const propose: Pick<OfferedToolSet<T>, 'tools' | 'omitted' | 'externalConnections'> = opts.readOnly
         ? {
               tools: [],
               omitted: proposeCandidates.filter(inProfile).map((t) => ({ name: t.name, reason: 'READ_ONLY_WORKFLOW' as const })),
+              // Nothing was offered on this surface, so none of its connections
+              // is reachable. Deliberately NOT the withheld candidates' facts.
+              externalConnections: [],
           }
         : offerTools(
               inv,
@@ -303,6 +348,11 @@ export function offerToolSet<T>(
     return {
         tools: [...read.tools, ...propose.tools],
         omitted: [...read.omitted, ...propose.omitted, ...lost],
+        // External tools ride the READ surface (`allReadTools` appends
+        // `inv.externalTools` to the internal set), so in practice this comes
+        // from `read`. Both are concatenated anyway rather than assuming that:
+        // if a future surface offers an external tool, the gate must see it.
+        externalConnections: [...read.externalConnections, ...propose.externalConnections],
         review,
     };
 }

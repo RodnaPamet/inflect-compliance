@@ -1228,6 +1228,62 @@ export function recordPeerCardCheck(attrs: { outcome: string; context: 'register
     _peerCardCheck.add(1, { outcome: attrs.outcome, context: attrs.context });
 }
 
+// ── External tool calls (M5, #3872) ──────────────────────────────────────────
+
+let _externalToolCall: Counter | null = null;
+
+/**
+ * One call to an external (customer-hosted MCP or A2A) tool, and how it ended.
+ *
+ * ── WHY THE CONNECTION IS NOT A LABEL, THOUGH M5 ASKED FOR ONE ──────────────
+ *
+ * #3872's prompt says "a counter per external tool call, tagged by connection
+ * and outcome". The outcome is here; the CONNECTION deliberately is not, and
+ * this follows the rule `recordPeerCardCheck` above already states: an
+ * identifier is unbounded, so it does not belong in a label, and the per-entity
+ * record is the audit row. That row already exists for exactly this event —
+ * `recordExternalToolDecision` writes an `AiDecisionLog` per external call
+ * carrying `provider: mcp:<connectionId>` and the same outcome — so putting the
+ * id here would add cardinality without adding a fact. A connection NAME would
+ * be worse: tenant-chosen text, unbounded, and capable of carrying information
+ * about the customer's estate into a metrics backend.
+ *
+ * What IS here are the two bounded classes M5's constraints are actually about:
+ * whether the tool was write-classified, and whether its connection is marked
+ * as reaching a business system. Twelve series in total, and each one answers a
+ * question the step was specified to make answerable.
+ *
+ * `businessSystem` has THREE values, not two: `unreviewed` is the NULL state
+ * (#3864) and must stay distinguishable from a reviewed `false`, or the metric
+ * would report "no business-system traffic" for an estate nobody has classified.
+ *
+ * ALERT ON — a rising `outcome="REFUSED"` for `write="true"`, which is agents
+ * repeatedly attempting writes their connection's rung does not permit; since
+ * #3872 those tools are withheld from the offer, so a sustained rate means the
+ * offer and the dispatch disagree. And any `businessSystem="true"` traffic at
+ * all is worth knowing about on a deployment that believes it has none.
+ */
+export function recordExternalToolCall(attrs: {
+    outcome: 'DONE' | 'FAILED' | 'REFUSED';
+    write: boolean;
+    businessSystem: 'true' | 'false' | 'unreviewed';
+}): void {
+    if (!_externalToolCall) {
+        _externalToolCall = getMeter().createCounter('agentic.external_tool.call', {
+            description:
+                'Calls to customer-hosted MCP and A2A tools, by outcome, write classification and '
+                + 'whether the connection is marked as carrying third-party business data. The '
+                + 'connection itself is not a label — see the per-call AiDecisionLog row for that.',
+            unit: '1',
+        });
+    }
+    _externalToolCall.add(1, {
+        outcome: attrs.outcome,
+        write: String(attrs.write),
+        business_system: attrs.businessSystem,
+    });
+}
+
 // ── Tenant-authored skills (#3680) ───────────────────────────────────────────
 
 /**

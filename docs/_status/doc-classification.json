@@ -467,6 +467,9 @@
         "docs/runbooks/joule-byoa.md": {
             "class": "authoritative"
         },
+        "docs/runbooks/wiring-an-sap-mcp-connection.md": {
+            "class": "authoritative"
+        },
         "docs/sap-agent-integration-roadmap.md": {
             "class": "living"
         },

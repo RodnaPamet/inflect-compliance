@@ -43,6 +43,7 @@ import { resolveGrantedExternalTools } from '@/app-layer/usecases/external-mcp-t
 import type { RequestContext } from '@/app-layer/types';
 
 import { declaresWrite } from '@/lib/mcp/tool-write-classification';
+import { recordExternalToolCall } from '@/lib/observability/integration-metrics';
 import {
     jsonSchemaForConstraint,
     parseOpenFields,
@@ -58,7 +59,9 @@ import { openAutomaticExternalWrite } from '@/app-layer/usecases/external-write-
 import { createAgentProposal } from '@/app-layer/usecases/agent-proposals';
 import { dispatchA2aSend, resolveGrantedA2aSendTools } from '@/app-layer/usecases/a2a-outbound';
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
-import { clampForInboundA2a, type ExternalWriteMode } from '@/lib/integrations/external-write-ladder';
+import { clampForInboundA2a, type ExternalWriteMode,
+    refusesEveryWrite,
+} from '@/lib/integrations/external-write-ladder';
 
 import type { McpReadTool } from './types';
 
@@ -259,7 +262,7 @@ function adapterFor(
         openFields?: unknown;
         targetPopulation?: string | null;
     }> = [],
-    connection: { id: string; name: string; url: string; mode: ExternalWriteMode },
+    connection: { id: string; name: string; url: string; mode: ExternalWriteMode; reachesBusinessSystem: boolean | null },
     policyCardVersion: number,
 ): McpReadTool<Record<string, unknown>> {
     // ── WHO CHOOSES THE ARGUMENTS ───────────────────────────────────────────
@@ -422,6 +425,33 @@ function adapterFor(
                   })
                   .strict() as unknown as typeof EXTERNAL_ARGS_SCHEMA)
             : EXTERNAL_ARGS_SCHEMA,
+        // ── WHAT THE OFFER NEEDS, READ ONCE, HERE (#3872) ───────────────────
+        //
+        // The same two terms the dispatch below branches on, taken at
+        // invocation-build time so the offered set and the funnel cannot
+        // disagree. `offerToolSet` withholds a write-classified tool whose
+        // connection refuses every write and records `CONNECTION_READ_ONLY`,
+        // for the reason the AUTONOMY omission beside it already states:
+        // advertising a tool and then watching the funnel refuse every call to
+        // it is the mismatch both probes exist to prevent.
+        externalConnection: {
+            connectionId: connection.id,
+            connectionName: connection.name,
+            // An A2A send is ALWAYS a write, exactly as the dispatch's own A2A
+            // branch sits above its read/write split: asking another
+            // organisation's agent to act is a write whatever its definition
+            // says. Reading `declaresWrite` for it would ask the wrong question.
+            declaresWrite: send.kind === 'a2a' ? true : declaresWrite(def.annotations),
+            connectionRefusesWrites: refusesEveryWrite(connection.mode),
+            // THREE states kept as three. `true` is a reviewed claim that this
+            // connection carries third-party business or personal data; `false`
+            // is a reviewed claim that it does not; NULL is nobody having said.
+            // The residency gate acts on `true` alone — treating NULL as `true`
+            // would refuse every run on every connection nobody has reviewed,
+            // and treating `false` and NULL alike at the STORE would lose the
+            // distinction the column was added to keep (#3864).
+            reachesBusinessSystem: connection.reachesBusinessSystem,
+        },
         resourceScope: EXTERNAL_TOOL_RESOURCE_SCOPE,
         authorize: {
             keys: [EXTERNAL_TOOL_PERMISSION],
@@ -571,6 +601,13 @@ function adapterFor(
                 });
             }
             const transport = send.transport;
+            // The same three states the offer carries, as a bounded label.
+            const businessSystem =
+                connection.reachesBusinessSystem === true
+                    ? ('true' as const)
+                    : connection.reachesBusinessSystem === false
+                      ? ('false' as const)
+                      : ('unreviewed' as const);
 
             // ── IS THIS A WRITE? (#2861) ────────────────────────────────
             //
@@ -580,26 +617,56 @@ function adapterFor(
             //
             // Unknown counts as a write — see that module for why the
             // inconvenient direction is the right one.
-            if (!declaresWrite(def.annotations)) {
-                // `callTool` is the one outbound seam and it scans these
-                // arguments before a socket is opened. Nothing is added here: a
-                // second check in a per-tool wrapper would be the copy that
-                // drifts.
-                return callTool(transport, def.name, merged);
+            const isWrite = declaresWrite(def.annotations);
+            // ── ONE COUNTER, BOTH PATHS, EVERY ENGINE (M5, #3872) ───────
+            //
+            // Here rather than in an engine, because every engine reaches the
+            // far end through this closure — a counter in `flue/` would have
+            // missed the Tool Runner the moment it shipped.
+            //
+            // The axis is deliberately "calls that reached the DISPATCH stage".
+            // An argument-validation refusal above never named a connection and
+            // never approached a socket, so counting it here would mix "the far
+            // end refused" with "the model called the tool wrongly".
+            //
+            // A refusal is told from a failure by the `Nothing was sent.`
+            // sentinel every refusal in this module ends with — chosen over the
+            // `external_*` prefix because it states the property that matters
+            // rather than a naming convention.
+            try {
+                const result = isWrite
+                    ? await dispatchWrite(ctx, {
+                          qualified,
+                          advertisedName: def.name,
+                          transport,
+                          connection,
+                          outbound: merged,
+                          policyCardVersion,
+                          // WHICH approved template authorised this, not just
+                          // what came out of it. Null when the tool has no saved
+                          // sets, which the rungs below AUTOMATIC permit and the
+                          // AUTOMATIC arm refuses.
+                          parameterSetLabel: chosen?.label ?? null,
+                      })
+                    // `callTool` is the one outbound seam and it scans these
+                    // arguments before a socket is opened. Nothing is added
+                    // here: a second check in a per-tool wrapper would be the
+                    // copy that drifts.
+                    : await callTool(transport, def.name, merged);
+                recordExternalToolCall({ outcome: 'DONE', write: isWrite, businessSystem });
+                return result;
+            } catch (err) {
+                const message = err instanceof Error ? err.message : '';
+                recordExternalToolCall({
+                    outcome: message.includes('Nothing was sent.') ? 'REFUSED' : 'FAILED',
+                    write: isWrite,
+                    businessSystem,
+                });
+                // RE-THROWN unchanged. A counter must not alter what the caller
+                // sees, and the funnel's own handling of this error is what
+                // reaches the model.
+                throw err;
             }
-
-            return dispatchWrite(ctx, {
-                qualified,
-                advertisedName: def.name,
-                transport,
-                connection,
-                outbound: merged,
-                policyCardVersion,
-                // WHICH approved template authorised this, not just what came
-                // out of it. Null when the tool has no saved sets, which the
-                // rungs below AUTOMATIC permit and the AUTOMATIC arm refuses.
-                parameterSetLabel: chosen?.label ?? null,
-            });
         },
     };
 }

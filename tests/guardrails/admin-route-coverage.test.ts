@@ -372,6 +372,13 @@ const ADMIN_ONLY_ROUTES = [
     // `admin.agent_registry`, so the write path through the sibling PUT cannot
     // be used to go around the narrower key.
     'admin/security-settings/agent-enforcement/route.ts',
+    // The business-data transfer acknowledgement (M5, #3872). Its own route
+    // rather than a field on the sibling PUT, because it is a dated act with an
+    // author and a patch body would let it be set as a side effect of saving an
+    // unrelated form. Route-gated on `admin.manage` like both siblings; the
+    // usecase additionally requires a PERSON, so a `*`-scoped API key cannot
+    // accept a data transfer on a company's behalf.
+    'admin/security-settings/external-ai-acknowledgement/route.ts',
 
     // Billing routes (admin-only)
     'billing/checkout/route.ts',

@@ -7,6 +7,11 @@ import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import { recordExternalToolDecision } from './tool-decision';
 import {
+    externalResidencyRefusal,
+    type ExternalAiAcknowledgement,
+} from '../external-residency-gate';
+import { providerIdOf } from './model-selection';
+import {
     updateRun,
     failRun,
     haltRunAtCap,
@@ -192,6 +197,20 @@ export async function executeFlueRun(
     fromSeq: number,
     runStartMs: number,
     modelSpecifier: string,
+    /**
+     * Postures the DRIVER read, handed down rather than re-read here (#3872).
+     *
+     * This module deliberately holds no Prisma — `runInTenantContext` moved out
+     * with `recordModelDecision` so the engine's static graph stays thin — and
+     * the acknowledgement travelling WITH the run is also the right semantics:
+     * the question is what permitted this run, not what is set now, and between
+     * the two an admin can have withdrawn it mid-run. Same argument the
+     * policy-card version's build-time read makes.
+     *
+     * Optional so every existing caller and test compiles unchanged; absent
+     * reads as unacknowledged, which is the refusing direction.
+     */
+    postures: { externalAiAcknowledgement?: ExternalAiAcknowledgement } = {},
 ): Promise<RunDriverOutcome> {
     // BOOT FIRST, and check the specifier against what actually got
     // registered. An unregistered model would otherwise surface from inside pi
@@ -531,6 +550,32 @@ export async function executeFlueRun(
         // A read-only definition is offered no propose tool (#3749).
         { readOnly: def.readOnly === true },
     );
+
+    // ── ROUTING AN ERP'S ROWS OUTSIDE THE DEPLOYMENT IS A TRANSFER (#3872) ──
+    //
+    // HERE, and not earlier, because the gate reads the OFFERED set: a tool
+    // withheld above transfers nothing, since the model never sees it. And not
+    // later, because it must precede the first model call — after one, the
+    // transfer the gate exists to refuse has already happened.
+    //
+    // The whole run refuses rather than the business-system tools being dropped
+    // and the run continuing. A run that answers a question about an ERP it was
+    // silently prevented from reading is worse than no answer, and the omission
+    // list is not something the model is obliged to mention.
+    const transferRefusal = externalResidencyRefusal({
+        providerId: providerIdOf(modelSpecifier),
+        offered: offered.externalConnections.map((c) => ({
+            name: c.connectionName,
+            connectionId: c.connectionId,
+            connectionName: c.connectionName,
+            reachesBusinessSystem: c.reachesBusinessSystem,
+        })),
+        acknowledgement: postures.externalAiAcknowledgement ?? { at: null, byUserId: null },
+    });
+    if (transferRefusal) {
+        const status = await failRun(ctx, runId, transferRefusal.message);
+        return { status, stepFailures: 0 };
+    }
     const latch: CapLatch = { halt: null };
     const killed: KillLatch = { verdict: null, afterCap: false };
     let seq = fromSeq;

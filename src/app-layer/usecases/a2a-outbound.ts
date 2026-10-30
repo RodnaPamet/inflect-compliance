@@ -99,7 +99,7 @@ export interface GrantedA2aSendTool {
     readonly qualified: string;
     readonly def: typeof A2A_SEND_TOOL_DEFINITION;
     readonly peerId: string;
-    readonly connection: { id: string; name: string; url: string; mode: ExternalWriteMode };
+    readonly connection: { id: string; name: string; url: string; mode: ExternalWriteMode; reachesBusinessSystem: boolean | null };
     readonly parameterSets: ReadonlyArray<{
         label: string;
         parameters: Record<string, unknown>;
@@ -142,7 +142,7 @@ export async function resolveGrantedA2aSendTools(
     const { connections, parameterSets } = await runInTenantContext(ctx, async (db) => ({
         connections: await db.integrationConnection.findMany({
             where: { id: { in: connectionIds }, tenantId: ctx.tenantId, provider: A2A_PEER_PROVIDER_ID, isEnabled: true },
-            select: { id: true, name: true, configJson: true, externalWriteMode: true },
+            select: { id: true, name: true, configJson: true, externalWriteMode: true, reachesBusinessSystem: true },
         }),
         parameterSets: await db.externalToolParameterSet.findMany({
             where: { tenantId: ctx.tenantId, toolName: { in: connectionIds.map(a2aSendToolName) } },
@@ -174,7 +174,18 @@ export async function resolveGrantedA2aSendTools(
             qualified,
             def: A2A_SEND_TOOL_DEFINITION,
             peerId,
-            connection: { id: connection.id, name: connection.name, url: admitted.endpoint, mode: rung },
+            connection: {
+                id: connection.id,
+                name: connection.name,
+                url: admitted.endpoint,
+                mode: rung,
+                // An A2A peer connection reaches another ORGANISATION's agent, not
+                // a system of record, so this is normally NULL. Carried anyway
+                // because the flag is a property of the connection row rather
+                // than of the route, and a tenant that has marked one is making a
+                // claim the external-residency gate should honour (#3872).
+                reachesBusinessSystem: connection.reachesBusinessSystem,
+            },
             parameterSets: parameterSets
                 .filter((p) => p.toolName === qualified)
                 .map((p) => ({
