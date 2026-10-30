@@ -64,6 +64,8 @@ interface Harness {
     run: GlobalSetup;
     markerPath: string;
     releases: number;
+    /** The marker path globalSetup named for its workers, if it named one. */
+    published: string | null;
     logs: string[];
     warnings: string[];
     cleanup: () => void;
@@ -77,12 +79,19 @@ interface Harness {
 function loadGlobalSetup(drift: TestDbMigrationDriftOutcome): Harness {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inflect-2640-marker-'));
     const markerPath = path.join(dir, 'perworker.json');
-    const state = { releases: 0 };
+    const state: { releases: number; published: string | null } = { releases: 0, published: null };
 
     jest.resetModules();
     jest.doMock('../helpers/db', () => ({
         __esModule: true,
-        PER_WORKER_MARKER: markerPath,
+        // This run's marker (#4610). Faked so the test process's environment
+        // is never pointed at a marker by the globalSetup under test.
+        CHECKOUT_ROOT: dir,
+        reapDeadRunMarkers: () => [],
+        newRunMarkerPath: () => markerPath,
+        publishRunMarker: (p: string) => {
+            state.published = p;
+        },
         getBaseTestDatabaseUrl: () => 'postgresql://test:test@127.0.0.1:5434/inflect_test',
         getDbName: () => 'inflect_test',
         adminConnectionString: () => 'postgresql://test:test@127.0.0.1:5434/postgres',
@@ -120,6 +129,9 @@ function loadGlobalSetup(drift: TestDbMigrationDriftOutcome): Harness {
         markerPath,
         get releases() {
             return state.releases;
+        },
+        get published() {
+            return state.published;
         },
         logs,
         warnings,
@@ -181,6 +193,7 @@ describe('globalSetup and a test database that is BEHIND this branch', () => {
                 () => {},
             );
             expect(fs.existsSync(h.markerPath)).toBe(false);
+            expect(h.published).toBeNull();
         } finally {
             h.cleanup();
         }
@@ -218,6 +231,8 @@ describe('globalSetup and the outcomes that must NOT block a run', () => {
         try {
             await expect(h.run({ maxWorkers: 1 })).resolves.toBeUndefined();
             expect(fs.existsSync(h.markerPath)).toBe(true);
+            // ...and names it, or no worker would ever read it (#4610).
+            expect(h.published).toBe(h.markerPath);
         } finally {
             h.cleanup();
         }
@@ -231,6 +246,8 @@ describe('globalSetup and the outcomes that must NOT block a run', () => {
         try {
             await expect(h.run({ maxWorkers: 1 })).resolves.toBeUndefined();
             expect(fs.existsSync(h.markerPath)).toBe(true);
+            // ...and names it, or no worker would ever read it (#4610).
+            expect(h.published).toBe(h.markerPath);
         } finally {
             h.cleanup();
         }

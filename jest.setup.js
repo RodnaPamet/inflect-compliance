@@ -41,22 +41,26 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://user:password
 // app writes to the base DB while the test reads the worker DB. Serial
 // runs / CI (marker.perWorker === false) leave DATABASE_URL untouched.
 //
-// WHICH marker: THIS checkout's own. Its path comes from the same CommonJS
-// module that gives tests/helpers/db.ts its tag and marker path, so the two
-// cannot disagree. It used to be a literal here, `inflect-test-perworker.json`
-// under node_modules/.cache, the same name in every checkout. Worktrees
-// symlink node_modules to the main checkout's, so that was one file for every
-// worktree on the machine, and a run read whichever checkout had started
-// Jest last (2026-10-30). See the header of tests/helpers/test-db-checkout.js.
+// WHICH marker: THIS RUN's own, named by globalSetup in the environment the
+// workers inherit (`currentRunMarker`, from the same CommonJS module that
+// tests/helpers/db.ts reads it through). It used to be derived here: first a
+// literal shared by every worktree (they symlink node_modules), then a name
+// per checkout, which two runs in ONE checkout still shared (#4610). A run
+// read whichever had started Jest last. See the header of
+// tests/helpers/test-db-checkout.js.
+//
+// No marker named means globalSetup did not run for this process (the scan or
+// jsdom project on its own, a bare node script): shared-DB mode.
 //
 // The require sits OUTSIDE the try on purpose. Inside it, a renamed or broken
 // helper would be swallowed as "no marker", and every worker would quietly
 // fall back to the shared base database while globalSetup had created
 // per-worker ones. A missing helper must fail the run, not degrade it.
-const { PER_WORKER_MARKER } = require('./tests/helpers/test-db-checkout');
+const { currentRunMarker } = require('./tests/helpers/test-db-checkout');
+const runMarker = currentRunMarker();
 try {
   const fs = require('fs');
-  const marker = JSON.parse(fs.readFileSync(PER_WORKER_MARKER, 'utf8'));
+  const marker = runMarker ? JSON.parse(fs.readFileSync(runMarker, 'utf8')) : { perWorker: false };
   if (marker.perWorker) {
     const u = new URL(marker.baseUrl);
     const wid = process.env.JEST_WORKER_ID || '1';

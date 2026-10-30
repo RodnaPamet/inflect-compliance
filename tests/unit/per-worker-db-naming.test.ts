@@ -23,7 +23,10 @@ import {
     tagForRoot,
     checkoutTag,
     perWorkerDbName,
-    perWorkerMarkerPath,
+    RUN_MARKER_ENV,
+    runMarkerPath,
+    newRunMarkerPath,
+    reapDeadRunMarkers,
     selectReapableWorkerDbs,
 } from '../helpers/db';
 
@@ -72,8 +75,8 @@ describe('the tag separates checkouts', () => {
 });
 
 /**
- * The per-worker MARKER must not be shared across checkouts either
- * (2026-10-30).
+ * The per-worker MARKER must not be shared across checkouts (2026-10-30), nor
+ * across two runs of one checkout (#4610).
  *
  * globalSetup records the mode and the exact database names it created in a
  * marker under `node_modules/.cache/`. Workers read it to find their
@@ -83,15 +86,20 @@ describe('the tag separates checkouts', () => {
  * ONE file. Two worktrees running Jest at once: the later globalSetup
  * overwrote the record, the earlier run's tests connected to the other
  * checkout's databases, and the earlier run's teardown dropped the other
- * run's databases `WITH (FORCE)`. The tag in each database NAME did nothing
- * while the record carrying those names was shared.
+ * run's databases `WITH (FORCE)`.
  *
- * The shape that matters is the worktree's: two roots, ONE directory holding
- * both markers. A test that compared two path strings would pass on the old
- * scheme too whenever the roots differed, which they always do; the
- * directory is what was shared.
+ * A name per checkout fixed that, and left two runs of ONE checkout sharing
+ * the file: the run lock admits a second run pointed at another base database
+ * through DATABASE_URL_TEST, and its refusal message suggests exactly that.
+ * So each run now has its own marker, named by globalSetup in the environment
+ * its workers inherit, and every reader takes the path from there.
+ *
+ * The shapes that matter are the real ones: two roots with ONE directory
+ * holding both markers, and one root running twice. A test that compared two
+ * path strings would pass on the old scheme whenever the roots differed; the
+ * directory, and then the checkout, is what was shared.
  */
-describe('the per-worker marker is per checkout', () => {
+describe('the per-worker marker is per run', () => {
     const fsx: typeof import('node:fs') = require('node:fs');
     const os: typeof import('node:os') = require('node:os');
     const { execFileSync }: typeof import('node:child_process') = require('node:child_process');
@@ -100,7 +108,7 @@ describe('the per-worker marker is per checkout', () => {
     let sandbox: string;
 
     beforeEach(() => {
-        sandbox = fsx.mkdtempSync(path.join(os.tmpdir(), 'inflect-marker-per-checkout-'));
+        sandbox = fsx.mkdtempSync(path.join(os.tmpdir(), 'inflect-marker-per-run-'));
     });
     afterEach(() => {
         fsx.rmSync(sandbox, { recursive: true, force: true });
@@ -148,9 +156,11 @@ describe('the per-worker marker is per checkout', () => {
     /**
      * What globalSetup does at its end, run from inside `root` and through
      * THAT checkout's own copy of the helper: write the record of the
-     * databases this checkout created, at this checkout's marker path.
+     * databases this run created at a new marker path, and name it. Returns
+     * the environment globalSetup leaves behind, which is what the run's
+     * workers inherit.
      */
-    function recordAsGlobalSetup(root: string, workerDbs: string[]): void {
+    function recordAsGlobalSetup(root: string, workerDbs: string[]): Record<string, string> {
         const marker = {
             perWorker: true,
             count: workerDbs.length,
@@ -158,41 +168,52 @@ describe('the per-worker marker is per checkout', () => {
             baseUrl: 'postgresql://test:test@127.0.0.1:5434/inflect_test?schema=public',
             workerDbs,
         };
-        node(
+        const env = node(
             `const fs = require('fs'); const path = require('path');
-             const { PER_WORKER_MARKER } = require(${JSON.stringify(
-                 path.join(root, 'tests/helpers/test-db-checkout.js'),
-             )});
-             fs.mkdirSync(path.dirname(PER_WORKER_MARKER), { recursive: true });
-             fs.writeFileSync(PER_WORKER_MARKER, ${JSON.stringify(JSON.stringify(marker))});`,
+             const h = require(${JSON.stringify(path.join(root, 'tests/helpers/test-db-checkout.js'))});
+             const markerPath = h.newRunMarkerPath();
+             fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+             fs.writeFileSync(markerPath, ${JSON.stringify(JSON.stringify(marker))});
+             h.publishRunMarker(markerPath);
+             process.stdout.write(JSON.stringify({ [h.RUN_MARKER_ENV]: process.env[h.RUN_MARKER_ENV] }));`,
         );
+        return JSON.parse(env) as Record<string, string>;
     }
 
-    /** The database a worker of `root` connects the APP to, per its jest.setup.js. */
-    function appDatabaseOfWorker(root: string, workerId: number): string {
+    /** The database a worker of a run connects the APP to, per its checkout's jest.setup.js. */
+    function appDatabaseOfWorker(
+        root: string,
+        runEnv: Record<string, string>,
+        workerId: number,
+    ): string {
         const url = node(
             `require(${JSON.stringify(path.join(root, 'jest.setup.js'))});
              process.stdout.write(process.env.DATABASE_URL);`,
-            { JEST_WORKER_ID: String(workerId) },
+            { ...runEnv, JEST_WORKER_ID: String(workerId) },
         );
         return new URL(url).pathname.slice(1);
     }
 
     it('has a different FILE NAME for different repo roots', () => {
-        // Same examples as the tag's own test above: both real layouts. The
-        // NAME, not the full path: two full paths under different roots
-        // differ even on the old fixed-name scheme, so comparing them would
-        // pass on the very bug. A shared directory leaves only the name to
+        // The NAME, not the full path: two full paths under different roots
+        // differ on any scheme. A shared directory leaves only the name to
         // tell two checkouts' markers apart.
-        const name = (root: string) => path.basename(perWorkerMarkerPath(root));
+        const name = (root: string) => path.basename(runMarkerPath(root, '1-abcd'));
         expect(name('/home/dev/git/inflect-compliance')).not.toBe(
             name('/home/dev/inflect-compliance'),
         );
         expect(name('/a/inflect-compliance')).not.toBe(name('/b/inflect-compliance'));
     });
 
-    it('has a stable name for one root, so one checkout reads what it wrote', () => {
-        expect(perWorkerMarkerPath('/some/checkout')).toBe(perWorkerMarkerPath('/some/checkout'));
+    it('has a different FILE for two runs of one checkout, in the same directory', () => {
+        // #4610. Same checkout, so same directory and same tag: only the run
+        // can tell the two apart.
+        const a = newRunMarkerPath();
+        const b = newRunMarkerPath();
+        expect(path.dirname(a)).toBe(path.dirname(b));
+        expect(a).not.toBe(b);
+        expect(path.basename(a)).toContain(checkoutTag());
+        expect(path.basename(a)).toContain(`-${process.pid}-`);
     });
 
     it('is a different FILE for two checkouts whose marker directory is one directory', () => {
@@ -200,46 +221,172 @@ describe('the per-worker marker is per checkout', () => {
         const a = checkout('worktree-a', shared);
         const b = checkout('worktree-b', shared);
 
-        const dirA = path.dirname(perWorkerMarkerPath(a));
-        const dirB = path.dirname(perWorkerMarkerPath(b));
+        const dirA = path.dirname(runMarkerPath(a, '1-abcd'));
+        const dirB = path.dirname(runMarkerPath(b, '1-abcd'));
 
         // The premise, checked rather than assumed: the two checkouts really
         // do reach ONE directory. Without this the assertion below could pass
         // because the fixture failed to share anything.
         expect(fsx.realpathSync(dirA)).toBe(fsx.realpathSync(dirB));
 
-        // And yet two files in it.
-        const fileA = path.join(fsx.realpathSync(dirA), path.basename(perWorkerMarkerPath(a)));
-        const fileB = path.join(fsx.realpathSync(dirB), path.basename(perWorkerMarkerPath(b)));
+        // And yet two files in it, even for one run id.
+        const fileA = path.join(fsx.realpathSync(dirA), path.basename(runMarkerPath(a, '1-abcd')));
+        const fileB = path.join(fsx.realpathSync(dirB), path.basename(runMarkerPath(b, '1-abcd')));
         expect(fileA).not.toBe(fileB);
     });
 
     it("a worker reads its own checkout's record after another checkout's globalSetup has run", () => {
-        // The bug, end to end, with the real files: A's run records its
-        // databases, B's run starts later and records its own into the SAME
-        // shared directory, and then a worker of A's run starts a test file.
+        // The 2026-10-30 bug, end to end, with the real files: A's run records
+        // its databases, B's run starts later and records its own into the
+        // SAME shared directory, and then a worker of A's run starts a file.
         const shared = sharedCacheDir();
         const a = checkout('worktree-a', shared);
         const b = checkout('worktree-b', shared);
 
-        recordAsGlobalSetup(a, ['inflect_test_aaaa_w1', 'inflect_test_aaaa_w2']);
-        recordAsGlobalSetup(b, ['inflect_test_bbbb_w1', 'inflect_test_bbbb_w2']);
+        const runA = recordAsGlobalSetup(a, ['inflect_test_aaaa_w1', 'inflect_test_aaaa_w2']);
+        const runB = recordAsGlobalSetup(b, ['inflect_test_bbbb_w1', 'inflect_test_bbbb_w2']);
 
-        // On the shared file this was `inflect_test_bbbb_w2`: A's tests in
-        // B's database, which B's teardown would then drop under them.
-        expect(appDatabaseOfWorker(a, 2)).toBe('inflect_test_aaaa_w2');
-        expect(appDatabaseOfWorker(b, 2)).toBe('inflect_test_bbbb_w2');
+        expect(appDatabaseOfWorker(a, runA, 2)).toBe('inflect_test_aaaa_w2');
+        expect(appDatabaseOfWorker(b, runB, 2)).toBe('inflect_test_bbbb_w2');
     });
 
-    it('is the marker globalSetup, teardown and the test client use', () => {
-        // They import PER_WORKER_MARKER from tests/helpers/db.ts. A second
-        // definition there, or a literal, would split them from
-        // jest.setup.js again.
+    it("a worker reads its own RUN's record after a second run of the same checkout has started", () => {
+        // #4610, end to end. One checkout, two runs on different base
+        // databases, as the run lock's refusal message suggests. On the
+        // per-checkout name this read `inflect_scratch_cccc_w2`: run one's
+        // tests in run two's database, which run two's teardown then drops.
+        const root = checkout('main', sharedCacheDir());
+
+        const runOne = recordAsGlobalSetup(root, ['inflect_test_cccc_w1', 'inflect_test_cccc_w2']);
+        const runTwo = recordAsGlobalSetup(root, [
+            'inflect_scratch_cccc_w1',
+            'inflect_scratch_cccc_w2',
+        ]);
+
+        expect(appDatabaseOfWorker(root, runOne, 2)).toBe('inflect_test_cccc_w2');
+        expect(appDatabaseOfWorker(root, runTwo, 2)).toBe('inflect_scratch_cccc_w2');
+    });
+
+    it('a process no globalSetup named a marker for stays on the database it was given', () => {
+        // The scan and jsdom projects run alone, and bare scripts: no
+        // globalSetup, so no per-worker databases, whatever markers a live
+        // run in this checkout has written.
+        const root = checkout('main', sharedCacheDir());
+        recordAsGlobalSetup(root, ['inflect_test_dddd_w1', 'inflect_test_dddd_w2']);
+
+        const url = node(
+            `require(${JSON.stringify(path.join(root, 'jest.setup.js'))});
+             process.stdout.write(process.env.DATABASE_URL);`,
+            {
+                DATABASE_URL: 'postgresql://test:test@127.0.0.1:5434/inflect_test',
+                JEST_WORKER_ID: '2',
+            },
+        );
+        expect(new URL(url).pathname.slice(1)).toBe('inflect_test');
+    });
+
+    it('is the naming globalSetup, teardown and the test client use', () => {
+        // They import these from tests/helpers/db.ts. A second definition
+        // there would split them from jest.setup.js again.
         const db = require('../helpers/db');
         const shared = require('../helpers/test-db-checkout');
-        expect(db.PER_WORKER_MARKER).toBe(shared.PER_WORKER_MARKER);
-        expect(db.PER_WORKER_MARKER).toBe(perWorkerMarkerPath(REAL_ROOT));
-        expect(path.basename(db.PER_WORKER_MARKER)).toContain(checkoutTag());
+        for (const fn of [
+            'runMarkerPath',
+            'newRunMarkerPath',
+            'publishRunMarker',
+            'currentRunMarker',
+            'reapDeadRunMarkers',
+        ]) {
+            expect(db[fn]).toBe(shared[fn]);
+        }
+        expect(db.RUN_MARKER_ENV).toBe(shared.RUN_MARKER_ENV);
+    });
+
+    it("the test client reads the database its run's marker names", () => {
+        // `getTestDatabaseUrl` is the test client's side of what
+        // jest.setup.js does for the app. It must follow the same named
+        // marker, or the app and the test would connect to different
+        // databases.
+        const markerPath = path.join(sandbox, 'run-marker.json');
+        fsx.writeFileSync(
+            markerPath,
+            JSON.stringify({
+                perWorker: true,
+                count: 2,
+                baseName: 'inflect_test',
+                baseUrl: 'postgresql://test:test@127.0.0.1:5434/inflect_test?schema=public',
+            }),
+        );
+        const priorMarker = process.env[RUN_MARKER_ENV];
+        const priorWorker = process.env.JEST_WORKER_ID;
+        process.env[RUN_MARKER_ENV] = markerPath;
+        process.env.JEST_WORKER_ID = '2';
+        try {
+            jest.isolateModules(() => {
+                const db = require('../helpers/db');
+                expect(db.isParallelRun()).toBe(true);
+                expect(db.getDbName(db.getTestDatabaseUrl())).toBe(
+                    db.perWorkerDbName('inflect_test', 2),
+                );
+            });
+        } finally {
+            if (priorMarker === undefined) delete process.env[RUN_MARKER_ENV];
+            else process.env[RUN_MARKER_ENV] = priorMarker;
+            if (priorWorker === undefined) delete process.env.JEST_WORKER_ID;
+            else process.env.JEST_WORKER_ID = priorWorker;
+        }
+    });
+
+    describe('markers left by runs that died', () => {
+        /** A checkout directory with these file names in its marker directory. */
+        function withMarkers(names: string[]): string {
+            const root = checkout('main', sharedCacheDir());
+            for (const name of names) {
+                fsx.writeFileSync(path.join(root, 'node_modules', '.cache', name), '{}');
+            }
+            return root;
+        }
+        const left = (root: string) =>
+            fsx.readdirSync(path.join(root, 'node_modules', '.cache')).sort();
+
+        it("deletes this checkout's markers whose run is no longer alive, and keeps a live run's", () => {
+            const root = path.join(sandbox, 'main');
+            const dead = path.basename(runMarkerPath(root, '111-aaaa'));
+            const live = path.basename(runMarkerPath(root, '222-bbbb'));
+            withMarkers([dead, live]);
+
+            const reaped = reapDeadRunMarkers(root, (pid) => pid === 222);
+
+            expect(reaped).toEqual([dead]);
+            expect(left(root)).toEqual([live]);
+        });
+
+        it('deletes the one-per-checkout marker this checkout used to write', () => {
+            const root = path.join(sandbox, 'main');
+            const legacy = `inflect-test-perworker-${tagForRoot(root)}.json`;
+            withMarkers([legacy]);
+
+            expect(reapDeadRunMarkers(root, () => true)).toEqual([legacy]);
+            expect(left(root)).toEqual([]);
+        });
+
+        it("never touches another checkout's markers in a shared directory, dead or not", () => {
+            const root = path.join(sandbox, 'main');
+            const other = path.join(sandbox, 'worktree-b');
+            const theirs = [
+                path.basename(runMarkerPath(other, '111-aaaa')),
+                `inflect-test-perworker-${tagForRoot(other)}.json`,
+                'unrelated.json',
+            ];
+            withMarkers(theirs);
+
+            expect(reapDeadRunMarkers(root, () => false)).toEqual([]);
+            expect(left(root)).toEqual([...theirs].sort());
+        });
+
+        it('a directory that does not exist yet reaps nothing and does not throw', () => {
+            expect(reapDeadRunMarkers(path.join(sandbox, 'no-such-checkout'))).toEqual([]);
+        });
     });
 });
 
