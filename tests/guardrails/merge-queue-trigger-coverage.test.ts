@@ -142,6 +142,15 @@ const QUEUE_ENFORCED_JOBS: readonly string[] = [
     'test-summary',
     'build',
     'security',
+    // ADDED #4623. Both already ran in the queue — neither carries a
+    // `merge_group` skip — but neither was in this list, so none of the
+    // per-job assertions below were applied to them. `ratchets` is the
+    // omission that mattered: the docblock above names "a structural-ratchet
+    // count mismatch" as a collision this set exists to catch, and a count
+    // ratchet is the most collision-prone gate in the pipeline (two PRs each
+    // raising the same floor). `Ratchets` is also a REQUIRED check.
+    'ratchets',
+    'flue',
 ];
 
 /**
@@ -161,10 +170,54 @@ const QUEUE_SKIPPED_JOBS: Readonly<Record<string, string>> = {
     codeql: 'SAST finds taint/injection patterns, not "PR A renamed what PR B calls". Its analyze ' +
         'step also uploads SARIF, which in a queue run would file a code-scanning analysis against ' +
         'the throwaway gh-readonly-queue ref. Runs on the PR and again on the push to main.',
+    // ADDED #4623. These three carry the `!= 'merge_group'` condition and no
+    // lean-set banner, so the derived check below — which used to key on the
+    // BANNER — could not see them and they were governed by nothing. Each
+    // reason is the job's own, read from its comments rather than invented.
+    changes: 'A `merge_group` event carries no base/head pair, so `dorny/paths-filter` has nothing to ' +
+        'diff and errors out ("requires \'base\' input to be configured"). With the filter step skipped ' +
+        'its `container` output is empty and the `|| \'true\'` fallback resolves to the CONSERVATIVE ' +
+        'value, erring toward running more rather than less. Runs on push and schedule.',
+    'e2e-bundle': 'The same event gate as `e2e`, and for the same reason stated in the job: there is no ' +
+        'point compiling a test-mode bundle for a job that is skipped in the queue. It produces an ' +
+        'artifact rather than a verdict, so skipping it removes no judgement about the diff — and it ' +
+        'runs again on the push to main, so the bundle is still built and exercised post-merge.',
+    'scanner-image': 'Skipped with `docker` and `trivy` and, per the job\'s own comment, for the same ' +
+        'reason: it already ran on the pull request and runs again on the push to main. The image holds ' +
+        'the scanner plus the application modules it imports, and a merge collision cannot produce a ' +
+        'container-scan finding — that surface is a property of the base image and dependency tree.',
     // REMOVED 2026-10-14: `laya-image`. The job was deleted with the Laya
     // estate, and a stale entry here is not inert — the sibling "no entry names
     // a job that no longer exists" check reads this map as the authority on
     // which jobs are deliberately queue-exempt.
+};
+
+/**
+ * Jobs that RUN in a queue candidate but are not collision-catching gates
+ * (#4623). The third category the enforced/skipped pair needed to be complete.
+ *
+ * Without this, `QUEUE_ENFORCED_JOBS` was a list with no derived check behind
+ * it, and that is not a hypothetical: removing `ratchets` from it was
+ * mutation-tested and the whole suite stayed green, because every assertion
+ * iterated the list rather than the file. A job silently dropped from it stops
+ * being governed and nothing says so — the same shape as the SKIPPED side's
+ * documented gap, in the opposite direction.
+ */
+const QUEUE_RUNS_BUT_NOT_A_GATE: Readonly<Record<string, string>> = {
+    'change-class': 'Runs in the queue and exits 0 there BY DESIGN (#4439): it judges pull-request ' +
+        'metadata, which a merge_group event does not carry. It runs rather than skips precisely so ' +
+        'the context is PRESENT on a candidate — an absent required check scores as zero failures.',
+    'coverage-gate': 'Merges nine shard artefacts and enforces the floors. Its verdict is about ' +
+        'aggregate coverage, not about two diffs meeting, and it cannot report until every Jest job ' +
+        'has finished — so requiring it would serialise the gate behind the slowest shard.',
+    'load-smoke': 'A k6 smoke run, advisory by design: its thresholds measure a throwaway runner as ' +
+        'much as the code, so a red is not evidence the diff is slower. Nothing about a merge ' +
+        'collision shows up in it.',
+    trivy: 'QUEUE-EXEMPT BY DEPENDENCY, not by condition — it carries no `!= merge_group` of its own ' +
+        'but `needs: [docker]`, and `docker` skips, so it is skipped with it. Recorded here rather ' +
+        'than in QUEUE_SKIPPED_JOBS because that map asserts each entry carries the condition, and ' +
+        'this one does not. The distinction is worth keeping: a skip by dependency disappears the ' +
+        'moment its parent stops skipping.',
 };
 
 /** Jobs whose post-merge (`push` to main) run must remain intact. */
@@ -200,6 +253,21 @@ const hasTrigger = (file: string, name: string): boolean =>
  * line before the next 2-space-indented key. Same helper shape as
  * tests/guardrails/trivy-no-rebuild.test.ts.
  */
+/**
+ * Every job id `ci.yml` declares, derived from the file (#4623).
+ *
+ * The assertions that need this are the ones keyed on what a job DOES rather
+ * than on what a hand-kept list says about it — so the list cannot be the
+ * population, or the check inherits the list's omissions.
+ */
+function ciJobIds(): string[] {
+    const body = CI.slice(CI.indexOf('\njobs:'));
+    return body
+        .split('\n')
+        .map((l) => /^ {2}([a-z][a-z0-9_-]*):\s*$/.exec(l)?.[1])
+        .filter((id): id is string => Boolean(id));
+}
+
 function jobBlock(yamlSrc: string, jobName: string): string {
     const lines = yamlSrc.split('\n');
     const start = lines.findIndex((l) => l === `  ${jobName}:`);
@@ -362,11 +430,27 @@ describe('merge queue — the lean gate is not hollowed out', () => {
         },
     );
 
-    it('the enforced and skipped sets are disjoint and complete over the gate', () => {
+    it('the enforced and skipped sets are disjoint, and each is exactly what the file does', () => {
+        // RENAMED #4623. This was "disjoint and complete over the gate", and it
+        // checked no completeness: non-overlap plus two memberships, indifferent
+        // to the other nine jobs. A test whose NAME carries a claim its body does
+        // not make is worse than a missing test, because a reader who greps for
+        // completeness finds it and stops looking.
+        //
+        // It now asserts both halves against the file: every enforced job runs in
+        // the queue, every skipped job skips it, and no job is in both. Full
+        // completeness over ALL of ci.yml is a different question — whether each
+        // job is a REQUIRED check — and lives in
+        // `tests/guards/ci-check-requiredness-is-declared.test.ts` (#4552).
         const overlap = QUEUE_ENFORCED_JOBS.filter((j) =>
             Object.prototype.hasOwnProperty.call(QUEUE_SKIPPED_JOBS, j),
         );
         expect(overlap).toEqual([]);
+
+        const skips = (job: string) => MERGE_GROUP_SKIP.test(withoutComments(jobBlock(CI, job)));
+        expect(QUEUE_ENFORCED_JOBS.filter(skips)).toEqual([]);
+        expect(Object.keys(QUEUE_SKIPPED_JOBS).filter((j) => !skips(j))).toEqual([]);
+
         // Typecheck + Test are the two that actually catch the observed
         // collision class. Losing either silently is the failure mode.
         expect(QUEUE_ENFORCED_JOBS).toContain('typecheck');
@@ -389,44 +473,85 @@ describe('merge queue — the lean gate is not hollowed out', () => {
         expect(header).toMatch(/Merge-queue lean set/);
     });
 
-    it('every job that declares a queue SKIP is in QUEUE_SKIPPED_JOBS', () => {
-        // THE GAP THIS CLOSES. `QUEUE_SKIPPED_JOBS` is hand-maintained, and every
-        // assertion above iterates IT rather than the file — so a new job carrying
-        // a `── Merge-queue lean set: SKIP ──` banner and a `!= 'merge_group'`
-        // condition was governed by nothing: no written reason required, no
-        // post-merge reachability checked. The map and the file could drift apart
-        // in silence, which is the same shape as a check that never runs being
-        // scored as a pass.
+    it('every job that SKIPS the queue is in QUEUE_SKIPPED_JOBS — keyed on the CONDITION', () => {
+        // THE GAP THIS CLOSES, and it is the second version of this fix.
         //
-        // WHICH JOB A BANNER BELONGS TO IS DECIDED BY ITS INDENTATION, because the
-        // file uses both placements and they point in OPPOSITE directions:
-        //   `    # ── …` (inside the job body)      -> the job id is ABOVE  (e2e, codeql)
-        //   `  #  ── …` (pre-job comment block)     -> the job id is BELOW  (docker)
-        // A one-directional scan gets half of them wrong and, worse, attributes a
-        // banner to a NEIGHBOURING job — which would read as a populated result
-        // rather than as a parse failure.
+        // `QUEUE_SKIPPED_JOBS` is hand-maintained, and every assertion above
+        // iterates IT rather than the file, so a job it omits is governed by
+        // nothing: no written reason required, no post-merge reachability
+        // checked.
+        //
+        // The first fix keyed on the `── Merge-queue lean set: SKIP ──` BANNER.
+        // That is the DOCUMENTATION of a skip, not the skip — and measured
+        // #4623, three jobs carried the condition with no banner
+        // (`changes`, `e2e-bundle`, `scanner-image`), so the check could not
+        // see them and reported a clean pass over the three that happened to
+        // be documented. A detector keyed on a comment finds the jobs whose
+        // authors already thought about it.
+        //
+        // So this keys on `github.event_name != 'merge_group'` in the job's
+        // own non-comment body, which is what actually removes the job from a
+        // queue run. The banner convention is checked separately below.
+        const skipping = ciJobIds().filter((job) =>
+            MERGE_GROUP_SKIP.test(withoutComments(jobBlock(CI, job))),
+        );
+        // The denominator beside the result: a derivation that found nothing
+        // would pass the comparison below over two empty sets.
+        expect(skipping.length).toBeGreaterThanOrEqual(3);
+        expect(new Set(skipping).size).toBe(skipping.length);
+        expect([...skipping].sort()).toEqual(Object.keys(QUEUE_SKIPPED_JOBS).sort());
+    });
+
+    it('every job that RUNS in the queue is classified — enforced, or explicitly not a gate', () => {
+        // THE MIRROR OF THE SKIPPED-SIDE CHECK, and the thing that keeps
+        // `QUEUE_ENFORCED_JOBS` honest. Mutation-tested #4623: with `ratchets`
+        // deleted from that list the entire suite stayed green, because every
+        // assertion iterated the list rather than the file. So a job dropped
+        // from it — or a new job never added — was governed by nothing.
+        const running = ciJobIds().filter(
+            (job) => !MERGE_GROUP_SKIP.test(withoutComments(jobBlock(CI, job))),
+        );
+        expect(running.length).toBeGreaterThanOrEqual(8);
+        const classified = [...QUEUE_ENFORCED_JOBS, ...Object.keys(QUEUE_RUNS_BUT_NOT_A_GATE)];
+        expect(new Set(classified).size).toBe(classified.length);
+        expect([...running].sort()).toEqual([...classified].sort());
+    });
+
+    it.each(Object.entries(QUEUE_RUNS_BUT_NOT_A_GATE))(
+        'ci.yml job "%s" is not a gate, and says why in more than a word',
+        (job, reason) => {
+            // It must still exist, and the reason must be a reason. `false`
+            // with no argument records that somebody typed it.
+            expect(() => jobBlock(CI, job)).not.toThrow();
+            expect(reason.trim().length).toBeGreaterThanOrEqual(80);
+        },
+    );
+
+    it('every lean-set BANNER attributes to a job that actually skips', () => {
+        // The banner is how a reader finds the skip, so it must not point at a
+        // job that does not skip — a banner on an enforced job would document
+        // an exemption that is not there, which is worse than no banner.
+        // Keyed the same bidirectional way (see the detector proof below).
         const lines = CI.split('\n');
         const isJobId = (line: string): string | null =>
             /^ {2}([a-z][a-z0-9_-]*):\s*$/.exec(line)?.[1] ?? null;
-
-        const declared: string[] = [];
+        const bannered: string[] = [];
         lines.forEach((line, i) => {
             const banner = /^(\s*)#\s*──\s*Merge-queue lean set:\s*SKIP\s*──/.exec(line);
             if (!banner) return;
-            const insideJob = (banner[1] ?? '').length >= 4;
-            const step = insideJob ? -1 : 1;
+            const step = (banner[1] ?? '').length >= 4 ? -1 : 1;
             for (let j = i + step; j >= 0 && j < lines.length; j += step) {
                 const id = isJobId(lines[j] as string);
-                if (id) { declared.push(id); return; }
+                if (id) { bannered.push(id); return; }
             }
         });
-
-        // The denominator beside the result: a parse that found nothing would pass
-        // the comparison below over two empty sets, and one that found duplicates
-        // would hide a misattribution behind a sort.
-        expect(declared.length).toBeGreaterThanOrEqual(3);
-        expect(new Set(declared).size).toBe(declared.length);
-        expect([...declared].sort()).toEqual(Object.keys(QUEUE_SKIPPED_JOBS).sort());
+        expect(bannered.length).toBeGreaterThanOrEqual(3);
+        expect(new Set(bannered).size).toBe(bannered.length);
+        // Subset, not equality: a skip may be documented in the job's own prose
+        // instead of the banner, which the three added in #4623 are.
+        for (const job of bannered) {
+            expect(Object.keys(QUEUE_SKIPPED_JOBS)).toContain(job);
+        }
     });
 
     it('the banner-to-job attribution works in BOTH placements (detector proof)', () => {

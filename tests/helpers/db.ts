@@ -103,7 +103,7 @@ export function getBaseTestDatabaseUrl(): string {
 
 // ─── Why the marker's FILE NAME carries the tag too (2026-10-30) ──────
 //
-// PER_WORKER_MARKER is the cross-process record globalSetup writes: the DB
+// The per-worker marker is the cross-process record globalSetup writes: the DB
 // mode and the exact names it created. Workers read it to find their
 // database, and teardown reads it to know what to drop. It lives under
 // `node_modules/.cache/`, and it used to have one fixed name.
@@ -121,20 +121,40 @@ export function getBaseTestDatabaseUrl(): string {
 // It is not in os.tmpdir(): a predictable name in the world-writable temp
 // dir is a symlink-race vector (CodeQL js/insecure-temporary-file).
 //
-// ONE DEFINITION. The tag, the checkout root and the marker path live in
+// ONE DEFINITION. The tag, the checkout root and the marker's naming live in
 // `./test-db-checkout.js`, plain CommonJS, so that `jest.setup.js` (which
 // must not load this file) requires the very same code. They are re-exported
-// here so every existing importer keeps its spelling. Its header has the
-// rest, including the residual: the marker is per checkout, not per run.
+// here so every existing importer keeps its spelling.
+//
+// And one marker per RUN, not per checkout (#4610): two runs in one checkout
+// pointed at different base databases (the lock admits that) shared the
+// checkout's file, and the later globalSetup overwrote the earlier run's
+// record. globalSetup now names its run's marker in the environment its
+// workers inherit, and every reader takes the path from there
+// (`currentRunMarker`). The module's header has the rest.
 import {
     CHECKOUT_ROOT,
     tagForRoot,
     checkoutTag,
-    perWorkerMarkerPath,
-    PER_WORKER_MARKER,
+    RUN_MARKER_ENV,
+    runMarkerPath,
+    newRunMarkerPath,
+    publishRunMarker,
+    currentRunMarker,
+    reapDeadRunMarkers,
 } from './test-db-checkout';
 
-export { CHECKOUT_ROOT, tagForRoot, checkoutTag, perWorkerMarkerPath, PER_WORKER_MARKER };
+export {
+    CHECKOUT_ROOT,
+    tagForRoot,
+    checkoutTag,
+    RUN_MARKER_ENV,
+    runMarkerPath,
+    newRunMarkerPath,
+    publishRunMarker,
+    currentRunMarker,
+    reapDeadRunMarkers,
+};
 
 export interface PerWorkerInfo {
     perWorker: boolean;
@@ -298,12 +318,10 @@ export function adminConnectionString(): string {
 // names would collide.
 //   - NOT the tag alone: a second run pointed at another base via
 //     DATABASE_URL_TEST collides with no DATABASE, and refusing it would make
-//     the escape hatch the refusal message offers a lie. It does still share
-//     this checkout's per-worker MARKER, which is keyed on the checkout and
-//     not the base (`test-db-checkout.js`, the residual in its header). While
-//     the first run is in progress, the second run's globalSetup overwrites
-//     the first run's record and its teardown deletes it, so the first run's
-//     later test files leave their own databases. Not fixed here.
+//     the escape hatch the refusal message offers a lie. Such a run used to
+//     share this checkout's per-worker MARKER too, and overwrote the first
+//     run's record. Each run now has a marker of its own, named in the
+//     environment its workers inherit (#4610; `test-db-checkout.js`).
 //   - NOT the base alone: separate git worktrees derive different tags and
 //     therefore different databases. They are the workflow this repo actually
 //     uses to run agents in parallel, and refusing them would be a
@@ -586,8 +604,12 @@ export async function releaseTestDbRunLock(): Promise<void> {
 let _perWorker: PerWorkerInfo | undefined;
 function readPerWorker(): PerWorkerInfo {
     if (_perWorker !== undefined) return _perWorker;
+    // This run's marker, named by globalSetup. None named means globalSetup
+    // did not start this process, and so created no per-worker databases.
+    const marker = currentRunMarker();
     try {
-        _perWorker = JSON.parse(fs.readFileSync(PER_WORKER_MARKER, 'utf8')) as PerWorkerInfo;
+        if (!marker) throw new Error('no run marker named');
+        _perWorker = JSON.parse(fs.readFileSync(marker, 'utf8')) as PerWorkerInfo;
     } catch {
         _perWorker = { perWorker: false, count: 1, baseName: '', baseUrl: '' };
     }

@@ -45,15 +45,37 @@
  * `os.tmpdir()`, where a predictable file name is a symlink-race vector
  * (CodeQL js/insecure-temporary-file).
  *
- * RESIDUAL, on purpose: the marker is per CHECKOUT, not per run. Two runs in
- * ONE checkout still share it. The concurrent-run lock refuses the second of
- * two runs on the same base database, but it admits a second run pointed at
- * another base through DATABASE_URL_TEST, and those two runs share this
- * file. See the lock's section in `tests/helpers/db.ts`.
+ * ─── Why the name also carries the RUN (#4610) ──────────────────────
+ *
+ * Per checkout was not enough. Two runs in ONE checkout still shared the
+ * file. The concurrent-run lock refuses the second of two runs on the same
+ * base database, but it admits a second run pointed at another base through
+ * DATABASE_URL_TEST, and its own refusal message suggests exactly that. The
+ * second run's globalSetup then overwrote the marker, and the first run's
+ * test files read the second run's database names from it.
+ *
+ * So each run now has a marker of its own. globalSetup names it
+ * (`newRunMarkerPath`), writes it, and puts its path in the environment
+ * (`publishRunMarker`, under `RUN_MARKER_ENV`). Jest starts its workers after
+ * globalSetup, so they inherit that environment; the in-band runner and
+ * globalTeardown run in the process that set it. Every reader takes the path
+ * from there (`currentRunMarker`) and derives nothing, so two runs cannot
+ * reach one file however they were started.
+ *
+ * Outside a run that globalSetup started (the `scan` and `jsdom` projects run
+ * on their own, a bare `node` script), there is no marker, and the readers
+ * fall back to the shared base database, which is what such a run uses.
+ *
+ * A run killed before its teardown leaves its marker behind. The name carries
+ * the pid of the process that ran globalSetup, so the next globalSetup in this
+ * checkout deletes the markers of runs that are no longer alive
+ * (`reapDeadRunMarkers`), and the one-per-checkout marker this file used to
+ * write.
  */
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 
 /** This checkout's root: two levels above `tests/helpers/`. */
@@ -90,32 +112,137 @@ function checkoutTag() {
 }
 
 /**
- * Where the checkout at `repoRoot` keeps its per-worker marker. The tag is in
- * the FILE NAME, not only in the directory, because the directory may be
- * shared through a symlinked `node_modules` (see the header).
- *
- * @param {string} repoRoot absolute path of a checkout
- * @returns {string}
+ * The environment variable that names THIS RUN's marker. globalSetup sets it;
+ * Jest's workers inherit it, because Jest spawns them after globalSetup.
  */
-function perWorkerMarkerPath(repoRoot) {
-    return path.join(
-        repoRoot,
-        'node_modules',
-        '.cache',
-        `inflect-test-perworker-${tagForRoot(repoRoot)}.json`,
-    );
+const RUN_MARKER_ENV = 'INFLECT_TEST_RUN_MARKER';
+
+/** Where the checkout at `repoRoot` keeps its markers. */
+function markerDir(repoRoot) {
+    return path.join(repoRoot, 'node_modules', '.cache');
+}
+
+/** The marker-name prefix for the checkout at `repoRoot`. */
+function markerPrefix(repoRoot) {
+    return `inflect-test-perworker-${tagForRoot(repoRoot)}`;
 }
 
 /**
- * The marker globalSetup writes for THIS checkout, describing the database
- * mode and the exact per-worker database names it created.
+ * A marker path for one run of the checkout at `repoRoot`. The checkout tag
+ * is in the FILE NAME, not only in the directory, because the directory may
+ * be shared through a symlinked `node_modules` (see the header). `runId`
+ * keeps two runs of one checkout apart.
+ *
+ * @param {string} repoRoot absolute path of a checkout
+ * @param {string} runId `<pid>-<hex>`, as `newRunId` makes it
+ * @returns {string}
  */
-const PER_WORKER_MARKER = perWorkerMarkerPath(CHECKOUT_ROOT);
+function runMarkerPath(repoRoot, runId) {
+    return path.join(markerDir(repoRoot), `${markerPrefix(repoRoot)}-${runId}.json`);
+}
+
+/**
+ * A fresh run id: the pid of the process running globalSetup, which is the
+ * process the run lives in, and random bytes, so a reused pid still gets a
+ * name of its own.
+ *
+ * @returns {string}
+ */
+function newRunId() {
+    return `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
+}
+
+/**
+ * A marker path for a new run of THIS checkout.
+ *
+ * @returns {string}
+ */
+function newRunMarkerPath() {
+    return runMarkerPath(CHECKOUT_ROOT, newRunId());
+}
+
+/**
+ * Name `markerPath` as this run's marker, for this process and every process
+ * it starts from now on, the Jest workers included.
+ *
+ * @param {string} markerPath
+ */
+function publishRunMarker(markerPath) {
+    process.env[RUN_MARKER_ENV] = markerPath;
+}
+
+/**
+ * This run's marker, as globalSetup named it, or `null` when no globalSetup
+ * named one (see the header for which runs those are).
+ *
+ * @returns {string | null}
+ */
+function currentRunMarker() {
+    return process.env[RUN_MARKER_ENV] || null;
+}
+
+/**
+ * Whether the process `pid` is alive. EPERM means it exists under another
+ * user, which is alive.
+ *
+ * @param {number} pid
+ * @returns {boolean}
+ */
+function pidAlive(pid) {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (err) {
+        return Boolean(err && err.code === 'EPERM');
+    }
+}
+
+/**
+ * Delete the markers in the checkout at `repoRoot` that no live run owns: one
+ * whose name carries a pid that is not alive, and the one-per-checkout marker
+ * this checkout used to write. Another checkout's markers are never touched,
+ * even in a shared directory, because only names carrying this checkout's tag
+ * are considered.
+ *
+ * Best-effort: a marker it cannot read or delete is left where it is.
+ *
+ * @param {string} repoRoot absolute path of a checkout
+ * @param {(pid: number) => boolean} [isAlive] for tests
+ * @returns {string[]} the file names it deleted
+ */
+function reapDeadRunMarkers(repoRoot, isAlive = pidAlive) {
+    const dir = markerDir(repoRoot);
+    const prefix = markerPrefix(repoRoot);
+    const runMarker = new RegExp(`^${prefix}-(\\d+)-[0-9a-f]+\\.json$`);
+    let names;
+    try {
+        names = fs.readdirSync(dir);
+    } catch {
+        return [];
+    }
+    const reaped = [];
+    for (const name of names) {
+        const legacy = name === `${prefix}.json`;
+        const match = runMarker.exec(name);
+        if (!legacy && !(match && !isAlive(Number(match[1])))) continue;
+        try {
+            fs.unlinkSync(path.join(dir, name));
+            reaped.push(name);
+        } catch {
+            /* already gone, or not ours to delete */
+        }
+    }
+    return reaped;
+}
 
 module.exports = {
     CHECKOUT_ROOT,
     tagForRoot,
     checkoutTag,
-    perWorkerMarkerPath,
-    PER_WORKER_MARKER,
+    RUN_MARKER_ENV,
+    runMarkerPath,
+    newRunMarkerPath,
+    publishRunMarker,
+    currentRunMarker,
+    reapDeadRunMarkers,
 };

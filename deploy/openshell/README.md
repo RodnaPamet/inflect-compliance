@@ -448,6 +448,42 @@ The projection above rests entirely on the VM not being left running, and
    **The boot disk had to be labelled separately**: a disk does not inherit its
    instance's labels, so the budget would have silently excluded the single
    largest always-on charge in the table above.
+4. **An alert that the idle timer did not run** — owner decision 2026-10-30
+   (#4571), declared at
+   [`infra/alerts/policies/openshell-gateway-overrunning.json`](../../infra/alerts/policies/openshell-gateway-overrunning.json)
+   and routed in `docs/incident-response.md`.
+
+   **Deliberately NOT an uptime check.** This VM is `TERMINATED` almost always
+   by design, so an uptime check would fire on the normal state — and an alert
+   that fires constantly trains people to ignore the channel it fires on, which
+   is worse than no alert. The condition is the opposite shape: GCP's own
+   `compute.googleapis.com/instance/uptime_total` **only produces samples while
+   the instance runs**, so a stopped machine is silent, and `> 7200s` fires only
+   when the VM has been up far longer than the idle path allows. The longest
+   legitimate idle-to-off run is ~32 minutes (10-minute boot grace + four
+   five-minute strikes + ~2 minutes to stop), so 2 hours is roughly 4x headroom.
+
+   It needs **no Ops Agent and no service account**, which matters because this
+   VM has neither: `gcloud compute instances describe` returns no
+   `serviceAccounts` key at all, so nothing running on it can write to Cloud
+   Logging or Monitoring. The signal #4571 originally proposed — an absence of
+   `logger -t openshell-idle-shutdown` entries — cannot work here for two
+   independent reasons: there is no path for those entries to reach Cloud
+   Logging, and absence is also the normal state, because a stopped VM logs
+   nothing for days.
+
+   Verified at creation rather than assumed: the deployed filter matches one
+   real time series (uptime observed 60s–2267s), the same filter with a
+   deliberately mistyped instance name matches **zero** series — so the name is
+   load-bearing, not ignored — and 7200s would not have fired on any of the
+   VM's real history, so it starts quiet.
+
+   **What it is for, stated honestly:** control 2 already bounds a runaway to
+   24 hours (~1.61 USD), so this is not an emergency signal. It exists because
+   an unfixed timer recurs *nightly*, and three such nights is 4.82 USD of
+   compute, which takes the 5 USD cap over once the disk is counted. The
+   budget's own 50% threshold also catches it, roughly a day later and saying
+   "cost" rather than "the timer did not run".
 
 ### The PKI is REGENERABLE, not backed up — owner decision 2026-10-30 (#4565)
 

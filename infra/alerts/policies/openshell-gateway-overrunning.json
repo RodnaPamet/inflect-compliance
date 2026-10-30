@@ -1,0 +1,29 @@
+{
+    "displayName": "openshell gateway VM has been running too long — the idle timer did not take it down (#4571)",
+    "combiner": "OR",
+    "conditions": [
+        {
+            "displayName": "the gateway VM has been up for more than 2 hours",
+            "conditionThreshold": {
+                "filter": "metric.type=\"compute.googleapis.com/instance/uptime_total\" AND resource.type=\"gce_instance\" AND metric.labels.instance_name=\"openshell-gateway\"",
+                "comparison": "COMPARISON_GT",
+                "thresholdValue": 7200,
+                "duration": "300s",
+                "trigger": {
+                    "count": 1
+                },
+                "aggregations": [
+                    {
+                        "alignmentPeriod": "300s",
+                        "perSeriesAligner": "ALIGN_MAX",
+                        "crossSeriesReducer": "REDUCE_MAX"
+                    }
+                ]
+            }
+        }
+    ],
+    "documentation": {
+        "mimeType": "text/markdown",
+        "content": "The OpenShell gateway VM has been running for over two hours. It is designed to be TERMINATED almost always: `openshell-idle-shutdown.timer` shuts it down after four consecutive idle five-minute checks, so the longest legitimate idle-to-off run is about 32 minutes (10-minute boot grace + 20 minutes of strikes + ~2 minutes to stop).\n\n**This is NOT an uptime check and it does not fire when the VM is off.** `uptime_total` only produces samples while the instance runs, so a stopped machine — the normal state — is silent here. That was the reason an uptime check was rejected for this VM: an alert that fires on the normal state trains people to ignore the channel.\n\n**Two causes, both worth knowing:**\n\n1. **The idle timer is broken.** It is the actual cost control. Check `journalctl -t openshell-idle-shutdown` on the VM: it logs a line every five minutes, including `metrics unreadable — state UNKNOWN, strikes reset`, which is the deliberate fail-towards-staying-up path. A gateway whose metrics endpoint is unreachable never accumulates strikes and never shuts down.\n2. **Something is genuinely using it for hours.** At ~$0.067/hour against a $5/month cap this is itself worth seeing, since the cap is a runtime budget of roughly 45 hours once the 20 GB disk's ~$2/month standing charge is taken out.\n\n**What already bounds the cost, so this is not an emergency:** the stop-only resource policy `openshell-gateway-nightly-stop` (05:00 Europe/Sofia) ends any runaway within 24 hours, which is about $1.61. The reason to act on the FIRST occurrence is that it recurs nightly if unfixed — three such nights is $4.82 of compute and takes the $5 cap over with the disk included.\n\nThe budget's own 50% threshold will also fire, roughly a day later and saying \"cost\" rather than \"the timer did not run\"."
+    }
+}
