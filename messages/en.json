@@ -2570,7 +2570,8 @@
         "ERROR": "Error",
         "NOT_APPLICABLE": "N/A",
         "PENDING": "Pending",
-        "RUNNING": "Running"
+        "RUNNING": "Running",
+        "PARTIAL": "Partial"
       },
       "verdict": {
         "HEALTHY": "Healthy",
@@ -9856,7 +9857,8 @@
       "ERROR": "Error",
       "NOT_APPLICABLE": "N/A",
       "PENDING": "Pending",
-      "RUNNING": "Running"
+      "RUNNING": "Running",
+      "PARTIAL": "Partial"
     },
     "checksList": {
       "colCheck": "Check",
