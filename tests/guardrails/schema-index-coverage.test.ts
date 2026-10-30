@@ -808,12 +808,12 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // @@index([tenantId, scannerRunId, status]). Bounded take ≤500.
     ScannerFinding:
         'listScannerFindings filters by tenantId (+status/severity) — covered by @@index([tenantId, status, severity]) + @@index([tenantId, scannerRunId, status]); bounded take ≤500.',
-    // BIA register — listBias filters by tenantId (+optional criticality/
-    // processNodeId), ordered by criticality/MTPD for the recovery-priority
-    // view; covered by @@index([tenantId, criticality]) +
-    // @@index([tenantId, processNodeId]). Bounded take ≤500.
+    // BIA register — listBias reads the tenant's ranking population (four
+    // columns, take ≤ BIA_RANK_POPULATION_CAP + 1), ranks it in memory, then
+    // reads the page by id; covered by @@index([tenantId, criticality]) +
+    // @@index([tenantId, processNodeId]) and the primary key.
     BusinessImpactAnalysis:
-        'listBias filters by tenantId (+criticality/processNodeId) — covered by @@index([tenantId, criticality]) + @@index([tenantId, processNodeId]); recovery-priority sort is in-page on a bounded per-tenant set (take ≤500).',
+        'listBias reads the ranking population by tenantId (bounded take, four columns) and the page by tenantId + id in (…) — covered by @@index([tenantId, criticality]) + @@index([tenantId, processNodeId]) and the primary key; the recovery-priority sort is in memory.',
     // Vendor-doc extraction — listVendorDocExtractions filters by tenantId
     // (+vendorId/status), ordered by createdAt; covered by
     // @@index([tenantId, vendorId]) + @@index([tenantId, status]). Bounded take.

@@ -23,7 +23,8 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatDate } from '@inflect/ui/lib/format-date';
-import { buildBiaFilters, BIA_FILTER_KEYS } from './filter-defs';
+import { TruncationBanner } from '@/components/ui/TruncationBanner';
+import { buildBiaFilters, buildBiaCriticalityLabels, BIA_FILTER_KEYS } from './filter-defs';
 import { NewBiaModal } from './NewBiaModal';
 
 export interface BiaRow {
@@ -34,13 +35,31 @@ export interface BiaRow {
     rpoHours: number | null;
     mtpdHours: number | null;
     reviewedAt: string | null;
+    /**
+     * Decided on the server, from the same clock reading as the summary's
+     * count. Comparing against the clock here, during render, gave the
+     * server pass and hydration different answers near the threshold (#418).
+     */
+    reviewOverdue: boolean;
     processNode: { id: string; label: string } | null;
     ownerUser: { id: string; name: string | null; email: string } | null;
     recovery: { rank: number; rationale: string } | null;
 }
 
+/** Counts over the whole register, not the page (`listBias`). */
+export interface BiaRegisterSummary {
+    total: number;
+    critical: number;
+    overdue: number;
+}
+
 interface Props {
     initialRows: BiaRow[];
+    summary: BiaRegisterSummary;
+    /** More analyses exist than `initialRows` holds; these are the first in recovery order. */
+    truncated: boolean;
+    /** The register is within the cap the recovery rank is worked out over. */
+    rankComplete: boolean;
     tenantSlug: string;
     canWrite: boolean;
 }
@@ -51,13 +70,6 @@ const CRITICALITY_VARIANT: Record<string, StatusBadgeVariant> = {
     MEDIUM: 'warning',
     LOW: 'info',
 };
-
-const REVIEW_STALE_DAYS = 365;
-
-function isReviewOverdue(reviewedAt: string | null): boolean {
-    if (!reviewedAt) return true;
-    return Date.now() - new Date(reviewedAt).getTime() > REVIEW_STALE_DAYS * 86_400_000;
-}
 
 const hrs = (v: number | null) => (v != null ? `${v}h` : '—');
 
@@ -80,7 +92,7 @@ export function BusinessContinuityClient(props: Props) {
     );
 }
 
-function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
+function BusinessContinuityInner({ initialRows, summary, truncated, rankComplete, tenantSlug, canWrite }: Props) {
     const tx = useTranslations('audits');
     const tGroup = useTranslations('common.filterGroups');
     const filterDefs = useMemo(
@@ -139,11 +151,10 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
     } = useThresholdLoadMore(rows);
 
 
-    const summary = useMemo(() => {
-        const critical = initialRows.filter((r) => r.criticality === 'CRITICAL').length;
-        const overdue = initialRows.filter((r) => isReviewOverdue(r.reviewedAt)).length;
-        return { total: initialRows.length, critical, overdue };
-    }, [initialRows]);
+    const critLabels = useMemo(
+        () => buildBiaCriticalityLabels((k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1])),
+        [tx],
+    );
 
     const columns = useMemo(
         () =>
@@ -177,13 +188,13 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
                     accessorFn: (r) => r.criticality,
                     cell: ({ row }) => (
                         <StatusBadge variant={CRITICALITY_VARIANT[row.original.criticality] ?? 'neutral'}>
-                            {row.original.criticality}
+                            {critLabels[row.original.criticality] ?? row.original.criticality}
                         </StatusBadge>
                     ),
                 },
-                { id: 'rto', header: 'RTO', accessorFn: (r) => r.rtoHours ?? -1, cell: ({ row }) => <span className="tabular-nums text-content-muted">{hrs(row.original.rtoHours)}</span> },
-                { id: 'rpo', header: 'RPO', accessorFn: (r) => r.rpoHours ?? -1, cell: ({ row }) => <span className="tabular-nums text-content-muted">{hrs(row.original.rpoHours)}</span> },
-                { id: 'mtpd', header: 'MTPD', accessorFn: (r) => r.mtpdHours ?? -1, cell: ({ row }) => <span className="tabular-nums text-content-muted">{hrs(row.original.mtpdHours)}</span> },
+                { id: 'rto', header: tx('bia.colRto'), accessorFn: (r) => r.rtoHours ?? -1, cell: ({ row }) => <span className="tabular-nums text-content-muted">{hrs(row.original.rtoHours)}</span> },
+                { id: 'rpo', header: tx('bia.colRpo'), accessorFn: (r) => r.rpoHours ?? -1, cell: ({ row }) => <span className="tabular-nums text-content-muted">{hrs(row.original.rpoHours)}</span> },
+                { id: 'mtpd', header: tx('bia.colMtpd'), accessorFn: (r) => r.mtpdHours ?? -1, cell: ({ row }) => <span className="tabular-nums text-content-muted">{hrs(row.original.mtpdHours)}</span> },
                 {
                     id: 'owner',
                     header: tx('bia.colOwner'),
@@ -199,14 +210,14 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
                     header: tx('bia.colReviewed'),
                     accessorFn: (r) => r.reviewedAt ?? '',
                     cell: ({ row }) =>
-                        isReviewOverdue(row.original.reviewedAt) ? (
+                        row.original.reviewOverdue ? (
                             <StatusBadge variant="warning">{tx('bia.reviewOverdue')}</StatusBadge>
                         ) : (
                             <span className="text-content-muted">{formatDate(row.original.reviewedAt!)}</span>
                         ),
                 },
             ]),
-        [tx],
+        [tx, critLabels],
     );
 
     // Stable table-model identities — a fresh identity here rebuilds
@@ -242,6 +253,13 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
                     ) : undefined,
                 }}
                 filters={{ defs: filterDefs }}
+                banner={
+                    <TruncationBanner
+                        truncated={truncated}
+                        cap={initialRows.length}
+                        hint={rankComplete ? tx('bia.truncatedHint') : tx('bia.rankIncompleteHint', { count: summary.total })}
+                    />
+                }
                 table={{
                     data: visibleBiaRows,
                     onReachEnd: hasMoreBiaRows ? loadMoreBiaRows : undefined,

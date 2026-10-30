@@ -17,11 +17,14 @@ export default async function BusinessContinuityPage({
 }) {
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
-    const rows = (await listBias(ctx)) as unknown as BiaRow[];
+    const register = await listBias(ctx);
 
     return (
         <BusinessContinuityClient
-            initialRows={rows}
+            initialRows={register.rows as unknown as BiaRow[]}
+            summary={register.summary}
+            truncated={register.truncated}
+            rankComplete={register.rankComplete}
             tenantSlug={resolved.tenantSlug}
             // BOTH, not just the role tier. #2197 gave the BIA writes a
             // `continuity.edit` gate, so a custom role can now be built with
