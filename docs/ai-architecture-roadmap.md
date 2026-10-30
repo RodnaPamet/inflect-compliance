@@ -24,7 +24,7 @@ Three documents own three different things, and none repeats another:
 | --- | --- |
 | The target as received | [`ai-architecture/blueprint-v6.md`](./ai-architecture/blueprint-v6.md) (historical: a record of the input) |
 | What exists, the global rules, Layer 5's optionality, sequencing, the status board, the decisions | **this file** |
-| Phases, sub-phases, prompts and hardening for one framework | `ai-architecture/<framework>.md` — one per missing framework (eighteen roadmaps, listed in the status board, beside the blueprint record) |
+| Phases, sub-phases, prompts and hardening for one framework | `ai-architecture/<framework>.md` — one per missing framework (twenty roadmaps, listed in the status board, beside the blueprint record): eighteen from the blueprint, and two additions the owner made on 2026-10-30, [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) and [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) |
 
 Two operator instructions bind the whole plan: **Layer 5 is planned on Modal
 (serverless GPU) for Nemotron 3 Super**, and **Layer 5 is optional** — a
@@ -92,6 +92,8 @@ flowchart LR
     NG["NeMo Guardrails<br/>second guard slice"]:::todo
     NC["NemoClaw<br/>substrate only"]:::partial
     PR["Microsoft Presidio<br/>PII redaction, EN + BG"]:::todo
+    WB["Web Bot Auth (added)<br/>signed crawler, verified agents"]:::todo
+    MA["Mastercard Agent Pay (added)<br/>spending authority governed"]:::todo
   end
 
   classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
@@ -134,7 +136,25 @@ request touching Flue re-checks them.
   prompt assembly unscanned — `guardUntrustedInput` lived only in the tools
   adapter (F5). Closed by [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md)
   Phase 0 with the existing scanner, before NeMo.
-- Missing: Morpheus, NeMo Guardrails, Presidio; NemoClaw as a stack.
+- **Nothing signs or verifies an automated HTTP request** (verified
+  2026-10-30, main 3.340.0). The product's only unattended crawler of
+  third-party websites, the vendor monitor's TLS grade, identifies itself by
+  a User-Agent string alone. It fetches a tenant-entered domain through
+  `fetchWithRetry` rather than `safeFetch`, and a site that refuses it
+  (403, or a challenge) leaves the vendor's old grade in place with no
+  event. The public trust center knows automated visitors only by IP.
+  [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) plans both
+  directions; it is an addition to the blueprint (owner, 2026-10-30).
+- **Nothing records that an agent can spend money** (verified 2026-10-30).
+  The agentic IAM subsystem governs grants, autonomy, ownership and kills,
+  but no field, finding or evidence kind describes payment authority, and
+  the harness cannot see payment code. No card data exists anywhere in the
+  product. [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md)
+  makes spending authority a governed privilege without Inflect ever
+  holding a payment credential; it is the second addition to the blueprint
+  (owner, 2026-10-30).
+- Missing: Morpheus, NeMo Guardrails, Presidio, Web Bot Auth, Agent Pay
+  governance; NemoClaw as a stack.
 
 ### Layer 2 — Orchestration & workflow
 
@@ -399,6 +419,8 @@ The living part. One row per framework; the child roadmap owns the phases.
 | NeMo Guardrails | 1 | [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md) | 3 | missing (F5 residual closes in its Phase 0) | — | D-L1-2 |
 | Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 | missing; CPU detector first | — | D-L1-3 |
 | NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | substrate present (OpenShell); stack to be declined | — | D-L1-4 |
+| Web Bot Auth (added 2026-10-30, not in v6) | 1 | [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) | 1 (sign the crawler) / 3 (verify at the door) | missing; vendor monitor unsigned, its refusals invisible | — | D-L1-5, D-L1-6, D-L1-7 |
+| Mastercard Agent Pay (added 2026-10-30, not in v6) | 1 | [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) | 2 (register) / 3 (discover, evidence) / 4 (Mastercard API, if access) | missing; no agent's spending authority is recorded | — | D-L1-8, D-L1-9, D-L1-10 |
 | Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | missing; in-product canvas on tldraw decided, Langflow not adopted | 0 (decided) | D-L2-2 |
 | Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3) | 3 | F3 decision to record |
 | Nemotron workers + role axis | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (hosted) | missing | — | D-L3-1, D-L3-2 |
@@ -438,6 +460,7 @@ timeline
                        : Ragas 0-2, the record opens the gate
                        : Role axis, nemotron-reasoning 1
                        : Garak 0-1, nightly and non-blocking
+                       : Web Bot Auth 0-2, sign the vendor monitor
   section Optional GPU
     Wave 2 · Layer 5 and observability : Modal 0-2, notice window runs first
                                        : Nemotron as the worker
@@ -445,6 +468,7 @@ timeline
                                        : Inspect 0-2, governed-run records
                                        : Langfuse 0-2 and ARES 0-2
                                        : Agent-flow canvas 1-4, view every agent, author, preview
+                                       : Agent Pay 0-1, spending authority on the register
   section Guards
     Wave 3 · Layer 1 : Presidio 0-2, PII redaction
                      : NeMo Guardrails 1-2
@@ -453,9 +477,12 @@ timeline
                      : Morpheus 0-1, CPU detector
                      : NemoClaw 0, decision
                      : Agent-flow canvas 5, run and replay
+                     : Web Bot Auth 3, verify at the trust center
+                     : Agent Pay 2-3, discover and evidence
   section Conditional
     Wave 4 : cuOpt, Triton and SWE-bench decisions
            : Morpheus 2, cuOpt 2, Triton 1 only if triggered
+           : Agent Pay 4, read and suspend at Mastercard, if access
 ```
 
 The hard dependencies between roadmaps, as a graph. A box may start only when
@@ -485,6 +512,11 @@ flowchart LR
   NG2["W3 · NeMo 1-2"]:::todo
   LU3["W3 · Langfuse 3"]:::todo
   GA2["W3 · Garak 2-3"]:::todo
+  WB2["W1 · Web Bot Auth 0-2<br/>sign the crawler"]:::todo
+  WB3["W3 · Web Bot Auth 3<br/>verify at the door"]:::todo
+  AP1["W2 · Agent Pay 0-1<br/>on the register"]:::todo
+  AP3["W3 · Agent Pay 2-3<br/>discover, evidence"]:::todo
+  AP4["W4 · Agent Pay 4<br/>if Mastercard API access"]:::todo
 
   RT1 --> WV2
   WV2 --> RF2
@@ -505,6 +537,10 @@ flowchart LR
   LU2 --> LU3
   GA1 --> GA2
   NG2 --> GA2
+  WB2 --> WB3
+  WB3 --> AP3
+  AP1 --> AP3
+  AP1 --> AP4
 
   classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
   classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
@@ -514,8 +550,10 @@ The same dependencies as prose, for a reader without a Mermaid renderer:
 Weaviate Phase 2 needs an embedding provider; Ragas needs an index; the
 `search_knowledge` tool needs a Ragas record; every GPU arm needs Modal
 Phase 1; Langfuse capture-on and NeMo PII rails need Presidio; Tool Runner
-Step 2c needs an Inspect record. Each child's "Where it sits" table states its
-own.
+Step 2c needs an Inspect record; Web Bot Auth's inbound verifier needs its own
+outbound phases; Agent Pay's discovery reuses that verifier, and its Mastercard
+phase waits on API access Mastercard gates. Each child's "Where it sits" table
+states its own.
 
 ### Evals by layer
 
@@ -527,6 +565,7 @@ gate or ratchets a floor — that is what separates an eval from a dashboard
 flowchart LR
   GA["Garak<br/>probes"]:::eval --> X1["Layer 1<br/>guards"]
   PII["Presidio fixtures<br/>EN + BG"]:::eval --> X1
+  WBA["Web Bot Auth<br/>conformance vectors"]:::eval --> X1
   IS["Inspect<br/>ten governed-run tasks"]:::eval --> X2["Layer 2<br/>engines"]
   IS --> X3["Layer 3<br/>models"]
   SK["Skill eval sets<br/>per model revision"]:::done --> X3
@@ -537,6 +576,7 @@ flowchart LR
 
   X1 --> G1(["Thresholds<br/>blocking after garak 2"]):::gate
   X1 --> G2(["PII record<br/>mounts the detector"]):::gate
+  X1 --> G7(["Conformance record<br/>gates signed crawling"]):::gate
   X2 --> G3(["Inspect record<br/>gates engine promotion"]):::gate
   X3 --> G4(["Comparison record<br/>decides model defaults"]):::gate
   X4 --> G5(["RAG record<br/>opens search_knowledge"]):::gate
@@ -551,12 +591,12 @@ flowchart LR
 
 | Layer | What is evaluated | Framework | Record / gate |
 | --- | --- | --- | --- |
-| 1 | injection, jailbreak, leakage through the composed guard; PII precision/recall; rail precision | Garak; Presidio fixtures; NeMo rail sets | garak thresholds (blocking after Phase 2); `evals/pii/records/` as a mount condition |
+| 1 | injection, jailbreak, leakage through the composed guard; PII precision/recall; rail precision; request-signature conformance and the verifier's negative cases | Garak; Presidio fixtures; NeMo rail sets; Web Bot Auth vectors and the directory validator | garak thresholds (blocking after Phase 2); `evals/pii/records/` as a mount condition; `evals/web-bot-auth/records/` gates signed crawling |
 | 2 | governed-run invariants (propose-not-commit, halt on flagged result, kill mid-run, caps) | Inspect (ten tasks) | `evals/inspect/records/`; engine promotion (Step 2c) gated on a record |
 | 3 | worker/supervisor model quality; protocol fidelity; residency per role | skills evaluation sets per model revision; Inspect comparisons | skills records; comparison records decide defaults |
 | 4 | retrieval precision/recall, faithfulness; parse fidelity; isolation | Ragas → ARES; parse-eval; two-tenant tests | `evals/rag/records/` opens `search_knowledge`; floors ratchet |
 | 5 | optionality (byte-identical without), residency at the socket, serving smoke, cost | provider-set test; Inspect LOCAL_ONLY task; nightly smoke; spend alerts | CI; Modal alerts |
-| cross | the product's own agents on its own ladder (H3–H5) | Inspect records cited on the agent's Coverage tab | committed records are evidence; live runs are not |
+| cross | the product's own agents on its own ladder (H3–H5); customers' payment-capable agents found in code | Inspect records cited on the agent's Coverage tab; synthetic repositories for the scanner | committed records are evidence; live runs are not; the scanner fixture record gates Agent Pay discovery |
 
 All of it on seed and fixture data; records by PR; nightly jobs
 non-blocking with a dated, parsed marker until their floors are set, then
@@ -573,6 +613,12 @@ the child records the reasoning.
 | D-L1-2 | NeMo rails: LLM-free first; LLM-backed only on the tenant's permitted route | nemo-guardrails | as stated |
 | D-L1-3 | Behaviour anomaly signal; CPU detector before Morpheus | morpheus | CPU first |
 | D-L1-4 | NemoClaw: reference-only; runtime and privacy router declined | nemoclaw | declined |
+| D-L1-5 | Web Bot Auth signing identity: one Ed25519 key per deployment, never per tenant, so no signature discloses which customer monitors a vendor | web-bot-auth | adopt |
+| D-L1-6 | Outbound conduct: a User-Agent naming the bot, a public bot page, robots.txt honoured, registration with Cloudflare Verified Bots by the operator | web-bot-auth | adopt; register after Phase 2 |
+| D-L1-7 | Inbound verification: a label on public surfaces, never authorization; open directory fetch under cache and caps, or an allowlist of operators | web-bot-auth | label only; open fetch, cached and capped |
+| D-L1-8 | Inflect never holds a payment credential (no PAN, token value or wallet key) and its own agents never pay; it stays outside PCI DSS cardholder-data scope | mastercard-agent-pay | adopt |
+| D-L1-9 | Spending authority is a declared envelope on the register, reviewed by a second person, required before activation, and reached by recertification and the kill switch | mastercard-agent-pay | adopt |
+| D-L1-10 | Reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once written API access and a sandbox exist | mastercard-agent-pay | wait for access; Phases 1–3 need none |
 | D-L2-1 | Langflow's box: the visual canvas is the product's own, editing the agent profile; Langflow not adopted | langflow | **decided 2026-10-29** (owner) |
 | D-L2-2 | Reasoning engines enforce flow checkpoints, or the canvas offers no checkpoint node | langflow | build enforcement; no checkpoint node until it lands |
 | D-L2-3 | The agent-flow canvas is drawn by tldraw (3.x, watermark kept), never xyflow, and lives inside the process-canvas module | langflow | **decided 2026-10-29** (owner) |
