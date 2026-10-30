@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 
 import { RequirePermission } from '@/components/require-permission';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import { useTenantContext } from '@/lib/tenant-context-provider';
 
 import {
@@ -34,6 +35,12 @@ import {
  * Every row but the audit log's includes `admin.view`, so that adds nobody
  * anywhere else; on the audit log it shows an AUDITOR the page the server
  * renders for them (owner decision 2026-10-29).
+ *
+ * Every other page also needs the caller's OWN membership role to be one the
+ * edge admits to an admin path (OWNER or ADMIN), whatever a custom role
+ * grants: the edge reads that role and refuses the page's API calls from
+ * anybody else, so a Reader whose custom role carried `admin.view` used to get
+ * pages that could not load or save (owner decision 2026-10-30, #4581 B).
  */
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
     const t = useTranslations('admin');
@@ -44,16 +51,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         return <>{children}</>;
     }
 
+    const forbidden = <ForbiddenPage title={t('forbidden.title')} message={t('forbidden.message')} />;
+    if (!membershipOpensAdminConsole(tenant.membershipRole)) {
+        return forbidden;
+    }
+
     return (
         <RequirePermission
             resource="admin"
             action="view"
-            fallback={
-                <ForbiddenPage
-                    title={t('forbidden.title')}
-                    message={t('forbidden.message')}
-                />
-            }
+            fallback={forbidden}
         >
             {children}
         </RequirePermission>

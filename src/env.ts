@@ -332,7 +332,31 @@ export const env = createEnv({
          * differently from "did not answer": a deploy that never named a
          * gateway must not be shown as having an unreachable one.
          */
-        SANDBOX_RUNTIME_HEALTH_URL: z.string().url().optional(),
+        SANDBOX_RUNTIME_HEALTH_URL: z.preprocess(
+            /*
+                AN EMPTY VALUE MEANS ABSENT — #4564, and this coercion is load
+                bearing rather than tidy.
+
+                `z.string().url().optional()` accepts `undefined` and REJECTS
+                `''` with "Invalid URL". Compose has no way to omit a variable
+                conditionally: `"${VAR:-}"` passes an empty string, which is how
+                every other optional value in this stack is defaulted. So
+                without this, a deploy that simply did not name a gateway would
+                hand the app an empty string, fail env validation, and the
+                container would not start — a working state turned into an
+                outage by a variable nobody set.
+
+                Proven before writing it: `''` fails this schema, `undefined`
+                passes. The same hazard exists for the other optional URL vars
+                here (DIRECT_DATABASE_URL, DATABASE_READ_URL,
+                UPSTASH_REDIS_REST_URL, APP_URL) and is left alone — none is
+                defaulted empty by this stack today, and widening the coercion
+                to variables this change does not touch could alter behaviour a
+                live deploy depends on.
+            */
+            (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+            z.string().url().optional(),
+        ),
         // `z.enum(['0','1'])` and NOT `z.coerce.boolean()`, which maps the
         // string "false" to TRUE. Matches RATE_LIMIT_ENABLED above.
         SANDBOX_EXECUTION_ENABLED: z.enum(['0', '1']).optional(),

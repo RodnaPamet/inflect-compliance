@@ -66,6 +66,34 @@ export interface ProbeResult {
     readonly reachableVersion: string | null;
 }
 
+/**
+ * How long a probe's answer may be reused — 5.6e follow-up (#4572).
+ *
+ * ═══ WHY THE ANSWER IS CACHED AT ALL ═══
+ *
+ * The admin page is `force-dynamic`, correctly: its subject is "what did this
+ * deploy declare" and a statically rendered copy would pin whatever the build
+ * container had. But that made every load perform the probe, and the gateway VM
+ * is `TERMINATED` most of the time by design — so the ordinary experience of the
+ * page was a two-second server-side stall before anything rendered.
+ *
+ * ═══ THE FAILED ANSWER IS CACHED TOO, AND THAT IS THE POINT ═══
+ *
+ * Caching only successes would leave the stall exactly where it hurts: a
+ * stopped VM is the common case, and it is the case that costs the full
+ * timeout. So `unreachable` is cached on the same terms as `answered`.
+ *
+ * ═══ WHAT MUST NOT HAPPEN ═══
+ *
+ * A cached verdict must not be rendered as a current one. The reader is being
+ * told something about another host's state, and "reachable" from thirty
+ * seconds ago is a different claim from "reachable now". So the cache records
+ * WHEN it answered and the page renders that beside the verdict — which is the
+ * same discipline as the digest: say what was observed and when, never imply
+ * freshness nobody measured.
+ */
+export const PROBE_CACHE_TTL_MS = 30_000;
+
 /** The health path that carries a version. See the module docblock. */
 export const HEALTH_PATH = '/readyz';
 

@@ -35,6 +35,16 @@ export interface RequestContext {
     /** The effective role of the user within this tenant */
     role: Role;
 
+    /**
+     * The role on the caller's OWN membership row, before any custom role.
+     * `role` above is a custom role's base when the membership carries one;
+     * this is what the edge's admin gate reads (`checkAdminAccess`), so the
+     * admin page gate reads it too (#4581 B). Set on the session paths of
+     * `getTenantCtx` / `getLegacyCtx`; absent for an API key, which has no
+     * membership. It is not an authority for anything else.
+     */
+    membershipRole?: Role;
+
     /** Effective permissions derived from the role */
     permissions: {
         canRead: boolean;

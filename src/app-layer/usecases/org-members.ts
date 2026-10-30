@@ -415,12 +415,8 @@ export interface RemoveOrgMemberResult {
  * the route, so a non-HTTP caller reached this usecase with none at all.
  */
 /**
- * An owner's membership is changed only by another owner (#4576).
- *
- * In deploy 1 nothing writes ORG_OWNER, so no row reaches this. It is here so
- * that the containers still serving while deploy 2's backfill creates owners
- * cannot let an admin demote or remove one. The refusal is audited, as the
- * route-level refusals are.
+ * An owner's membership is changed only by another owner (#4576), read as
+ * `canManageOwners`. The refusal is audited, as the route-level refusals are.
  */
 async function assertMayChangeOwnerRow(
     ctx: OrgContext,
@@ -428,7 +424,7 @@ async function assertMayChangeOwnerRow(
     targetUserId: string,
     verb: 'remove' | 'change',
 ): Promise<void> {
-    if (!isOrgOwner(targetRole) || isOrgOwner(ctx.orgRole)) return;
+    if (!isOrgOwner(targetRole) || ctx.permissions.canManageOwners) return;
     await emitOrgAudit(ctx, {
         action: OrgAuditAction.ORG_AUTHZ_DENIED,
         targetUserId,
@@ -451,6 +447,13 @@ async function assertNotLastOwner(
             `Cannot ${verb} the last ORG_OWNER of an organization. Make another member an owner first.`,
         );
     }
+}
+
+/** Which transition a role change effects (#4576). The no-op is handled before this. */
+function transitionOf(from: OrgRole, to: OrgRole): ChangeOrgMemberRoleTransition {
+    if (from === 'ORG_READER') return to === 'ORG_OWNER' ? 'reader_to_owner' : 'reader_to_admin';
+    if (to === 'ORG_READER') return 'admin_to_reader';
+    return from === 'ORG_OWNER' ? 'owner_to_admin' : 'admin_to_owner';
 }
 
 function assertCanManageOrgMembers(ctx: OrgContext): void {
@@ -583,7 +586,11 @@ export type ChangeOrgMemberRoleTransition =
     | 'reader_to_admin'
     | 'admin_to_reader'
     /** An owner becomes an admin: the role only, no tenant access moves (#4576). */
-    | 'owner_to_admin';
+    | 'owner_to_admin'
+    /** An admin becomes an owner: the role only; they already hold tenant ADMIN. */
+    | 'admin_to_owner'
+    /** A reader becomes an owner: fans ADMIN out to every tenant, as reader_to_admin does. */
+    | 'reader_to_owner';
 
 export interface ChangeOrgMemberRoleResult {
     membership: {
@@ -634,9 +641,9 @@ export async function changeOrgMemberRole(
         throw new ValidationError('userId is required');
     }
     const newRole = input.role;
-    if (newRole !== 'ORG_ADMIN' && newRole !== 'ORG_READER') {
+    if (newRole !== 'ORG_OWNER' && newRole !== 'ORG_ADMIN' && newRole !== 'ORG_READER') {
         throw new ValidationError(
-            `Invalid role '${String(newRole)}' — must be ORG_ADMIN or ORG_READER`,
+            `Invalid role '${String(newRole)}' — must be ORG_OWNER, ORG_ADMIN or ORG_READER`,
         );
     }
 
@@ -652,8 +659,10 @@ export async function changeOrgMemberRole(
     if (!existing) {
         throw new NotFoundError('Org membership not found');
     }
-    // An owner's membership is changed only by another owner (#4576).
+    // An owner's membership is changed only by another owner, and only an
+    // owner makes one (#4576).
     await assertMayChangeOwnerRow(ctx, existing.role, userId, 'change');
+    await assertMayChangeOwnerRow(ctx, newRole, userId, 'change');
 
     // No-op fast path. Returns success without opening a transaction
     // or touching the provisioning chain — repeated PUT with the same
@@ -700,12 +709,7 @@ export async function changeOrgMemberRole(
         }
     }
 
-    const transition: ChangeOrgMemberRoleTransition =
-        existing.role === 'ORG_READER'
-            ? 'reader_to_admin'
-            : newRole === 'ORG_READER'
-              ? 'admin_to_reader'
-              : 'owner_to_admin';
+    const transition = transitionOf(existing.role, newRole);
 
     const result = await prisma.$transaction(async (tx) => {
         // Re-check the last-admin guard INSIDE the transaction so a
@@ -743,7 +747,7 @@ export async function changeOrgMemberRole(
         let provision: ProvisionResult | undefined;
         let deprovision: DeprovisionResult | undefined;
 
-        if (transition === 'reader_to_admin') {
+        if (transition === 'reader_to_admin' || transition === 'reader_to_owner') {
             // Fan out ADMIN rows into every child tenant. Idempotent
             // — pre-existing manual memberships are preserved by the
             // unique-on-(tenantId, userId) skipDuplicates path.
@@ -770,14 +774,18 @@ export async function changeOrgMemberRole(
     // Audit fan-out — runs AFTER the transaction commits, mirroring
     // the post-commit semantics of `events/audit.ts:logEvent`. If the
     // transaction had rolled back we wouldn't reach this line.
-    if (transition === 'reader_to_admin' && result.provision && result.provision.tenantIds.length > 0) {
+    if (
+        (transition === 'reader_to_admin' || transition === 'reader_to_owner') &&
+        result.provision &&
+        result.provision.tenantIds.length > 0
+    ) {
         await emitOrgMembershipAudit(ctx, {
             action: 'ORG_ADMIN_PROVISIONED',
             sourceAction: 'org_member_promoted',
             targetUserId: userId,
             tenantIds: result.provision.tenantIds,
             previousOrgRole: 'ORG_READER',
-            newOrgRole: 'ORG_ADMIN',
+            newOrgRole: newRole,
         });
     } else if (
         transition === 'admin_to_reader' &&
@@ -808,7 +816,11 @@ export async function changeOrgMemberRole(
             deprovisionedTenantCount: result.deprovision?.deleted ?? 0,
         },
     });
-    if (transition === 'reader_to_admin' && result.provision && result.provision.created > 0) {
+    if (
+        (transition === 'reader_to_admin' || transition === 'reader_to_owner') &&
+        result.provision &&
+        result.provision.created > 0
+    ) {
         await emitOrgAudit(ctx, {
             action: OrgAuditAction.ORG_ADMIN_PROVISIONED_TO_TENANTS,
             targetUserId: userId,

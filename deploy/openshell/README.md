@@ -250,6 +250,55 @@ absent from both VMs and is presented out of band by a person.
     differently from "did not answer".
 ```
 
+### What to put in `/opt/inflect/.env.prod` — #4564
+
+The admin page's subject is "what did this deploy declare", and it declares
+nothing until these reach the app. They go in `/opt/inflect/.env.prod` on the
+app VM, which `docker-compose.prod.yml` hands to the container through
+`env_file:` — so **no compose or apply.sh change is involved**, and nothing has
+to be interpolated.
+
+```
+SANDBOX_RUNTIME_CONFIG_DIGEST=sha256:…      # copy from config-digest.txt
+SANDBOX_RUNTIME_APPLIED_AT=2026-10-30T06:39:54Z
+SANDBOX_RUNTIME_CHANNELS=ocsf-file
+SANDBOX_RUNTIME_HEALTH_URL=http://10.132.0.28:8081
+```
+
+**All four are optional and absence is a working state**, not a broken one. With
+no digest the page reports `not-configured` for every row, which is true of a
+deploy that declared nothing.
+
+#### `SANDBOX_RUNTIME_CHANNELS` is derived, not chosen
+
+It lists the channels declared **on**, and for this deployment that is
+`ocsf-file` alone — derived from the committed artefacts rather than decided
+here:
+
+| channel | why | from |
+|---|---|---|
+| `anonymous-telemetry` | OFF | `OPENSHELL_TELEMETRY_ENABLED=false` in the unit |
+| `otlp-traces` | OFF | no active OTLP endpoint in either artefact |
+| `ocsf-file` | **ON** | the `[openshell.gateway.ocsf_log]` table in `gateway.toml` |
+| `ocsf-over-otlp` | OFF | no active `OPENSHELL_OTLP_OCSF_ENDPOINT` |
+
+Get this wrong in the permissive direction and the page under-reports where data
+can go, which is the one failure that makes it worse than no page. Note that
+`parseDeclaredChannels` **refuses the whole list** on a name this build does not
+know — a newer runtime or a typo both mean the enumeration is no longer
+exhaustive, and an incomplete list of egress paths reads exactly like a complete
+one.
+
+#### An empty value means absent, and that took a schema change
+
+Compose and shell defaults produce **empty strings**, not absent variables, and
+`SANDBOX_RUNTIME_HEALTH_URL` was `z.string().url().optional()` — which accepts
+`undefined` and rejects `''` with "Invalid URL". So an operator who left the line
+in but blank would have failed env validation and the container would not have
+started: a working state turned into an outage by a variable nobody set.
+`src/env.ts` now coerces empty to absent for that one variable, verified against
+`''`, whitespace, a real URL and a malformed one.
+
 ### The digest, and why the admin page shows provenance instead of state
 
 Effective gateway configuration is **unobservable from outside the process**.

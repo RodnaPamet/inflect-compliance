@@ -118,8 +118,11 @@ afterAll(async () => {
 });
 
 describe('an owner is read as at least an admin', () => {
-    it('holds exactly what an admin holds, in this deploy', () => {
-        expect(getOrgPermissions('ORG_OWNER')).toEqual(getOrgPermissions('ORG_ADMIN'));
+    it('holds everything an admin holds (deploy 2 adds the owner-only powers on top)', () => {
+        const owner = getOrgPermissions('ORG_OWNER') as unknown as Record<string, boolean>;
+        for (const [flag, granted] of Object.entries(getOrgPermissions('ORG_ADMIN'))) {
+            if (granted) expect({ flag, owner: owner[flag] }).toEqual({ flag, owner: true });
+        }
     });
 
     it('the member list puts the owner first', async () => {
@@ -127,13 +130,17 @@ describe('an owner is read as at least an admin', () => {
         expect(rows.map((r) => r.role)).toEqual(['ORG_OWNER', 'ORG_ADMIN', 'ORG_READER']);
     });
 
-    it('a tenant created under the org is provisioned to the owner as to an admin', async () => {
-        const r = await createTenantUnderOrg(ctxAs('admin', 'ORG_ADMIN'), {
+    it('a tenant created under the org is provisioned to every administrator', async () => {
+        // Tenant management is the owner's since deploy 2.
+        const r = await createTenantUnderOrg(ctxAs('owner', 'ORG_OWNER'), {
             name: `${ORG_SLUG} tenant`,
             slug: `${ORG_SLUG}-tenant`,
         });
         tenantIds.push(r.tenant.id);
-        expect(await tenantRole('owner')).toBe('ADMIN');
+        // The owner created it, so owns it; the other administrator is
+        // provisioned ADMIN, and the reader nothing.
+        expect(await tenantRole('owner')).toBe('OWNER');
+        expect(await tenantRole('admin')).toBe('ADMIN');
         expect(await tenantRole('reader')).toBeNull();
     });
 });
@@ -146,7 +153,7 @@ describe('an owner\'s membership is changed only by an owner', () => {
         );
         expect(await denials()).toBe(before + 1);
         expect(await roleOf('owner')).toBe('ORG_OWNER');
-        expect(await tenantRole('owner')).toBe('ADMIN');
+        expect(await tenantRole('owner')).toBe('OWNER');
     });
 
     it('an ORG_ADMIN cannot re-role the owner', async () => {
@@ -181,7 +188,7 @@ describe('with a second owner, an owner may step down', () => {
         expect(r.provision).toBeUndefined();
         expect(r.deprovision).toBeUndefined();
         expect(await roleOf('owner')).toBe('ORG_ADMIN');
-        expect(await tenantRole('owner')).toBe('ADMIN');
+        expect(await tenantRole('owner')).toBe('OWNER');
     });
 });
 
@@ -200,18 +207,12 @@ describe('the last-administrator guard counts an owner', () => {
     });
 });
 
-describe('no writer accepts ORG_OWNER in this deploy', () => {
+// The role change became its ONE writer in deploy 2; see org-owner-writers.
+describe('the direct add and the invite never write ORG_OWNER', () => {
     it('the direct add refuses it', async () => {
         await expect(
             addOrgMember(ctxAs('owner2', 'ORG_OWNER'), { userEmail: `new-${SUITE}@example.com`, role: 'ORG_OWNER' }),
         ).rejects.toThrow(/must be ORG_ADMIN or ORG_READER/);
-    });
-
-    it('the role change refuses it', async () => {
-        await expect(
-            changeOrgMemberRole(ctxAs('owner2', 'ORG_OWNER'), { userId: ids.reader, role: 'ORG_OWNER' }),
-        ).rejects.toThrow(/must be ORG_ADMIN or ORG_READER/);
-        expect(await roleOf('reader')).toBe('ORG_READER');
     });
 
     it('the invite refuses it', async () => {

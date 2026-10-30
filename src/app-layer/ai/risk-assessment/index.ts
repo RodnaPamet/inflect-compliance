@@ -22,6 +22,7 @@ import { AnthropicRiskSuggestionProvider } from './anthropic-provider';
 import { LocalRiskSuggestionProvider } from './local-provider';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
+import { LOCAL_GATEWAY_REFUSAL_MESSAGE, resolveLocalGateway } from '@/lib/ai/local-gateway';
 
 /** Per-tenant AI-residency + local-gateway override, resolved by the usecase. */
 export interface ProviderSelection {
@@ -59,23 +60,20 @@ export interface ProviderSelection {
  * this one, and its content must not go somewhere it did not choose.
  */
 function buildLocalProvider(sel?: ProviderSelection): RiskSuggestionProvider {
-    const baseUrl = env.AI_LOCAL_BASE_URL;
-    if (sel?.localBaseUrl && sel.localBaseUrl !== baseUrl) {
+    // ONE definition of the rule, shared with `resolveFlueModel` — see
+    // `src/lib/ai/local-gateway.ts`. Behaviour here is unchanged from #4556,
+    // which fixed the hole inline; what changes is that Flue's identical rule
+    // and this one are no longer two copies that can drift apart.
+    const gateway = resolveLocalGateway(sel?.localBaseUrl);
+    if (!gateway.served) {
         logger.warn(
-            'Tenant local AI gateway is not one this deployment serves — using the deterministic stub',
-            { component: 'ai', reason: 'LOCAL_GATEWAY_NOT_SERVED' },
-        );
-        return new StubRiskSuggestionProvider(/* isFallbackMode */ true);
-    }
-    if (!baseUrl) {
-        logger.warn(
-            'Local AI gateway not configured (AI_LOCAL_BASE_URL) — using the deterministic stub',
-            { component: 'ai' },
+            `${LOCAL_GATEWAY_REFUSAL_MESSAGE[gateway.reason]} — using the deterministic stub`,
+            { component: 'ai', reason: gateway.reason },
         );
         return new StubRiskSuggestionProvider(/* isFallbackMode */ true);
     }
     return new LocalRiskSuggestionProvider(
-        baseUrl,
+        gateway.baseUrl,
         sel?.localModel || env.AI_LOCAL_MODEL || undefined,
         env.AI_LOCAL_API_KEY || undefined,
     );

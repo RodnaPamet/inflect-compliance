@@ -46,6 +46,41 @@ jest.mock('@/lib/agentic/agent-profile', () => ({
     ...jest.requireActual('@/lib/agentic/agent-profile'),
     runsProfiles: jest.fn(() => engineRunsProfiles),
 }));
+/**
+ * A LONGER SHIPPED CORPUS, on demand (#4523).
+ *
+ * The approve-time budget check exists because the catalogue a version names
+ * can get MORE EXPENSIVE after the version is saved — a deploy lengthens a
+ * shipped skill's description, or a tenant skill it names is approved with a
+ * longer one. The stored `skillRefs` cannot change (the
+ * `IMMUTABLE_AGENT_PROFILE_VERSION` trigger freezes a version's settings at
+ * EVERY status, not only once decided), so growing the row is not a way to
+ * reach that case. Growing the descriptions is, and this is that.
+ */
+let inflateCatalogue = false;
+/**
+ * A shipped skill the load-time text scan REFUSED, on demand (#4590). A refused
+ * skill stays in `repositorySkillNames()` (a tenant skill may not take its
+ * name) and is absent from `repositorySkillCatalogue()` (it cannot mount). No
+ * shipped skill is refused today, so this drops a real one from the catalogue
+ * while the names keep it, which is exactly that state.
+ */
+let refusedName: string | null = null;
+jest.mock('@/lib/agentic/flue/skills/resolve', () => {
+    const actual = jest.requireActual('@/lib/agentic/flue/skills/resolve') as {
+        repositorySkillCatalogue: () => ReadonlyMap<string, { name: string; description: string }>;
+    };
+    return {
+        ...actual,
+        repositorySkillCatalogue: () => {
+            const real = new Map([...actual.repositorySkillCatalogue()].filter(([k]) => k !== refusedName));
+            if (!inflateCatalogue) return real;
+            return new Map(
+                [...real].map(([k, v]) => [k, { ...v, description: `${v.description} ${'detail '.repeat(140)}` }]),
+            );
+        },
+    };
+});
 jest.mock('@/lib/agentic/agent-registration-gate', () => ({
     ...jest.requireActual('@/lib/agentic/agent-registration-gate'),
     evaluateAgentRegistration: jest.fn(async () => ({ standing: 'vouched' })),
@@ -77,6 +112,8 @@ import { resolveRunDefinition } from '@/app-layer/usecases/agent-profile-runs';
 import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile.schemas';
 import { profileRunKey } from '@/lib/agentic/agent-profile';
 import { SKILL_TEXT_RULES } from '@/lib/agentic/flue/skills/text-scan';
+import { catalogBytes, loadSkillCorpus, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
+import { repositorySkillNames } from '@/lib/agentic/flue/skills/resolve';
 import { registerWorkflow } from '@/lib/agentic/workflow-registry';
 import type { RequestContext } from '@/app-layer/types';
 import { makeRequestContext } from '../helpers/make-context';
@@ -347,6 +384,128 @@ describeFn('agent profiles (real DB)', () => {
                 reason: 'SKILL_UNKNOWN',
                 skills: ['repository:no-such-skill', 'tenant:not-approved'],
             });
+        });
+
+        it('SKILL_CATALOGUE_OVER_BUDGET: the whole shipped corpus is refused at save, with the byte count', async () => {
+            await ensureA2Profile();
+            // The shipped corpus ALONE is over budget (11 skills, 3,187 bytes
+            // against 2,048), so this is two clicks away in the picker — which
+            // is why #4523 moved the refusal here from the run.
+            const all = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills
+                .filter((sk) => sk.origin === 'repository');
+            expect(all.length).toBeGreaterThan(1);
+
+            const before = await prisma.agentProfileVersion.count({ where: { tenantId: TA } });
+            const err = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: all })).catch((e) => e);
+            expect(err.details).toMatchObject({ reason: 'SKILL_CATALOGUE_OVER_BUDGET', budget: 2_048 });
+            // The COUNT is the actionable part: "shorten a description" needs a number.
+            expect(err.details.bytes).toBeGreaterThan(2_048);
+            expect(err.details.skills).toEqual(all.map((sk) => `repository:${sk.name}`));
+            expect(await prisma.agentProfileVersion.count({ where: { tenantId: TA } })).toBe(before);
+        });
+
+        it('a selection within the budget is accepted, so the budget is the only new bar', async () => {
+            await ensureA2Profile();
+            // Guards against the obvious over-correction: refusing every
+            // skillRefs set, which would pass the case above and break the
+            // feature. A vacuous refusal is not a fix.
+            const one = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills
+                .filter((sk) => sk.origin === 'repository')
+                .slice(0, 2);
+            const v = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: one }));
+            expect(v.version).toBeGreaterThan(0);
+        });
+
+        it('an UNKNOWN name is reported ahead of the budget, because a name is more useful than a size', async () => {
+            await ensureA2Profile();
+            // Ordering matters: an unknown skill has no catalogue line, so
+            // pricing it first would price it at zero AND hide the real fault.
+            const all = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills
+                .filter((sk) => sk.origin === 'repository');
+            const err = await createAgentProfileVersion(
+                authorA(),
+                AGENTS.a2,
+                version({ skillRefs: [...all, { origin: 'repository', name: 'no-such-skill' }] }),
+            ).catch((e) => e);
+            expect(err.details).toMatchObject({ reason: 'SKILL_UNKNOWN', skills: ['repository:no-such-skill'] });
+        });
+
+        it('is re-priced at APPROVAL, so a catalogue that got dearer after save cannot be approved', async () => {
+            await ensureA2Profile();
+            // Saved while the catalogue was cheap: two skills, well inside budget.
+            const two = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills
+                .filter((sk) => sk.origin === 'repository')
+                .slice(0, 2);
+            const v = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: two }));
+            await submitAgentProfileVersion(authorA(), AGENTS.a2, v.version);
+
+            // Then a deploy lengthens those skills' descriptions. The version's
+            // own row is unchanged and unchangeable; what it costs is not.
+            inflateCatalogue = true;
+            try {
+                expect(
+                    await reasonOf(
+                        approveAgentProfileVersion(reviewerA(), AGENTS.a2, v.version, { instructionsHash: v.instructionsHash }),
+                    ),
+                ).toBe('SKILL_CATALOGUE_OVER_BUDGET');
+            } finally {
+                inflateCatalogue = false;
+            }
+
+            // Still SUBMITTED: the refusal lands before any status write, so a
+            // reviewer can act on it rather than finding it in force and broken.
+            expect(
+                (await prisma.agentProfileVersion.findFirstOrThrow({
+                    where: { tenantId: TA, version: v.version, instructionsHash: v.instructionsHash },
+                    select: { status: true },
+                })).status,
+            ).toBe('SUBMITTED');
+
+            // And with the corpus back to its real size it approves, so the
+            // refusal was the budget and not something this test broke.
+            await approveAgentProfileVersion(reviewerA(), AGENTS.a2, v.version, { instructionsHash: v.instructionsHash });
+        });
+
+        it('the picker prices each option as the save does, so its running total is the save\'s figure (#4590)', async () => {
+            await ensureA2Profile();
+            const options = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills.filter(
+                (sk) => sk.origin === 'repository',
+            );
+            const corpus = new Map(loadSkillCorpus().skills.map((s) => [s.name, s]));
+            // Each option carries its own line's cost, priced by the run's function.
+            for (const o of options) expect(o.catalogueBytes).toBe(catalogBytes([corpus.get(o.name)!]));
+            // And the lines add: the save prices the whole set at the options' sum.
+            const total = options.reduce((n, o) => n + o.catalogueBytes, 0);
+            expect(total).toBeGreaterThan(MAX_CATALOG_BYTES);
+            const err = await createAgentProfileVersion(
+                authorA(),
+                AGENTS.a2,
+                version({ skillRefs: options.map(({ origin, name }) => ({ origin, name })) }),
+            ).catch((e) => e);
+            expect(err.details).toMatchObject({ reason: 'SKILL_CATALOGUE_OVER_BUDGET', bytes: total });
+        });
+
+        it('a refused shipped skill is neither offered nor saved, though its name stays reserved (#4590)', async () => {
+            await ensureA2Profile();
+            const name = loadSkillCorpus().skills[0].name;
+            refusedName = name;
+            try {
+                const offered = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills.map((sk) => sk.name);
+                expect(offered).not.toContain(name);
+                // Still a reserved name: a tenant skill may not take it.
+                expect(repositorySkillNames().has(name)).toBe(true);
+                const err = await createAgentProfileVersion(
+                    authorA(),
+                    AGENTS.a2,
+                    version({ skillRefs: [{ origin: 'repository', name }] }),
+                ).catch((e) => e);
+                expect(err.details).toMatchObject({ reason: 'SKILL_UNKNOWN', skills: [`repository:${name}`] });
+            } finally {
+                refusedName = null;
+            }
+            // Mountable again, it is offered and saves.
+            const back = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: [{ origin: 'repository', name }] }));
+            expect(back.version).toBeGreaterThan(0);
         });
 
         it('NOT_DRAFT, NOT_SUBMITTED, ALREADY_RETIRED', async () => {
@@ -666,13 +825,28 @@ describeFn('agent profiles (real DB)', () => {
             expect(view.versions).toEqual([]);
             expect(view.options.tools).toEqual(['list_controls', 'list_risks']);
             expect(view.options.skills.length).toBeGreaterThan(0);
-            expect(view.limits).toEqual({ instructionsMaxChars: 16_000, maxTurns: 50, rejectionReasonMaxChars: 1_000 });
+            expect(view.limits).toEqual({
+                instructionsMaxChars: 16_000,
+                maxTurns: 50,
+                rejectionReasonMaxChars: 1_000,
+                skillCatalogueBudgetBytes: MAX_CATALOG_BYTES,
+            });
 
-            // The pickers offer what the save accepts: every option round-trips.
+            // The pickers offer what the save accepts, PER OPTION — every tool
+            // and every skill is individually a valid choice.
+            //
+            // It no longer holds for the whole set AT ONCE, and that is
+            // deliberate (#4523): the skill catalogue is a BUDGET, not a
+            // per-item check, and the shipped corpus alone exceeds it. So this
+            // takes a within-budget slice, and the refusals block proves the
+            // full set is refused by name with its byte count. The picker still
+            // offers a selection the save will refuse once it grows too large,
+            // which is a client affordance filed separately — the server's
+            // answer is now the early one either way.
             const v = await createAgentProfile(
                 authorA(),
                 AGENTS.fresh,
-                version({ toolNames: view.options.tools, skillRefs: view.options.skills.slice(0, 32) }),
+                version({ toolNames: view.options.tools, skillRefs: view.options.skills.slice(0, 2) }),
             );
             expect(v.version).toBe(1);
         });

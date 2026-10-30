@@ -65,6 +65,17 @@ export interface ProfileSkillRef {
     readonly name: string;
 }
 
+/**
+ * A skill the Behaviour tab's picker offers (#4590): the ref, and what its one
+ * catalogue line costs on every turn (`catalogBytes` of that skill alone).
+ * Lines add, so the editor's running total of the chosen options is exactly
+ * what the save prices against `limits.skillCatalogueBudgetBytes`. Never sent
+ * back: the save takes `ProfileSkillRef` only.
+ */
+export interface ProfileSkillOption extends ProfileSkillRef {
+    readonly catalogueBytes: number;
+}
+
 // ─── The run key ────────────────────────────────────────────────────
 
 /**
