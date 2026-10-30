@@ -321,6 +321,13 @@ const AI_LOCAL_BASE_URL_READERS: Record<string, string> = {
         'tenant gateway this registration cannot serve.',
     'src/lib/agentic/flue/providers.ts':
         'A string LITERAL naming the variable in a credential-source label, not a read.',
+    'src/app-layer/usecases/tenant-security-settings.ts':
+        'PRESENCE ONLY — `Boolean(env.AI_LOCAL_BASE_URL)` at two sites, reported to the ' +
+        'residency control as `deploymentHasLocalGateway` so the page can say what ' +
+        'LOCAL_ONLY will mean on this deployment. The address itself is never returned, ' +
+        'nothing is dialled, and no tenant value is compared against it — so the rule in ' +
+        '`local-gateway.ts` does not apply. Classified 2026-10-30: this guard caught the ' +
+        'reader when #4551 added it, which is what it is for.',
 };
 
 /** Both callers that resolve a TENANT-supplied gateway, and must share the rule. */
