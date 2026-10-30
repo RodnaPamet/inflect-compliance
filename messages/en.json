@@ -4011,52 +4011,52 @@
     },
     "nis2Gap": {
       "runStatus": {
-          "DRAFT": "Draft",
-          "IN_PROGRESS": "In progress",
-          "COMPLETED": "Completed",
-          "ARCHIVED": "Archived"
+        "DRAFT": "Draft",
+        "IN_PROGRESS": "In progress",
+        "COMPLETED": "Completed",
+        "ARCHIVED": "Archived"
       },
       "crit": {
-          "CRITICAL": "Critical",
-          "HIGH": "High",
-          "MEDIUM": "Medium",
-          "LOW": "Low"
+        "CRITICAL": "Critical",
+        "HIGH": "High",
+        "MEDIUM": "Medium",
+        "LOW": "Low"
       },
       "consequence": {
-          "AUDIT_FINDING": "Audit finding",
-          "OPERATIONAL_RISK": "Operational risk",
-          "FINE": "Fine",
-          "PERSONAL_LIABILITY": "Personal liability"
+        "AUDIT_FINDING": "Audit finding",
+        "OPERATIONAL_RISK": "Operational risk",
+        "FINE": "Fine",
+        "PERSONAL_LIABILITY": "Personal liability"
       },
       "answer": {
-          "YES": "Yes",
-          "PARTIALLY": "Partially",
-          "NO": "No",
-          "NA": "Not applicable"
+        "YES": "Yes",
+        "PARTIALLY": "Partially",
+        "NO": "No",
+        "NA": "Not applicable"
       },
       "effort": {
-          "QUICK_WIN": "Quick win",
-          "DAYS": "Days",
-          "WEEKS": "Weeks",
-          "MONTHS": "Months"
+        "QUICK_WIN": "Quick win",
+        "DAYS": "Days",
+        "WEEKS": "Weeks",
+        "MONTHS": "Months"
       },
       "assignmentStatus": {
-          "PENDING": "Pending",
-          "IN_PROGRESS": "In progress",
-          "SUBMITTED": "Submitted"
+        "PENDING": "Pending",
+        "IN_PROGRESS": "In progress",
+        "SUBMITTED": "Submitted"
       },
       "kind": {
-          "RISK": "Risk",
-          "TASK": "Task",
-          "CONTROL_LINK": "Link control",
-          "CONTROL_CREATE": "New control"
+        "RISK": "Risk",
+        "TASK": "Task",
+        "CONTROL_LINK": "Link control",
+        "CONTROL_CREATE": "New control"
       },
       "respondentRole": {
-          "CEO": "CEO — scoping & governance",
-          "IT": "IT — technical & cryptography",
-          "HR": "HR — training & awareness",
-          "PROCUREMENT": "Procurement — supply chain",
-          "ANYONE": "General"
+        "CEO": "CEO — scoping & governance",
+        "IT": "IT — technical & cryptography",
+        "HR": "HR — training & awareness",
+        "PROCUREMENT": "Procurement — supply chain",
+        "ANYONE": "General"
       },
       "loadFailed": "Failed to load NIS2 gap assessment.",
       "rerunFailed": "Failed to start a re-assessment.",
