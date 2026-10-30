@@ -120,7 +120,7 @@ describe('idsFromCappedList — every shape the list routes actually return', ()
         expect(idsFromCappedList(payload)).toEqual(['r1', 'r2', 'r3']);
     });
 
-    it('still reads a bare array (incidents)', () => {
+    it('still reads a bare array (an uncapped route, or an older cached response)', () => {
         expect(idsFromCappedList([{ id: 'x' }, { id: 'y' }])).toEqual(['x', 'y']);
     });
 

@@ -29,8 +29,9 @@ import { jsonResponse } from '@/lib/api-response';
  *
  * ═══ personnel.manage, THE SAME KEY THAT CREATES AN EMPLOYEE ═══
  *
- * True for OWNER and ADMIN only (`@/lib/permissions`) — EDITOR, READER and
- * AUDITOR hold `personnel.view` and not `manage`. That is the population that
+ * True for OWNER and ADMIN only (`@/lib/permissions`) — EDITOR, READER,
+ * AUDITOR and AI_ADMIN hold neither it nor `personnel.view` (the read has been
+ * OWNER/ADMIN only too since 2026-10-29). That is the population that
  * can already create the row, and an org chart decides who receives the
  * offboarding mail about a colleague, so it is not a wider authority than the
  * one beside it. `requirePermission` rather than a usecase-only assert,

@@ -3,12 +3,13 @@
  *
  * A SERVER component, following `admin/audit-log` rather than
  * `admin/ai-features`: everything on this page is read-only, so there is no
- * route to fetch from and no client-side loading state to get wrong. The
- * admin layout already gates this subtree on `admin.view`, which is the right
- * permission for a page that cannot change anything — unlike `ai-features`,
- * which adds an owner-only client gate because the endpoint behind it is
- * `admin.tenant_lifecycle`. Adding an owner gate here would hide a read-only
- * audit surface from the auditors who need it.
+ * route to fetch from and no client-side loading state to get wrong.
+ * `admin.view` is the right permission for a page that cannot change anything
+ * — unlike `ai-features`, which adds an owner-only client gate because the
+ * endpoint behind it is `admin.tenant_lifecycle`. It is applied HERE, before
+ * the declaration is read, not left to the admin layout: that layout is a
+ * client component and cannot keep this server component's props out of the
+ * payload. See `../_lib/admin-page-requirements.ts`.
  *
  * `force-dynamic` because the declaration is read from the process environment:
  * a statically rendered copy would pin whatever the BUILD container had, which
@@ -22,11 +23,19 @@ import {
     readSandboxRuntimeDeclaration,
 } from '@/app-layer/usecases/sandbox-runtime-config';
 
+import { gateAdminPage } from '../_lib/admin-page-gate';
 import { SandboxRuntimeClient, type SandboxRuntimeView } from './SandboxRuntimeClient';
 
 export const dynamic = 'force-dynamic';
 
-export default async function SandboxRuntimePage() {
+export default async function SandboxRuntimePage({
+    params,
+}: {
+    params: Promise<{ tenantSlug: string }>;
+}) {
+    const gate = await gateAdminPage('/admin/sandbox-runtime', params);
+    if (!gate.allowed) return gate.forbidden;
+
     // Awaited for the metadata title only; the rows translate client-side.
     await getTranslations('admin');
 

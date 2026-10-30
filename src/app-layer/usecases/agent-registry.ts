@@ -44,6 +44,7 @@ import { getSampleAuditDisagreementRate } from '@/app-layer/usecases/agent-propo
 import type { PrismaTx } from '@/lib/db-context';
 import { badRequest, conflict, ConflictError, forbidden, notFound } from '@/lib/errors/types';
 import { isClassifiedTier } from '@/lib/eu-ai-act/classification';
+import { normalizeQ } from '@/lib/filters/query-helpers';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import {
@@ -62,7 +63,7 @@ import {
     inFlightRunCount,
 } from '@/lib/agentic/run-concurrency-policy';
 import { isAgentRegistrationEnforced } from '@/lib/agentic/agent-registration-gate';
-import { resolveDriverForTenant } from '@/lib/agentic/agent-driver-policy';
+import { narrowToWhatAWorkflowAsksFor, resolveDriverForTenant } from '@/lib/agentic/agent-driver-policy';
 import { KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
 import { listKillSwitches } from './agent-kill-switch';
 import { authorAiSystemEntry } from './ai-system';
@@ -249,6 +250,11 @@ export function parseAgentListFilters(
         'agent authority tier',
     );
     if (tier.length > 0) filters.riskTier = tier;
+    // The search box (#4471). `FilterProvider` writes it as `?q=`; the page
+    // re-renders on every keystroke's debounce and nothing read it, so typing
+    // changed no row.
+    const q = normalizeQ(Array.isArray(raw.q) ? raw.q[0] : raw.q);
+    if (q) filters.q = q;
     return filters;
 }
 
@@ -741,7 +747,11 @@ export async function getRegisteredAgent(ctx: RequestContext, id: string) {
         // governance facts rather than columns on the agent, and the Overview
         // tab needs them together — a tab owns its own fetch, so the
         // alternative is a second endpoint for one enum.
-        resolveDriverForTenant(ctx.tenantId),
+        // Narrowed again WITH the slug, so a Tool Runner choice in a workspace
+        // where nothing can ask for that engine reads as the static engine and
+        // says why (Step 2c). Flue is already narrowed inside; a second pass is
+        // a no-op for it.
+        resolveDriverForTenant(ctx.tenantId).then((d) => narrowToWhatAWorkflowAsksFor(d, ctx.tenantSlug)),
     ]);
     // AFTER the trio resolves, not before the flag reads are started: a 404 pays
     // for two extra settings lookups, and the alternative — awaiting the agent

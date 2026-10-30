@@ -118,9 +118,9 @@ describe('4. AGENT_PROFILES_TENANTS opens the routes to the tenants it names, an
     });
 });
 
-describe('2. no engine runs a profile in this build', () => {
+describe('2. only the Tool Runner engine runs a profile (Step 2c)', () => {
     it('answers for each driver there is', () => {
-        expect(Object.fromEntries(AGENT_DRIVERS.map((d) => [d, runsProfiles(d)]))).toEqual({ static: false, flue: false, 'tool-runner': false });
+        expect(Object.fromEntries(AGENT_DRIVERS.map((d) => [d, runsProfiles(d)]))).toEqual({ static: false, flue: false, 'tool-runner': true });
     });
 });
 
@@ -128,8 +128,15 @@ describe('3. the run key and the flag', () => {
     it('round-trips a key and refuses every other form', () => {
         const key = profileRunKey('cmabc123', 7);
         expect(key).toBe('agent-profile:cmabc123@v7');
-        expect(parseProfileRunKey(key)).toEqual({ profileId: 'cmabc123', version: 7 });
+        expect(parseProfileRunKey(key)).toEqual({ profileId: 'cmabc123', version: 7, testRun: false });
+        // A Test run carries its suffix, and only this one (Step 2c).
+        const testKey = profileRunKey('cmabc123', 7, { testRun: true });
+        expect(testKey).toBe('agent-profile:cmabc123@v7:test-run');
+        expect(parseProfileRunKey(testKey)).toEqual({ profileId: 'cmabc123', version: 7, testRun: true });
         for (const bad of [
+            'agent-profile:cmabc123@v7:test',
+            'agent-profile:cmabc123@v7:test-run:test-run',
+            'agent-profile:cmabc123@v7:TEST-RUN',
             'agent-profile:cmabc123',
             'agent-profile:cmabc123@v0',
             'agent-profile:cmabc123@v01',

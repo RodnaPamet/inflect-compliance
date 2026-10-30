@@ -45,6 +45,7 @@ import type {
 
 import { EstateFormModal, type EstateScannerOption } from './EstateFormModal';
 import { COMPLETENESS_VARIANT } from './ScannerSection';
+import { sourceKindLabel } from './source-kind-label';
 
 const STATUS_VARIANT: Readonly<Record<EstateHealthStatus, StatusBadgeVariant>> = {
     FRESH: 'success',
@@ -60,7 +61,7 @@ function SourceLine({ estateId, source }: { estateId: string; source: EstateSour
             className="flex flex-wrap items-center gap-compact text-xs"
             data-testid={`harness-estate-source-${estateId}-${source.kind}`}
         >
-            <span className="font-mono">{source.kind}</span>
+            <span>{sourceKindLabel(t, source.kind)}</span>
             <StatusBadge variant={STATUS_VARIANT[source.status]} size="sm">
                 {t(`harness.estates.status.${source.status}`)}
             </StatusBadge>
@@ -167,7 +168,9 @@ function EstateBlock({ row, window, actions }: { row: EstateHealthRow; window: n
             </ul>
             {row.undeclaredSources.length > 0 && (
                 <InlineNotice variant="warning" icon={null} data-testid={`harness-estate-undeclared-${row.id}`}>
-                    {t('harness.estates.undeclared', { kinds: row.undeclaredSources.join(', ') })}
+                    {t('harness.estates.undeclared', {
+                        kinds: row.undeclaredSources.map((k) => sourceKindLabel(t, k)).join(', '),
+                    })}
                 </InlineNotice>
             )}
         </section>

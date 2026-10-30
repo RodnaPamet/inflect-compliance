@@ -73,6 +73,7 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 import { AgentEnginesSection } from '@/app/t/[tenantSlug]/(app)/admin/ai-features/AgentEnginesSection';
 import {
     REASON_MESSAGE,
+    TOOL_RUNNER_REASON_MESSAGE,
     type AgentDriverSettingPayload,
     type FlueWiringPayload,
 } from '@/app/t/[tenantSlug]/(app)/admin/ai-features/agent-engine-display';
@@ -96,10 +97,17 @@ interface EngineCopy {
     operatorTerm: string;
     boundKeyNote: string;
     reason: Record<string, string>;
-    engine: Record<'STATIC' | 'FLUE', { name: string }>;
-    confirmTitle: Record<'STATIC' | 'FLUE', string>;
-    confirmBody: Record<'STATIC' | 'FLUE', string>;
+    engine: Record<'STATIC' | 'FLUE' | 'TOOL_RUNNER', { name: string; description: string }>;
+    confirmTitle: Record<'STATIC' | 'FLUE' | 'TOOL_RUNNER', string>;
+    confirmBody: Record<'STATIC' | 'FLUE' | 'TOOL_RUNNER', string>;
     term: Record<string, string>;
+    runsOnToolRunner: string;
+    runsOnToolRunnerNotReady: string;
+    reasonToolRunner: Record<string, string>;
+    deploymentOffStoredToolRunner: string;
+    wiringHeadingToolRunner: string;
+    toolRunnerTerm: Record<string, string>;
+    toolRunnerStartNote: string;
 }
 const COPY = EN.admin.agentEngines as unknown as EngineCopy;
 
@@ -116,11 +124,13 @@ function setting(over: Partial<AgentDriverSettingPayload> = {}): AgentDriverSett
         effective: { driver: 'static', reason: 'TENANT_NOT_OPTED_IN' },
         envEnabled: true,
         implemented: true,
+        toolRunner: { envEnabled: false, implemented: true },
         ...over,
     };
 }
 
 const WIRING_BLOCKED: FlueWiringPayload = {
+    engine: 'FLUE',
     terms: [
         { key: 'ENV', satisfied: true, actor: 'operator' },
         { key: 'TENANT', satisfied: true, actor: 'tenant' },
@@ -134,6 +144,7 @@ const WIRING_BLOCKED: FlueWiringPayload = {
 };
 
 const WIRING_READY: FlueWiringPayload = {
+    engine: 'FLUE',
     terms: WIRING_BLOCKED.terms.map((term) => ({ ...term, satisfied: true })),
     ready: true,
     blockedOn: null,
@@ -216,6 +227,128 @@ describe('every reason has its own sentence', () => {
         const headline = screen.getByTestId('agent-engines-headline');
         expect(headline).toHaveTextContent(COPY.reason.UNKNOWN);
         expect(headline).not.toHaveTextContent('SOMETHING_NEW');
+    });
+});
+
+describe('the Tool Runner engine (Step 2c)', () => {
+    const TOOL_RUNNER_EFFECTIVE = setting({
+        mode: 'TOOL_RUNNER',
+        effective: { driver: 'tool-runner', reason: null },
+        toolRunner: { envEnabled: true, implemented: true },
+    });
+    const TR_WIRING: FlueWiringPayload = {
+        engine: 'TOOL_RUNNER',
+        terms: [
+            { key: 'ENV', satisfied: true, actor: 'operator' },
+            { key: 'TENANT', satisfied: true, actor: 'tenant' },
+            { key: 'BUILD', satisfied: true, actor: 'operator' },
+            { key: 'PROFILES', satisfied: true, actor: 'operator' },
+            { key: 'MODEL_KEY', satisfied: false, actor: 'operator' },
+            { key: 'REGISTERED_AGENT', satisfied: true, actor: 'tenant', count: 1 },
+        ],
+        ready: false,
+        blockedOn: 'MODEL_KEY',
+    };
+
+    const ENGINE_REASONS = ['ENV_DISABLED', 'DRIVER_NOT_IMPLEMENTED', 'NO_WORKFLOW_REQUESTS_IT'] as const;
+
+    it.each(ENGINE_REASONS)(
+        '%s names the Tool Runner, not Flue, for a workspace that chose it, in both catalogues',
+        (reason) => {
+            const { unmount } = arrange({
+                setting: setting({ mode: 'TOOL_RUNNER', effective: { driver: 'static', reason } }),
+                canChange: false,
+            });
+            expect(TOOL_RUNNER_REASON_MESSAGE[reason]).toBe(`reasonToolRunner.${reason}`);
+            const expected = at(EN.admin.agentEngines, TOOL_RUNNER_REASON_MESSAGE[reason]) as string;
+            expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(expected);
+            expect(expected).toContain('Tool Runner');
+            expect(expected).not.toBe(at(EN.admin.agentEngines, REASON_MESSAGE[reason]));
+            expect(typeof at(BG.admin.agentEngines, TOOL_RUNNER_REASON_MESSAGE[reason])).toBe('string');
+            unmount();
+        },
+    );
+
+    it('an effective Tool Runner says so, under its own name, and warns while its checklist blocks', () => {
+        const { unmount } = arrange({ setting: TOOL_RUNNER_EFFECTIVE, canChange: false });
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(COPY.runsOnToolRunner);
+        expect(screen.getByTestId('agent-engines-headline')).toHaveAttribute('data-tone', 'success');
+        expect(screen.getByTestId('agent-engines')).toHaveTextContent(COPY.engine.TOOL_RUNNER.name);
+        unmount();
+
+        arrange({ setting: TOOL_RUNNER_EFFECTIVE, canChange: true, wiring: TR_WIRING });
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(COPY.runsOnToolRunnerNotReady);
+        expect(screen.getByTestId('agent-engines-headline')).toHaveAttribute('data-tone', 'warning');
+    });
+
+    it('each reasoning engine is offered only while its own switch is on', () => {
+        const { unmount } = arrange({
+            setting: setting({ envEnabled: true, toolRunner: { envEnabled: false, implemented: true } }),
+            canChange: true,
+            wiring: WIRING_BLOCKED,
+        });
+        expect(screen.getByTestId('agent-engine-FLUE')).toBeEnabled();
+        expect(screen.getByTestId('agent-engine-TOOL_RUNNER')).toBeDisabled();
+        unmount();
+
+        const second = arrange({
+            setting: setting({
+                envEnabled: false,
+                effective: { driver: 'static', reason: 'ENV_DISABLED' },
+                toolRunner: { envEnabled: true, implemented: true },
+            }),
+            canChange: true,
+            wiring: WIRING_BLOCKED,
+        });
+        expect(screen.getByTestId('agent-engines')).toHaveAttribute('data-control', 'editable');
+        expect(screen.getByTestId('agent-engine-FLUE')).toBeDisabled();
+        expect(screen.getByTestId('agent-engine-TOOL_RUNNER')).toBeEnabled();
+        expect(screen.getByTestId('agent-engine-STATIC')).toBeEnabled();
+        second.unmount();
+
+        arrange({
+            setting: setting({ envEnabled: false, effective: { driver: 'static', reason: 'ENV_DISABLED' } }),
+            canChange: true,
+            wiring: WIRING_BLOCKED,
+        });
+        expect(screen.getByTestId('agent-engines')).toHaveAttribute('data-control', 'deployment-off');
+        expect(screen.getByTestId('agent-engine-TOOL_RUNNER')).toBeDisabled();
+    });
+
+    it('an owner chooses it through the confirm dialog, which says what goes to Anthropic', async () => {
+        const user = userEvent.setup();
+        fetchMock.mockResolvedValue({ ok: true, json: async () => TOOL_RUNNER_EFFECTIVE });
+        arrange({
+            setting: setting({ toolRunner: { envEnabled: true, implemented: true } }),
+            canChange: true,
+            wiring: WIRING_BLOCKED,
+        });
+        await user.click(screen.getByTestId('agent-engine-TOOL_RUNNER'));
+        const dialog = await screen.findByRole('dialog');
+        expect(dialog).toHaveTextContent(COPY.confirmTitle.TOOL_RUNNER);
+        expect(dialog).toHaveTextContent(COPY.confirmBody.TOOL_RUNNER);
+        await user.click(within(dialog).getByRole('button', { name: COPY.confirmLabel }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ mode: 'TOOL_RUNNER' });
+    });
+
+    it('a workspace on it reads its own checklist and how its runs start, not Flue\'s', () => {
+        arrange({ setting: TOOL_RUNNER_EFFECTIVE, canChange: true, wiring: TR_WIRING });
+        expect(screen.getByText(COPY.wiringHeadingToolRunner)).toBeInTheDocument();
+        expect(screen.queryByText(COPY.wiringHeading)).toBeNull();
+        expect(screen.getByTestId('agent-engines-term-MODEL_KEY')).toHaveTextContent(COPY.toolRunnerTerm.MODEL_KEY);
+        expect(screen.getByTestId('agent-engines-term-MODEL_KEY')).toHaveAttribute('data-satisfied', 'false');
+        expect(screen.getByTestId('agent-engines-term-PROFILES')).toHaveTextContent(COPY.toolRunnerTerm.PROFILES);
+        expect(screen.getByText(COPY.toolRunnerStartNote)).toBeInTheDocument();
+        expect(screen.queryByText(COPY.boundKeyNote)).toBeNull();
+    });
+
+    it('is described as Powered by Claude, and never as Claude Code', () => {
+        for (const catalogue of [EN.admin.agentEngines, BG.admin.agentEngines]) {
+            const description = at(catalogue, 'engine.TOOL_RUNNER.description') as string;
+            expect(description).toContain('Powered by Claude');
+            expect(description).not.toContain('Claude Code');
+        }
     });
 });
 

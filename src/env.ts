@@ -278,6 +278,10 @@ export const env = createEnv({
         STRIPE_PRICE_ID_PRO: z.string().optional(),
         STRIPE_PRICE_ID_ENTERPRISE: z.string().optional(),
         APP_URL: z.string().url().optional(),
+        // The commit the running image was built from, baked in by the
+        // Dockerfile from the publish workflow's build argument (#4477).
+        // Unset outside a published image; read through `buildVersion()`.
+        BUILD_SHA: z.string().optional(),
 
         // AI Risk Assessment. 'stub' (default, no network/key) | 'anthropic'
         // (direct Claude API — reuses ANTHROPIC_API_KEY / ANTHROPIC_MODEL
@@ -674,6 +678,7 @@ export const env = createEnv({
         STRIPE_PRICE_ID_PRO: process.env.STRIPE_PRICE_ID_PRO,
         STRIPE_PRICE_ID_ENTERPRISE: process.env.STRIPE_PRICE_ID_ENTERPRISE,
         APP_URL: process.env.APP_URL,
+        BUILD_SHA: process.env.BUILD_SHA,
 
         AI_RISK_PROVIDER: process.env.AI_RISK_PROVIDER,
         AI_QUESTIONNAIRE_PROVIDER: process.env.AI_QUESTIONNAIRE_PROVIDER,

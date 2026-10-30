@@ -35,9 +35,11 @@ import {
     getEmailProvider,
     setEmailProvider,
     sendEmail,
+    isUndeliverableRecipient,
     initMailerFromEnv,
     type EmailMessage,
 } from '@/lib/mailer';
+import { tenantSystemUserEmail } from '@/lib/tenant-system-user';
 
 const BASE_MSG: EmailMessage = {
     to: 'user@example.com',
@@ -88,6 +90,21 @@ describe('provider singleton', () => {
         await sendEmail(BASE_MSG);
 
         expect(stub.sentMessages).toEqual([BASE_MSG]);
+    });
+
+    it("sendEmail sends nothing to a tenant's SYSTEM user, whose address is undeliverable (#4400)", async () => {
+        const stub = new StubEmailProvider();
+        setEmailProvider(stub);
+
+        await expect(
+            sendEmail({ ...BASE_MSG, to: tenantSystemUserEmail('tenant-1') }),
+        ).resolves.toEqual({ delivered: false });
+        expect(stub.sentMessages).toEqual([]);
+
+        // Only a list made ENTIRELY of reserved addresses is dropped.
+        expect(isUndeliverableRecipient(`a@example.com, ${tenantSystemUserEmail('t')}`)).toBe(false);
+        expect(isUndeliverableRecipient('Inflect <system+t@inflect.invalid>')).toBe(true);
+        expect(isUndeliverableRecipient('someone@invalid.example.com')).toBe(false);
     });
 
     it('sendEmail reports a configured transport as delivered', async () => {

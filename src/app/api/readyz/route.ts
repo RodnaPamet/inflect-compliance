@@ -57,6 +57,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import { env } from '@/env';
+import { buildVersion } from '@/lib/build-info';
 import { jsonResponse } from '@/lib/api-response';
 import { logger } from '@/lib/observability/logger';
 
@@ -256,7 +257,7 @@ export async function GET() {
             status: allOk ? 'ready' : 'not_ready',
             timestamp: new Date().toISOString(),
             uptime: process.uptime(),
-            version: process.env.BUILD_SHA || process.env.VERCEL_GIT_COMMIT_SHA || 'dev',
+            version: buildVersion(),
             checks,
             failed,
             latencyMs: Date.now() - start,

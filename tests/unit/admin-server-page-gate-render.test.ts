@@ -1,0 +1,271 @@
+/**
+ * An admin server page's RENDER refuses before it reads.
+ *
+ * The admin layout is a client component, so it cannot keep a server page's
+ * props out of the RSC payload: whatever a server page passes to its client
+ * island reaches the browser, under an "Access denied" screen or not. The fix
+ * is a server gate at each page (`gateAdminPage`). This file calls each page
+ * the way Next does and asserts, for every gated admin page:
+ *
+ *   · a READER's render returns the admin forbidden page (the layout's own
+ *     title and message) and NO data read is started — every usecase the pages
+ *     call and the Prisma client two of them use directly are spies;
+ *   · an ADMIN's render reads and returns the page.
+ *
+ * The audit log is the one page an AUDITOR's render reads (owner decision
+ * 2026-10-29); every other gated page refuses an AUDITOR.
+ *
+ * The structural rule (gate first, own route, from the real module) is
+ * `tests/guardrails/admin-layout-guard.test.ts`; who each row admits is
+ * `tests/unit/admin-page-requirements.test.ts`.
+ */
+import { makeRequestContext } from '../helpers/make-context';
+import type { RequestContext } from '@/app-layer/types';
+
+// ─── Mocks, all declared before the page modules are imported ──────────────
+
+/** The session → context boundary: each test IS the principal it names. */
+let currentCtx: RequestContext;
+const getTenantCtxMock = jest.fn(async (_params: { tenantSlug: string }) => currentCtx);
+jest.mock('@/app-layer/context', () => ({
+    __esModule: true,
+    getTenantCtx: (params: { tenantSlug: string }) => getTenantCtxMock(params),
+}));
+
+/**
+ * The RBAC and billing pages used to resolve the caller themselves, through
+ * `auth()` and `resolveTenantContext`, with no permission check. Both are
+ * mocked to admit the session, so a page that goes back to that shape fails
+ * this file on its assertions rather than on importing NextAuth.
+ */
+jest.mock('@/auth', () => ({
+    __esModule: true,
+    auth: async () => ({ user: { id: currentCtx.userId } }),
+}));
+jest.mock('@/lib/tenant-context', () => ({
+    __esModule: true,
+    resolveTenantContext: async () => ({
+        tenant: { id: currentCtx.tenantId, slug: 'acme', name: 'Acme' },
+        role: currentCtx.role,
+    }),
+}));
+
+/** `next-intl/server` is ESM; resolve against the real catalogue. */
+jest.mock('next-intl/server', () => {
+    const lookup = (bag: unknown, key: string): unknown =>
+        key
+            .split('.')
+            .reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), bag);
+    return {
+        __esModule: true,
+        getTranslations: async (ns: string) => {
+            const en = require('../../messages/en.json') as Record<string, unknown>;
+            const bag = lookup(en, ns);
+            const t = (key: string) => {
+                const v = lookup(bag, key);
+                return typeof v === 'string' ? v : key;
+            };
+            t.rich = (key: string) => t(key);
+            return t;
+        },
+    };
+});
+
+/** Every data read the gated pages make. */
+const reads = {
+    listEmployees: jest.fn(async () => ({ employees: [], truncated: false, total: 0 })),
+    listDevices: jest.fn(async () => []),
+    listTrainingAssignments: jest.fn(async () => []),
+    listAuditLogs: jest.fn(async () => []),
+    listDsarRequests: jest.fn(async () => []),
+    getTrustCenter: jest.fn(async () => null),
+    listAgentCredentials: jest.fn(async () => []),
+    getPrivacyPosture: jest.fn(async () => {
+        throw new Error('not rendered in this file');
+    }),
+    getRiskMatrixConfig: jest.fn(async () => ({})),
+    readSandboxRuntimeDeclaration: jest.fn(() => ({
+        configured: false,
+        configDigest: null,
+        reachableVersion: null,
+        channels: [],
+        appliedAt: null,
+    })),
+    readSandboxExecutionPlatformEnabled: jest.fn(() => false),
+    tenantFindUnique: jest.fn(async () => ({ name: 'Acme' })),
+    membershipFindMany: jest.fn(async () => []),
+    billingAccountFindUnique: jest.fn(async () => null),
+    billingEventFindMany: jest.fn(async () => []),
+};
+
+jest.mock('@/app-layer/usecases/personnel', () => ({ __esModule: true, listEmployees: () => reads.listEmployees() }));
+jest.mock('@/app-layer/usecases/device', () => ({ __esModule: true, listDevices: () => reads.listDevices() }));
+jest.mock('@/app-layer/usecases/training', () => ({
+    __esModule: true,
+    listTrainingAssignments: () => reads.listTrainingAssignments(),
+}));
+jest.mock('@/app-layer/usecases/auditLog', () => ({ __esModule: true, listAuditLogs: () => reads.listAuditLogs() }));
+jest.mock('@/app-layer/usecases/dsar-register', () => ({
+    __esModule: true,
+    listDsarRequests: () => reads.listDsarRequests(),
+}));
+jest.mock('@/app-layer/usecases/trust-center', () => ({ __esModule: true, getTrustCenter: () => reads.getTrustCenter() }));
+jest.mock('@/app-layer/usecases/api-keys', () => ({
+    __esModule: true,
+    listAgentCredentials: () => reads.listAgentCredentials(),
+}));
+jest.mock('@/app-layer/usecases/privacy-posture', () => ({
+    __esModule: true,
+    getPrivacyPosture: () => reads.getPrivacyPosture(),
+}));
+jest.mock('@/app-layer/usecases/risk-matrix-config', () => ({
+    __esModule: true,
+    getRiskMatrixConfig: () => reads.getRiskMatrixConfig(),
+}));
+jest.mock('@/app-layer/usecases/sandbox-runtime-config', () => ({
+    __esModule: true,
+    readSandboxRuntimeDeclaration: () => reads.readSandboxRuntimeDeclaration(),
+    readSandboxExecutionPlatformEnabled: () => reads.readSandboxExecutionPlatformEnabled(),
+}));
+jest.mock('@/lib/prisma', () => ({
+    __esModule: true,
+    default: {
+        tenant: { findUnique: () => reads.tenantFindUnique() },
+        tenantMembership: { findMany: () => reads.membershipFindMany() },
+        billingAccount: { findUnique: () => reads.billingAccountFindUnique() },
+        billingEvent: { findMany: () => reads.billingEventFindMany() },
+    },
+}));
+
+import { ForbiddenPage } from '@/components/ForbiddenPage';
+import en from '../../messages/en.json';
+import AdminPage from '@/app/t/[tenantSlug]/(app)/admin/page';
+import AuditLogPage from '@/app/t/[tenantSlug]/(app)/admin/audit-log/page';
+import BillingPage from '@/app/t/[tenantSlug]/(app)/admin/billing/page';
+import DevicesPage from '@/app/t/[tenantSlug]/(app)/admin/devices/page';
+import DsarPage from '@/app/t/[tenantSlug]/(app)/admin/dsar-requests/page';
+import McpPage from '@/app/t/[tenantSlug]/(app)/admin/mcp/page';
+import PersonnelPage from '@/app/t/[tenantSlug]/(app)/admin/personnel/page';
+import PrivacyPage from '@/app/t/[tenantSlug]/(app)/admin/privacy/page';
+import RbacPage from '@/app/t/[tenantSlug]/(app)/admin/rbac/page';
+import RiskMatrixPage from '@/app/t/[tenantSlug]/(app)/admin/risk-matrix/page';
+import SandboxRuntimePage from '@/app/t/[tenantSlug]/(app)/admin/sandbox-runtime/page';
+import TrainingPage from '@/app/t/[tenantSlug]/(app)/admin/training/page';
+import TrustCenterPage from '@/app/t/[tenantSlug]/(app)/admin/trust-center/page';
+import VendorReviewsPage from '@/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/page';
+import VendorReviewPage from '@/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/page';
+import VendorTemplatesPage from '@/app/t/[tenantSlug]/(app)/admin/vendor-templates/page';
+import VendorTemplatePage from '@/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/page';
+import { ADMIN_PAGE_REQUIREMENTS } from '@/app/t/[tenantSlug]/(app)/admin/_lib/admin-page-requirements';
+
+type Element = { type: unknown; props: Record<string, unknown> };
+type PageFn = (args: {
+    params: Promise<Record<string, string>>;
+    searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) => Promise<Element>;
+
+/** Every gated page, keyed by its route; the last test pins it to the table. */
+const PAGES: Record<string, unknown> = {
+    '/admin': AdminPage,
+    '/admin/audit-log': AuditLogPage,
+    '/admin/billing': BillingPage,
+    '/admin/devices': DevicesPage,
+    '/admin/dsar-requests': DsarPage,
+    '/admin/mcp': McpPage,
+    '/admin/personnel': PersonnelPage,
+    '/admin/privacy': PrivacyPage,
+    '/admin/rbac': RbacPage,
+    '/admin/risk-matrix': RiskMatrixPage,
+    '/admin/sandbox-runtime': SandboxRuntimePage,
+    '/admin/training': TrainingPage,
+    '/admin/trust-center': TrustCenterPage,
+    '/admin/vendor-assessment-reviews': VendorReviewsPage,
+    '/admin/vendor-assessment-reviews/[assessmentId]': VendorReviewPage,
+    '/admin/vendor-templates': VendorTemplatesPage,
+    '/admin/vendor-templates/[templateId]': VendorTemplatePage,
+};
+
+async function render(route: string, role: string): Promise<Element> {
+    currentCtx = makeRequestContext(role, { tenantSlug: 'acme' });
+    const params = Promise.resolve({ tenantSlug: 'acme', assessmentId: 'a-1', templateId: 't-1' });
+    // Next hands every page `searchParams` too; the personnel page reads it.
+    return (PAGES[route] as PageFn)({ params, searchParams: Promise.resolve({}) });
+}
+
+function readsStarted(): string[] {
+    return Object.entries(reads)
+        .filter(([, spy]) => spy.mock.calls.length > 0)
+        .map(([name]) => name);
+}
+
+function expectAdminForbidden(el: Element): void {
+    expect(el.type).toBe(ForbiddenPage);
+    expect(el.props).toEqual({ title: en.admin.forbidden.title, message: en.admin.forbidden.message });
+}
+
+beforeEach(() => {
+    for (const spy of Object.values(reads)) spy.mockClear();
+    getTenantCtxMock.mockClear();
+});
+
+describe('a READER is refused by every gated admin page before any read', () => {
+    test.each(Object.keys(PAGES))('%s', async (route) => {
+        const el = await render(route, 'READER');
+        expectAdminForbidden(el);
+        expect(readsStarted()).toEqual([]);
+        // The gate resolved the caller from the URL's tenant, and only that.
+        expect(getTenantCtxMock).toHaveBeenCalledWith({ tenantSlug: 'acme' });
+    });
+});
+
+describe('personnel — the roster', () => {
+    test('a READER gets the forbidden page and the roster is never read', async () => {
+        expectAdminForbidden(await render('/admin/personnel', 'READER'));
+        expect(reads.listEmployees).not.toHaveBeenCalled();
+    });
+
+    test('an AUDITOR is refused too: no admin.view', async () => {
+        expectAdminForbidden(await render('/admin/personnel', 'AUDITOR'));
+        expect(reads.listEmployees).not.toHaveBeenCalled();
+    });
+
+    test.each(['ADMIN', 'OWNER'])('an %s reads the roster and gets the page', async (role) => {
+        const el = await render('/admin/personnel', role);
+        expect(el.type).not.toBe(ForbiddenPage);
+        expect(reads.listEmployees).toHaveBeenCalledTimes(1);
+        expect(el.props.tenantSlug).toBe('acme');
+    });
+});
+
+describe('rbac — every member with email and role', () => {
+    test('a READER gets the forbidden page and no membership is read', async () => {
+        expectAdminForbidden(await render('/admin/rbac', 'READER'));
+        expect(reads.membershipFindMany).not.toHaveBeenCalled();
+        expect(reads.tenantFindUnique).not.toHaveBeenCalled();
+    });
+
+    test('an ADMIN reads the member list and gets the page', async () => {
+        const el = await render('/admin/rbac', 'ADMIN');
+        expect(el.type).not.toBe(ForbiddenPage);
+        expect(reads.membershipFindMany).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('audit log — the owner decision of 2026-10-29', () => {
+    test.each(['READER', 'EDITOR', 'AI_ADMIN'])('a %s gets the forbidden page and the log is never read', async (role) => {
+        expectAdminForbidden(await render('/admin/audit-log', role));
+        expect(reads.listAuditLogs).not.toHaveBeenCalled();
+    });
+
+    test.each(['AUDITOR', 'ADMIN', 'OWNER'])('an %s reads the log', async (role) => {
+        const el = await render('/admin/audit-log', role);
+        expect(el.type).not.toBe(ForbiddenPage);
+        expect(reads.listAuditLogs).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('the gated pages here are the gated pages there', () => {
+    test('PAGES covers every row of ADMIN_PAGE_REQUIREMENTS', () => {
+        expect(Object.keys(PAGES).sort()).toEqual(Object.keys(ADMIN_PAGE_REQUIREMENTS).sort());
+    });
+});

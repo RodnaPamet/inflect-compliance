@@ -29,6 +29,8 @@ import { Heading } from '@/components/ui/typography';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import type { HarnessMatrixView, ShadowRow } from '@/lib/agentic/harness-read-model';
 
+import { sourceKindLabel } from './source-kind-label';
+
 function RegistrationCell({
     row,
     onRegister,
@@ -90,7 +92,11 @@ export function ShadowList({
                     id: 'via',
                     header: t('harness.colVia'),
                     enableSorting: false,
-                    cell: ({ row }) => <span className="text-xs">{row.original.discoveredVia.join(', ')}</span>,
+                    cell: ({ row }) => (
+                        <span className="text-xs">
+                            {row.original.discoveredVia.map((k) => sourceKindLabel(t, k)).join(', ')}
+                        </span>
+                    ),
                 },
                 {
                     id: 'reason',

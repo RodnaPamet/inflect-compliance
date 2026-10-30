@@ -16,7 +16,7 @@
  * mandatory anyway — the server refuses an omitted axis rather than scoring it
  * zero, so the form must always send one.
  */
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Combobox } from '@/components/ui/combobox';
+import { AsyncCombobox, type AsyncOption } from '@/components/ui/async-combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -36,8 +37,9 @@ import {
 import {
     AGENT_AUTONOMY_MAX,
     AGENT_AUTONOMY_MIN,
+    isUnattributedThirdParty,
 } from '@/app-layer/schemas/agent-registry.schemas';
-import { apiErrorMessage } from '@/lib/api-error';
+import { apiRefusalMessage } from '@/lib/api-error';
 
 export interface OwnerOption {
     id: string;
@@ -57,7 +59,7 @@ const ACCESS_SCOPES = [
 ] as const;
 const REVERSIBILITIES = ['REVERSIBLE', 'COMPENSABLE', 'TERMINAL'] as const;
 
-const formSchema = z.object({
+const baseSchema = z.object({
     name: z.string().min(2),
     description: z.string().optional(),
     ownerUserId: z.string().min(1),
@@ -71,17 +73,37 @@ const formSchema = z.object({
     annexIIIArea: z.string().optional(),
     transparencyCase: z.string().optional(),
 });
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = z.infer<typeof baseSchema>;
+
+/** How many vendors one search returns: a search, not a listing. */
+const VENDOR_SEARCH_LIMIT = 50;
 
 interface Props {
     tenantSlug: string;
     owners: OwnerOption[];
+    /**
+     * The supplier picker's FIRST page. Typing searches every vendor in the
+     * tenant, so a supplier past this page is still reachable (#4471).
+     */
     vendors: VendorOption[];
+    /**
+     * May this reader list vendors (`vendors.view`)? FALSE disables the
+     * supplier picker and says why, rather than offering a search every
+     * keystroke of which the vendors route refuses.
+     */
+    canListVendors?: boolean;
     onClose: () => void;
     onCreated: (id: string) => void | Promise<void>;
 }
 
-export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated }: Props) {
+export function NewAgentModal({
+    tenantSlug,
+    owners,
+    vendors,
+    canListVendors = true,
+    onClose,
+    onCreated,
+}: Props) {
     // The `agents` namespace, not `admin`: the register's copy moved to
     // `agents.register.*` when the page left `/admin` (#2426). This modal is
     // part of the register, so its ~30 keys moved with it.
@@ -99,7 +121,33 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
     ];
 
     const ownerOptions = owners.map((o) => ({ value: o.id, label: o.label }));
-    const vendorOptions = [noneOption, ...vendors.map((v) => ({ value: v.id, label: v.name }))];
+    // No "None" entry: the field is shown only for a third-party agent, which
+    // the server refuses without a supplier, so "None" was a choice that could
+    // only be refused (#4471).
+    const vendorOptions = useMemo<AsyncOption[]>(
+        () => vendors.map((v) => ({ value: v.id, label: v.name })),
+        [vendors],
+    );
+    // The first page when nothing is typed; otherwise every vendor whose name
+    // matches, from the vendors route, so the picker is not limited to the
+    // page the server rendered.
+    const searchVendors = useCallback(
+        async (query: string, signal: AbortSignal): Promise<AsyncOption[]> => {
+            if (!canListVendors) return [];
+            const q = query.trim();
+            if (q === '') return vendorOptions;
+            const res = await fetch(
+                `/api/t/${tenantSlug}/vendors?q=${encodeURIComponent(q)}&limit=${VENDOR_SEARCH_LIMIT}`,
+                { signal },
+            );
+            if (!res.ok) return [];
+            const body = (await res.json().catch(() => null)) as
+                | { items?: { id: string; name: string }[] }
+                | null;
+            return (body?.items ?? []).map((v) => ({ value: v.id, label: v.name }));
+        },
+        [canListVendors, tenantSlug, vendorOptions],
+    );
     const scopeOptions = ACCESS_SCOPES.map((s) => ({
         value: s,
         label: t(`register.filterEnums.accessScope.${s}`),
@@ -112,6 +160,23 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
         { value: 'FIRST_PARTY', label: t('register.new.provenanceFirstParty') },
         { value: 'THIRD_PARTY', label: t('register.new.provenanceThirdParty') },
     ];
+
+    // The server's rule, from the module the server reads it from, refused
+    // here with a translated sentence — before this the field was MARKED
+    // required and the form sent it empty, and the refusal came back as
+    // "Invalid request payload" (#4471).
+    const formSchema = useMemo(
+        () =>
+            baseSchema.superRefine((value, ctx) => {
+                if (!isUnattributedThirdParty(value)) return;
+                ctx.addIssue({
+                    code: 'custom',
+                    path: ['vendorId'],
+                    message: t('register.new.vendorRequired'),
+                });
+            }),
+        [t],
+    );
 
     const {
         register,
@@ -166,7 +231,9 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
             });
             if (!res.ok) {
                 const body: unknown = await res.json().catch(() => null);
-                throw new Error(apiErrorMessage(body, t('register.new.errorFallback')));
+                // A validation refusal's reason is in `details`; its message
+                // alone is "Invalid request payload" (#4471).
+                throw new Error(apiRefusalMessage(body, t('register.new.errorFallback')));
             }
             const created = (await res.json()) as { id: string };
             await onCreated(created.id);
@@ -200,7 +267,7 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
     );
 
     const enumSelect = (
-        name: 'dataAccessScope' | 'reversibility' | 'provenance' | 'ownerUserId' | 'vendorId',
+        name: 'dataAccessScope' | 'reversibility' | 'provenance' | 'ownerUserId',
         options: { value: string; label: string }[],
         placeholder: string,
         hideSearch = true,
@@ -354,16 +421,34 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
                             {provenance === 'THIRD_PARTY' && (
                                 <FormField
                                     label={t('register.new.vendorLabel')}
-                                    hint={t('register.new.vendorHint')}
+                                    hint={canListVendors ? t('register.new.vendorHint') : undefined}
+                                    // Always visible, not a tooltip: it explains
+                                    // why the picker beneath it is disabled.
+                                    description={
+                                        canListVendors ? undefined : t('register.new.vendorUnavailable')
+                                    }
                                     required
                                     error={errors.vendorId?.message}
                                 >
-                                    {enumSelect(
-                                        'vendorId',
-                                        vendorOptions,
-                                        t('register.new.vendorPlaceholder'),
-                                        false,
-                                    )}
+                                    <Controller
+                                        control={control}
+                                        name="vendorId"
+                                        render={({ field }) => (
+                                            <AsyncCombobox
+                                                id="agent-vendorId-input"
+                                                name="vendorId"
+                                                value={field.value || null}
+                                                onChange={(o) => field.onChange(o?.value ?? '')}
+                                                onSearch={searchVendors}
+                                                initialOptions={vendorOptions}
+                                                placeholder={t('register.new.vendorPlaceholder')}
+                                                searchPlaceholder={t('register.new.vendorSearchPlaceholder')}
+                                                disabled={!canListVendors}
+                                                invalid={Boolean(errors.vendorId)}
+                                                matchTriggerWidth
+                                            />
+                                        )}
+                                    />
                                 </FormField>
                             )}
                         </div>

@@ -139,6 +139,114 @@ describe('IncidentsClient render', () => {
     });
 });
 
+// #4463 — the Next deadline badge's state (pending / due / overdue) was
+// conveyed by its colour alone; the text was only the kind ("24h").
+describe('IncidentsClient — the Next deadline badge names its state', () => {
+    afterEach(() => mockSWR.mockReset());
+
+    it('reads "24h · Overdue", not a red "24h"', () => {
+        mockSWR.mockReturnValue({ data: ROWS, isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentsClient initialIncidents={ROWS} tenantSlug="acme" canManage />));
+        expect(screen.getByText('24h · Overdue')).toBeInTheDocument();
+    });
+
+    it('names a deadline that is due soon, and one that is pending', () => {
+        const rows = [
+            makeRow({
+                notifications: [
+                    { kind: 'DETAILED_72H', dueAt: '2026-06-04T00:00:00.000Z', status: 'DUE' },
+                ],
+            }),
+            makeRow({
+                id: 'inc_3',
+                reference: 'INC-2026-003',
+                notifications: [
+                    { kind: 'FINAL_1MONTH', dueAt: '2026-07-01T00:00:00.000Z', status: 'PENDING' },
+                ],
+            }),
+        ];
+        mockSWR.mockReturnValue({ data: rows, isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentsClient initialIncidents={rows} tenantSlug="acme" canManage />));
+        expect(screen.getByText('72h · Due soon')).toBeInTheDocument();
+        expect(screen.getByText('1mo · Pending')).toBeInTheDocument();
+    });
+});
+
+// #4463 — a search or filter that matches nothing is not an empty register.
+describe('IncidentsClient — a search that matches nothing', () => {
+    afterEach(() => {
+        mockSWR.mockReset();
+        window.history.replaceState({}, '', '/');
+    });
+
+    it('says nothing matched, not "No incidents yet", and clears back to the register', () => {
+        window.history.replaceState({}, '', '/t/acme/incidents?q=no-such-incident');
+        mockSWR.mockReturnValue({ data: ROWS, isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentsClient initialIncidents={ROWS} tenantSlug="acme" canManage />));
+
+        expect(screen.getByText('No incidents match your search or filters')).toBeInTheDocument();
+        expect(screen.queryByText(/No incidents yet/i)).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+        expect(screen.getByText(/INC-2026-001/)).toBeInTheDocument();
+        expect(screen.queryByText('No incidents match your search or filters')).not.toBeInTheDocument();
+    });
+
+    it('says nothing matched when a filter hides every row', () => {
+        window.history.replaceState({}, '', '/t/acme/incidents?severity=MEDIUM');
+        mockSWR.mockReturnValue({ data: ROWS, isLoading: false, error: null, mutate: jest.fn() });
+        render(withSWR(<IncidentsClient initialIncidents={ROWS} tenantSlug="acme" canManage />));
+
+        expect(screen.getByText('No incidents match your search or filters')).toBeInTheDocument();
+        expect(screen.queryByText(/No incidents yet/i)).not.toBeInTheDocument();
+    });
+});
+
+// #4463 — the register read stops at the backfill cap. The response says so
+// (`truncated`), and the KPI cards come from server counts over every
+// incident rather than from the rows that made it into the list.
+describe('IncidentsClient — a capped register', () => {
+    afterEach(() => mockSWR.mockReset());
+
+    it('shows the truncation banner and the server KPI counts, not counts of the loaded rows', () => {
+        mockSWR.mockReturnValue({
+            data: {
+                rows: ROWS,
+                truncated: true,
+                kpiCounts: { total: 7200, open: 6100, reportable: 310, deadlinesDueOrOverdue: 12 },
+            },
+            isLoading: false,
+            error: null,
+            mutate: jest.fn(),
+        });
+        render(withSWR(<IncidentsClient initialIncidents={ROWS} tenantSlug="acme" canManage />));
+
+        expect(screen.getByTestId('list-truncation-banner')).toBeInTheDocument();
+        // Counted over 7,200 incidents — the two loaded rows would give 1 / 1 / 1.
+        expect(screen.getByText('6100')).toBeInTheDocument();
+        expect(screen.getByText('310')).toBeInTheDocument();
+        expect(screen.getByText('12')).toBeInTheDocument();
+        // The rows themselves still render.
+        expect(screen.getByText(/INC-2026-001/)).toBeInTheDocument();
+    });
+
+    it('shows no banner when the register fits under the cap', () => {
+        mockSWR.mockReturnValue({
+            data: {
+                rows: ROWS,
+                truncated: false,
+                kpiCounts: { total: 2, open: 1, reportable: 1, deadlinesDueOrOverdue: 1 },
+            },
+            isLoading: false,
+            error: null,
+            mutate: jest.fn(),
+        });
+        render(withSWR(<IncidentsClient initialIncidents={ROWS} tenantSlug="acme" canManage />));
+        expect(screen.queryByTestId('list-truncation-banner')).not.toBeInTheDocument();
+        expect(screen.getByText(/INC-2026-002/)).toBeInTheDocument();
+    });
+});
+
 describe('NewIncidentModal submit', () => {
     const origFetch = global.fetch;
     afterEach(() => {
@@ -184,6 +292,132 @@ describe('NewIncidentModal submit', () => {
         });
         fireEvent.click(screen.getByText('Create incident'));
         expect(await screen.findByText(/Failed to open incident/i)).toBeInTheDocument();
+    });
+
+    // #4463 — the modal threw its generic message on any non-2xx without
+    // reading the body, so the server's reason never reached the person.
+    it("shows the server's reason from the error envelope", async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: false,
+            status: 400,
+            json: async () => ({
+                error: { code: 'BAD_REQUEST', message: 'Owner must be an active member of this tenant' },
+            }),
+        }) as unknown as typeof fetch;
+        render(
+            withSWR(
+                <NewIncidentModal open onClose={jest.fn()} tenantSlug="acme" onCreated={jest.fn()} />,
+            ),
+        );
+        fireEvent.change(screen.getByPlaceholderText(/Ransomware on the billing cluster/i), {
+            target: { value: 'Event with a stale owner' },
+        });
+        fireEvent.click(screen.getByText('Create incident'));
+        expect(
+            await screen.findByText('Owner must be an active member of this tenant'),
+        ).toBeInTheDocument();
+        expect(screen.queryByText(/Failed to open incident/i)).not.toBeInTheDocument();
+    });
+
+    it('names an over-long title at its field and sends nothing', async () => {
+        global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => [] }) as unknown as typeof fetch;
+        render(
+            withSWR(
+                <NewIncidentModal open onClose={jest.fn()} tenantSlug="acme" onCreated={jest.fn()} />,
+            ),
+        );
+        fireEvent.change(screen.getByPlaceholderText(/Ransomware on the billing cluster/i), {
+            target: { value: 'x'.repeat(301) },
+        });
+        fireEvent.click(screen.getByText('Create incident'));
+        expect(await screen.findByText(/Keep the title to/)).toBeInTheDocument();
+        // (The owner picker loads its members; nothing reaches the create route.)
+        expect(global.fetch).not.toHaveBeenCalledWith('/api/t/acme/incidents', expect.anything());
+    });
+});
+
+// #4463 — "Detected at" is the clock every Article 23 deadline is counted
+// from. It was a day-only DatePicker whose value is UTC midnight, so any
+// pick moved detection to 00:00 UTC and every deadline fell early.
+describe('NewIncidentModal — the detection time', () => {
+    const origFetch = global.fetch;
+    // 14:37:20 local on 29 Oct 2026 — `advanceTimers` keeps the clock moving
+    // so the form's async work still settles.
+    const OPENED = new Date(2026, 9, 29, 14, 37, 20);
+
+    beforeEach(() => {
+        jest.useFakeTimers({ now: OPENED, advanceTimers: true });
+        global.fetch = jest.fn(async (url: string) => ({
+            ok: true,
+            json: async () => (url === '/api/t/acme/incidents' ? { id: 'inc_new' } : []),
+        })) as unknown as typeof fetch;
+    });
+    afterEach(() => {
+        jest.useRealTimers();
+        global.fetch = origFetch;
+    });
+
+    const createCalls = () =>
+        (global.fetch as jest.Mock).mock.calls.filter(([url]) => url === '/api/t/acme/incidents');
+
+    async function submit(onCreated = jest.fn()) {
+        fireEvent.change(screen.getByPlaceholderText(/Ransomware on the billing cluster/i), {
+            target: { value: 'Ransomware event' },
+        });
+        fireEvent.click(screen.getByText('Create incident'));
+        await new Promise((r) => setTimeout(r, 0));
+        await new Promise((r) => setTimeout(r, 0));
+        return onCreated;
+    }
+
+    function renderModal(onCreated = jest.fn()) {
+        render(
+            withSWR(<NewIncidentModal open onClose={jest.fn()} tenantSlug="acme" onCreated={onCreated} />),
+        );
+        return screen.getByLabelText('Time detected') as HTMLInputElement;
+    }
+
+    it('defaults to the minute the form opened, in local time — not midnight', async () => {
+        const time = renderModal();
+        expect(time.value).toBe('14:37');
+        // The day is today's LOCAL date (the picker holds it as that Y/M/D).
+        expect(document.querySelector('[data-value="2026-10-29"]')).not.toBeNull();
+
+        await submit();
+
+        expect(createCalls()).toHaveLength(1);
+        const body = JSON.parse(createCalls()[0][1].body);
+        expect(new Date(body.detectedAt).getTime()).toBe(new Date(2026, 9, 29, 14, 37, 0).getTime());
+    });
+
+    it('sends the time the person enters', async () => {
+        const time = renderModal();
+        fireEvent.change(time, { target: { value: '09:05' } });
+
+        await submit();
+
+        const body = JSON.parse(createCalls()[0][1].body);
+        expect(new Date(body.detectedAt).getTime()).toBe(new Date(2026, 9, 29, 9, 5, 0).getTime());
+    });
+
+    it('refuses a detection time later than now, and sends nothing', async () => {
+        const time = renderModal();
+        fireEvent.change(time, { target: { value: '15:00' } });
+
+        await submit();
+
+        expect(screen.getByText('The detection time cannot be in the future.')).toBeInTheDocument();
+        expect(createCalls()).toHaveLength(0);
+    });
+
+    it('refuses a missing time rather than guess one', async () => {
+        const time = renderModal();
+        fireEvent.change(time, { target: { value: '' } });
+
+        await submit();
+
+        expect(screen.getByText('Enter the time the incident was detected.')).toBeInTheDocument();
+        expect(createCalls()).toHaveLength(0);
     });
 });
 

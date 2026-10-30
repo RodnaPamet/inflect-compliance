@@ -28,7 +28,7 @@ auditor can verify the inventory is accurate, not merely asserted.
 | Stripe | Tenant billing contact email; plan; payment method (held by Stripe — we do not store it) | Billing | US | Per Stripe agreement | Yes (self-hosted mode disables) |
 | SMTP relay (operator-chosen) | Recipient email; message body (verification tokens, notification text — may include names + tenant slug) | Email delivery | Per operator | Per operator | No (delivery surface) |
 | OpenRouter | Risk-assessment prompt text (risk titles/descriptions — business content) | AI risk suggestions | US/global | Per OpenRouter | Yes (default `stub`; off unless enabled) |
-| Anthropic (Claude API) | Posture summary: aggregate metrics only (counts + percentages — no PII, no entity text). Risk suggestions: risk-assessment prompt text (risk titles/descriptions, asset names — business content). Agent runs (Flue, tenants with `aiResidency=EXTERNAL`): the run's prompt — workflow description, declared run input and read-tool output; for `discovered-agent-review` that includes a discovered agent's source owner reference (`DiscoveredAgent.ownerRef`, a person reference from the customer's directory) | AI posture summary; AI risk suggestions; agent runtime (Flue) | US/global | Per Anthropic | Yes (both default `stub`; off unless enabled) |
+| Anthropic (Claude API) | Posture summary: aggregate metrics only (counts + percentages — no PII, no entity text). Risk suggestions: risk-assessment prompt text (risk titles/descriptions, asset names — business content). Agent runs (Flue, tenants with `aiResidency=EXTERNAL`): the run's prompt — workflow description, declared run input and read-tool output; for `discovered-agent-review` that includes a discovered agent's source owner reference (`DiscoveredAgent.ownerRef`, a person reference from the customer's directory). Agent profile runs (Tool Runner engine, tenants with `aiResidency=EXTERNAL`): tenant-authored agent instructions, and the output of the read tools the profile names | AI posture summary; AI risk suggestions; agent runtime (Flue, Tool Runner) | US/global | Per Anthropic | Yes (both default `stub`; off unless enabled) |
 | HaveIBeenPwned | SHA-1 prefix of a chosen password (k-anonymity; no PII) | Password breach check | Global | Volatile (no log) | No (security primitive) |
 | GitHub | Repo metadata (per-tenant integration only) | Repo sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Microsoft SharePoint | Document metadata (per-tenant integration only) | Document sync | Global | Token lifetime | Yes (per-tenant opt-in) |
@@ -156,7 +156,7 @@ enabling any of them adds a sub-processor and requires an entry above.
 - **Also used by** the inbound-questionnaire autofill (PR-9): env `AI_QUESTIONNAIRE_PROVIDER` (default `stub`; `openrouter` + `OPENROUTER_API_KEY` to enable) — routes questionnaire questions + grounding through OpenRouter (`src/app-layer/ai/questionnaire/openrouter-provider.ts`).
 - **Codebase:** `src/app-layer/ai/risk-assessment/openrouter-provider.ts:14` (`https://openrouter.ai/api/v1/chat/completions`); env `AI_RISK_PROVIDER`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` (`src/env.ts:213`).
 
-### Anthropic (Claude API) — AI compliance-posture summary + AI risk suggestions (optional)
+### Anthropic (Claude API) — AI compliance-posture summary, AI risk suggestions and agent runs (optional)
 
 Two independent features share ONE credential (`ANTHROPIC_API_KEY` /
 `ANTHROPIC_MODEL`) but send **materially different payloads**. Each is
@@ -176,7 +176,13 @@ enabled by its own env var, so an operator can run either alone.
 - **Residency:** a tenant with `aiResidency=LOCAL_ONLY` never reaches this provider; its runs use the local model.
 - **Owner decision (2026-10-18):** naming this data category on the existing Anthropic row is sufficient; the agent runtime ships without a separate notice window or a code gate for it.
 
-Common to all three:
+**(d) Agent profile runs (Tool Runner engine)** — the Messages API, model `AGENT_TOOL_RUNNER_MODEL_BALANCED` / `AGENT_TOOL_RUNNER_MODEL_DEEP` by the profile's tier
+- **Data shared:** **tenant-authored agent instructions**: the instructions a workspace writes on an agent's Behaviour tab, sent as the operator's own fenced block, under the hash its approval pinned. With them, the run's fixed task sentence and the output of the read tools the profile names and the agent is granted, labelled as data. A Test run is read-only, so it offers no propose tool.
+- **Residency:** a tenant with `aiResidency=LOCAL_ONLY` never reaches this provider: `clientForRun` refuses it (`TOOL_RUNNER_LOCAL_ONLY_UNSERVED`) before anything external is read.
+- **Nothing stored at Anthropic beyond the Messages API call:** the client reaches `/v1/messages` only, and refuses to build while `ANTHROPIC_CUSTOM_HEADERS` is set (`src/lib/agentic/tool-runner/client.ts`).
+- **Owner decision (2026-10-25, Agent SDK design decision 2):** naming this data category on the existing Anthropic row is sufficient, matching the 2026-10-18 decision for Flue. The engine ships without a separate notice window; it runs only where the operator sets `AGENT_DRIVER_TOOL_RUNNER` and an owner chooses it (Step 2c, #4150).
+
+Common to all four:
 - **Legal basis:** legitimate interest (Art. 6(1)(f)); only active when the operator opts in.
 - **Processing instructions:** generate the requested completion; per Anthropic's terms.
 - **Transfer:** Anthropic US/global; per its terms.
@@ -184,7 +190,7 @@ Common to all three:
 - **Operator-optional:** both default to `stub` (deterministic local providers — no external call). Set `AI_POSTURE_PROVIDER=anthropic` and/or `AI_RISK_PROVIDER=anthropic`, plus `ANTHROPIC_API_KEY` (model via `ANTHROPIC_MODEL`), to enable. `…=openrouter` routes the same respective payload through OpenRouter instead.
 - **Workspace:** an API key created inside an Anthropic workspace needs nothing more. An ORGANISATION-level key is refused by Anthropic with HTTP 400 unless each request names its workspace, so set `ANTHROPIC_WORKSPACE_ID` (a `wrkspc_…` identifier, not a secret) and every request to the Anthropic API — both features above, and the Flue agent runtime's external provider, which uses the same key — carries the header `anthropic-workspace-id: <id>`. Unset, no request carries it. The header names which of the operator's own workspaces the request is billed and governed under; it sends no customer data and changes nothing about what each payload contains (`src/lib/ai/anthropic-workspace.ts`).
 - **Model:** the two features above share `ANTHROPIC_MODEL` (default `claude-haiku-4-5`). The Flue agent runtime's external provider, which uses the same key, names its own model, `AGENT_FLUE_MODEL` (default `claude-sonnet-5-5`), so the agent runtime and these two features can run on different models without a second credential. Neither variable changes what any payload contains.
-- **Env:** `AI_POSTURE_PROVIDER`, `AI_RISK_PROVIDER`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_WORKSPACE_ID`, `AGENT_FLUE_MODEL` (`src/env.ts`).
+- **Env:** `AI_POSTURE_PROVIDER`, `AI_RISK_PROVIDER`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_WORKSPACE_ID`, `AGENT_FLUE_MODEL`, `AGENT_DRIVER_TOOL_RUNNER`, `AGENT_TOOL_RUNNER_MODEL_BALANCED`, `AGENT_TOOL_RUNNER_MODEL_DEEP` (`src/env.ts`).
 
 ### HaveIBeenPwned — password breach check
 - **PII shared:** **none** — only the first 5 hex chars of the SHA-1 of a candidate password (k-anonymity range query). The full hash/password never leaves the server.

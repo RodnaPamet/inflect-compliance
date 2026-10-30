@@ -140,6 +140,26 @@ describe('a view-key-only reader', () => {
     });
 });
 
+// The Runs tab reads `GET /agent-runs`, which takes the runs page's gate
+// (`admin.view` OR the view key) rather than this page's inventory read. The one
+// reader they disagree about — a custom role holding the register key and
+// neither of those — finds the tab disabled rather than opened and refused.
+describe('the Runs tab', () => {
+    it('is disabled for a register-key holder the runs route refuses', () => {
+        renderWith({ ...VIEW_ONLY, canReadRegistry: true, canReadRuns: false });
+        expect(tab('runs')?.disabled).toBe(true);
+        expect(tab('risk')?.disabled).toBe(false);
+    });
+
+    it('is open when the runs route admits the reader, and when the flag is not threaded', () => {
+        renderWith({ ...VIEW_ONLY, canReadRuns: true });
+        expect(tab('runs')?.disabled).toBe(false);
+        cleanup();
+        renderWith(VIEW_ONLY);
+        expect(tab('runs')?.disabled).toBe(false);
+    });
+});
+
 // Step 1b (#4144): the Behaviour tab exists only while AGENT_PROFILES is on, and
 // its read takes the register key, so a view-key reader finds it disabled.
 describe('the Behaviour tab', () => {

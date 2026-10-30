@@ -66,10 +66,10 @@ code:
   agent (`TenantApiKey.agentId`, `maxAutonomyLevel`) and pointing the agent at
   `/api/mcp`.
 
-What a tenant **cannot** do yet is have Inflect run what it says the agent
-should *do*. Since Step 1a it can write it down, behind the `AGENT_PROFILES`
-flag (see "Agent profiles" below), but no engine runs a profile until Phase 2.
-An Inflect-hosted
+Since Step 2c a tenant can also have Inflect run what it says the agent should
+*do*: it writes a profile behind the `AGENT_PROFILES` flag (see "Agent profiles"
+below), an owner chooses the Tool Runner engine, and the Behaviour tab's Test
+run runs a version read-only, as the agent. Outside a profile, an Inflect-hosted
 run executes a `WorkflowDefinition` from `src/lib/agentic/workflow-registry.ts`
 (nine in `src/lib/agentic/workflows/` plus the registry's own `diagnostic`), and
 each one is written by this repository. So "set up my own agent" today means one of two things. Either the
@@ -243,10 +243,12 @@ profile run key is refused at admission.
     version as `def.profile`;
   - a run that is admitted pins `profileVersionId` and
     `profileInstructionsHash`, write-once.
-- **No engine runs a profile yet** (decision 7 below). `runsProfiles(driver)` is
-  false for every engine, so admission refuses a profile before the run row
-  exists: `PROFILE_NEEDS_REASONING_ENGINE` on the static engine, and
-  `PROFILE_ENGINE_CANNOT_RUN_PROFILES` on Flue.
+- **Only the Tool Runner engine runs a profile** (Step 2c, #4150; decision 7
+  below keeps Flue out). `runsProfiles` is true for `tool-runner` alone, and a
+  profile's definition asks for that engine. Admission refuses a profile on any
+  other engine before the run row exists: `PROFILE_NEEDS_REASONING_ENGINE` where
+  the tenant's engine is static or Flue, `PROFILE_ENGINE_CANNOT_RUN_PROFILES` on
+  a reasoning engine whose entry is false.
 - **The tools a run is offered** are narrowed in the engine-neutral core.
   `offerToolSet`'s `profileTools` offers the intersection of the version's
   tools and the agent's current grants. It records each tool lost to a revoked
@@ -264,8 +266,11 @@ profile run key is refused at admission.
   - A reviewer who is not the author sees the submitted text diffed against the
     version in force. Approve sends the hash on screen. Reject asks for a
     reason.
-  - Test run is shown on a submitted or approved version, disabled, and names
-    the engine setting it needs.
+  - Test run is shown on a submitted or approved version (Step 2c). Where the
+    workspace's engine runs profiles, it starts a read-only run of that version
+    as the agent and opens the Runs tab; otherwise it is disabled and says why:
+    the engine (named), the engine not in force, the agent not ready, or a
+    version that does not allow `TEST_RUN`.
 - **A rejection says why.** `AgentProfileVersion.rejectionReason` is sanitised,
   at most 1,000 characters, encrypted at rest, and never audited. The trigger
   writes it only in the move from SUBMITTED to REJECTED, requires it there, and
@@ -286,21 +291,46 @@ profile run key is refused at admission.
   - member labels in place of user ids;
   - `testRun`.
 
-Two things are not enforced yet, and the steps that need them carry them:
-
-- **`allowedTriggers`** is checked at each trigger site as it gains a start
-  path: Test run in Step 2c, the Ask page and automation in Phase 2.
-- **Resume and settlement** still read the registry. A profile run row cannot
-  exist until an engine runs profiles, and the engine that does routes both
-  through the resolver (Step 2b).
+- **`allowedTriggers` is checked where a trigger starts a run.** The Test run
+  checks `TEST_RUN` (Step 2c); the Ask page and automation check theirs when they
+  gain a start path in Phase 2.
+- **The worker and resume execute what admission pinned** (Step 2c). They
+  rebuild a profile run's definition from the run's own `profileVersionId`,
+  while its instructions hash to `profileInstructionsHash`, never by approval
+  status and never from the registry, which knows no profile key.
 
 ### What the harness scanner recognises
 
 The reference scanner's `code` source
 (`packages/agent-harness-scanner/src/sources/code/recognize.ts`) reads static
-code for LangChain and LangGraph agents only. An agent built on the Claude Agent
-SDK that a customer runs today is invisible to it, and so it is reported as
-neither shadow nor registered.
+code for LangChain, LangGraph and Claude Agent SDK agents (Step 3b, #4156).
+
+- **What counts as an SDK agent.** A call resolved through the file's imports:
+  - `query` from `@anthropic-ai/claude-agent-sdk`;
+  - `query` or `ClaudeSDKClient` from `claude_agent_sdk`;
+  - in Python, a `ClaudeAgentOptions` that no such call in its file consumes.
+  A local function called `query` is not one.
+- **What is reported.** Its tools, model and credentials, as for the other
+  frameworks.
+- **Its options become NOT MET verdicts.** The owner's mapping of 2026-10-29
+  (`AGENT_SDK_OPTION_CRITERIA` in `src/lib/agentic/harness-findings.ts`):
+
+  | Option | Criterion |
+  | --- | --- |
+  | `bypassPermissions` | `H3.propose_not_commit` |
+  | host settings loaded | `H3.skills_declared` and `H2.tools_allowlisted` |
+  | an `allowedTools` wildcard | `H2.tools_allowlisted` |
+  | a callable `Bash` or `WebFetch` | `H2.tools_allowlisted` |
+  | no hook, with `settingSources: []` | `H3.payloads_guarded` |
+
+  - Each verdict carries the option's `code://` locator as evidence.
+  - Code never makes a criterion MET.
+  - An option the reader could not resolve concludes nothing, and makes the
+    source `UNPARSEABLE`.
+  - The verdicts reach the ingest through `/3` as it stands; the contract has
+    no member for the options themselves.
+- **Where it shows.** An SDK agent in a scanned repository shows up as shadow,
+  or as registered once the register links it, like a LangGraph one.
 
 ### The free-text instruction question was asked once already
 
@@ -558,14 +588,16 @@ should not. It can make governing it a few clicks:
    agent's exact granted tool names, and the hardening above (`settingSources:
    []`, `strictMcpConfig`, an explicit `permissionMode`). Copy, paste, run.
    The customer types no `curl` and no `ant`.
-3. The harness scanner's `code` source learns to recognise the SDK
-   (`@anthropic-ai/claude-agent-sdk`, Python `claude_agent_sdk`): `query(...)` /
-   `ClaudeSDKClient(...)` call sites, their `tools`, `allowedTools`,
-   `mcpServers`, `permissionMode`, `settingSources` and `agents`. An SDK agent in a
-   scanned repository then shows up as shadow or registered like a LangGraph
-   one. Its options also become harness-ladder evidence. `bypassPermissions`, a
-   missing `settingSources: []` or a wildcard `allowedTools` are findings
-   against H2/H3. They are never gates, because the ladder is report-only.
+3. The harness scanner's `code` source recognises the SDK
+   (`@anthropic-ai/claude-agent-sdk`, Python `claude_agent_sdk`; Step 3b, #4156):
+   `query(...)` / `ClaudeSDKClient(...)` call sites, their `tools`,
+   `allowedTools`, `mcpServers`, `permissionMode`, `settingSources`, `agents`
+   and `hooks`. An SDK agent in a scanned repository shows up as shadow or
+   registered like a LangGraph one. Its options are also harness-ladder
+   evidence, as NOT MET verdicts against H2/H3: `bypassPermissions`, host
+   settings loaded, a wildcard `allowedTools`, a callable `Bash` or `WebFetch`,
+   and no hook. They are never gates, because the ladder is report-only.
+   "What the harness scanner recognises" above has the owner's mapping.
 
 Every call still lands on `/api/mcp`, so the funnel's authorization applies
 unchanged: kill switch, grants, policy card, autonomy ceiling, audit,

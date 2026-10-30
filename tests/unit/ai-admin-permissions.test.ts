@@ -39,7 +39,8 @@ const EXPECTED_AI_ADMIN: { [D in keyof PermissionSet]: PermissionSet[D] } = {
     vendors: { view: true, create: false, edit: false },
     tests: { view: true, create: false, execute: false },
     incidents: { view: true, manage: false },
-    personnel: { view: true, manage: false },
+    // The people layer is OWNER/ADMIN only (owner decision, 2026-10-29).
+    personnel: { view: false, manage: false },
     // `decide` is READER's too: the usecase narrows it to the campaign's
     // assigned reviewer, so an AI admin decides only a review assigned to them.
     access_reviews: { view: true, create: false, decide: true, close: false },

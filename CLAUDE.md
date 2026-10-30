@@ -816,6 +816,17 @@ Bearer, nothing else, because the fall-through also skips the admin-role
 and MFA gates. The edge never decides whether a key is REAL; the handler
 does (`tryApiKeyAuth` throws 401 rather than falling back to the cookie).
 
+**A key bound to an agent answers to that agent at REST too** (#4481, owner
+decision 2026-10-29). `tryApiKeyAuth` calls `assertAgentKeyMayActAtRest`
+(`src/lib/agentic/agent-key-rest-gate.ts`) for every key with an `agentId`.
+A kill in force (platform, tenant or agent scope) or any status but ACTIVE
+refuses the key with a 403 and an `AUTHZ_DENIED` row (gate `agent_key_rest`),
+and a kill state that cannot be read fails the request. Before it, only the
+MCP funnel read the agent, so killing or suspending an agent left its key
+reading over REST. It does NOT hold a key to its agent's tool grants on REST:
+REST reach is still the key's scopes intersected with its principal. So a key
+meant for `/api/mcp` carries only the scopes its grants need.
+
 **Last-OWNER protection — two layers.** Usecase layer
 (`updateTenantMemberRole`, `deactivateTenantMember`, `removeTenantMember`)
 counts ACTIVE OWNERs and throws `forbidden('Cannot demote/deactivate the last
@@ -969,6 +980,8 @@ signed its subject in from any browser.
 ### Background Jobs (BullMQ)
 
 Job definitions are in `src/app-layer/jobs/`. The executor registry is `src/app-layer/jobs/executor-registry.ts`. Jobs wrap their body in `runJob()` from `@/lib/observability/job-runner`, which opens a fresh AsyncLocalStorage request context (`route: job:<name>`) and a `traceOperation` span; the BullMQ worker additionally runs each execution inside an `execute <jobName>` span linked to the originating `enqueue` span. No job uses `traceUsecase`.
+
+**A job that must write a NOT NULL `User` foreign key writes it as the tenant's SYSTEM user** (#4400), through `buildTenantSystemJobContext` in `src/app-layer/context-system.ts`. It must not borrow a member for that. The row is `sys_<tenantId>`, created on first use. Its `emailHash` is `system:<tenantId>`, which no lookup by email can compute, and it never has a password. Migration `20261029200000_tenant_system_user` refuses the `sys_` id in every table a sign-in or standing needs: Account, identity link, tenant and org membership, password reset, MFA, both session tables, API keys and device tokens. So no code path can make it a person. The jwt callback and the mailer refuse it again as a second line. The policy review reminder and the evidence retention notifications have moved. The other borrowing callers move one per PR, each with a test that the row no longer names a person (`buildDelegatedJobContext`'s docblock). A job acting for a named, accountable person still resolves their membership (`resolveMemberContext`).
 
 ### Data Retention
 
@@ -1769,7 +1782,8 @@ through their own routes. Rules that are easy to undo:
 **The reference scanner** (`packages/agent-harness-scanner`, #3678) runs in a
 client's estate and posts what the ingest above verifies. Okta, Azure Key Vault,
 LangSmith (the `runtime` source, #3738) and the `code` source (LangChain and
-LangGraph, #3737) today; Entra, MCP, the register and the container are #3686.
+LangGraph, #3737; the Claude Agent SDK, #4156) today; Entra, MCP, the register
+and the container are #3686.
 
 - **Read-only is the wire's shape.** A source holds `ReadOnlyHttp`, whose only
   verb is GET — do not give `getJson` a method parameter. The OAuth token
@@ -1801,8 +1815,11 @@ LangGraph, #3737) today; Entra, MCP, the register and the container are #3686.
   beside the signing key. `eslint.config.mjs` refuses `child_process`, `vm`, a
   module loader, `require()`, `import()` and `eval` there, and the side-effect
   test proves it. An agent counts only when its names resolve through the
-  file's imports to a `langchain`/`langgraph` module, and anything that does not
-  resolve is `UNPARSEABLE` — never dropped, and never guessed into a value.
+  file's imports to a `langchain`/`langgraph` or Claude Agent SDK module, and
+  anything that does not resolve is `UNPARSEABLE` — never dropped, and never
+  guessed into a value. A file that names none of those modules is not parsed
+  (`FRAMEWORK_MARKERS` in `sources/code/files.ts`): a framework recognised
+  without its marker there finds nothing, silently.
 
 **Client estates** (`usecases/agent-harness-estates.ts`, the only writer of
 `AgentHarnessEstate` and `AgentHarnessEstateSource`; health in the pure
@@ -2771,6 +2788,23 @@ a run RECORDS — `WorkflowRun.driver` and the run metrics' `driver` label — i
 `'flue' ? 'FLUE' : 'STATIC'` ternary: with a third engine that ternary records
 every run it walks as STATIC (#4270).
 
+**The scanner finds Agent SDK agents customers run, and code only ever counts
+against them** (Step 3b, #4156). The `code` source recognises `query` /
+`ClaudeSDKClient` from the SDK, and its options become ladder verdicts through
+`agentSdkOptionVerdicts` (`src/lib/agentic/harness-findings.ts`). Three rules
+that are each one careless edit from being undone:
+
+  - **The mapping is the owner's.** `AGENT_SDK_OPTION_CRITERIA` records the
+    decisions of 2026-10-29 on #4156. A new option, or a new criterion for an
+    old one, is put to the owner first: the step's rule is to ask, not invent.
+  - **NOT MET only.** Code can show a control is missing, never that one works:
+    a hook's body, a sandbox and a gateway are out of its sight. So nothing the
+    `code` source reports is `met: true`, and a present hook evidences nothing.
+  - **An option the reader could not resolve concludes nothing.** Options
+    passed in, spread or computed are `null` facts, never the SDK's defaults,
+    and make the source `UNPARSEABLE`. Reading an unseen option as its default
+    would raise a finding the code does not support, or hide one it does.
+
 **An agent profile is what the agent should DO, never what it may reach**
 (Step 1a, #4143; `usecases/agent-profiles.ts` is the only writer,
 `usecases/agent-profile-runs.ts` the resolver). Rules that are each one careless
@@ -2793,15 +2827,29 @@ edit from being undone:
   - **`agent-profile:<id>@v<n>` resolves only inside the caller's tenant**, and
     only the APPROVED version in force; a malformed key is refused, never read
     as a registered workflow key.
-  - **No engine runs a profile yet** (owner decision, 2026-10-26).
-    `runsProfiles(driver)` is a `Record<AgentDriver, boolean>`, false for every
-    engine, and admission refuses a profile before the run row exists:
-    `PROFILE_NEEDS_REASONING_ENGINE` on static, `PROFILE_ENGINE_CANNOT_RUN_PROFILES`
-    otherwise. Flue builds its prompt from the definition's description, so it
-    would run a profile while ignoring the instructions. The engine that sets
-    its entry true must render the pinned instructions as the operator's fenced
-    block, pass `profileTools`, and record the data category on the Anthropic
-    sub-processor row in the same diff (Step 2c).
+  - **Only the Tool Runner runs a profile** (Step 2c, #4150). `runsProfiles` is
+    a `Record<AgentDriver, boolean>`, true for `tool-runner` alone; a profile's
+    definition asks for that engine, and admission refuses it before the run row
+    exists: `PROFILE_NEEDS_REASONING_ENGINE` where the tenant's engine is static
+    (or Flue, which a profile does not ask for), `PROFILE_ENGINE_CANNOT_RUN_PROFILES`
+    on a reasoning engine whose entry is false. Flue stays false by decision
+    (2026-10-26): it would run a profile while ignoring the instructions. The
+    Anthropic row of `docs/sub-processors.md` names "tenant-authored agent
+    instructions"; an engine that sets its entry true records its data category
+    in the same diff.
+  - **A Test run is its own key, `agent-profile:<id>@v<n>:test-run`**, admitted
+    only when the caller passes `profileTrigger: 'TEST_RUN'`, which only
+    `startAgentProfileTestRun` does: the generic start route refuses that key
+    (`PROFILE_TEST_RUN_KEY`). It may name the SUBMITTED version, must be allowed
+    by the version's own `allowedTriggers`, runs as the agent from a PERSON's
+    context (`TESTER_NOT_A_PERSON` otherwise), and its definition is read-only
+    whatever the output kind. The key is what tells the worker it is a Test run,
+    so do not drop the suffix from the stored `workflowKey`.
+  - **The worker executes what admission PINNED.** `executeQueuedWorkflowRun`
+    and resume rebuild a profile run's definition from the run's own
+    `profileVersionId` while its instructions hash to `profileInstructionsHash`
+    (`resolvePinnedRunDefinition`), never by approval status and never from the
+    registry, which knows no profile key.
   - **A run pins `profileVersionId` and `profileInstructionsHash`**, written in
     the CREATE and never after (trigger), both or neither (CHECK).
   - **`AGENT_PROFILES` is the deployment's switch**, read like
@@ -2854,11 +2902,17 @@ one careless edit from being undone:
   - **SDK 1.x speaks API version `2026-10-21`**, which refuses `temperature`,
     `top_p` and `top_k`. A unit test pins the version; read it on any bump.
 
-**The Tool Runner driver is built and cannot run** (`src/lib/agentic/tool-runner/`,
-Step 2b, #4149). `DRIVER_IMPLEMENTED['tool-runner']` is false, and `TOOL_RUNNER`
-is a READ_ONLY value of `AgentDriverMode`: `STORED_DRIVER_MODES` holds it, every
-reader reads it as itself, and `AGENT_DRIVER_MODES` (what a writer accepts) does
-not. Rules that are each one careless edit from being undone:
+**The Tool Runner driver runs agent profiles** (`src/lib/agentic/tool-runner/`,
+built in Step 2b, #4149, and turned on in Step 2c, #4150).
+`DRIVER_IMPLEMENTED['tool-runner']` is true, in a commit of its own so it reverts
+alone, and `TOOL_RUNNER` is WRITTEN: `AGENT_DRIVER_MODES` holds it. It still runs
+nothing unless the operator sets `AGENT_DRIVER_TOOL_RUNNER` and an owner chooses
+it. The settings page reports its switch and build beside Flue's, offers each
+engine only while its own switch is on, and names the chosen engine in every
+reason and in its own checklist (`TOOL_RUNNER_WIRING_TERMS`). Its fourth gate is
+the profile surface (`somethingRequestsToolRunner`), applied with the tenant's
+slug by the reporting surfaces only, never on the run path. Rules that are each
+one careless edit from being undone:
 
   - **`lockedParams` is the only shape of a runner request**, and only
     `execute.ts` starts a runner (`tests/unit/agentic/tool-runner-locked-params.test.ts`

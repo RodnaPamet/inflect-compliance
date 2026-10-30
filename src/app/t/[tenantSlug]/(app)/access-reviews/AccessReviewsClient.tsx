@@ -26,6 +26,8 @@ import { Button } from '@/components/ui/button';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
@@ -272,9 +274,14 @@ export function AccessReviewsClient({ tenantSlug, initialReviews, canCreate }: P
                             onReachEnd={hasMoreReviews ? loadMoreReviews : undefined}
                             columns={columns}
                             getRowId={(r) => r.id}
+                            // #4464 — the footer and empty fallback read this
+                            // noun, so it is translated like every other label.
                             resourceName={(plural) =>
-                                plural ? 'access reviews' : 'access review'
+                                plural ? t('resourcePlural') : t('resourceSingular')
                             }
+                            // Nothing on this page acts on ticked rows, and the
+                            // select column is on by default (a row click ticked it).
+                            selectionEnabled={false}
                         />
                         {/* Per-row testid markers for downstream tests
                          *  that don't reach into DataTable internals.
@@ -649,8 +656,7 @@ function CreateCampaignButton({
                     <Modal.Body>
                         <div className="space-y-default">
                             <FormField label={t('fieldName')} required>
-                                <input
-                                    className="input"
+                                <Input
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
                                     placeholder={t('namePlaceholder')}
@@ -658,8 +664,7 @@ function CreateCampaignButton({
                                 />
                             </FormField>
                             <FormField label={t('fieldDescription')}>
-                                <textarea
-                                    className="input"
+                                <Textarea
                                     rows={3}
                                     value={description}
                                     onChange={(e) =>

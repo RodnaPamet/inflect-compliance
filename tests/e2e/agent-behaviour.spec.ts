@@ -157,7 +157,8 @@ test.describe('agent behaviour: two people, one approved version', () => {
                     timeout: 15_000,
                 });
                 await expect(panel.locator('[data-testid="behaviour-version-1-status"]')).toHaveText('In force');
-                // Test run is disabled while no engine runs a profile, and says why.
+                // Test run is disabled while the workspace's engine (the built-in
+                // one here) does not run profiles, and says where to change it.
                 await expect(inForce.locator('[data-testid="behaviour-test-run-1-button"]')).toBeDisabled();
                 await expect(inForce.locator('[data-testid="behaviour-test-run-1-reason"]')).toContainText('Agent engines');
             } finally {

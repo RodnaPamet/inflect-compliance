@@ -57,8 +57,8 @@ export interface VendorChoice {
 
 /**
  * Resolved on the server, because the shell decides which tabs are reachable
- * before any tab mounts. See `page.tsx` for why `canCloseBreaker` is the one
- * flag that is a conjunction.
+ * before any tab mounts. `canManageRegistry` and `canCloseBreaker` are asked of
+ * every gate their writes pass (`agentRegisterAffordances`).
  */
 export interface AgentDetailPermissions {
     /**
@@ -68,7 +68,11 @@ export interface AgentDetailPermissions {
      * page and finds those tabs disabled.
      */
     canReadRegistry: boolean;
-    /** `admin.agent_registry` AND the role-tier write — status moves and amendment. */
+    /**
+     * Status moves, amendment and the risk assessment's writes: the edge,
+     * `admin.agent_registry` and `assertAgentGovernanceWrite`, asked by
+     * `agentRegisterAffordances` (#4471).
+     */
     canManageRegistry: boolean;
     /** `admin.agent_policy_card` — gates the policy-card GET, not only its writes. */
     canEditPolicyCard: boolean;
@@ -76,8 +80,17 @@ export interface AgentDetailPermissions {
     canGrantTools: boolean;
     /** `admin.agent_kill_switch` — engage and lift, independently grantable. */
     canKill: boolean;
-    /** `admin.agent_registry` AND the role-tier admin check the usecase asserts. */
+    /**
+     * Closing a breaker: the edge, `admin.agent_registry` and
+     * `assertAgentGovernanceAdmin`, asked by `agentRegisterAffordances`.
+     */
     canCloseBreaker: boolean;
+    /**
+     * `admin.agent_kill_switch` behind the edge — the kill-switch list route
+     * the breaker tab's history reads. Optional; absent reads as
+     * `canCloseBreaker`, the gate it used to borrow.
+     */
+    canReadKillHistory?: boolean;
     /**
      * `admin.agent_skill_review` (#3680) — authoring and review of the
      * WORKSPACE's own skills on the Skills tab. The repository corpus is
@@ -93,6 +106,15 @@ export interface AgentDetailPermissions {
      * a caller that predates it renders no transfer card.
      */
     canTransferOwnership?: boolean;
+    /**
+     * `admin.view` OR `admin.agent_registry_view` (`mayReadAgentActivity`) —
+     * the gate `GET /agent-runs` takes, which the Runs tab reads. Narrower than
+     * the page's own inventory read for exactly one principal: a custom role
+     * holding the register key with neither of these. That reader finds the tab
+     * disabled rather than opened and refused. Optional, and only `false`
+     * disables it, so a caller that predates it renders the tab as before.
+     */
+    canReadRuns?: boolean;
 }
 
 // `skills` is the SEVENTH key and `runs` the EIGHTH. The integration plan said
@@ -268,10 +290,12 @@ export function AgentDetailClient({
                     ? [{ key: 'behaviour' as const, label: t('agentDetail.tabBehaviour'), disabled: !perms.canReadRegistry }]
                     : []),
                 { key: 'coverage', label: t('agentDetail.tabCoverage'), disabled: !perms.canReadRegistry },
-                // NOT disabled: the runs read is `/agent-runs`, which the view
-                // key reads (#3710) — this agent's runs are part of what an
-                // auditor reads about it.
-                { key: 'runs', label: t('agentDetail.tabRuns') },
+                // The runs read is `/agent-runs`, which the view key reads
+                // (#3710) — this agent's runs are part of what an auditor reads
+                // about it. Disabled only for a reader the route refuses: one
+                // holding the register key and neither `admin.view` nor the
+                // view key (`canReadRuns`).
+                { key: 'runs', label: t('agentDetail.tabRuns'), disabled: perms.canReadRuns === false },
                 { key: 'breaker', label: t('agentDetail.tabBreaker'), disabled: !perms.canReadRegistry },
             ]}
             activeTab={tab}
@@ -330,7 +354,16 @@ export function AgentDetailClient({
                     canAuthorSkills={perms.canAuthorSkills === true}
                 />}
             {tab === 'behaviour' && profilesEnabled && (
-                <BehaviourTab {...props} retired={agent.status === 'RETIRED'} />
+                <BehaviourTab
+                    {...props}
+                    retired={agent.status === 'RETIRED'}
+                    // A started Test run is shown where the agent's runs are,
+                    // re-read so it is listed (Step 2c).
+                    onOpenRuns={() => {
+                        refresh();
+                        setTab('runs');
+                    }}
+                />
             )}
             {tab === 'coverage' && <CoverageTab {...props} />}
             {/* Read-only, and no `onChanged`: resuming or aborting a run
@@ -341,6 +374,7 @@ export function AgentDetailClient({
                     {...props}
                     onChanged={refresh}
                     canCloseBreaker={perms.canCloseBreaker}
+                    canReadKillHistory={perms.canReadKillHistory ?? perms.canCloseBreaker}
                 />
             )}
             {amending && (
