@@ -47,14 +47,14 @@ jest.mock('next/navigation', () => ({ useSearchParams: () => search }));
 /**
  * The viewer the page's write gates are asked of (#4466 finding 9): the REAL
  * `useOffersAdminApiWrite` and `offersAdminApiWrite`, over a tenant context a
- * test may replace. An Owner, whom the edge admits, unless a test says
- * otherwise.
+ * test may replace. An Owner membership, which the edge admits (#4587's
+ * `membershipRole`), unless a test says otherwise.
  */
 const mockViewer: {
-    edgeAdmits: boolean;
+    membershipRole: string | undefined;
     appPermissions: unknown;
     permissions: { canAdmin: boolean; canWrite: boolean };
-} = { edgeAdmits: true, appPermissions: null, permissions: { canAdmin: true, canWrite: true } };
+} = { membershipRole: 'OWNER', appPermissions: null, permissions: { canAdmin: true, canWrite: true } };
 jest.mock('@/lib/tenant-context-provider', () => {
     const apiUrl = (p: string) => `/api/t/acme${p}`;
     const href = (p: string) => `/t/acme${p}`;
@@ -64,7 +64,7 @@ jest.mock('@/lib/tenant-context-provider', () => {
         useTenantHref: () => href,
         // Read by `@/lib/auth/use-offers-admin-api-write`, which is not mocked.
         useTenantContext: () => ({
-            edgeAdmitsAdminApi: mockViewer.edgeAdmits,
+            membershipRole: mockViewer.membershipRole,
             appPermissions: mockViewer.appPermissions ?? getPermissionsForRole('OWNER'),
             permissions: mockViewer.permissions,
         }),
@@ -178,7 +178,7 @@ describe('choosing sites', () => {
 // fails one of them would only be refused.
 describe('the controls offered, by who is asking', () => {
     afterEach(() => {
-        mockViewer.edgeAdmits = true;
+        mockViewer.membershipRole = 'OWNER';
         mockViewer.permissions = { canAdmin: true, canWrite: true };
     });
 
@@ -190,7 +190,7 @@ describe('the controls offered, by who is asking', () => {
 
     it.each([
         ['an Admin membership on a Reader-based custom role', () => (mockViewer.permissions = { canAdmin: false, canWrite: false })],
-        ['an Editor membership the edge refuses', () => (mockViewer.edgeAdmits = false)],
+        ['an Editor membership the edge refuses', () => (mockViewer.membershipRole = 'EDITOR')],
     ])('%s is not offered Connect', async (_who, as) => {
         as();
         serve([]);
@@ -202,7 +202,7 @@ describe('the controls offered, by who is asking', () => {
 
     it.each([
         ['an Admin membership on a Reader-based custom role', () => (mockViewer.permissions = { canAdmin: false, canWrite: false })],
-        ['an Editor membership the edge refuses', () => (mockViewer.edgeAdmits = false)],
+        ['an Editor membership the edge refuses', () => (mockViewer.membershipRole = 'EDITOR')],
     ])('%s is offered none of them', async (_who, as) => {
         as();
         serve([sp()]);

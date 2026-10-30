@@ -98,7 +98,7 @@ function mount(patch: { ok: boolean; status: number; body: unknown } = { ok: tru
                     role: 'OWNER',
                     permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
                     appPermissions: getPermissionsForRole('OWNER'),
-                    edgeAdmitsAdminApi: true,
+                    membershipRole: 'OWNER',
                     modules: { processCanvas: false },
                 }}
             >

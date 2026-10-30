@@ -64,14 +64,14 @@ jest.mock('next/navigation', () => ({
 /**
  * The viewer the page's write gates are asked of (#4466 finding 9): the REAL
  * `useOffersAdminApiWrite` and `offersAdminApiWrite`, over a tenant context a
- * test may replace. An Owner, whom the edge admits, unless a test says
- * otherwise.
+ * test may replace. An Owner membership, which the edge admits (#4587's
+ * `membershipRole`), unless a test says otherwise.
  */
 const mockViewer: {
-    edgeAdmits: boolean;
+    membershipRole: string | undefined;
     appPermissions: unknown;
     permissions: { canAdmin: boolean; canWrite: boolean };
-} = { edgeAdmits: true, appPermissions: null, permissions: { canAdmin: true, canWrite: true } };
+} = { membershipRole: 'OWNER', appPermissions: null, permissions: { canAdmin: true, canWrite: true } };
 jest.mock('@/lib/tenant-context-provider', () => {
     const apiUrl = (p: string) => `/api/t/acme${p}`;
     const href = (p: string) => `/t/acme${p}`;
@@ -81,7 +81,7 @@ jest.mock('@/lib/tenant-context-provider', () => {
         useTenantHref: () => href,
         // Read by `@/lib/auth/use-offers-admin-api-write`, which is not mocked.
         useTenantContext: () => ({
-            edgeAdmitsAdminApi: mockViewer.edgeAdmits,
+            membershipRole: mockViewer.membershipRole,
             appPermissions: mockViewer.appPermissions ?? getPermissionsForRole('OWNER'),
             permissions: mockViewer.permissions,
         }),
@@ -479,7 +479,7 @@ describe('the controls offered, by who is asking', () => {
     };
 
     afterEach(() => {
-        mockViewer.edgeAdmits = true;
+        mockViewer.membershipRole = 'OWNER';
         mockViewer.appPermissions = null;
         mockViewer.permissions = { canAdmin: true, canWrite: true };
     });
@@ -518,7 +518,7 @@ describe('the controls offered, by who is asking', () => {
     });
 
     it('an Editor membership whose custom role grants Manage — the edge refuses it — is offered nothing', async () => {
-        mockViewer.edgeAdmits = false;
+        mockViewer.membershipRole = 'EDITOR';
         mockViewer.appPermissions = asAdmin();
         serve([okta, tools, off]);
         await renderPage();

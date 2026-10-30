@@ -77,8 +77,11 @@ interface Mount {
     viewer?: 'OWNER' | 'ADMIN';
     /** The viewer's resolved permissions, when a custom role sets them. */
     held?: PermissionSet;
-    /** The edge's verdict from the tenant layout; absent, as in a provider built without it. */
-    edgeAdmits?: boolean;
+    /**
+     * The membership's own role (#4587), which the edge reads. Defaults to
+     * `viewer`; `null` leaves it out, which is not admitted.
+     */
+    membershipRole?: Role | null;
     /** The coarse admin tier — a custom role's BASE decides it. */
     canAdmin?: boolean;
 }
@@ -115,7 +118,7 @@ function mount(answers: Mount = {}) {
                         canExport: true,
                     },
                     appPermissions: answers.held ?? getPermissionsForRole(viewer),
-                    ...(answers.edgeAdmits === undefined ? {} : { edgeAdmitsAdminApi: answers.edgeAdmits }),
+                    ...(answers.membershipRole === null ? {} : { membershipRole: answers.membershipRole ?? viewer }),
                     modules: { processCanvas: false },
                 }}
             >
@@ -448,7 +451,7 @@ describe('custom roles page — writes offered only where the server takes them'
     const listed = () => ok([role('cr-1', 'Compliance Lead', 'EDITOR')]);
 
     it('an Owner is offered create, edit and delete, and sees no notice', async () => {
-        mount({ list: listed(), edgeAdmits: true });
+        mount({ list: listed() });
         await screen.findByText('Compliance Lead');
         expect(byId('create-role-btn')).not.toBeNull();
         expect(byId('edit-role-cr-1')).not.toBeNull();
@@ -457,7 +460,7 @@ describe('custom roles page — writes offered only where the server takes them'
     });
 
     it('an Editor membership whose custom role grants admin.manage — the edge refuses it — is offered none', async () => {
-        mount({ list: listed(), edgeAdmits: false, held: getPermissionsForRole('ADMIN') });
+        mount({ list: listed(), membershipRole: 'EDITOR', held: getPermissionsForRole('ADMIN') });
         await screen.findByText('Compliance Lead');
         expect(byId('create-role-btn')).toBeNull();
         expect(byId('edit-role-cr-1')).toBeNull();
@@ -466,7 +469,7 @@ describe('custom roles page — writes offered only where the server takes them'
     });
 
     it('an Admin membership on a Reader-based custom role granting admin.manage — the usecase refuses it — is offered none', async () => {
-        mount({ list: listed(), edgeAdmits: true, held: getPermissionsForRole('ADMIN'), canAdmin: false });
+        mount({ list: listed(), membershipRole: 'ADMIN', held: getPermissionsForRole('ADMIN'), canAdmin: false });
         await screen.findByText('Compliance Lead');
         expect(byId('create-role-btn')).toBeNull();
         expect(byId('delete-role-cr-1')).toBeNull();
@@ -475,9 +478,17 @@ describe('custom roles page — writes offered only where the server takes them'
 
     it('a viewer without admin.manage — the route refuses it — is offered none', async () => {
         const admin = getPermissionsForRole('ADMIN');
-        mount({ list: listed(), edgeAdmits: true, held: { ...admin, admin: { ...admin.admin, manage: false } } });
+        mount({ list: listed(), membershipRole: 'ADMIN', held: { ...admin, admin: { ...admin.admin, manage: false } } });
         await screen.findByText('Compliance Lead');
         expect(byId('create-role-btn')).toBeNull();
+        expect(byId('roles-manage-refused')).not.toBeNull();
+    });
+
+    it('a context with no membership role is offered none: absent is not admitted (#4587)', async () => {
+        mount({ list: listed(), membershipRole: null });
+        await screen.findByText('Compliance Lead');
+        expect(byId('create-role-btn')).toBeNull();
+        expect(byId('edit-role-cr-1')).toBeNull();
         expect(byId('roles-manage-refused')).not.toBeNull();
     });
 });

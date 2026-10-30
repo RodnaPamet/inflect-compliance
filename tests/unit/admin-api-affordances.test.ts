@@ -4,10 +4,14 @@
  * usecase's floor would all let it through.
  *
  *   - `offersAdminApiWrite` composes the three, and fails on any one;
- *   - `edgeAdmitsAdminApi` IS the edge's answer — asked of `checkAdminAccess`
- *     itself — for the custom roles and integrations APIs, for every role;
- *   - the tenant layout hands that verdict to every page, from the session's
- *     membership claims, as the middleware reads them.
+ *   - the admin pages' edge verdict is #4587's `membershipOpensAdminConsole`
+ *     over the membership's own role, and it IS the edge's answer —
+ *     `checkAdminAccess` itself — for the custom roles and integrations APIs,
+ *     for every role; a missing role is not admitted;
+ *   - the agent register asks the edge for its own subtree, where an AI admin
+ *     is admitted too;
+ *   - the tenant layout hands pages the membership's role and no verdict of its
+ *     own, so there is one edge answer, not two.
  */
 jest.mock('@/auth', () => ({ auth: jest.fn() }));
 jest.mock('@/lib/server/tenant-context.server', () => ({ getTenantServerContext: jest.fn() }));
@@ -23,7 +27,7 @@ import { auth } from '@/auth';
 import { getTenantServerContext } from '@/lib/server/tenant-context.server';
 import { checkAdminAccess } from '@/lib/auth/guard';
 import { offersAdminApiWrite } from '@/lib/auth/admin-api-affordances';
-import { edgeAdmitsAdminApi } from '@/lib/auth/admin-api-edge';
+import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import { edgeAdmitsAgentAdminWrite } from '@/lib/agentic/agent-register-affordances';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { TENANT_ROLES } from '@/lib/roles';
@@ -57,11 +61,11 @@ describe('offersAdminApiWrite — all three gates, or nothing', () => {
     });
 });
 
-describe('edgeAdmitsAdminApi is the edge’s own answer', () => {
+describe('the admin pages’ edge verdict is the edge’s own answer', () => {
     const PAGES = ['/admin/roles', '/admin/roles/cr-1', '/admin/integrations', '/admin/integrations/c-1/sync'];
 
     it.each(TENANT_ROLES)('for a %s membership, it equals checkAdminAccess on the roles and integrations APIs', (role) => {
-        const verdict = edgeAdmitsAdminApi('acme', claims(role));
+        const verdict = membershipOpensAdminConsole(role);
         for (const page of PAGES) {
             for (const method of ['GET', 'POST', 'PATCH', 'DELETE']) {
                 const edge = checkAdminAccess(`/api/t/acme${page}`, 'READER', claims(role).memberships, method) !== 'deny';
@@ -70,28 +74,27 @@ describe('edgeAdmitsAdminApi is the edge’s own answer', () => {
         }
     });
 
-    it('admits exactly OWNER and ADMIN memberships there — a custom role never enters it', () => {
-        expect(TENANT_ROLES.filter((role) => edgeAdmitsAdminApi('acme', claims(role)))).toEqual(['OWNER', 'ADMIN']);
+    it('admits exactly OWNER and ADMIN memberships — a custom role never enters it — and not a missing role', () => {
+        expect(TENANT_ROLES.filter((role) => membershipOpensAdminConsole(role))).toEqual(['OWNER', 'ADMIN']);
+        expect(membershipOpensAdminConsole(undefined)).toBe(false);
+        expect(membershipOpensAdminConsole(null)).toBe(false);
     });
 
-    it('defers, and so admits, for a tenant missing from a capped claim, as the edge does', () => {
-        expect(edgeAdmitsAdminApi('acme', { role: 'READER', memberships: [{ slug: 'other', role: 'READER' }] })).toBe(true);
-        expect(edgeAdmitsAdminApi('acme', null)).toBe(true);
-    });
-
-    it('the agent register asks the same function for its own subtree, where an AI admin is admitted', () => {
+    it('the agent register asks the edge for its own subtree, where an AI admin is admitted', () => {
         expect(edgeAdmitsAgentAdminWrite('acme', claims('AI_ADMIN'))).toBe(true);
-        expect(edgeAdmitsAdminApi('acme', claims('AI_ADMIN'))).toBe(false);
+        expect(membershipOpensAdminConsole('AI_ADMIN')).toBe(false);
         expect(edgeAdmitsAgentAdminWrite('acme', claims('EDITOR'))).toBe(false);
+        expect(edgeAdmitsAgentAdminWrite('acme', claims('ADMIN'))).toBe(true);
     });
 });
 
-describe('the tenant layout hands every page the edge’s verdict', () => {
-    async function layoutValueFor(role: string) {
-        (auth as jest.Mock).mockResolvedValue({ user: { id: 'u-1', ...claims(role) } });
+describe('the tenant layout hands pages the membership’s role, and no second verdict', () => {
+    async function layoutValueFor(membershipRole: string) {
+        (auth as jest.Mock).mockResolvedValue({ user: { id: 'u-1', ...claims(membershipRole) } });
         (getTenantServerContext as jest.Mock).mockResolvedValue({
             tenant: { id: 't-1', slug: 'acme', name: 'Acme', currencySymbol: '€' },
-            role: 'EDITOR',
+            role: 'ADMIN',
+            membershipRole,
             permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true },
             appPermissions: admin,
             modules: { processCanvas: false },
@@ -99,14 +102,20 @@ describe('the tenant layout hands every page the edge’s verdict', () => {
         const element = (await TenantLayout({
             children: null,
             params: Promise.resolve({ tenantSlug: 'acme' }),
-        })) as { props: { value: { edgeAdmitsAdminApi?: boolean } } };
+        })) as { props: { value: Record<string, unknown> } };
         return element.props.value;
     }
 
-    it('an ADMIN membership is admitted, and an EDITOR one whose custom role is ADMIN-built is not', async () => {
-        expect((await layoutValueFor('ADMIN')).edgeAdmitsAdminApi).toBe(true);
+    it('an EDITOR membership whose custom role is ADMIN-built is handed EDITOR, which opens no admin console', async () => {
         // The context's own permissions are a custom role's (ADMIN keys, admin
-        // tier); the edge still reads the EDITOR membership.
-        expect((await layoutValueFor('EDITOR')).edgeAdmitsAdminApi).toBe(false);
+        // tier); the edge, and so the pages, read the EDITOR membership.
+        const value = await layoutValueFor('EDITOR');
+        expect(value.membershipRole).toBe('EDITOR');
+        expect(membershipOpensAdminConsole(value.membershipRole as string)).toBe(false);
+        expect(membershipOpensAdminConsole((await layoutValueFor('ADMIN')).membershipRole as string)).toBe(true);
+    });
+
+    it('carries no verdict of its own beside the role', async () => {
+        expect(Object.keys(await layoutValueFor('ADMIN')).filter((k) => /edge/i.test(k))).toEqual([]);
     });
 });

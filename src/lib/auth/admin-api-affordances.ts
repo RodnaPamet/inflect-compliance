@@ -9,10 +9,12 @@
  *   1. THE EDGE. `checkAdminAccess` (`src/lib/auth/guard.ts`) admits the admin
  *      API by the membership's BUILT-IN role in that tenant: OWNER and ADMIN,
  *      AI_ADMIN on the agent paths, AUDITOR on five inventory reads. A custom
- *      role never enters it. The verdict is asked on the server, by the edge's
- *      own function (`edgeAdmitsAdminApi` in `./admin-api-edge.ts`), and handed
- *      in: a client page receives it through the tenant layout
- *      (`TenantContextValue.edgeAdmitsAdminApi`).
+ *      role never enters it. A client admin page reads it as
+ *      `membershipOpensAdminConsole(membershipRole)` (`./edge-admin-roles.ts`,
+ *      #4587), the set the edge applies outside the agent subtree, through
+ *      `useOffersAdminApiWrite`; the agent register asks the edge for its own
+ *      subtree on the server (`agent-register-affordances.ts`). Either way it is
+ *      handed in here as a boolean.
  *   2. THE ROUTE: its literal `requirePermission(<key>)`, which reads the
  *      custom-role-aware permission set.
  *   3. THE USECASE FLOOR: a coarse tier the usecase asserts (`assertCanAdmin`

@@ -13,10 +13,11 @@ Custom roles and Integrations pages, and teaches the Members page and the
 Custom roles form the owner's carriage rule of the same day.
 
 ```
-tenant layout (server) ── edgeAdmitsAdminApi(slug, session.user) ──▶ TenantContext.edgeAdmitsAdminApi
-                                       │ checkAdminAccess
-client page ── useOffersAdminApiWrite({ key, floor }) ── offersAdminApiWrite(viewer, gate)
-agent pages (server) ── agentRegisterAffordances ─────────┘
+tenant layout (server) ── membershipRole (#4587) ──▶ TenantContext.membershipRole
+client page ── useOffersAdminApiWrite({ key, floor })
+                 edge = membershipOpensAdminConsole(membershipRole) ── offersAdminApiWrite(viewer, gate)
+agent pages (server) ── agentRegisterAffordances
+                 edge = checkAdminAccess('/admin/agents', claims) ───┘
 ```
 
 ## Files
@@ -24,10 +25,8 @@ agent pages (server) ── agentRegisterAffordances ─────────
 | File | Role |
 | --- | --- |
 | `src/lib/auth/admin-api-affordances.ts` | `offersAdminApiWrite`: edge ∧ key ∧ floor. Pure and client-safe |
-| `src/lib/auth/admin-api-edge.ts` | `edgeAdmitsAdminApi`: the edge's own answer, server-side (`guard.ts` imports `next/server`) |
-| `src/lib/agentic/agent-register-affordances.ts` | Now the agent register's use of the two, not a copy |
-| `src/lib/tenant-context-provider.tsx`, `src/app/t/[tenantSlug]/layout.tsx` | The verdict travels to client pages (`edgeAdmitsAdminApi`) |
-| `src/lib/auth/use-offers-admin-api-write.ts` | `useOffersAdminApiWrite`, the client pages' hook over the verdict |
+| `src/lib/agentic/agent-register-affordances.ts` | Now the agent register's use of `offersAdminApiWrite`, with its own edge verdict for the agent subtree |
+| `src/lib/auth/use-offers-admin-api-write.ts` | `useOffersAdminApiWrite`, the client pages' hook; its edge gate is #4587's `membershipOpensAdminConsole(membershipRole)` |
 | `src/app/t/[tenantSlug]/(app)/admin/roles/page.tsx` | Writes offered by the gates; the carriage locks; refusals in labels |
 | `src/app/t/[tenantSlug]/(app)/admin/members/page.tsx` | The custom-role picker asks `customRoleCarriageRefusal` |
 | `src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx`, `SharePointCard.tsx` | Configure (canAdmin) and operate (key only) offered separately |
@@ -35,23 +34,36 @@ agent pages (server) ── agentRegisterAffordances ─────────
 
 ## Decisions
 
-- **The edge verdict is computed once, in the tenant layout.** The three
-  pages are client components, the app mounts no `SessionProvider`, and the
-  edge module cannot be bundled for the browser. One boolean answers for every
-  admin path outside the agent subtree and the auditor's inventory reads; a
-  unit test holds it equal to `checkAdminAccess` on the roles and integrations
-  APIs for every role, so an edge change that splits them fails there.
+- **One edge verdict, #4587's.** The three pages are client components, the
+  app mounts no `SessionProvider`, and `guard.ts` cannot be bundled for the
+  browser. #4587 (#4581 B) put the membership's own role on the tenant context
+  (`membershipRole`) and the edge's admin set in a module with no imports
+  (`EDGE_ADMIN_ROLES`, `membershipOpensAdminConsole` in
+  `src/lib/auth/edge-admin-roles.ts`), which the admin layout, `admitsAdminPage`
+  and the sidebar read. The hook reads the same answer. This branch first had a
+  second verdict, computed by the tenant layout from the session's claims
+  (`edgeAdmitsAdminApi`, `src/lib/auth/admin-api-edge.ts`); it was removed so
+  there is one. A unit test holds `membershipOpensAdminConsole` equal to
+  `checkAdminAccess` on the roles and integrations APIs for every role and
+  method, so an edge change that splits them fails there.
+- **The agent register keeps its own edge question.** The agent subtree also
+  admits AI_ADMIN, which `membershipOpensAdminConsole` does not, so
+  `agent-register-affordances.ts` asks `checkAdminAccess` for
+  `/admin/agents` on the server, from the session's claims, as it did before
+  this branch. The rest of `admin-api-edge.ts` had no other caller and was
+  deleted.
 - **The hook is its own module, not the provider's.** Every tenant page loads
   the tenant context provider, so whatever it imports at runtime ships in every
   route's First Load JS. With the hook there, `admin-api-affordances` and
   `permission-key` did: every route grew by 2 to 4 KB and the test-plan page
-  went over its budget (671.7 KB against 668). The provider carries only the
-  `edgeAdmitsAdminApi` field; the hook imports the provider, never the reverse,
-  so only the pages that call it carry the affordance code.
-- **An absent verdict is read as admitted.** A provider built without it (a
-  test) keeps every control; the layout always asks, and the server is the
-  authority either way. Failing closed would have hidden controls in every
-  rendered test of every admin page for no protection.
+  went over its budget (671.7 KB against 668). The provider imports nothing
+  for it at runtime; the hook imports the provider, never the reverse, so only
+  the pages that call it carry the affordance code.
+- **A missing role is not admitted.** That is #4587's rule for the admin
+  console, and the hook follows it, so the two cannot disagree about a page.
+  The branch first read an absent verdict as admitted; the rendered tests now
+  give their providers a `membershipRole`, and one asserts that a context
+  without it is offered nothing.
 - **Integrations splits configure from operate.** Listing, testing and syncing
   check the key alone; saving, enabling, disabling, removing and authorizing
   also take `canAdmin`. An Admin membership on a Reader-based custom role that

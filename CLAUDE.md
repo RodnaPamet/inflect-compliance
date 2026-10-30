@@ -935,11 +935,11 @@ new tenant-membership creation path).
   one of the four stops having one.
 - **An admin page offers a write only where the server takes it** (#4467,
   #4466, generalised from #4471's agent register). Three gates, each asked as
-  the server asks it: the edge (`edgeAdmitsAdminApi` in
-  `src/lib/auth/admin-api-edge.ts`, which calls `checkAdminAccess` with the
-  session's membership claims; the tenant layout hands every page the verdict
-  as `TenantContextValue.edgeAdmitsAdminApi`), the route's key, and the
-  usecase's floor (`offersAdminApiWrite` in
+  the server asks it: the edge (#4587's `membershipOpensAdminConsole` over
+  `TenantContextValue.membershipRole`, the same answer the admin layout and the
+  sidebar give, a missing role not admitted; the agent register, whose subtree
+  also admits AI_ADMIN, asks `checkAdminAccess` for it on the server), the
+  route's key, and the usecase's floor (`offersAdminApiWrite` in
   `src/lib/auth/admin-api-affordances.ts`; a client page calls
   `useOffersAdminApiWrite` from `src/lib/auth/use-offers-admin-api-write.ts`).
   Never AND a key with a role in a page, and never copy the edge's role table:
