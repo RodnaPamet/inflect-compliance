@@ -43,6 +43,17 @@
  * file was running when V8 collected, so a mark says where to look, not who to
  * blame. stderr is a pipe on CI, and Node writes pipes synchronously on Linux,
  * so the line is out of the process before the next allocation can kill it.
+ *
+ * Two things to know before reading a trail line (both measured on #4613):
+ *
+ *   · `heapUsed` is PRE-GC, so a mark is not proof of a leak. Shard 2/7 reports
+ *     4.6 GB at its 186th file on CI, and a heap snapshot taken there after a
+ *     full GC held 672 MB. V8 lets garbage pile up when the cap is 12 GB. A
+ *     mark says the heap is large; a run that dies says it is live.
+ *   · The run dies BELOW the cap. V8 aborts with "Ineffective mark-compacts
+ *     near heap limit" once old space stays above about 80% of
+ *     `--max-old-space-size` while GC makes no progress, so under 12288 the
+ *     fatal line arrives near 10 GB, not 12. The 10 GB mark is the last warning.
  */
 const MB = 1024 * 1024;
 
