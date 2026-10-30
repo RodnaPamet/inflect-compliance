@@ -1,4 +1,5 @@
 import { env } from '@/env';
+import { resolveLocalGateway } from '@/lib/ai/local-gateway';
 
 /**
  * WHICH MODEL A FLUE RUN MAY ASK FOR — and why this is a model specifier
@@ -187,27 +188,21 @@ export type FlueModelChoice =
 export function resolveFlueModel(sel?: FlueModelSelection): FlueModelChoice {
     // ── HARD residency invariant, checked before anything external ──────────
     if (sel?.residency === 'LOCAL_ONLY') {
-        const baseUrl = sel.localBaseUrl || env.AI_LOCAL_BASE_URL;
-        if (!baseUrl) return { ok: false, reason: 'LOCAL_GATEWAY_NOT_CONFIGURED' };
-        // WHAT IS DECIDED HERE MUST BE WHAT IS DIALLED THERE.
-        //
-        // The `inflect-local` provider is built once at boot, from
-        // `AI_LOCAL_BASE_URL` alone (`runtime-start.ts`: "Deployment-wide
-        // only"). A per-tenant `aiLocalBaseUrl` therefore decides that the run
-        // may proceed, and then does not carry: the dispatch goes to the
-        // deployment's endpoint. For a LOCAL_ONLY workspace that is the one
-        // outcome the setting exists to prevent — the tenant's content leaving
-        // for a gateway it did not nominate.
-        //
-        // Refused, not silently honoured, and not silently ignored. This is
-        // the same treatment the sibling `localModel` override already gets:
-        // unserved per-tenant values become a named refusal an operator can
-        // act on (`flueModelIsRegistered`), never a fallback. The upgrade path
-        // is the same one recorded on `FlueProviderModels.localModels` — read
-        // the distinct configured gateways at boot and register a provider per
-        // gateway.
-        if (sel.localBaseUrl && sel.localBaseUrl !== env.AI_LOCAL_BASE_URL) {
-            return { ok: false, reason: 'LOCAL_GATEWAY_NOT_SERVED' };
+        // The rule now lives in `@/lib/ai/local-gateway`, shared with the
+        // risk-suggestion factory, which had no such rule and dialled the
+        // tenant's URL with the deployment's key (#4545). The behaviour here is
+        // unchanged — the refusals map one-to-one — and the point of moving it
+        // is that the next reader of a tenant `aiLocalBaseUrl` inherits it
+        // instead of having to remember it.
+        const gateway = resolveLocalGateway(sel.localBaseUrl);
+        if (!gateway.served) {
+            return {
+                ok: false,
+                reason:
+                    gateway.reason === 'NOT_SERVED'
+                        ? 'LOCAL_GATEWAY_NOT_SERVED'
+                        : 'LOCAL_GATEWAY_NOT_CONFIGURED',
+            };
         }
         const model = sel.localModel || env.AI_LOCAL_MODEL;
         if (!model) return { ok: false, reason: 'LOCAL_MODEL_NOT_CONFIGURED' };

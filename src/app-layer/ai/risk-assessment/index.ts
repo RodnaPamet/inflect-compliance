@@ -22,6 +22,7 @@ import { AnthropicRiskSuggestionProvider } from './anthropic-provider';
 import { LocalRiskSuggestionProvider } from './local-provider';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
+import { LOCAL_GATEWAY_REFUSAL_MESSAGE, resolveLocalGateway } from '@/lib/ai/local-gateway';
 
 /** Per-tenant AI-residency + local-gateway override, resolved by the usecase. */
 export interface ProviderSelection {
@@ -37,18 +38,36 @@ export interface ProviderSelection {
     localModel?: string | null;
 }
 
-/** Build a local provider from the resolved base URL, or the stub if unset. */
+/**
+ * Build a local provider for the gateway this deployment serves, or the stub.
+ *
+ * THE TENANT DOES NOT CHOOSE THE HOST (#4545). `sel.localBaseUrl` is
+ * `TenantSecuritySettings.aiLocalBaseUrl`, writable by any `admin.manage`
+ * holder through a schema that validates only that it is a URL — so passing it
+ * to `LocalRiskSuggestionProvider`, which dials it and attaches
+ * `AI_LOCAL_API_KEY` as a bearer, let a tenant admin aim the server at an
+ * internal host and collect the deployment's gateway credential.
+ *
+ * `resolveLocalGateway` is the rule, and it is the SAME function
+ * `resolveFlueModel` uses — see `src/lib/ai/local-gateway.ts` for why this is
+ * not a `safeFetch` problem and why the rule is shared rather than copied.
+ *
+ * A refusal falls back to the deterministic stub rather than throwing, which is
+ * this module's documented contract for every provider failure. It is also the
+ * one safe direction: the stub opens no socket at all, so a refused gateway
+ * cannot be reached by any path from here.
+ */
 function buildLocalProvider(sel?: ProviderSelection): RiskSuggestionProvider {
-    const baseUrl = sel?.localBaseUrl || env.AI_LOCAL_BASE_URL;
-    if (!baseUrl) {
+    const gateway = resolveLocalGateway(sel?.localBaseUrl);
+    if (!gateway.served) {
         logger.warn(
-            'Local AI gateway not configured (AI_LOCAL_BASE_URL / tenant override) — using the deterministic stub',
-            { component: 'ai' },
+            `Local AI gateway not used (${LOCAL_GATEWAY_REFUSAL_MESSAGE[gateway.reason]}) — using the deterministic stub`,
+            { component: 'ai', reason: gateway.reason },
         );
         return new StubRiskSuggestionProvider(/* isFallbackMode */ true);
     }
     return new LocalRiskSuggestionProvider(
-        baseUrl,
+        gateway.baseUrl,
         sel?.localModel || env.AI_LOCAL_MODEL || undefined,
         env.AI_LOCAL_API_KEY || undefined,
     );
