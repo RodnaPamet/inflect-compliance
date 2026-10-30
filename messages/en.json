@@ -11552,6 +11552,8 @@
         "toolsEmpty": "This agent is granted no tools. Grant one on the Tools tab first.",
         "skillsHint": "Only the skills this agent can mount.",
         "skillsPlaceholder": "Choose skills",
+        "skillsBudget": "{used} of {budget} bytes of skill descriptions chosen. A run pays for them on every turn.",
+        "skillsOverBudget": "These skills' descriptions total {used} bytes, over the {budget}-byte budget a run can mount. Choose fewer skills.",
         "skillOption": {
           "repository": "{name}",
           "tenant": "{name} (this workspace)"
