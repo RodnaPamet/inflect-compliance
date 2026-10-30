@@ -45,7 +45,14 @@ export default function CycleReadinessPage() {
             fetch(apiUrl(`/audits/cycles/${cycleId}`)).then(r => r.ok ? r.json() : null),
             // feat/readiness-trend — the ReadinessSnapshot time-series.
             fetch(apiUrl(`/audits/cycles/${cycleId}/readiness?action=history`)).then(r => r.ok ? r.json() : null),
-        ]).then(([r, c, h]) => { setResult(r); setCycle(c); setHistory(h?.snapshots ?? []); }).finally(() => setLoading(false));
+        ])
+            .then(([r, c, h]) => { setResult(r); setCycle(c); setHistory(h?.snapshots ?? []); })
+            // `.finally` already cleared the spinner, so this page degraded
+            // rather than hung — but the rejection itself still went nowhere.
+            // Catching it leaves the same empty-result state the non-ok branch
+            // of each fetch produces, now reached deliberately.
+            .catch(() => { setResult(null); setCycle(null); setHistory([]); })
+            .finally(() => setLoading(false));
     }, [apiUrl, cycleId]);
 
     const breadcrumbs = [

@@ -88,6 +88,7 @@ Each alert email is titled with the policy's display name.
 | `inflect identity writes unsettled — an account is in unknown state (#2842)` | Not a platform fault. Follow the alert text, then the `identity-chain-diagnostic` skill. |
 | `inflect assistant is REFUSING most attempts — users blocked from a working feature (#3856)` | Not installed: [`infra/reporters/README.md`](../infra/reporters/README.md) lists its reporter as not deployed. If it is installed and fires, follow the alert text. |
 | `inflect agent proposals are FLOODING the review queue (#3856)` | Not installed, as above. |
+| `openshell gateway VM has been running too long — the idle timer did not take it down (#4571)` | Not a platform fault, and not urgent: the stop-only `openshell-gateway-nightly-stop` policy bounds it within 24 hours (~1.61 USD). `journalctl -t openshell-idle-shutdown` on the VM says why the timer did not fire — `metrics unreadable — state UNKNOWN` is the deliberate fail-towards-staying-up path, so an unreachable metrics endpoint never accumulates strikes. Act on the FIRST occurrence anyway: unfixed it recurs nightly, and three nights is 4.82 USD of compute, which takes the 5 USD cap over with the disk counted. |
 | Errors start right after a new image reached the VM | [Rollback](#6-rollback) |
 | A browser or `curl` rejects the certificate | [Certificate Expiry](#5-certificate-expiry) |
 | `OOM command not allowed` in the `app` or `worker` log | [Redis](#3-redis-oom--degraded-queueing) |

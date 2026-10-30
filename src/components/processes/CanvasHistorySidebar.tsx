@@ -40,6 +40,7 @@ export function CanvasHistorySidebar({
     currentVersion,
     onDiffRequest,
     onRestored,
+    canRestore = true,
 }: {
     tenantSlug: string;
     /** Active process map id; null when nothing is loaded. */
@@ -58,6 +59,11 @@ export function CanvasHistorySidebar({
      * re-render at the new post-restore version.
      */
     onRestored?: () => void;
+    /**
+     * May the viewer restore a version? Restoring is a write (`processes.edit`),
+     * so a read-only viewer sees the history and the diff, not Restore.
+     */
+    canRestore?: boolean;
 }) {
     const t = useTranslations("automation.history");
     const toast = useToast();
@@ -224,6 +230,7 @@ export function CanvasHistorySidebar({
                                             >
                                                 {t("diff")}
                                             </Button>
+                                            {canRestore && (
                                             <Button
                                                 variant="secondary"
                                                 size="xs"
@@ -240,6 +247,7 @@ export function CanvasHistorySidebar({
                                                     ? t("restoring")
                                                     : t("restore")}
                                             </Button>
+                                            )}
                                         </div>
                                     )}
                                 </li>

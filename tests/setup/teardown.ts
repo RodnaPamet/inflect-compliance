@@ -19,18 +19,21 @@ const teardown = async () => {
     // Drop the per-worker DBs globalSetup created (best-effort) + clear
     // the marker. All workers have exited by now, so no live connections.
     //
-    // THIS checkout's marker only. While the marker had one fixed name in a
-    // `node_modules` that worktrees share, this block read whichever
-    // checkout had started Jest last and dropped THAT run's databases
-    // `WITH (FORCE)`, mid-run, leaving its own behind (2026-10-30).
-    // PER_WORKER_MARKER now carries the checkout tag in its file name.
+    // THIS RUN's marker only, named by globalSetup in this process's
+    // environment. While the marker had one fixed name in a `node_modules`
+    // that worktrees share, this block read whichever checkout had started
+    // Jest last and dropped THAT run's databases `WITH (FORCE)`, mid-run,
+    // leaving its own behind (2026-10-30). A name per checkout still let a
+    // second run in the same checkout overwrite it (#4610).
     try {
         const fs = await import('fs');
         const { Client } = await import('pg');
-        const { PER_WORKER_MARKER, adminConnectionString, perWorkerDbName } = await import(
+        const { currentRunMarker, adminConnectionString, perWorkerDbName } = await import(
             '../helpers/db'
         );
-        const marker = JSON.parse(fs.readFileSync(PER_WORKER_MARKER, 'utf8')) as {
+        const markerPath = currentRunMarker();
+        if (!markerPath) throw new Error('no run marker named');
+        const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')) as {
             perWorker: boolean; count: number; baseName: string; workerDbs?: string[];
         };
         if (marker.perWorker) {
@@ -50,7 +53,7 @@ const teardown = async () => {
             }
             await admin.end();
         }
-        fs.unlinkSync(PER_WORKER_MARKER);
+        fs.unlinkSync(markerPath);
     } catch {
         /* marker absent / DB down — nothing to clean */
     }

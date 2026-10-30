@@ -99,6 +99,14 @@ export interface CanvasDocumentBarProps {
      * (e.g. empty state).
      */
     exportSlot?: import("react").ReactNode;
+    /**
+     * May the viewer change maps? The server takes `processes.edit` (Owner,
+     * Admin, Editor) for every write behind this bar. Without it the bar
+     * offers no write at all, rather than buttons that end in "Save failed".
+     */
+    canEdit: boolean;
+    /** May the viewer delete a map? The server takes the Admin tier. */
+    canDelete: boolean;
 }
 
 export function CanvasDocumentBar({
@@ -108,6 +116,8 @@ export function CanvasDocumentBar({
     editorState,
     handlers,
     exportSlot,
+    canEdit,
+    canDelete,
 }: CanvasDocumentBarProps) {
     const t = useTranslations("automation.documentBar");
     // VR-6 — Run Mode toggle (automation canvases only). Flips the canvas
@@ -243,6 +253,7 @@ export function CanvasDocumentBar({
                 <input
                     type="text"
                     value={editedName}
+                    readOnly={!canEdit}
                     onChange={(e) => setEditedName(e.target.value)}
                     onBlur={handleRenameCommit}
                     onKeyDown={(e) => {
@@ -266,6 +277,7 @@ export function CanvasDocumentBar({
                     className="max-w-[28ch] rounded-[6px] border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-content-emphasis hover:border-canvas-border focus:border-border-emphasis focus:bg-canvas-surface focus:outline-none"
                 />
             )}
+            {canEdit && (
             <Button
                 size="sm"
                 variant="secondary"
@@ -275,7 +287,8 @@ export function CanvasDocumentBar({
             >
                 {creating ? t("creating") : t("newProcess")}
             </Button>
-            {activeId && (
+            )}
+            {activeId && canEdit && (
                 <Button
                     size="sm"
                     variant="secondary"
@@ -286,7 +299,7 @@ export function CanvasDocumentBar({
                     {duplicating ? t("duplicating") : t("duplicate")}
                 </Button>
             )}
-            {activeId && (
+            {activeId && canEdit && (
                 // Lifecycle — DRAFT / ACTIVE / ARCHIVED status selector.
                 // Reflects the active map's stored status; on change it
                 // PATCHes `{ status }` and the parent patches the list
@@ -309,7 +322,7 @@ export function CanvasDocumentBar({
                 </div>
             )}
             <div className="ml-auto flex items-center gap-default">
-                {activeId && (
+                {activeId && canEdit && (
                     <Button
                         size="sm"
                         variant="ghost"
@@ -326,7 +339,7 @@ export function CanvasDocumentBar({
                             : t("modeProcessMap")}
                     </Button>
                 )}
-                {activeId && (
+                {activeId && canDelete && (
                     // Lifecycle — delete affordance. Opens a
                     // typed-confirmation modal (the sanctioned pattern
                     // for top-level entity deletion — NOT the undo-toast).
@@ -352,7 +365,7 @@ export function CanvasDocumentBar({
                     discovery (Cmd+Z / Cmd+Shift+Z) is mirrored
                     visually. Disabled states drop out via the
                     history hook's flags. */}
-                {activeId && (
+                {activeId && canEdit && (
                     <>
                         <Button
                             size="sm"
@@ -464,6 +477,7 @@ export function CanvasDocumentBar({
                     </span>
                 )}
                 {exportSlot}
+                {canEdit && (
                 <Button
                     size="sm"
                     variant="primary"
@@ -473,6 +487,7 @@ export function CanvasDocumentBar({
                 >
                     {saving ? t("saving") : t("save")}
                 </Button>
+                )}
             </div>
         </div>
     );

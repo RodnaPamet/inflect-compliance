@@ -24,11 +24,21 @@ export default function NotificationsPage() {
     const tenantHref = useTenantHref();
     const t = useTranslations('notifications');
     const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [failed, setFailed] = useState(false);
 
+    // Without the `.catch` a network rejection left the list at its `[]`
+    // initial value, which renders as "no notifications" — a wrong answer
+    // presented as a confident one. An empty list and an unreachable server
+    // are different facts and the page now says which.
     useEffect(() => {
+        let live = true;
         fetch(apiUrl('/notifications'))
-            .then(r => r.json())
-            .then(setNotifications);
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+            // Reset on the success path, not in the effect body — see the same
+            // note on the mapping page.
+            .then((d) => { if (live) { setNotifications(d as Notification[]); setFailed(false); } })
+            .catch(() => { if (live) setFailed(true); });
+        return () => { live = false; };
     }, [apiUrl]);
 
     // Epic 60 — mark-read now overlays the read=true state immediately

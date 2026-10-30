@@ -7,10 +7,12 @@
  *   shared DB — the deadlock/data-race flake class. Serial runs
  *   (`--runInBand`, CI) skip cloning and stay on the shared base DB
  *   (unchanged path).
- * - Writes THIS checkout's marker (`PER_WORKER_MARKER`), which the
- *   worker-side `getTestDatabaseUrl()`, `jest.setup.js` and globalTeardown
- *   read. Its file name carries the checkout tag, because worktrees share
- *   one `node_modules`; see `tests/helpers/test-db-checkout.js`.
+ * - Writes THIS RUN's marker and names it in the environment
+ *   (`publishRunMarker`), which the worker-side `getTestDatabaseUrl()`,
+ *   `jest.setup.js` and globalTeardown read. Jest starts its workers after
+ *   this hook, so they inherit the name. One marker per run, because
+ *   worktrees share one `node_modules` and one checkout can run twice
+ *   (#4610); see `tests/helpers/test-db-checkout.js`.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -27,7 +29,10 @@ import {
     rememberTestDbRunLock,
     releaseTestDbRunLock,
     checkTestDbMigrationDrift,
-    PER_WORKER_MARKER,
+    newRunMarkerPath,
+    publishRunMarker,
+    reapDeadRunMarkers,
+    CHECKOUT_ROOT,
 } from '../helpers/db';
 import type { PerWorkerInfo } from '../helpers/db';
 
@@ -239,8 +244,19 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
         }
     }
 
-    fs.mkdirSync(path.dirname(PER_WORKER_MARKER), { recursive: true });
-    fs.writeFileSync(PER_WORKER_MARKER, JSON.stringify(marker));
+    // This run's own marker (#4610). Written first and named second, so no
+    // reader is ever pointed at a file that is not there yet. A marker left
+    // by a killed run of this checkout goes first; housekeeping, so it never
+    // stops the run.
+    try {
+        reapDeadRunMarkers(CHECKOUT_ROOT);
+    } catch {
+        /* best-effort */
+    }
+    const markerPath = newRunMarkerPath();
+    fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+    fs.writeFileSync(markerPath, JSON.stringify(marker));
+    publishRunMarker(markerPath);
 
     if (!base.includes('test')) {
         console.warn(`[test-setup] WARNING: DATABASE_URL does not look like a test database!`);
