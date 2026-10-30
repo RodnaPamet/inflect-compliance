@@ -2942,19 +2942,50 @@ jobs:
 
       # Reuse the image the `docker` job already built — no rebuild.
       # The tarball was exported there as an artifact; download it and
-      # load it into this runner's daemon under the SAME tag Trivy
-      # scans (`inflect-compliance:ci-<sha>`).
+      # hand the TARBALL ITSELF to Trivy (`input:` below), which is why
+      # there is no `docker load` here any more.
+      #
+      # ── WHY THE TAR AND NOT THE DAEMON (#4647) ─────────────────────────
+      #
+      # `image-ref:` made Trivy read the image out of the local daemon,
+      # and to do that it EXPORTS it back to a tar under /tmp first — so
+      # one 10.5 GB image needed three copies on one disk: the 1.6 GB
+      # artifact, `docker load`'s expansion into /var/lib/docker, and
+      # Trivy's own `/tmp/trivy-*/docker-export-*`. `input:` reads the
+      # downloaded tar in place, so only the first of those exists.
+      #
+      # This is not a theoretical saving. On 2026-10-30 run 41123577044
+      # died `no space left on device` writing that third copy, and the
+      # discriminator was the RUNNER, not anything in this repo — the
+      # `ubuntu-latest` pool is heterogeneous:
+      #
+      #   /dev/root            145G, 106G free  → scan passes
+      #   /dev/mapper/cow-root  72G,  34G free  → scan dies
+      #
+      # Same label on both (`vars.LARGE_RUNNER` is unset, so every run
+      # takes the fallback), same image size to the decimal, same 39G
+      # used. So re-running until a bigger machine answers proves only
+      # that a bigger machine answered. The runner-image notice in that
+      # same log says the label migrates to Ubuntu 26 from 2026-10-19,
+      # which means the small variant gets MORE common, not less.
+      #
+      # Why that mattered more than a red tick: Trivy is not a required
+      # check, so a failure here blocks nothing and tells nobody — the
+      # commit simply ships with no container CVE scan having run. An
+      # absent scan reads exactly like a clean one.
       - name: Download image tarball
         uses: actions/download-artifact@v8
         with:
           name: docker-image-${{ github.sha }}
           path: /tmp
 
-      - name: Load image into runner daemon
+      # Recorded, not merely assumed: the next person to read a failure
+      # here needs the tar size and the free space side by side. The
+      # `df` in the reclaim step above runs BEFORE this download.
+      - name: Record image size and free disk
         run: |
           ls -lh /tmp/image-${{ github.sha }}.tar
-          docker load --input /tmp/image-${{ github.sha }}.tar
-          docker image ls inflect-compliance
+          df -h /
 
       # ── Trivy scan: BLOCKING on CRITICAL,HIGH ──
       # Container-image scan against OS packages + bundled libraries.
@@ -2971,7 +3002,7 @@ jobs:
       - name: "Gate: Trivy vulnerability scan (critical+high)"
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: "inflect-compliance:ci-${{ github.sha }}"
+          input: "/tmp/image-${{ github.sha }}.tar"
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
@@ -3035,7 +3066,7 @@ jobs:
         if: ${{ always() && vars.CODE_SCANNING_ENABLED == 'true' }}
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: "inflect-compliance:ci-${{ github.sha }}"
+          input: "/tmp/image-${{ github.sha }}.tar"
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
