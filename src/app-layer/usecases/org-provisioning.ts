@@ -66,6 +66,7 @@
 import { Prisma, Role } from '@prisma/client';
 
 import prisma from '@/lib/prisma';
+import { ORG_ADMIN_TIER_ROLES } from '@/lib/org-roles';
 
 /**
  * Helpers accept either the global Prisma client or an in-flight
@@ -203,7 +204,8 @@ export async function provisionAllOrgAdminsToTenant(
     db: DbClient = prisma,
 ): Promise<ProvisionResult> {
     const admins = await db.orgMembership.findMany({
-        where: { organizationId: orgId, role: 'ORG_ADMIN' },
+        // Every administrator of the org, its owner included (#4576).
+        where: { organizationId: orgId, role: { in: [...ORG_ADMIN_TIER_ROLES] } },
         select: { userId: true },
     });
     if (admins.length === 0) {

@@ -148,7 +148,9 @@ describe('GAP O4-2 — org members page structural contract', () => {
         // self-removal — UX guard; the last-admin invariant is
         // also enforced server-side.
         expect(src).toMatch(
-            /onClick=\{\(\)\s*=>\s*setRoleTarget[\s\S]*?disabled=\{isSelf\}/,
+            // `|| ownerLocked` since #4576: an owner's row is also locked for a
+            // viewer who is not an owner. The self-disable is unchanged.
+            /onClick=\{\(\)\s*=>\s*setRoleTarget[\s\S]*?disabled=\{isSelf(?:\s*\|\|\s*ownerLocked)?\}/,
         );
     });
 
@@ -159,7 +161,7 @@ describe('GAP O4-2 — org members page structural contract', () => {
         // server-side; this prevents the easy footgun.
         const src = read(CLIENT_PATH);
         expect(src).toMatch(/const\s+isSelf\s*=\s*row\.original\.userId\s*===\s*currentUserId/);
-        expect(src).toMatch(/disabled=\{isSelf\}/);
+        expect(src).toMatch(/disabled=\{isSelf(?:\s*\|\|\s*ownerLocked)?\}/);
     });
 
     it('does not hand-roll a <table> or a fixed-overlay modal', () => {
