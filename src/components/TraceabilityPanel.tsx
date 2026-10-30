@@ -192,14 +192,34 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
         if (o && Array.isArray(o.items)) return o.items as T[];
         return [];
     };
+    // Each of the three already treats a non-ok response as an empty list. The
+    // `.catch` makes a REJECTION — offline, DNS, an aborted request — behave
+    // the same way instead of going nowhere. Deliberately not a new error
+    // surface: this panel is embedded in five detail pages and the existing
+    // contract for "could not read the options" is already an empty picker.
     useEffect(() => {
-        if (showAddRisk) fetch(`${apiBase}/risks`).then(r => r.ok ? r.json() : []).then(d => setAvailableRisks(unwrap(d, 'risks')));
+        if (showAddRisk) {
+            fetch(`${apiBase}/risks`)
+                .then(r => r.ok ? r.json() : [])
+                .then(d => setAvailableRisks(unwrap(d, 'risks')))
+                .catch(() => setAvailableRisks([]));
+        }
     }, [showAddRisk, apiBase]);
     useEffect(() => {
-        if (showAddControl) fetch(`${apiBase}/controls`).then(r => r.ok ? r.json() : []).then(d => setAvailableControls(unwrap(d, 'controls')));
+        if (showAddControl) {
+            fetch(`${apiBase}/controls`)
+                .then(r => r.ok ? r.json() : [])
+                .then(d => setAvailableControls(unwrap(d, 'controls')))
+                .catch(() => setAvailableControls([]));
+        }
     }, [showAddControl, apiBase]);
     useEffect(() => {
-        if (showAddAsset) fetch(`${apiBase}/assets`).then(r => r.ok ? r.json() : []).then(d => setAvailableAssets(unwrap(d, 'assets')));
+        if (showAddAsset) {
+            fetch(`${apiBase}/assets`)
+                .then(r => r.ok ? r.json() : [])
+                .then(d => setAvailableAssets(unwrap(d, 'assets')))
+                .catch(() => setAvailableAssets([]));
+        }
     }, [showAddAsset, apiBase]);
 
     // ─── Link (optimistic) ───

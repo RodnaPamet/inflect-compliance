@@ -136,9 +136,13 @@ export default function InstallWizardPage() {
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         if (!selectedPack) { setPreview(null); return; }
+        // `.catch` mirrors the non-ok branch: a rejection yields no preview
+        // rather than leaving the PREVIOUS pack's preview on screen under the
+        // newly selected pack's name, which is the misleading outcome.
         fetch(apiUrl(`/frameworks/${frameworkKey}?action=preview&packKey=${selectedPack}`))
             .then(r => r.ok ? r.json() : null)
-            .then(p => { setPreview(p); if (p) setStep('preview'); });
+            .then(p => { setPreview(p); if (p) setStep('preview'); })
+            .catch(() => setPreview(null));
     }, [selectedPack, apiUrl, frameworkKey]);
 
     const toggleChosen = (key: string) =>

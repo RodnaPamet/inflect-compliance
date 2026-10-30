@@ -364,13 +364,31 @@ function FileDropzoneInner(
             // files (browsers cap concurrent connections per origin
             // anyway); parallelising at the dropzone layer offers
             // little practical gain but adds complexity.
+            // `onAllSettled` was the last statement of an unguarded IIFE, so a
+            // rejection from `runOne` skipped it and the consumer was never told
+            // the batch had finished — the dropzone sits in its uploading state
+            // with no completion and no error.
+            //
+            // The `catch` is not redundant with the `finally`: `finally` makes
+            // the callback fire, but the IIFE's promise still REJECTS, and
+            // nothing awaits it. Catching is also defensive rather than
+            // expected — `runOne` has its own try/catch and converts a failed
+            // upload into a settled entry, so a throw reaching here is a bug in
+            // it, not an upload that failed. Swallowing it loudly would be
+            // worse than swallowing it quietly: there is no error surface here
+            // that `runOne` has not already used.
             (async () => {
                 const settled: FileUploadEntry[] = [];
-                for (const entry of accepted) {
-
-                    settled.push(await runOne(entry));
+                try {
+                    for (const entry of accepted) {
+                        settled.push(await runOne(entry));
+                    }
+                } catch {
+                    // runOne settles its own failures; a throw reaching here is
+                    // a bug in it, and there is no surface here it has not used.
+                } finally {
+                    onAllSettled?.(settled);
                 }
-                onAllSettled?.(settled);
             })();
         },
         [

@@ -30,10 +30,28 @@ export default function MappingPage() {
     const tenantHref = useTenantHref();
     const t = useTranslations('mapping');
     const [data, setData] = useState<FrameworkMappings | null>(null);
+    const [failed, setFailed] = useState(false);
     const [tab, setTab] = useState<'soc2' | 'nis2'>('soc2');
 
-    useEffect(() => { fetch(apiUrl('/mapping')).then(r => r.json()).then(setData); }, [apiUrl]);
+    // The `.catch` is load-bearing, not decoration. Without it a network
+    // rejection left `data` null for ever and the component below renders the
+    // loading pulse on a null — so the page showed an animated skeleton with
+    // no error, indefinitely. `r.ok` is checked for the same reason: a 500
+    // that returns HTML makes `r.json()` throw down the same path.
+    useEffect(() => {
+        let live = true;
+        fetch(apiUrl('/mapping'))
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+            // The reset rides the SUCCESS path rather than the effect body: a
+            // synchronous `setFailed(false)` here is what
+            // `react-hooks/set-state-in-effect` warns about, and it is only
+            // needed so a later successful read clears a previous failure.
+            .then((d) => { if (live) { setData(d as FrameworkMappings); setFailed(false); } })
+            .catch(() => { if (live) setFailed(true); });
+        return () => { live = false; };
+    }, [apiUrl]);
 
+    if (failed) return <div className="text-content-muted p-8">{t('loadError')}</div>;
     if (!data) return <div className="animate-pulse text-content-muted p-8">{t('loading')}</div>;
 
     const items = tab === 'soc2' ? data.soc2 : data.nis2;

@@ -4440,6 +4440,7 @@
     "title": "Framework Mapping",
     "subtitle": "Cross-framework readiness view. All descriptions are original paraphrases.",
     "loading": "Loading framework mappings...",
+    "loadError": "Couldn't load the framework mappings. Reload the page to try again.",
     "soc2": "SOC 2",
     "nis2": "NIS2",
     "controls": "{implemented}/{total} controls",
@@ -4566,6 +4567,7 @@
   "notifications": {
     "title": "Notifications",
     "loading": "Loading notifications...",
+    "loadError": "Couldn't load the notifications. Reload the page to try again.",
     "markRead": "Mark read",
     "noNotifications": "No notifications",
     "crumbDashboard": "Dashboard",
