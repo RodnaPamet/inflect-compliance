@@ -46,6 +46,10 @@ Inflect would host it in the worker, the same way it hosts Flue.
   tool. `toolRunnerModelFor` maps a profile tier to a model id
   (`AGENT_TOOL_RUNNER_MODEL_BALANCED` / `_DEEP`, default Sonnet 5.5 and Opus
   5.5). The Tool Runner driver is its one caller.
+  Every request is logged as `tool-runner: request` by shape only: method,
+  path, top-level body keys and whether a `thread` member was present. The
+  same shape is recorded as `wire` on the run's `MODEL_CALL` step input, so
+  the run page shows what was sent without a log read.
 - **The Tool Runner engine runs agent profiles (Step 2b, #4149, turned on in
   Step 2c, #4150).** `src/lib/agentic/tool-runner/` holds `driver.ts` (a pure
   plan that refuses with a named reason, then the hand-off), `execute.ts` (the
@@ -55,8 +59,10 @@ Inflect would host it in the worker, the same way it hosts Flue.
   and every scenario was mutation-proved. `DRIVER_IMPLEMENTED['tool-runner']` is
   true and `TOOL_RUNNER` is a WRITTEN value of `AgentDriverMode`, so a tenant
   can choose it on Admin → AI features → Agent engines, where it is described
-  "Powered by Claude". It runs only where the operator sets
-  `AGENT_DRIVER_TOOL_RUNNER`. `runsProfiles` is true for it alone, a profile's
+  "Powered by Claude". It runs only where it is available: the operator sets
+  `AGENT_DRIVER_TOOL_RUNNER=1`, or leaves it unset and the workspace's
+  organization turns the engine on in its Settings (#4557). Any other set value
+  makes it unavailable everywhere. `runsProfiles` is true for it alone, a profile's
   definition asks for it, and the Anthropic row of `docs/sub-processors.md`
   names "tenant-authored agent instructions". The builder's **Test run**
   (Behaviour tab, `POST …/profile/versions/:version/test-run`) starts a

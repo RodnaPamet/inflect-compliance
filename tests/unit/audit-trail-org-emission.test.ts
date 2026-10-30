@@ -75,6 +75,7 @@ function ctxFor(overrides: Partial<OrgContext> = {}): OrgContext {
             canConfigureDashboard: true,
             canSetThreatLevel: true,
             canSetMaturity: true,
+            canManageAgentSwitches: true,
         },
         ...overrides,
     };

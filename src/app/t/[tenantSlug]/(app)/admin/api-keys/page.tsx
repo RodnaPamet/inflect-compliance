@@ -110,6 +110,7 @@ const SCOPE_GROUPS: Record<string, { labelKey: string; scopes: string[] }> = {
     continuity: { labelKey: 'scopeGroup.continuity', scopes: ['continuity:write'] },
     processes:  { labelKey: 'scopeGroup.processes',  scopes: ['processes:write'] },
     vendors:    { labelKey: 'scopeGroup.vendors',    scopes: ['vendors:read', 'vendors:write'] },
+    findings:   { labelKey: 'scopeGroup.findings',   scopes: ['findings:read', 'findings:write'] },
     tests:      { labelKey: 'scopeGroup.tests',      scopes: ['tests:read', 'tests:write'] },
     frameworks: { labelKey: 'scopeGroup.frameworks', scopes: ['frameworks:read', 'frameworks:write'] },
     // `audits:workpaper_view` (#3749): reading the auditor agent's workpapers,

@@ -94,8 +94,8 @@ const ASK = { key: 'ad-hoc-question', name: 'Ad-hoc question', description: 'Ans
 const PICKER_FORM = { key: 'discovered-agent-review', name: 'Discovered agent review', description: 'Reviews one', requiredInput: ['discoveredAgentId'] };
 
 /** A caller who may list discovered agents and open the Ask page. */
-const ALL: StartAbilities = { discoveredAgents: true, askPage: true };
-const NONE: StartAbilities = { discoveredAgents: false, askPage: false };
+const ALL: StartAbilities = { discoveredAgents: true, askPage: true, frameworks: true };
+const NONE: StartAbilities = { discoveredAgents: false, askPage: false, frameworks: false };
 
 const DISCOVERED_LIST = '/api/t/acme/admin/agents/discovered';
 const discoveredRow = (id: string, discoveredId: string, extra: Record<string, unknown> = {}) => ({
@@ -410,6 +410,16 @@ describe('the discovered-agent review picks its agent from the inventory', () =>
         fireEvent.click(button);
         expect(screen.queryByRole('dialog')).toBeNull();
         expect(fetchMock.mock.calls.some(([u]) => u === DISCOVERED_LIST)).toBe(false);
+    });
+
+    it('the framework picker is not offered to a caller who cannot view frameworks — no form, no request, and the reason (#4533)', () => {
+        renderRuns({ startAbilities: { ...ALL, frameworks: false } });
+        const button = screen.getByTestId('workflow-start-audit-prep');
+        expect(button).toBeDisabled();
+        expect(gateLabelOf('audit-prep')).toContain(en('agents.runs.notHere.NEEDS_FRAMEWORK_ACCESS'));
+        fireEvent.click(button);
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(fetchMock.mock.calls.some(([u]) => u === '/api/t/acme/frameworks')).toBe(false);
     });
 
     it('a page that passes no abilities offers neither the picker nor the link', () => {

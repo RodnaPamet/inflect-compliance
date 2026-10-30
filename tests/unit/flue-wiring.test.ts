@@ -38,6 +38,13 @@ jest.mock('@/lib/db-context', () => ({
 
 const envBag: Record<string, string | undefined> = {};
 jest.mock('@/env', () => ({ env: new Proxy({}, { get: (_t, k: string) => envBag[k] }) }));
+// The workspace's organization row (#4557). `null` — no organization — unless a
+// test sets one, so every env-only case reads exactly as it did before.
+const orgRow: { value: { agentProfilesEnabled: boolean; agentToolRunnerEnabled: boolean } | null } = { value: null };
+jest.mock('@/lib/prisma', () => ({
+    __esModule: true,
+    default: { tenant: { findUnique: jest.fn(async () => ({ organization: orgRow.value })) } },
+}));
 
 jest.mock('@/lib/observability', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -62,6 +69,7 @@ const ctx = makeRequestContext('OWNER');
 
 /** Everything satisfied. Each test then breaks exactly one term. */
 beforeEach(() => {
+    orgRow.value = null;
     jest.clearAllMocks();
     row = { agentDriver: 'FLUE' };
     for (const k of Object.keys(envBag)) delete envBag[k];

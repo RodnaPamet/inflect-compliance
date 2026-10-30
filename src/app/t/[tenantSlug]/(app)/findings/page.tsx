@@ -3,6 +3,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { listFindings } from '@/app-layer/usecases/finding';
 import { FindingsClient } from './FindingsClient';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { FINDING_STATUSES } from './filter-defs';
 
 export const dynamic = 'force-dynamic';
@@ -47,6 +48,12 @@ export default async function FindingsPage({
         getTranslations('common'),
         getTenantCtx({ tenantSlug }),
     ]);
+    // The register's own key (#4535): a custom role with `findings.view` off is
+    // refused here, as `GET /findings` refuses it, rather than shown a table
+    // that cannot load.
+    if (!ctx.appPermissions.findings.view) {
+        return <ForbiddenPage title={t('accessTitle')} message={t('accessMessage')} />;
+    }
     const findings = await listFindings(ctx, { take: SSR_PAGE_LIMIT }, { status: status || undefined });
 
     return (
@@ -56,9 +63,12 @@ export default async function FindingsPage({
                 initialFindings={JSON.parse(JSON.stringify(findings))}
                 initialFilters={initialFilters}
                 tenantSlug={tenantSlug}
-                // `createFinding` / `updateFinding` assert the coarse write
-                // tier only, so the UI offers writes on exactly that.
-                canWrite={ctx.permissions.canWrite}
+                // Each write follows its route's gate: the `findings.*` key the
+                // route asks AND the coarse tier the usecase asserts (#4535).
+                // Built-in roles hold both or neither; a custom role is offered
+                // only the writes its keys allow.
+                canCreate={ctx.permissions.canWrite && ctx.appPermissions.findings.create}
+                canEdit={ctx.permissions.canWrite && ctx.appPermissions.findings.edit}
                 translations={{
                     title: t('title'),
                 listDescription: t('listDescription'),

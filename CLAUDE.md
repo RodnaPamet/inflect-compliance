@@ -981,7 +981,7 @@ signed its subject in from any browser.
 
 Job definitions are in `src/app-layer/jobs/`. The executor registry is `src/app-layer/jobs/executor-registry.ts`. Jobs wrap their body in `runJob()` from `@/lib/observability/job-runner`, which opens a fresh AsyncLocalStorage request context (`route: job:<name>`) and a `traceOperation` span; the BullMQ worker additionally runs each execution inside an `execute <jobName>` span linked to the originating `enqueue` span. No job uses `traceUsecase`.
 
-**A job that must write a NOT NULL `User` foreign key writes it as the tenant's SYSTEM user** (#4400), through `buildTenantSystemJobContext` in `src/app-layer/context-system.ts`. It must not borrow a member for that. The row is `sys_<tenantId>`, created on first use. Its `emailHash` is `system:<tenantId>`, which no lookup by email can compute, and it never has a password. Migration `20261029200000_tenant_system_user` refuses the `sys_` id in every table a sign-in or standing needs: Account, identity link, tenant and org membership, password reset, MFA, both session tables, API keys and device tokens. So no code path can make it a person. The jwt callback and the mailer refuse it again as a second line. The policy review reminder, the evidence retention notifications and the agent owner-orphan pass's transfer task have moved. The other borrowing callers move one per PR, each with a test that the row no longer names a person (`buildDelegatedJobContext`'s docblock). A job acting for a named, accountable person still resolves their membership (`resolveMemberContext`).
+**A job that must write a NOT NULL `User` foreign key writes it as the tenant's SYSTEM user** (#4400), through `buildTenantSystemJobContext` in `src/app-layer/context-system.ts`. It must not borrow a member for that. The row is `sys_<tenantId>`, created on first use. Its `emailHash` is `system:<tenantId>`, which no lookup by email can compute, and it never has a password. Migration `20261029200000_tenant_system_user` refuses the `sys_` id in every table a sign-in or standing needs: Account, identity link, tenant and org membership, password reset, MFA, both session tables, API keys and device tokens. So no code path can make it a person. The jwt callback and the mailer refuse it again as a second line. The policy review reminder, the evidence retention notifications and the agent owner-orphan pass's transfer task have moved. A manually requested identity leaver or joiner pass no longer borrows its requester either: it resolves their real membership when it runs, and falls back to the scheduled pass's own context, naming nobody, when they have lost the key (see "Identity lifecycle — JML"). That was the last of #4400's borrowing callers; the four jobs still on `buildDelegatedJobContext` act for a named member (its docblock). A job acting for a named, accountable person still resolves their membership (`resolveMemberContext`).
 
 ### Data Retention
 
@@ -1145,6 +1145,21 @@ Reconcile is gated on the sync returning `PASSED` — a `PARTIAL` (resumable) or
 **exact normalised email** between `Employee.workEmail` and
 `ConnectedIdentityAccount.email`, and only when exactly one employee holds that
 address. For Entra that address is `u.mail || u.userPrincipalName`.
+
+**A manual pass re-reads its requester's authority when it RUNS** (#4400), leaver
+and joiner alike. Each "Run now" route asserts `admin.tenant_lifecycle` at
+enqueue and puts the caller's id in the payload. The pass then resolves that
+member again (`resolvePassActor`, `usecases/identity-pass-requester.ts`). If they
+are still ACTIVE and still hold the key, the pass acts as them, with their real
+role, and the journal's `actorUserId` names them. If they were removed, are no
+longer ACTIVE, or lack the key, the pass STILL runs, on the scheduled pass's own
+context. Refusing would leave a departed employee's accounts enabled, or hold
+back a starter's account, and the schedule runs the same pass anyway. Nothing it
+writes as an actor names them, and the execution row's `resultJson.request`
+records who asked, `authority: 'JOB'` and the refusal. `triggeredBy` is read off
+the request, not off `ctx.userId`, so that run still says `manual`. Do not bring
+back a context that fabricates ADMIN for the requester (`buildDelegatedJobContext`),
+and do not make the refusal stop the pass.
 
 **The write-mode ladder** (`DISABLED → DRY_RUN → AUTOMATIC`) is stored
 per direction on `TenantSecuritySettings.identity{Leaver,Joiner}Mode`, defaulting
@@ -2974,6 +2989,20 @@ is offered by adding its mode to `AGENT_DRIVER_MODES` and its name and
 description to `admin.agentEngines.engine`. A new `StaticDriverReason` must get
 a sentence in `REASON_MESSAGE`, which `satisfies` the union, so `tsc` fails
 until it does.
+
+**The two agent switches are an organization's to decide** (#4557, owner
+decision 2026-10-30). `AGENT_PROFILES` and `AGENT_DRIVER_TOOL_RUNNER` read as
+three states (`readDeploymentSwitch` in `src/lib/agentic/agent-switches.ts`):
+`1`/`true` on for every workspace, any other set value off for every workspace
+(a typo is a veto), and UNSET leaves each workspace's organization to decide
+(`Organization.agentProfilesEnabled` / `agentToolRunnerEnabled`, set by an org
+admin on `/org/:slug/settings`, audited `ORG_AGENT_SWITCHES_CHANGED`). A
+workspace with no organization stays off, and `AGENT_PROFILES_TENANTS` still
+opens the slugs it names. Every reader goes through `agentProfilesDecisionFor` /
+`toolRunnerDecisionFor` in `agent-switches-policy.ts`, which read the
+organization by the workspace's OWN id or slug. Never read either variable
+directly: that reports an organization's choice as off. The Tool Runner's
+"available" is still not "chosen": the workspace owner chooses the engine.
 
 **A new engine passes the driver conformance suite before it is switched on**
 (Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables

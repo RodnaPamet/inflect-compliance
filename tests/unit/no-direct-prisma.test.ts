@@ -134,6 +134,11 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // ORG_MATURITY widget — org-scoped maturity ratings; same
         // global-prisma + getOrgCtx shape as the other org usecases.
         'org-maturity.ts',
+        // #4557 — the organization's two agent switches, columns on the
+        // org-scoped Organization row; same global-prisma + getOrgCtx shape.
+        // Read gated by canViewPortfolio, set by canManageAgentSwitches
+        // (ORG_ADMIN), audited via ORG_AGENT_SWITCHES_CHANGED.
+        'org-agent-switches.ts',
         // ORG_INITIATIVES — org-scoped programme tracking; global prisma for
         // initiatives/links + withTenantDb for cross-tenant progress rollup.
         'org-security-initiative.ts',

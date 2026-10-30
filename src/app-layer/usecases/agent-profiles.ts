@@ -48,7 +48,6 @@ import { createHash } from 'crypto';
 import { Prisma } from '@prisma/client';
 
 import type { RequestContext } from '../types';
-import { env } from '@/env';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { AppError, ConflictError, ValidationError } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
@@ -56,8 +55,8 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { scanSkillText } from '@/lib/agentic/flue/skills/text-scan';
 import { repositorySkillCatalogue, repositorySkillNames } from '@/lib/agentic/flue/skills/resolve';
 import { catalogBytes, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
+import { agentProfilesOnFor } from '@/lib/agentic/agent-switches-policy';
 import {
-    agentProfilesEnabledFor,
     PROFILE_INSTRUCTIONS_MAX_CHARS,
     PROFILE_MAX_TURNS,
     PROFILE_REJECTION_REASON_MAX_CHARS,
@@ -144,18 +143,19 @@ function refuse(reason: AgentProfileRefusal, message: string, extra: Record<stri
 /**
  * Is the profile surface on for this tenant? The deployment's switch opens it to
  * every tenant; `AGENT_PROFILES_TENANTS` opens it to the tenants it names
- * (Step 1H, #4145). No slug is never named, so the answer fails closed.
+ * (Step 1H, #4145); with the switch unset, the tenant's organization decides
+ * (#4557). No slug is never named, so the answer fails closed.
  */
-export function agentProfilesOn(tenantSlug: string | null | undefined): boolean {
-    return agentProfilesEnabledFor(env.AGENT_PROFILES, env.AGENT_PROFILES_TENANTS, tenantSlug);
+export async function agentProfilesOn(tenantSlug: string | null | undefined): Promise<boolean> {
+    return agentProfilesOnFor(tenantSlug);
 }
 
 /**
  * The flag, then the key. The flag first, so a deployment without the surface
  * answers every caller the same 404 and says nothing about who may act.
  */
-function assertMayManageProfiles(ctx: RequestContext): void {
-    if (!agentProfilesOn(ctx.tenantSlug)) throw refuse('PROFILES_DISABLED', 'Not found.');
+async function assertMayManageProfiles(ctx: RequestContext): Promise<void> {
+    if (!(await agentProfilesOn(ctx.tenantSlug))) throw refuse('PROFILES_DISABLED', 'Not found.');
     if (ctx.permissions.canRead !== true || ctx.appPermissions?.admin?.agent_registry !== true) {
         throw new AppError('Agent profiles require admin.agent_registry.', 'FORBIDDEN', 403, true);
     }
@@ -394,7 +394,7 @@ export async function createAgentProfile(
     agentId: string,
     input: AgentProfileVersionInput,
 ): Promise<CreatedAgentProfileVersion> {
-    assertMayManageProfiles(ctx);
+    await assertMayManageProfiles(ctx);
     const prepared = prepareVersion(input);
     try {
         return await runInTenantContext(ctx, async (db) => {
@@ -471,7 +471,7 @@ export async function createAgentProfileVersion(
     agentId: string,
     input: AgentProfileVersionInput,
 ): Promise<CreatedAgentProfileVersion> {
-    assertMayManageProfiles(ctx);
+    await assertMayManageProfiles(ctx);
     const prepared = prepareVersion(input);
     try {
         return await runInTenantContext(ctx, async (db) => {
@@ -562,7 +562,7 @@ async function findVersion(db: PrismaTx, ctx: RequestContext, profileId: string,
 
 /** DRAFT → SUBMITTED. */
 export async function submitAgentProfileVersion(ctx: RequestContext, agentId: string, version: number): Promise<{ status: 'SUBMITTED' }> {
-    assertMayManageProfiles(ctx);
+    await assertMayManageProfiles(ctx);
     return runInTenantContext(ctx, async (db) => {
         const agent = await findAgent(db, ctx, agentId);
         assertAgentNotRetired(agent);
@@ -614,7 +614,7 @@ export async function approveAgentProfileVersion(
     version: number,
     input: { instructionsHash: string },
 ): Promise<{ status: 'APPROVED'; instructionsHash: string; runKey: string; supersededVersion: number | null }> {
-    assertMayManageProfiles(ctx);
+    await assertMayManageProfiles(ctx);
     return runInTenantContext(ctx, async (db) => {
         const agent = await findAgent(db, ctx, agentId);
         assertAgentNotRetired(agent);
@@ -703,7 +703,7 @@ export async function rejectAgentProfileVersion(
     version: number,
     input: { reason: string },
 ): Promise<{ status: 'REJECTED' }> {
-    assertMayManageProfiles(ctx);
+    await assertMayManageProfiles(ctx);
     const reason = sanitizePlainText(input.reason).trim();
     if (reason === '') throw refuse('REJECTION_REASON_REQUIRED', 'Say why the version is rejected, so its author can act on it.');
     if (reason.length > PROFILE_REJECTION_REASON_MAX_CHARS) {
@@ -746,7 +746,7 @@ export async function rejectAgentProfileVersion(
  * the safe direction.
  */
 export async function retireAgentProfileVersion(ctx: RequestContext, agentId: string, version: number): Promise<{ status: 'RETIRED' }> {
-    assertMayManageProfiles(ctx);
+    await assertMayManageProfiles(ctx);
     return runInTenantContext(ctx, async (db) => {
         const agent = await findAgent(db, ctx, agentId);
         const profile = await findProfile(db, ctx, agentId);
@@ -914,7 +914,7 @@ function viewSkillRefs(raw: unknown): ProfileSkillRef[] {
  * the first version can be written.
  */
 export async function getAgentProfile(ctx: RequestContext, agentId: string): Promise<AgentProfileView> {
-    assertMayManageProfiles(ctx);
+    await assertMayManageProfiles(ctx);
     // Read outside the transaction below: it opens its own, and it is the same
     // read the settings page and the run path make (Step 2c).
     const engine = await getAgentDriverSetting(ctx);
@@ -1031,7 +1031,7 @@ export async function startAgentProfileTestRun(
     agentId: string,
     version: number,
 ): Promise<{ runId: string; status: string; runKey: string }> {
-    assertMayManageProfiles(ctx);
+    await assertMayManageProfiles(ctx);
     if (!isPersonContext(ctx)) {
         throw refuse(
             'TESTER_NOT_A_PERSON',

@@ -52,7 +52,7 @@ export default async function VulnerabilitiesPage({
     const can = {
         triage: canTriage,
         convertToRisk: canTriage && p.risks.create,
-        convertToFinding: canTriage,
+        convertToFinding: canTriage && p.findings.create,
         createTask: canTriage && p.tasks.create && p.tasks.edit,
     };
 

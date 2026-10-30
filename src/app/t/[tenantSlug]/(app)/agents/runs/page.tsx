@@ -122,6 +122,9 @@ export default async function AgentRunsPage({
         // question's Start button. Reader-level, and not `canOperate`:
         // following a link starts nothing here.
         askPage: Boolean(ctx.appPermissions.controls?.view),
+        // The framework picker's list, `GET /frameworks`, checks
+        // `frameworks.view` and nothing else (#4533).
+        frameworks: Boolean(ctx.appPermissions.frameworks?.view),
     };
 
     return (
