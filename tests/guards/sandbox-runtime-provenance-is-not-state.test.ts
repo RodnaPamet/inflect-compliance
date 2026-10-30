@@ -90,7 +90,26 @@ describe('no rendered string asserts a setting effective value', () => {
         const body = (block as RegExpExecArray)[1];
         // Every interpolation in that block names `provenance` or a translation.
         const reads = [...body.matchAll(/\{(view|declaration)\.(\w+)/g)].map((m) => `${m[1]}.${m[2]}`);
-        expect(reads.filter((r) => !['view.appliedAtIso', 'view.configDigest'].includes(r))).toEqual([]);
+        /*
+            THE ALLOWLIST IS THE POINT, not a formality. Each entry is a field
+            somebody decided may appear in this block, and the guard caught the
+            third one being added (#4572) rather than letting it in silently.
+
+            All three are PROVENANCE — what was sent, when, and when we last
+            looked. None is a setting's effective value, which is the thing this
+            page cannot know and must not imply. A fourth entry should be
+            argued the same way, and a field named after a channel or a mode
+            does not belong here at all.
+        */
+        const ALLOWED_PROVENANCE_READS = [
+            'view.appliedAtIso',
+            'view.configDigest',
+            // #4572: WHEN the probe answered. The verdict may be reused for up
+            // to 30 seconds, so the age is rendered — a cached "reachable" must
+            // not read as a current one.
+            'view.probedAtIso',
+        ];
+        expect(reads.filter((r) => !ALLOWED_PROVENANCE_READS.includes(r))).toEqual([]);
     });
 
     it('the reachability strings name no reporting channel', () => {

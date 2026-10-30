@@ -7421,7 +7421,8 @@
       "reachabilityNotProbed": "no health endpoint configured — not probed",
       "reachabilityUnreachable": "did not answer",
       "reachabilityAnswered": "reachable, reporting version {version}",
-      "reachabilityNoVersion": "answered, but reported no version"
+      "reachabilityNoVersion": "answered, but reported no version",
+      "probedAtLabel": "Checked"
     }
   },
   "riskManager": {
