@@ -42,6 +42,26 @@
  * `--yes`, prints the enumeration it is relying on, and never touches a
  * database with a live connection.
  *
+ * ─── Every drop is made under the owning checkout's run lock (2026-10-30) ─
+ *
+ * A connection count of 0 does not mean "not in use": a Jest run's
+ * per-worker databases read 0 between test files. The run lock does mean
+ * it. globalSetup holds the session advisory lock for its (checkout tag,
+ * base database) pair from setup to teardown, and that pair is exactly what
+ * a per-worker database's name is built from.
+ *
+ *   - `--mine` takes THIS checkout's lock before it reads anything, holds it
+ *     for the whole reap, and releases it at the end. If a test run in this
+ *     checkout holds it, the command refuses, drops nothing, and exits 1. It
+ *     used to promise this ("safe: the run lock covers this tag") without
+ *     taking the lock, and dropped a live run's idle databases.
+ *   - `--unmatched --yes` takes each tag's lock in turn, derived from the tag
+ *     in the database name, so it needs no checkout root. A tag whose lock is
+ *     held belongs to a live run in a checkout the enumeration missed, and
+ *     none of its databases are dropped. This narrows the inference above; it
+ *     does not replace it. Whether a tag with no live run is abandoned is
+ *     still a human's call, which is why `--yes` stays.
+ *
  *     npm run db:test:reap                      # report only
  *     npm run db:test:reap -- --mine            # this checkout's strays
  *     npm run db:test:reap -- --unmatched --yes # tags with no checkout found
@@ -58,7 +78,47 @@ import {
     getDbName,
     checkoutTag,
     tagForRoot,
+    CHECKOUT_ROOT,
+    acquireTestDbRunLock,
+    testDbRunLockKeyForTag,
 } from '../tests/helpers/db';
+import type { TestDbRunLockOutcome } from '../tests/helpers/db';
+
+/**
+ * How this command names itself when it holds a checkout's run lock. A Jest
+ * run refused because the reaper holds the lock prints this as the holder,
+ * so it must not read as another Jest run.
+ */
+const REAP_LOCK_LABEL = `inflect-db-test-reap:${process.pid}`;
+
+type LockNotTaken = Exclude<TestDbRunLockOutcome, { status: 'acquired' }>;
+
+/**
+ * Why `--mine` refuses. Anything but `acquired` refuses: `unchecked` means
+ * the lock could not be taken, and a lock that was not taken rules nothing
+ * out.
+ */
+function mineRefusal(outcome: LockNotTaken, tag: string, baseName: string): string {
+    const scope = `checkout ${tag}, base "${baseName}"`;
+    if (outcome.status === 'conflict') {
+        const who = outcome.holder
+            ? `  holder:  ${outcome.holder.applicationName} (postgres backend pid ${outcome.holder.backendPid}, ` +
+              `connected ${outcome.holder.backendStart})`
+            : '  holder:  a session holds the lock but pg_stat_activity did not name it';
+        return [
+            `Refusing --mine: a test run in this checkout is in progress (${scope}). Nothing was dropped.`,
+            who,
+            '',
+            "That run holds this checkout's run lock for as long as it runs, and its per-worker",
+            'databases read 0 connections between test files, so they would look like strays.',
+            'Run this again when it has finished.',
+        ].join('\n');
+    }
+    return [
+        `Refusing --mine: could not take this checkout's run lock (${outcome.reason}). Nothing was dropped.`,
+        'Without the lock a test run in progress cannot be ruled out.',
+    ].join('\n');
+}
 
 interface Row {
     datname: string;
@@ -132,14 +192,52 @@ function enumerateCheckoutRoots(): { roots: string[]; fromGit: number; fromScan:
     return { roots: [...roots], fromGit, fromScan };
 }
 
+interface ReapOptions {
+    dropMine: boolean;
+    dropUnmatched: boolean;
+    confirmed: boolean;
+    baseName: string;
+    myTag: string;
+}
+
 async function main(): Promise<number> {
     const argv = process.argv.slice(2);
-    const dropMine = argv.includes('--mine');
-    const dropUnmatched = argv.includes('--unmatched');
-    const confirmed = argv.includes('--yes');
+    const opts: ReapOptions = {
+        dropMine: argv.includes('--mine'),
+        dropUnmatched: argv.includes('--unmatched'),
+        confirmed: argv.includes('--yes'),
+        baseName: getDbName(getBaseTestDatabaseUrl()),
+        myTag: checkoutTag(),
+    };
+    if (!opts.dropMine) return reap(opts);
 
-    const baseName = getDbName(getBaseTestDatabaseUrl());
-    const myTag = checkoutTag();
+    // ── `--mine` holds THIS checkout's run lock for the whole reap ──
+    //
+    // The lock globalSetup takes and holds for an entire Jest run, keyed on
+    // the same (checkout tag, base database) pair the doomed names are built
+    // from. Taken BEFORE the connection counts are read: a run's per-worker
+    // databases read 0 connections between test files, so a count read while
+    // a run is live says nothing, and the only thing that does is this lock.
+    // `--mine` once said it was safe "because the run lock covers this tag"
+    // without taking it, and dropped a live run's databases under it.
+    const lock = await acquireTestDbRunLock({
+        key: testDbRunLockKeyForTag(opts.myTag, opts.baseName),
+        label: REAP_LOCK_LABEL,
+    });
+    if (lock.status !== 'acquired') {
+        console.error(mineRefusal(lock, opts.myTag, opts.baseName));
+        return 1;
+    }
+    try {
+        return await reap(opts);
+    } finally {
+        // Ending the session releases it anyway; this only makes it prompt.
+        await lock.release();
+    }
+}
+
+async function reap(opts: ReapOptions): Promise<number> {
+    const { dropMine, dropUnmatched, confirmed, baseName, myTag } = opts;
     const pattern = new RegExp(`^${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_([0-9a-f]+)_w(\\d+)$`);
 
     const admin = new Client({ connectionString: adminConnectionString() });
@@ -204,7 +302,7 @@ async function main(): Promise<number> {
     console.log(
         `${perWorker.length} per-worker database(s), ${totalMb} MB, ${byTag.size} checkout tag(s).`,
     );
-    console.log(`This checkout: ${myTag}  (${process.cwd()})`);
+    console.log(`This checkout: ${myTag}  (${CHECKOUT_ROOT})`);
     console.log(
         `Checkout roots enumerated: ${roots.length} (${fromScan} by scan, ${fromGit} more from git worktree list).`,
     );
@@ -236,7 +334,10 @@ async function main(): Promise<number> {
         const mineMb = mine.reduce((a, r) => a + r.mb, 0);
         const unmatchedMb = unmatched.reduce((a, r) => a + r.mb, 0);
         console.log('Nothing dropped — this is a report. To delete:');
-        console.log(`  --mine        ${mine.length} db, ${mineMb} MB (safe: the run lock covers this tag)`);
+        console.log(
+            `  --mine        ${mine.length} db, ${mineMb} MB (takes this checkout's run lock first, ` +
+                'and refuses while a test run holds it)',
+        );
         console.log(
             `  --unmatched   ${unmatched.length} db, ${unmatchedMb} MB (needs --yes; the label is an inference —`,
         );
@@ -259,21 +360,65 @@ async function main(): Promise<number> {
 
     let dropped = 0;
     let skipped = 0;
-    for (const t of targets) {
-        if (t.conns > 0) {
-            console.log(`  skip ${t.datname} — ${t.conns} live connection(s)`);
-            skipped += 1;
-            continue;
+    const dropIdle = async (dbs: readonly Row[]) => {
+        for (const t of dbs) {
+            if (t.conns > 0) {
+                console.log(`  skip ${t.datname} — ${t.conns} live connection(s)`);
+                skipped += 1;
+                continue;
+            }
+            try {
+                // No `WITH (FORCE)`: the connection counts were read before
+                // this loop, and if one has appeared since then failing is
+                // the correct outcome, not terminating someone's session.
+                await admin.query(`DROP DATABASE IF EXISTS "${t.datname}"`);
+                dropped += 1;
+            } catch (err) {
+                console.log(`  skip ${t.datname} — ${err instanceof Error ? err.message : err}`);
+                skipped += 1;
+            }
         }
-        try {
-            // No `WITH (FORCE)`: the connection counts were read before
-            // this loop, and if one has appeared since then failing is
-            // the correct outcome, not terminating someone's session.
-            await admin.query(`DROP DATABASE IF EXISTS "${t.datname}"`);
-            dropped += 1;
-        } catch (err) {
-            console.log(`  skip ${t.datname} — ${err instanceof Error ? err.message : err}`);
-            skipped += 1;
+    };
+
+    // This checkout's run lock is already held: `main()` took it.
+    if (dropMine) await dropIdle(mine);
+
+    // ── Another checkout's tag: still a human's call, and still its lock ──
+    //
+    // `--yes` and the printed enumeration stay the gate: "no checkout root
+    // found" is an inference this command cannot make safe. What it CAN rule
+    // out is a run in progress, in a checkout the enumeration missed. That
+    // run holds the lock for its (tag, base) pair, which this command can
+    // derive from the database name alone, so each tag is dropped only while
+    // this command holds that tag's lock. A tag whose lock is held is a live
+    // checkout, whatever the label said; nothing of it is dropped.
+    if (dropUnmatched) {
+        const unmatchedByTag = new Map<string, Row[]>();
+        for (const r of unmatched) {
+            const tag = pattern.exec(r.datname)![1];
+            unmatchedByTag.set(tag, [...(unmatchedByTag.get(tag) ?? []), r]);
+        }
+        for (const [tag, dbs] of unmatchedByTag) {
+            const lock = await acquireTestDbRunLock({
+                key: testDbRunLockKeyForTag(tag, baseName),
+                label: REAP_LOCK_LABEL,
+            });
+            if (lock.status !== 'acquired') {
+                const why =
+                    lock.status === 'conflict'
+                        ? `a test run of that checkout holds its run lock` +
+                          (lock.holder ? ` (${lock.holder.applicationName})` : '') +
+                          ', so the checkout is live'
+                        : `its run lock could not be taken (${lock.reason})`;
+                console.log(`  skip ${dbs.length} db of tag ${tag} — ${why}`);
+                skipped += dbs.length;
+                continue;
+            }
+            try {
+                await dropIdle(dbs);
+            } finally {
+                await lock.release();
+            }
         }
     }
     await admin.end();
