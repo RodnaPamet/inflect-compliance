@@ -80,6 +80,7 @@ const ROW = {
     createdAt: new Date('2026-09-01T00:00:00.000Z'),
     updatedAt: new Date('2026-09-20T00:00:00.000Z'),
     _count: { executions: 3 },
+    hasSecret: true,
 };
 
 async function connectionsFrom(rows: unknown[]): Promise<Record<string, unknown>[]> {
@@ -105,7 +106,16 @@ describe('GET …/admin/integrations — the connection payload is an allowlist'
         expect(c.lastTestStatus).toBe('ok');
         expect(c._count).toEqual({ executions: 3 });
         expect(c.secretStatus).toBe('••••••••');
+        expect(c.hasSecret).toBe(true);
         expect(String(c.webhookUrl)).toContain('/api/integrations/webhooks/active-directory');
+    });
+
+    it('reports a connection with no stored secret as having none (#4581)', async () => {
+        // `hasSecret` was the constant `true`, internal checks with no secret
+        // included. It is the usecase's flag now, and the mask follows it.
+        const [c] = await connectionsFrom([{ ...ROW, hasSecret: false }]);
+        expect(c.hasSecret).toBe(false);
+        expect(c.secretStatus).toBe('none');
     });
 
     it('drops a column the read grew that nobody meant to publish', async () => {

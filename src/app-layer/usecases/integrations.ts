@@ -128,8 +128,8 @@ function enabledSecurityFlags(configJson: unknown): string[] {
 }
 
 export async function listIntegrationConnections(ctx: RequestContext) {
-    return runInTenantContext(ctx, (db) =>
-        db.integrationConnection.findMany({
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.integrationConnection.findMany({
             where: { tenantId: ctx.tenantId },
             select: {
                 id: true,
@@ -150,8 +150,18 @@ export async function listIntegrationConnections(ctx: RequestContext) {
                 _count: { select: { executions: true } },
             },
             orderBy: { createdAt: 'desc' },
-        })
-    );
+        });
+        // Which connections store a secret at all (#4581). A second, id-only
+        // read rather than selecting `secretEncrypted`, so the ciphertext never
+        // enters this result: the list used to report `hasSecret: true` for
+        // every row, internal checks with no secret included.
+        const withSecret = await db.integrationConnection.findMany({
+            where: { tenantId: ctx.tenantId, secretEncrypted: { not: null }, id: { in: rows.map((r) => r.id) } },
+            select: { id: true },
+        });
+        const stored = new Set(withSecret.map((r) => r.id));
+        return rows.map((r) => ({ ...r, hasSecret: stored.has(r.id) }));
+    });
 }
 
 /**
