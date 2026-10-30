@@ -1,0 +1,16 @@
+-- #4576, deploy 1 of 2 — THE ORG_OWNER VALUE, AND NOTHING THAT WRITES IT.
+--
+-- A Prisma client meeting an enum value it was not generated with fails the
+-- whole read. `OrgMembership.role` is read on every org page and in the JWT's
+-- org memberships, so a row carrying ORG_OWNER must never be visible to a
+-- container that predates this migration. Hence two deploys, the pattern
+-- `AI_ADMIN` set for `Role` (#3699):
+--
+--   this one adds the value, and the code that ships with it reads it (an
+--   owner is at least an admin; an owner's row is changed only by an owner);
+--   the next one backfills the oldest ORG_ADMIN of each organization, adds
+--   the last-owner trigger, and moves the owner-only powers.
+--
+-- The value is not USED in this transaction. PostgreSQL forbids that; it does
+-- not forbid the ADD.
+ALTER TYPE "OrgRole" ADD VALUE IF NOT EXISTS 'ORG_OWNER';

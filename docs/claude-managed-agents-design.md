@@ -233,7 +233,11 @@ A new integration provider, `anthropic-workspace`, under
   archived but not deleted, and every version of its `system` stays at Anthropic.
   So each session sends the pinned instructions through the session's own
   `agent_with_overrides` `system` override, and deleting the session at settle
-  deletes them. Nothing a tenant wrote outlives the run at Anthropic. That makes
+  deletes them. Nothing a tenant wrote outlives the run at Anthropic, unless the
+  customer chose to keep sessions on that connection (decision 4). A kept
+  session stays in the customer's own workspace, held by their processor at
+  their direction, until they delete it or Inflect's purge, connection removal
+  or a DSAR erasure does. That makes
   a personal-data rule on instructions unnecessary here, which matters because
   the repository has no free-text personal-data detector to enforce one.
 - **Drift.** Before each session Inflect re-reads the agent at the pinned version
@@ -253,12 +257,12 @@ A new integration provider, `anthropic-workspace`, under
 | The funnel decides | `agent.custom_tool_use` → validate → `runGuardedTool` → `user.custom_tool_result` (`is_error` on refusal) |
 | Kill switch | asked on every event the job handles. To stop: answer pending calls with `is_error`, send `user.interrupt`, wait for idle, delete. "At a safe boundary" is weaker than Inflect's own per-turn check; between tool calls the model can only write text |
 | Run caps | tool calls and wall clock counted by the job; `budget` (dollars) as the backstop |
-| `MODEL_CALL` + Art 12 | one per `span.model_request_end`, with its `model_usage`. The prompt of each call is not visible, so the decision row's input digest covers what Inflect sent, not what the model saw. This is weaker than the other engines, and the owner must accept it explicitly |
+| `MODEL_CALL` + Art 12 | one per `span.model_request_end`, with its `model_usage`. The prompt of each call is not visible, so the decision row's input digest covers what Inflect sent, not what the model saw. This is weaker than the other engines; the owner accepted it on 2026-10-30 (decision 3) |
 | Guard on model text | on `agent.message` text, *after* Anthropic has stored it |
 | Skills | an Inflect `activate_skill` custom tool (pinned, hash-checked, no upload), or uploaded skills pinned by `version`. The custom tool keeps the mount gate in Inflect |
 | Residency | `LOCAL_ONLY` is refused, with a named reason |
-| Record and minimisation | the run's ledger is written in Inflect as it happens. At settle the job deletes the session (`DELETE /v1/sessions/{id}`), so the transcript does not outlive the run at Anthropic |
-| Tenant purge, DSAR | the purge must reach the provider: delete every session Inflect created, and archive the agents. An archived agent keeps its `system`, which is why that holds Inflect's fixed preamble and never a tenant's instructions |
+| Record and minimisation | the run's ledger is written in Inflect as it happens. At settle the job deletes the session (`DELETE /v1/sessions/{id}`), so the transcript does not outlive the run at Anthropic, unless the connection keeps sessions (decision 4) |
+| Tenant purge, DSAR | the purge must reach the provider: delete every session Inflect created, kept or not, and archive the agents. A DSAR erasure deletes every kept session Inflect recorded for the tenant's connections. An archived agent keeps its `system`, which is why that holds Inflect's fixed preamble and never a tenant's instructions |
 | Long sessions | webhooks into `integrations/webhooks/[provider]` (`session.status_idled`) wake a job instead of holding a stream for hours. The customer registers the endpoint in their Console |
 
 What MA-C2 adds over the Tool Runner engine is a **container**. A profile that
@@ -297,7 +301,8 @@ adds four rules that MA-C2 does not need:
 It changes what Inflect asks of Anthropic as a sub-processor:
 
 - transcripts holding tenant instructions and read-tool output, until Inflect
-  deletes them (at settle, under the per-session design above);
+  deletes them (always at settle: the keep choice of decision 4 is MA-C2's
+  only);
 - archived agent objects, which cannot be deleted, holding Inflect's fixed
   preamble and the tool schemas;
 - no ZDR, and US-only storage;
@@ -331,16 +336,31 @@ before the window closes, but tenant data may not reach the new processing.
 3. **For MA-C2, accept a weaker Art 12 row.** The per-call prompt is not visible
    to Inflect. The alternative is OpenTelemetry content-mode tracing from the
    customer's organisation, which means a second data path to secure.
-4. **For MA-C2, delete sessions at settle.** This minimises what persists at
-   Anthropic. It costs Anthropic's Console view of past runs, which Inflect's
-   own run timeline replaces.
-5. **Sub-processor framing for MA-C2.** Proposed: Anthropic acts as the
-   customer's own processor, used at the customer's direction, listed as an
-   opt-in per-tenant integration like GitHub and SharePoint. Confirm with
-   whoever signs the sub-processor register.
+   **Decided (owner, 2026-10-30): accepted.** The Art 12 row records what
+   Inflect sent and every tool call through the funnel, and says that each
+   call's prompt is held in the customer's workspace. No tracing ingest is
+   built.
+4. **For MA-C2, what happens to a session at settle.** Deleting it minimises
+   what persists at Anthropic, and costs Anthropic's Console view of past runs,
+   which Inflect's own run timeline replaces. **Decided (owner, 2026-10-30): the
+   customer's choice, per connection, deleting at settle by default.** A
+   customer may keep their sessions in their own workspace. A kept session is
+   still deleted by Inflect when the tenant is purged, when the connection is
+   removed, and on a DSAR erasure in the tenant. Inflect cannot read a
+   transcript to find one person in it, so a DSAR erasure deletes every kept
+   session Inflect recorded for the tenant's connections. The choice is MA-C2's
+   only: a session in Inflect's own organisation (MA-C1) is always deleted at
+   settle.
+5. **Sub-processor framing for MA-C2.** Anthropic acts as the customer's own
+   processor, used at the customer's direction, listed as an opt-in per-tenant
+   integration like GitHub and SharePoint. **Confirmed by the owner on
+   2026-10-30, as proposed.** Step 5a writes the `docs/sub-processors.md` row
+   in these words.
 6. **Transfer basis for MA-C1.** For tenants that opt in, Anthropic stores
-   session data as Inflect's own sub-processor, in the US, without ZDR. Before
-   the 6a notice goes out, someone must record three things on its pull request,
+   session data as Inflect's own sub-processor, in the US, without ZDR. The
+   owner decided on 2026-10-30 that these are recorded at step 6a and not
+   before. Before the 6a notice goes out, someone must record three things on
+   its pull request,
    per *Sub-processors: who confirms which half of step 2* in
    `docs/change-management-policy.md`:
    - the transfer mechanism for EU personal data (SCCs, or the basis Anthropic's
@@ -423,8 +443,10 @@ tests it read-only.
    and the two-tenant behavioural test.
 4. An "Anthropic workspace" card on the integrations admin page, gated like the
    other connection cards, with copy that says what Inflect will create in the
-   workspace (agents, one environment, sessions) and that it deletes sessions
-   when each run ends.
+   workspace (agents, one environment, sessions), that it deletes sessions
+   when each run ends unless the customer chooses on the card to keep them
+   (decision 4, off by default), and that a kept session is still deleted on
+   tenant purge, connection removal and a DSAR erasure.
 5. docs/sub-processors.md: an opt-in per-tenant integration row, framed as the
    owner decided, in this diff.
 6. Everything is behind a new opt-in env flag, AGENT_MANAGED_AGENTS. Triage it
@@ -499,7 +521,8 @@ gate cannot select yet.
    e. Stop (kill, cap, guard, wall clock): answer pending calls with is_error,
       send user.interrupt, wait for idle, delete the session.
    f. Settle: delete the session in finally, and record the deletion in the
-      ledger.
+      ledger, unless the connection keeps sessions (decision 4); a kept
+      session is recorded as kept, so 5c can find it.
 4. The client is built per run from the connection's decrypted key, with the
    workspace header. No other module constructs a client for this engine (guard).
 5. Pass the conformance suite against a faux SSE transport. Two shared
@@ -548,8 +571,8 @@ what remains.
 
 1. On tenant purge (tenant-purge.ts) and on removal of an anthropic-workspace
    connection:
-   - delete every session Inflect recorded for that connection, including any
-     a crash left behind;
+   - delete every session Inflect recorded for that connection, kept ones and
+     any a crash left behind;
    - archive every agent recorded in AgentProfileProvision (agents cannot be
      deleted).
    Use recorded ids only, never a list-and-match over the customer's workspace:
@@ -593,8 +616,8 @@ Before writing the enum value anywhere, confirm that the deployed image carries
 it.
 
 Before starting, confirm that decisions 3 (accept a weaker Art 12 row) and 4
-(delete sessions at settle) are recorded as accepted. If either is not, stop and
-report.
+(sessions deleted at settle unless the connection keeps them) are recorded as
+decided. If either is not, stop and report.
 
 Goal: DRIVER_IMPLEMENTED['managed-agents'] is true; the engine settings page
 offers it only to a tenant with a connected workspace; the builder's Test run
@@ -604,13 +627,16 @@ works on it.
 2. setAgentDriverSetting and the PUT schema accept MANAGED_AGENTS. A tenant
    without a connected workspace is refused with a named reason. The settings
    page explains the engine in plain words, including that conversations exist
-   in the customer's workspace until each run ends.
+   in the customer's workspace until each run ends, unless the customer keeps
+   them on the connection (decision 4).
 3. The run timeline marks span-derived decision rows, so a reviewer can see that
    the per-call prompt was not visible to Inflect.
 
 Tests: an E2E spec on isolatedTenant with a faux workspace that connects,
 selects the engine and completes a Test run, then asserts the faux workspace
-holds no session.
+holds no session (the connection at its default). An integration test with the
+connection keeping sessions asserts the session remains and is recorded as
+kept.
 
 Deliver per the Definition of done. This step is Significant.
 ```
@@ -620,9 +646,10 @@ Deliver per the Definition of done. This step is Significant.
 - [ ] The flag flip is its own commit, and the deployed image was confirmed before merge.
 - [ ] A tenant without a connected workspace cannot select the engine (test).
 - [ ] After the E2E run the faux workspace holds no session.
+- [ ] On a connection that keeps sessions, the session remains and is recorded as kept (test).
 - [ ] Span-derived decision rows are labelled in the run timeline (rendered test).
 
-**Exit.** A tenant can run a profile in its own Anthropic workspace, and nothing tenant-authored stays there after the run.
+**Exit.** A tenant can run a profile in its own Anthropic workspace, and nothing tenant-authored stays there after the run unless the customer chose to keep it.
 
 #### Step 5e — Profiles that need a workspace
 
@@ -695,12 +722,13 @@ Goal: evidence from a real Anthropic workspace.
    approved profile, then run it again with the kill switch engaged mid-run.
    Record:
    - the run ids, the MODEL_CALL and TOOL_CALL counts, and the halt reason;
-   - that the workspace holds no session afterwards, checked through the
-     provider's list endpoint, with ids only.
+   - that the workspace holds no session afterwards (the connection at its
+     default), checked through the provider's list endpoint, with ids only.
 3. Edit the provisioned agent's system prompt in the Console, run again, and
    record the AGENT_DRIFTED refusal.
-4. Purge rehearsal: disconnect the workspace, and record that the recorded
-   agents are archived and no session remains.
+4. Purge rehearsal: turn on keeping sessions, run once, then disconnect the
+   workspace, and record that the recorded agents are archived and no session
+   remains, the kept one included (decision 4).
 5. Update this document's Current state, the evidence row in the Agent SDK
    document, and CLAUDE.md's "Claude agent engines" section.
 
@@ -712,7 +740,7 @@ Deliver per the Definition of done.
 - [ ] Each adversarial question is answered in the implementation note, with a test for each defect found.
 - [ ] A production run in a real workspace completed, and the workspace held no session afterwards (recorded by method and date).
 - [ ] The kill-switch drill and the drift refusal were observed for real, by run id.
-- [ ] The disconnect rehearsal archived the recorded agents and left no session.
+- [ ] The disconnect rehearsal archived the recorded agents and left no session, a kept one included.
 - [ ] The evidence row is filled from production, not from a test.
 
 **Exit.** Managed Agents has run in a real customer-shaped workspace under every Inflect control, and left nothing tenant-authored behind.

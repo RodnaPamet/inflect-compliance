@@ -871,7 +871,10 @@ describe('getConnectionsHealth — activity vs success', () => {
         expect(res.connections[0].isStale).toBe(true);
     });
 
-    it('is fresh on a recent FAILED run even though it has never succeeded', async () => {
+    // #4581 D (owner decision 2026-10-30): freshness counts successes only. A
+    // run that failed is still reported as `lastRunAt`, but it no longer
+    // vouches for the connection.
+    it('is STALE on a recent failed run when it has never succeeded, and still reports the run', async () => {
         const res = await health(
             [{ id: 'c1', provider: 'okta', name: 'A', createdAt: minsAgo(9999), lastTestedAt: null, lastTestStatus: null }],
             [],
@@ -879,20 +882,56 @@ describe('getConnectionsHealth — activity vs success', () => {
         );
 
         expect(res.connections[0].hasEverSucceeded).toBe(false);
-        expect(res.connections[0].isStale).toBe(false);
+        expect(res.connections[0].isStale).toBe(true);
         expect(res.connections[0].lastRunAt).toBe(minsAgo(2).toISOString());
+        expect(res.connections[0].lastActivityAt).toBeNull();
+        expect(res.connections[0].secondsSinceActivity).toBeNull();
         expect(res.connections[0].secondsSinceLastSuccess).toBeNull();
+        expect(res.staleCount).toBe(1);
     });
 
-    it('takes the MOST RECENT of a run and a successful test as the activity time', async () => {
+    it('a recent failed run does not refresh an old success: the connection goes stale', async () => {
+        const fiveDays = 60 * 24 * 5;
         const res = await health(
-            [{ id: 'c1', provider: 'okta', name: 'A', createdAt: minsAgo(9999), lastTestedAt: minsAgo(1), lastTestStatus: 'ok' }],
-            [],
-            [{ connectionId: 'c1', _max: { completedAt: minsAgo(90), executedAt: minsAgo(90) } }],
+            [{ id: 'c1', provider: 'okta', name: 'A', createdAt: minsAgo(9999), lastTestedAt: null, lastTestStatus: null }],
+            [{ connectionId: 'c1', _max: { completedAt: minsAgo(fiveDays), executedAt: minsAgo(fiveDays) } }],
+            [{ connectionId: 'c1', _max: { completedAt: minsAgo(2), executedAt: minsAgo(2) } }],
         );
 
-        // Run at T-90m, test at T-1m: the newer of the two wins.
-        expect(res.connections[0].lastActivityAt).toBe(minsAgo(1).toISOString());
-        expect(res.connections[0].secondsSinceActivity).toBe(60);
+        // Nightly runs keep erroring (latest 2 min ago) on a credential that
+        // last worked five days ago. This read Fresh before #4581 D.
+        expect(res.connections[0].isStale).toBe(true);
+        expect(res.connections[0].lastRunAt).toBe(minsAgo(2).toISOString());
+        expect(res.connections[0].lastActivityAt).toBe(minsAgo(fiveDays).toISOString());
+        expect(res.connections[0].secondsSinceActivity).toBe(fiveDays * 60);
+    });
+
+    it('a failed run newer than a passed test does not move the activity time', async () => {
+        const res = await health(
+            [{ id: 'c1', provider: 'okta', name: 'A', createdAt: minsAgo(9999), lastTestedAt: minsAgo(90), lastTestStatus: 'ok' }],
+            [],
+            [{ connectionId: 'c1', _max: { completedAt: minsAgo(1), executedAt: minsAgo(1) } }],
+        );
+
+        expect(res.connections[0].lastActivityAt).toBe(minsAgo(90).toISOString());
+        expect(res.connections[0].isStale).toBe(false);
+    });
+
+    it('takes the MOST RECENT of a successful run and a passed test as the activity time', async () => {
+        const testNewer = await health(
+            [{ id: 'c1', provider: 'okta', name: 'A', createdAt: minsAgo(9999), lastTestedAt: minsAgo(1), lastTestStatus: 'ok' }],
+            [{ connectionId: 'c1', _max: { completedAt: minsAgo(90), executedAt: minsAgo(90) } }],
+            [{ connectionId: 'c1', _max: { completedAt: minsAgo(90), executedAt: minsAgo(90) } }],
+        );
+        // Successful run at T-90m, test at T-1m: the newer of the two wins.
+        expect(testNewer.connections[0].lastActivityAt).toBe(minsAgo(1).toISOString());
+        expect(testNewer.connections[0].secondsSinceActivity).toBe(60);
+
+        const runNewer = await health(
+            [{ id: 'c1', provider: 'okta', name: 'A', createdAt: minsAgo(9999), lastTestedAt: minsAgo(90), lastTestStatus: 'ok' }],
+            [{ connectionId: 'c1', _max: { completedAt: minsAgo(1), executedAt: minsAgo(1) } }],
+            [{ connectionId: 'c1', _max: { completedAt: minsAgo(1), executedAt: minsAgo(1) } }],
+        );
+        expect(runNewer.connections[0].lastActivityAt).toBe(minsAgo(1).toISOString());
     });
 });

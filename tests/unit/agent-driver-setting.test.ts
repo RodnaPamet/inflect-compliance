@@ -50,6 +50,13 @@ jest.mock('@/app-layer/events/audit', () => ({ logEvent: (...a: unknown[]) => lo
 
 const envBag: Record<string, string | undefined> = {};
 jest.mock('@/env', () => ({ env: new Proxy({}, { get: (_t, k: string) => envBag[k] }) }));
+// The workspace's organization row (#4557). `null` — no organization — unless a
+// test sets one, so every env-only case reads exactly as it did before.
+const orgRow: { value: { agentProfilesEnabled: boolean; agentToolRunnerEnabled: boolean } | null } = { value: null };
+jest.mock('@/lib/prisma', () => ({
+    __esModule: true,
+    default: { tenant: { findUnique: jest.fn(async () => ({ organization: orgRow.value })) } },
+}));
 
 jest.mock('@/lib/observability', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -90,6 +97,7 @@ import { makeRequestContext } from '../helpers/make-context';
 const ctx = makeRequestContext('OWNER');
 
 beforeEach(() => {
+    orgRow.value = null;
     jest.clearAllMocks();
     row = { agentDriver: 'STATIC' };
     for (const k of Object.keys(envBag)) delete envBag[k];
@@ -290,7 +298,40 @@ describe('the Tool Runner engine (Step 2c)', () => {
         envBag.AGENT_DRIVER_TOOL_RUNNER = '1';
         const view = await getAgentDriverSetting(ctx);
         expect(view.envEnabled).toBe(false);
-        expect(view.toolRunner).toEqual({ envEnabled: true, implemented: DRIVER_IMPLEMENTED['tool-runner'] });
+        expect(view.toolRunner).toEqual({
+            envEnabled: true,
+            implemented: DRIVER_IMPLEMENTED['tool-runner'],
+            basis: 'DEPLOYMENT_ON',
+        });
+    });
+
+    describe('with AGENT_DRIVER_TOOL_RUNNER unset, the organization decides (#4557)', () => {
+        it('available when the organization turned it on, saying so', async () => {
+            orgRow.value = { agentProfilesEnabled: false, agentToolRunnerEnabled: true };
+            const view = await getAgentDriverSetting(ctx);
+            expect(view.toolRunner).toMatchObject({ envEnabled: true, basis: 'ORGANIZATION_ON' });
+        });
+
+        it('not available while the organization has not, saying who holds it', async () => {
+            orgRow.value = { agentProfilesEnabled: false, agentToolRunnerEnabled: false };
+            row = { agentDriver: 'TOOL_RUNNER' };
+            const view = await getAgentDriverSetting(ctx);
+            expect(view.toolRunner).toMatchObject({ envEnabled: false, basis: 'ORGANIZATION_OFF' });
+            expect(view.effective).toEqual({ driver: 'static', reason: 'ENV_DISABLED' });
+        });
+
+        it('a workspace with no organization stays off, as before', async () => {
+            orgRow.value = null;
+            const view = await getAgentDriverSetting(ctx);
+            expect(view.toolRunner).toMatchObject({ envEnabled: false, basis: 'NO_ORGANIZATION' });
+        });
+
+        it('the deployment\'s 0 vetoes an organization that turned it on', async () => {
+            envBag.AGENT_DRIVER_TOOL_RUNNER = '0';
+            orgRow.value = { agentProfilesEnabled: true, agentToolRunnerEnabled: true };
+            const view = await getAgentDriverSetting(ctx);
+            expect(view.toolRunner).toMatchObject({ envEnabled: false, basis: 'DEPLOYMENT_OFF' });
+        });
     });
 
     it('reads static, naming why, when the profile surface is off for the workspace', async () => {

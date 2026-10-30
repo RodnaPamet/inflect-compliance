@@ -30,7 +30,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage } from '@/lib/api-error';
 import { grantExceedingKeys } from '@/lib/custom-role-grant-refusal';
-import { isPersonnelManageRefusal, mayHoldPersonnelManage } from '@/lib/personnel-manage-rule';
+import {
+    ADMIN_BASE_ONLY_PERMISSIONS,
+    adminBaseRefusalPermissions,
+    grantsNeedingAdminBase,
+    mayHoldOnBase,
+} from '@/lib/custom-role-admin-base-rule';
 import { Card, cardVariants } from '@/components/ui/card';
 import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
 import {
@@ -47,6 +52,8 @@ import type { Role } from '@prisma/client';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
 import { Tooltip } from '@/components/ui/tooltip';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ErrorState } from '@/components/ui/error-state';
@@ -171,14 +178,20 @@ function withinHeld(perms: PermissionSet, held: PermissionSet): PermissionSet {
 }
 
 /**
- * `perms` with `personnel.manage` off when the base role may not hold it
- * (#4536): only an ADMIN-based custom role may manage the roster, and the
- * server refuses any other. Applied to presets and to a base-role change, so
- * the grid never starts from a role the server would refuse.
+ * `perms` with every Admin-base-only permission off when the base role may not
+ * hold it (#4536, #4581 A): only an ADMIN-based custom role may hold them, and
+ * the server refuses any other. Applied to presets and to a base-role change,
+ * so the grid never starts from a role the server would refuse.
  */
 function withinBase(perms: PermissionSet, baseRole: Role): PermissionSet {
-    if (mayHoldPersonnelManage(baseRole) || !perms.personnel.manage) return perms;
-    return { ...perms, personnel: { ...perms.personnel, manage: false } };
+    if (baseRole === 'ADMIN') return perms;
+    let out = perms;
+    for (const key of ADMIN_BASE_ONLY_PERMISSIONS) {
+        const [domain, action] = key.split('.') as [keyof PermissionSet, string];
+        const actions = out[domain] as Record<string, boolean>;
+        if (actions[action]) out = { ...out, [domain]: { ...actions, [action]: false } };
+    }
+    return out;
 }
 
 // ─── Permission Grid Component ───
@@ -203,10 +216,10 @@ function PermissionGrid({
 }) {
     const labels = useRolesPageText();
     const { t } = labels;
-    // A permission the base role cannot carry (#4536): today only
-    // `personnel.manage`, which needs an ADMIN base.
+    // A permission the base role cannot carry (#4536, #4581 A): the
+    // Admin-base-only permissions, on any base but ADMIN.
     const needsAdminBase = (resource: keyof PermissionSet, action: string) =>
-        resource === 'personnel' && action === 'manage' && !mayHoldPersonnelManage(baseRole);
+        !mayHoldOnBase(baseRole, resource, action);
     const toggle = (resource: keyof PermissionSet, action: string) => {
         const current = (permissions[resource] as Record<string, boolean>)[action] ?? false;
         if (!current && !holdsPermission(held, resource, action)) return;
@@ -354,30 +367,24 @@ function RoleForm({
             setPermissions((p) => withinBase(p, role));
         }
     };
-    // Only a legacy role, stored before #4536, can still hold it here.
-    const manageOnWrongBase = permissions.personnel.manage && !mayHoldPersonnelManage(baseRole);
+    // Only a legacy role, stored before #4536 / #4581, can still hold one here.
+    const onWrongBase = grantsNeedingAdminBase(permissions, baseRole);
 
     return (
         <div className="space-y-default">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
-                <div>
-                    <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                        {t('roles.nameLabel')}
-                    </label>
-                    <input
+                {/* Labelled fields, so each label names its control (#4581). */}
+                <FormField label={t('roles.nameLabel')} required>
+                    <Input
                         type="text"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         placeholder={t('roles.namePlaceholder')}
-                        className="input w-full"
                         maxLength={100}
                         id="role-name-input"
                     />
-                </div>
-                <div>
-                    <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                        {t('roles.baseRoleLabel')}
-                    </label>
+                </FormField>
+                <FormField label={t('roles.baseRoleLabel')} description={t('roles.baseRoleHint')}>
                     <Combobox
                         hideSearch
                         id="role-base-select"
@@ -386,30 +393,23 @@ function RoleForm({
                         options={baseRoleOptions}
                         matchTriggerWidth
                     />
-                    <p className="text-[10px] text-content-subtle mt-1">
-                        {t('roles.baseRoleHint')}
-                    </p>
-                </div>
+                </FormField>
             </div>
 
-            <div>
-                <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                    {t('roles.descriptionLabel')}
-                </label>
-                <input
+            <FormField label={t('roles.descriptionLabel')}>
+                <Input
                     type="text"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder={t('roles.descriptionPlaceholder')}
-                    className="input w-full"
                     maxLength={500}
                     id="role-description-input"
                 />
-            </div>
+            </FormField>
 
-            {manageOnWrongBase && (
-                <InlineNotice variant="warning" id="role-manage-needs-admin-base">
-                    {t('roles.manageNeedsAdminBaseNotice', { permission: labels.permission('personnel.manage') })}
+            {onWrongBase.length > 0 && (
+                <InlineNotice variant="warning" id="role-needs-admin-base">
+                    {t('roles.needsAdminBaseNotice', { permissions: onWrongBase.map(labels.permission).join(', ') })}
                 </InlineNotice>
             )}
 
@@ -466,7 +466,7 @@ function RoleForm({
                     variant="primary"
                     type="button"
                     onClick={() => onSubmit({ name: name.trim(), description: description.trim(), baseRole, permissionsJson: permissions })}
-                    disabled={submitting || !name.trim() || exceeding.length > 0 || manageOnWrongBase}
+                    disabled={submitting || !name.trim() || exceeding.length > 0 || onWrongBase.length > 0}
                     loading={submitting}
                     id="role-submit-btn"
                 >
@@ -539,9 +539,11 @@ export default function CustomRolesPage() {
         if (exceeded && exceeded.length > 0) {
             return t('roles.grantRefused', { permissions: exceeded.map(labels.permission).join(', ') });
         }
-        // #4536 — the server's sentence is English; the page has its own.
-        if (isPersonnelManageRefusal(body)) {
-            return t('roles.manageNeedsAdminBaseNotice', { permission: labels.permission('personnel.manage') });
+        // #4536 / #4581 A — the server's sentence is English and names keys;
+        // the page has its own, with labels.
+        const needAdminBase = adminBaseRefusalPermissions(body);
+        if (needAdminBase !== null) {
+            return t('roles.needsAdminBaseNotice', { permissions: needAdminBase.map(labels.permission).join(', ') });
         }
         return apiErrorMessage(body, fallback);
     };

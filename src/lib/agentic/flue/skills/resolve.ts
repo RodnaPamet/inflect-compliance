@@ -201,6 +201,21 @@ export function repositorySkillNames(): ReadonlySet<string> {
     return new Set([...c.skills.map((s) => s.name), ...c.refused.map((r) => r.name)]);
 }
 
+/**
+ * The catalogue-line fields of every MOUNTABLE repository skill, by name.
+ *
+ * Deliberately NOT the same population as `repositorySkillNames` above, which
+ * includes the refused. A refused skill has no description and cannot mount, so
+ * it has no catalogue line to price — it is absent here, and a caller pricing a
+ * catalogue must not read that absence as "costs nothing to mount". It costs a
+ * refusal. See #4523 for the save-time budget this feeds, and the separate hole
+ * that a profile naming a refused skill still saves.
+ */
+export function repositorySkillCatalogue(): ReadonlyMap<string, { readonly name: string; readonly description: string }> {
+    const c = shippedCorpus();
+    return new Map(c.skills.map((s) => [s.name, { name: s.name, description: s.description }]));
+}
+
 /** Test seam: drop the cache so a suite can vary the corpus. */
 export function resetSkillCache(): void {
     corpus = null;
