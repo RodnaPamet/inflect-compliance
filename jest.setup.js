@@ -40,13 +40,23 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://user:password
 // getTestDatabaseUrl) connect to the SAME isolated DB. Without this the
 // app writes to the base DB while the test reads the worker DB. Serial
 // runs / CI (marker.perWorker === false) leave DATABASE_URL untouched.
+//
+// WHICH marker: THIS checkout's own. Its path comes from the same CommonJS
+// module that gives tests/helpers/db.ts its tag and marker path, so the two
+// cannot disagree. It used to be a literal here, `inflect-test-perworker.json`
+// under node_modules/.cache, the same name in every checkout. Worktrees
+// symlink node_modules to the main checkout's, so that was one file for every
+// worktree on the machine, and a run read whichever checkout had started
+// Jest last (2026-10-30). See the header of tests/helpers/test-db-checkout.js.
+//
+// The require sits OUTSIDE the try on purpose. Inside it, a renamed or broken
+// helper would be swallowed as "no marker", and every worker would quietly
+// fall back to the shared base database while globalSetup had created
+// per-worker ones. A missing helper must fail the run, not degrade it.
+const { PER_WORKER_MARKER } = require('./tests/helpers/test-db-checkout');
 try {
   const fs = require('fs');
-  const path = require('path');
-  // Repo-local marker path (see PER_WORKER_MARKER in tests/helpers/db.ts).
-  const marker = JSON.parse(
-    fs.readFileSync(path.join(__dirname, 'node_modules/.cache/inflect-test-perworker.json'), 'utf8'),
-  );
+  const marker = JSON.parse(fs.readFileSync(PER_WORKER_MARKER, 'utf8'));
   if (marker.perWorker) {
     const u = new URL(marker.baseUrl);
     const wid = process.env.JEST_WORKER_ID || '1';
