@@ -744,21 +744,44 @@ export default function AdminIntegrationsPage() {
                         </div>
                     </div>
 
-                    {loading ? (
-                        <div className="p-8 text-center text-content-subtle">
-                            <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
-                            <span className="sr-only">{t('integrations.fetching')}</span>
-                        </div>
-                    ) : loadError ? (
-                        // The server's reason, not the empty state: an
-                        // unreadable list is not an empty one.
+                    {/* ── LOADING AND EMPTY BELONG TO THE TABLE (#4482) ──────────
+                        Both were ad-hoc `p-8` divs rendered INSTEAD of the
+                        table. The loading one is ~105px tall and the loaded
+                        table is several times that, so the section GREW when
+                        the fetch resolved and everything below it moved down —
+                        measured as CLS 0.155 on this route, the only one of
+                        three sampled that was outside "good", and the only one
+                        reporting three LCP candidates.
+
+                        `DataTable` owns both states: `loading` draws an
+                        `absolute inset-0` overlay that adds no height, and a
+                        zero-row table carries a `min-h-[400px]` floor
+                        (`table.tsx`), so the box is reserved before the data
+                        arrives. The GUIDE says this outright — "use `loading`
+                        prop instead of `SkeletonTableRow`" and "do NOT create
+                        ad-hoc loading/empty states".
+
+                        `loadError` stays a branch of its own: an unreadable
+                        list is not an empty one, and `DataTable`'s `error`
+                        replaces the table rather than overlaying it, which is
+                        right for an error and wrong for a load.
+
+                        The `sr-only` announcement below is KEPT, deliberately.
+                        It was inside the spinner div, so deleting that removed
+                        it — a screen reader then had no signal that the table
+                        was loading at all. It is also what
+                        `tests/rendered/admin-integrations-page` waits on
+                        (`renderPage` waits for "Fetching integrations" to
+                        disappear), and without it that wait resolved instantly
+                        and five tests queried rows that had not arrived. An
+                        `sr-only` span is position-absolute and clipped, so it
+                        costs no layout height and does not reintroduce the
+                        shift. */}
+                    {loading && <span className="sr-only">{t('integrations.fetching')}</span>}
+                    {loadError ? (
                         <InlineNotice variant="error" data-testid="integrations-load-error">
                             {loadError}
                         </InlineNotice>
-                    ) : listedConnections.length === 0 ? (
-                        <div className="p-8 text-center text-content-subtle">
-                            {t('integrations.emptyConfigured')}
-                        </div>
                     ) : (
                         (() => {
                             const connCols = createColumns<ConnectionDTO>([
@@ -859,6 +882,7 @@ export default function AdminIntegrationsPage() {
                                 <DataTable
                                     data={listedConnections}
                                     columns={connCols}
+                                    loading={loading}
                                     getRowId={(c) => c.id}
                                     // Every action is per row; nothing acts on a selection.
                                     selectionEnabled={false}

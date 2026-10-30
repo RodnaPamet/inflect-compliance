@@ -9,7 +9,6 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
 
 interface HealthRow {
     connectionId: string;
@@ -164,22 +163,25 @@ export function ConnectionHealthPanel({ providerLabel }: { providerLabel?: (id: 
                 </div>
             </div>
             <p className="text-sm text-content-subtle mb-3">{t('integrations.health.description')}</p>
-            {loading ? (
-                <div className="p-8 text-center text-content-subtle">
-                    <LoadingSpinner className="mx-auto mb-2" />
-                    <span className="sr-only">{t('integrations.fetching')}</span>
-                </div>
-            ) : (
-                <DataTable
-                    data={data?.connections ?? []}
-                    columns={cols}
-                    getRowId={(r) => r.connectionId}
-                    // Read-only: nothing acts on a selected row.
-                    selectionEnabled={false}
-                    emptyState={t('integrations.emptyConfigured')}
-                    resourceName={(p) => p ? t('integrations.resourceConnections') : t('integrations.resourceConnection')}
-                />
-            )}
+            {/* `loading` on the table, not a spinner INSTEAD of it (#4482): the
+                overlay is `absolute inset-0` and a zero-row table reserves
+                `min-h-[400px]`, so this section no longer grows when the fetch
+                resolves and shifts everything below it.
+
+                The `sr-only` announcement is KEPT: it lived inside the spinner,
+                so removing that left a screen reader with no loading signal at
+                all. It is clipped, so it adds no height. */}
+            {loading && <span className="sr-only">{t('integrations.fetching')}</span>}
+            <DataTable
+                data={data?.connections ?? []}
+                columns={cols}
+                loading={loading}
+                getRowId={(r) => r.connectionId}
+                // Read-only: nothing acts on a selected row.
+                selectionEnabled={false}
+                emptyState={t('integrations.emptyConfigured')}
+                resourceName={(p) => p ? t('integrations.resourceConnections') : t('integrations.resourceConnection')}
+            />
         </div>
     );
 }
