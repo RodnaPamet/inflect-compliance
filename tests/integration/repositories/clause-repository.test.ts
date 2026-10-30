@@ -89,4 +89,23 @@ describeFn('ClauseRepository (real DB)', () => {
         expect(row.notes).toBe('done');
         expect(row.progressId).toBeTruthy();
     });
+
+    it('list() writes nothing once the catalogue exists — a read leaves the audit trail alone', async () => {
+        // Seed the catalogue (a no-op if an earlier test already did).
+        await withTenantDb(TENANT, (db) => ClauseRepository.list(db, ctx), rawPrisma as unknown as PrismaClient);
+        const clauseAudit = () =>
+            rawPrisma.auditLog.count({ where: { tenantId: TENANT, entity: 'Clause' } });
+        const before = await clauseAudit();
+
+        const rows = await withTenantDb(TENANT, (db) => ClauseRepository.list(db, ctx), rawPrisma as unknown as PrismaClient);
+
+        // Every catalogue clause is still listed…
+        expect(rows.length).toBeGreaterThan(0);
+        expect(new Set(rows.map((r) => r.number)).size).toBe(rows.length);
+        // …and listing them appended no hash-chained audit row. It used to
+        // append one `UPSERT Clause` per clause on every call, each waiting
+        // on the tenant's audit lock while the tenant transaction stayed
+        // open — the body that overran TENANT_TX_TIMEOUT_MS on a loaded runner.
+        expect(await clauseAudit()).toBe(before);
+    });
 });

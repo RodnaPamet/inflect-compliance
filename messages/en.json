@@ -7755,6 +7755,8 @@
       "dataHigh": "High"
     },
     "detail": {
+      "activationNeedsReview": "This vendor can't be made Active until an assessment has been sent and its review completed with a risk rating.",
+      "saveFailed": "Couldn't save the vendor. Please try again.",
       "crumbVendors": "Vendors",
       "crumbFallback": "Vendor",
       "notFound": "Vendor not found.",
@@ -9917,6 +9919,21 @@
         "metaTokens": "Tokens",
         "metaStarted": "Started",
         "proposal": "{kind} · {status}",
+        "stepStatus": {
+          "PENDING": "Pending",
+          "RUNNING": "Running",
+          "DONE": "Done",
+          "FAILED": "Failed",
+          "SKIPPED": "Skipped"
+        },
+        "proposalStatus": {
+          "PENDING": "awaiting review",
+          "ACCEPTED": "accepted",
+          "REJECTED": "rejected",
+          "EDITED": "accepted with edits",
+          "QUARANTINED": "quarantined",
+          "EXPIRED": "expired"
+        },
         "scope": {
           "NONE": "no data",
           "READ_METADATA": "metadata",
@@ -9964,6 +9981,7 @@
         "HOST_SYSTEM_FACTS": "Started by a connected host system, which supplies the SAP document facts this workflow reviews. This page cannot collect them.",
         "NEEDS_AGENT_INVENTORY": "Reviews one discovered agent, chosen from the agent inventory, which your role cannot read. An administrator can grant read access to the agent inventory.",
         "NEEDS_ASK_ACCESS": "Questions are asked on the Ask a question page, which needs read access to this workspace's controls.",
+        "NEEDS_FRAMEWORK_ACCESS": "Starts from a framework chosen from the catalogue, which your role cannot view. An administrator can grant view access to frameworks.",
         "UNCLASSIFIED_INPUT": "Needs input this page does not know how to collect, so it cannot be started here."
       },
       "startForm": {
@@ -11334,6 +11352,7 @@
     "crumbList": "Access Reviews",
     "title": "Access Reviews",
     "campaignsCount": "{count, plural, one {# campaign} other {# campaigns}}",
+    "truncatedHint": "Older campaigns are not listed.",
     "resourcePlural": "access reviews",
     "resourceSingular": "access review",
     "colCampaign": "Campaign",

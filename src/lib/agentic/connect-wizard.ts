@@ -93,9 +93,11 @@ const quoted = (values: readonly string[], indent: string): string =>
 export function agentSdkTypeScript(input: { origin: string; grantedTools: readonly string[] }): string {
     return [
         `import { env, stdout } from "node:process";`,
-        `import { query } from "@anthropic-ai/claude-agent-sdk";`,
+        `import { query, type Options } from "@anthropic-ai/claude-agent-sdk";`,
         ``,
-        `const options = {`,
+        // Typed by the SDK's own `Options`, or a type-checked project widens
+        // `"http"` and `"dontAsk"` to `string` and refuses the call (Step 3H).
+        `const options: Options = {`,
         `  mcpServers: {`,
         `    ${INFLECT_MCP_SERVER_NAME}: {`,
         `      type: "http",`,

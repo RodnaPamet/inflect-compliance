@@ -2297,6 +2297,29 @@ jobs:
           retention-days: 7
         continue-on-error: true
 
+      # ── THE CWV BASELINE IS KEPT ON A GREEN RUN (#4539) ──────────────
+      #
+      # Its own step, deliberately, rather than relaxing the `if: failure()`
+      # above. That condition exists for the ~150 MB of traces, screenshots
+      # and videos, and the comment there records the ~90 GB it once cost;
+      # narrowing its `path:` to one file would lose the traces on a RED run,
+      # which is the only run they are for.
+      #
+      # `synthetic-cwv-baseline.spec.ts` writes a few KB of JSON and asserts
+      # no budget, so it essentially never fails — which meant its
+      # measurement was discarded on every run that worked (#4442 shipped it
+      # that way; this is the fix). 90 days because the value of a baseline
+      # is the SERIES: one run of one browser on one machine bounds nothing,
+      # but a sequence shows whether a route is drifting.
+      - name: Upload the CWV baseline
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cwv-baseline
+          path: test-results/cwv-baseline.json
+          retention-days: 90
+        continue-on-error: true
+
   # ═══════════════════════════════════════════════════════════════
   #  Job 6.5: Load Smoke — k6 mutation smoke (10 VUs × 30s)
   #

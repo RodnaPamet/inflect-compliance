@@ -35,8 +35,8 @@ const at = (catalogue: Record<string, unknown>, dotted: string): unknown =>
         catalogue,
     );
 
-const ALL: StartAbilities = { discoveredAgents: true, askPage: true };
-const NONE: StartAbilities = { discoveredAgents: false, askPage: false };
+const ALL: StartAbilities = { discoveredAgents: true, askPage: true, frameworks: true };
+const NONE: StartAbilities = { discoveredAgents: false, askPage: false, frameworks: false };
 
 const DEFS = listWorkflowDefinitions();
 const plansFor = (abilities: StartAbilities) =>
@@ -141,6 +141,20 @@ describe('a picker or a link is offered only to a caller who may use it', () => 
             mode: 'NOT_HERE',
             reason: 'NEEDS_AGENT_INVENTORY',
         });
+    });
+
+    it('a framework workflow is a picker form only for a caller who may view frameworks (#4533)', () => {
+        for (const key of ['audit-prep', 'framework-onboarding']) {
+            const def = DEFS.find((d) => d.key === key)!;
+            expect(startPlanFor(def, { ...NONE, frameworks: true })).toEqual({
+                mode: 'FORM',
+                fields: [{ key: 'frameworkKey', spec: { kind: 'framework' } }],
+            });
+            expect(startPlanFor(def, { ...ALL, frameworks: false })).toEqual({
+                mode: 'NOT_HERE',
+                reason: 'NEEDS_FRAMEWORK_ACCESS',
+            });
+        }
     });
 
     it('the ad-hoc question links to the Ask page for a person it admits, and only them', () => {

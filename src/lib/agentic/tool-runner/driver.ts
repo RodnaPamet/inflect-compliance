@@ -44,10 +44,11 @@ export function planToolRunnerRun(
     def: WorkflowDefinition,
     fromSeq: number,
     selection: ToolRunnerResidencyTerms,
+    runId?: string,
 ): ToolRunnerRunPlan {
     if (def.driver !== 'tool-runner') return { ok: false, reason: 'DEFINITION_ASKED_FOR_ANOTHER_DRIVER' };
     if (fromSeq >= ENGINE_CAPS.MAX_STEPS) return { ok: false, reason: 'NO_STEPS_REMAIN' };
-    const choice = clientForRun(selection);
+    const choice = clientForRun(selection, { runId });
     if (!choice.ok) return { ok: false, reason: choice.reason };
     return { ok: true, client: choice.client };
 }
@@ -89,7 +90,7 @@ export async function runToolRunnerDriver(
     fromSeq: number,
     runStartMs: number,
 ): Promise<RunDriverOutcome> {
-    const plan = planToolRunnerRun(def, fromSeq, await residencyTermsFor(ctx));
+    const plan = planToolRunnerRun(def, fromSeq, await residencyTermsFor(ctx), runId);
     if (!plan.ok) {
         // Settled, not thrown: the run row already exists.
         const status = await failRun(ctx, runId, refusalMessage(plan.reason));

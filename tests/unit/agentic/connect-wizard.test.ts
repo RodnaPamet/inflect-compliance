@@ -84,6 +84,13 @@ describe('the Agent SDK options', () => {
         expect(py).toContain('permission_mode="dontAsk",');
     });
 
+    it('the TypeScript options are typed by the SDK\'s own Options, so a type-checked project accepts them', () => {
+        // Untyped, `"http"` and `"dontAsk"` widen to `string` and `query({ options })`
+        // does not compile (checked against @anthropic-ai/claude-agent-sdk 0.3.301, Step 3H).
+        expect(ts).toContain('import { query, type Options } from "@anthropic-ai/claude-agent-sdk";');
+        expect(ts).toContain('const options: Options = {');
+    });
+
     it('never name "Claude Code", and never carry a key', () => {
         const ma = JSON.stringify(managedAgentConfig({ origin: ORIGIN, grantedTools: GRANTS }));
         expect([ts, py, ma].map((text) => text.includes('Claude Code'))).toEqual([false, false, false]);

@@ -80,7 +80,7 @@ flowchart LR
 
   subgraph L2["LAYER 2 · Orchestration and workflow"]
     direction TB
-    LF["Agent-flow canvas<br/>view every agent, draw flows;<br/>Langflow not adopted"]:::todo
+    LF["Agent-flow canvas on tldraw<br/>view every agent, draw flows;<br/>Langflow not adopted"]:::todo
     FL["Flue<br/>phases 1-3 shipped"]:::done
     CV["Canvas, rule builder,<br/>agent profiles (ours)"]:::done
   end
@@ -167,6 +167,12 @@ request touching Flue re-checks them.
   visually. [`langflow.md`](./ai-architecture/langflow.md) plans it in the
   product as a second editor for the agent profile (D-L2-1, decided
   2026-10-29); Langflow itself is not adopted.
+- The process canvas is switching drawing engines tenant by tenant, from
+  `@xyflow/react` to `tldraw` 3.15.6 (#2960); #2962 removes xyflow. The
+  agent-flow canvas is built on tldraw only and inside the process-canvas
+  module (D-L2-3, decided 2026-10-29), because tldraw's licence caps it at 3.x
+  with the watermark kept and a guard confines the editor to that module. So
+  it reaches only tenants that have the module enabled.
 
 ### Layer 3 — Cognitive & reasoning
 
@@ -393,7 +399,7 @@ The living part. One row per framework; the child roadmap owns the phases.
 | NeMo Guardrails | 1 | [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md) | 3 | missing (F5 residual closes in its Phase 0) | — | D-L1-2 |
 | Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 | missing; CPU detector first | — | D-L1-3 |
 | NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | substrate present (OpenShell); stack to be declined | — | D-L1-4 |
-| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | missing; in-product canvas decided, Langflow not adopted | 0 (decided) | D-L2-2 |
+| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | missing; in-product canvas on tldraw decided, Langflow not adopted | 0 (decided) | D-L2-2 |
 | Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3) | 3 | F3 decision to record |
 | Nemotron workers + role axis | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (hosted) | missing | — | D-L3-1, D-L3-2 |
 | Claude engines | 3 | `docs/claude-*-design.md` (#4135) | — | Tool Runner built, off; Agent SDK designed | 2b | Step 2c (gated on Inspect record) |
@@ -569,6 +575,7 @@ the child records the reasoning.
 | D-L1-4 | NemoClaw: reference-only; runtime and privacy router declined | nemoclaw | declined |
 | D-L2-1 | Langflow's box: the visual canvas is the product's own, editing the agent profile; Langflow not adopted | langflow | **decided 2026-10-29** (owner) |
 | D-L2-2 | Reasoning engines enforce flow checkpoints, or the canvas offers no checkpoint node | langflow | build enforcement; no checkpoint node until it lands |
+| D-L2-3 | The agent-flow canvas is drawn by tldraw (3.x, watermark kept), never xyflow, and lives inside the process-canvas module | langflow | **decided 2026-10-29** (owner) |
 | D-L3-1 | Supervisor/worker role axis in model selection | nemotron-reasoning | adopt |
 | D-L3-2 | Nemotron as the default worker when a hosted/local route exists | nemotron-reasoning | adopt after skill records |
 | D-L3-3 | An optimisation problem at GPU scale exists | cuopt | no; CPU seam if a feature wants it |

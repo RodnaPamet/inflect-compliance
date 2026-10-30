@@ -87,7 +87,7 @@ import type {
     SwappableKpiKey,
 } from '@/app-layer/usecases/dashboard';
 import { buildKpiSparklines } from '@/lib/charts/kpi-trends';
-import { OPEN_RISK_STATUSES } from '@/app-layer/domain/risk-status';
+import { NEEDS_TREATMENT_RISK_STATUSES } from '@/app-layer/domain/risk-status';
 import type { DashboardQuickAddGates } from './dashboard-gates';
 // PR3 perf: lazy-load the heavy viz components (visx + motion) so their code
 // splits into separate chunks loaded after the KPI/hero shell. `ssr: false`
@@ -1173,10 +1173,11 @@ function RiskDistributionSection({
     // Severity → the risks list filtered by inherent-score range (the
     // same buckets the donut counts): Critical 15-25, High 10-14,
     // Medium 5-9, Low 1-4. `score=min|max` is the risks range token.
-    // The donut counts OPEN risks only, so each link also filters the list
-    // to the open statuses — otherwise a closed critical risk the slice
-    // leaves out would reappear in the list it opens.
-    const open = `status=${OPEN_RISK_STATUSES.join(',')}`;
+    // The donut counts only the risks still needing treatment (Open,
+    // Mitigating), so each link also filters the list to those statuses —
+    // otherwise a mitigated or closed critical risk the slice leaves out
+    // would reappear in the list it opens.
+    const open = `status=${NEEDS_TREATMENT_RISK_STATUSES.join(',')}`;
     const severitySegments: Array<DonutStatusSegment & { tone: string }> = [
         { label: t('severity.critical'), value: riskBySeverity.critical, color: '#dc2626', tone: 'bg-bg-error-emphasis', href: href(`/risks?score=15|25&${open}`) },
         { label: t('severity.high'), value: riskBySeverity.high, color: '#f97316', tone: 'bg-orange-500', href: href(`/risks?score=10|14&${open}`) },
