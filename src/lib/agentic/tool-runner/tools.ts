@@ -198,7 +198,9 @@ export class SerialQueue {
 /**
  * The run's tools: the read surface and, unless the definition is read-only,
  * the propose surface, narrowed to the profile's tools when the run is a
- * profile's.
+ * profile's. The engine's own `activate_skill` is NOT among them: it is offered
+ * beside this set (`skills.ts`), so an empty set still means a run that can
+ * reach nothing.
  */
 export function toolRunnerToolsFor(
     inv: McpInvocation,
@@ -207,9 +209,15 @@ export function toolRunnerToolsFor(
         readonly readOnly: boolean;
         readonly profileTools?: readonly string[];
         readonly observe: (o: StepGuardObservation) => void;
+        /**
+         * The run's one queue, when the caller offers tools of its own beside
+         * these (`activate_skill`, Step 2d): every call of the run waits on the
+         * same queue, so the ledger's order is the order the calls were made.
+         */
+        readonly queue?: SerialQueue;
     },
 ): OfferedToolSet<BetaRunnableTool<Record<string, unknown>>> {
-    const queue = new SerialQueue();
+    const queue = opts.queue ?? new SerialQueue();
     return offerToolSet(inv, (offered) => runnableToolFor(offered, binding, queue), {
         sourcePrefix: TOOL_RUNNER_GUARD_SOURCE,
         observe: opts.observe,

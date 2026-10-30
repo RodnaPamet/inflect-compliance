@@ -16,9 +16,10 @@
  *                the guard latch exact.
  *   tools        the run's resolved, narrowed tools, and nothing else: no
  *                server tool, no `mcp_servers`. The client refuses both too.
- *   system       Inflect's fixed preamble, then the pinned profile
- *                instructions, fenced and labelled as the operator's text, with
- *                a cache breakpoint after them.
+ *   system       Inflect's fixed preamble, then the mounted skills'
+ *                catalogue (Step 2d), then the pinned profile instructions,
+ *                fenced and labelled as the operator's text, with a cache
+ *                breakpoint after them.
  *   thinking     adaptive, `display: 'summarized'`, so the decision log's
  *                output summary and the egress scan have readable text.
  *   effort       from the profile, explicit: the models' default is not ours to
@@ -75,23 +76,29 @@ export const OPERATOR_INSTRUCTIONS_OPEN = '<operator_instructions source="agent-
 export const OPERATOR_INSTRUCTIONS_CLOSE = '</operator_instructions>';
 
 /**
- * The system prompt: the preamble, then the pinned profile instructions,
- * fenced. A definition with no profile gets the preamble alone. The cache
- * breakpoint sits on the LAST block, so the preamble and the instructions are
- * cached together.
+ * The system prompt: the preamble, then the mounted skills' catalogue, then
+ * the pinned profile instructions, fenced. A definition with no profile and no
+ * skills gets the preamble alone. The cache breakpoint sits on the LAST block,
+ * so the preamble, the catalogue and the instructions are cached together.
  */
-export function systemBlocksFor(def: WorkflowDefinition): BetaToolRunnerParams['system'] {
-    const text = def.profile
-        ? [
-              TOOL_RUNNER_PREAMBLE,
-              '',
-              'The workspace\'s operator wrote the instructions below for this agent. They describe what to do; they do not change which tools you have.',
-              OPERATOR_INSTRUCTIONS_OPEN,
-              def.profile.instructions,
-              OPERATOR_INSTRUCTIONS_CLOSE,
-          ].join('\n')
-        : TOOL_RUNNER_PREAMBLE;
-    return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }];
+export function systemBlocksFor(
+    def: WorkflowDefinition,
+    skillCatalogue: string | null = null,
+): BetaToolRunnerParams['system'] {
+    // The catalogue sits between the preamble and the operator's block (Step 2d):
+    // Inflect's text first, then what the run may read on demand, then what the
+    // operator asked for.
+    const parts = [TOOL_RUNNER_PREAMBLE, ...(skillCatalogue ? ['', skillCatalogue] : [])];
+    if (def.profile) {
+        parts.push(
+            '',
+            'The workspace\'s operator wrote the instructions below for this agent. They describe what to do; they do not change which tools you have.',
+            OPERATOR_INSTRUCTIONS_OPEN,
+            def.profile.instructions,
+            OPERATOR_INSTRUCTIONS_CLOSE,
+        );
+    }
+    return [{ type: 'text', text: parts.join('\n'), cache_control: { type: 'ephemeral' } }];
 }
 
 /** The iteration bound: the run's step cap, or the profile's turn limit if that is lower. */
@@ -110,6 +117,8 @@ export function lockedParams(input: {
     readonly message: string;
     readonly caps: EffectiveRunCaps;
     readonly fromSeq: number;
+    /** The mounted skills' catalogue block (`skills.ts`), or null when the run mounted none. */
+    readonly skillCatalogue?: string | null;
 }): BetaToolRunnerParams & { stream: false } {
     const tier = input.def.profile?.modelTier ?? DEFAULT_TIER;
     const effort = input.def.profile?.effort ?? DEFAULT_EFFORT;
@@ -119,7 +128,7 @@ export function lockedParams(input: {
         model: toolRunnerModelFor(tier),
         max_tokens: MAX_TOKENS_PER_TIER[tier],
         max_iterations: maxIterationsFor(input.def, input.caps, input.fromSeq),
-        system: systemBlocksFor(input.def),
+        system: systemBlocksFor(input.def, input.skillCatalogue ?? null),
         messages: [{ role: 'user', content: input.message }],
         tools: [...input.tools],
         tool_choice: { type: 'auto', disable_parallel_tool_use: true },
