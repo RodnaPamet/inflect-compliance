@@ -920,8 +920,12 @@ new tenant-membership creation path).
   as `TenantContextValue.edgeAdmitsAdminApi`), the route's key, and the
   usecase's floor (`offersAdminApiWrite` in
   `src/lib/auth/admin-api-affordances.ts`; a client page calls
-  `useOffersAdminApiWrite`). Never AND a key with a role in a page, and never
-  copy the edge's role table: a custom role is not the membership role.
+  `useOffersAdminApiWrite` from `src/lib/auth/use-offers-admin-api-write.ts`).
+  Never AND a key with a role in a page, and never copy the edge's role table:
+  a custom role is not the membership role. Keep the hook OFF the tenant
+  context provider: every tenant page loads the provider, so its runtime
+  imports ship in every route's First Load JS, and the bundle-size budget
+  failed the day the hook lived there.
 - **An access-review campaign does no OWNER-tier work** (#3727). Closing one
   writes its decisions under `access_reviews.close`, which an ADMIN holds, so it
   holds the members page's rules itself: a MODIFY never sets OWNER

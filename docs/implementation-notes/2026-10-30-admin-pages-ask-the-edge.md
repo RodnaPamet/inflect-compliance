@@ -26,7 +26,8 @@ agent pages (server) ── agentRegisterAffordances ─────────
 | `src/lib/auth/admin-api-affordances.ts` | `offersAdminApiWrite`: edge ∧ key ∧ floor. Pure and client-safe |
 | `src/lib/auth/admin-api-edge.ts` | `edgeAdmitsAdminApi`: the edge's own answer, server-side (`guard.ts` imports `next/server`) |
 | `src/lib/agentic/agent-register-affordances.ts` | Now the agent register's use of the two, not a copy |
-| `src/lib/tenant-context-provider.tsx`, `src/app/t/[tenantSlug]/layout.tsx` | The verdict travels to client pages; `useOffersAdminApiWrite` |
+| `src/lib/tenant-context-provider.tsx`, `src/app/t/[tenantSlug]/layout.tsx` | The verdict travels to client pages (`edgeAdmitsAdminApi`) |
+| `src/lib/auth/use-offers-admin-api-write.ts` | `useOffersAdminApiWrite`, the client pages' hook over the verdict |
 | `src/app/t/[tenantSlug]/(app)/admin/roles/page.tsx` | Writes offered by the gates; the carriage locks; refusals in labels |
 | `src/app/t/[tenantSlug]/(app)/admin/members/page.tsx` | The custom-role picker asks `customRoleCarriageRefusal` |
 | `src/app/t/[tenantSlug]/(app)/admin/integrations/page.tsx`, `SharePointCard.tsx` | Configure (canAdmin) and operate (key only) offered separately |
@@ -40,6 +41,13 @@ agent pages (server) ── agentRegisterAffordances ─────────
   admin path outside the agent subtree and the auditor's inventory reads; a
   unit test holds it equal to `checkAdminAccess` on the roles and integrations
   APIs for every role, so an edge change that splits them fails there.
+- **The hook is its own module, not the provider's.** Every tenant page loads
+  the tenant context provider, so whatever it imports at runtime ships in every
+  route's First Load JS. With the hook there, `admin-api-affordances` and
+  `permission-key` did: every route grew by 2 to 4 KB and the test-plan page
+  went over its budget (671.7 KB against 668). The provider carries only the
+  `edgeAdmitsAdminApi` field; the hook imports the provider, never the reverse,
+  so only the pages that call it carry the affordance code.
 - **An absent verdict is read as admitted.** A provider built without it (a
   test) keeps every control; the layout always asks, and the server is the
   authority either way. Failing closed would have hidden controls in every
