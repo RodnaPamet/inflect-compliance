@@ -42,10 +42,14 @@ const args = z.object({}).strict();
 
 export const getTenantContextTool: McpReadTool<Record<string, never>> = {
     name: 'get_tenant_context',
+    // Changing this text moves the tool's manifest pin: a tenant that has
+    // pinned the old text refuses the tool until somebody re-approves it.
     description:
         'Grounding for the tenant: entity counts (assets, risks, controls, ' +
-        'evidence, open tasks, findings) and recent activity — the baseline an ' +
-        'agent needs before reasoning. Read-only, tenant-scoped.',
+        'evidence, open tasks, findings) and, for a caller that may read the ' +
+        'audit log, its ten latest entries (an empty list for any other ' +
+        'caller) — the baseline an agent needs before reasoning. Read-only, ' +
+        'tenant-scoped.',
     inputSchema: {
         type: 'object',
         properties: {},
