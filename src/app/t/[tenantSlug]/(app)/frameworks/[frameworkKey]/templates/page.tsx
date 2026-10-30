@@ -95,13 +95,23 @@ export default function TemplateLibraryPage() {
     }, [apiUrl, frameworkKey, searchParams, category, section]);
 
     useEffect(() => {
+        // try/finally, because `setLoading(false)` was the LAST statement of an
+        // IIFE with no guard: any rejection skipped it and the page stayed on
+        // its loading state for ever. The `finally` is the fix; the empty
+        // `catch` is deliberate, since `fetchTemplates` already owns its own
+        // error reporting and this effect has nothing to add to it.
         (async () => {
-            const [fwRes] = await Promise.all([
-                fetch(apiUrl(`/frameworks/${frameworkKey}`)),
-            ]);
-            if (fwRes.ok) setFramework(await fwRes.json());
-            await fetchTemplates();
-            setLoading(false);
+            try {
+                const [fwRes] = await Promise.all([
+                    fetch(apiUrl(`/frameworks/${frameworkKey}`)),
+                ]);
+                if (fwRes.ok) setFramework(await fwRes.json());
+                await fetchTemplates();
+            } catch {
+                /* fetchTemplates reports its own failure; nothing to add here */
+            } finally {
+                setLoading(false);
+            }
         })();
     }, [apiUrl, frameworkKey, fetchTemplates]);
 
