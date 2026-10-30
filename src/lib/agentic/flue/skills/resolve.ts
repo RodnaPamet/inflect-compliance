@@ -172,23 +172,78 @@ export function resolveRunSkills(
     }
     const seen = new Set(documents.map((d) => d.name));
     for (const v of [...tenantVersions].sort(byName)) {
-        if (repositorySkillNames().has(v.name)) {
-            throw new SkillLoadError(v.name, 'a tenant skill may not take the name of a repository skill');
-        }
+        const taken = tenantNameRefusal(v.name);
+        if (taken) throw taken;
         if (seen.has(v.name)) throw new SkillLoadError(v.name, 'duplicate skill name');
-        const verdict = checkTenantSkillMountable(v);
-        if (!verdict.ok) {
-            if (verdict.kind === 'refused') throw new SkillTextRefusedError(v.name, verdict.rules, verdict.guardRules);
-            throw new SkillNotMountableError(v.name, verdict.reason, verdict.detail);
-        }
+        const mounted = tenantGateMount(v);
+        if (!mounted.ok) throw mounted.error;
         seen.add(v.name);
-        documents.push({ name: v.name, description: verdict.skill.description, instructions: verdict.skill.instructions });
-        pins.push(verdict.pin);
+        documents.push(mounted.document);
+        pins.push(mounted.pin);
     }
     // ONE budget over BOTH: the per-turn cost of this run's catalogue is every
     // mounted skill's line, repository and tenant alike.
     assertCatalogWithinBudget(documents);
     return { documents, pins };
+}
+
+/** One tenant version as a run mounts it, or the refusal a run is given for it. */
+export type TenantVersionMount =
+    | { readonly ok: true; readonly document: ResolvedSkillDocument; readonly pin: MountedSkillPin }
+    | { readonly ok: false; readonly error: SkillLoadError };
+
+/** A tenant skill named like a shipped skill: the runtime mounts a name once. */
+function tenantNameRefusal(name: string): SkillLoadError | null {
+    return repositorySkillNames().has(name)
+        ? new SkillLoadError(name, 'a tenant skill may not take the name of a repository skill')
+        : null;
+}
+
+/** The tenant mount gate's verdict on one version, as a run is given it. */
+function tenantGateMount(v: TenantSkillVersionForMount): TenantVersionMount {
+    const verdict = checkTenantSkillMountable(v);
+    if (!verdict.ok) {
+        return {
+            ok: false,
+            error: verdict.kind === 'refused'
+                ? new SkillTextRefusedError(v.name, verdict.rules, verdict.guardRules)
+                : new SkillNotMountableError(v.name, verdict.reason, verdict.detail),
+        };
+    }
+    return {
+        ok: true,
+        document: { name: v.name, description: verdict.skill.description, instructions: verdict.skill.instructions },
+        pin: verdict.pin,
+    };
+}
+
+/**
+ * WHAT A RUN ASKS OF ONE TENANT VERSION before it mounts it, the per-version
+ * half of `resolveRunSkills`, which asks the same two things in the same
+ * order: no shipped skill holds its name, and the tenant mount gate
+ * (`checkTenantSkillMountable`: approved, by a second person, its text still
+ * hashing to the approval's pin, the text scan, and the evaluation record
+ * recomputed from its raw answers) passes it. Nothing is cached: a tenant
+ * version is a database row, read fresh by every caller.
+ */
+export function tenantVersionMount(v: TenantSkillVersionForMount): TenantVersionMount {
+    const taken = tenantNameRefusal(v.name);
+    return taken ? { ok: false, error: taken } : tenantGateMount(v);
+}
+
+/**
+ * The catalogue lines of the tenant versions a run could mount, each asked by
+ * `tenantVersionMount`; a version a run would refuse is left out. An agent
+ * profile's picker offers these, and its save and approval accept these and
+ * refuse any other tenant name as unknown (owner decision, 2026-10-30). The
+ * caller reads the versions with the columns the gate reads
+ * (`TENANT_SKILL_MOUNT_SELECT` in `tenant-mount.ts`).
+ */
+export function mountableTenantSkillLines(versions: readonly TenantSkillVersionForMount[]): { name: string; description: string }[] {
+    return versions.flatMap((v) => {
+        const mounted = tenantVersionMount(v);
+        return mounted.ok ? [{ name: mounted.document.name, description: mounted.document.description }] : [];
+    });
 }
 
 /**

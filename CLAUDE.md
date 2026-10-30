@@ -2920,8 +2920,14 @@ edit from being undone:
     it. That map asks what a run's mount asks, from the run's own cache: the
     text scan did not refuse the skill, and the mount gate's verdict
     (`verdictFor`, a passing evaluation record for this exact text) is a pass.
-    Any other name, and a tenant skill with no approved version, is
-    `SKILL_UNKNOWN`, by name and first. Then the named lines are priced with
+    A tenant skill counts only if its APPROVED version, read with the mount's
+    own columns (`readApprovedTenantSkillsByNameIn`), passes what admission asks
+    of it: `mountableTenantSkillLines`, which is `tenantVersionMount`, the
+    per-version half of `resolveRunSkills` (no shipped skill of its name, then
+    `checkTenantSkillMountable`). The picker reads the same through
+    `readMountableTenantSkillLines`: at most 200 versions a load, in pages of 20,
+    so one page of records (each up to 4 MiB) is held at a time. Any other name
+    is `SKILL_UNKNOWN`, by name and first. Then the named lines are priced with
     the run's `catalogBytes`: over `MAX_CATALOG_BYTES` is
     `SKILL_CATALOGUE_OVER_BUDGET`, a 409 carrying `bytes`, `budget` and the
     `skills` priced. Approval asks again because a deploy can refuse or
@@ -2985,7 +2991,8 @@ edit from being undone:
     over it. "Mountable" means `repositorySkillCatalogue()`, never
     `repositorySkillNames()`: a shipped skill the text scan refused or the
     mount gate refuses keeps its name reserved and is neither offered nor
-    saved. A `SKILL_CATALOGUE_OVER_BUDGET` refusal, at save beside the skills
+    saved; and an approved tenant skill the tenant mount gate now refuses is
+    neither offered nor saved either. A `SKILL_CATALOGUE_OVER_BUDGET` refusal, at save beside the skills
     field or in the approval notice, is worded by the tab from its `bytes` and
     `budget`, never shown as the server's English sentence. Instructions and
     reasons render as React text, never through markdown or `innerHTML`.

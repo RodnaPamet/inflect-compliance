@@ -1,8 +1,14 @@
-# 2026-10-30 — An agent profile cannot choose a shipped skill the mount gate refuses
+# 2026-10-30 — An agent profile cannot choose a skill no run could mount
 
-**Branch:** `claude/profile-picker-unmountable-skills` (#4611). A follow-up to
-#4523, #4589 and #4599, under the owner's decisions of 2026-10-30. It
-supersedes #4598 and #4606, which #4589 and #4599 overtook.
+**Branches:**
+
+- `claude/profile-picker-unmountable-skills` (#4611): shipped skills the mount
+  gate refuses.
+- `claude/profile-picker-unmountable-tenant-skills` (#4616): approved tenant
+  skills the tenant mount gate now refuses.
+
+Both follow up #4523, #4589 and #4599, under the owner's decisions of
+2026-10-30. #4611 supersedes #4598 and #4606, which #4589 and #4599 overtook.
 
 ## Design
 
@@ -40,6 +46,49 @@ The PR also carries the parts of #4598 and #4606 that main does not have:
     the save's figure;
   - the refused case at the first-version save, at approval of a version
     stored before the check, and at admission.
+
+## Tenant skills (#4616)
+
+The picker offered, and the save accepted, any APPROVED tenant version. A
+version passes `checkTenantSkillMountable` when it is approved, but a deploy can
+tighten the scan or the record check, and the pinned hash is recomputed from
+the stored text. A version could therefore be offered and saved that admission
+refuses.
+
+**The run's check, extracted rather than copied.** The per-version half of
+`resolveRunSkills` is now `tenantVersionMount(v)` in `resolve.ts`: no shipped
+skill may hold the name, then the tenant mount gate. `resolveRunSkills` calls
+the same two parts in its original order (name, duplicate, gate), so a run's
+refusal is unchanged. `mountableTenantSkillLines` keeps the versions that pass.
+
+**Reading the versions.** They are read with the mount's own columns
+(`TENANT_SKILL_MOUNT_SELECT`), decrypted by the same client:
+
+- `readApprovedTenantSkillsByNameIn(db, …)` is admission's by-name read, now
+  taking the caller's tenant transaction; the save and approval use it.
+- `readMountableTenantSkillLines(db, …)` is the picker's read.
+
+**The picker's cost.** One load reads and gates at most 200 approved versions.
+It reads them in pages of 20, ordered by id, so it makes at most 10 queries and
+holds at most one page of evaluation records at a time; a record is up to
+4 MiB. Per version it does the following:
+
+- decrypts two columns;
+- hashes at most 8 KiB;
+- runs the text scan;
+- parses the record and recomputes it.
+
+Measured in the unit-test runtime:
+
+- about 1.2 ms per version with a four-case record, so about 250 ms for 200;
+- about 7 ms for a record the size of the largest shipped one (55 KB);
+- so about 1.4 s for 200 such versions.
+
+The save and approval read only the tenant skills the version names, in one
+query.
+
+**Not built: a verdict cache.** Keyed on the exact stored inputs, one would cut
+repeat loads, but the run deliberately caches nothing for a tenant version.
 
 ## What the gate reads, and what can change between save and run
 

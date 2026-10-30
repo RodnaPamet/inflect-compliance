@@ -20,19 +20,22 @@
  *
  * Every caller is on the ordinary-Node side: run admission
  * (`usecases/workflow-runs.ts`, which pins the result before the run row
- * exists) and each segment of a reasoning engine (`flue/execute.ts` and
+ * exists), each segment of a reasoning engine (`flue/execute.ts` and
  * `tool-runner/execute.ts`, which mount the documents and compare the pins
- * with the row's). Neither the agent module nor the
- * runtime's ESM graph reaches this file.
+ * with the row's), and an agent profile's picker, save and approval
+ * (`usecases/agent-profiles.ts`), which read the versions the same way and ask
+ * them what a run asks (`mountableTenantSkillLines`). Neither the agent module
+ * nor the runtime's ESM graph reaches this file.
  */
 import type { RequestContext } from '@/app-layer/types';
+import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 
 import { recordTenantSkillMount } from '@/lib/observability/integration-metrics';
 
 import { SkillLoadError, SkillTextRefusedError } from './index';
 import { SkillNotMountableError } from './mount-gate';
-import { resolveRunSkills, type DeclaresSkills, type RunSkillMount } from './resolve';
+import { mountableTenantSkillLines, resolveRunSkills, type DeclaresSkills, type RunSkillMount } from './resolve';
 import type { TenantSkillVersionForMount } from './tenant-skill';
 
 /** The columns the mount gate reads. Nothing else is selected. */
@@ -130,21 +133,74 @@ export async function readApprovedTenantSkills(
  * skill's name rather than by a workflow (Step 2d): what an agent profile
  * names. One per name at most, because a skill holds one APPROVED version (a
  * partial unique index), so `take` is the number of names.
+ *
+ * Read through `db`, a transaction already bound to `tenantId`. Admission
+ * reads by it (below), and so do a profile version's save and approval, so the
+ * gate is asked of the same columns of the same rows.
  */
+export async function readApprovedTenantSkillsByNameIn(
+    db: PrismaTx,
+    tenantId: string,
+    names: readonly string[],
+): Promise<TenantSkillVersionForMount[]> {
+    if (names.length === 0) return [];
+    const rows = await db.tenantSkillVersion.findMany({
+        where: { tenantId, status: 'APPROVED', skill: { name: { in: [...names] } } },
+        select: TENANT_SKILL_MOUNT_SELECT,
+        orderBy: { createdAt: 'asc' },
+        take: names.length,
+    });
+    return rows.map(toMountInput);
+}
+
 async function readApprovedTenantSkillsByName(
     ctx: RequestContext,
     names: readonly string[],
 ): Promise<TenantSkillVersionForMount[]> {
     if (names.length === 0) return [];
-    const rows = await runInTenantContext(ctx, (db) =>
-        db.tenantSkillVersion.findMany({
-            where: { tenantId: ctx.tenantId, status: 'APPROVED', skill: { name: { in: [...names] } } },
+    return runInTenantContext(ctx, (db) => readApprovedTenantSkillsByNameIn(db, ctx.tenantId, names));
+}
+
+/**
+ * Versions read per page by `readMountableTenantSkillLines`. A version's
+ * evaluation record may be up to 4 MiB (`TENANT_SKILL_LIMITS.recordBytes`),
+ * so the page, not the whole list, bounds what is held at once.
+ */
+export const MOUNTABLE_TENANT_SKILL_PAGE = 20;
+
+/**
+ * THE TENANT SKILLS AN AGENT PROFILE'S PICKER OFFERS (owner decision,
+ * 2026-10-30): this tenant's APPROVED versions a run could mount, as catalogue
+ * lines, from at most `limit` versions read. Each is read with the columns the
+ * gate reads and asked what a run asks (`mountableTenantSkillLines`), so a
+ * version admission would refuse is not offered.
+ *
+ * In pages of `MOUNTABLE_TENANT_SKILL_PAGE`, ordered by id, through `db`, a
+ * transaction already bound to `tenantId`. Each page's rows are dropped once
+ * its lines are taken, so at most one page of records is held at a time.
+ */
+export async function readMountableTenantSkillLines(
+    db: PrismaTx,
+    tenantId: string,
+    limit: number,
+): Promise<{ name: string; description: string }[]> {
+    const lines: { name: string; description: string }[] = [];
+    let cursor: string | undefined;
+    for (let read = 0; read < limit; ) { // guardrail-allow: n+1 — one query per PAGE of versions, at most limit / page of them
+        const take = Math.min(MOUNTABLE_TENANT_SKILL_PAGE, limit - read);
+        const rows = await db.tenantSkillVersion.findMany({
+            where: { tenantId, status: 'APPROVED' },
             select: TENANT_SKILL_MOUNT_SELECT,
-            orderBy: { createdAt: 'asc' },
-            take: names.length,
-        }),
-    );
-    return rows.map(toMountInput);
+            orderBy: { id: 'asc' },
+            take,
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        });
+        lines.push(...mountableTenantSkillLines(rows.map(toMountInput)));
+        read += rows.length;
+        if (rows.length < take) break;
+        cursor = rows[rows.length - 1].id;
+    }
+    return lines;
 }
 
 /** The fields of an agent profile this module reads: which skills it names, and from where. */
