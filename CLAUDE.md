@@ -3218,6 +3218,11 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
   See `docs/implementation-notes/2026-05-21-e2e-isolation.md` and
   `tests/e2e/fixtures.ts`.
 - `SKIP_ENV_VALIDATION=1` is set in `jest.setup.js` to prevent env loader crash in unit tests.
+- **Reading a shard's heap**: each `Test` shard prints a `heap trail (#4613)`
+  line the first time `heapUsed` passes 4 GB and every 2 GB above, and a
+  `heap summary (#3977)` block at the end. `heapUsed` is pre-GC, so a mark is
+  not proof of a leak, and under `--max-old-space-size=12288` V8 aborts near
+  10 GB, not 12. See `tests/reporters/heap-summary-reporter.js`.
 - Coverage floors live in `jest.thresholds.json` (five keys: `global` +
   `usecases/` / `policies/` / `events/` / `lib/`), with the reasoning in
   `docs/coverage-policy.md`. A path key REMOVES its files from `global`,
