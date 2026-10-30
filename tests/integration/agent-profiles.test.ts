@@ -58,6 +58,14 @@ jest.mock('@/lib/agentic/agent-profile', () => ({
  * reach that case. Growing the descriptions is, and this is that.
  */
 let inflateCatalogue = false;
+/**
+ * A shipped skill the load-time text scan REFUSED, on demand (#4590). A refused
+ * skill stays in `repositorySkillNames()` (a tenant skill may not take its
+ * name) and is absent from `repositorySkillCatalogue()` (it cannot mount). No
+ * shipped skill is refused today, so this drops a real one from the catalogue
+ * while the names keep it, which is exactly that state.
+ */
+let refusedName: string | null = null;
 jest.mock('@/lib/agentic/flue/skills/resolve', () => {
     const actual = jest.requireActual('@/lib/agentic/flue/skills/resolve') as {
         repositorySkillCatalogue: () => ReadonlyMap<string, { name: string; description: string }>;
@@ -65,7 +73,7 @@ jest.mock('@/lib/agentic/flue/skills/resolve', () => {
     return {
         ...actual,
         repositorySkillCatalogue: () => {
-            const real = actual.repositorySkillCatalogue();
+            const real = new Map([...actual.repositorySkillCatalogue()].filter(([k]) => k !== refusedName));
             if (!inflateCatalogue) return real;
             return new Map(
                 [...real].map(([k, v]) => [k, { ...v, description: `${v.description} ${'detail '.repeat(140)}` }]),
@@ -104,6 +112,8 @@ import { resolveRunDefinition } from '@/app-layer/usecases/agent-profile-runs';
 import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile.schemas';
 import { profileRunKey } from '@/lib/agentic/agent-profile';
 import { SKILL_TEXT_RULES } from '@/lib/agentic/flue/skills/text-scan';
+import { catalogBytes, loadSkillCorpus, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
+import { repositorySkillNames } from '@/lib/agentic/flue/skills/resolve';
 import { registerWorkflow } from '@/lib/agentic/workflow-registry';
 import type { RequestContext } from '@/app-layer/types';
 import { makeRequestContext } from '../helpers/make-context';
@@ -456,6 +466,48 @@ describeFn('agent profiles (real DB)', () => {
             await approveAgentProfileVersion(reviewerA(), AGENTS.a2, v.version, { instructionsHash: v.instructionsHash });
         });
 
+        it('the picker prices each option as the save does, so its running total is the save\'s figure (#4590)', async () => {
+            await ensureA2Profile();
+            const options = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills.filter(
+                (sk) => sk.origin === 'repository',
+            );
+            const corpus = new Map(loadSkillCorpus().skills.map((s) => [s.name, s]));
+            // Each option carries its own line's cost, priced by the run's function.
+            for (const o of options) expect(o.catalogueBytes).toBe(catalogBytes([corpus.get(o.name)!]));
+            // And the lines add: the save prices the whole set at the options' sum.
+            const total = options.reduce((n, o) => n + o.catalogueBytes, 0);
+            expect(total).toBeGreaterThan(MAX_CATALOG_BYTES);
+            const err = await createAgentProfileVersion(
+                authorA(),
+                AGENTS.a2,
+                version({ skillRefs: options.map(({ origin, name }) => ({ origin, name })) }),
+            ).catch((e) => e);
+            expect(err.details).toMatchObject({ reason: 'SKILL_CATALOGUE_OVER_BUDGET', bytes: total });
+        });
+
+        it('a refused shipped skill is neither offered nor saved, though its name stays reserved (#4590)', async () => {
+            await ensureA2Profile();
+            const name = loadSkillCorpus().skills[0].name;
+            refusedName = name;
+            try {
+                const offered = (await getAgentProfile(reviewerA(), AGENTS.a2)).options.skills.map((sk) => sk.name);
+                expect(offered).not.toContain(name);
+                // Still a reserved name: a tenant skill may not take it.
+                expect(repositorySkillNames().has(name)).toBe(true);
+                const err = await createAgentProfileVersion(
+                    authorA(),
+                    AGENTS.a2,
+                    version({ skillRefs: [{ origin: 'repository', name }] }),
+                ).catch((e) => e);
+                expect(err.details).toMatchObject({ reason: 'SKILL_UNKNOWN', skills: [`repository:${name}`] });
+            } finally {
+                refusedName = null;
+            }
+            // Mountable again, it is offered and saves.
+            const back = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ skillRefs: [{ origin: 'repository', name }] }));
+            expect(back.version).toBeGreaterThan(0);
+        });
+
         it('NOT_DRAFT, NOT_SUBMITTED, ALREADY_RETIRED', async () => {
             const v = await createAgentProfileVersion(authorA(), AGENTS.a2, version());
             expect(await reasonOf(approveAgentProfileVersion(reviewerA(), AGENTS.a2, v.version, { instructionsHash: v.instructionsHash }))).toBe('NOT_SUBMITTED');
@@ -773,7 +825,12 @@ describeFn('agent profiles (real DB)', () => {
             expect(view.versions).toEqual([]);
             expect(view.options.tools).toEqual(['list_controls', 'list_risks']);
             expect(view.options.skills.length).toBeGreaterThan(0);
-            expect(view.limits).toEqual({ instructionsMaxChars: 16_000, maxTurns: 50, rejectionReasonMaxChars: 1_000 });
+            expect(view.limits).toEqual({
+                instructionsMaxChars: 16_000,
+                maxTurns: 50,
+                rejectionReasonMaxChars: 1_000,
+                skillCatalogueBudgetBytes: MAX_CATALOG_BYTES,
+            });
 
             // The pickers offer what the save accepts, PER OPTION — every tool
             // and every skill is individually a valid choice.

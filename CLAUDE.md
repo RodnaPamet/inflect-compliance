@@ -2902,7 +2902,13 @@ edit from being undone:
   - **The Behaviour tab offers what the server would accept, from the server's
     read.** The pickers list the view's `options` (the agent's current grants
     and mountable skills). Approve and Reject follow each version's
-    `canDecide`. Compute neither in the client. Instructions and reasons render
+    `canDecide`. Compute neither in the client. The skills picker is a budget as
+    well as a list (#4590): each option carries the server's `catalogueBytes`
+    for its one line, the view's `limits.skillCatalogueBudgetBytes` is the
+    per-run budget, and the editor shows their running total and will not save
+    over it. "Mountable" means `repositorySkillCatalogue()`, never
+    `repositorySkillNames()`: a refused shipped skill keeps its name reserved
+    and is neither offered nor saved. Instructions and reasons render
     as React text, never through markdown or `innerHTML`.
 
 **Every Anthropic client an agent run uses comes from `clientForRun`**

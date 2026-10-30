@@ -75,6 +75,7 @@ import { BehaviourTab } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/B
 import type { ProfileVersionView, ProfileView } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/behaviour-types';
 
 const EN = jest.requireActual('../../messages/en.json') as { agents: { behaviour: Record<string, unknown> } };
+const EDITOR = EN.agents.behaviour.editor as Record<string, string>;
 const copy = (path: string, params: Record<string, string | number> = {}): string => {
     let v = path.split('.').reduce<unknown>(
         (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
@@ -122,9 +123,12 @@ function view(versions: ProfileVersionView[], over: Partial<ProfileView> = {}): 
             ? { profileId: 'prof-1', currentApprovedVersion: approved?.version ?? null, runKey: approved ? `agent-profile:prof-1@v${approved.version}` : null }
             : null,
         versions,
-        options: { tools: ['list_controls', 'list_risks'], skills: [{ origin: 'repository', name: 'risk-register-review' }] },
+        options: {
+            tools: ['list_controls', 'list_risks'],
+            skills: [{ origin: 'repository', name: 'risk-register-review', catalogueBytes: 300 }],
+        },
         testRun: { available: false, reason: 'ENGINE_DOES_NOT_RUN_PROFILES', engine: 'STATIC' },
-        limits: { instructionsMaxChars: 16_000, maxTurns: 50, rejectionReasonMaxChars: 1_000 },
+        limits: { instructionsMaxChars: 16_000, maxTurns: 50, rejectionReasonMaxChars: 1_000, skillCatalogueBudgetBytes: 2_048 },
         ...over,
     };
 }
@@ -375,6 +379,68 @@ describe('the editor', () => {
         expect(document.getElementById('behaviour-tools')?.getAttribute('aria-describedby')).toContain('behaviour-tools-error');
         expect(document.getElementById('behaviour-instructions-error')).toBeNull();
         expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
+    });
+
+    describe('the skill catalogue budget (#4590)', () => {
+        const SKILLS = [
+            { origin: 'repository' as const, name: 'risk-register-review', catalogueBytes: 1_500 },
+            { origin: 'tenant' as const, name: 'our-own-skill', catalogueBytes: 1_000 },
+        ];
+        const withSkills = (skillRefs: ProfileVersionView['skillRefs']) =>
+            view([version({ skillRefs })], { options: { tools: ['list_controls', 'list_risks'], skills: SKILLS } });
+
+        it('shows the running total of the chosen skills against the budget', async () => {
+            renderTab(withSkills([{ origin: 'repository', name: 'risk-register-review' }]));
+            fireEvent.click(screen.getByTestId('behaviour-write'));
+            await screen.findByTestId('behaviour-editor');
+            expect(screen.getByTestId('behaviour-skills-budget').textContent).toBe(
+                EDITOR.skillsBudget.replace('{used}', '1500').replace('{budget}', '2048'),
+            );
+            expect(screen.getByTestId('behaviour-editor-save')).toBeEnabled();
+        });
+
+        it('over the budget, says so beside the skills field and does not let the save happen', async () => {
+            renderTab(
+                withSkills([
+                    { origin: 'repository', name: 'risk-register-review' },
+                    { origin: 'tenant', name: 'our-own-skill' },
+                ]),
+            );
+            fireEvent.click(screen.getByTestId('behaviour-write'));
+            const editor = await screen.findByTestId('behaviour-editor');
+            expect(document.getElementById('behaviour-skills-error')?.textContent).toBe(
+                EDITOR.skillsOverBudget.replace('{used}', '2500').replace('{budget}', '2048'),
+            );
+            expect(within(editor).getByTestId('behaviour-editor-save')).toBeDisabled();
+            await act(async () => {
+                fireEvent.submit(editor);
+            });
+            expect(fetchMock).not.toHaveBeenCalled();
+        });
+
+        it('sends each chosen skill as its ref only, never the cost the view carried', async () => {
+            renderTab(withSkills([{ origin: 'tenant', name: 'our-own-skill' }]));
+            fireEvent.click(screen.getByTestId('behaviour-write'));
+            const editor = await screen.findByTestId('behaviour-editor');
+            fetchMock.mockResolvedValue(ok({ profileId: 'prof-1', versionId: 'ver-9', version: 9 }));
+            await act(async () => {
+                fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+            });
+            expect(JSON.parse(fetchMock.mock.calls[0][1].body).skillRefs).toEqual([{ origin: 'tenant', name: 'our-own-skill' }]);
+        });
+
+        it('a server refusal over the budget is shown beside the skills field', async () => {
+            renderTab(withSkills([]));
+            fireEvent.click(screen.getByTestId('behaviour-write'));
+            const editor = await screen.findByTestId('behaviour-editor');
+            const message = 'These 2 skills would cost 2500 bytes of catalogue on every turn, over the 2048 budget.';
+            fetchMock.mockResolvedValue(refused('SKILL_CATALOGUE_OVER_BUDGET', message, 409));
+            await act(async () => {
+                fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+            });
+            expect(document.getElementById('behaviour-skills-error')?.textContent).toBe(message);
+            expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
+        });
     });
 
     it('starts from the open version and says that saving retires it', async () => {
