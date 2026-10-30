@@ -291,6 +291,8 @@ function mount(activeId: string | null = 'map-1') {
                 activeId={activeId}
                 onActiveIdChange={() => {}}
                 onProcessesChange={() => {}}
+                canEdit
+                canDelete
             />
         </TenantProvider>,
     );

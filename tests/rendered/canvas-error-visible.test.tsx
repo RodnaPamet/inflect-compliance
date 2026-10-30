@@ -103,6 +103,10 @@ function props(
             onChangeStatus: jest.fn(),
             onDelete: jest.fn(),
         },
+        // An editor and deleter: this file is about the autosave error, not
+        // about who may write, so every write the bar can offer is offered.
+        canEdit: true,
+        canDelete: true,
     };
 }
 

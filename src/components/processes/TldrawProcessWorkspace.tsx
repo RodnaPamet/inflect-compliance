@@ -154,6 +154,15 @@ export interface TldrawProcessWorkspaceProps {
      * and returned 403 on press".
      */
     canOperateCheckpoints?: boolean;
+    /**
+     * May the viewer change maps (`processes.edit` — Owner, Admin, Editor)?
+     * Without it the canvas is read-only: no palette, no editing, no autosave,
+     * no restore, and the document bar offers no write. Every one of those
+     * used to be offered to every role and end in "Save failed" (#4640).
+     */
+    canEdit: boolean;
+    /** May the viewer delete a map? The server takes the Admin tier. */
+    canDelete: boolean;
 }
 
 export function TldrawProcessWorkspace(props: TldrawProcessWorkspaceProps) {
@@ -220,6 +229,8 @@ function Inner({
     activeId,
     onActiveIdChange,
     onProcessesChange,
+    canEdit,
+    canDelete,
 }: TldrawProcessWorkspaceProps) {
     const toast = useToast();
     const [editor, setEditor] = useState<Editor | null>(null);
@@ -463,6 +474,8 @@ function Inner({
                 busy={bar.busy}
                 editorState={bar.editorState}
                 handlers={bar.handlers}
+                canEdit={canEdit}
+                canDelete={canDelete}
                 exportSlot={
                     activeId && activeProcess ? (
                         <TldrawCanvasExportMenu
@@ -506,7 +519,7 @@ function Inner({
             <CanvasCommandPalette groups={commandGroups} hostRef={canvasHostRef} />
 
             <div className="flex min-h-0 flex-1">
-                <ProcessPalette />
+                {canEdit && <ProcessPalette />}
 
                 {/* `relative`, so the checkpoint panel's `absolute` resolves
                     against the CANVAS AREA rather than the page: it must sit
@@ -524,22 +537,28 @@ function Inner({
                         onEditorReady={setEditor}
                         onStateChange={handleState}
                         onSaved={handleSaved}
+                        readOnly={!canEdit}
                     />
                 </div>
 
-                <ProcessInspector
-                    node={selection.node}
-                    edge={selection.edge}
-                    tenantSlug={tenantSlug}
-                    // This renderer does not read `dataJson.size`; the node
-                    // shape draws at its default geometry. `useTldrawSelection`
-                    // already drops the patch, so the control was persisting
-                    // nothing AND displaying nothing.
-                    rendererHonoursSize={false}
-                    onUpdate={selection.onUpdate}
-                    onEdgeUpdate={selection.onEdgeUpdate}
-                    {...(activeId ? { mapId: activeId } : {})}
-                />
+                {/* A disabled fieldset disables every control inside the
+                    inspector at once, so a read-only viewer can still read a
+                    step's details but not change what would never save. */}
+                <fieldset disabled={!canEdit} className="contents">
+                    <ProcessInspector
+                        node={selection.node}
+                        edge={selection.edge}
+                        tenantSlug={tenantSlug}
+                        // This renderer does not read `dataJson.size`; the node
+                        // shape draws at its default geometry. `useTldrawSelection`
+                        // already drops the patch, so the control was persisting
+                        // nothing AND displaying nothing.
+                        rendererHonoursSize={false}
+                        onUpdate={selection.onUpdate}
+                        onEdgeUpdate={selection.onEdgeUpdate}
+                        {...(activeId ? { mapId: activeId } : {})}
+                    />
+                </fieldset>
 
                 {/* Both components are engine-FREE — measured at 0 xyflow
                     references each against `PersistedProcessCanvas`'s 19, the
@@ -554,6 +573,7 @@ function Inner({
                         currentVersion={version ?? null}
                         onDiffRequest={handleDiffRequest}
                         onRestored={handleRestored}
+                        canRestore={canEdit}
                     />
                 )}
                 {activeId && diff && version != null && (
