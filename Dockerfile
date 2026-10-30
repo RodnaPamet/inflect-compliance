@@ -202,6 +202,14 @@ COPY --from=builder /app/src/data/libraries ./src/data/libraries
 # and evaluation-record.json travel together; the mount gate reads all three.
 # tests/guardrails/catalogue-reaches-production.test.ts holds every such read.
 COPY --from=builder /app/src/lib/agentic/flue/skills ./src/lib/agentic/flue/skills
+# The vendored OpenShell gRPC contract, read from disk by `grpcSandboxTransport`
+# in src/lib/agentic/openshell/grpc-transport.ts at `process.cwd()` the first
+# time a sandbox call is made (#4561). Without it the loader throws ENOENT and
+# every collection fails SANDBOX_UNREACHABLE — which is the refusing default,
+# so the failure would look like an absent gateway rather than an absent file.
+# tests/guardrails/catalogue-reaches-production.test.ts derives this directory
+# from that read and fails until this line exists.
+COPY --from=builder /app/vendor/openshell-proto ./vendor/openshell-proto
 # Prisma 7 — connection URL config moved out of `datasource db {}`
 # in `prisma/schema/base.prisma` into `prisma.config.ts`. The CLI
 # (`prisma migrate deploy` from the entrypoint) reads URLs from

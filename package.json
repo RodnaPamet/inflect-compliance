@@ -100,6 +100,8 @@
     "@dagrejs/dagre": "^3.1.0",
     "@earendil-works/pi-ai": "1.4.0",
     "@flue/runtime": "2.3.0",
+    "@grpc/grpc-js": "^1.14.5",
+    "@grpc/proto-loader": "^0.8.1",
     "@hookform/resolvers": "^6.0.0",
     "@next-auth/prisma-adapter": "1.0.7",
     "@node-saml/node-saml": "^5.1.0",
