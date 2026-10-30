@@ -215,7 +215,7 @@ export function EvidenceBulkImportModal({
                     // Revalidate every `/evidence?…` SWR cache entry so the
                     // list page refreshes regardless of the active filter.
                     const evidenceUrlPrefix = apiUrl(CACHE_KEYS.evidence.list());
-                    swrMutate(
+                    void swrMutate(
                         (key) =>
                             typeof key === 'string' &&
                             (key === evidenceUrlPrefix ||
@@ -231,7 +231,7 @@ export function EvidenceBulkImportModal({
                 onPollFailure();
             }
         };
-        tick();
+        void tick();
         return () => {
             cancelled = true;
             if (retryTimer !== null) clearTimeout(retryTimer);

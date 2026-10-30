@@ -134,7 +134,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
         const listKey = apiUrl(CACHE_KEYS.automation.rules.list());
         const ruleId = rule.id;
         onOpenChange(false);
-        globalMutate(
+        void globalMutate(
             listKey,
             (current?: AutomationRuleRow[]) =>
                 (current ?? []).map((r) =>
@@ -152,14 +152,14 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                 if (!res.ok) throw new Error(`Archive failed (${res.status})`);
             },
             undoAction: () => {
-                globalMutate(listKey);
+                void globalMutate(listKey);
             },
             onCommit: () => {
-                globalMutate(listKey);
+                void globalMutate(listKey);
             },
             onError: () => {
                 toast.error(t('rules.archiveFailed'));
-                globalMutate(listKey);
+                void globalMutate(listKey);
             },
         });
     }, [rule, apiUrl, globalMutate, triggerUndoToast, t, toast, onOpenChange]);

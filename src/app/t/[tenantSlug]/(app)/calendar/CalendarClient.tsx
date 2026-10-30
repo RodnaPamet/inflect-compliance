@@ -906,7 +906,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                     initialDueAt={taskCreateDate ?? undefined}
                     onCreated={() => {
                         setTaskCreateDate(null);
-                        calQuery.mutate();
+                        void calQuery.mutate();
                     }}
                 />
             )}

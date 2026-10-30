@@ -112,7 +112,7 @@ export function CanvasHistorySidebar({
         let cancelled = false;
         setLoading(true);
         setError(null);
-        (async () => {
+        void (async () => {
             try {
                 const res = await fetch(
                     `/api/t/${tenantSlug}/processes/${mapId}/snapshots`,

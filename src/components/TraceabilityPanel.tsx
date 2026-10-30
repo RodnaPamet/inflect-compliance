@@ -153,7 +153,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     const revalidateList = (type: 'risk' | 'control' | 'asset') => {
         if (type !== 'control' && type !== 'risk') return;
         const prefix = `${apiBase}/${type === 'control' ? 'controls' : 'risks'}`;
-        swrMutate(
+        void swrMutate(
             (k) => typeof k === 'string' && (k === prefix || k.startsWith(`${prefix}?`)),
             undefined,
             { revalidate: true },
@@ -288,7 +288,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
             else if (type === 'control') setShowAddControl(false);
             else if (type === 'asset') setShowAddAsset(false);
             // Cross-revalidate the linked entity's mirror view + parent list.
-            swrMutate(traceUrlFor(type, linkedId));
+            void swrMutate(traceUrlFor(type, linkedId));
             revalidateList(type);
         } catch {
             // rollbackOnError restored the cache; leave the form open.
@@ -334,7 +334,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
             };
             // Optimistic removal — no revalidate yet (the DELETE is deferred
             // 5s by the undo hook).
-            swrMutate(traceUrl, updated, { revalidate: false });
+            void swrMutate(traceUrl, updated, { revalidate: false });
         }
 
         triggerUndoToast({
@@ -347,15 +347,15 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                 // Revalidate this entity + the linked entity's mirror view +
                 // the parent list so RAG counts on the index pages stay
                 // correct after a commit.
-                swrMutate(traceUrl);
-                swrMutate(traceUrlFor(type, linkedId));
+                void swrMutate(traceUrl);
+                void swrMutate(traceUrlFor(type, linkedId));
                 revalidateList(type);
             },
             undoAction: () => {
-                if (previous) swrMutate(traceUrl, previous, { revalidate: false });
+                if (previous) void swrMutate(traceUrl, previous, { revalidate: false });
             },
             onError: () => {
-                if (previous) swrMutate(traceUrl, previous, { revalidate: false });
+                if (previous) void swrMutate(traceUrl, previous, { revalidate: false });
             },
         });
     };

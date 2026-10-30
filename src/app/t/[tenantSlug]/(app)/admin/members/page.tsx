@@ -300,7 +300,7 @@ export default function MembersAdminPage() {
     }, [apiUrl, t]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchMembers(); }, [fetchMembers]);
+    useEffect(() => { void fetchMembers(); }, [fetchMembers]);
 
     // ─── Handlers (unchanged from pre-migration) ───
     async function handleInvite() {

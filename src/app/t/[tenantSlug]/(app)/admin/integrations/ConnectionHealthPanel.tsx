@@ -80,12 +80,14 @@ export function ConnectionHealthPanel({
         try {
             const res = await fetch(apiUrl('/admin/integrations/health'));
             if (res.ok) setData(await res.json());
+        } catch {
+            // A network failure keeps what is shown, as a non-ok response does.
         } finally {
             setLoading(false);
         }
     }, [apiUrl]);
 
-    useEffect(() => { fetchHealth(); }, [fetchHealth]);
+    useEffect(() => { void fetchHealth(); }, [fetchHealth]);
 
     /**
      * The stored reason is a machine token, so the words live here and can

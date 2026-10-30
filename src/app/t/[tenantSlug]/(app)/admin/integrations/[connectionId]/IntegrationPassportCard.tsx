@@ -86,7 +86,7 @@ export function IntegrationPassportCard({ connectionId }: { connectionId: string
 
     useEffect(() => {
         let alive = true;
-        (async () => {
+        void (async () => {
             try {
                 const res = await fetch(apiUrl(`/admin/integration-passport/${connectionId}`));
                 if (res.status === 404 || res.status === 403) {

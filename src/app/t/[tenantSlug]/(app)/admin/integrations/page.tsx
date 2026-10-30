@@ -197,7 +197,7 @@ export default function AdminIntegrationsPage() {
     }, [apiUrl, t]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchConnections(); }, [fetchConnections]);
+    useEffect(() => { void fetchConnections(); }, [fetchConnections]);
 
     const resetForm = () => {
         setShowForm(false);

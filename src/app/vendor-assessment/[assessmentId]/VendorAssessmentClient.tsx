@@ -361,7 +361,7 @@ export function VendorAssessmentClient({
                 <form
                     onSubmit={(e) => {
                         e.preventDefault();
-                        handleSubmit();
+                        void handleSubmit();
                     }}
                     className="space-y-page"
                 >
