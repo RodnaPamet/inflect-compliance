@@ -6241,12 +6241,12 @@
           }
         },
         "legacy-mcp": {
-          "description": "A read-only view of a legacy application's access tables, exposed through an MCP server the customer runs in front of it. Connecting one does not recertify anything: the accounts it exposes are reconciled against HR and a person confirms every link.",
-          "setupGuide": "Enter the HTTPS endpoint of the MCP server you run in front of the legacy application, and the bearer token it expects. Testing the connection performs a real handshake and reads the manifest, which tells you whether the server speaks the inflect-legacy-access/1 contract. The endpoint must be reachable on a public address over HTTPS: private, loopback and link-local addresses are refused, redirects are not followed, and changing the endpoint later requires re-entering the token.",
+          "description": "A read-only view of a legacy application's access tables, exposed through a tool server the customer runs in front of it. Connecting one does not recertify anything: the accounts it exposes are reconciled against HR and a person confirms every link.",
+          "setupGuide": "Enter the HTTPS endpoint of the tool server you run in front of the legacy application, and the bearer token it expects. Testing the connection performs a real handshake and reads the manifest, which tells you whether the server speaks the inflect-legacy-access/1 contract. The endpoint must be reachable on a public address over HTTPS: private, loopback and link-local addresses are refused, redirects are not followed, and changing the endpoint later requires re-entering the token.",
           "fields": {
             "endpointUrl": {
-              "label": "MCP server URL",
-              "description": "HTTPS endpoint of your MCP server, e.g. https://legacy-mcp.example.com/rpc"
+              "label": "Tool server URL",
+              "description": "HTTPS endpoint of your tool server, e.g. https://legacy-tools.example.com/rpc"
             },
             "applicationName": {
               "label": "Application name",
@@ -6384,11 +6384,11 @@
         },
         "mcp-server": {
           "description": "An external Model Context Protocol server an agent can be granted tools on. Connecting one does not grant anything: its tools must be reviewed and pinned, then granted to a specific registered agent, before any run can call them.",
-          "setupGuide": "Enter the server's HTTPS endpoint, then choose how it authenticates. A server behind Microsoft Entra takes the tenant ID, client ID and client secret, plus EITHER a refresh token (delegated — every token carries a named person's privileges, so an agent can never see more than that person) OR a token scope (app-only — no such ceiling, and the scope must name your server's own audience). Anything else takes a static Authorization header value, which works but expires with the token you paste. Testing the connection performs a real MCP handshake and reports how many tools the server advertises. Those tools are NOT usable yet: an administrator reviews and approves them, and they must then be granted to a registered agent. The server must be reachable on a public address over HTTPS — private and link-local addresses are refused, and redirects are not followed.",
+          "setupGuide": "Enter the server's HTTPS endpoint, then choose how it authenticates. A server behind Microsoft Entra takes the tenant ID, client ID and client secret, plus EITHER a refresh token (delegated — every token carries a named person's privileges, so an agent can never see more than that person) OR a token scope (app-only — no such ceiling, and the scope must name your server's own audience). Anything else takes a static Authorization header value, which works but expires with the token you paste. Testing the connection performs a real handshake with the tool server and reports how many tools it advertises. Those tools are NOT usable yet: an administrator reviews and approves them, and they must then be granted to a registered agent. The server must be reachable on a public address over HTTPS — private and link-local addresses are refused, and redirects are not followed.",
           "fields": {
             "url": {
               "label": "Server URL",
-              "description": "HTTPS endpoint of the MCP server, e.g. https://mcp.example.com/rpc"
+              "description": "HTTPS endpoint of the tool server, e.g. https://tools.example.com/rpc"
             },
             "tenantId": {
               "label": "Entra tenant ID",
@@ -6396,11 +6396,11 @@
             },
             "clientId": {
               "label": "Application (client) ID",
-              "description": "The app registration authorized against this MCP server."
+              "description": "The app registration authorized against this tool server."
             },
             "scope": {
               "label": "Token scope (audience)",
-              "description": "The resource this server's token is for, e.g. https://mcp.example.com/.default. REQUIRED for app-only access (client secret, no refresh token) — there is no safe default, because a token minted for the wrong audience is refused as an invalid token rather than as a bad secret. Optional for delegated access, which defaults to the Microsoft Entra MCP resource."
+              "description": "The resource this server's token is for, e.g. https://tools.example.com/.default. REQUIRED for app-only access (client secret, no refresh token) — there is no safe default, because a token minted for the wrong audience is refused as an invalid token rather than as a bad secret. Optional for delegated access, which defaults to the tool-server resource Microsoft Entra provides."
             },
             "authorization": {
               "label": "Authorization header",
