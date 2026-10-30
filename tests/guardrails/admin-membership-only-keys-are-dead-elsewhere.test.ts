@@ -98,15 +98,18 @@ const AFFORDANCE_ONLY_PAGES: Readonly<Record<string, string>> = {
 
 const SCANNED_MACHINE_DIRS = ['src/lib/mcp/', 'src/lib/agentic/', 'src/app-layer/ai/', 'src/app-layer/jobs/'];
 
+/** `s` as a literal inside a RegExp: every metacharacter escaped, the backslash included. */
+function escapeRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** The patterns that read `key`, for a code text with comments stripped. */
 function readsOf(key: string): RegExp[] {
-    const quoted = [`'admin.${key}'`, `"admin.${key}"`, '`admin.' + key + '`'].map(
-        (q) => new RegExp(q.replace(/[.]/g, '\\.')),
-    );
-    const property = new RegExp(`\\badmin\\s*\\??\\.\\s*${key}\\b`);
+    const quoted = [`'admin.${key}'`, `"admin.${key}"`, '`admin.' + key + '`'].map((q) => new RegExp(escapeRegex(q)));
+    const property = new RegExp(`\\badmin\\s*\\??\\.\\s*${escapeRegex(key)}\\b`);
     // An agent key is named bare to the policy helpers; `sso` is too common a
     // word for that (`component: 'sso'`), and no helper takes it bare.
-    const bare = key.startsWith('agent_') ? [new RegExp(`(['"\`])${key}\\1`), new RegExp(`\\.${key}\\b`)] : [];
+    const bare = key.startsWith('agent_') ? [new RegExp(`(['"\`])${escapeRegex(key)}\\1`), new RegExp(`\\.${escapeRegex(key)}\\b`)] : [];
     return [...quoted, property, ...bare];
 }
 
