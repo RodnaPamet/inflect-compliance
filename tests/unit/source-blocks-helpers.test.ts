@@ -276,6 +276,93 @@ describe('source-blocks — codeOf', () => {
         expect(codeOf(src)).toContain('"https://example.test/x"');
     });
 
+    /**
+     * A REGEX LITERAL IS NOT A STRING, AND THE SCANNER HAS TO KNOW (#4658).
+     *
+     * `scanSpans` had branches for `//`, `/*` and the three quote characters
+     * and none for a regex literal, so it walked `.replace(/"/g, "'")` by
+     * skipping the `/`, reading the `"` INSIDE the regex as a string opening,
+     * scanning to the `"` in `"'"`, and desynchronising. Every comment after
+     * it in the file was then left unmasked.
+     *
+     * Why that is the bad direction to fail in: an unmasked comment makes
+     * prose look like code, so a guard COUNTING occurrences can be moved by a
+     * documentation pass, and one asserting a pattern is PRESENT can be
+     * satisfied by a comment mentioning it. Both are silent.
+     *
+     * Each case below pairs the pathological text with a CONTROL differing
+     * only in the delimiter under test. Without the control these assert that
+     * masking happens at all, not that it happens for the stated reason.
+     */
+    describe('a regex literal does not desynchronise the scanner', () => {
+        const probe = (line: string): string => codeOf([
+            'const a = s',
+            `    ${line}`,
+            '    // SENTINEL in a comment',
+            '    .replace(/x/g, "y");',
+        ].join('\n'));
+
+        it.each([
+            ['a double quote', '.replace(/"/g, "q")'],
+            ['a single quote', ".replace(/'/g, 'q')"],
+            ['a backtick', '.replace(/`/g, "q")'],
+            ['a // sequence', '.replace(/\\/\\//g, "q")'],
+            ['an escaped delimiter', '.replace(/\\//g, "q")'],
+            ['a slash in a character class', '.replace(/[/]/g, "q")'],
+        ])('masks the comment after a regex containing %s', (_what, line) => {
+            expect(probe(line)).not.toContain('SENTINEL');
+        });
+
+        it('the control — a regex with no delimiter trouble — also masks it', () => {
+            // If this failed, the cases above would be measuring the probe
+            // rather than the delimiters.
+            expect(probe('.replace(/plain/g, "q")')).not.toContain('SENTINEL');
+        });
+
+        it('the regex BODY survives, because a regex is code and not a comment', () => {
+            // The fix CONSUMES the regex span so the quote inside it never
+            // reaches the string branch. It must not BLANK it: `codeOf` masks
+            // comments only, and a guard asserting on a pattern written as a
+            // regex literal has to still see it.
+            const src = 'const re = /\\bborder-[a-z]+\\b/g; // note';
+            const masked = codeOf(src);
+            expect(masked).toContain('/\\bborder-[a-z]+\\b/g');
+            expect(masked).not.toContain('note');
+        });
+
+        it('a DIVISION is still not read as a regex', () => {
+            // The opposite error. `regexCanStartAt` treats `)`, `]`, `}` and a
+            // non-keyword identifier as division context; if it did not, the
+            // scan would run from the first `/` to the next one and swallow
+            // the comment that follows.
+            const src = [
+                'const ratio = (a) / (b);',
+                'const kept = total / count; // trailing note',
+                'const after = 1;',
+            ].join('\n');
+            const masked = codeOf(src);
+            expect(masked).toContain('const ratio = (a) / (b);');
+            expect(masked).toContain('const kept = total / count;');
+            expect(masked).toContain('const after = 1;');
+            expect(masked).not.toContain('trailing note');
+        });
+
+        it('JSX self-closing and closing tags still reach their comments', () => {
+            // The two exceptions `regexCanStartAt` takes for JSX, whose `/` is
+            // neither operator nor literal. Asserted here because the new
+            // branch consults the same predicate, so breaking it would break
+            // JSX masking too.
+            const src = [
+                'const el = <Foo bar={x} /> ;',
+                'const el2 = <div>text</div>; // tag note',
+                'const z = 3;',
+            ].join('\n');
+            const masked = codeOf(src);
+            expect(masked).not.toContain('tag note');
+            expect(masked).toContain('const z = 3;');
+        });
+    });
+
     it('is idempotent, so wrapping an already-extracted block is harmless', () => {
         const src = [
             'export async function handler() {',
