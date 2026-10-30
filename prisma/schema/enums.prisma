@@ -62,6 +62,11 @@ enum Role {
 enum OrgRole {
   ORG_ADMIN
   ORG_READER
+  /// The organization's owner (#4576). Deploy 1 adds the value and teaches
+  /// every reader; nothing writes it until deploy 2. Declared LAST so a sort on
+  /// the column never moves the existing values. Compare roles through
+  /// `src/lib/org-roles.ts`, never with a literal 'ORG_ADMIN'.
+  ORG_OWNER
 }
 
 /// Epic B — actions tracked in the OrgAuditLog ledger.
@@ -110,6 +115,9 @@ enum OrgAuditAction {
   /// no longer exists. Hence an org-level entry — not for a second copy of the
   /// fact, but for a reader who can get at it.
   ORG_TENANT_DELETED
+  /// An org admin turned an agent switch on or off for the organization's
+  /// workspaces (#4557). Carries both values of each switch that moved.
+  ORG_AGENT_SWITCHES_CHANGED
 }
 
 enum MembershipStatus {

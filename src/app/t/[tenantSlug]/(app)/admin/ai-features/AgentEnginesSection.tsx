@@ -193,6 +193,13 @@ export function AgentEnginesSection() {
                                 {t('deploymentOffStoredToolRunner')}
                             </span>
                         )}
+                        {/* The organization, not the operator, can turn the
+                            Tool Runner on here (#4557): say so. */}
+                        {state.toolRunner.basis === 'ORGANIZATION_OFF' && (
+                            <span data-testid="agent-engines-organization-can-enable" className="mt-1 block">
+                                {t('deploymentOffOrganization')}
+                            </span>
+                        )}
                     </InlineNotice>
                 )}
 
@@ -287,6 +294,9 @@ export function AgentEnginesSection() {
                                     <span className="ml-auto flex items-center gap-default">
                                         {term.actor === 'operator' && (
                                             <span className="text-xs text-content-muted">{t('operatorTerm')}</span>
+                                        )}
+                                        {term.actor === 'organization' && (
+                                            <span className="text-xs text-content-muted">{t('organizationTerm')}</span>
                                         )}
                                         {!term.satisfied && href && (
                                             <Link href={href} className="text-sm text-content-link">

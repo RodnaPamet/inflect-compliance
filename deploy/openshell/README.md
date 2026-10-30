@@ -132,9 +132,37 @@ https://events.telemetry.data.nvidia.com/v1.1/events/jsonstruct
 
 That denial is a **precondition below**, not something this directory
 configures — there is no egress policy here to point at, and claiming otherwise
-would be the same mistake as trusting the setting. A setting whose effect cannot
-be observed is a request; the network rule is the enforcement, and it is the
-thing to check on the host.
+would be the same mistake as trusting the setting.
+
+**And what is deployed is a NAME-RESOLUTION control, not a network one — #4566.**
+An earlier version of this paragraph ended "the network rule is the enforcement",
+which was written to say *do not trust the env var, trust the network*. The
+network half was never built, so the sentence provided exactly the false
+reassurance it was written to prevent. What the host actually carries is a
+sinkhole in `/etc/hosts`:
+
+```
+0.0.0.0 events.telemetry.data.nvidia.com
+```
+
+Verified working — `curl` to the endpoint returns HTTP 000 — and there is **no
+GCP egress firewall rule**, confirmed against the live project. So the honest
+statement of coverage is:
+
+| | |
+|---|---|
+| a process using the system resolver | **denied** |
+| a process with its own resolver | not denied |
+| a connection to a literal address | not denied |
+| an image rebuild that drops the hosts entry | not denied, and silent |
+
+The env var and the sinkhole are two independent controls and both are weak in
+different ways, which is better than one. Neither is a network rule. A
+deny-by-default egress policy is the strong shape and is real work: the endpoint
+is CDN-hosted, so an IP rule would rot, and an allowlist has to admit ghcr.io
+and three clouds' APIs, all CDN-hosted too. Tracked on #4566 alongside the
+collector allowlist, because both need the same answer about egress to hosts
+whose addresses move.
 
 ## Inbound authentication
 
@@ -221,6 +249,55 @@ absent from both VMs and is presented out of band by a person.
     absent — absent means "not probed", which the admin page reports
     differently from "did not answer".
 ```
+
+### What to put in `/opt/inflect/.env.prod` — #4564
+
+The admin page's subject is "what did this deploy declare", and it declares
+nothing until these reach the app. They go in `/opt/inflect/.env.prod` on the
+app VM, which `docker-compose.prod.yml` hands to the container through
+`env_file:` — so **no compose or apply.sh change is involved**, and nothing has
+to be interpolated.
+
+```
+SANDBOX_RUNTIME_CONFIG_DIGEST=sha256:…      # copy from config-digest.txt
+SANDBOX_RUNTIME_APPLIED_AT=2026-10-30T06:39:54Z
+SANDBOX_RUNTIME_CHANNELS=ocsf-file
+SANDBOX_RUNTIME_HEALTH_URL=http://10.132.0.28:8081
+```
+
+**All four are optional and absence is a working state**, not a broken one. With
+no digest the page reports `not-configured` for every row, which is true of a
+deploy that declared nothing.
+
+#### `SANDBOX_RUNTIME_CHANNELS` is derived, not chosen
+
+It lists the channels declared **on**, and for this deployment that is
+`ocsf-file` alone — derived from the committed artefacts rather than decided
+here:
+
+| channel | why | from |
+|---|---|---|
+| `anonymous-telemetry` | OFF | `OPENSHELL_TELEMETRY_ENABLED=false` in the unit |
+| `otlp-traces` | OFF | no active OTLP endpoint in either artefact |
+| `ocsf-file` | **ON** | the `[openshell.gateway.ocsf_log]` table in `gateway.toml` |
+| `ocsf-over-otlp` | OFF | no active `OPENSHELL_OTLP_OCSF_ENDPOINT` |
+
+Get this wrong in the permissive direction and the page under-reports where data
+can go, which is the one failure that makes it worse than no page. Note that
+`parseDeclaredChannels` **refuses the whole list** on a name this build does not
+know — a newer runtime or a typo both mean the enumeration is no longer
+exhaustive, and an incomplete list of egress paths reads exactly like a complete
+one.
+
+#### An empty value means absent, and that took a schema change
+
+Compose and shell defaults produce **empty strings**, not absent variables, and
+`SANDBOX_RUNTIME_HEALTH_URL` was `z.string().url().optional()` — which accepts
+`undefined` and rejects `''` with "Invalid URL". So an operator who left the line
+in but blank would have failed env validation and the container would not have
+started: a working state turned into an outage by a variable nobody set.
+`src/env.ts` now coerces empty to absent for that one variable, verified against
+`''`, whitespace, a real URL and a malformed one.
 
 ### The digest, and why the admin page shows provenance instead of state
 

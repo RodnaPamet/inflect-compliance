@@ -332,7 +332,31 @@ export const env = createEnv({
          * differently from "did not answer": a deploy that never named a
          * gateway must not be shown as having an unreachable one.
          */
-        SANDBOX_RUNTIME_HEALTH_URL: z.string().url().optional(),
+        SANDBOX_RUNTIME_HEALTH_URL: z.preprocess(
+            /*
+                AN EMPTY VALUE MEANS ABSENT — #4564, and this coercion is load
+                bearing rather than tidy.
+
+                `z.string().url().optional()` accepts `undefined` and REJECTS
+                `''` with "Invalid URL". Compose has no way to omit a variable
+                conditionally: `"${VAR:-}"` passes an empty string, which is how
+                every other optional value in this stack is defaulted. So
+                without this, a deploy that simply did not name a gateway would
+                hand the app an empty string, fail env validation, and the
+                container would not start — a working state turned into an
+                outage by a variable nobody set.
+
+                Proven before writing it: `''` fails this schema, `undefined`
+                passes. The same hazard exists for the other optional URL vars
+                here (DIRECT_DATABASE_URL, DATABASE_READ_URL,
+                UPSTASH_REDIS_REST_URL, APP_URL) and is left alone — none is
+                defaulted empty by this stack today, and widening the coercion
+                to variables this change does not touch could alter behaviour a
+                live deploy depends on.
+            */
+            (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+            z.string().url().optional(),
+        ),
         // `z.enum(['0','1'])` and NOT `z.coerce.boolean()`, which maps the
         // string "false" to TRUE. Matches RATE_LIMIT_ENABLED above.
         SANDBOX_EXECUTION_ENABLED: z.enum(['0', '1']).optional(),
@@ -351,10 +375,13 @@ export const env = createEnv({
         // "off", not at boot, where the answer is "nothing starts".
         AGENT_DRIVER_FLUE: z.string().optional(),
         // The Tool Runner engine's own switch (Step 2b of
-        // docs/claude-tool-runner-design.md), opt-in and read exactly as
-        // AGENT_DRIVER_FLUE is, for the same reasons. It answers for this engine
-        // only. In this build it selects nothing on its own:
-        // DRIVER_IMPLEMENTED['tool-runner'] is false until Step 2c.
+        // docs/claude-tool-runner-design.md). It answers for this engine only.
+        // THREE STATES since #4557 (`readDeploymentSwitch`): '1'/'true' make the
+        // engine available to every workspace; any other set value, '0'
+        // included, makes it unavailable to every workspace; UNSET leaves it to
+        // each workspace's organization (`Organization.agentToolRunnerEnabled`,
+        // set on the org Settings page), and a workspace with no organization
+        // stays off. A workspace owner still chooses the engine.
         AGENT_DRIVER_TOOL_RUNNER: z.string().optional(),
         // RUNS STARTED BY A PERSON IN A BROWSER (#3868 step 2) — opt-in.
         //
@@ -387,16 +414,20 @@ export const env = createEnv({
         // profile route answers 404 and a profile run key is refused at
         // admission, so the tables exist and nothing reaches them.
         //
-        // Read through `agentProfilesEnabled`, which accepts only '1' and
-        // 'true', for the reason `AGENT_DRIVER_FLUE` above gives: a typo in a
-        // feature flag is "off", not a process that will not boot.
+        // THREE STATES since #4557 (`readDeploymentSwitch`): '1'/'true' open the
+        // surface to every workspace; any other set value, '0' included, closes
+        // it to every workspace not named below — a typo is a veto, not a
+        // process that will not boot; UNSET leaves it to each workspace's
+        // organization (`Organization.agentProfilesEnabled`), and a workspace
+        // with no organization stays closed.
         AGENT_PROFILES: z.string().optional(),
         // The same surface, opened to named tenants only (Step 1H, #4145; owner
         // decision 2026-10-26): comma-separated tenant slugs. It lets one
         // proving tenant author and approve a profile in production while every
         // other tenant still has no Behaviour tab and a 404 on every profile
         // route. `AGENT_PROFILES` on opens the surface to every tenant whatever
-        // this says. Read through `agentProfilesEnabledFor`.
+        // this says, and a named tenant stays open past `AGENT_PROFILES=0`.
+        // Read through `agentProfilesDecisionFor`.
         AGENT_PROFILES_TENANTS: z.string().optional(),
         // A2A HOST CONSUMERS (#3861) — admits a host that calls Inflect as a
         // CLIENT rather than as a peer agent: no card to pin, no Ed25519 key,

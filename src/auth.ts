@@ -97,7 +97,7 @@ export interface MembershipEntry {
  */
 export interface OrgMembershipEntry {
     slug: string;
-    role: 'ORG_ADMIN' | 'ORG_READER';
+    role: 'ORG_OWNER' | 'ORG_ADMIN' | 'ORG_READER';
     organizationId: string;
 }
 

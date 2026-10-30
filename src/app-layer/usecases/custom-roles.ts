@@ -30,11 +30,7 @@ import {
     ownerTierClearMessage,
 } from '@/lib/roles';
 import { CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER } from '@/lib/custom-role-grant-refusal';
-import {
-    PERSONNEL_MANAGE_NEEDS_ADMIN_BASE,
-    mayHoldPersonnelManage,
-    statesPersonnelManage,
-} from '@/lib/personnel-manage-rule';
+import { PERMISSION_NEEDS_ADMIN_BASE, grantsNeedingAdminBase } from '@/lib/custom-role-admin-base-rule';
 import type { Role } from '@prisma/client';
 
 /**
@@ -73,6 +69,32 @@ async function findLiveCustomRoleByName(
         },
         select: { id: true },
     });
+}
+
+/** The partial unique index on a LIVE role's name (20261029190000). */
+const LIVE_NAME_INDEX = 'TenantCustomRole_tenantId_name_key';
+
+/**
+ * Whether `err` is the partial unique index refusing a second LIVE role of
+ * one name — what `findLiveCustomRoleByName` checks for, lost to a race
+ * between the check and the write (#4581). Without this the loser of the race
+ * got a 500 instead of the sentence the check would have given it.
+ */
+function isLiveNameTaken(err: unknown): boolean {
+    const e = err as {
+        code?: unknown;
+        meta?: { target?: unknown; driverAdapterError?: { cause?: { constraint?: { index?: unknown; fields?: unknown } } } };
+    } | null;
+    if (e?.code !== 'P2002') return false;
+    // The pg driver adapter names the index; the classic engine names its
+    // columns in `target`. Anything else is not recognised and stays a 500,
+    // as it was, rather than being reported as a name clash it may not be.
+    const constraint = e.meta?.driverAdapterError?.cause?.constraint;
+    if (constraint?.index === LIVE_NAME_INDEX) return true;
+    if (Array.isArray(constraint?.fields) && constraint.fields.includes('name')) return true;
+    const target = e.meta?.target;
+    if (target === LIVE_NAME_INDEX) return true;
+    return Array.isArray(target) && target.includes('name');
 }
 
 // ─── List Custom Roles ───
@@ -153,7 +175,7 @@ export async function createCustomRole(ctx: RequestContext, input: CreateCustomR
 
     // A role may not contain more authority than its author holds.
     assertGrantWithinOwnAuthority(ctx, input.permissionsJson, input.baseRole);
-    assertPersonnelManageOnAdminBase(input.permissionsJson, input.baseRole);
+    assertAdminBaseOnlyPermissions(input.permissionsJson, input.baseRole);
 
     return runInTenantContext(ctx, async (db) => {
         // Check for a duplicate name among the tenant's LIVE roles.
@@ -162,16 +184,25 @@ export async function createCustomRole(ctx: RequestContext, input: CreateCustomR
             throw badRequest(`A custom role named "${name}" already exists in this tenant.`);
         }
 
-        const role = await db.tenantCustomRole.create({
-            data: {
-                tenantId: ctx.tenantId,
-                name,
-                description: input.description?.trim() || null,
-                baseRole: input.baseRole,
-                permissionsJson: input.permissionsJson as object,
-                isActive: true,
-            },
-        });
+        const role = await db.tenantCustomRole
+            .create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    name,
+                    description: input.description?.trim() || null,
+                    baseRole: input.baseRole,
+                    permissionsJson: input.permissionsJson as object,
+                    isActive: true,
+                },
+            })
+            .catch((err: unknown) => {
+                // Two creates of one name at once both pass the check above;
+                // the partial unique index refuses the second (#4581).
+                if (isLiveNameTaken(err)) {
+                    throw badRequest(`A custom role named "${name}" already exists in this tenant.`);
+                }
+                throw err;
+            });
 
         await logEvent(db, ctx, {
             action: 'CUSTOM_ROLE_CREATED',
@@ -208,8 +239,10 @@ export async function updateCustomRole(
     assertCanManageMembers(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // A deleted (inactive) role is gone as far as the API is concerned: it
+        // is hidden from the list and cannot be edited or deleted again (#4581).
         const existing = await db.tenantCustomRole.findFirst({
-            where: { id: roleId, tenantId: ctx.tenantId },
+            where: { id: roleId, tenantId: ctx.tenantId, isActive: true },
         });
         if (!existing) {
             throw notFound('Custom role not found.');
@@ -272,16 +305,25 @@ export async function updateCustomRole(
         // two halves the rule is about: a rename of a legacy role must not be
         // refused for a grant the rename does not touch.
         if (input.permissionsJson !== undefined || input.baseRole !== undefined) {
-            assertPersonnelManageOnAdminBase(
+            assertAdminBaseOnlyPermissions(
                 input.permissionsJson !== undefined ? input.permissionsJson : existing.permissionsJson,
                 input.baseRole !== undefined ? input.baseRole : existing.baseRole,
             );
         }
 
-        const updated = await db.tenantCustomRole.update({
-            where: { id: roleId },
-            data,
-        });
+        const updated = await db.tenantCustomRole
+            .update({
+                where: { id: roleId },
+                data,
+            })
+            .catch((err: unknown) => {
+                // A rename racing another create or rename of the same name
+                // (#4581); see `isLiveNameTaken`.
+                if (isLiveNameTaken(err)) {
+                    throw badRequest(`A custom role named "${data.name}" already exists.`);
+                }
+                throw err;
+            });
 
         await logEvent(db, ctx, {
             action: 'CUSTOM_ROLE_UPDATED',
@@ -307,8 +349,10 @@ export async function deleteCustomRole(ctx: RequestContext, roleId: string) {
     assertCanManageMembers(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // A deleted (inactive) role is gone as far as the API is concerned: it
+        // is hidden from the list and cannot be edited or deleted again (#4581).
         const existing = await db.tenantCustomRole.findFirst({
-            where: { id: roleId, tenantId: ctx.tenantId },
+            where: { id: roleId, tenantId: ctx.tenantId, isActive: true },
         });
         if (!existing) {
             throw notFound('Custom role not found.');
@@ -385,15 +429,19 @@ function assertGrantWithinOwnAuthority(
 }
 
 /**
- * Only an ADMIN-based custom role may hold `personnel.manage` (#4536, owner
- * decision 2026-10-30). On any other base the roster read is off, so the key
- * would let a role create records it cannot list.
+ * Only an ADMIN-based custom role may hold the permissions in
+ * `ADMIN_BASE_ONLY_PERMISSIONS` (#4536, #4581 A; owner decisions 2026-10-30).
+ * Server code behind each asks the Admin tier, which a custom role reads from
+ * its base, so on any other base the route let the role in and the usecase
+ * refused it. The keys travel in `details.permissions` so the Roles page can
+ * name them by their labels.
  */
-function assertPersonnelManageOnAdminBase(permissionsJson: unknown, baseRole: Role): void {
-    if (statesPersonnelManage(permissionsJson) && !mayHoldPersonnelManage(baseRole)) {
+function assertAdminBaseOnlyPermissions(permissionsJson: unknown, baseRole: Role): void {
+    const refused = grantsNeedingAdminBase(permissionsJson, baseRole);
+    if (refused.length > 0) {
         throw badRequest(
-            'Only a custom role based on Admin can manage the personnel roster. Switch Personnel / manage off, or base the role on Admin.',
-            { reason: PERSONNEL_MANAGE_NEEDS_ADMIN_BASE },
+            `Only a custom role based on Admin can hold: ${refused.join(', ')}. Switch them off, or base the role on Admin.`,
+            { reason: PERMISSION_NEEDS_ADMIN_BASE, permissions: refused },
         );
     }
 }

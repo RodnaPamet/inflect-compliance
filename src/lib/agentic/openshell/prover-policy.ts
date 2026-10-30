@@ -157,7 +157,24 @@ export function toProverPolicyV1(policy: CollectorSandboxPolicy): TranslatedProv
         policy: {
             version: 1,
             filesystem_policy: {
-                read_only: filesystem.rootReadOnly ? ['/'] : [],
+                /*
+                    `['/']` UNCONDITIONALLY, because `rootReadOnly` is typed as
+                    the literal `true` — #4573.
+
+                    The first version wrote `filesystem.rootReadOnly ? ['/'] : []`,
+                    which reads as a handled case and is dead code: no input the
+                    type admits reaches the empty branch. That is the same shape
+                    as the comment-skip deleted from the runtime-image pinning
+                    scanner, where removing it changed no result on any input.
+
+                    Deliberately NOT fixed by widening the type to `boolean`. A
+                    collector sandbox with a writable root is not a configuration
+                    this deployment should be able to express, and the literal is
+                    what says so. If it ever widens, this line stops compiling
+                    against an unused field rather than silently proving a policy
+                    nobody deploys.
+                */
+                read_only: ['/'],
                 read_write: [filesystem.scratchDir],
             },
             // `allowRoot: false` is expressed by WHICH user is named, because

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import {
     FileContent,
     FolderBookmark,
+    Gear,
     GridIcon,
     Menu3,
     OfficeBuilding,
@@ -110,6 +111,17 @@ export function useOrgNavSections(): OrgNavSectionDef[] {
                     // Epic B — immutable per-org privilege ledger.
                     // Same gate as Members: ORG_ADMIN can review who
                     // was added/removed/role-changed and when.
+                    requiresManageMembers: true,
+                },
+                {
+                    // #4557 — the organization's agent switches. Restored to
+                    // the sidebar with a page behind it, in the Manage group
+                    // and for org admins, like Members and Audit Log. Every
+                    // member may read /settings directly; the write gate is
+                    // the route's.
+                    href: orgHref('/settings'),
+                    label: t('nav.settings'),
+                    icon: Gear,
                     requiresManageMembers: true,
                 },
             ],
