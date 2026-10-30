@@ -36,7 +36,7 @@ A few rules hold whatever your role:
 
 - An Owner or an AI admin never carries a custom role, and no custom role is built on either of them. Their permissions are always the built-in set.
 - Each custom role is built on a base role: Admin, Editor, Auditor or Reader. Wherever Inflect checks a level of role rather than a single permission, a member carrying the custom role counts as its base role. A custom role that grants an action its base role lacks may therefore be refused when that action is used, so choose the base role closest to what the role grants.
-- Only Owner and Admin members reach the admin pages. A custom role that gives admin permissions to an Editor, Auditor or Reader can show them the admin pages, but most of those pages cannot load or save anything for them. Make them an Admin instead.
+- Only Owner and Admin members reach the admin pages. A custom role that gives admin permissions to an Editor, Auditor or Reader does not open them: that member sees no admin link and is refused the admin pages. An Auditor can still open the audit log. To give someone the admin pages, make them an Admin.
 
 ## What you see
 
