@@ -35,6 +35,8 @@ import {
     NO_STATUS_MOVES,
 } from './_lib/status-variants';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { isAuditReadOnly } from '@/lib/audit-lifecycle';
 import { auditWriteErrorFrom, auditWriteFailureMessage } from './_lib/audit-write-error';
 
 // listAudits → AuditRepository.list (auditListSelect). The lighter LIST row
@@ -275,7 +277,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
             toast.success(tx('detail.checklistSaved'));
             loadAudit(selected.id);
         } catch (err) {
-            toast.error(auditWriteFailureMessage(err, tx('detail.checklistError')));
+            toast.error(auditWriteFailureMessage(err, tx('detail.checklistError'), tx));
         }
     };
 
@@ -293,7 +295,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
             return true;
         } catch (err) {
             setSelected((s) => (s ? { ...s, status: prevStatus } : s));
-            toast.error(auditWriteFailureMessage(err, tx('detail.statusError')));
+            toast.error(auditWriteFailureMessage(err, tx('detail.statusError'), tx));
             return false;
         }
     };
@@ -302,6 +304,11 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
         status === 'PLANNED' ? tx('detail.backToPlanned') : tx('detail.backToInProgress');
 
     const statusMoves = selected ? (AUDIT_STATUS_MOVES[selected.status] ?? NO_STATUS_MOVES) : NO_STATUS_MOVES;
+    // A completed or cancelled audit is read-only (#4531): no Edit, no result
+    // pickers, no new finding. Its status moves (Completed → In Progress) stay,
+    // because reopening is how a completed audit is changed. The server holds
+    // the same rule (`auditWriteRefusal`).
+    const readOnly = selected ? isAuditReadOnly(selected.status) : false;
     const forwardStatus = statusMoves.forward;
     const backStatus = statusMoves.back;
 
@@ -500,8 +507,8 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                             selected={cycleOptions.find((o) => o.value === (cycleId ?? '')) ?? cycleOptions[0]}
                             setSelected={(opt) => onCycleChange(opt?.value ?? '')}
                             matchTriggerWidth
-                            buttonProps={{ className: 'text-sm min-w-[14rem]', id: 'audits-cycle-picker' }}
-                            aria-label={tx('hub.cyclePickerLabel')}
+                            // `aria-label` on `buttonProps`, where the Combobox reads it (#4531).
+                            buttonProps={{ className: 'text-sm min-w-[14rem]', id: 'audits-cycle-picker', 'aria-label': tx('hub.cyclePickerLabel') }}
                             caret
                         />
                     </div>
@@ -568,13 +575,18 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                             {tx('detail.cancelAudit')}
                                         </Button>
                                     )}
-                                    {canWrite && (
+                                    {canWrite && !readOnly && (
                                         <Button variant="ghost" size="sm" id="edit-audit-btn" onClick={() => setIsEditOpen(true)}>
                                             {tx('editModal.trigger')}
                                         </Button>
                                     )}
                                 </div>
                             </div>
+                            {readOnly && (
+                                <InlineNotice variant="info" id="audit-read-only-notice">
+                                    {tx(selected.status === 'CANCELLED' ? 'detail.readOnlyCancelled' : 'detail.readOnlyCompleted')}
+                                </InlineNotice>
+                            )}
                             {selected.auditScope && <p className="text-sm text-content-muted">{selected.auditScope}</p>}
                             {selected.auditors && (
                                 <dl className="flex flex-wrap gap-x-compact text-sm" id="audit-auditors">
@@ -588,17 +600,22 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 <div className="space-y-tight">
                                     {selected.checklist?.map((item) => (
                                         <div key={item.id} className="flex flex-col sm:flex-row items-start gap-compact p-3 border border-border-default/50 rounded-lg">
-                                            {/* A read-only viewer gets no picker: the badge at the
-                                                row's end already states the result. */}
-                                            {canWrite && (
+                                            {/* A read-only viewer, or a completed or cancelled
+                                                audit, gets no picker: the badge at the row's end
+                                                already states the result. */}
+                                            {canWrite && !readOnly && (
                                                 <Combobox
                                                     hideSearch
                                                     options={resultOptions}
                                                     selected={resultOptions.find(o => o.value === item.result) ?? null}
                                                     setSelected={(opt) => opt && updateChecklist(item.id, opt.value)}
                                                     matchTriggerWidth
-                                                    buttonProps={{ className: 'w-full sm:w-auto text-xs' }}
-                                                    aria-label={tx('list.resultFor', { prompt: item.prompt })}
+                                                    // On `buttonProps`: the Combobox names its trigger from
+                                                    // there and ignores a top-level `aria-label` (#4531).
+                                                    buttonProps={{
+                                                        className: 'w-full sm:w-auto text-xs',
+                                                        'aria-label': tx('list.resultFor', { prompt: item.prompt }),
+                                                    }}
                                                     caret
                                                 />
                                             )}
@@ -616,7 +633,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                             <div>
                                 <div className="mb-2 flex items-center justify-between gap-compact">
                                     <Heading level={3}>{t.findingsTab} ({selected.findings?.length || 0})</Heading>
-                                    {canWrite && (
+                                    {canWrite && !readOnly && (
                                         <Button
                                             variant="secondary"
                                             size="sm"

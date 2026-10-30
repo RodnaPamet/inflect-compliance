@@ -90,6 +90,8 @@ The dialog has no owner field. Assign one on the vendor's page, or in bulk from 
 
 A vendor can be made {{ui:vendors.statusOption.ACTIVE}} only once an assessment of it has completed review with a risk rating, on its page or in bulk.
 
+On a vendor's page, **{{ui:vendors.detail.editVendor}}** opens a form for its details. If **{{ui:vendors.detail.save}}** is refused, the form stays open with your changes and says why: a taken name is marked under **{{ui:vendors.detail.name}}**, and any other reason shows above the buttons.
+
 ### Change many vendors at once
 
 Tick the rows you want, up to 100 at a time; with more ticked, the bar says **Select at most 100 vendors at a time.** In the selection bar, choose an action from **{{ui:common.table.chooseAction}}**, fill in its value if it asks for one, and click **{{ui:common.table.apply}}**:
@@ -118,7 +120,9 @@ The message that follows says how many vendors the change applied to. If a colle
 | **{{ui:vendors.empty.noResultsTitle}}** | Vendors exist, but none match the search and filters | Click **{{ui:vendors.empty.clearFilters}}** |
 | The server's reason, or **{{ui:vendors.bulk.failed}}**, after a bulk action | A bulk action did not go through, for example because the owner you chose is no longer an active member | Act on the reason, then try again |
 | A message that some vendors were skipped, after **{{ui:vendors.bulk.setStatus}}** | Those vendors have no completed assessment review, so they cannot become {{ui:vendors.statusOption.ACTIVE}} | Complete an assessment review for each, then try again |
-| **{{ui:vendors.form.nameTaken}}** in the new-vendor dialog | Another vendor in the workspace has that name | Choose a different name |
+| **{{ui:vendors.form.nameTaken}}** in the new-vendor dialog, or under **{{ui:vendors.detail.name}}** on a vendor's page | Another vendor in the workspace has that name | Choose a different name |
+| **{{ui:vendors.detail.activationNeedsReview}}** on a vendor's page | You set the status to {{ui:vendors.statusOption.ACTIVE}}, and the vendor has no assessment whose review completed with a risk rating | Send an assessment and complete its review, or choose another status |
+| **{{ui:vendors.detail.saveFailed}}** on a vendor's page | The save did not reach the server | Try again |
 | **{{ui:vendors.createFailed}}** | The vendor was not created | Try again |
 | **{{ui:vendors.loadError}}** | The list did not load. The summary cards show a dash | Reload the page |
 | A banner saying only the first 5,000 results are shown | More than 5,000 vendors match the search and filters | Narrow the list with a filter or the search |

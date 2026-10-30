@@ -41,7 +41,7 @@ import { TASK_FILTER_KEYS } from "@/app/t/[tenantSlug]/(app)/tasks/filter-defs";
 import { RISK_FILTER_KEYS } from "@/app/t/[tenantSlug]/(app)/risks/filter-defs";
 import {
     HIGH_RISK_SCORE_MIN,
-    OPEN_RISK_STATUSES,
+    NEEDS_TREATMENT_RISK_STATUSES,
 } from "@/app-layer/domain/risk-status";
 
 // #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
@@ -83,12 +83,12 @@ describe("v2-PR-11 NextBestAction priority chain (resolveNextBestAction)", () =>
         );
         // High-risks beats low-coverage (3 > 4 priority order).
         expect(a.id).toBe("high-risks");
-        // The Risks list's own filter keys: score range + the open statuses,
-        // the population `highRisks` counts. `?filter=` is read by no page.
-        // Built from the domain module, so the literal the logic spells out
-        // cannot drift from the population the count is of.
+        // The Risks list's own filter keys: score range + the statuses still
+        // needing treatment, the population `highRisks` counts. `?filter=` is
+        // read by no page. Built from the domain module, so the literal the
+        // logic spells out cannot drift from the population the count is of.
         expect(a.href).toBe(
-            `/t/acme/risks?score=${HIGH_RISK_SCORE_MIN}|25&status=${OPEN_RISK_STATUSES.join(",")}`,
+            `/t/acme/risks?score=${HIGH_RISK_SCORE_MIN}|25&status=${NEEDS_TREATMENT_RISK_STATUSES.join(",")}`,
         );
     });
 

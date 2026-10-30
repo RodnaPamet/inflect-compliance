@@ -176,7 +176,12 @@ describeFn('only an ADMIN membership carries an admin-only custom role (real DB,
         const legacy = await member(a.tenantId, (await user('legacy-editor')).id, 'EDITOR', a.adminBuilt);
 
         await updateCustomRole(a.ownerCtx, a.adminBuilt, { name: `Renamed ${stamp}` });
-        await updateCustomRole(a.ownerCtx, a.adminBuilt, { permissionsJson: blob('ADMIN', { agent_policy_card: false }) });
+        // Narrowed: an admin-only key off, and personnel.manage off, which
+        // #4536 keeps to an ADMIN base, so the base can be lowered next.
+        const narrowed = blob('ADMIN', { agent_policy_card: false });
+        await updateCustomRole(a.ownerCtx, a.adminBuilt, {
+            permissionsJson: { ...narrowed, personnel: { ...narrowed.personnel, manage: false } },
+        });
         await updateCustomRole(a.ownerCtx, a.adminBuilt, { baseRole: 'EDITOR' });
         await updateTenantMemberRole(a.ownerCtx, { membershipId: legacy.id, role: 'READER' });
         await assignCustomRole(a.ownerCtx, legacy.id, null);

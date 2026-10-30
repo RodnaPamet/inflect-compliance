@@ -52,6 +52,21 @@ export class AuditRepository {
         });
     }
 
+    /**
+     * The audit's status, read `FOR UPDATE` so it holds until the update
+     * commits (#4531). A plain read would let a concurrent cancel land between
+     * the read-only check and the write, and the edit would then reach a
+     * cancelled audit. Null when the audit is not this tenant's.
+     */
+    static async lockStatus(db: PrismaTx, ctx: RequestContext, id: string): Promise<{ status: string } | null> {
+        const rows = await db.$queryRaw<Array<{ status: string }>>`
+            SELECT "status"::text AS "status"
+              FROM "Audit"
+             WHERE "id" = ${id} AND "tenantId" = ${ctx.tenantId}
+               FOR UPDATE`;
+        return rows[0] ?? null;
+    }
+
     static async update(db: PrismaTx, ctx: RequestContext, id: string, data: Omit<Prisma.AuditUncheckedUpdateInput, 'tenantId'>) {
         const existing = await this.getById(db, ctx, id);
         if (!existing) return null;

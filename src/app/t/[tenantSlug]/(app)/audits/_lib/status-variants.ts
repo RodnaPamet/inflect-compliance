@@ -53,10 +53,12 @@ export const DEFAULT_STATUS_VARIANT: StatusBadgeVariant = 'neutral';
  * The status moves the audit pane offers, by current status: one step
  * forward, one step back, and Cancel while the audit is not yet done.
  *
- * The server accepts any `AuditStatus` from any other (`UpdateAuditSchema`
- * is the enum and `updateAudit` has no transition rules), so this table is
- * the whole lifecycle the page presents. The step back exists so an audit
- * moved forward by mistake can be corrected without the API.
+ * The server refuses every write to a CANCELLED audit and every write to a
+ * COMPLETED one except the move back to IN_PROGRESS (`auditWriteRefusal` in
+ * `@/lib/audit-lifecycle`, #4531); between PLANNED and IN_PROGRESS it has no
+ * transition rules, so this table is the lifecycle the page presents. The
+ * step back exists so an audit moved forward by mistake can be corrected
+ * without the API, and it is the only way to change a completed audit.
  *
  * CANCELLED offers nothing: reopening a cancelled audit is not a step back
  * along PLANNED → IN_PROGRESS → COMPLETED (the status it was cancelled from

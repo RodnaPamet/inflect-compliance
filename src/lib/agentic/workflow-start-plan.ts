@@ -104,6 +104,13 @@ export interface StartAbilities {
     readonly discoveredAgents: boolean;
     /** May open the Ask page: its own gate, `controls.view`. */
     readonly askPage: boolean;
+    /**
+     * May list the framework catalogue: `frameworks.view`, the one check
+     * `GET /frameworks` makes (`assertCanViewFrameworks`; the route has no
+     * gate of its own). Every built-in role holds it; a custom role can switch
+     * it off (#4533).
+     */
+    readonly frameworks: boolean;
 }
 
 /** The ability a field kind needs, and the reason given when the caller lacks it. */
@@ -112,6 +119,7 @@ const FIELD_NEEDS: Readonly<Partial<Record<StartFieldSpec['kind'], {
     readonly reason: NotStartedHereReason;
 }>>> = {
     discoveredAgent: { ability: 'discoveredAgents', reason: 'NEEDS_AGENT_INVENTORY' },
+    framework: { ability: 'frameworks', reason: 'NEEDS_FRAMEWORK_ACCESS' },
 };
 
 /** Why a workflow is not started from this page. Each has a sentence in `agents.runs.notHere`. */
@@ -120,6 +128,7 @@ export const NOT_STARTED_HERE_REASONS = [
     'HOST_SYSTEM_FACTS',
     'NEEDS_AGENT_INVENTORY',
     'NEEDS_ASK_ACCESS',
+    'NEEDS_FRAMEWORK_ACCESS',
     'UNCLASSIFIED_INPUT',
 ] as const;
 

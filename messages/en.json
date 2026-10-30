@@ -3566,7 +3566,10 @@
     "newModal": {
       "description": "Plan a new internal audit. Its checklist is generated from the chosen framework's requirements, or from your controls if you choose none. You record a result against each item; the items themselves are fixed once the audit is created.",
       "creating": "Creating…",
-      "discardConfirm": "Discard audit? Any details you entered will be lost.",
+      "discardTitle": "Discard audit?",
+      "discardConfirm": "Any details you entered will be lost.",
+      "discardConfirmLabel": "Discard draft",
+      "discardCancelLabel": "Keep editing",
       "framework": "Framework",
       "noFramework": "No framework",
       "cycle": "Audit cycle",
@@ -4163,6 +4166,8 @@
       "passRate": "{pct}% pass rate"
     },
     "detail": {
+      "readOnlyCompleted": "This audit is completed, so it can't be changed. Move it back to In Progress to change it.",
+      "readOnlyCancelled": "This audit is cancelled and can't be changed.",
       "loadError": "Could not load the audit.",
       "checklistError": "Could not update the checklist item.",
       "checklistSaved": "Checklist item updated.",
@@ -4305,6 +4310,8 @@
     }
   },
   "findings": {
+    "accessTitle": "No access to findings",
+    "accessMessage": "Your role can't view the findings register. Ask an Owner or Admin for access.",
     "title": "Findings Register",
     "listDescription": "Issues raised in audit and assessment — owned, dated, closed.",
     "findingsCount": "{count} findings",
@@ -4858,6 +4865,8 @@
       "cellNotGranted": "{permission}: not granted. Click to grant it.",
       "cellNotHeld": "{permission}: not granted. You do not hold this permission yourself, so you cannot give it.",
       "cellGrantedNotHeld": "{permission}: granted. You do not hold this permission yourself, so you can remove it but not give it back.",
+      "cellNeedsAdminBase": "{permission}: not granted. Only a role based on Admin can have this permission.",
+      "manageNeedsAdminBaseNotice": "This role grants {permission}, which only a role based on Admin can have. Switch it off, or base the role on Admin, to save.",
       "actions": {
         "view": "View",
         "create": "Create",
@@ -6819,6 +6828,7 @@
       "risks": "Risks",
       "assets": "Assets",
       "vendors": "Vendors",
+      "findings": "Findings",
       "tests": "Tests",
       "incidents": "Incidents",
       "personnel": "Personnel",
@@ -7340,6 +7350,7 @@
       "continuity": "Business continuity",
       "processes": "Processes",
       "vendors": "Vendors",
+      "findings": "Findings",
       "tests": "Tests",
       "frameworks": "Frameworks",
       "audits": "Audits",
@@ -7411,7 +7422,12 @@
       "executionUnconfirmableHeading": "Turned on, with no runtime declared",
       "executionUnconfirmableBody": "This deployment says agent tools run in a sandbox, but it has declared no sandbox runtime for them to run in. Sandboxed execution is therefore not available, and this is not the same as the setting being off - someone turned it on and it cannot work.",
       "executionPlatformHeading": "Not switchable from this page",
-      "executionPlatformBody": "Whether agent tools run in a sandbox is set for the whole deployment, not per workspace. The row reports what the deployment permits."
+      "executionPlatformBody": "Whether agent tools run in a sandbox is set for the whole deployment, not per workspace. The row reports what the deployment permits.",
+      "reachabilityLabel": "Gateway",
+      "reachabilityNotProbed": "no health endpoint configured — not probed",
+      "reachabilityUnreachable": "did not answer",
+      "reachabilityAnswered": "reachable, reporting version {version}",
+      "reachabilityNoVersion": "answered, but reported no version"
     }
   },
   "riskManager": {
@@ -7755,6 +7771,8 @@
       "dataHigh": "High"
     },
     "detail": {
+      "activationNeedsReview": "This vendor can't be made Active until an assessment has been sent and its review completed with a risk rating.",
+      "saveFailed": "Couldn't save the vendor. Please try again.",
       "crumbVendors": "Vendors",
       "crumbFallback": "Vendor",
       "notFound": "Vendor not found.",
@@ -9917,6 +9935,21 @@
         "metaTokens": "Tokens",
         "metaStarted": "Started",
         "proposal": "{kind} · {status}",
+        "stepStatus": {
+          "PENDING": "Pending",
+          "RUNNING": "Running",
+          "DONE": "Done",
+          "FAILED": "Failed",
+          "SKIPPED": "Skipped"
+        },
+        "proposalStatus": {
+          "PENDING": "awaiting review",
+          "ACCEPTED": "accepted",
+          "REJECTED": "rejected",
+          "EDITED": "accepted with edits",
+          "QUARANTINED": "quarantined",
+          "EXPIRED": "expired"
+        },
         "scope": {
           "NONE": "no data",
           "READ_METADATA": "metadata",
@@ -9964,6 +9997,7 @@
         "HOST_SYSTEM_FACTS": "Started by a connected host system, which supplies the SAP document facts this workflow reviews. This page cannot collect them.",
         "NEEDS_AGENT_INVENTORY": "Reviews one discovered agent, chosen from the agent inventory, which your role cannot read. An administrator can grant read access to the agent inventory.",
         "NEEDS_ASK_ACCESS": "Questions are asked on the Ask a question page, which needs read access to this workspace's controls.",
+        "NEEDS_FRAMEWORK_ACCESS": "Starts from a framework chosen from the catalogue, which your role cannot view. An administrator can grant view access to frameworks.",
         "UNCLASSIFIED_INPUT": "Needs input this page does not know how to collect, so it cannot be started here."
       },
       "startForm": {
@@ -11334,6 +11368,7 @@
     "crumbList": "Access Reviews",
     "title": "Access Reviews",
     "campaignsCount": "{count, plural, one {# campaign} other {# campaigns}}",
+    "truncatedHint": "Older campaigns are not listed.",
     "resourcePlural": "access reviews",
     "resourceSingular": "access review",
     "colCampaign": "Campaign",

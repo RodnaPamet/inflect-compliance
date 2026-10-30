@@ -408,6 +408,30 @@ describe('BEHAVIOUR — updateCustomRole, judged against every carrier', () => {
         expect(err.details).toMatchObject({ reason: CUSTOM_ROLE_ADMIN_BASE_REFUSAL, blockingMemberships: 1 });
     });
 
+    it('when a save breaks the personnel rule (#4536) too, the content refusal comes first and nothing is read', async () => {
+        // personnel.manage on a READER base AND a new admin-only key, with
+        // EDITOR carriers: both rules are broken. The personnel rule reads the
+        // role alone and runs first; the carriage rule reads the carriers.
+        const withManage = (admin: Partial<PermissionSet['admin']>) => ({
+            ...blob('READER', admin),
+            personnel: { view: false, manage: true },
+        });
+        const db = saveDb('cr-plain', [{ role: 'EDITOR', n: 2 }]);
+        const first = await updateCustomRole(owner(), 'cr-plain', {
+            permissionsJson: withManage({ agent_policy_card: true }),
+        }).catch((e) => e);
+        expect(first).toMatchObject({ status: 400, details: { reason: 'PERSONNEL_MANAGE_NEEDS_ADMIN_BASE' } });
+        expect(db.tenantMembership.groupBy).not.toHaveBeenCalled();
+
+        // With personnel.manage switched off, the carriage refusal is next.
+        saveDb('cr-plain', [{ role: 'EDITOR', n: 2 }]);
+        const second = await refusalOf(
+            updateCustomRole(owner(), 'cr-plain', { permissionsJson: blob('READER', { agent_policy_card: true }) }),
+        );
+        expect(second.details).toMatchObject({ reason: CUSTOM_ROLE_ADMIN_KEYS_REFUSAL, blockingMemberships: 2 });
+        expect(db.tenantCustomRole.update).not.toHaveBeenCalled();
+    });
+
     it('the same save carried only by ADMINs passes', async () => {
         const db = saveDb('cr-plain', [{ role: 'ADMIN', n: 4 }]);
         await updateCustomRole(owner(), 'cr-plain', { baseRole: 'ADMIN' });
@@ -417,7 +441,9 @@ describe('BEHAVIOUR — updateCustomRole, judged against every carrier', () => {
     it('a legacy role is not trapped: removing keys, lowering the base and renaming all pass', async () => {
         for (const input of [
             { permissionsJson: blob('ADMIN', { agent_policy_card: false }) },
-            { baseRole: 'EDITOR' as const },
+            // Lowered with personnel.manage switched off in the same save, as
+            // the roles page does: #4536 keeps it to an ADMIN base.
+            { baseRole: 'EDITOR' as const, permissionsJson: { ...blob('ADMIN'), personnel: { view: true, manage: false } } },
             { name: 'Renamed' },
         ]) {
             const db = saveDb('cr-admin-built', [{ role: 'EDITOR', n: 5 }]);

@@ -35,3 +35,8 @@ function reasonOf(body: unknown): unknown {
 export function isVendorNameTaken(body: unknown): boolean {
     return reasonOf(body) === VENDOR_NAME_TAKEN;
 }
+
+/** True when a parsed API error body is the activation refusal. */
+export function isVendorActivationNeedsReview(body: unknown): boolean {
+    return reasonOf(body) === VENDOR_ACTIVATION_NEEDS_REVIEW;
+}

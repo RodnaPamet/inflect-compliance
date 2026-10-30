@@ -77,6 +77,17 @@ const FLOWS: HardenedFlow[] = [
         i18nConfirmKey: 'modal.discardConfirm',
     },
     {
+        label: 'audits',
+        hookPath: 'audits/_form/useNewAuditForm.ts',
+        hookExport: 'useNewAuditForm',
+        modalPath: 'audits/NewAuditModal.tsx',
+        confirmCopy: /Discard audit\?/,
+        // Migrated to <ConfirmDialog> like the task form (#4531): the
+        // question is the dialog title.
+        i18nConfirmKey: 'newModal.discardTitle',
+        usesConfirmDialog: true,
+    },
+    {
         label: 'assets',
         hookPath: 'assets/_form/useEditAssetForm.ts',
         hookExport: 'useEditAssetForm',

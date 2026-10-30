@@ -727,3 +727,66 @@ describe('listCustomRoles — permissionsJson normalisation', () => {
         });
     });
 });
+
+// ─── personnel.manage needs an ADMIN base (#4536) ───
+
+describe('Custom Roles — personnel.manage needs an ADMIN base (#4536)', () => {
+    /** A preset's blob with `personnel.manage` as given. */
+    const withManage = (base: Role, manage: boolean) => {
+        const p = getPermissionsForRole(base);
+        return { ...p, personnel: { ...p.personnel, manage } };
+    };
+    const refused = { details: { reason: 'PERSONNEL_MANAGE_NEEDS_ADMIN_BASE' } };
+
+    it.each<Role>(['READER', 'EDITOR', 'AUDITOR'])('refuses to create a %s-based role that manages the roster', async (base) => {
+        mockTx.tenantCustomRole = { findFirst: jest.fn(async () => null), create: jest.fn() };
+        await expect(
+            createCustomRole(makeCtx(), { name: 'Roster', baseRole: base, permissionsJson: withManage(base, true) }),
+        ).rejects.toMatchObject(refused);
+        expect(mockTx.tenantCustomRole.create).not.toHaveBeenCalled();
+    });
+
+    it('creates an ADMIN-based role that manages the roster', async () => {
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn(async () => null),
+            create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'cr-9', ...data })),
+        };
+        await createCustomRole(makeCtx(), { name: 'Roster', baseRole: 'ADMIN', permissionsJson: withManage('ADMIN', true) });
+        expect(mockTx.tenantCustomRole.create).toHaveBeenCalled();
+    });
+
+    it('refuses an update that grants it on a READER base, and one that moves an ADMIN role holding it to READER', async () => {
+        const update = jest.fn();
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn(async () => ({ id: 'cr-1', tenantId: 'tenant-1', name: 'R', baseRole: 'READER', isActive: true, permissionsJson: withManage('READER', false) })),
+            update,
+        };
+        await expect(
+            updateCustomRole(makeCtx(), 'cr-1', { permissionsJson: withManage('READER', true) }),
+        ).rejects.toMatchObject(refused);
+
+        mockTx.tenantCustomRole.findFirst = jest.fn(async () => ({ id: 'cr-1', tenantId: 'tenant-1', name: 'R', baseRole: 'ADMIN', isActive: true, permissionsJson: withManage('ADMIN', true) }));
+        await expect(updateCustomRole(makeCtx(), 'cr-1', { baseRole: 'READER' })).rejects.toMatchObject(refused);
+        expect(update).not.toHaveBeenCalled();
+    });
+
+    it('a rename of a legacy role still holding it is not refused for a grant the rename does not touch', async () => {
+        const legacy = { id: 'cr-1', tenantId: 'tenant-1', name: 'Old', baseRole: 'READER', isActive: true, permissionsJson: withManage('READER', true) };
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn().mockResolvedValueOnce(legacy).mockResolvedValueOnce(null),
+            update: jest.fn(async () => ({ ...legacy, name: 'New' })),
+        };
+        await expect(updateCustomRole(makeCtx(), 'cr-1', { name: 'New' })).resolves.toMatchObject({ name: 'New' });
+    });
+
+    it('switching it off on a legacy role is accepted', async () => {
+        const legacy = { id: 'cr-1', tenantId: 'tenant-1', name: 'Old', baseRole: 'READER', isActive: true, permissionsJson: withManage('READER', true) };
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn(async () => legacy),
+            update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...legacy, ...data })),
+        };
+        await expect(
+            updateCustomRole(makeCtx(), 'cr-1', { permissionsJson: withManage('READER', false) }),
+        ).resolves.toBeDefined();
+    });
+});

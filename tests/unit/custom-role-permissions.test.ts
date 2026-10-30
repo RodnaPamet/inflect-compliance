@@ -60,9 +60,10 @@ describe('getPermissionsForRole', () => {
             // deliberate acts were performed: it caught each addition in CI
             // exactly as designed, rather than letting a new domain appear in
             // the model with nothing recording that anybody chose it.
+            // `findings` is #4535's (owner decision 2026-10-30).
             expect(Object.keys(perms).sort()).toEqual([
                 'access_reviews', 'admin', 'assets', 'audits', 'continuity',
-                'controls', 'evidence', 'frameworks', 'identity_reconciliation',
+                'controls', 'evidence', 'findings', 'frameworks', 'identity_reconciliation',
                 'incidents', 'personnel',
                 'policies', 'processes', 'reports', 'risks', 'tasks', 'tests',
                 'vendors',

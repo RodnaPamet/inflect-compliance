@@ -35,6 +35,11 @@ import {
     type CustomRoleForCarriage,
 } from '@/lib/roles';
 import { CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER } from '@/lib/custom-role-grant-refusal';
+import {
+    PERSONNEL_MANAGE_NEEDS_ADMIN_BASE,
+    mayHoldPersonnelManage,
+    statesPersonnelManage,
+} from '@/lib/personnel-manage-rule';
 import type { Role } from '@prisma/client';
 
 /**
@@ -153,6 +158,7 @@ export async function createCustomRole(ctx: RequestContext, input: CreateCustomR
 
     // A role may not contain more authority than its author holds.
     assertGrantWithinOwnAuthority(ctx, input.permissionsJson, input.baseRole);
+    assertPersonnelManageOnAdminBase(input.permissionsJson, input.baseRole);
 
     return runInTenantContext(ctx, async (db) => {
         // Check for a duplicate name among the tenant's LIVE roles.
@@ -267,6 +273,15 @@ export async function updateCustomRole(
                 : existing.permissionsJson,
             input.baseRole !== undefined ? input.baseRole : existing.baseRole,
         );
+        // The RESULTING role again, but only when the update writes one of the
+        // two halves the rule is about: a rename of a legacy role must not be
+        // refused for a grant the rename does not touch.
+        if (input.permissionsJson !== undefined || input.baseRole !== undefined) {
+            assertPersonnelManageOnAdminBase(
+                input.permissionsJson !== undefined ? input.permissionsJson : existing.permissionsJson,
+                input.baseRole !== undefined ? input.baseRole : existing.baseRole,
+            );
+        }
 
         // Who CARRIES the role decides what it may become (owner decision,
         // 2026-10-30): a save that would give a non-ADMIN carrier an admin-tier
@@ -274,6 +289,16 @@ export async function updateCustomRole(
         // members block it. Judged on the resulting role, like the grant check
         // above, and only for what the save ADDS, so a save that narrows a
         // legacy role is never refused.
+        //
+        // LAST, on purpose: the two checks above are about the role's own
+        // content and read nothing, this one is about who carries it and reads
+        // the memberships. So when a save breaks both kinds (personnel.manage
+        // on a non-ADMIN base AND a new admin-only key for a non-ADMIN
+        // carrier), the content refusal (400, PERSONNEL_MANAGE_NEEDS_ADMIN_BASE)
+        // is the one returned, and the carriage refusal follows once it is
+        // fixed. The two never ask contradictory fixes of one save: personnel
+        // .manage needs an ADMIN base, which a non-ADMIN carrier refuses, so
+        // the only way to satisfy both is to switch personnel.manage off.
         await assertCustomRoleSaveCarriableInTx(db, ctx, roleId, existing, {
             baseRole: input.baseRole !== undefined ? input.baseRole : existing.baseRole,
             permissionsJson:
@@ -382,6 +407,20 @@ function assertGrantWithinOwnAuthority(
         throw forbidden(
             `Cannot grant permissions you do not hold: ${exceeded.join(', ')}.`,
             { reason: CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER, exceeded },
+        );
+    }
+}
+
+/**
+ * Only an ADMIN-based custom role may hold `personnel.manage` (#4536, owner
+ * decision 2026-10-30). On any other base the roster read is off, so the key
+ * would let a role create records it cannot list.
+ */
+function assertPersonnelManageOnAdminBase(permissionsJson: unknown, baseRole: Role): void {
+    if (statesPersonnelManage(permissionsJson) && !mayHoldPersonnelManage(baseRole)) {
+        throw badRequest(
+            'Only a custom role based on Admin can manage the personnel roster. Switch Personnel / manage off, or base the role on Admin.',
+            { reason: PERSONNEL_MANAGE_NEEDS_ADMIN_BASE },
         );
     }
 }

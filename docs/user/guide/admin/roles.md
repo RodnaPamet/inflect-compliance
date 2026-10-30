@@ -36,11 +36,12 @@ A few rules hold whatever your role:
 
 - An Owner or an AI admin never carries a custom role, and no custom role is built on either of them. Their permissions are always the built-in set.
 - Each custom role is built on a base role: Admin, Editor, Auditor or Reader. Wherever Inflect checks a level of role rather than a single permission, a member carrying the custom role counts as its base role. A custom role that grants an action its base role lacks may therefore be refused when that action is used, so choose the base role closest to what the role grants.
+- **{{ui:admin.resourceLabels.personnel}}** / **{{ui:admin.roles.actions.manage}}** can be part only of a custom role based on Admin. On any other base its cell is greyed out, a preset does not switch it on, and moving a role off Admin switches it off. A role saved with it on another base before this rule existed has had it switched off; such a role cannot be saved again while it keeps it.
 - Only Owner and Admin members can use the admin pages' controls, whatever custom role they carry. So two kinds of custom role can be carried only by an Admin member, and are refused for an Editor, Auditor or Reader:
   - a role built on Admin, because members carrying it would count as Admins everywhere except the admin pages;
   - a role that grants any of {{ui:admin.roles.actions.sso}}, {{ui:admin.roles.actions.agent_tool_exposure}}, {{ui:admin.roles.actions.agent_policy_card}}, {{ui:admin.roles.actions.agent_ownership}}, {{ui:admin.roles.actions.agent_skill_review}} or {{ui:admin.roles.actions.agent_skill_author}}. Each of these is used only on the admin pages, so on anyone but an Admin it would grant nothing.
 
-  The other admin permissions can be given to anyone in a custom role, because each also works outside the admin pages: reading the agent register, for example. A custom role that Editors, Auditors or Readers already carry cannot be changed into one of the two kinds while they carry it.
+  The other admin permissions can be given to anyone in a custom role, because each also works outside the admin pages: reading the agent register, for example. A custom role that Editors, Auditors or Readers already carry cannot be changed into one of the two kinds while they carry it, so it cannot hold **{{ui:admin.resourceLabels.personnel}}** / **{{ui:admin.roles.actions.manage}}** either: that needs a role based on Admin.
 - A custom role given to an Editor, Auditor or Reader before these rules applied keeps working as it did. You can still rename it, switch permissions off, choose a lower base role, or take it away; you cannot add another of the permissions above to it, or build it on Admin.
 
 ## What you see
