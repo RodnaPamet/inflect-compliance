@@ -39,7 +39,11 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     SKIPPED: 'neutral',
 };
 
-export function MonitorTab() {
+/**
+ * `canCancel` — cancelling a stuck run takes the write tier on the server
+ * (`assertCanExecuteAutomation`), so without it the button is not offered (#4640).
+ */
+export function MonitorTab({ canCancel = false }: { canCancel?: boolean } = {}) {
     const t = useTranslations('processes');
     // The execution-status vocabulary lives in `automation.executions` because
     // ExecutionsPanel owns it; this feed renders the SAME rows one click away
@@ -163,11 +167,13 @@ export function MonitorTab() {
                                         downstream chain. The tooltip says so
                                         rather than letting the verb imply more
                                         than it delivers. */}
+                                    {canCancel && (
                                     <Tooltip content={t('monitor.cancelHint')}>
                                         <Button variant="ghost" size="sm" onClick={() => cancel(e.id)}>
                                             {t('monitor.cancel')}
                                         </Button>
                                     </Tooltip>
+                                    )}
                                 </li>
                             ))}
                         </ul>

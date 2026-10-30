@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
+import { apiErrorMessage } from '@/lib/api-error';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
@@ -92,13 +93,18 @@ export function NewTestPlanModal({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: name.trim(), frequency, steps: serializeSteps(steps) }),
             });
-            if (!res.ok) throw new Error('create failed');
+            if (!res.ok) {
+                // The server's reason, not a fixed sentence: a refused role and
+                // an invalid plan used to read the same.
+                const body: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, t('unified.createFailed')));
+            }
             toast.success(t('unified.createSuccess'));
             reset();
             onCreated();
             onClose();
-        } catch {
-            toast.error(t('unified.createFailed'));
+        } catch (err) {
+            toast.error(err instanceof Error && err.message ? err.message : t('unified.createFailed'));
         } finally {
             setSaving(false);
         }

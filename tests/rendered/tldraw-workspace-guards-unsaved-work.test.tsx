@@ -110,6 +110,8 @@ function mount(status: AutosaveStatus) {
                 activeId="map-1"
                 onActiveIdChange={() => {}}
                 onProcessesChange={() => {}}
+                canEdit
+                canDelete
             />,
         </TenantProvider>
     );

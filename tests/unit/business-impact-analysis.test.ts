@@ -86,13 +86,19 @@ describe('createBia', () => {
 
 describe('listBias', () => {
     it('lists with a criticality filter and ranks the set', async () => {
-        withDb({ businessImpactAnalysis: { findMany: jest.fn().mockResolvedValue([{ id: 'b1', criticality: 'HIGH', mtpdHours: 4, rtoHours: 2 }]) } });
-        const rows = await listBias(ctx(), { criticality: 'HIGH', take: 10 });
+        withDb({ businessImpactAnalysis: { findMany: jest.fn().mockResolvedValue([{ id: 'b1', criticality: 'HIGH', mtpdHours: 4, rtoHours: 2, reviewedAt: null }]) } });
+        // The page is the ranked ids, so the stubbed ranker has to place b1.
+        jest.requireMock<{ deriveRecoveryPriority: jest.Mock }>('../../src/app-layer/services/bia-recovery-priority')
+            .deriveRecoveryPriority.mockReturnValueOnce([{ id: 'b1', rank: 1, rationale: '' }]);
+        const { rows } = await listBias(ctx(), { criticality: 'HIGH', take: 10 });
         expect(rows[0]).toMatchObject({ id: 'b1', recovery: { rank: 1 } });
     });
     it('lists with no options (default take, no filter)', async () => {
         withDb({ businessImpactAnalysis: { findMany: jest.fn().mockResolvedValue([]) } });
-        await expect(listBias(ctx())).resolves.toEqual([]);
+        await expect(listBias(ctx())).resolves.toEqual({
+            rows: [], truncated: false, rankComplete: true,
+            summary: { total: 0, critical: 0, overdue: 0 },
+        });
     });
 });
 

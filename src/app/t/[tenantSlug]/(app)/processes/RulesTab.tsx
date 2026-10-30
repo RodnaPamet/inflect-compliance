@@ -72,16 +72,21 @@ function matchesCsv(filterValue: string | null, rowValue: string): boolean {
     return filterValue.split(',').filter(Boolean).includes(rowValue);
 }
 
-export function RulesTab({ tenantSlug }: { tenantSlug: string }) {
+/**
+ * `canManage` — may the viewer create, change, toggle or archive rules? Every
+ * one of those takes the Admin tier on the server (`assertCanManageAutomation`),
+ * so without it the tab is a read-only list (#4640).
+ */
+export function RulesTab({ tenantSlug, canManage = false }: { tenantSlug: string; canManage?: boolean }) {
     const filterCtx = useFilterContext([], RULE_FILTER_KEYS, {});
     return (
         <FilterProvider value={filterCtx}>
-            <RulesTabInner tenantSlug={tenantSlug} />
+            <RulesTabInner tenantSlug={tenantSlug} canManage={canManage} />
         </FilterProvider>
     );
 }
 
-function RulesTabInner({ tenantSlug }: { tenantSlug: string }) {
+function RulesTabInner({ tenantSlug, canManage }: { tenantSlug: string; canManage: boolean }) {
     const t = useTranslations('processes');
     const tGroup = useTranslations('common.filterGroups');
     const RULE_STATUS_LABELS = buildRuleStatusLabels((k) => t(k as Parameters<typeof t>[0]));
@@ -204,12 +209,12 @@ function RulesTabInner({ tenantSlug }: { tenantSlug: string }) {
                 }}
                 filters={{
                     defs: buildRuleFilters((k) => t(k as Parameters<typeof t>[0]), (k) => tGroup(k as Parameters<typeof tGroup>[0])),
-                    toolbarActions: (
+                    toolbarActions: canManage ? (
                         <Button variant="secondary" onClick={() => setTemplatesOpen(true)}>
                             {t('rules.templates')}
                         </Button>
-                    ),
-                    toolbarPrimary: (
+                    ) : undefined,
+                    toolbarPrimary: canManage ? (
                         <Button
                             variant="primary"
                             icon={<Plus />}
@@ -221,7 +226,7 @@ function RulesTabInner({ tenantSlug }: { tenantSlug: string }) {
                         >
                             {t('rules.addRule')}
                         </Button>
-                    ),
+                    ) : undefined,
                 }}
                 table={{
                     data: rows,
@@ -244,6 +249,7 @@ function RulesTabInner({ tenantSlug }: { tenantSlug: string }) {
                 rule={selected}
                 open={sheetOpen}
                 onOpenChange={setSheetOpen}
+                canManage={canManage}
                 onEdit={(r) => {
                     setSheetOpen(false);
                     setEditRule(r);

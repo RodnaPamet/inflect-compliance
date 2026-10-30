@@ -44,13 +44,23 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { Tooltip } from '@/components/ui/tooltip';
 import { buildTestFilters, TEST_FILTER_KEYS } from './filter-defs';
+import { apiErrorMessage } from '@/lib/api-error';
 
-/** Bulk-action status options (canonical BulkActionBar). */
-const TEST_PLAN_STATUS_OPTIONS = [
-    { value: 'ACTIVE', label: 'Active' },
-    { value: 'PAUSED', label: 'Paused' },
-    { value: 'ARCHIVED', label: 'Archived' },
-];
+/** Bulk-action status values, in the order the bar offers them. */
+const TEST_PLAN_STATUS_VALUES = ['ACTIVE', 'PAUSED', 'ARCHIVED'] as const;
+
+/**
+ * The server's own sentence for a refused request, or `fallback`.
+ *
+ * Every failure on this page used to throw a fixed string and drop the body,
+ * which hid the two refusals a person can act on: bulk delete is Owner/Admin
+ * only, and a plan that runs an audit procedure may be changed only by the
+ * auditor agent's owner (`AUDIT_PROCEDURE_PLAN_OWNER_ONLY`).
+ */
+async function refusalMessage(res: Response, fallback: string): Promise<string> {
+    const body: unknown = await res.json().catch(() => null);
+    return apiErrorMessage(body, fallback);
+}
 
 interface TestPlanSummary {
     id: string;
@@ -90,6 +100,8 @@ interface ControlCheck {
 const CHECK_STATUS_BADGE: Record<string, StatusBadgeVariant> = {
     PASSED: 'success', FAILED: 'error', ERROR: 'error',
     NOT_APPLICABLE: 'neutral', PENDING: 'info', RUNNING: 'info',
+    // A run that produced output but not all of it — not a pass.
+    PARTIAL: 'warning',
 };
 
 const freqLabels = (t: (key: string) => string): Record<string, string> => ({
@@ -263,7 +275,14 @@ function TestsRollupContent() {
     const tGroup = useTranslations('common.filterGroups');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { tenantSlug, permissions } = useTenantContext();
+    const { tenantSlug, appPermissions } = useTenantContext();
+    // The keys the server checks, not the coarse tier: creating, bulk status
+    // and bulk owner take `tests.create`, starting a run takes
+    // `tests.execute`, and bulk delete takes `admin.manage`. Equal for the
+    // built-in roles; a custom role can hold one without the others.
+    const canManagePlans = appPermissions.tests.create;
+    const canRunTests = appPermissions.tests.execute;
+    const canBulkDelete = appPermissions.admin.manage;
     const router = useRouter();
     const guardedPush = useGuardedPush();
     const { state, search, hasActive, clearAll } = useFilters();
@@ -326,11 +345,14 @@ function TestsRollupContent() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ planIds: ids }),
                     });
-                    if (!res.ok) throw new Error('bulk delete failed');
+                    if (!res.ok) throw new Error(await refusalMessage(res, t('list.bulkFailed')));
                     await mutate();
                 },
                 undoAction: () => { void mutate(); },
-                onError: () => { toast.error(t('list.bulkFailed')); void mutate(); },
+                onError: (err) => {
+                    toast.error(err instanceof Error && err.message ? err.message : t('list.bulkFailed'));
+                    void mutate();
+                },
             });
             return;
         }
@@ -349,16 +371,20 @@ function TestsRollupContent() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error(t('list.bulkFailed'));
+            if (!res.ok) throw new Error(await refusalMessage(res, t('list.bulkFailed')));
             await fetchData();
             setSelected(new Set());
             toast.success(t('list.bulkApplied'));
-        } catch {
-            toast.error(t('list.bulkFailed'));
+        } catch (err) {
+            toast.error(err instanceof Error && err.message ? err.message : t('list.bulkFailed'));
         } finally {
             setBulkApplying(false);
         }
     };
+    const planStatusOptions = useMemo(
+        () => TEST_PLAN_STATUS_VALUES.map((value) => ({ value, label: t(`planStatus.${value}`) })),
+        [t],
+    );
     const testBulkActions: BulkActionDef[] = useMemo(
         () => [
             {
@@ -369,9 +395,9 @@ function TestsRollupContent() {
                     <Combobox
                         hideSearch
                         id="bulk-value-input"
-                        selected={TEST_PLAN_STATUS_OPTIONS.find((o) => o.value === value) ?? null}
+                        selected={planStatusOptions.find((o) => o.value === value) ?? null}
                         setSelected={(opt) => setValue(opt?.value ?? '')}
-                        options={TEST_PLAN_STATUS_OPTIONS}
+                        options={planStatusOptions}
                         placeholder={t('bulk.selectStatus')}
                         matchTriggerWidth
                         buttonProps={{ className: 'text-sm' }}
@@ -397,9 +423,12 @@ function TestsRollupContent() {
                     />
                 ),
             },
-            { value: 'delete', label: t('bulk.delete'), confirm: true },
+            // Offered only to the roles the server lets delete (Owner, Admin):
+            // an Editor used to watch the rows vanish, wait out the undo
+            // window, and get them back with an error.
+            ...(canBulkDelete ? [{ value: 'delete', label: t('bulk.delete'), confirm: true }] : []),
         ],
-        [t, tenantSlug],
+        [t, tenantSlug, planStatusOptions, canBulkDelete],
     );
 
     // ── Column-visibility gear (Epic 52/R10) ──
@@ -485,11 +514,11 @@ function TestsRollupContent() {
                 const res = await fetch(apiUrl(`/tests/plans/${planId}/runs`), {
                     method: 'POST',
                 });
-                if (!res.ok) throw new Error(await res.text());
+                if (!res.ok) throw new Error(await refusalMessage(res, t('due.runFailed')));
                 const run = await res.json();
                 router.push(tenantHref(`/tests/runs/${run.id}`));
-            } catch {
-                toast.error(t('due.runFailed'));
+            } catch (err) {
+                toast.error(err instanceof Error && err.message ? err.message : t('due.runFailed'));
             }
         },
         [apiUrl, router, tenantHref, t, toast],
@@ -508,11 +537,22 @@ function TestsRollupContent() {
         setPlanning(true);
         try {
             const res = await fetch(apiUrl('/tests/due'), { method: 'POST' });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) throw new Error(await refusalMessage(res, t('due.planningFailed')));
+            const result = (await res.json().catch(() => null)) as
+                | { checked?: number; created?: number; alreadyPending?: number }
+                | null;
             await mutate();
-            toast.success(t('due.planningDone'));
-        } catch {
-            toast.error(t('due.planningFailed'));
+            toast.success(
+                result && typeof result.checked === 'number'
+                    ? t('due.planningResult', {
+                          checked: result.checked,
+                          created: result.created ?? 0,
+                          alreadyPending: result.alreadyPending ?? 0,
+                      })
+                    : t('due.planningDone'),
+            );
+        } catch (err) {
+            toast.error(err instanceof Error && err.message ? err.message : t('due.planningFailed'));
         } finally {
             setPlanning(false);
         }
@@ -727,7 +767,7 @@ function TestsRollupContent() {
                     id: 'quickRun', header: '',
                     enableSorting: false,
                     cell: ({ row }) =>
-                        permissions.canWrite &&
+                        canRunTests &&
                         isDueWithin7Days(row.original, hydratedNow) &&
                         getLastResultKey(row.original) !== 'IN_PROGRESS' ? (
                             <Button
@@ -749,7 +789,7 @@ function TestsRollupContent() {
                         ) : null,
                 },
             ])),
-        [t, tenantHref, orderColumns, FREQ_LABELS, PLAN_STATUS_LABELS, RESULT_LABELS, permissions, hydratedNow, handleQuickRun],
+        [t, tenantHref, orderColumns, FREQ_LABELS, PLAN_STATUS_LABELS, RESULT_LABELS, canRunTests, hydratedNow, handleQuickRun],
     );
 
     // R3-P1 — columns for the Automated checks view.
@@ -779,7 +819,9 @@ function TestsRollupContent() {
                     id: 'status', header: t('colHeaders.status'), accessorFn: (c) => c.status,
                     cell: ({ row }) => (
                         <StatusBadge variant={CHECK_STATUS_BADGE[row.original.status] ?? 'neutral'} size="sm">
-                            {t(`checkStatus.${row.original.status}` as Parameters<typeof t>[0])}
+                            {t.has(`checkStatus.${row.original.status}`)
+                                ? t(`checkStatus.${row.original.status}` as Parameters<typeof t>[0])
+                                : row.original.status}
                         </StatusBadge>
                     ),
                 },
@@ -837,7 +879,7 @@ function TestsRollupContent() {
                             />
                         </div>
                     </div>
-                    {view === 'plans' && (
+                    {view === 'plans' && canManagePlans && (
                         <Button variant="primary" icon={<Plus />} onClick={() => setCreateOpen(true)} id="tests-create-plan-btn">
                             {t('unified.testPlanNoun')}
                         </Button>
@@ -925,7 +967,7 @@ function TestsRollupContent() {
                                     <AppIcon name="dashboard" size={16} />
                                 </Link>
                             </Tooltip>
-                            {permissions.canWrite && (
+                            {canManagePlans && (
                                 <IconAction
                                     variant="primary"
                                     onClick={() => void handleRunDuePlanning()}
@@ -991,7 +1033,7 @@ function TestsRollupContent() {
                     getRowId={(p) => p.id}
                     columnVisibility={columnVisibility}
                     onColumnVisibilityChange={setColumnVisibility}
-                    selectionEnabled
+                    selectionEnabled={canManagePlans}
                     selectedRows={Object.fromEntries(
                         Array.from(selected).map((id) => [id, true]),
                     )}

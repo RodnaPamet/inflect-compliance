@@ -25,6 +25,7 @@ import { badRequest, notFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { deriveRecoveryPriority, rankFor } from '../services/bia-recovery-priority';
+import { isBiaReviewOverdue } from '@/lib/bia/review-overdue';
 
 /**
  * Requirement codes whose control is a "continuity control" (case 4a).
@@ -419,27 +420,87 @@ async function attachProcessNodes<
     }));
 }
 
-/** Register list — enriched with the recovery-priority rank across the set. */
+/**
+ * How many BIAs a recovery rank is worked out over. The rank is a position in
+ * the WHOLE register, so it is computed over every analysis up to this cap,
+ * and the register reads one past it to know whether it reached them all.
+ */
+export const BIA_RANK_POPULATION_CAP = 2000;
+
+/** The register page: at most this many rows, the first in recovery order. */
+export const BIA_REGISTER_PAGE_SIZE = 200;
+
+/**
+ * Every BIA the recovery rank is computed over, with the few columns the rank
+ * and the register's summary read. Ordered by id, so a register past the cap
+ * ranks the same analyses on every read.
+ */
+async function readRecoveryPopulation(db: PrismaTx, ctx: RequestContext) {
+    const found = await db.businessImpactAnalysis.findMany({
+        where: { tenantId: ctx.tenantId },
+        select: { id: true, criticality: true, mtpdHours: true, rtoHours: true, reviewedAt: true },
+        orderBy: { id: 'asc' },
+        take: BIA_RANK_POPULATION_CAP + 1,
+    });
+    const complete = found.length <= BIA_RANK_POPULATION_CAP;
+    return { population: complete ? found : found.slice(0, BIA_RANK_POPULATION_CAP), complete };
+}
+
+/**
+ * Register list. The page is the first `take` analyses IN RECOVERY ORDER over
+ * the whole register, each with its rank in that register — the same rank the
+ * analysis's own page shows. It used to be the first 200 by criticality
+ * spelled alphabetically (CRITICAL, HIGH, LOW, MEDIUM), ranked among
+ * themselves only, so past 200 the Medium analyses fell off before the Low
+ * ones and a row's "#" could disagree with its page.
+ *
+ * `truncated` says more analyses match than are shown; `rankComplete` says the
+ * register is within the cap the rank is computed over. `summary` counts the
+ * register, not the page.
+ */
 export async function listBias(ctx: RequestContext, opts?: { criticality?: string; take?: number }) {
     assertCanRead(ctx);
-    const rows = await runInTenantContext(ctx, async (db) => {
-        const found = await db.businessImpactAnalysis.findMany({
-            where: { tenantId: ctx.tenantId, ...(opts?.criticality ? { criticality: opts.criticality } : {}) },
-            include: {
-                ownerUser: { select: { id: true, name: true, email: true } },
-                _count: { select: { dependencies: true } },
+    const take = Math.min(opts?.take ?? BIA_REGISTER_PAGE_SIZE, 500);
+    return runInTenantContext(ctx, async (db) => {
+        const { population, complete } = await readRecoveryPopulation(db, ctx);
+        const rankings = deriveRecoveryPriority(population);
+        const criticalityOf = new Map(population.map((p) => [p.id, p.criticality] as const));
+        const matching = opts?.criticality
+            ? rankings.filter((r) => criticalityOf.get(r.id) === opts.criticality)
+            : rankings;
+        const pageIds = matching.slice(0, take).map((r) => r.id);
+        const found = pageIds.length
+            ? await db.businessImpactAnalysis.findMany({
+                where: { tenantId: ctx.tenantId, id: { in: pageIds } },
+                include: {
+                    ownerUser: { select: { id: true, name: true, email: true } },
+                    _count: { select: { dependencies: true } },
+                },
+                take: pageIds.length,
+            })
+            : [];
+        const withNodes = await attachProcessNodes(db, ctx, found);
+        const rankById = new Map(rankings.map((r) => [r.id, r] as const));
+        // One clock reading for the rows' badges and the summary's count.
+        const now = Date.now();
+        const rows = withNodes
+            .map((r) => ({
+                ...r,
+                recovery: rankById.get(r.id) ?? null,
+                reviewOverdue: isBiaReviewOverdue(r.reviewedAt, now),
+            }))
+            .sort((a, b) => (a.recovery?.rank ?? Number.MAX_SAFE_INTEGER) - (b.recovery?.rank ?? Number.MAX_SAFE_INTEGER));
+        return {
+            rows,
+            truncated: matching.length > rows.length || !complete,
+            rankComplete: complete,
+            summary: {
+                total: population.length,
+                critical: population.filter((p) => p.criticality === 'CRITICAL').length,
+                overdue: population.filter((p) => isBiaReviewOverdue(p.reviewedAt, now)).length,
             },
-            orderBy: [{ criticality: 'asc' }, { mtpdHours: 'asc' }],
-            take: Math.min(opts?.take ?? 200, 500),
-        });
-        return attachProcessNodes(db, ctx, found);
+        };
     });
-    const rankings = deriveRecoveryPriority(
-        rows.map((r) => ({ id: r.id, criticality: r.criticality, mtpdHours: r.mtpdHours, rtoHours: r.rtoHours })),
-    );
-    return rows
-        .map((r) => ({ ...r, recovery: rankFor(r.id, rankings) }))
-        .sort((a, b) => (a.recovery?.rank ?? 999) - (b.recovery?.rank ?? 999));
 }
 
 /** Full detail — dependencies, process node, linked controls/risks, rank. */
@@ -457,13 +518,10 @@ export async function getBia(ctx: RequestContext, id: string) {
         if (!bia) throw notFound('BIA not found');
         const [withNode] = await attachProcessNodes(db, ctx, [bia]);
 
-        // Recovery rank is relative to the full tenant set.
-        const all = await db.businessImpactAnalysis.findMany({
-            where: { tenantId: ctx.tenantId },
-            select: { id: true, criticality: true, mtpdHours: true, rtoHours: true },
-            take: 500,
-        });
-        const recovery = rankFor(id, deriveRecoveryPriority(all));
+        // Recovery rank is relative to the whole register — the same
+        // population, so the same number, as the register's "#" column.
+        const { population } = await readRecoveryPopulation(db, ctx);
+        const recovery = rankFor(id, deriveRecoveryPriority(population));
         const [dependencies, linkedControls] = await Promise.all([
             resolveDependencies(db, ctx, bia.dependencies),
             resolveLinkedControls(db, ctx, bia.evidenceLinks.map((e) => e.controlId)),
@@ -729,12 +787,8 @@ export async function getControlBiaSurface(ctx: RequestContext, controlId: strin
         });
         if (bias.length === 0) return { kind: 'none' };
         // Chip shows the single highest-recovery-priority protected process.
-        const all = await db.businessImpactAnalysis.findMany({
-            where: { tenantId: ctx.tenantId },
-            select: { id: true, criticality: true, mtpdHours: true, rtoHours: true },
-            take: 500,
-        });
-        const rankings = deriveRecoveryPriority(all);
+        const { population } = await readRecoveryPopulation(db, ctx);
+        const rankings = deriveRecoveryPriority(population);
         const top = bias
             .map((b) => ({ b, rank: rankFor(b.id, rankings)?.rank ?? 999 }))
             .sort((x, y) => x.rank - y.rank)[0];

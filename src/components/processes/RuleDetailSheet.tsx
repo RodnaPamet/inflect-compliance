@@ -62,9 +62,14 @@ export interface RuleDetailSheetProps {
     onOpenChange: (open: boolean) => void;
     /** Opens the builder modal in edit mode (Epic 3). */
     onEdit?: (rule: AutomationRuleRow) => void;
+    /**
+     * May the viewer toggle, re-prioritise, edit or archive the rule? Each takes
+     * the Admin tier on the server; without it the sheet is read-only (#4640).
+     */
+    canManage?: boolean;
 }
 
-export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetailSheetProps) {
+export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = false }: RuleDetailSheetProps) {
     const t = useTranslations('processes');
     const RULE_ACTION_LABELS = buildRuleActionLabels((k) => t(k as Parameters<typeof t>[0]));
     // The list row renders "Enabled" via these labels while this sheet printed
@@ -225,7 +230,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                     {isEnabled ? 'Enabled' : 'Disabled'}
                                     <Switch
                                         checked={isEnabled}
-                                        disabled={isArchived || patchMutation.isMutating}
+                                        disabled={!canManage || isArchived || patchMutation.isMutating}
                                         onCheckedChange={(checked) =>
                                             patchMutation.trigger({
                                                 id: rule.id,
@@ -538,7 +543,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                     value={rule.priority}
                                     min={0}
                                     max={1000}
-                                    disabled={isArchived || patchMutation.isMutating}
+                                    disabled={!canManage || isArchived || patchMutation.isMutating}
                                     onChange={(value) =>
                                         patchMutation.trigger({ id: rule.id, priority: value })
                                     }
@@ -570,12 +575,12 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                 which is exactly the reversible-destructive case
                                 the undo toast exists for — and the processes
                                 surface had zero Epic 67 sites before this. */}
-                            {!isArchived && (
+                            {canManage && !isArchived && (
                                 <Button variant="ghost" onClick={archiveRule}>
                                     {t('rules.archive')}
                                 </Button>
                             )}
-                            {onEdit && !isArchived && (
+                            {canManage && onEdit && !isArchived && (
                                 <Button variant="secondary" onClick={() => onEdit(rule)}>
                                     {t('rules.edit')}
                                 </Button>
