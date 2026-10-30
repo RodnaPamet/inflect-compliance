@@ -68,13 +68,80 @@ export interface RuntimeRowDisplay {
     readonly kind: RuntimeRowKind;
     /** May an administrator change this row from this page at all? */
     readonly actionable: boolean;
+    /**
+     * WHERE the value lives, for a `set-in-code` row — 5.6c (#3998).
+     *
+     * The issue asks for "the honest affordance", which is "this is set in
+     * code, here is where" rather than a disabled switch: a greyed-out control
+     * reads as a PERMISSION problem, and an admin who concludes that goes
+     * looking for someone to grant it. A path and a check name say the true
+     * thing instead — the value is not yours to change from here, and this is
+     * what holds it.
+     *
+     * Absent on every other kind, because no other kind has a file to point at.
+     */
+    readonly setInCode?: {
+        /** The committed policy that carries the value. */
+        readonly policyModule: string;
+        /** The test that fails if it stops carrying it. */
+        readonly ciCheck: string;
+    };
 }
 
 /** A reporting channel's row. Never actionable: it is another process's startup configuration. */
+/**
+ * The precedence a channel row resolves in, most-explanatory first — 5.6d (#3999).
+ *
+ * ═══ WHY THE ORDER IS A STATED CONTRACT AND NOT JUST THE BRANCH ORDER ═══
+ *
+ * `ai-feature-display` established the rule this follows: its ordering is a
+ * stated contract — `off-by-platform` first — "because every other explanation
+ * would send the reader to flip a switch that changes nothing". The same logic
+ * applies here with different words, and writing the order down as DATA means a
+ * test can assert it instead of re-reading the branches.
+ *
+ * `not-configured` outranks `unreachable` for exactly that reason: a deploy
+ * that declared no runtime has no gateway to be unreachable, and reporting
+ * "did not answer" would send a reader to look at a host that was never named.
+ *
+ * ═══ WHY THERE IS NO `off-by-platform` FOR A CHANNEL ═══
+ *
+ * #3999 asks to keep the ordering explicit for the new kind, "a channel that is
+ * `off-by-platform` AND `declared-not-observed` should report the platform
+ * reason first". That combination CANNOT ARISE, and the reason is worth
+ * recording rather than implementing a branch nothing reaches.
+ *
+ * `SANDBOX_EXECUTION_ENABLED` governs whether THIS application routes tool
+ * calls into the sandbox runtime. It does not govern the gateway, which is a
+ * separate process on another host that reads its own configuration at startup
+ * and reports on these four channels whether or not we ever ask it for a
+ * sandbox. So a channel is never "off because of our platform switch", and a
+ * row saying so would be false in the one direction this page exists to avoid.
+ *
+ * The switch does change one thing — with it off, no sandbox supervisors are
+ * launched, so the anonymous-telemetry channel carries the gateway's own
+ * reporting and nothing else. That is a statement about VOLUME, not about
+ * whether the channel is on, and it belongs in the channel's description rather
+ * than in its state.
+ *
+ * `displayForExecutionSwitch` is where the platform dimension lives, and it is
+ * the row an admin should read first — which the page's ORDER on screen
+ * handles, not this function.
+ */
+export const CHANNEL_KIND_PRECEDENCE: readonly RuntimeRowKind[] = [
+    'not-configured',
+    'unreachable',
+    'declared-not-observed',
+] as const;
+
 export function displayForChannel(
     _channel: ReportingChannelKey,
     declaration: SandboxRuntimeDeclaration,
 ): RuntimeRowDisplay {
+    // Resolved in `CHANNEL_KIND_PRECEDENCE` order. Kept as an if-chain rather
+    // than a loop over the constant: the constant is the CONTRACT a test holds
+    // this against, and deriving the behaviour from it would make the test
+    // compare the code to itself.
     if (!declaration.configured) return { kind: 'not-configured', actionable: false };
     if (declaration.reachableVersion === null) return { kind: 'unreachable', actionable: false };
     return { kind: 'declared-not-observed', actionable: false };
@@ -92,8 +159,38 @@ export function displayForChannel(
  * value the gateway is not the authority on.
  */
 export function displayForEnforcement(): RuntimeRowDisplay {
-    return { kind: 'set-in-code', actionable: false };
+    return {
+        kind: 'set-in-code',
+        actionable: false,
+        // Named once, here, so the page and the guard cannot disagree about
+        // which file and which check are being claimed. A pointer nobody holds
+        // to the actual artefact is how a page ends up citing a renamed test.
+        setInCode: {
+            policyModule: TIER_C_POLICY_MODULE,
+            ciCheck: TIER_C_CI_CHECK,
+        },
+    };
 }
+
+/**
+ * The module that COMPOSES the policy carrying both Tier C values.
+ *
+ * Distinct from `ENFORCEMENT_SETTINGS[].policyPath`, which is the key path
+ * INSIDE a policy (`landlock.compatibility`). A reader needs both: the key tells
+ * them what to look for, this tells them which file to open. Naming only one
+ * sends them to grep.
+ */
+export const TIER_C_POLICY_MODULE = 'src/lib/agentic/openshell/collector-policy.ts';
+
+/**
+ * The assertion that fails if a committed policy stops carrying them.
+ *
+ * A NAME, not a path, because the claim on screen is "a check holds this" and a
+ * reader needs to find the check. A guard asserts this names a real test, so a
+ * rename cannot leave the page citing something that no longer runs.
+ */
+export const TIER_C_CI_CHECK =
+    'the code that 0.1b justifies still writes enforcement on every endpoint';
 
 /**
  * The sandbox-execution switch this product owns — platform-only, per the owner

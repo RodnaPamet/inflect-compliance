@@ -15,6 +15,9 @@
 import {
     displayForChannel,
     displayForEnforcement,
+    CHANNEL_KIND_PRECEDENCE,
+    TIER_C_CI_CHECK,
+    TIER_C_POLICY_MODULE,
     displayForExecutionSwitch,
     RUNTIME_ROW_KINDS,
     type RuntimeRowKind,
@@ -68,8 +71,69 @@ describe('2. nothing on this page is actionable', () => {
     });
 
     it('an enforcement setting is never actionable, in any state', () => {
-        expect(displayForEnforcement()).toEqual({ kind: 'set-in-code', actionable: false });
+        // Exact equality INCLUDING the pointer, not `toMatchObject`: 5.6c's
+        // affordance is "this is set in code, here is where", so a row that
+        // dropped the pointer would still be non-actionable and would have
+        // lost the half that tells an admin where to look.
+        expect(displayForEnforcement()).toEqual({
+            kind: 'set-in-code',
+            actionable: false,
+            setInCode: {
+                policyModule: TIER_C_POLICY_MODULE,
+                ciCheck: TIER_C_CI_CHECK,
+            },
+        });
         expect(ENFORCEMENT_SETTINGS.map((s) => s.required)).toEqual(['enforce', 'hard_requirement']);
+    });
+
+    it('the ordering contract for a channel row is DATA, and the code follows it', () => {
+        /*
+            #3999 asks for the ordering to stay explicit. Asserted against the
+            exported constant rather than by re-reading the branches, and in
+            both directions: the order itself, and that each position actually
+            resolves to its kind.
+
+            `not-configured` outranks `unreachable` because a deploy that named
+            no runtime has no gateway to be unreachable — reporting "did not
+            answer" would send a reader to a host nobody named.
+        */
+        expect([...CHANNEL_KIND_PRECEDENCE]).toEqual([
+            'not-configured',
+            'unreachable',
+            'declared-not-observed',
+        ]);
+
+        const base = {
+            configured: true,
+            configDigest: 'sha256:x',
+            appliedAt: null,
+            reachableVersion: '0.1.6',
+            channels: {
+                'anonymous-telemetry': null,
+                'otlp-traces': null,
+                'ocsf-file': null,
+                'ocsf-over-otlp': null,
+            },
+        } as const;
+
+        // Each precedence position, driven by the input that should reach it.
+        expect(displayForChannel('otlp-traces', { ...base, configured: false }).kind).toBe(
+            CHANNEL_KIND_PRECEDENCE[0],
+        );
+        expect(
+            displayForChannel('otlp-traces', { ...base, reachableVersion: null }).kind,
+        ).toBe(CHANNEL_KIND_PRECEDENCE[1]);
+        expect(displayForChannel('otlp-traces', base).kind).toBe(CHANNEL_KIND_PRECEDENCE[2]);
+
+        // And the HIGHER position wins when both conditions hold, which is what
+        // "precedence" means and what a plain branch order does not state.
+        expect(
+            displayForChannel('otlp-traces', {
+                ...base,
+                configured: false,
+                reachableVersion: null,
+            }).kind,
+        ).toBe('not-configured');
     });
 
     it('the execution row reports the platform state and offers no control', () => {
