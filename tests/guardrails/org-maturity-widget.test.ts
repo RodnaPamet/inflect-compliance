@@ -12,6 +12,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { codeOf } from '../helpers/source-blocks';
+import { OrgRole } from '@prisma/client';
+import { getOrgPermissions } from '@/lib/permissions';
+import { isOrgAdminTier } from '@/lib/org-roles';
 
 import { assertWidgetTypedShape } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 import { DEFAULT_ORG_DASHBOARD_PRESET } from '@/app-layer/usecases/org-dashboard-presets';
@@ -70,10 +73,14 @@ describe('ORG_MATURITY — set action + the maturity≠coverage distinction', ()
         expect(usecase).toMatch(/sanitizePlainText/);
     });
 
-    it('canSetMaturity is an ORG_ADMIN-only permission flag', () => {
+    it('canSetMaturity is granted to the org admin tier and to no other role', () => {
         const perms = read('src/lib/permissions.ts');
         expect(perms).toMatch(/canSetMaturity: boolean/);
-        expect((perms.match(/canSetMaturity: true/g) ?? []).length).toBe(1);
+        // Resolved, not counted in the source: ORG_OWNER and ORG_ADMIN are
+        // separate arms since #4576, and both grant it.
+        for (const role of Object.values(OrgRole)) {
+            expect([role, getOrgPermissions(role).canSetMaturity]).toEqual([role, isOrgAdminTier(role)]);
+        }
     });
 });
 

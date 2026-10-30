@@ -9,6 +9,7 @@ import type {
     ProfileEffort,
     ProfileModelTier,
     ProfileOutputKind,
+    ProfileSkillOption,
     ProfileSkillRef,
     ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
@@ -43,14 +44,6 @@ export interface ProfileVersionView {
     canDecide: boolean;
 }
 
-/**
- * A skill the editor may offer, with the bytes its catalogue line costs every
- * prompt of a run, as the server measured it (#4523).
- */
-export interface ProfileSkillOption extends ProfileSkillRef {
-    catalogueBytes: number;
-}
-
 export interface ProfileView {
     profile: { profileId: string; currentApprovedVersion: number | null; runKey: string | null } | null;
     versions: ProfileVersionView[];
@@ -65,7 +58,6 @@ export interface ProfileView {
         instructionsMaxChars: number;
         maxTurns: number;
         rejectionReasonMaxChars: number;
-        /** The per-run catalogue budget a version's skills are held to. */
         skillCatalogueBudgetBytes: number;
     };
 }
@@ -77,13 +69,13 @@ export function refusalReason(body: unknown): string | null {
 }
 
 /**
- * The figures of a `SKILL_CATALOGUE_OVER_BUDGET` refusal (#4523), which the tab
- * words itself in the reader's language, or null for any other body. Both
- * figures are the server's: the tab adds nothing up to say it.
+ * The figures of a `SKILL_CATALOGUE_OVER_BUDGET` refusal (the 409 the save and
+ * the approval answer, #4589: `details.bytes` and `details.budget`), or null
+ * for any other body. The tab words the refusal itself, in the reader's
+ * language, from these figures; both are the server's.
  */
-export function catalogueOverBudget(body: unknown): { catalogueBytes: number; budgetBytes: number } | null {
+export function catalogueOverBudget(body: unknown): { bytes: number; budget: number } | null {
     if (refusalReason(body) !== 'SKILL_CATALOGUE_OVER_BUDGET') return null;
-    const details = (body as { error: { details: { catalogueBytes?: unknown; budgetBytes?: unknown } } }).error.details;
-    const { catalogueBytes, budgetBytes } = details;
-    return typeof catalogueBytes === 'number' && typeof budgetBytes === 'number' ? { catalogueBytes, budgetBytes } : null;
+    const { bytes, budget } = (body as { error: { details: { bytes?: unknown; budget?: unknown } } }).error.details;
+    return typeof bytes === 'number' && typeof budget === 'number' ? { bytes, budget } : null;
 }

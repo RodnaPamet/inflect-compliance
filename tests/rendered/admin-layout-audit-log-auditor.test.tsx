@@ -46,13 +46,23 @@ import { makeRequestContext } from '../helpers/make-context';
 const FORBIDDEN_TITLE = (require('../../messages/en.json') as { admin: { forbidden: { title: string } } })
     .admin.forbidden.title;
 
-function tenant(role: Role, appPermissions: PermissionSet = getPermissionsForRole(role)): TenantContextValue {
+/**
+ * `role` is the effective role (a custom role's base, when there is one) and
+ * `membershipRole` the membership's own, which the edge reads (#4581 B). A
+ * built-in membership has the two equal.
+ */
+function tenant(
+    role: Role,
+    appPermissions: PermissionSet = getPermissionsForRole(role),
+    membershipRole: Role = role,
+): TenantContextValue {
     return {
         userId: 'user-1',
         tenantId: 'tenant-1',
         tenantSlug: 'acme',
         tenantName: 'Acme',
         role,
+        membershipRole,
         // The coarse tier the tenant layout threads through, as the unit
         // helper derives it (`computePermissions` imports the Prisma client).
         permissions: makeRequestContext(role).permissions,
@@ -128,12 +138,40 @@ describe('a custom role follows the server gate', () => {
         for (const path of OTHER_ADMIN_PAGES) expect(shows(value, path)).toBe('forbidden');
     });
 
-    test('a READER base granted admin.view is passed by the layout floor on every page, as before', () => {
+    test('a READER base granted admin.view on an ADMIN membership is passed by the layout floor on every page, as before', () => {
         const base = getPermissionsForRole('READER');
-        const value = tenant('READER', { ...base, admin: { ...base.admin, view: true } });
+        const value = tenant('READER', { ...base, admin: { ...base.admin, view: true } }, 'ADMIN');
         // On the audit log the server page then renders its own forbidden page,
         // because `listAuditLogs` asserts canAudit — the layout adds no refusal.
         expect(shows(value, '/t/acme/admin/members')).toBe('page');
         expect(shows(value, AUDIT_LOG)).toBe('page');
+    });
+});
+
+describe('the membership\'s own role, as the edge reads it (#4581 B)', () => {
+    // The edge refuses every admin API call from a membership whose own role is
+    // not OWNER or ADMIN, whatever its custom role grants. So the layout does
+    // not show such a membership the pages those calls belong to.
+    test.each(['READER', 'EDITOR', 'AUDITOR'] as const)(
+        'a %s membership whose custom role grants every admin key sees no admin page but the audit log it may read',
+        (membershipRole) => {
+            const all = getPermissionsForRole('ADMIN');
+            for (const base of ['ADMIN', 'EDITOR', 'READER', 'AUDITOR'] as const) {
+                const value = tenant(base, { ...getPermissionsForRole(base), admin: all.admin }, membershipRole);
+                for (const path of OTHER_ADMIN_PAGES) {
+                    expect({ base, path, shown: shows(value, path) }).toEqual({ base, path, shown: 'forbidden' });
+                }
+            }
+        },
+    );
+
+    test('an AUDITOR membership keeps the audit log', () => {
+        const value = tenant('AUDITOR', getPermissionsForRole('AUDITOR'), 'AUDITOR');
+        expect(shows(value, AUDIT_LOG)).toBe('page');
+    });
+
+    test('a context with no membership role sees no admin page', () => {
+        const value = { ...tenant('OWNER'), membershipRole: undefined };
+        for (const path of [AUDIT_LOG, ...OTHER_ADMIN_PAGES]) expect(shows(value, path)).toBe('forbidden');
     });
 });

@@ -196,6 +196,37 @@ describeFn('a custom role name is unique among live roles only (real DB, two ten
         ).toBeNull();
     });
 
+    it('creates racing for one name: one wins, every other gets the duplicate sentence, never a 500 (#4581)', async () => {
+        const a = await tenant('race');
+        // Six at once: each checks for a live duplicate before any has
+        // committed, so most pass the check and the partial index decides.
+        const outcomes = await Promise.allSettled(Array.from({ length: 6 }, () => create(a.ownerCtx, 'Vendor Steward')));
+        const won = outcomes.filter((o) => o.status === 'fulfilled');
+        const lost = outcomes.filter((o): o is PromiseRejectedResult => o.status === 'rejected');
+        expect(won).toHaveLength(1);
+        expect(lost).toHaveLength(5);
+        for (const o of lost) {
+            const err = o.reason as { status?: number; message?: string; code?: unknown };
+            expect({ status: err.status, message: err.message }).toEqual({
+                status: 400,
+                message: 'A custom role named "Vendor Steward" already exists in this tenant.',
+            });
+            expect(err.code).not.toBe('P2002');
+        }
+    });
+
+    it('a deleted role cannot be edited or deleted again: both are 404 and the row stays as it was (#4581)', async () => {
+        const a = await tenant('deleted-edit');
+        const role = await create(a.ownerCtx, 'Retired role');
+        await deleteCustomRole(a.ownerCtx, role.id);
+        const before = await prisma.tenantCustomRole.findUniqueOrThrow({ where: { id: role.id } });
+
+        await expect(updateCustomRole(a.ownerCtx, role.id, { name: 'Renamed' })).rejects.toMatchObject({ status: 404 });
+        await expect(deleteCustomRole(a.ownerCtx, role.id)).rejects.toMatchObject({ status: 404 });
+
+        expect(await prisma.tenantCustomRole.findUniqueOrThrow({ where: { id: role.id } })).toEqual(before);
+    });
+
     it('the name is per tenant: a second tenant may hold a live role with the same name', async () => {
         const a = await tenant('per-tenant-a');
         const b = await tenant('per-tenant-b');

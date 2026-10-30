@@ -1,82 +1,91 @@
-# 2026-10-30 — An agent profile version's skills fit its run's catalogue budget
+# 2026-10-30 — a profile's skill catalogue is priced at save, not only at the run
 
-**Branch:** `claude/profile-skill-budget-4523` — closes #4523.
+**Issue:** #4523
 
-## Design
+## The defect
 
-A run mounts every skill it names as one always-present `name: description`
-line, and is refused at admission when those lines exceed `MAX_CATALOG_BYTES`
-(2 KiB). Since #4151 that includes an agent profile's run. The profile's save
-checked only that each named skill existed, so a version naming too many skills
-(the shipped corpus alone is 3,187 bytes) could be saved, submitted and
-approved, and then never run.
+Saving an agent profile version checked that every skill it names EXISTS
+(`assertSkillsKnown`) and nothing about what they COST. Any run is refused when
+its catalogue exceeds `MAX_CATALOG_BYTES` (2 KiB), and since #4151 that includes
+a profile's run — refused by `resolveRunSkills` at admission, before the run row
+exists. So a version naming too many skills could be saved, submitted, approved,
+and then never run.
 
-The save and the approval now ask the run's own question, through code the run
-shares:
+It was two clicks away, not theoretical: **the shipped corpus alone is over
+budget** — 11 skills totalling 3,187 bytes against 2,048 — and the Behaviour
+tab's picker offers all of them.
 
-```
-                 measureCatalog(lines)  ← the ONE comparison (withinCatalogBudget)
-                    ▲                ▲
-assertCatalogWithinBudget      runCatalogue(repositoryNames, tenantLines)
-        ▲                            ▲
-resolveRunSkills (admission)   assertSkillsFit (agent-profiles.ts: save + approval)
-                               mountableSkills (per-option catalogueBytes for the picker)
-```
+## What changed
 
-- `runCatalogue` builds the lines `resolveRunSkills` mounts for the same names:
-  each repository skill's from the shipped corpus (`repositoryLines`, which
-  `workflowCatalogs` now shares), each tenant skill's from its APPROVED
-  version, read by `approvedTenantSkillsByNameWhere` — the filter the mount
-  itself reads by.
-- `assertSkillsFit` replaces `assertSkillsKnown`: unknown skills are still
-  refused first (`SKILL_UNKNOWN`), then the measure, refusing
-  `SKILL_CATALOGUE_OVER_BUDGET` with `catalogueBytes` and `budgetBytes`.
-- Approval now calls it on the stored `skillRefs`.
-- The view's `options.skills` carry each option's `catalogueBytes`, and
-  `limits.skillCatalogueBudgetBytes` the budget. The editor adds the chosen
-  ones up under the skills picker. The refusal is worded by the tab, in en and
-  bg, from the figures in `details`.
-
-## Files
+`assertSkillsKnown` became `assertSkillsKnownAndWithinBudget`, prices the named
+skills with the same `catalogBytes` the run uses, and refuses
+`SKILL_CATALOGUE_OVER_BUDGET` (409) with the byte count. Called at **create**,
+**new version** and — newly — **approve**.
 
 | File | Role |
 | --- | --- |
-| `src/lib/agentic/flue/skills/index.ts` | `withinCatalogBudget` and `measureCatalog`; `assertCatalogWithinBudget` goes through them |
-| `src/lib/agentic/flue/skills/resolve.ts` | `runCatalogue`, `repositoryLines`; `workflowsOverBudget` uses the one comparison |
-| `src/lib/agentic/flue/skills/tenant-mount.ts` | `approvedTenantSkillsByNameWhere`, shared by the mount and the save |
-| `src/app-layer/usecases/agent-profiles.ts` | `assertSkillsFit` at save (both paths) and approval; per-option bytes and the budget in the view |
-| `src/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/*` | running total, translated refusal at save and approval, refs posted as names only |
-| `messages/{en,bg}.json` | `agents.behaviour.refusal.SKILL_CATALOGUE_OVER_BUDGET`, `editor.catalogue`, `editor.catalogueOver` |
+| `src/lib/agentic/flue/skills/resolve.ts` | `repositorySkillCatalogue()` — name → catalogue-line fields for every MOUNTABLE shipped skill. |
+| `src/app-layer/usecases/agent-profiles.ts` | The check, the refusal, the three call sites, `skillRefs` added to `VERSION_SELECT` so approve can read the stored set. |
+| `tests/integration/agent-profiles.test.ts` | Four cases, plus a corpus-inflation seam. |
+| `tests/integration/tool-runner-skills.test.ts` | Setup repaired — see below. |
 
 ## Decisions
 
-- **Approval measures again.** Something a version names can change while it
-  waits. A tenant skill can be approved again with a longer description, and
-  its own approval measures only the workflows it names (`workflowsOverBudget`),
-  never the profiles that name it. A deploy can lengthen a shipped description.
-  And a version saved before this change was never measured. Approval already
-  re-checks tool grants for the same reason. Admission still measures a third
-  time. Between approval and a run, the same changes can still happen. The
-  issue accepted this.
-- **Approval also refuses a tenant skill with no approved version**
-  (`SKILL_UNKNOWN`). Such a skill has no line to measure, and the run refuses it
-  anyway (`readRunSkillInputs`). This is new at approval; save always did it.
-- **No mount gate at save.** The measure answers "would these fit". "May each
-  one mount" (evaluation record, text scan, pin) stays admission's question,
-  because a skill's record or text can change after approval. A repository
-  skill the text scan refused costs nothing here, as in `workflowCatalogs`. No
-  shipped skill is refused today.
-- **The picker total informs and does not gate Save.** The per-skill figures
-  and the budget come from the server. The client only adds them up for
-  display. The save measures again and decides. This keeps the tab's rule that
-  it computes nothing authoritative.
-- **No migration for versions already over budget.** They read as before. A
-  submitted one can no longer be approved, and is refused with the figures. One
-  in force still runs into the run's own refusal, as before. Each is superseded
-  by saving a version that fits, through the ordinary lifecycle. Section 9 of
-  `tests/integration/agent-profiles.test.ts` walks that path on a row written
-  without the check.
-- `tests/integration/tool-runner-skills.test.ts` could no longer save an
-  over-budget profile to show admission's refusal. It now saves one that fits,
-  and then approves a longer version of a tenant skill it names. That is the
-  path still left open in production.
+- **409, not 400**, matching the tenant-skill precedent's `CATALOGUE_OVER_BUDGET`.
+  It is a conflict with the corpus's current size, not a malformed request.
+
+- **`SKILL_UNKNOWN` is reported before the budget.** An unknown skill has no
+  catalogue line, so pricing it first would price it at zero *and* hide the real
+  fault. A test pins the ordering.
+
+- **The run still prices the catalogue, and must.** The cost of a FIXED set
+  changes: a deploy can lengthen a shipped description, and approving a tenant
+  skill does not consider the profiles naming it. This moves the refusal earlier
+  for the common case; it does not make the run's check redundant.
+
+- **Priced at approval too.** The reviewer is the last person who can act before
+  a run is refused. This is also what made the run-time case testable — see
+  below.
+
+- **`repositorySkillCatalogue` is deliberately NOT the population of
+  `repositorySkillNames`.** The latter includes REFUSED skills by design, so a
+  tenant skill cannot take one of their names. A refused skill has no
+  description and cannot mount, so it has no line to price — it is absent from
+  the catalogue map, and the docstring says a caller must not read that absence
+  as "free to mount". It costs a refusal.
+
+## What testing this taught, which is the part worth keeping
+
+**A version's settings are frozen at EVERY status, not only once decided.** The
+first attempt at the approve-time test grew `skillRefs` on a SUBMITTED version
+by raw UPDATE and hit `IMMUTABLE_AGENT_PROFILE_VERSION`. The file's neighbouring
+test is titled "a decided version is frozen …", which reads as though SUBMITTED
+were mutable. It is not. So the stored set can never get bigger — only
+**dearer**, which is exactly the case the run-time check exists for, and the
+test now models it by lengthening the descriptions instead.
+
+**The save and the run price from different reads, and that is what made the
+existing run-level test repairable.** `tests/integration/tool-runner-skills.test.ts`
+needs a stored over-budget profile to prove the run refuses one; the new
+save-time check refuses that setup. The run prices the live corpus through
+`shippedCorpus()`, while the save prices `repositorySkillCatalogue()` — so
+reporting a cheap catalogue for the `beforeAll` only models a version saved
+while its skills were cheap, and the run still sees the real 3,187 bytes and
+still refuses. The assertion the suite exists for is untouched.
+
+## Mutation proofs
+
+| Mutation | Caught by |
+| --- | --- |
+| the budget throw removed entirely | the save case **and** the approve case |
+| only the APPROVE-time call removed | the approve case alone |
+
+The second is the one that matters: it shows the approve-time check carries its
+own coverage rather than riding on the save-time one.
+
+## Left open, filed rather than widened
+
+The picker still offers selections the save refuses — it shows no catalogue
+cost, and `mountableSkills` lists REFUSED repository skills, which can never
+mount whatever the budget says. Both are client affordances over the same view,
+filed separately; the server's answer is now the early one either way.

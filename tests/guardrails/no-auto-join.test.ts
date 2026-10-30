@@ -165,7 +165,7 @@ const ALLOWLISTED_ORG_MEMBERSHIP_SITES: ReadonlyArray<OrgAllowlistedSite> = [
         file: 'src/app/api/org/route.ts',
         reason:
             'Epic O-2 self-service org creation. The signed-in user creates ' +
-            'their own organization and becomes its sole ORG_ADMIN — same ' +
+            'their own organization and becomes its ORG_OWNER (#4576) — same ' +
             '"I am my own tenant" pattern as the credentials-signup tenant ' +
             'creation. The user only gains privilege over the org they ' +
             'just created; they cannot affect any other org.',

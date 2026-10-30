@@ -126,17 +126,6 @@ export async function readApprovedTenantSkills(
 }
 
 /**
- * Which rows a profile's tenant skills are: this tenant's APPROVED version of
- * each skill named. The mount below reads by it, and so does a profile
- * version's save and approval (`agent-profiles.ts`, #4523), which measure the
- * catalogue a run would mount: one filter, so the two cannot read different
- * versions of the same skill.
- */
-export function approvedTenantSkillsByNameWhere(tenantId: string, names: readonly string[]) {
-    return { tenantId, status: 'APPROVED' as const, skill: { name: { in: [...names] } } };
-}
-
-/**
  * This tenant's APPROVED versions of the skills named here, keyed by the
  * skill's name rather than by a workflow (Step 2d): what an agent profile
  * names. One per name at most, because a skill holds one APPROVED version (a
@@ -149,7 +138,7 @@ async function readApprovedTenantSkillsByName(
     if (names.length === 0) return [];
     const rows = await runInTenantContext(ctx, (db) =>
         db.tenantSkillVersion.findMany({
-            where: approvedTenantSkillsByNameWhere(ctx.tenantId, names),
+            where: { tenantId: ctx.tenantId, status: 'APPROVED', skill: { name: { in: [...names] } } },
             select: TENANT_SKILL_MOUNT_SELECT,
             orderBy: { createdAt: 'asc' },
             take: names.length,
@@ -174,8 +163,7 @@ interface NamesProfileSkills {
  * name. A name with no approved version in this tenant REFUSES the run, as an
  * unknown repository name does: a profile run is never taught less than its
  * version names. The save-time check (`agent-profiles.ts`) refused the same
- * name when it was written, and its approval again; this one catches a skill
- * retired since.
+ * name when it was written; this one catches a skill retired since.
  */
 async function readRunSkillInputs(
     ctx: RequestContext,

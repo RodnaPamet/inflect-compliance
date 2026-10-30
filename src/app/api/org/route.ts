@@ -2,7 +2,7 @@
  * Epic O-2 — top-level organization routes.
  *
  *   POST /api/org   — create a new organization. Authenticated session
- *                     required. The creator becomes ORG_ADMIN on the
+ *                     required. The creator becomes ORG_OWNER on the
  *                     new org. Auto-provisioning runs but is a no-op
  *                     because the new org has zero tenants yet.
  *
@@ -42,11 +42,13 @@ export const POST = withApiErrorHandling(
                     data: { name, slug },
                     select: { id: true, name: true, slug: true },
                 });
+                // The creator OWNS the organization (#4576 deploy 2), so a new
+                // organization is never born without an owner.
                 await tx.orgMembership.create({
                     data: {
                         organizationId: org.id,
                         userId: session.userId,
-                        role: 'ORG_ADMIN',
+                        role: 'ORG_OWNER',
                     },
                 });
                 // Epic 41 — seed the default dashboard preset inside
@@ -68,7 +70,7 @@ export const POST = withApiErrorHandling(
             return NextResponse.json(
                 {
                     organization: created,
-                    role: 'ORG_ADMIN' as const,
+                    role: 'ORG_OWNER' as const,
                 },
                 { status: 201 },
             );

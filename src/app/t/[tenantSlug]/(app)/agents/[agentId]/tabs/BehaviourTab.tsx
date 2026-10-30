@@ -118,11 +118,12 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
             });
             if (!res.ok) {
                 const payload = await res.json().catch(() => null);
-                // Approval re-measures the skills (#4523), and that refusal is
-                // worded here, in the reader's language, from its figures.
+                // Approval prices the skills again (#4589): a catalogue that got
+                // dearer since the save is refused, and worded here, in the
+                // reader's language, from its figures.
                 const over = catalogueOverBudget(payload);
                 const message = over
-                    ? t('refusal.SKILL_CATALOGUE_OVER_BUDGET', { used: over.catalogueBytes, budget: over.budgetBytes })
+                    ? t('refusal.SKILL_CATALOGUE_OVER_BUDGET', { used: over.bytes, budget: over.budget })
                     : apiErrorMessage(payload, t('actionFailed'));
                 toast.error(message);
                 return message;
