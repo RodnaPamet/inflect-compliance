@@ -2570,7 +2570,8 @@
         "ERROR": "Грешка",
         "NOT_APPLICABLE": "Н/П",
         "PENDING": "Изчаква",
-        "RUNNING": "Изпълнява се"
+        "RUNNING": "Изпълнява се",
+        "PARTIAL": "Частична"
       },
       "verdict": {
         "HEALTHY": "Здрав",
@@ -9863,7 +9864,8 @@
       "ERROR": "Грешка",
       "NOT_APPLICABLE": "Н/П",
       "PENDING": "Изчаква",
-      "RUNNING": "Изпълнява се"
+      "RUNNING": "Изпълнява се",
+      "PARTIAL": "Частична"
     },
     "checksList": {
       "colCheck": "Проверка",
