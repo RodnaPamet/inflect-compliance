@@ -6,12 +6,13 @@
  * only). Mirrors `<NewVendorModal>`: shared `<NewAuditFields>` +
  * unsaved-changes guard + `Modal.Form` pinned-footer shell.
  */
-import { useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { useSWRConfig } from 'swr';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useNewAuditForm } from './_form/useNewAuditForm';
 import {
@@ -44,7 +45,7 @@ export function NewAuditModal({
     labels,
 }: NewAuditModalProps) {
     const { mutate: swrMutate } = useSWRConfig();
-    const tx = useTranslations('audits');
+    const t = useTranslations('audits');
     // feat/audits-surface — AuditsClient keys the list SWR on
     // `/audits?cycleId=…` when a cycle filter is active (else the bare
     // `/audits` key). Read the active filter here so we can (a) revalidate
@@ -73,16 +74,18 @@ export function NewAuditModal({
         },
     });
 
+    // Closing a form somebody has typed into asks first, in a dialog rather
+    // than the browser's own `confirm()` (#4531). The close is deferred until
+    // they choose: the request opens the dialog, and Discard closes the form.
+    const [discardOpen, setDiscardOpen] = useState(false);
     const guardedSetOpen = useCallback<Dispatch<SetStateAction<boolean>>>(
         (next) => {
             const wantClose =
                 typeof next === 'function' ? !next(true) : next === false;
             if (wantClose) {
                 if (form.submitting) return;
-                if (
-                    form.isDirty &&
-                    !window.confirm(tx('newModal.discardConfirm'))
-                ) {
+                if (form.isDirty) {
+                    setDiscardOpen(true);
                     return;
                 }
             }
@@ -98,17 +101,18 @@ export function NewAuditModal({
     };
 
     return (
+        <>
         <Modal
             showModal={open}
             setShowModal={guardedSetOpen}
             size="lg"
             title={labels.newAudit}
-            description={tx('newModal.description')}
+            description={t('newModal.description')}
             preventDefaultClose={form.submitting}
         >
             <Modal.Header
                 title={labels.newAudit}
-                description={tx('newModal.description')}
+                description={t('newModal.description')}
             />
             <Modal.Form id="new-audit-form" onSubmit={handleSubmit}>
                 <Modal.Body>
@@ -145,10 +149,27 @@ export function NewAuditModal({
                         disabled={!form.canSubmit}
                         id="create-audit-btn"
                     >
-                        {form.submitting ? tx('newModal.creating') : labels.createAudit}
+                        {form.submitting ? t('newModal.creating') : labels.createAudit}
                     </Button>
                 </Modal.Actions>
             </Modal.Form>
         </Modal>
+        {/* As the task form's guard: `warning`, because an unsaved draft is
+            recoverable by retyping, and "Discard draft" is the verb for
+            unsaved state. */}
+        <ConfirmDialog
+            showModal={discardOpen}
+            setShowModal={setDiscardOpen}
+            tone="warning"
+            title={t('newModal.discardTitle')}
+            description={t('newModal.discardConfirm')}
+            confirmLabel={t('newModal.discardConfirmLabel')}
+            cancelLabel={t('newModal.discardCancelLabel')}
+            onConfirm={() => {
+                setDiscardOpen(false);
+                setOpen(false);
+            }}
+        />
+        </>
     );
 }

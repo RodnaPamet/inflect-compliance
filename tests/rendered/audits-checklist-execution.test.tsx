@@ -19,6 +19,9 @@
  * row looking saved — an auditor who sees PASS on screen and PASS nowhere in
  * the database is the worst outcome this page can produce, because the
  * discrepancy surfaces during the audit itself.
+ *
+ * A completed or cancelled audit is read-only (#4531): the last block holds
+ * what the pane offers then, and what it says when the server refuses.
  */
 
 import * as React from 'react';
@@ -89,6 +92,7 @@ jest.mock('next/navigation', () => ({
     redirect: jest.fn(),
 }));
 
+import { toast } from 'sonner';
 import { AuditsClient } from '@/app/t/[tenantSlug]/(app)/audits/AuditsClient';
 import { TenantProvider } from '@/lib/tenant-context-provider';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -139,16 +143,25 @@ const TRANSLATIONS = {
 const fetchMock = jest.fn();
 /** Set by a test to make the next PUT fail. */
 let failNextPut = false;
+/** Set by a test to answer the next PUT with this refusal. */
+let refuseNextPut: { status: number; body: unknown } | null = null;
 
 beforeEach(() => {
     detail = freshDetail();
     failNextPut = false;
+    refuseNextPut = null;
+    (toast.error as jest.Mock).mockClear();
     fetchMock.mockReset();
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
         const u = String(url);
         if (init?.method === 'PUT') {
             if (failNextPut) {
                 return Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response);
+            }
+            if (refuseNextPut) {
+                const r = refuseNextPut;
+                refuseNextPut = null;
+                return Promise.resolve({ ok: false, status: r.status, json: async () => r.body } as Response);
             }
             // Model the server: apply the patch so the re-read reflects it.
             // Notes follow `updateAudit` + `AuditRepository.updateChecklistItem`
@@ -180,7 +193,8 @@ async function flush() {
 }
 
 /** Render the hub and open the audit's detail pane by clicking its row. */
-async function openAudit() {
+async function openAudit(status?: string) {
+    if (status) detail.status = status;
     render(
         <TenantProvider value={TENANT_CTX}>
             <AuditsClient
@@ -415,5 +429,128 @@ describe('cancelling an audit', () => {
         await flush();
         expect(detail.status).toBe('PLANNED');
         expect(screen.getByRole('dialog')).toBeTruthy();
+    });
+});
+
+/**
+ * A completed or cancelled audit is read-only (#4531, owner decision
+ * 2026-10-30): no Edit, no result pickers, no new finding, and a notice that
+ * says why. A completed one keeps its move back to In Progress, which is how it
+ * is changed. The server refuses the same writes; the page says so in the
+ * viewer's language when it does.
+ */
+describe('a completed or cancelled audit is read-only', () => {
+    const EN = jest.requireActual('../../messages/en.json') as {
+        audits: { detail: Record<string, string>; list: Record<string, string> };
+    };
+    const resultPickers = () =>
+        screen.queryAllByRole('combobox').filter((c) => /^Result for /.test(c.getAttribute('aria-label') ?? ''));
+
+    it('an open audit names each result picker by its item', async () => {
+        await openAudit('IN_PROGRESS');
+        // The name rides `buttonProps`, where the Combobox reads it; a
+        // top-level `aria-label` was ignored.
+        expect(
+            screen.getByRole('combobox', { name: 'Result for Verify A.5.1 — policies exist' }),
+        ).toBeTruthy();
+        expect(resultPickers()).toHaveLength(2);
+        expect(document.querySelector('#edit-audit-btn')).not.toBeNull();
+        expect(document.querySelector('#new-audit-finding-btn')).not.toBeNull();
+        expect(document.querySelector('#audit-read-only-notice')).toBeNull();
+    });
+
+    it('a COMPLETED audit offers no edit, no picker and no finding — only the move back', async () => {
+        await openAudit('COMPLETED');
+        expect(resultPickers()).toHaveLength(0);
+        expect(document.querySelector('#edit-audit-btn')).toBeNull();
+        expect(document.querySelector('#new-audit-finding-btn')).toBeNull();
+        expect(document.querySelector('#audit-read-only-notice')?.textContent).toContain(
+            EN.audits.detail.readOnlyCompleted,
+        );
+
+        await act(async () => {
+            fireEvent.click(document.querySelector('#audit-status-back-btn')!);
+        });
+        await waitFor(() => expect(puts()).toEqual([{ status: 'IN_PROGRESS' }]));
+        // Reopened, it is editable again.
+        await waitFor(() => expect(resultPickers()).toHaveLength(2));
+        expect(document.querySelector('#audit-read-only-notice')).toBeNull();
+    });
+
+    it('a CANCELLED audit offers nothing at all, and says so', async () => {
+        await openAudit('CANCELLED');
+        expect(resultPickers()).toHaveLength(0);
+        for (const id of ['#edit-audit-btn', '#new-audit-finding-btn', '#audit-status-forward-btn', '#audit-status-back-btn', '#cancel-audit-btn']) {
+            expect({ id, present: document.querySelector(id) !== null }).toEqual({ id, present: false });
+        }
+        expect(document.querySelector('#audit-read-only-notice')?.textContent).toContain(
+            EN.audits.detail.readOnlyCancelled,
+        );
+        // The result is still shown, as a badge.
+        expect(screen.getAllByText('Not tested').length).toBeGreaterThan(0);
+    });
+
+    it('a write the server refuses because the audit closed meanwhile says so in the page’s words', async () => {
+        await openAudit('IN_PROGRESS');
+        refuseNextPut = {
+            status: 409,
+            body: {
+                error: {
+                    code: 'CONFLICT',
+                    message: 'This audit is cancelled and can no longer be changed.',
+                    details: { reason: 'AUDIT_CANCELLED_READ_ONLY' },
+                },
+            },
+        };
+        await pickFromCombobox(/not tested/i, /^pass$/i);
+        await waitFor(() => expect((toast.error as jest.Mock).mock.calls.map((c) => c[0])).toContain(EN.audits.detail.readOnlyCancelled));
+    });
+});
+
+/**
+ * Closing the New audit form after typing asks in a dialog, not the browser's
+ * own `confirm()` (#4531), and the close waits for the answer.
+ */
+describe('the New audit form asks before discarding what was typed', () => {
+    async function openTypedForm() {
+        await openAudit();
+        await act(async () => {
+            fireEvent.click(document.querySelector('#new-audit-btn')!);
+        });
+        await flush();
+        await act(async () => {
+            fireEvent.change(document.querySelector('#audit-title-input')!, { target: { value: 'Draft audit' } });
+        });
+        await flush();
+    }
+    const cancelForm = async () => {
+        await act(async () => {
+            fireEvent.click(document.querySelector('#new-audit-cancel-btn')!);
+        });
+        await flush();
+    };
+
+    it('keeping the draft leaves the form open with what was typed', async () => {
+        const confirmSpy = jest.spyOn(window, 'confirm');
+        await openTypedForm();
+        await cancelForm();
+        expect(screen.getAllByText('Discard audit?').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Any details you entered will be lost.').length).toBeGreaterThan(0);
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+        });
+        await flush();
+        expect((document.querySelector('#audit-title-input') as HTMLInputElement).value).toBe('Draft audit');
+        expect(confirmSpy).not.toHaveBeenCalled();
+        confirmSpy.mockRestore();
+    });
+
+    it('discarding closes the form', async () => {
+        await openTypedForm();
+        await cancelForm();
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
+        });
+        await waitFor(() => expect(document.querySelector('#audit-title-input')).toBeNull());
     });
 });
