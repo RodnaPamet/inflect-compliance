@@ -7829,6 +7829,8 @@
       "reachabilityUnreachable": "did not answer",
       "reachabilityAnswered": "reachable, reporting version {version}",
       "reachabilityNoVersion": "answered, but reported no version",
+      "policyModuleLabel": "Set in",
+      "ciCheckLabel": "Held by",
       "probedAtLabel": "Checked"
     },
     "aiResidency": {

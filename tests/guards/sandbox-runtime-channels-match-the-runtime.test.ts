@@ -28,7 +28,7 @@
  * re-reading the vocabulary, which is the same discipline as the vendored
  * skills' manifest.
  */
-import { REPORTING_CHANNELS } from '@/app-layer/usecases/sandbox-runtime-config';
+import { type ReportingChannelKey, REPORTING_CHANNELS } from '@/app-layer/usecases/sandbox-runtime-config';
 import { collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
 import { REPO_ROOT, repoRelativeFiles } from '../helpers/repo-files';
 import * as fs from 'node:fs';
@@ -95,6 +95,48 @@ describe('the reporting channels match the runtime that has them', () => {
             // And it IS a prefix of a real one, which is why it fooled a scan.
             expect(RUNTIME_REPORTING_VARS.some((v) => artifact.startsWith(v))).toBe(true);
         }
+    });
+
+    it('the FIXTURE can express a fifth channel, so the guard can fail', () => {
+        /*
+            #4001 asks for `a-control-that-cannot-express-failure` to be applied
+            to this guard itself: "a guard whose fixture cannot produce the
+            failing input is green forever… the fixture must be able to express
+            a fifth channel."
+
+            The assertions above compare VARIABLE sets, and the control below
+            proves a made-up variable is caught. This proves the channel-shaped
+            version: a fifth channel, with a variable the runtime does not
+            define, is rejected — and a fifth channel whose variable the runtime
+            DOES define but which no channel claimed would be caught by the
+            unclaimed direction.
+
+            Constructed here rather than mutated into the real export, because
+            the real export is what the page renders: a test that edited it
+            would be asserting against a list no deploy has.
+        */
+        const fifth = {
+            key: 'future-channel' as ReportingChannelKey,
+            chartKey: null,
+            envVars: ['OPENSHELL_FUTURE_SINK'],
+            defaultsOn: false,
+        };
+        const withFifth = [...REPORTING_CHANNELS, fifth];
+        expect(withFifth.length).toBe(REPORTING_CHANNELS.length + 1);
+
+        // The claims-nothing-unknown direction catches it.
+        const claimedWithFifth = withFifth.flatMap((c) => c.envVars);
+        const unknown = claimedWithFifth.filter(
+            (v) => !(RUNTIME_REPORTING_VARS as readonly string[]).includes(v),
+        );
+        expect(unknown).toEqual(['OPENSHELL_FUTURE_SINK']);
+
+        // And the dangerous direction catches the opposite: a runtime variable
+        // no channel claims. Simulated by dropping a channel rather than adding
+        // one, which is the same arithmetic from the other side.
+        const withoutFirst = REPORTING_CHANNELS.slice(1).flatMap((c) => c.envVars);
+        const unclaimed = RUNTIME_REPORTING_VARS.filter((v) => !withoutFirst.includes(v));
+        expect(unclaimed).toEqual([...REPORTING_CHANNELS[0].envVars]);
     });
 
     it('the comparison can fail in both directions', () => {

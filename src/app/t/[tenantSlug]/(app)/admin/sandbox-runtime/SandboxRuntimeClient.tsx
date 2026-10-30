@@ -296,6 +296,27 @@ export function SandboxRuntimeClient({
                             </dt>
                             <dd className="font-mono">{setting.policyPath}</dd>
                         </div>
+                        {/* 5.6c (#3998): "this is set in code, here is where".
+                            The MODULE and the CHECK, not a disabled switch — a
+                            greyed-out control reads as a permission problem,
+                            and an admin who concludes that goes looking for
+                            someone to grant it. */}
+                        <div className="flex gap-tight">
+                            <dt className="text-content-muted">
+                                {t('sandboxRuntime.policyModuleLabel')}
+                            </dt>
+                            <dd className="font-mono" data-testid={`policy-module-${setting.key}`}>
+                                {displayForEnforcement().setInCode?.policyModule}
+                            </dd>
+                        </div>
+                        <div className="flex gap-tight">
+                            <dt className="text-content-muted">
+                                {t('sandboxRuntime.ciCheckLabel')}
+                            </dt>
+                            <dd data-testid={`ci-check-${setting.key}`}>
+                                {displayForEnforcement().setInCode?.ciCheck}
+                            </dd>
+                        </div>
                     </dl>,
                 ),
             )}
