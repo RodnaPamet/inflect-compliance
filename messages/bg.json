@@ -7828,7 +7828,8 @@
       "reachabilityNotProbed": "няма конфигуриран адрес за проверка — не е проверяван",
       "reachabilityUnreachable": "не отговори",
       "reachabilityAnswered": "достъпен, докладва версия {version}",
-      "reachabilityNoVersion": "отговори, но не докладва версия"
+      "reachabilityNoVersion": "отговори, но не докладва версия",
+      "probedAtLabel": "Проверено"
     },
     "aiResidency": {
       "title": "Къде работи изкуственият интелект",
