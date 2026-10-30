@@ -20,6 +20,15 @@
  * native dynamic import that Jest's module system does not provide (the same
  * reason `tests/guards/eslint-skips-build-output.test.ts` does).
  *
+ * It runs THIS rule only (`ruleFilter`), with no TypeScript program
+ * (`projectService: false`). The config is otherwise the repo's. The rule
+ * reads the syntax tree alone, and a type-aware rule elsewhere in the config
+ * (`no-floating-promises` over `src/app-layer` and `src/lib`, #4579) cannot
+ * parse a planted path, which is on no disk and so in no program: each such
+ * file came back as one fatal message with a null rule id. A fatal message is
+ * refused below, so a planted file that fails to parse cannot pass the
+ * "allows" case by never being read.
+ *
  * It lives beside the rule's RuleTester suite rather than in `tests/guards/`,
  * whose file count is held under a ceiling (`no-epic-named-ratchets`): it
  * proves this rule's wiring, so this is where a reader of the rule looks.
@@ -45,14 +54,18 @@ const PLANT_SITES = [
     'src/lib/processes/canvas-export.ts',
 ];
 
-type LintResult = { filePath: string; ruleIds: string[] };
+type LintResult = { filePath: string; ruleIds: string[]; fatal: string[] };
 
 /** Lint `text` as if it were each of `filePaths`, plus the files on disk, with the repo config. */
 function lint(text: string, filePaths: readonly string[], onDisk: readonly string[]): LintResult[] {
     const program = `
         const { ESLint } = require('eslint');
         const [text, paths, disk] = JSON.parse(process.argv[1]);
-        const eslint = new ESLint({ cwd: process.cwd() });
+        const eslint = new ESLint({
+            cwd: process.cwd(),
+            ruleFilter: ({ ruleId }) => ruleId === ${JSON.stringify(RULE_ID)},
+            overrideConfig: { languageOptions: { parserOptions: { projectService: false } } },
+        });
         (async () => {
             const out = [];
             for (const filePath of paths) {
@@ -62,6 +75,7 @@ function lint(text: string, filePaths: readonly string[], onDisk: readonly strin
             process.stdout.write(JSON.stringify(out.map((r) => ({
                 filePath: require('path').relative(process.cwd(), r.filePath),
                 ruleIds: r.messages.map((m) => m.ruleId),
+                fatal: r.messages.filter((m) => m.fatal).map((m) => m.message),
             }))));
         })().catch((e) => { process.stderr.write(String(e && e.stack || e)); process.exit(1); });
     `;
@@ -84,6 +98,10 @@ describe('the ESLint config allows one Anthropic construction site', () => {
     beforeAll(() => {
         results = lint(PLANTED, [...PLANT_SITES, SEAM], [SEAM]);
     }, 120_000);
+
+    it('every file parsed, so no verdict below is vacuous', () => {
+        expect(results.filter((r) => r.fatal.length > 0)).toEqual([]);
+    });
 
     it.each(PLANT_SITES)('refuses the planted construction at %s', (site) => {
         expect(at(site, 'planted').ruleIds).toContain(RULE_ID);

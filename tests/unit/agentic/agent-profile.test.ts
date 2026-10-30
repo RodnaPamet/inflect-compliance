@@ -11,6 +11,8 @@
  *   4. `AGENT_PROFILES_TENANTS` OPENS THE ROUTES TO THE TENANTS IT NAMES and to
  *      no other (Step 1H, #4145): a named tenant's route reaches its
  *      permission check, and every other tenant's still answers 404 first.
+ *   5. WITH `AGENT_PROFILES` UNSET, THE WORKSPACE'S ORGANIZATION DECIDES
+ *      (#4557): its routes answer 404 until the organization turns profiles on.
  */
 // The deployment switch stays unset throughout; the per-tenant allowlist
 // (Step 1H) is set per test.
@@ -27,6 +29,21 @@ jest.mock('@/env', () => {
         }),
     };
 });
+// The workspace's organization row, as the gate reads it by slug (#4557).
+// `null` is a workspace with no organization.
+const mockOrgChoice: { agentProfilesEnabled: boolean | null } = { agentProfilesEnabled: null };
+jest.mock('@/lib/prisma', () => ({
+    __esModule: true,
+    default: {
+        tenant: {
+            findUnique: jest.fn(async () =>
+                mockOrgChoice.agentProfilesEnabled === null
+                    ? { organization: null }
+                    : { organization: { agentProfilesEnabled: mockOrgChoice.agentProfilesEnabled, agentToolRunnerEnabled: false } },
+            ),
+        },
+    },
+}));
 const mockRequirePermission = jest.fn();
 jest.mock('@/lib/security/permission-middleware', () => ({
     // A permission check that is reached at all fails the test: the flag must
@@ -42,9 +59,8 @@ import { NextRequest } from 'next/server';
 
 import { repoFiles, repoRelative } from '../../helpers/repo-files';
 import { AGENT_DRIVERS } from '@/lib/agentic/agent-driver';
+import { readDeploymentSwitch, resolveAgentSwitch, slugIsAllowlisted } from '@/lib/agentic/agent-switches';
 import {
-    agentProfilesEnabled,
-    agentProfilesEnabledFor,
     isProfileRunKey,
     parseProfileRunKey,
     profileRunKey,
@@ -79,6 +95,7 @@ async function callRoute(rel: string, tenantSlug: string): Promise<Array<{ metho
 
 beforeEach(() => {
     mockAllowlist.value = undefined;
+    mockOrgChoice.agentProfilesEnabled = null;
     mockRequirePermission.mockClear();
 });
 
@@ -106,15 +123,31 @@ describe('4. AGENT_PROFILES_TENANTS opens the routes to the tenants it names, an
     });
 
     it('reads the list like the switch: trimmed, case-insensitive, and closed without a slug', () => {
-        expect(agentProfilesEnabledFor(undefined, 'a, b ,c', 'B')).toBe(true);
-        expect(agentProfilesEnabledFor(undefined, 'a,b', 'ab')).toBe(false);
-        expect(agentProfilesEnabledFor(undefined, 'a,b', undefined)).toBe(false);
-        expect(agentProfilesEnabledFor(undefined, 'a,b', '')).toBe(false);
-        expect(agentProfilesEnabledFor(undefined, ',', '')).toBe(false);
-        expect(agentProfilesEnabledFor(undefined, undefined, 'a')).toBe(false);
+        expect(slugIsAllowlisted('a, b ,c', 'B')).toBe(true);
+        expect(slugIsAllowlisted('a,b', 'ab')).toBe(false);
+        expect(slugIsAllowlisted('a,b', undefined)).toBe(false);
+        expect(slugIsAllowlisted('a,b', '')).toBe(false);
+        expect(slugIsAllowlisted(',', '')).toBe(false);
+        expect(slugIsAllowlisted(undefined, 'a')).toBe(false);
         // The deployment switch opens every tenant, named or not.
-        expect(agentProfilesEnabledFor('1', undefined, 'anyone')).toBe(true);
-        expect(agentProfilesEnabledFor('yes', 'a', 'b')).toBe(false);
+        expect(resolveAgentSwitch({ deployment: readDeploymentSwitch('1'), organization: null }).on).toBe(true);
+        // The list opens a named tenant even past the veto: the operator's own,
+        // narrower instruction.
+        expect(resolveAgentSwitch({ deployment: readDeploymentSwitch('0'), allowlisted: true, organization: false }).on).toBe(true);
+    });
+});
+
+describe('5. with AGENT_PROFILES unset, the workspace\'s organization decides (#4557)', () => {
+    it.each(PROFILE_ROUTES)('%s', async (rel) => {
+        // An organization that has not turned profiles on: 404, before the key.
+        mockOrgChoice.agentProfilesEnabled = false;
+        for (const r of await callRoute(rel, 'acme')) expect(r).toEqual({ method: r.method, status: 404 });
+        expect(mockRequirePermission).not.toHaveBeenCalled();
+        // The same workspace once its organization turns them on: past the gate.
+        mockOrgChoice.agentProfilesEnabled = true;
+        const opened = await callRoute(rel, 'acme');
+        expect(mockRequirePermission).toHaveBeenCalledTimes(opened.length);
+        for (const r of opened) expect(r.status).not.toBe(404);
     });
 });
 
@@ -151,8 +184,9 @@ describe('3. the run key and the flag', () => {
         expect(isProfileRunKey('posture-review')).toBe(false);
     });
 
-    it('reads the flag as on only for 1 and true', () => {
-        expect(['1', 'true', ' TRUE '].map(agentProfilesEnabled)).toEqual([true, true, true]);
-        expect(['', '0', 'yes', 'on', undefined, null].map(agentProfilesEnabled)).toEqual([false, false, false, false, false, false]);
+    it('reads the flag as on only for 1 and true, as unset only when absent or blank, and any other value as the veto', () => {
+        expect(['1', 'true', ' TRUE '].map(readDeploymentSwitch)).toEqual(['ON', 'ON', 'ON']);
+        expect(['', '  ', undefined, null].map(readDeploymentSwitch)).toEqual(['UNSET', 'UNSET', 'UNSET', 'UNSET']);
+        expect(['0', 'false', 'yes', 'on'].map(readDeploymentSwitch)).toEqual(['OFF', 'OFF', 'OFF', 'OFF']);
     });
 });
