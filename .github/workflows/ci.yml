@@ -851,19 +851,17 @@ jobs:
           # The flag cannot simply be added here either: it breaks five
           # node-project suites (see the `flue` job for that measurement).
           #
-          # `--no-compilation-cache` (#4613). V8's compilation cache is what
-          # held the heap of finished test files. Shard 2/7 ended every main
-          # run near 8.5 GB of heapUsed, and 8.1-8.4 GB of it SURVIVED one
-          # forced gc(); with the cache off the same 352 files peaked at
-          # 1.5-2.1 GB and kept 1.0-1.1 GB (diagnostic runs 41083029444 and
-          # 41088386042). Forcing a full gc() every 25 files had the same
-          # effect, and a heap snapshot never showed the 8 GB because taking
-          # one clears the cache first. Shard 7/7's intermittent climb to
-          # ~10 GB ("Ineffective mark-compacts near heap limit", exit 134) was
-          # not live either: a run that reached 10.7 GB and survived kept
-          # 1.2 GB after a forced gc(). It is a V8 flag that NODE_OPTIONS
-          # refuses ("not allowed in NODE_OPTIONS"), so node runs jest's bin
-          # directly instead of through npx.
+          # `--no-compilation-cache` (#4613). With V8's compilation cache on,
+          # shard 2/7 kept the contexts of finished test files: the count of
+          # live V8 contexts rose by about one per file to ~240, holding
+          # 8.1-8.4 GB that ten forced gc() calls in a row did not free. With
+          # it off, the same 352 files peaked at 1.5-2.1 GB and kept 1.0-1.1
+          # GB (diagnostic runs 41089355501 and 41088386042). Shard 7/7's
+          # intermittent climb to ~10 GB ("Ineffective mark-compacts near heap
+          # limit", exit 134) runs the same files as its 2 GB runs; with the
+          # cache off it stayed under 2 GB in every run measured. It is a V8
+          # flag that NODE_OPTIONS refuses ("not allowed in NODE_OPTIONS"), so
+          # node runs jest's bin directly instead of through npx.
           # tests/guards/in-band-shard-heap-bound.test.ts holds the flag here.
           node --no-compilation-cache node_modules/jest/bin/jest.js --runInBand --coverage --coverageReporters=json \
             --selectProjects node jsdom \
