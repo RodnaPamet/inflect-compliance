@@ -94,10 +94,17 @@ interface Producer {
     selectsProjects: string[];
 }
 
+/**
+ * A step that boots Jest: through npx, or through node running Jest's bin —
+ * the `Test` shards' form since #4613, because the V8 flag they need is refused
+ * in NODE_OPTIONS. A form this misses drops its job out of the census silently.
+ */
+const BOOTS_JEST = /\bnpx jest\b|\bnode\b[^\n]*\snode_modules\/jest\/bin\/jest\.js\b/;
+
 const producers: Producer[] = [];
 for (const [id, job] of Object.entries(jobs)) {
     const jestStep = (job.steps ?? []).find(
-        (s) => typeof s.run === 'string' && /\bnpx jest\b/.test(s.run) && !s.run.includes('--listTests'),
+        (s) => typeof s.run === 'string' && BOOTS_JEST.test(s.run) && !s.run.includes('--listTests'),
     );
     if (!jestStep?.run) continue;
 

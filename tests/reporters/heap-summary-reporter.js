@@ -26,21 +26,87 @@
  * the wrong process confidently would be worse than none, and getting that
  * distinction wrong is exactly what sent my own measurement of this issue
  * astray twice.
+ *
+ * ── A TRAIL THAT IS WRITTEN BEFORE THE CRASH, NOT AFTER IT (#4613) ─────────
+ *
+ * The summary block is printed by `onRunComplete`, which an `exit 134` never
+ * reaches. So the one run that needed it — shard 7/7 running past 10 GB on files
+ * that pass at 2 GB in other runs — ended at V8's GC trace with nothing to say.
+ *
+ * `onTestResult` therefore writes one line, immediately, the first time
+ * `heapUsed` reaches each mark: 4 GB, then every 2 GB above it. A run that
+ * stays at its usual 2 GB prints nothing; a run heading for the cap prints three
+ * or four lines, the last just before it dies. Each line carries the file that
+ * finished, its index, the process uptime (the clock V8's GC trace uses, so the
+ * two can be lined up) and how many files ran since the previous mark — the
+ * RANGE to bisect. The caveat below still applies: the step lands on whichever
+ * file was running when V8 collected, so a mark says where to look, not who to
+ * blame. stderr is a pipe on CI, and Node writes pipes synchronously on Linux,
+ * so the line is out of the process before the next allocation can kill it.
+ *
+ * Two things to know before reading a trail line (both measured on #4613):
+ *
+ *   · `heapUsed` is PRE-GC, so a mark is not proof of a leak. Shard 2/7 reports
+ *     4.6 GB at its 186th file on CI, and a heap snapshot taken there after a
+ *     full GC held 672 MB. V8 lets garbage pile up when the cap is 12 GB. A
+ *     mark says the heap is large; a run that dies says it is live.
+ *   · The run dies BELOW the cap. V8 aborts with "Ineffective mark-compacts
+ *     near heap limit" once old space stays above about 80% of
+ *     `--max-old-space-size` while GC makes no progress, so under 12288 the
+ *     fatal line arrives near 10 GB, not 12. The 10 GB mark is the last warning.
  */
 const MB = 1024 * 1024;
+
+/** First mark, and the spacing of every mark above it, in MB of heapUsed. */
+const TRAIL_FIRST_MB = 4096;
+const TRAIL_STEP_MB = 2048;
+
+const rel = (p) => (typeof p === 'string' ? p.replace(`${process.cwd()}/`, '') : String(p));
+const gb = (bytes) => `${(bytes / MB / 1024).toFixed(1)} GB`;
+// Signed, because a "step" is negative on a short run and `+-12 MB` reads
+// like a typo rather than a reading.
+const signedMb = (n) => `${n < 0 ? '-' : '+'}${Math.round(Math.abs(n) / MB)} MB`;
 
 class HeapSummaryReporter {
     constructor(globalConfig) {
         this._inBand = globalConfig?.maxWorkers === 1;
         this._samples = [];
         this._peak = { rss: 0, heap: 0, path: null };
+        // The next heapUsed mark (MB) that earns a trail line, and the file
+        // index at which the previous mark was crossed.
+        this._nextMarkMb = TRAIL_FIRST_MB;
+        this._lastMarkIndex = 0;
     }
 
     onTestResult(test, testResult) {
         const { rss, heapUsed } = process.memoryUsage();
         const path = testResult?.testFilePath ?? test?.path ?? '(unknown)';
+        const prev = this._samples[this._samples.length - 1];
         this._samples.push({ path, rss, heapUsed });
         if (rss > this._peak.rss) this._peak = { rss, heap: heapUsed, path };
+        this._trail(path, rss, heapUsed, prev);
+    }
+
+    /** One line per mark crossed, written now — see "A TRAIL" above. */
+    _trail(path, rss, heapUsed, prev) {
+        const heapMb = heapUsed / MB;
+        if (heapMb < this._nextMarkMb) return;
+        // A single step can jump several marks; name the highest one reached
+        // and do not print the skipped ones, so a mark is never printed twice.
+        const mark =
+            TRAIL_FIRST_MB +
+            Math.floor((heapMb - TRAIL_FIRST_MB) / TRAIL_STEP_MB) * TRAIL_STEP_MB;
+        const index = this._samples.length;
+        const since = index - this._lastMarkIndex;
+        const step = prev ? signedMb(heapUsed - prev.heapUsed) : 'first file';
+        process.stderr.write(
+            `heap trail (#4613)  heapUsed passed ${mark / 1024} GB after ${rel(path)}` +
+                ` — file ${index}, ${since} file${since === 1 ? '' : 's'} since the previous mark,` +
+                ` heapUsed ${gb(heapUsed)} (step ${step}), rss ${gb(rss)},` +
+                ` at ${Math.round(process.uptime())} s\n`,
+        );
+        this._nextMarkMb = mark + TRAIL_STEP_MB;
+        this._lastMarkIndex = index;
     }
 
     onRunComplete() {
@@ -49,9 +115,6 @@ class HeapSummaryReporter {
         const first = this._samples[0];
         const last = this._samples[this._samples.length - 1];
         const mb = (n) => `${Math.round(n / MB)} MB`;
-        // Signed, because the largest "step" is negative on a short run and
-        // `+-12 MB` reads like a typo rather than a reading.
-        const signed = (n) => `${n < 0 ? '-' : '+'}${Math.round(Math.abs(n) / MB)} MB`;
 
         // Biggest single-step growth. Reported as "the step landed here", NOT as
         // "this file is heavy": measured on this suite, the file blamed for a
@@ -67,7 +130,6 @@ class HeapSummaryReporter {
             (s, i) => i > 0 && s.rss < this._samples[i - 1].rss,
         ).length;
 
-        const rel = (p) => (typeof p === 'string' ? p.replace(`${process.cwd()}/`, '') : String(p));
         const lines = [
             '',
             '─── heap summary (#3977) ─────────────────────────────────────',
@@ -81,7 +143,7 @@ class HeapSummaryReporter {
         // sentinel printed `-Infinity MB after null` — a line that looks like a
         // crash in the thing meant to explain crashes.
         if (this._samples.length > 1) {
-            lines.push(`  largest step      ${signed(worst.delta)} after ${rel(worst.path)}`);
+            lines.push(`  largest step      ${signedMb(worst.delta)} after ${rel(worst.path)}`);
             lines.push(`  steps that receded ${receded} of ${this._samples.length - 1}`);
         }
         // ─── THE SHAPE VERDICT, AND WHY IT IS GATED ON IN-BAND (#3977) ────
