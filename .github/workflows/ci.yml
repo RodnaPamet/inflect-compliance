@@ -21,12 +21,17 @@
 #  Runs on PRs, pushes to main, and merge-queue groups.
 #
 #  Merge-queue lean set (see docs/implementation-notes/2026-08-01-merge-queue.md):
-#    RUN  in the queue — changes · lint · typecheck · test · test-summary
-#                        · build · security   (the semantic-collision gate)
-#    SKIP in the queue — e2e · docker · trivy · codeql · scanner-image
+#    GATE in the queue — lint · typecheck · test · ratchets · flue
+#                        · test-summary · build · security
+#                        (the jobs that catch a semantic merge collision)
+#    SKIP in the queue — e2e-bundle · e2e · docker · codeql · scanner-image
 #                        (different failure class; each already runs on the
 #                        PR AND on push to main)
-#    Already push/schedule-only — coverage · load-smoke.
+#    Neither           — changes · change-class · coverage-gate run in the
+#                        queue without gating a collision; trivy skips there
+#                        with the image job it needs; load-smoke runs only on
+#                        push, schedule and dispatch.
+#  tests/guardrails/merge-queue-trigger-coverage.test.ts classifies every job.
 # ───────────────────────────────────────────────────────────────
 name: CI
 
@@ -1807,6 +1812,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════
   e2e-bundle:
     name: E2E bundle
+    # ── Merge-queue lean set: SKIP ──
     # Same event gate as `e2e` — no point building a bundle for a job
     # that is skipped in the merge queue.
     if: ${{ github.event_name != 'merge_group' }}
@@ -3081,6 +3087,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════
   scanner-image:
     name: "Scanner image"
+    # ── Merge-queue lean set: SKIP ──
     # Runs on every pull request rather than behind a path filter. The image
     # holds the scanner AND the application modules the scanner imports, so a
     # filter would be a second hand-kept copy of that import closure, and a

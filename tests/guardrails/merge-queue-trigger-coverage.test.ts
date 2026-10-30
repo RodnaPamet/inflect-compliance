@@ -134,11 +134,21 @@ const NEVER_REQUIRE: Readonly<Record<string, string>> = {
  * one of these acquires a `merge_group` skip the queue still runs, still
  * goes green, and no longer tests anything the queue exists to test —
  * the most expensive possible failure mode, because it is invisible.
+ *
+ * `ratchets` and `flue` were missing until #4623, although both run in the
+ * queue and the sentence above names the ratchet count by its failure. So
+ * none of this file's per-job checks applied to `Ratchets`, a REQUIRED
+ * check and the single most collision-prone gate (two PRs each moving the
+ * same floor), or to `Flue runtime`, which runs a test population of its
+ * own. Every job is now classified in exactly one of the three maps here,
+ * against the jobs `ci.yml` declares, so a job cannot go missing again.
  */
 const QUEUE_ENFORCED_JOBS: readonly string[] = [
     'lint',
     'typecheck',
     'test',
+    'ratchets',
+    'flue',
     'test-summary',
     'build',
     'security',
@@ -161,11 +171,45 @@ const QUEUE_SKIPPED_JOBS: Readonly<Record<string, string>> = {
     codeql: 'SAST finds taint/injection patterns, not "PR A renamed what PR B calls". Its analyze ' +
         'step also uploads SARIF, which in a queue run would file a code-scanning analysis against ' +
         'the throwaway gh-readonly-queue ref. Runs on the PR and again on the push to main.',
+    'e2e-bundle': 'Builds the bundle the e2e job runs against, and nothing else reads it. With ' +
+        'e2e skipped in the queue the bundle has no consumer there, so building it would spend a ' +
+        'large-runner build on no check. Runs on the PR and again on the push to main, with e2e.',
+    'scanner-image': 'Builds the harness scanner image, a container build with the docker job\'s ' +
+        'failure class: a merge collision surfaces first as a compile or unit failure. Runs on ' +
+        'every PR (no path filter, by design) and again on the push to main.',
     // REMOVED 2026-10-14: `laya-image`. The job was deleted with the Laya
     // estate, and a stale entry here is not inert — the sibling "no entry names
     // a job that no longer exists" check reads this map as the authority on
     // which jobs are deliberately queue-exempt.
 };
+
+/**
+ * `ci.yml` jobs that are NEITHER a queue gate NOR a deliberate queue skip,
+ * with the reason. Without this map a new job is classified by nobody: not
+ * held to "runs in the queue", not asked for a skip reason (#4623).
+ */
+const QUEUE_UNGATED_JOBS: Readonly<Record<string, string>> = {
+    changes: 'Computes the path filter the PR-time jobs read. In the queue its filter step is ' +
+        "skipped and every output falls back to 'true', which the paths-filter checks below hold. " +
+        'It runs in the queue and gates nothing itself.',
+    'change-class': 'Reads the pull request body for the SIGNIFICANT-change analysis. A queue ref ' +
+        'carries no pull_request context, so it runs there and exits 0 by design (its docblock in ' +
+        'ci.yml). It gates at PR time, not at the point of a merge collision.',
+    'coverage-gate': 'Merges the coverage the Test shards, Ratchets and Flue uploaded and checks ' +
+        'the floors. It runs in the queue, but a merge collision reaches it only through the jobs ' +
+        'it reads, and those are enforced above.',
+    trivy: 'Scans the image the docker job built, and needs it. It has no queue condition of its ' +
+        'own and skips in the queue because docker does; it runs again on the push to main, with ' +
+        'the image it scans.',
+    'load-smoke': 'Runs only on push, schedule and workflow_dispatch, so it never runs for a pull ' +
+        'request or a queue candidate and has no queue behaviour to classify.',
+};
+
+/** Every job ci.yml declares, read from the parsed workflow. */
+function ciJobs(): Record<string, { if?: unknown; needs?: unknown }> {
+    const doc = yaml.load(CI) as { jobs?: Record<string, { if?: unknown; needs?: unknown }> };
+    return doc?.jobs ?? {};
+}
 
 /** Jobs whose post-merge (`push` to main) run must remain intact. */
 const POST_MERGE_JOBS = Object.keys(QUEUE_SKIPPED_JOBS);
@@ -362,15 +406,68 @@ describe('merge queue — the lean gate is not hollowed out', () => {
         },
     );
 
-    it('the enforced and skipped sets are disjoint and complete over the gate', () => {
-        const overlap = QUEUE_ENFORCED_JOBS.filter((j) =>
-            Object.prototype.hasOwnProperty.call(QUEUE_SKIPPED_JOBS, j),
-        );
-        expect(overlap).toEqual([]);
+    it('the three classifications are disjoint, and typecheck and test are enforced', () => {
+        // Named for what it checks. It was "disjoint and complete over the
+        // gate" and checked no completeness (#4623); the next case does.
+        const classified = [
+            ...QUEUE_ENFORCED_JOBS,
+            ...Object.keys(QUEUE_SKIPPED_JOBS),
+            ...Object.keys(QUEUE_UNGATED_JOBS),
+        ];
+        const seen = new Set<string>();
+        const twice = classified.filter((j) => (seen.has(j) ? true : (seen.add(j), false)));
+        expect(twice).toEqual([]);
         // Typecheck + Test are the two that actually catch the observed
         // collision class. Losing either silently is the failure mode.
         expect(QUEUE_ENFORCED_JOBS).toContain('typecheck');
         expect(QUEUE_ENFORCED_JOBS).toContain('test');
+    });
+
+    it('every job ci.yml declares is classified, and every classified job exists', () => {
+        // THE COMPLETENESS the case above used to claim (#4623). Before this,
+        // `ratchets` and `flue` ran in the queue in no list at all, so not one
+        // of this file's per-job checks applied to them. The population is the
+        // parsed workflow, not a list kept beside it.
+        const declared = Object.keys(ciJobs()).sort();
+        const classified = [
+            ...QUEUE_ENFORCED_JOBS,
+            ...Object.keys(QUEUE_SKIPPED_JOBS),
+            ...Object.keys(QUEUE_UNGATED_JOBS),
+        ].sort();
+        // The denominator: a parse that found no jobs would compare two
+        // empty lists and pass.
+        expect(declared.length).toBeGreaterThanOrEqual(15);
+        expect(classified).toEqual(declared);
+    });
+
+    it("every job whose CONDITION skips the queue is in QUEUE_SKIPPED_JOBS", () => {
+        // The banner-derived case below finds the jobs that SAY they skip. This
+        // one finds the jobs that DO, from the parsed `if:`. `e2e-bundle` and
+        // `scanner-image` skipped with no banner, so neither was asked for a
+        // reason or a post-merge run until #4623.
+        const skipping = Object.entries(ciJobs())
+            .filter(([, job]) => MERGE_GROUP_SKIP.test(String(job.if ?? '')))
+            .map(([id]) => id)
+            .sort();
+        expect(skipping.length).toBeGreaterThanOrEqual(3);
+        expect(skipping).toEqual(Object.keys(QUEUE_SKIPPED_JOBS).sort());
+    });
+
+    it.each(Object.entries(QUEUE_UNGATED_JOBS))(
+        'ci.yml job "%s" is neither gate nor skip, and says why',
+        (job, reason) => {
+            // The JOB's condition, not its block: `changes` skips one STEP in
+            // the queue (the path filter) and runs there as a job.
+            expect(String(ciJobs()[job]?.if ?? '')).not.toMatch(MERGE_GROUP_SKIP);
+            expect(reason.trim().length).toBeGreaterThanOrEqual(80);
+        },
+    );
+
+    it("trivy's queue skip is docker's: it needs the image docker builds", () => {
+        // Its classification rests on this. Without the dependency it would
+        // run in the queue, where no image is built for it to scan.
+        const needs = ciJobs().trivy?.needs;
+        expect(Array.isArray(needs) ? needs : [needs]).toContain('docker');
     });
 
     it('the HEADER documents the lean set so a reader need not diff the jobs', () => {
