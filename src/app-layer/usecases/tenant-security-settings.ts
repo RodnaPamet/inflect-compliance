@@ -1,4 +1,5 @@
 import { RequestContext } from '../types';
+import { env } from '@/env';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import {
@@ -196,6 +197,15 @@ export interface TenantSecurityConfig {
     legacyMatchAiMode: LegacyMatchAiMode;
     aiLocalBaseUrl: string | null;
     aiLocalModel: string | null;
+    /**
+     * Whether THIS DEPLOYMENT has a local model gateway (`AI_LOCAL_BASE_URL`).
+     *
+     * A fact about the deployment, not the tenant, and only its presence: the
+     * address itself is never returned. It is what lets the residency control
+     * say what `LOCAL_ONLY` will mean here — local models, or AI features that
+     * stop rather than send anything out.
+     */
+    deploymentHasLocalGateway: boolean;
     mfaFailClosed: boolean;
     /**
      * Epic Agentic — refuse `/api/mcp` traffic from a credential not bound to
@@ -285,6 +295,7 @@ export async function getTenantSecurityConfig(
             legacyMatchAiMode: row?.legacyMatchAiMode ?? ('OFF' as LegacyMatchAiMode),
             aiLocalBaseUrl: row?.aiLocalBaseUrl ?? null,
             aiLocalModel: row?.aiLocalModel ?? null,
+            deploymentHasLocalGateway: Boolean(env.AI_LOCAL_BASE_URL),
             mfaFailClosed: row?.mfaFailClosed ?? false,
             // Absent row reads as ENFORCING — the same rule the gate applies,
             // stated in one more place because a settings page disagreeing with
@@ -449,8 +460,6 @@ export async function updateTenantSecurityConfig(
         throw badRequest('No settings supplied');
     }
 
-    // LOCAL_ONLY residency with no gateway configured would send every AI call
-    // to a provider the tenant just declared off-limits, or fail at call time.
     // Cross-field checks belong here rather than in the Zod schema because the
     // patch may set only ONE side and the other has to come from the stored row.
     return runInTenantContext(ctx, async (db) => {
@@ -459,7 +468,6 @@ export async function updateTenantSecurityConfig(
             select: {
                 aiResidency: true,
                 legacyMatchAiMode: true,
-                aiLocalBaseUrl: true,
                 auditStreamUrl: true,
                 auditStreamSecretEncrypted: true,
                 apiKeyRotationDays: true,
@@ -484,14 +492,21 @@ export async function updateTenantSecurityConfig(
             );
         }
 
+        // LOCAL_ONLY NEEDS NO GATEWAY OF THE TENANT'S OWN.
+        //
+        // This used to refuse LOCAL_ONLY unless `aiLocalBaseUrl` was set, on the
+        // grounds that a LOCAL_ONLY tenant with no gateway "would send every AI
+        // call to a provider the tenant just declared off-limits". No consumer
+        // does that any more: every factory short-circuits LOCAL_ONLY before an
+        // external branch, and with no gateway each one stops with a named
+        // reason (Flue `LOCAL_GATEWAY_NOT_CONFIGURED`, the Tool Runner
+        // `tool_runner_local_only_unserved`, the assistant offers no model, risk
+        // suggestions fall back to the deterministic templates). That is what
+        // the setting asks for, so refusing it only kept a workspace from
+        // choosing the stricter posture. It also made the setting unreachable
+        // from a page that offers no URL field — and a tenant-typed gateway
+        // address is not one to invite (#4545).
         const nextResidency = (patch.aiResidency ?? before?.aiResidency ?? 'EXTERNAL') as AiResidency;
-        const nextLocalBase =
-            patch.aiLocalBaseUrl !== undefined ? patch.aiLocalBaseUrl : (before?.aiLocalBaseUrl ?? null);
-        if (nextResidency === 'LOCAL_ONLY' && !nextLocalBase) {
-            throw badRequest(
-                'aiResidency=LOCAL_ONLY requires aiLocalBaseUrl to be set (here or already stored)',
-            );
-        }
 
         // ── Step 6c: the adjudication mode ─────────────────────────────
         //
@@ -569,6 +584,29 @@ export async function updateTenantSecurityConfig(
         // decides whether a customer's data leaves the deployment. "somebody
         // changed legacyMatchAiMode" is not an answer to "when did our data
         // start going to a third party, and which one".
+        // A RESIDENCY CHANGE GETS ITS OWN EVENT, with both values, for the
+        // reason the adjudication mode does below: it decides whether this
+        // workspace's data may reach an external model at all, and
+        // `SECURITY_SETTINGS_UPDATED` records field names only. The gateway
+        // address is not in it — that one stays a field name.
+        const priorResidency = (before?.aiResidency ?? 'EXTERNAL') as AiResidency;
+        if (patch.aiResidency !== undefined && patch.aiResidency !== priorResidency) {
+            await logEvent(db, ctx, {
+                action: 'AI_RESIDENCY_CHANGED',
+                entityType: 'TenantSecuritySettings',
+                entityId: ctx.tenantId,
+                details: `AI residency changed from ${priorResidency} to ${nextResidency}`,
+                detailsJson: {
+                    category: 'entity_lifecycle',
+                    entityName: 'TenantSecuritySettings',
+                    operation: 'updated',
+                    changedFields: ['aiResidency'],
+                    before: { aiResidency: priorResidency },
+                    after: { aiResidency: nextResidency },
+                },
+            });
+        }
+
         if (patch.legacyMatchAiMode !== undefined
             && patch.legacyMatchAiMode !== (before?.legacyMatchAiMode ?? 'OFF')) {
             await logEvent(db, ctx, {
@@ -687,6 +725,7 @@ export async function updateTenantSecurityConfig(
             legacyMatchAiMode: row?.legacyMatchAiMode ?? ('OFF' as LegacyMatchAiMode),
             aiLocalBaseUrl: row?.aiLocalBaseUrl ?? null,
             aiLocalModel: row?.aiLocalModel ?? null,
+            deploymentHasLocalGateway: Boolean(env.AI_LOCAL_BASE_URL),
             mfaFailClosed: row?.mfaFailClosed ?? false,
             // Absent row reads as ENFORCING — the same rule the gate applies,
             // stated in one more place because a settings page disagreeing with

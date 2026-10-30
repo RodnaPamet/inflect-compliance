@@ -7412,6 +7412,26 @@
       "executionUnconfirmableBody": "This deployment says agent tools run in a sandbox, but it has declared no sandbox runtime for them to run in. Sandboxed execution is therefore not available, and this is not the same as the setting being off - someone turned it on and it cannot work.",
       "executionPlatformHeading": "Not switchable from this page",
       "executionPlatformBody": "Whether agent tools run in a sandbox is set for the whole deployment, not per workspace. The row reports what the deployment permits."
+    },
+    "aiResidency": {
+      "title": "Where AI runs",
+      "description": "Decide whether this workspace's data may leave the deployment for an external model provider. Every change is recorded in the audit log with the old and new value.",
+      "loadFailed": "This setting couldn't be loaded. Refresh the page to try again.",
+      "saveFailed": "The setting wasn't saved.",
+      "externalBadge": "External",
+      "localBadge": "Local only",
+      "stateExternal": "AI features may use external model providers.",
+      "stateLocal": "Nothing is sent to an external model provider.",
+      "choiceAria": "Where AI runs",
+      "externalLabel": "External provider",
+      "externalDesc": "AI features may send this workspace's data to the external model providers this deployment uses. They are listed on the sub-processor register.",
+      "localLabel": "Local only",
+      "localDesc": "Nothing is sent to an external model provider.",
+      "localWithGateway": "This deployment has a local model gateway. AI features that can run on it use it. The rest stop with a reason instead of sending data out, including the Tool Runner engine and the assistant.",
+      "localWithoutGateway": "This deployment has no local model gateway, so AI features that need a model stop with a reason instead of sending data out. Agent runs stop on either engine, and risk suggestions fall back to templates.",
+      "saved": "Saved.",
+      "save": "Save",
+      "forbidden": "Only an administrator can change where AI runs."
     }
   },
   "riskManager": {

@@ -79,6 +79,7 @@ import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics'
 import { logger } from '@/lib/observability/logger';
 import { recordWorkflowContextIntegrityHalt } from '@/lib/observability/metrics';
 
+import { lastRequestShape } from './client';
 import { recordToolRunnerDecision } from './model-decision';
 import { lockedParams } from './params';
 import { activateSkillTool, skillCatalogueText, type RunSkills } from './skills';
@@ -364,6 +365,10 @@ export async function executeToolRunnerRun(
                     : null;
             const textVerdict = outcome ? stepVerdictOf(outcome) : 'CLEAN';
 
+            // What went over the wire for this call, by shape only (Step 2H):
+            // the run's page shows it, so `thread: false` is read on the run
+            // itself rather than in the worker's log.
+            const sent = lastRequestShape(client);
             await recordStep(ctx, runId, seq++, 'MODEL_CALL', {
                 status: 'DONE',
                 label: def.key,
@@ -373,6 +378,9 @@ export async function executeToolRunnerRun(
                     model: reply.model,
                     stopReason: reply.stop_reason,
                     decisionDigest: computeInputDigest(request),
+                    wire: sent
+                        ? { method: sent.method, path: sent.path, bodyKeys: sent.bodyKeys, threadMember: sent.threadMember }
+                        : null,
                 },
             });
             await recordToolRunnerDecision(
