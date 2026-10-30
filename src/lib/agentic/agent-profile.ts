@@ -70,13 +70,22 @@ export interface ProfileSkillRef {
 /**
  * The workflow key a profile run is started under. The prefix cannot collide
  * with a registered workflow key, which never contains a colon.
+ *
+ * A TEST RUN carries the suffix `:test-run` (Step 2c). The key is the one thing
+ * about a run that every later reader sees, the worker that executes it
+ * included, so it is where the run says it is a Test run: the worker rebuilds
+ * the definition read-only from it, and the Runs tab can tell one apart.
+ * Admission accepts the suffix only from the Test-run usecase.
  */
 export const PROFILE_RUN_KEY_PREFIX = 'agent-profile:';
 
-const RUN_KEY = /^agent-profile:([a-z0-9]{1,64})@v([1-9][0-9]{0,8})$/;
+/** The suffix that marks a profile run as a Test run. */
+export const PROFILE_TEST_RUN_SUFFIX = ':test-run';
 
-export function profileRunKey(profileId: string, version: number): string {
-    return `${PROFILE_RUN_KEY_PREFIX}${profileId}@v${version}`;
+const RUN_KEY = /^agent-profile:([a-z0-9]{1,64})@v([1-9][0-9]{0,8})(:test-run)?$/;
+
+export function profileRunKey(profileId: string, version: number, opts: { testRun?: boolean } = {}): string {
+    return `${PROFILE_RUN_KEY_PREFIX}${profileId}@v${version}${opts.testRun ? PROFILE_TEST_RUN_SUFFIX : ''}`;
 }
 
 /** Does this key ask for a profile, well-formed or not? */
@@ -89,10 +98,12 @@ export function isProfileRunKey(key: string): boolean {
  * profile but is not well formed. A malformed key is REFUSED by the resolver,
  * never treated as a registered workflow key.
  */
-export function parseProfileRunKey(key: string): { profileId: string; version: number } | null {
+export function parseProfileRunKey(
+    key: string,
+): { profileId: string; version: number; testRun: boolean } | null {
     const m = RUN_KEY.exec(key);
     if (!m) return null;
-    return { profileId: m[1], version: Number(m[2]) };
+    return { profileId: m[1], version: Number(m[2]), testRun: m[3] === PROFILE_TEST_RUN_SUFFIX };
 }
 
 // ─── Which engines run a profile ────────────────────────────────────
@@ -101,13 +112,12 @@ export function parseProfileRunKey(key: string): { profileId: string; version: n
  * DOES THIS ENGINE RUN AN AGENT PROFILE — render its pinned instructions as the
  * operator's own fenced block, offer only its tools and mount its skills?
  *
- * FALSE FOR EVERY ENGINE TODAY, and that is the decision, not a gap (owner,
- * 2026-10-26): Flue builds its prompt from a workflow's description and steps,
- * so it would run a profile while ignoring the instructions. Admission refuses
- * a profile on an engine that cannot run one, before the run row exists, so
- * nothing runs a profile until Phase 2's Tool Runner engine sets its entry
- * here. Sending profile instructions to a model is also a new data category on
- * the Anthropic sub-processor row, which Step 2c records.
+ * TRUE FOR THE TOOL RUNNER ONLY (Step 2c). Flue stays false by decision, not
+ * gap (owner, 2026-10-26): it builds its prompt from a workflow's description
+ * and steps, so it would run a profile while ignoring the instructions.
+ * Admission refuses a profile on an engine that cannot run one, before the run
+ * row exists. Sending profile instructions to a model is a data category on
+ * the Anthropic sub-processor row, recorded with this entry.
  *
  * A `Record<AgentDriver, boolean>`, as `REASONING_ENGINE` is, so a driver added
  * to `AGENT_DRIVERS` without a classification here is a compile error.
@@ -115,11 +125,11 @@ export function parseProfileRunKey(key: string): { profileId: string; version: n
 const RUNS_PROFILES: Readonly<Record<AgentDriver, boolean>> = {
     static: false,
     flue: false,
-    // FALSE in Step 2b, although the driver already renders the pinned
-    // instructions and passes `profileTools`. Step 2c sets it true with the
-    // engine, in the diff that records the data category on the sub-processor
-    // row.
-    'tool-runner': false,
+    // TRUE since Step 2c (#4150): the driver renders the pinned instructions as
+    // the operator's fenced block and offers only `profileTools`, and the
+    // Anthropic row of `docs/sub-processors.md` names "tenant-authored agent
+    // instructions" in the same diff.
+    'tool-runner': true,
 };
 
 export function runsProfiles(driver: AgentDriver): boolean {

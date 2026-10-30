@@ -134,6 +134,11 @@ const PROPOSAL: ProposalRow = {
     rationale: 'Observed three failed backups in the last quarter.',
     proposedViaKeyId: 'key-abcdef12',
     createdAt: '2026-09-01T10:00:00.000Z',
+    proposedViaKeyPrefix: null,
+    expiresAt: null,
+    windowClosed: false,
+    approvalsRecorded: 0,
+    signedByViewer: false,
     // Made outside a run — this suite is not about provenance.
     runId: null,
     stepSeq: null,

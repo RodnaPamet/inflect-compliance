@@ -139,6 +139,8 @@ model Risk {
   deletedByUserId  String?
   retentionUntil   DateTime?
   assetLinks       AssetRiskLink[]
+  // Vulnerabilities converted into this risk (#4465). SET NULL on purge.
+  convertedFromVulnerabilities AssetVulnerability[] @relation("VulnerabilityConvertedRisk")
   tenant           Tenant               @relation(fields: [tenantId], references: [id])
   controls         RiskControl[]
   // Epic G-7 — structured treatment plans (replaces free-text

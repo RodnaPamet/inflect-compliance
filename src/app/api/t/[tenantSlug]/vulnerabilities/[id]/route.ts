@@ -1,10 +1,11 @@
-import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getTenantCtx } from '@/app-layer/context';
 import { updateVulnerabilityStatus, VULN_STATUSES } from '@/app-layer/usecases/vulnerability';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+
+type Params = { tenantSlug: string; id: string };
 
 const UpdateSchema = z.object({
     status: z.enum(VULN_STATUSES).optional(),
@@ -13,9 +14,14 @@ const UpdateSchema = z.object({
     remediationDueAt: z.string().max(40).optional().nullable(),
 });
 
-export const PATCH = withApiErrorHandling(withValidatedBody(UpdateSchema, async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> }, body) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const updated = await updateVulnerabilityStatus(ctx, params.id, body);
-    return jsonResponse(updated);
-}));
+/**
+ * Triage edits a vulnerability, which is an asset-domain record: `assets.edit`,
+ * the key `updateVulnerabilityStatus` asserts (`assertCanEditAsset`) (#4465).
+ */
+export const PATCH = withApiErrorHandling(
+    requirePermission<Params>('assets.edit', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, UpdateSchema);
+        const updated = await updateVulnerabilityStatus(ctx, params.id, body);
+        return jsonResponse(updated);
+    }),
+);

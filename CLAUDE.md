@@ -2827,15 +2827,29 @@ edit from being undone:
   - **`agent-profile:<id>@v<n>` resolves only inside the caller's tenant**, and
     only the APPROVED version in force; a malformed key is refused, never read
     as a registered workflow key.
-  - **No engine runs a profile yet** (owner decision, 2026-10-26).
-    `runsProfiles(driver)` is a `Record<AgentDriver, boolean>`, false for every
-    engine, and admission refuses a profile before the run row exists:
-    `PROFILE_NEEDS_REASONING_ENGINE` on static, `PROFILE_ENGINE_CANNOT_RUN_PROFILES`
-    otherwise. Flue builds its prompt from the definition's description, so it
-    would run a profile while ignoring the instructions. The engine that sets
-    its entry true must render the pinned instructions as the operator's fenced
-    block, pass `profileTools`, and record the data category on the Anthropic
-    sub-processor row in the same diff (Step 2c).
+  - **Only the Tool Runner runs a profile** (Step 2c, #4150). `runsProfiles` is
+    a `Record<AgentDriver, boolean>`, true for `tool-runner` alone; a profile's
+    definition asks for that engine, and admission refuses it before the run row
+    exists: `PROFILE_NEEDS_REASONING_ENGINE` where the tenant's engine is static
+    (or Flue, which a profile does not ask for), `PROFILE_ENGINE_CANNOT_RUN_PROFILES`
+    on a reasoning engine whose entry is false. Flue stays false by decision
+    (2026-10-26): it would run a profile while ignoring the instructions. The
+    Anthropic row of `docs/sub-processors.md` names "tenant-authored agent
+    instructions"; an engine that sets its entry true records its data category
+    in the same diff.
+  - **A Test run is its own key, `agent-profile:<id>@v<n>:test-run`**, admitted
+    only when the caller passes `profileTrigger: 'TEST_RUN'`, which only
+    `startAgentProfileTestRun` does: the generic start route refuses that key
+    (`PROFILE_TEST_RUN_KEY`). It may name the SUBMITTED version, must be allowed
+    by the version's own `allowedTriggers`, runs as the agent from a PERSON's
+    context (`TESTER_NOT_A_PERSON` otherwise), and its definition is read-only
+    whatever the output kind. The key is what tells the worker it is a Test run,
+    so do not drop the suffix from the stored `workflowKey`.
+  - **The worker executes what admission PINNED.** `executeQueuedWorkflowRun`
+    and resume rebuild a profile run's definition from the run's own
+    `profileVersionId` while its instructions hash to `profileInstructionsHash`
+    (`resolvePinnedRunDefinition`), never by approval status and never from the
+    registry, which knows no profile key.
   - **A run pins `profileVersionId` and `profileInstructionsHash`**, written in
     the CREATE and never after (trigger), both or neither (CHECK).
   - **`AGENT_PROFILES` is the deployment's switch**, read like
@@ -2888,11 +2902,17 @@ one careless edit from being undone:
   - **SDK 1.x speaks API version `2026-10-21`**, which refuses `temperature`,
     `top_p` and `top_k`. A unit test pins the version; read it on any bump.
 
-**The Tool Runner driver is built and cannot run** (`src/lib/agentic/tool-runner/`,
-Step 2b, #4149). `DRIVER_IMPLEMENTED['tool-runner']` is false, and `TOOL_RUNNER`
-is a READ_ONLY value of `AgentDriverMode`: `STORED_DRIVER_MODES` holds it, every
-reader reads it as itself, and `AGENT_DRIVER_MODES` (what a writer accepts) does
-not. Rules that are each one careless edit from being undone:
+**The Tool Runner driver runs agent profiles** (`src/lib/agentic/tool-runner/`,
+built in Step 2b, #4149, and turned on in Step 2c, #4150).
+`DRIVER_IMPLEMENTED['tool-runner']` is true, in a commit of its own so it reverts
+alone, and `TOOL_RUNNER` is WRITTEN: `AGENT_DRIVER_MODES` holds it. It still runs
+nothing unless the operator sets `AGENT_DRIVER_TOOL_RUNNER` and an owner chooses
+it. The settings page reports its switch and build beside Flue's, offers each
+engine only while its own switch is on, and names the chosen engine in every
+reason and in its own checklist (`TOOL_RUNNER_WIRING_TERMS`). Its fourth gate is
+the profile surface (`somethingRequestsToolRunner`), applied with the tenant's
+slug by the reporting surfaces only, never on the run path. Rules that are each
+one careless edit from being undone:
 
   - **`lockedParams` is the only shape of a runner request**, and only
     `execute.ts` starts a runner (`tests/unit/agentic/tool-runner-locked-params.test.ts`
@@ -2957,6 +2977,28 @@ reports more than a run can do** (Phase 0's hardening, 0H):
   - The headline is green only when nothing known stops a run. For an owner
     whose checklist shows no active agent or bound key, it says no Flue run can
     start yet (`headlineFor`, `headlineToneFor`).
+
+**"Connect an agent you run" mints through the api-keys route, and nowhere
+else** (Step 3a, #4155). The sheet on an agent's page
+(`agents/[agentId]/ConnectAgentSheet.tsx`) POSTs to `/admin/api-keys`, so the
+mint keeps that route's `requirePermission('admin.manage')`, `createApiKey`'s
+`assertCanAdmin` and `API_KEY_CREATE_LIMIT`. Do not add a second minting route
+or let `AI_ADMIN` mint here: that is a new permission decision. Three rules in
+the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
+
+- **The key's scopes are the grants', and no more** (owner decision 2026-10-29).
+  `mcp:read`, `mcp:propose` only with a propose grant, and each granted tool's
+  own resource scope, read from `MCP_TOOL_KEY_SCOPE` in the client-safe
+  `tool-catalogue.ts`. A unit test holds that copy equal to every registry
+  definition's `resourceScope`, so a drifted copy cannot mint a key its tool
+  refuses. An external tool's scope is `admin:external_tools` (#4485).
+- **`allowedTools` and the Console toolset name the grants exactly**: no
+  wildcard and no server-level entry. `/api/mcp` refuses an ungranted tool
+  anyway; the list keeps the customer's agent from asking.
+- **The key is in no snippet.** The snippets read `INFLECT_API_KEY` from the
+  environment, and are built in the browser, so no request after the mint
+  carries the key. It lives only in the sheet's state and goes when the sheet
+  unmounts.
 
 ## Testing Conventions
 

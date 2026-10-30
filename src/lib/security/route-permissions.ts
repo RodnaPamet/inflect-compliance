@@ -506,6 +506,32 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'refuses every API key in the usecase: a machine cannot be one of ' +
             'the humans a proposal needs.',
     },
+    // The two other directories under `/agent-proposals` take THEIR pages'
+    // gates, which are not the queue's: compose is `admin.view` alone (the
+    // view key opens the queue, not compose), and the sample audits are
+    // review-quality data, gated `admin.agent_registry` on that page.
+    {
+        path: new RegExp(`^${T}\\/agent-proposals\\/compose$`),
+        methods: ['GET', 'POST'],
+        permission: 'admin.view',
+        note:
+            'Read a template\'s open fields and candidates, or compose an ' +
+            'external-write proposal from it. The /agents/compose page\'s ' +
+            'gate here; POST then takes the role-tier write ' +
+            '`composeExternalWriteProposal` asserts, which is what the page ' +
+            'enables Send on.',
+    },
+    {
+        path: new RegExp(`^${T}\\/agent-proposals\\/sample-audits(\\/[^/]+)?$`),
+        methods: ['GET', 'POST'],
+        permission: 'admin.agent_registry',
+        note:
+            'The retrospective sample audits of approved proposals and their ' +
+            'disagreement rate (GET), and one answer (POST /:id). The gate of ' +
+            '/agents/review-quality, the page about whether approvals mean ' +
+            'anything; the answer also takes the role-tier write and the ' +
+            'not-the-approver refusal in `recordSampleAuditOutcome`.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/policy-card$`),
         permission: 'admin.agent_policy_card',
@@ -1359,6 +1385,41 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'counterpart — both usecases assert canAdmin (via purgeEntity / ' +
             'restoreEntity), so the route gate matches at admin.manage ' +
             '(OWNER/ADMIN), not the assets.edit an EDITOR holds.',
+    },
+
+    // ── Asset vulnerabilities (#4465) ───────────────────────────────
+    // A matched CVE is an asset-domain row, so it reads under assets.view and
+    // writes under assets.edit; a conversion also needs the create key of what
+    // it creates. Every built-in role holds each set entirely or not at all.
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities(\\/status)?$`),
+        methods: ['GET'],
+        permission: 'assets.view',
+        note: 'Vulnerability list and CVE-sync status reads — asset visibility, held by every role.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities(\\/[^/]+)?$`),
+        methods: ['POST', 'PATCH'],
+        permission: 'assets.edit',
+        note: 'Manually linking a CVE to an asset (POST) and triaging one (PATCH) edit an asset-domain record.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/convert-to-risk$`),
+        methods: ['POST'],
+        permission: ['assets.edit', 'risks.create'],
+        note: 'Converting a vulnerability into a risk writes onto the vulnerability and creates a risk.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/convert-to-finding$`),
+        methods: ['POST'],
+        permission: 'assets.edit',
+        note: 'Converting a vulnerability into a finding writes onto the vulnerability; findings have no key of their own.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vulnerabilities\\/[^/]+\\/remediation-task$`),
+        methods: ['POST'],
+        permission: ['assets.edit', 'tasks.create', 'tasks.edit'],
+        note: 'Creates a task and links it to the asset — both task keys are asked before the task exists.',
     },
 
     // ── Tenant security settings ────────────────────────────────────

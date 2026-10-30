@@ -53,4 +53,4 @@ The audit then appears under {{ui:audits.cycleDetail.fieldworkAudits}} on the cy
 | {{ui:audits.cycleDetail.statusError}}, or the reason the server gave | The status did not change, and the list shows the old one again | Try again. If the message names your role, ask an Owner, Admin or Editor |
 | {{ui:audits.cycleDetail.loadError}} | The cycle's page could not be loaded | Click **{{ui:audits.cycleDetail.retry}}**. If it keeps failing, go back to {{ui:audits.cycles.title}} and open the cycle from its card |
 | {{ui:audits.cycleDetail.notFound}} | The cycle does not exist in this workspace, or the link is wrong | Go back to {{ui:audits.cycles.title}} and open the cycle from its card |
-| **You do not have permission to modify records in this context.** when you create a fieldwork audit | Your role cannot create audits | Ask an Owner, Admin or Editor |
+| No **{{ui:audits.newAudit}}** button on the {{ui:audits.title}} page | Your role cannot create audits | Ask an Owner, Admin or Editor |

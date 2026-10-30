@@ -64,10 +64,17 @@ export interface AgentDriverSetting {
      * reporting a capability the runtime refuses.
      */
     effective: { driver: string; reason: string | null };
-    /** The operator's process-wide switch — the other key. */
+    /** The operator's process-wide switch for the Flue engine — the other key. */
     envEnabled: boolean;
     /** Whether this build has a Flue implementation at all. */
     implemented: boolean;
+    /**
+     * The same two terms for the Tool Runner engine (Step 2c, #4150), which has
+     * its own operator switch, `AGENT_DRIVER_TOOL_RUNNER`. Reported beside
+     * Flue's rather than instead of them: the page offers both engines, and
+     * which ones an owner may choose depends on each engine's own switch.
+     */
+    toolRunner: { envEnabled: boolean; implemented: boolean };
 }
 
 /** Read the stored mode and, more importantly, what it will actually do. */
@@ -96,6 +103,7 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
     // workflow on the static engine.
     const decision = narrowToWhatAWorkflowAsksFor(
         resolveAgentDriver({ envEnabled, toolRunnerEnvEnabled, tenantSetting: mode }),
+        ctx.tenantSlug,
     );
 
     return {
@@ -103,6 +111,7 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
         effective: { driver: decision.driver, reason: decision.reason ?? null },
         envEnabled,
         implemented: DRIVER_IMPLEMENTED.flue,
+        toolRunner: { envEnabled: toolRunnerEnvEnabled, implemented: DRIVER_IMPLEMENTED['tool-runner'] },
     };
 }
 
@@ -156,7 +165,10 @@ export async function setAgentDriverSetting(
             // is the audience.
             detailsJson: {
                 category: 'access',
-                operation: next === 'FLUE' ? 'grant' : 'revoke',
+                // Either reasoning engine is a grant: each hands the walk of a
+                // run to code this repository did not write. Only the move back
+                // to the built-in engine takes that away.
+                operation: next === 'STATIC' ? 'revoke' : 'grant',
                 summary: `Agentic driver: ${before.mode} → ${next}`,
             },
             // The OTHER key's state at the moment of the decision. Without it
@@ -168,6 +180,8 @@ export async function setAgentDriverSetting(
                 to: next,
                 envEnabled: before.envEnabled,
                 implemented: before.implemented,
+                toolRunnerEnvEnabled: before.toolRunner.envEnabled,
+                toolRunnerImplemented: before.toolRunner.implemented,
             },
         }),
     );

@@ -178,6 +178,8 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         'FK — Task id, not content (heuristic matched "remediation").',
     'AssetVulnerability.remediationTaskId':
         'FK — remediation Task id, not content (heuristic matched "remediation").',
+    'AssetVulnerability.convertedFindingId':
+        'FK — the Finding this vulnerability was converted into (#4465), not content (heuristic matched "finding").',
     'KriReading.remediationTaskId':
         'FK — remediation Task id, not content (heuristic matched "remediation").',
     'TreatmentMilestone.treatmentPlanId':

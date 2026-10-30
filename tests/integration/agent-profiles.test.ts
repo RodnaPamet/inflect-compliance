@@ -36,7 +36,7 @@ jest.mock('@/env', () => {
         }),
     };
 });
-let mockDriver: 'static' | 'flue' = 'flue';
+let mockDriver: 'static' | 'flue' | 'tool-runner' = 'flue';
 jest.mock('@/lib/agentic/agent-driver-policy', () => ({
     ...jest.requireActual('@/lib/agentic/agent-driver-policy'),
     resolveDriverForRun: jest.fn(async () => ({ driver: mockDriver, reason: null })),
@@ -588,13 +588,23 @@ describeFn('agent profiles (real DB)', () => {
             expect(await runRowsFor(TA, key)).toBe(0);
         });
 
-        it('PROFILE_ENGINE_CANNOT_RUN_PROFILES on every engine of this build, before any run row exists', async () => {
+        it('a profile asks for the Tool Runner: a tenant on Flue runs it on no reasoning engine, and is refused', async () => {
+            // Step 2c: the compiled definition asks for 'tool-runner', so a
+            // tenant permitted only Flue gets the static engine for it.
             mockDriver = 'flue';
+            expect(await reasonOf(startWorkflowRun(asAgentA(), key))).toBe('PROFILE_NEEDS_REASONING_ENGINE');
+            expect(await runRowsFor(TA, key)).toBe(0);
+        });
+
+        it('PROFILE_ENGINE_CANNOT_RUN_PROFILES on a reasoning engine that does not run profiles, before any run row exists', async () => {
+            mockDriver = 'tool-runner';
+            engineRunsProfiles = false;
             expect(await reasonOf(startWorkflowRun(asAgentA(), key))).toBe('PROFILE_ENGINE_CANNOT_RUN_PROFILES');
             expect(await runRowsFor(TA, key)).toBe(0);
         });
 
         it('an admitted run pins the version and its hash, write-once; a registered run pins neither', async () => {
+            mockDriver = 'tool-runner';
             engineRunsProfiles = true;
             const started = await startWorkflowRun(asAgentA(), key);
             const run = await prisma.workflowRun.findFirstOrThrow({
@@ -667,10 +677,12 @@ describeFn('agent profiles (real DB)', () => {
             expect(v.version).toBe(1);
         });
 
-        it('says why a test run cannot start while no engine runs a profile', async () => {
+        it('says why a test run cannot start on an engine that does not run profiles, naming it (Step 2c)', async () => {
+            // No settings row: the workspace is on the built-in engine.
             expect((await getAgentProfile(reviewerA(), AGENTS.fresh)).testRun).toEqual({
                 available: false,
-                reason: 'NO_ENGINE_RUNS_PROFILES',
+                reason: 'ENGINE_DOES_NOT_RUN_PROFILES',
+                engine: 'STATIC',
             });
         });
 

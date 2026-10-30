@@ -160,12 +160,25 @@ model AssetVulnerability {
   /// so deleting the task only clears the link — it never cascade-
   /// deletes the vulnerability row.
   remediationTaskId String?
+  /// The Risk this vulnerability was converted into (#4465). Set once by
+  /// `convertVulnerabilityToRisk`, which refuses a second conversion while
+  /// the risk it names is live. The database FK is
+  /// `ON DELETE SET NULL ("convertedRiskId")` — column-scoped so `tenantId`
+  /// survives a purge — which Prisma's DSL cannot spell, so this relation
+  /// renders RESTRICT and the difference is signed-off residue in
+  /// prisma/fresh-db-schema-drift.expected.sql.
+  convertedRiskId    String?
+  /// The Finding this vulnerability was converted into (#4465). Same rules
+  /// and the same FK shape as `convertedRiskId`.
+  convertedFindingId String?
 
-  tenant          Tenant @relation(fields: [tenantId], references: [id])
-  asset           Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  cve             Cve    @relation(fields: [cveId], references: [id], onDelete: Cascade)
-  ownerUser       User?  @relation("AssetVulnerabilityOwner", fields: [ownerUserId], references: [id])
-  remediationTask Task?  @relation("VulnerabilityRemediation", fields: [remediationTaskId, tenantId], references: [id, tenantId])
+  tenant           Tenant   @relation(fields: [tenantId], references: [id])
+  asset            Asset    @relation(fields: [assetId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  cve              Cve      @relation(fields: [cveId], references: [id], onDelete: Cascade)
+  ownerUser        User?    @relation("AssetVulnerabilityOwner", fields: [ownerUserId], references: [id])
+  remediationTask  Task?    @relation("VulnerabilityRemediation", fields: [remediationTaskId, tenantId], references: [id, tenantId])
+  convertedRisk    Risk?    @relation("VulnerabilityConvertedRisk", fields: [convertedRiskId, tenantId], references: [id, tenantId])
+  convertedFinding Finding? @relation("VulnerabilityConvertedFinding", fields: [convertedFindingId, tenantId], references: [id, tenantId])
 
   /// One link per (asset, cve) within a tenant — re-matching is idempotent.
   @@unique([tenantId, assetId, cveId])
@@ -176,6 +189,8 @@ model AssetVulnerability {
   @@index([cveId])
   @@index([assetId])
   @@index([remediationTaskId])
+  @@index([tenantId, convertedRiskId])
+  @@index([tenantId, convertedFindingId])
 }
 
 /// Tenant-scoped: one DevSecOps scanner execution (SAST/SCA/DAST/SECRETS/

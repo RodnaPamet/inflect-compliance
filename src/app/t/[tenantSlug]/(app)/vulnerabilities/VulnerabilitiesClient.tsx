@@ -28,6 +28,8 @@ import { UserCombobox, type Member } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { toYMD } from '@/components/ui/date-picker/date-utils';
 import { EmptyState } from '@/components/ui/empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
@@ -35,8 +37,16 @@ import { FormField } from '@/components/ui/form-field';
 import { useToast, useEnterSubmit, useThresholdLoadMore } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks';
 import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
+import { apiErrorMessage } from '@/lib/api-error';
+import { vulnerabilityRefusal, type VulnerabilityRefusal } from '@/lib/vulnerability-refusals';
 import { formatDate } from '@inflect/ui/lib/format-date';
-import { buildVulnFilters, VULN_FILTER_KEYS, buildVulnStatusLabels } from './filter-defs';
+import {
+    buildVulnFilters,
+    VULN_FILTER_KEYS,
+    buildVulnStatusLabels,
+    buildVulnSeverityLabels,
+    buildVulnMatchedViaLabels,
+} from './filter-defs';
 
 /** CVE-sync freshness + reach, lazy-fetched from /vulnerabilities/status. */
 interface CveSyncStatus {
@@ -58,6 +68,10 @@ export interface VulnRow {
     remediationDueAt: string | Date | null;
     remediationTaskId: string | null;
     remediationTask: { id: string; key: string | null } | null;
+    /** What To Risk made, if anything (#4465). A deleted one no longer counts. */
+    convertedRisk?: { id: string; key: string | null; deletedAt: string | Date | null } | null;
+    /** What To Finding made, if anything (#4465). A deleted one no longer counts. */
+    convertedFinding?: { id: string; deletedAt: string | Date | null } | null;
     /** Free-text analyst note (encrypted at rest; plaintext on the row). */
     note: string | null;
     cve: {
@@ -70,10 +84,38 @@ export interface VulnRow {
     asset: { id: string; key: string | null; name: string };
 }
 
+/**
+ * What this viewer may do, one flag per route gate (#4465). Each is the coarse
+ * write tier AND the granular keys its route asks, computed server-side.
+ */
+export interface VulnPermissions {
+    /** Status / owner / due date / note / Link CVE — `assets.edit`. */
+    triage: boolean;
+    /** To Risk — `assets.edit` + `risks.create`. */
+    convertToRisk: boolean;
+    /** To Finding — `assets.edit`. */
+    convertToFinding: boolean;
+    /** Create task — `assets.edit` + `tasks.create` + `tasks.edit`. */
+    createTask: boolean;
+}
+
+/**
+ * A view scoped to one asset (`?assetId=`, from the asset page's "See all
+ * vulnerabilities"). `asset` is null when the id names no live asset.
+ */
+export interface VulnScope {
+    assetId: string;
+    asset: { id: string; key: string | null; name: string } | null;
+}
+
 interface Props {
     initialRows: VulnRow[];
+    /** The read stopped at `cap` with more rows behind it. */
+    truncated: boolean;
+    cap: number;
+    scope: VulnScope | null;
     tenantSlug: string;
-    canWrite: boolean;
+    can: VulnPermissions;
 }
 
 /** Minimal asset shape the "Link CVE" picker consumes from GET /assets. */
@@ -81,6 +123,11 @@ interface AssetOption {
     id: string;
     name: string;
     key: string | null;
+}
+
+/** A conversion's target, if it is still there to open (not soft-deleted). */
+function live<T extends { deletedAt: string | Date | null }>(target: T | null | undefined): T | null {
+    return target && !target.deletedAt ? target : null;
 }
 
 const SEVERITY_VARIANT: Record<string, StatusBadgeVariant> = {
@@ -98,7 +145,7 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     FALSE_POSITIVE: 'neutral',
 };
 
-export function VulnerabilitiesClient({ initialRows, tenantSlug, canWrite }: Props) {
+export function VulnerabilitiesClient(props: Props) {
     const tx = useTranslations('vulnerabilities');
     const tGroup = useTranslations('common.filterGroups');
     const filters = useMemo(
@@ -112,17 +159,27 @@ export function VulnerabilitiesClient({ initialRows, tenantSlug, canWrite }: Pro
     const filterCtx = useFilterContext(filters, [...VULN_FILTER_KEYS]);
     return (
         <FilterProvider value={filterCtx}>
-            <VulnerabilitiesInner initialRows={initialRows} tenantSlug={tenantSlug} canWrite={canWrite} />
+            <VulnerabilitiesInner {...props} />
         </FilterProvider>
     );
 }
 
-function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
+function VulnerabilitiesInner({ initialRows, truncated, cap, scope, tenantSlug, can }: Props) {
+    const canTriage = can.triage;
     const t = useTranslations('vulnerabilities');
     const tGroup = useTranslations('common.filterGroups');
     const tAdapt = (k: string, v?: Record<string, unknown>) =>
         t(k as Parameters<typeof t>[0], v as Parameters<typeof t>[1]);
     const statusLabels = useMemo(() => buildVulnStatusLabels(tAdapt), [t]);
+    // Stored codes render as labels (#4465); an unknown code shows as itself.
+    const severityLabels = useMemo(
+        () => buildVulnSeverityLabels((k) => t(k as Parameters<typeof t>[0])),
+        [t],
+    );
+    const matchedViaLabels = useMemo(
+        () => buildVulnMatchedViaLabels((k) => t(k as Parameters<typeof t>[0])),
+        [t],
+    );
     const filterDefs = useMemo(
         () => buildVulnFilters(tAdapt, (k) => tGroup(k as Parameters<typeof tGroup>[0])),
         [t, tGroup],
@@ -145,6 +202,26 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
     }
 
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
+
+    // A refused action shows WHY (#4465): a refusal this page can name in the
+    // viewer's language gets its own sentence, anything else the server's
+    // message, and only a body with no message the generic fallback.
+    const refusalText = useMemo<Record<VulnerabilityRefusal, string>>(
+        () => ({
+            REMEDIATION_TASK_EXISTS: t('refusalRemediationTaskExists'),
+            VULNERABILITY_ALREADY_CONVERTED_TO_RISK: t('refusalAlreadyConvertedToRisk'),
+            VULNERABILITY_ALREADY_CONVERTED_TO_FINDING: t('refusalAlreadyConvertedToFinding'),
+        }),
+        [t],
+    );
+    const failureMessage = useCallback(
+        async (res: Response, fallback: string) => {
+            const body: unknown = await res.json().catch(() => null);
+            const reason = vulnerabilityRefusal(body);
+            return reason ? refusalText[reason] : apiErrorMessage(body, fallback);
+        },
+        [refusalText],
+    );
 
     const rowData = useMemo(
         () => initialRows.map((r) => (overrides[r.id] ? { ...r, ...overrides[r.id] } : r)),
@@ -190,20 +267,23 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
     const patchVuln = useCallback(
         async (id: string, body: Record<string, unknown>, optimistic: Partial<VulnRow>) => {
             applyOverride(id, optimistic);
+            let message = t('updateFailed');
             try {
                 const res = await fetch(apiUrl(`/vulnerabilities/${id}`), {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body),
                 });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (res.ok) return;
+                message = await failureMessage(res, message);
             } catch {
-                clearOverride(id);
-                toast.error(t('updateFailed'));
-                router.refresh();
+                // Network failure: no body to read, the fallback stands.
             }
+            clearOverride(id);
+            toast.error(message);
+            router.refresh();
         },
-        [apiUrl, applyOverride, clearOverride, router, toast, t],
+        [apiUrl, applyOverride, clearOverride, failureMessage, router, toast, t],
     );
 
     const patchStatus = useCallback(
@@ -248,16 +328,21 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             setPendingId(row.id);
             try {
                 const res = await fetch(apiUrl(`/vulnerabilities/${row.id}/convert-to-risk`), { method: 'POST' });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                toast.success(t('riskCreated'));
+                if (res.ok) {
+                    toast.success(t('riskCreated'));
+                } else {
+                    toast.error(await failureMessage(res, t('convertRiskFailed')));
+                }
+                // Either way the row may have moved on (a refusal can mean
+                // somebody else got there first), so re-read it.
                 router.refresh();
             } catch {
-                toast.error(t('convertFailed', { target: 'risk' }));
+                toast.error(t('convertRiskFailed'));
             } finally {
                 setPendingId(null);
             }
         },
-        [apiUrl, router, toast, t],
+        [apiUrl, failureMessage, router, toast, t],
     );
 
     const convert = useCallback(
@@ -266,9 +351,13 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             setPendingId(row.id);
             try {
                 const res = await fetch(apiUrl(`/vulnerabilities/${row.id}/convert-to-finding`), { method: 'POST' });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (!res.ok) {
+                    toast.error(await failureMessage(res, t('convertFindingFailed')));
+                    router.refresh();
+                    return;
+                }
                 const body = (await res.json().catch(() => null)) as { nudge?: { suggestElevateToRisk?: boolean } } | null;
-                if (body?.nudge?.suggestElevateToRisk) {
+                if (body?.nudge?.suggestElevateToRisk && can.convertToRisk) {
                     // Finding may under-capture a HIGH/CRITICAL vuln — offer to
                     // also elevate to a Risk (opt-in, never automatic).
                     toast.info(t('elevateNudge'), { action: { label: t('elevateAction'), onClick: () => void convertToRisk(row) } });
@@ -277,12 +366,12 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
                 }
                 router.refresh();
             } catch {
-                toast.error(t('convertFailed', { target: 'finding' }));
+                toast.error(t('convertFindingFailed'));
             } finally {
                 setPendingId(null);
             }
         },
-        [apiUrl, convertToRisk, router, toast, t],
+        [apiUrl, can.convertToRisk, convertToRisk, failureMessage, router, toast, t],
     );
 
     const createRemediationTask = useCallback(
@@ -290,7 +379,12 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             setPendingId(row.id);
             try {
                 const res = await fetch(apiUrl(`/vulnerabilities/${row.id}/remediation-task`), { method: 'POST' });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (!res.ok) {
+                    toast.error(await failureMessage(res, t('taskCreateFailed')));
+                    // REMEDIATION_TASK_EXISTS means the row already has one: show it.
+                    router.refresh();
+                    return;
+                }
                 const task = (await res.json()) as { id: string; key: string | null };
                 applyOverride(row.id, {
                     remediationTaskId: task.id,
@@ -304,7 +398,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
                 setPendingId(null);
             }
         },
-        [apiUrl, applyOverride, router, toast, t],
+        [apiUrl, applyOverride, failureMessage, router, toast, t],
     );
 
     const statusOptions = useMemo<ComboboxOption[]>(
@@ -352,7 +446,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             cell: ({ row }) => {
                 const sev = (row.original.cve.cvssSeverity ?? '').toUpperCase();
                 if (!sev) return <span className="text-content-muted">—</span>;
-                return <StatusBadge variant={SEVERITY_VARIANT[sev] ?? 'neutral'}>{sev}</StatusBadge>;
+                return <StatusBadge variant={SEVERITY_VARIANT[sev] ?? 'neutral'}>{severityLabels[sev] ?? sev}</StatusBadge>;
             },
         },
         {
@@ -369,7 +463,11 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             id: 'matchedVia',
             header: t('colMatched'),
             accessorFn: (r) => r.matchedVia,
-            cell: ({ row }) => <span className="text-content-muted">{row.original.matchedVia}</span>,
+            cell: ({ row }) => (
+                <span className="text-content-muted">
+                    {matchedViaLabels[row.original.matchedVia] ?? row.original.matchedVia}
+                </span>
+            ),
         },
         {
             id: 'status',
@@ -377,7 +475,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             accessorFn: (r) => r.status,
             cell: ({ row }) => {
                 const r = row.original;
-                if (!canWrite) {
+                if (!canTriage) {
                     return (
                         <StatusBadge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>
                             {statusLabels[r.status] ?? r.status}
@@ -402,7 +500,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             accessorFn: (r) => r.ownerUser?.name ?? r.ownerUser?.email ?? '',
             cell: ({ row }) => {
                 const r = row.original;
-                if (!canWrite) {
+                if (!canTriage) {
                     const label = r.ownerUser?.name ?? r.ownerUser?.email;
                     return label ? (
                         <span className="text-content-default">{label}</span>
@@ -428,7 +526,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             accessorFn: (r) => (r.remediationDueAt ? new Date(r.remediationDueAt).getTime() : -1),
             cell: ({ row }) => {
                 const r = row.original;
-                if (!canWrite) {
+                if (!canTriage) {
                     return r.remediationDueAt ? (
                         <span className="tabular-nums text-content-default">{formatDate(r.remediationDueAt)}</span>
                     ) : (
@@ -463,7 +561,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
                         </Link>
                     );
                 }
-                if (!canWrite) return <span className="text-content-muted">—</span>;
+                if (!can.createTask) return <span className="text-content-muted">—</span>;
                 return (
                     <Button
                         variant="secondary"
@@ -483,7 +581,7 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             cell: ({ row }) => (
                 <NoteCell
                     row={row.original}
-                    canWrite={canWrite}
+                    canWrite={canTriage}
                     onSave={patchNote}
                     emptyLabel={t('addNote')}
                     editLabel={t('editNote')}
@@ -491,34 +589,71 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
                 />
             ),
         },
-        ...(canWrite
+        ...(can.convertToRisk || can.convertToFinding
             ? [{
                 id: 'actions',
                 header: '',
-                cell: ({ row }: { row: { original: VulnRow } }) => (
-                    <div className="flex justify-end gap-default">
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={pendingId === row.original.id}
-                            onClick={() => convert(row.original, 'risk')}
-                        >
-                            {t('toRisk')}
-                        </Button>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={pendingId === row.original.id}
-                            onClick={() => convert(row.original, 'finding')}
-                        >
-                            {t('toFinding')}
-                        </Button>
-                    </div>
-                ),
+                cell: ({ row }: { row: { original: VulnRow } }) => {
+                    // Each conversion works once (#4465): once it has made its
+                    // item, the button becomes a link to it.
+                    const risk = live(row.original.convertedRisk);
+                    const finding = live(row.original.convertedFinding);
+                    return (
+                        <div className="flex justify-end gap-default">
+                            {risk ? (
+                                <Link
+                                    href={`/t/${tenantSlug}/risks/${risk.id}`}
+                                    data-testid={`vuln-converted-risk-${row.original.id}`}
+                                    className="inline-flex items-center gap-1 font-medium text-content-link hover:underline"
+                                >
+                                    {risk.key ?? t('viewRisk')}
+                                    <ArrowUpRight className="h-3 w-3 shrink-0" />
+                                </Link>
+                            ) : (
+                                can.convertToRisk && (
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={pendingId === row.original.id}
+                                        onClick={() => convert(row.original, 'risk')}
+                                    >
+                                        {t('toRisk')}
+                                    </Button>
+                                )
+                            )}
+                            {finding ? (
+                                // Findings have no page of their own; the link
+                                // opens the register the finding is in.
+                                <Link
+                                    href={`/t/${tenantSlug}/findings`}
+                                    data-testid={`vuln-converted-finding-${row.original.id}`}
+                                    className="inline-flex items-center gap-1 font-medium text-content-link hover:underline"
+                                >
+                                    {t('viewFinding')}
+                                    <ArrowUpRight className="h-3 w-3 shrink-0" />
+                                </Link>
+                            ) : (
+                                can.convertToFinding && (
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={pendingId === row.original.id}
+                                        onClick={() => convert(row.original, 'finding')}
+                                    >
+                                        {t('toFinding')}
+                                    </Button>
+                                )
+                            )}
+                        </div>
+                    );
+                },
             }]
             : []),
     ]), [
-        canWrite,
+        can.convertToFinding,
+        can.convertToRisk,
+        can.createTask,
+        canTriage,
         convert,
         createRemediationTask,
         patchStatus,
@@ -528,6 +663,8 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
         pendingId,
         statusOptions,
         statusLabels,
+        severityLabels,
+        matchedViaLabels,
         tenantSlug,
         t,
     ]);
@@ -554,10 +691,10 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
 
     // Header actions: the sync strip plus a manual "Link CVE" affordance
     // (write users only) that opens the AssetVulnerability create modal.
-    const headerActions = (syncStrip || canWrite) ? (
+    const headerActions = (syncStrip || canTriage) ? (
         <div className="flex items-center gap-default">
             {syncStrip}
-            {canWrite && (
+            {canTriage && (
                 <Button
                     id="vuln-link-cve-trigger"
                     variant="secondary"
@@ -571,12 +708,53 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
         </div>
     ) : undefined;
 
-    // Honest empty state — distinguish filtered-out from three list-empty
-    // cases (sync off → no asset identity → genuinely clean), checked in order.
+    // "Show all" from a one-asset view: the same page and filters, without
+    // the asset. `assetId` is the one parameter clearing the filters keeps.
+    const showAllHref = useMemo(() => {
+        const q = new URLSearchParams();
+        for (const key of VULN_FILTER_KEYS) {
+            const values = (state[key] ?? []) as string[];
+            if (values.length) q.set(key, values.join(','));
+        }
+        const qs = q.toString();
+        return `/t/${tenantSlug}/vulnerabilities${qs ? `?${qs}` : ''}`;
+    }, [state, tenantSlug]);
+
+    // Above the table: whose list this is when it is one asset's (#4465), and
+    // that it stops at the cap when it does — nothing on screen said either.
+    const banner = (
+        <>
+            {scope && (
+                <InlineNotice variant="info" id="vuln-asset-scope">
+                    {scope.asset
+                        ? t('scopedToAsset', {
+                              asset: scope.asset.key ? `${scope.asset.key} · ${scope.asset.name}` : scope.asset.name,
+                          })
+                        : t('scopedToMissingAsset')}
+                    {' · '}
+                    <Link href={showAllHref} id="vuln-asset-scope-clear" className="font-medium underline hover:no-underline">
+                        {t('showAllVulnerabilities')}
+                    </Link>
+                </InlineNotice>
+            )}
+            <TruncationBanner truncated={truncated} cap={cap} />
+        </>
+    );
+
+    // Honest empty state — distinguish filtered-out from the list-empty cases
+    // (sync off → one asset's view → no asset identity → genuinely clean),
+    // checked in order. A one-asset view never claims "your assets".
     const emptyState = hasActive ? (
         <EmptyState icon={ShieldAlert} title={t('emptyFilteredTitle')} description={t('emptyFilteredDesc')} />
     ) : syncStatus && !syncStatus.syncEnabled ? (
         <EmptyState icon={ShieldAlert} title={t('emptyDisabledTitle')} description={t('emptyDisabledDesc')} />
+    ) : scope ? (
+        <EmptyState
+            icon={ShieldAlert}
+            title={t('emptyScopedTitle')}
+            description={t('emptyScopedDesc')}
+            primaryAction={{ label: t('showAllVulnerabilities'), href: showAllHref }}
+        />
     ) : syncStatus && syncStatus.assetsWithIdentity === 0 ? (
         <EmptyState
             icon={ShieldAlert}
@@ -609,16 +787,20 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
                 actions: headerActions,
             }}
             filters={{ defs: filterDefs }}
+            banner={banner}
             table={{
                 data: visibleVulnRows,
                 onReachEnd: hasMoreVulnRows ? loadMoreVulnRows : undefined,
                 columns,
                 getRowId: (r) => r.id,
+                // No bulk actions here, so no select column: its checkboxes
+                // would do nothing (the house rule #4275 applied to Controls).
+                selectionEnabled: false,
                 resourceName: (plural) => (plural ? t('resourcePlural') : t('resourceSingular')),
                 emptyState,
             }}
         >
-            {canWrite && linkOpen && (
+            {canTriage && linkOpen && (
                 <LinkCveModal
                     apiUrl={apiUrl}
                     onClose={() => setLinkOpen(false)}

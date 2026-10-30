@@ -10,8 +10,8 @@
  *     either is characters on the screen and creates no element;
  *   • the author is never offered Approve on their own submission;
  *   • the tool picker offers exactly the tools the agent is granted;
- *   • Test run is disabled, names the engine setting it needs, and starts
- *     nothing;
+ *   • Test run (Step 2c) starts the version's run and opens the Runs tab when
+ *     it can, and otherwise is disabled, says why, and starts nothing;
  *   • a refusal from the save is shown beside the field it concerns.
  */
 import * as React from 'react';
@@ -123,7 +123,7 @@ function view(versions: ProfileVersionView[], over: Partial<ProfileView> = {}): 
             : null,
         versions,
         options: { tools: ['list_controls', 'list_risks'], skills: [{ origin: 'repository', name: 'risk-register-review' }] },
-        testRun: { available: false, reason: 'NO_ENGINE_RUNS_PROFILES' },
+        testRun: { available: false, reason: 'ENGINE_DOES_NOT_RUN_PROFILES', engine: 'STATIC' },
         limits: { instructionsMaxChars: 16_000, maxTurns: 50, rejectionReasonMaxChars: 1_000 },
         ...over,
     };
@@ -152,10 +152,17 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function renderTab(data: ProfileView, props: { retired?: boolean } = {}) {
+function renderTab(data: ProfileView, props: { retired?: boolean; onOpenRuns?: () => void } = {}) {
     const mutate = jest.fn().mockResolvedValue(undefined);
     swr.mockReturnValue({ data, error: undefined, isLoading: false, mutate });
-    render(<BehaviourTab tenantSlug="acme" agentId="agent-1" retired={props.retired ?? false} />);
+    render(
+        <BehaviourTab
+            tenantSlug="acme"
+            agentId="agent-1"
+            retired={props.retired ?? false}
+            onOpenRuns={props.onOpenRuns}
+        />,
+    );
     return { mutate };
 }
 
@@ -264,19 +271,55 @@ describe('instructions are text everywhere', () => {
     });
 });
 
-describe('Test run', () => {
-    it('is disabled on a submitted and an approved version, names the engine setting, and starts nothing', () => {
-        renderTab(view([SUBMITTED(), version()]));
+describe('Test run (Step 2c)', () => {
+    it('on an engine that does not run profiles: disabled on both versions, names the engine and where to change it, starts nothing', () => {
+        renderTab(view([SUBMITTED(), version()], { testRun: { available: false, reason: 'ENGINE_DOES_NOT_RUN_PROFILES', engine: 'FLUE' } }));
+        const expected = copy('testRun.reason.ENGINE_DOES_NOT_RUN_PROFILES', { engine: copy('testRun.engine.FLUE') });
         for (const n of [1, 2]) {
             const button = screen.getByTestId(`behaviour-test-run-${n}-button`) as HTMLButtonElement;
             expect(button.disabled).toBe(true);
             fireEvent.click(button);
-            expect(screen.getByTestId(`behaviour-test-run-${n}-reason`).textContent).toBe(
-                copy('testRun.reason.NO_ENGINE_RUNS_PROFILES'),
-            );
+            expect(screen.getByTestId(`behaviour-test-run-${n}-reason`).textContent).toBe(expected);
         }
-        expect(copy('testRun.reason.NO_ENGINE_RUNS_PROFILES')).toContain('Agent engines');
+        expect(expected).toContain('Flue engine');
+        expect(expected).toContain('Agent engines');
         expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it.each(['ENGINE_NOT_IN_FORCE', 'AGENT_NOT_READY'] as const)('%s: disabled, with its own sentence', (reason) => {
+        renderTab(view([version()], { testRun: { available: false, reason } }));
+        expect((screen.getByTestId('behaviour-test-run-1-button') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByTestId('behaviour-test-run-1-reason').textContent).toBe(copy(`testRun.reason.${reason}`));
+    });
+
+    it('a version that does not allow Test runs is disabled, though the engine is ready', () => {
+        renderTab(view([version({ allowedTriggers: ['ASK'] })], { testRun: { available: true } }));
+        expect((screen.getByTestId('behaviour-test-run-1-button') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByTestId('behaviour-test-run-1-reason').textContent).toBe(copy('testRun.reason.TRIGGER_NOT_ALLOWED'));
+    });
+
+    it('when it can start: POSTs that version\'s Test run, says so, and opens the Runs tab', async () => {
+        const onOpenRuns = jest.fn();
+        fetchMock.mockResolvedValue(ok({ runId: 'run-1', status: 'RUNNING' }));
+        renderTab(view([SUBMITTED(), version()], { testRun: { available: true } }), { onOpenRuns });
+        const button = screen.getByTestId('behaviour-test-run-2-button') as HTMLButtonElement;
+        expect(button.disabled).toBe(false);
+        expect(screen.queryByTestId('behaviour-test-run-2-reason')).toBeNull();
+        fireEvent.click(button);
+        await waitFor(() => expect(onOpenRuns).toHaveBeenCalledTimes(1));
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock.mock.calls[0][0]).toBe('/api/t/acme/admin/agents/agent-1/profile/versions/2/test-run');
+        expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+        expect(toastSuccess).toHaveBeenCalledWith(copy('testRun.started'));
+    });
+
+    it('a refusal from the server is shown, and the Runs tab is not opened', async () => {
+        const onOpenRuns = jest.fn();
+        fetchMock.mockResolvedValue(refused('AGENT_KILL_SWITCHED', 'A kill switch is in force for this agent (scope: AGENT).', 409));
+        renderTab(view([version()], { testRun: { available: true } }), { onOpenRuns });
+        fireEvent.click(screen.getByTestId('behaviour-test-run-1-button'));
+        await waitFor(() => expect(toastError).toHaveBeenCalledWith('A kill switch is in force for this agent (scope: AGENT).'));
+        expect(onOpenRuns).not.toHaveBeenCalled();
     });
 
     it('is not offered on a draft', () => {
