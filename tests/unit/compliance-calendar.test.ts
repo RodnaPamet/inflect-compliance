@@ -929,6 +929,19 @@ describe('calendar event ownership', () => {
         expect((await eventOfType('finding-due'))?.ownerUserId).toBe(OWNER);
     });
 
+    it("a finding links to its panel on the register, there being no /findings/[id] route", async () => {
+        mockFindingFindMany.mockResolvedValue([
+            {
+                id: 'find-1',
+                title: 'Missing 2FA',
+                dueDate: IN_RANGE,
+                status: 'OPEN',
+                assigneeUserId: OWNER,
+            },
+        ]);
+        expect((await eventOfType('finding-due'))?.href).toBe('/t/acme/findings?finding=find-1');
+    });
+
     it('a finding with only the legacy free-text owner reports NO owner', async () => {
         // `Finding.owner` holds a NAME. Publishing it as `ownerUserId` is worse
         // than publishing nothing: a name can never match the viewer, and in

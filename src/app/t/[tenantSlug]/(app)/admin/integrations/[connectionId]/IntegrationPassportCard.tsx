@@ -358,7 +358,9 @@ export function IntegrationPassportCard({ connectionId }: { connectionId: string
                         {openFindings.map((f) => (
                             <li key={f.id} className="flex flex-wrap items-center gap-tight">
                                 <StatusBadge variant={SEVERITY_VARIANT[f.severity] ?? 'neutral'}>{f.severity}</StatusBadge>
-                                <a className="text-content-info underline underline-offset-2" href={tenantHref(`/findings/${f.id}`)}>
+                                {/* There is no `/findings/[id]` route: a finding's address
+                                    is the register with its panel opened. */}
+                                <a className="text-content-info underline underline-offset-2" href={tenantHref(`/findings?finding=${f.id}`)}>
                                     {f.title}
                                 </a>
                                 {f.assigneeUserId === null && <span className="text-content-muted">{t('findingOwnerRole')}</span>}

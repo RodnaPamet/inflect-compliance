@@ -43,6 +43,7 @@ import {
     toYMD,
 } from '@/components/ui/date-picker/date-utils';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
+import { apiErrorMessage } from '@/lib/api-error';
 
 interface ControlOption {
     id: string;
@@ -232,9 +233,13 @@ export function CreateFindingModal({
                 body: JSON.stringify(payload),
             });
             if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
+                // The error envelope is `{ error: { code, message } }`, so
+                // `data.error` is an OBJECT; handing it to `new Error()` showed
+                // every refusal as "[object Object]". Read the server's reason
+                // through the shared helper, falling back to the status line.
+                const data = await res.json().catch(() => null);
                 throw new Error(
-                    data.message || data.error || tx('create.createFailed', { status: res.status }),
+                    apiErrorMessage(data, tx('create.createFailed', { status: res.status })),
                 );
             }
             const finding = await res.json();
