@@ -361,9 +361,21 @@ export const RUN_LOCK_LABEL_PREFIX = 'inflect-jest-run:';
  * both, and the int4 pair keeps the key out of JS `BigInt` entirely.
  */
 export function testDbRunLockKey(repoRoot: string, baseName: string): TestDbRunLockKey {
+    return testDbRunLockKeyForTag(tagForRoot(repoRoot), baseName);
+}
+
+/**
+ * The same key from a checkout TAG rather than its root. A per-worker
+ * database name carries the tag and not the root, so this is the form
+ * `scripts/reap-test-databases.ts` needs to ask whether a run of the checkout
+ * that owns `<base>_<tag>_w<N>` is live, including a checkout it could not
+ * find on disk. The string hashed is unchanged, so every checkout, on any
+ * branch, derives the same key for the same pair.
+ */
+export function testDbRunLockKeyForTag(tag: string, baseName: string): TestDbRunLockKey {
     const digest = crypto
         .createHash('sha256')
-        .update(`inflect-test-db-run-lock ${tagForRoot(repoRoot)} ${baseName}`)
+        .update(`inflect-test-db-run-lock ${tag} ${baseName}`)
         .digest();
     return [digest.readInt32BE(0), digest.readInt32BE(4)];
 }
