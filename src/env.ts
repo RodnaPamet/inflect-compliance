@@ -325,6 +325,14 @@ export const env = createEnv({
         // dropped channel name makes an incomplete list of where data can go
         // read exactly like a complete one.
         SANDBOX_RUNTIME_CHANNELS: z.string().optional(),
+        /**
+         * Base URL of the gateway's UNAUTHENTICATED health port — 5.6e (#4000).
+         *
+         * Absent means "no probe was attempted", which the admin page reports
+         * differently from "did not answer": a deploy that never named a
+         * gateway must not be shown as having an unreachable one.
+         */
+        SANDBOX_RUNTIME_HEALTH_URL: z.string().url().optional(),
         // `z.enum(['0','1'])` and NOT `z.coerce.boolean()`, which maps the
         // string "false" to TRUE. Matches RATE_LIMIT_ENABLED above.
         SANDBOX_EXECUTION_ENABLED: z.enum(['0', '1']).optional(),
@@ -707,6 +715,7 @@ export const env = createEnv({
         SANDBOX_RUNTIME_CONFIG_DIGEST: process.env.SANDBOX_RUNTIME_CONFIG_DIGEST,
         SANDBOX_RUNTIME_APPLIED_AT: process.env.SANDBOX_RUNTIME_APPLIED_AT,
         SANDBOX_RUNTIME_CHANNELS: process.env.SANDBOX_RUNTIME_CHANNELS,
+        SANDBOX_RUNTIME_HEALTH_URL: process.env.SANDBOX_RUNTIME_HEALTH_URL,
         SANDBOX_EXECUTION_ENABLED: process.env.SANDBOX_EXECUTION_ENABLED,
         AI_POSTURE_PROVIDER: process.env.AI_POSTURE_PROVIDER,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
