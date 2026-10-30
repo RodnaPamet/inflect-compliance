@@ -66,7 +66,11 @@ function membershipDb(customRole: Record<string, unknown> | null) {
                 customRole: customRole ? { id: customRole.id, name: customRole.name } : null,
             })),
         },
-        tenantCustomRole: { findFirst: jest.fn().mockResolvedValue(customRole) },
+        tenantCustomRole: {
+            findFirst: jest.fn().mockResolvedValue(customRole),
+            // The carriage check reads the role for its base and blob (2026-10-30).
+            findMany: jest.fn().mockResolvedValue(customRole ? [customRole] : []),
+        },
     };
     mockRunInTx.mockImplementation(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(db));
     return db;

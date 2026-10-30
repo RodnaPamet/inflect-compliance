@@ -81,6 +81,8 @@ function membershipDb(membership: { role: string; customRoleId?: string | null }
                 permissionsJson: {},
                 isActive: true,
             }),
+            // The carriage check reads the role for its base and blob (2026-10-30).
+            findMany: jest.fn().mockResolvedValue([{ id: 'cr-1', baseRole: 'READER', permissionsJson: {} }]),
         },
     };
     mockRunInTx.mockImplementation(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(db));

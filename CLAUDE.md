@@ -893,6 +893,46 @@ new tenant-membership creation path).
   never BUILT on OWNER or AI_ADMIN either, because a carrier resolves to the
   role's base. Same NOT VALID shape; `deleteCustomRole` moves a legacy row's
   base to READER in the soft-delete write, or the deletion would fail it.
+- **Only an ADMIN membership carries a custom role built on ADMIN, or one
+  granting one of ten admin keys** (owner decisions, 2026-10-30). The edge
+  admits `/api/t/:slug/admin/**` by the membership's BUILT-IN role, and an
+  ADMIN base sets the coarse tier (`effectiveRole`) everywhere else. The ten are
+  `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` in `src/lib/roles.ts`, in two parts.
+  `ADMIN_API_ONLY_KEYS` (`sso` and the tool-exposure, policy-card, ownership and
+  two skill keys) are consumed only behind the admin API, so on an EDITOR,
+  READER or AUDITOR membership they granted nothing but buttons the edge
+  refused. `SIDE_DOOR_ADMIN_KEYS` (`scim`, `compliance_dsar_manage`,
+  `agent_harness_ingest`, `agent_external_tools`) are NOT dead elsewhere: an
+  agent-bound API key acting for the membership reaches their admin routes past
+  the edge, and a run the membership starts or a key at `/api/mcp` reaches
+  `get_harness_register` and every external tool call. They are refused BY
+  DECISION, because that path is a side door around the edge's role gate — so
+  for these four the rule DOES take something away. The other nine admin keys
+  are left alone. ONE predicate, `customRoleCarriageRefusal(after, before)`,
+  refuses only what a change ADDS (a save that narrows, a clear, a move among
+  EDITOR/READER/AUDITOR all pass) with a 409 and
+  `CUSTOM_ROLE_ADMIN_BASE_NEEDS_ADMIN_MEMBERSHIP` /
+  `CUSTOM_ROLE_ADMIN_KEYS_NEED_ADMIN_MEMBERSHIP` (`keys`, a save's
+  `blockingMemberships`); refusals are not audited. Every writer asks it: a
+  custom role save, assignment, the members-page role change, invite creation
+  and redemption, the Entra group sync (`custom_role_held`);
+  `tests/unit/custom-role-carriage-writers.test.ts` is the census, and verifies
+  the writers that cannot make the combination (a campaign MODIFY clears the
+  custom role; a transfer writes OWNER and ADMIN). No DB CHECK: the rule reads
+  `permissionsJson` over a base role's defaults. The stored roles were settled
+  once by migration `20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles`:
+  a role carried ONLY by non-ADMIN memberships (any status) has the ten stated
+  `false`, base unchanged; a role with any ADMIN carrier, a role nobody carries
+  and a legacy OWNER- or AI_ADMIN-based row (the NOT VALID #3734 CHECK refuses
+  its update) were left alone. It is orthogonal to the Admin-base rule (#4536,
+  #4595: `ADMIN_BASE_ONLY_PERMISSIONS` in `src/lib/custom-role-admin-base-rule.ts`),
+  which judges a role's BASE where this one judges its CARRIERS; their key sets
+  are disjoint, and so are the two migrations' (#4595's `20261030150000` runs
+  first). When one save breaks both, the Admin-base refusal (400,
+  `PERMISSION_NEEDS_ADMIN_BASE`) is asked first: it reads only the request.
+  `tests/guardrails/admin-membership-only-keys-are-dead-elsewhere.test.ts`
+  fails when one of the six gains a consumer outside the admin API, and when
+  one of the four stops having one.
 - **An access-review campaign does no OWNER-tier work** (#3727). Closing one
   writes its decisions under `access_reviews.close`, which an ADMIN holds, so it
   holds the members page's rules itself: a MODIFY never sets OWNER

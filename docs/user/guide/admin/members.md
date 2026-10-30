@@ -35,6 +35,7 @@ A few rules hold whatever your role:
 - This page never makes anyone an Owner. Owner is not offered in either list of roles.
 - An Owner or an AI admin never carries a custom role.
 - You can give a member a custom role only if you hold every permission it grants.
+- Only an Admin member can carry a custom role built on Admin, or one that grants one of the admin permissions kept for Admins. See [{{ui:admin.roles.title}}](roles.md). A member who carries one cannot be moved from Admin to another role until the custom role is changed or taken away.
 
 ## What it is for
 
@@ -123,7 +124,7 @@ Deactivating keeps the member's row, marked **DEACTIVATED**. Removing takes the 
 
 - Every invite, revoked invite, role change, custom-role change, line-of-defence change, deactivation, removal and revoked session is recorded in the workspace's audit log, naming who made it. Open it from **{{ui:admin.auditLog}}** on the {{ui:admin.title}} page.
 - An invite lasts 7 days and works once. When your colleague accepts it, they appear in the members table as **ACTIVE** with the invite's role.
-- A deactivated member loses access the next time they open a page or take an action. To let them back in, invite them again. They return with the role you choose in the invite, and with any custom role they carried before. That custom role, not the invite's role, then decides what they can do.
+- A deactivated member loses access the next time they open a page or take an action. To let them back in, invite them again. They return with the role you choose in the invite, and with any custom role they carried before. That custom role, not the invite's role, then decides what they can do. If they were an Admin carrying a custom role only an Admin member can carry, invite them as an Admin, or the invite is refused.
 - A removed member's Inflect account is not deleted, only their place in this workspace. To bring them back, invite them again.
 - Deactivating or removing a member does not revoke the API keys they created. A key of theirs that is bound to an agent stops working. Their other keys keep working until someone revokes them on the {{ui:admin.nav.apiKeys}} page.
 
@@ -138,6 +139,7 @@ Deactivating keeps the member's row, marked **DEACTIVATED**. Removing takes the 
 | **Cannot demote yourself. Ask another admin to change your role.**, **Cannot deactivate your own membership. Ask another admin.** or **Cannot remove your own membership. Ask another admin.** | You changed your own role, or ticked your own row among several members | Ask another Owner or Admin |
 | **Only OWNERs can deactivate an OWNER membership.**, **Only OWNERs can remove an OWNER membership.**, **Only an OWNER can deactivate an AI_ADMIN membership.** or **Only an OWNER can remove an AI_ADMIN membership.** | You ticked an Owner or an AI admin among several members | Ask an Owner |
 | A message that starts **Cannot grant permissions you do not hold** | The custom role grants permissions you do not have | Ask someone who holds those permissions to assign it |
+| A message that the custom role can only be carried by an Admin membership | The custom role is built on Admin, or grants a permission only an Admin member can use, and the member is not, or would no longer be, an Admin | Choose another custom role, or keep the member an Admin. To move them off Admin, change or remove the custom role first |
 | **User is already a member of this tenant** | That address belongs to an active member | Change their role in the members table instead |
 | A message starting **Too many requests** after an invite | You tried to send more than 20 invites for this workspace from your network within an hour | Wait for the time the message gives |
 | **{{ui:admin.members.roleChangeFailed}}**, **{{ui:admin.members.deactivationFailed}}**, **{{ui:admin.members.removalFailed}}** or **{{ui:admin.members.inviteFailed}}** | The change did not go through | Reload the page and try again |

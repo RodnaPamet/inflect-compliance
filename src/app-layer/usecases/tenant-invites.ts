@@ -31,10 +31,12 @@ import { hashForLookup } from '@/lib/security/encryption';
 import {
     BUILT_IN_SCOPE_REFUSAL,
     builtInScopeRoleMessage,
+    customRoleCarriageRefusal,
     isAssignableTenantRole,
     mayCarryCustomRole,
     unassignableRoleMessage,
 } from '@/lib/roles';
+import { assertCustomRoleCarriageInTx } from './custom-roles';
 import { recordInviteSent, recordInviteRedeemed } from '@/lib/observability/business-metrics';
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -68,6 +70,12 @@ export interface CreateInviteResult {
  *     redeeming would reactivate it as an OWNER with the custom role kept, and
  *     an OWNER never carries one (#3720). Refused here, before anything is
  *     sent, so the invitee is never handed an invite that cannot redeem.
+ *   - Rejects an invite (409, `CUSTOM_ROLE_ADMIN_BASE_NEEDS_ADMIN_MEMBERSHIP` /
+ *     `CUSTOM_ROLE_ADMIN_KEYS_NEED_ADMIN_MEMBERSHIP`) whose role could not
+ *     carry the custom role that existing membership carries, when its old
+ *     role could: redeeming would reactivate it in breach of the rule only an
+ *     ADMIN membership may carry such a custom role (owner decision,
+ *     2026-10-30).
  *   - Upserts on (tenantId, email) unique key, refreshing token + expiry.
  *
  * @returns invite row + relative URL (caller prepends origin for email).
@@ -109,7 +117,7 @@ export async function createInviteToken(
                         userId: existingUser.id,
                     },
                 },
-                select: { status: true, customRoleId: true },
+                select: { status: true, role: true, customRoleId: true },
             });
             if (existing?.status === 'ACTIVE') {
                 throw badRequest('User is already a member of this tenant');
@@ -118,6 +126,15 @@ export async function createInviteToken(
                 throw new ConflictError(builtInScopeRoleMessage(input.role, 'invite'), {
                     reason: BUILT_IN_SCOPE_REFUSAL,
                 });
+            }
+            if (existing?.customRoleId) {
+                await assertCustomRoleCarriageInTx(
+                    db,
+                    ctx.tenantId,
+                    { role: input.role, customRoleId: existing.customRoleId },
+                    { role: existing.role, customRoleId: existing.customRoleId },
+                    'invite',
+                );
             }
         }
 
@@ -437,15 +454,30 @@ async function finalizeInviteRedemption(
         // refuses this up front; this is the backstop for a custom role assigned
         // after the invite went out, and for an invite row written around it.
         // The claim is already committed, so the invite stays burnt.
-        if (!mayCarryCustomRole(invite.role)) {
+        //
+        // The same backstop for the rule only an ADMIN membership carries a
+        // custom role built on ADMIN or granting an admin-membership-only key
+        // (owner decision, 2026-10-30): a membership that carried one as an
+        // ADMIN is not reactivated under another role with it kept. Only what
+        // the redemption ADDS is refused, so a legacy row is not trapped.
+        if (invite.role !== 'ADMIN') {
             const existing = await tx.tenantMembership.findUnique({
                 where: { tenantId_userId: { tenantId: invite.tenantId, userId } },
-                select: { customRoleId: true },
+                select: { role: true, customRoleId: true },
             });
-            if (existing?.customRoleId) {
+            if (existing?.customRoleId && !mayCarryCustomRole(invite.role)) {
                 throw new ConflictError(builtInScopeRoleMessage(invite.role, 'invite'), {
                     reason: BUILT_IN_SCOPE_REFUSAL,
                 });
+            }
+            if (existing?.customRoleId) {
+                await assertCustomRoleCarriageInTx(
+                    tx,
+                    invite.tenantId,
+                    { role: invite.role, customRoleId: existing.customRoleId },
+                    existing,
+                    'invite',
+                );
             }
         }
 
@@ -575,28 +607,35 @@ export async function redeemPendingInvitesByEmail(input: {
         take: 50,
     });
 
-    // Tenants where this user's existing membership carries a custom role. An
-    // invite there into a role that carries none (OWNER, #3720) would refuse in
-    // `finalizeInviteRedemption` AFTER its claim — burning it and stopping the
-    // loop — so it is skipped before the claim instead. One read for the whole
-    // batch, not one per invite.
-    const builtInScopeTenantIds = pending
-        .filter((invite) => isAssignableTenantRole(invite.role) && !mayCarryCustomRole(invite.role))
+    // This user's existing memberships that carry a custom role, in the
+    // tenants of the invites that could be refused for it. An invite there
+    // into a role that carries none (OWNER, #3720), or into one that may not
+    // carry THIS custom role when the old role could (owner decision,
+    // 2026-10-30), would refuse in `finalizeInviteRedemption` AFTER its claim —
+    // burning it and stopping the loop — so it is skipped before the claim
+    // instead. One read for the whole batch, not one per invite. An ADMIN
+    // invite is never refused for a custom role, so it reads nothing.
+    const customRoleTenantIds = pending
+        .filter((invite) => isAssignableTenantRole(invite.role) && invite.role !== 'ADMIN')
         .map((invite) => invite.tenantId);
-    const tenantsWithCustomRole = new Set(
-        builtInScopeTenantIds.length === 0
+    const carriedByTenant = new Map(
+        customRoleTenantIds.length === 0
             ? []
             : (
                   await prisma.tenantMembership.findMany({
                       where: {
                           userId: input.userId,
-                          tenantId: { in: builtInScopeTenantIds },
+                          tenantId: { in: customRoleTenantIds },
                           customRoleId: { not: null },
                       },
-                      select: { tenantId: true },
+                      select: {
+                          tenantId: true,
+                          role: true,
+                          customRole: { select: { baseRole: true, permissionsJson: true } },
+                      },
                       take: 50,
                   })
-              ).map((m) => m.tenantId),
+              ).map((m) => [m.tenantId, m] as const),
     );
 
     const redeemed: RedeemResult[] = [];
@@ -606,8 +645,18 @@ export async function redeemPendingInvitesByEmail(input: {
         // no membership, and the invite is left unclaimed.
         if (!isAssignableTenantRole(invite.role)) continue;
         // Likewise an OWNER invite onto a membership carrying a custom role
-        // (#3720): left unclaimed, and redeemable once the custom role is gone.
-        if (!mayCarryCustomRole(invite.role) && tenantsWithCustomRole.has(invite.tenantId)) continue;
+        // (#3720), and an invite whose role may not carry the custom role
+        // the membership carries when its old role could (2026-10-30): left
+        // unclaimed, and redeemable once the custom role is changed.
+        const carried = carriedByTenant.get(invite.tenantId);
+        if (carried) {
+            if (!mayCarryCustomRole(invite.role)) continue;
+            const refusal = customRoleCarriageRefusal(
+                { membershipRole: invite.role, customRole: carried.customRole },
+                { membershipRole: carried.role, customRole: carried.customRole },
+            );
+            if (refusal) continue;
+        }
 
         // Atomic claim by id — the winner sets acceptedAt; a racing
         // token-URL redemption of the same invite makes this count=0.

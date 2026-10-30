@@ -865,8 +865,10 @@ function getEntraRoleSync() {
  *                       seniority may not rank it against (ADMIN, EDITOR,
  *                       AUDITOR); nothing was written (#3699).
  *   - `custom_role_held` — the mapping yields AI_ADMIN but the membership carries
- *                       a custom role, which that role never does; nothing was
- *                       written (#3699).
+ *                       a custom role, which that role never does (#3699); or it
+ *                       would move an ADMIN off ADMIN while they carry a custom
+ *                       role only an ADMIN may carry (2026-10-30); nothing was
+ *                       written.
  *   - `foreign_directory` — a sign-in from a Microsoft directory other than the
  *                       workspace's configured one, or with none configured;
  *                       no mapping applied, refused when the gate is on.

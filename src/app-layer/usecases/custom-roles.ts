@@ -26,8 +26,13 @@ import {
     OWNER_TIER_CLEAR_REFUSAL,
     builtInScopeRoleMessage,
     clearingCustomRoleIsOwnerTier,
+    customRoleCarriageDetails,
+    customRoleCarriageMessage,
+    customRoleCarriageRefusal,
     mayCarryCustomRole,
     ownerTierClearMessage,
+    type CustomRoleCarriageRefusal,
+    type CustomRoleForCarriage,
 } from '@/lib/roles';
 import { CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER } from '@/lib/custom-role-grant-refusal';
 import { PERMISSION_NEEDS_ADMIN_BASE, grantsNeedingAdminBase } from '@/lib/custom-role-admin-base-rule';
@@ -311,6 +316,29 @@ export async function updateCustomRole(
             );
         }
 
+        // Who CARRIES the role decides what it may become (owner decision,
+        // 2026-10-30): a save that would give a non-ADMIN carrier an admin-tier
+        // base or an admin-membership-only key is refused, naming how many
+        // members block it. Judged on the resulting role, like the grant check
+        // above, and only for what the save ADDS, so a save that narrows a
+        // legacy role is never refused.
+        //
+        // LAST, on purpose: the two checks above are about the role's own
+        // content and read nothing, this one is about who carries it and reads
+        // the memberships. So when a save breaks both kinds (an
+        // Admin-base-only permission on a non-ADMIN base AND a new admin-only
+        // key for a non-ADMIN carrier), the content refusal (400,
+        // PERMISSION_NEEDS_ADMIN_BASE) is the one returned, and the carriage
+        // refusal follows once it is fixed. The two never ask contradictory
+        // fixes of one save: an Admin-base-only permission needs an ADMIN
+        // base, which a non-ADMIN carrier refuses, so the fixes that satisfy
+        // both are to switch it off, or to make every carrier ADMIN first.
+        await assertCustomRoleSaveCarriableInTx(db, ctx, roleId, existing, {
+            baseRole: input.baseRole !== undefined ? input.baseRole : existing.baseRole,
+            permissionsJson:
+                input.permissionsJson !== undefined ? input.permissionsJson : existing.permissionsJson,
+        });
+
         const updated = await db.tenantCustomRole
             .update({
                 where: { id: roleId },
@@ -497,6 +525,13 @@ export async function assignCustomRole(
         }
 
         await assertCustomRoleAssignableInTx(db, ctx, membership.role, customRoleId);
+        await assertCustomRoleCarriageInTx(
+            db,
+            ctx.tenantId,
+            { role: membership.role, customRoleId },
+            { role: membership.role, customRoleId: membership.customRoleId },
+            'assign-custom-role',
+        );
         const updated = await writeCustomRoleInTx(db, membership.id, customRoleId);
         await logCustomRoleChange(db, ctx, { membership, updated, customRoleId });
         return updated;
@@ -556,6 +591,102 @@ export async function assertCustomRoleAssignableInTx(
             customRole.baseRole,
         );
     }
+}
+
+/** A membership's built-in role and the id of the custom role it carries. */
+export interface MembershipCarriage {
+    role: Role;
+    customRoleId: string | null;
+}
+
+/** The database surface the carriage check reads: the tenant's custom roles, by id. */
+type CustomRoleReader = Pick<PrismaTx, 'tenantCustomRole'>;
+
+/**
+ * Refuse moving a membership from `before` to `after` when the move ADDS an
+ * offence to the rule only an ADMIN membership may carry a custom role built
+ * on ADMIN or granting an admin-membership-only key (owner decision,
+ * 2026-10-30; `customRoleCarriageRefusal` in `src/lib/roles.ts`). 409, with the
+ * reason and the offending keys or base in `details`. Writes nothing.
+ *
+ * Every membership writer that can change a role or a custom role asks it: the
+ * assignment above, the members-page role change and the two together, and
+ * invite creation and redemption. `before` is `null` for a membership that
+ * does not exist yet. Clearing a custom role, replacing it with one that
+ * offends no more, and every change on an ADMIN membership pass without a read.
+ *
+ * The custom roles are read by id within `tenantId` whatever their `isActive`:
+ * a membership carrying a deleted role is impossible (deletion clears it), and
+ * a stale id judged as "no custom role" would read as no offence, which is the
+ * direction this check must not fail in.
+ */
+export async function assertCustomRoleCarriageInTx(
+    db: CustomRoleReader,
+    tenantId: string,
+    after: MembershipCarriage,
+    before: MembershipCarriage | null,
+    asked: 'assign-custom-role' | 'change-role' | 'invite',
+): Promise<void> {
+    if (!after.customRoleId || after.role === 'ADMIN') return;
+    const ids = [...new Set([after.customRoleId, before?.customRoleId].filter((id): id is string => !!id))];
+    const rows = await db.tenantCustomRole.findMany({
+        where: { tenantId, id: { in: ids } },
+        select: { id: true, baseRole: true, permissionsJson: true },
+        take: ids.length,
+    });
+    const byId = new Map<string, CustomRoleForCarriage>(rows.map((r) => [r.id, r]));
+    const shape = (id: string | null | undefined) => (id ? (byId.get(id) ?? null) : null);
+    const refusal = customRoleCarriageRefusal(
+        { membershipRole: after.role, customRole: shape(after.customRoleId) },
+        before ? { membershipRole: before.role, customRole: shape(before.customRoleId) } : null,
+    );
+    if (refusal) throw carriageConflict(refusal, asked);
+}
+
+function carriageConflict(
+    refusal: CustomRoleCarriageRefusal,
+    asked: Parameters<typeof customRoleCarriageMessage>[1],
+    blockingMemberships?: number,
+): ConflictError {
+    return new ConflictError(
+        customRoleCarriageMessage(refusal, asked, blockingMemberships),
+        customRoleCarriageDetails(refusal, blockingMemberships === undefined ? {} : { blockingMemberships }),
+    );
+}
+
+/**
+ * The save half of the rule: may the role `roleId`, as it stood (`existing`),
+ * become `next` while the memberships carrying it hold the roles they hold?
+ * Each built-in role among its carriers is asked once (`groupBy`, so a role
+ * carried by thousands of members costs one row per built-in role), and the
+ * refusal counts every carrier whose built-in role the save would put in
+ * breach. Carriers of every status count: a deactivated member carrying the
+ * role is one reactivation from carrying it live.
+ */
+async function assertCustomRoleSaveCarriableInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    roleId: string,
+    existing: CustomRoleForCarriage,
+    next: CustomRoleForCarriage,
+): Promise<void> {
+    const carriers = await db.tenantMembership.groupBy({
+        by: ['role'],
+        where: { tenantId: ctx.tenantId, customRoleId: roleId },
+        _count: { _all: true },
+    });
+    let first: CustomRoleCarriageRefusal | null = null;
+    let blocking = 0;
+    for (const group of carriers) {
+        const refusal = customRoleCarriageRefusal(
+            { membershipRole: group.role, customRole: next },
+            { membershipRole: group.role, customRole: existing },
+        );
+        if (!refusal) continue;
+        first ??= refusal;
+        blocking += group._count._all;
+    }
+    if (first) throw carriageConflict(first, 'save-custom-role', blocking);
 }
 
 /** The write of `customRoleId`, after `assertCustomRoleAssignableInTx` has passed. */

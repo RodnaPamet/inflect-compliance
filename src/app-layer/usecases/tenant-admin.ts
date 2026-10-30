@@ -38,6 +38,7 @@ import {
 } from '@/lib/roles';
 import {
     assertCustomRoleAssignableInTx,
+    assertCustomRoleCarriageInTx,
     logCustomRoleChange,
     writeCustomRoleInTx,
 } from './custom-roles';
@@ -225,6 +226,19 @@ export async function updateTenantMemberRole(
     return runInTenantContext(ctx, async (db) => {
         const membership = await findActiveMembership(db, ctx, input.membershipId);
         await assertRoleChangeAllowedInTx(db, ctx, membership, input.role);
+        // The custom role the member keeps must be one the NEW role may carry
+        // (owner decision, 2026-10-30): moving an ADMIN who carries one built
+        // on ADMIN, or granting an admin-membership-only key, to another role
+        // is refused until the custom role is changed. Here and not in
+        // `assertRoleChangeAllowedInTx`, because the combined change below
+        // judges the role and the custom role it is saved with together.
+        await assertCustomRoleCarriageInTx(
+            db,
+            ctx.tenantId,
+            { role: input.role, customRoleId: membership.customRoleId },
+            membership,
+            'change-role',
+        );
         const updated = await db.tenantMembership.update({
             where: { id: input.membershipId },
             data: { role: input.role },
@@ -263,6 +277,16 @@ export async function updateTenantMemberRoleAndCustomRole(
         const membership = await findActiveMembership(db, ctx, input.membershipId);
         await assertRoleChangeAllowedInTx(db, ctx, membership, input.role);
         await assertCustomRoleAssignableInTx(db, ctx, input.role, input.customRoleId);
+        // The pair as saved, against the pair as read: demoting an ADMIN while
+        // replacing their ADMIN-built custom role passes, as it would with the
+        // custom role changed first and the role second.
+        await assertCustomRoleCarriageInTx(
+            db,
+            ctx.tenantId,
+            { role: input.role, customRoleId: input.customRoleId },
+            membership,
+            input.customRoleId !== membership.customRoleId ? 'assign-custom-role' : 'change-role',
+        );
 
         const roleChanged = await db.tenantMembership.update({
             where: { id: input.membershipId },
