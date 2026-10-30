@@ -54,6 +54,7 @@ describeFn('Epic 41 — OrgDashboardWidget CRUD (DB-backed)', () => {
                 canConfigureDashboard: true,
                 canSetThreatLevel: true,
                 canSetMaturity: true,
+                canManageAgentSwitches: true,
             },
         };
     }
@@ -74,6 +75,7 @@ describeFn('Epic 41 — OrgDashboardWidget CRUD (DB-backed)', () => {
                 canConfigureDashboard: false,
                 canSetThreatLevel: false,
                 canSetMaturity: false,
+                canManageAgentSwitches: false,
             },
         };
     }

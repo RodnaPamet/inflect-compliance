@@ -831,6 +831,13 @@ export type OrgPermissionSet = {
      * (ORG_ADMIN only); audits via ORG_MATURITY_RATING_SET.
      */
     canSetMaturity: boolean;
+    /**
+     * Turn the agent profile surface and the Tool Runner engine on or off for
+     * the organization's workspaces, where the deployment leaves them open
+     * (#4557). ORG_ADMIN; the ORG_OWNER role, when it lands, holds it too.
+     * Reading the switches takes only `canViewPortfolio`.
+     */
+    canManageAgentSwitches: boolean;
 };
 
 /**
@@ -853,6 +860,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canConfigureDashboard: true,
                 canSetThreatLevel: true,
                 canSetMaturity: true,
+                canManageAgentSwitches: true,
             };
         case 'ORG_READER':
             return {
@@ -868,6 +876,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canConfigureDashboard: false,
                 canSetThreatLevel: false,
                 canSetMaturity: false,
+                canManageAgentSwitches: false,
             };
         default: {
             // Defensive — Prisma's enum is closed, so the runtime
@@ -885,6 +894,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canConfigureDashboard: false,
                 canSetThreatLevel: false,
                 canSetMaturity: false,
+                canManageAgentSwitches: false,
             };
         }
     }

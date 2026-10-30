@@ -72,6 +72,7 @@ function ctxFor(): OrgContext {
             canConfigureDashboard: true,
             canSetThreatLevel: true,
             canSetMaturity: true,
+            canManageAgentSwitches: true,
         },
     };
 }

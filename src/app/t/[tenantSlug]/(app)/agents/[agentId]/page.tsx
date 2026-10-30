@@ -184,9 +184,10 @@ export default async function AgentDetailPage({
             }}
             viewerUserId={ctx.userId}
             // The Behaviour tab exists only where agent profiles are on: the
-            // whole deployment, or this tenant by name (Steps 1b and 1H). Its
-            // routes answer 404 everywhere else.
-            profilesEnabled={agentProfilesOn(tenantSlug)}
+            // whole deployment, this tenant by name, or its organization's
+            // choice (Steps 1b and 1H, #4557). Its routes answer 404 everywhere
+            // else.
+            profilesEnabled={await agentProfilesOn(tenantSlug)}
         />
     );
 }

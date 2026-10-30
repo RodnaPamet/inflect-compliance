@@ -363,6 +363,15 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The two agent switches an organization decides for its workspaces when
+  /// the deployment leaves them open (#4557): `AGENT_PROFILES` and
+  /// `AGENT_DRIVER_TOOL_RUNNER` unset. Off by default, so nothing changes
+  /// until an org admin turns one on. Read only through
+  /// `src/lib/agentic/agent-switches-policy.ts`; written only by
+  /// `usecases/org-agent-switches.ts`, which audits ORG_AGENT_SWITCHES_CHANGED.
+  agentProfilesEnabled   Boolean @default(false)
+  agentToolRunnerEnabled Boolean @default(false)
+
   tenants                      Tenant[]
   memberships                  OrgMembership[]
   invites                      OrgInvite[]
