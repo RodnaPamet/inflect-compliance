@@ -57,6 +57,7 @@ export default async function OrgMembersPage({ params }: PageProps) {
         <MembersTable
             orgSlug={orgSlug}
             currentUserId={currentUserId}
+            viewerRole={ctx.orgRole}
             rows={JSON.parse(JSON.stringify(rows))}
             invites={JSON.parse(JSON.stringify(invites))}
         />

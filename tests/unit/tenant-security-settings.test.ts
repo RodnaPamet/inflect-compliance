@@ -40,6 +40,22 @@ jest.mock('@/app-layer/events/audit', () => ({
     logEvent: (...a: unknown[]) => mockLogEvent(...a),
 }));
 
+// Only the deployment's local gateway is overridden; every other variable
+// reads through to the real env.
+const mockEnvOverride: { AI_LOCAL_BASE_URL?: string } = {};
+jest.mock('@/env', () => {
+    const actual = jest.requireActual('@/env');
+    return {
+        ...actual,
+        env: new Proxy(actual.env, {
+            get: (target, key) =>
+                key === 'AI_LOCAL_BASE_URL' && 'AI_LOCAL_BASE_URL' in mockEnvOverride
+                    ? mockEnvOverride.AI_LOCAL_BASE_URL
+                    : Reflect.get(target, key),
+        }),
+    };
+});
+
 import {
     getTenantSecurityConfig,
     updateTenantSecurityConfig,
@@ -172,14 +188,17 @@ describe('validation', () => {
         ).rejects.toThrow(/at least 16/);
     });
 
-    it('refuses LOCAL_ONLY residency with no gateway configured', async () => {
+    it('accepts LOCAL_ONLY with no gateway of the tenant\'s own — every consumer stops rather than sends', async () => {
         mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({
             aiResidency: 'EXTERNAL',
             aiLocalBaseUrl: null,
         });
         await expect(
             updateTenantSecurityConfig(adminCtx, { aiResidency: 'LOCAL_ONLY' }),
-        ).rejects.toThrow(/requires aiLocalBaseUrl/);
+        ).resolves.toBeDefined();
+        expect(mockDb.tenantSecuritySettings.upsert).toHaveBeenCalledWith(
+            expect.objectContaining({ update: { aiResidency: 'LOCAL_ONLY' } }),
+        );
     });
 
     it('allows LOCAL_ONLY when the gateway is already stored', async () => {
@@ -407,5 +426,63 @@ describe('apiKeyRotationDays', () => {
         expect((await getTenantSecurityConfig(adminCtx)).apiKeyRotationDays).toBeNull();
         mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ apiKeyRotationDays: 45 });
         expect((await getTenantSecurityConfig(adminCtx)).apiKeyRotationDays).toBe(45);
+    });
+});
+
+/**
+ * `aiResidency` from the AI features page. The page offers two choices and no
+ * gateway address, so LOCAL_ONLY must be reachable without one (see the
+ * accepting test above), the change must be readable in the trail with both
+ * values, and the read must say whether this deployment has a gateway at all.
+ */
+describe('aiResidency', () => {
+    const residencyEvent = () =>
+        mockLogEvent.mock.calls.map((c) => c[2] as any).find((p) => p.action === 'AI_RESIDENCY_CHANGED');
+
+    afterEach(() => {
+        delete mockEnvOverride.AI_LOCAL_BASE_URL;
+    });
+
+    it('a change gets its own event with both values, which passes the real validator', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ aiResidency: 'EXTERNAL' });
+        await updateTenantSecurityConfig(adminCtx, { aiResidency: 'LOCAL_ONLY' });
+        const event = residencyEvent();
+        expect(event).toMatchObject({
+            entityType: 'TenantSecuritySettings',
+            detailsJson: { before: { aiResidency: 'EXTERNAL' }, after: { aiResidency: 'LOCAL_ONLY' } },
+        });
+        expect(() => validateAuditDetailsJson(event.detailsJson)).not.toThrow();
+    });
+
+    it('an absent row reads as EXTERNAL before the change', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue(null);
+        await updateTenantSecurityConfig(adminCtx, { aiResidency: 'LOCAL_ONLY' });
+        expect(residencyEvent().detailsJson.before).toEqual({ aiResidency: 'EXTERNAL' });
+    });
+
+    it('saving the value already stored writes no residency event', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ aiResidency: 'LOCAL_ONLY' });
+        await updateTenantSecurityConfig(adminCtx, { aiResidency: 'LOCAL_ONLY' });
+        expect(residencyEvent()).toBeUndefined();
+    });
+
+    it('the event never carries the gateway address', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ aiResidency: 'EXTERNAL' });
+        await updateTenantSecurityConfig(adminCtx, {
+            aiResidency: 'LOCAL_ONLY',
+            aiLocalBaseUrl: 'https://gpu.internal.example.com',
+        });
+        expect(JSON.stringify(residencyEvent())).not.toContain('gpu.internal.example.com');
+    });
+
+    it('the read reports whether the deployment has a local gateway, and never its address', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue(null);
+        mockEnvOverride.AI_LOCAL_BASE_URL = 'https://gateway.deployment.example';
+        const withGateway = await getTenantSecurityConfig(adminCtx);
+        expect(withGateway.deploymentHasLocalGateway).toBe(true);
+        expect(JSON.stringify(withGateway)).not.toContain('gateway.deployment.example');
+
+        mockEnvOverride.AI_LOCAL_BASE_URL = undefined;
+        expect((await getTenantSecurityConfig(adminCtx)).deploymentHasLocalGateway).toBe(false);
     });
 });

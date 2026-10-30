@@ -289,6 +289,15 @@ profile run key is refused at admission.
   what the switch being off shows: no tab, a 404 on every route and
   `PROFILES_DISABLED` at admission. A context with no slug is never named.
   `AGENT_PROFILES` on still opens the surface to every tenant.
+- **With `AGENT_PROFILES` unset, the workspace's organization decides** (#4557,
+  owner decision 2026-10-30). An org admin turns profiles on or off for every
+  workspace under the organization on the org's Settings page
+  (`Organization.agentProfilesEnabled`, audited as `ORG_AGENT_SWITCHES_CHANGED`).
+  `0`, or any other set value, closes the surface to every workspace the
+  allowlist does not name; a workspace with no organization stays closed. One
+  reader answers for every surface: `agentProfilesDecisionFor` in
+  `src/lib/agentic/agent-switches-policy.ts`, over the rule in
+  `agent-switches.ts`.
 - **The read is the builder's.** For an agent with no profile,
   `getAgentProfile` answers `profile: null` instead of refusing. Each answer
   carries:
@@ -660,10 +669,19 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
    `admin.agent_registry`, with author ≠ approver**, as for tenant skills. The
    rule is held in the usecase and by a CHECK. A new key would have been cleaner,
    at the price of a custom-role migration, and was declined.
-4. **Delegation in v1.** Proposed off. Turning it on later is a reviewed diff
-   that adds `Agent` back with a subset-only definition.
+4. **Delegation in v1.** **Decided (owner, 2026-10-30): on, inline and
+   subset-only** (it was proposed off). A profile version may define
+   sub-agents inline, each with its own instructions and a subset of the
+   version's tools and skills, approved with the version. Delegation is one
+   level deep: a sub-agent cannot delegate. Every tool call a sub-agent makes
+   goes through the funnel under the parent agent's identity, labelled with the
+   sub-agent, and charged to the parent run's caps. It is built first on the
+   Tool Runner engine, as Step 2e (`docs/claude-tool-runner-design.md`), after
+   2H. An engine built later (Phases 4 to 6) carries the same inline definition;
+   how it maps it is decided in that engine's own steps.
 5. **Branding.** The builder says "Agent", and names Claude as "Powered by
-   Claude" where the model is shown. It never says "Claude Code".
+   Claude" where the model is shown. It never says "Claude Code". **Decided
+   (owner, 2026-10-30): as written.**
 6. **The AI Guard on the direct MCP route.** **Done in #4111:** the egress
    slice on a read's arguments runs on the route, the same check as
    `runGuardedTool`'s step 1. The result scan is left to the engine that
@@ -720,7 +738,7 @@ done and the evidence table below bind all three.
 | --- | --- | --- | --- | --- |
 | 0 | Foundations | 0a, 0b, 0c, 0d, 0H | this document | — |
 | 1 | Agent builder | 1a, 1b, 1H | this document | 0H |
-| 2 | Tool Runner engine | 2a, 2b, 2c, 2d, 2H (2x is independent) | `docs/claude-tool-runner-design.md` | 1H |
+| 2 | Tool Runner engine | 2a, 2b, 2c, 2d, 2H (2x is independent; 2e follows 2H) | `docs/claude-tool-runner-design.md` | 1H |
 | 3 | Connect agents customers run | 3a, 3b, 3H | this document | 0H (3a also needs 0d) |
 | 4 | Agent SDK engine (conditional) | 4a, 4b, 4c, 4H | this document | 2H, and a profile that needs it |
 | 5 | Managed Agents in the customer's workspace | 5a, 5b, 5c, 5d, 5e, 5H | `docs/claude-managed-agents-design.md` | 2H, 3H |

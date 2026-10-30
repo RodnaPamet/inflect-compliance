@@ -148,6 +148,25 @@ describeFn('integrations usecase — branch coverage (integration)', () => {
         expect(typeof diag.errorCount24h).toBe('number');
     });
 
+    it('the list says which connections store a secret, without reading the secret (#4581)', async () => {
+        const withSecret = await globalPrisma.integrationConnection.create({
+            data: { tenantId: TENANT_ID, provider: PROVIDER_ID, name: `${SUITE_TAG} with secret`, secretEncrypted: 'v1:ciphertext' },
+        });
+        const noSecret = await globalPrisma.integrationConnection.create({
+            data: { tenantId: TENANT_ID, provider: PROVIDER_ID, name: `${SUITE_TAG} no secret` },
+        });
+        try {
+            const rows = (await listIntegrationConnections(ctx)) as Array<Record<string, unknown>>;
+            const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+            expect(byId[withSecret.id]?.hasSecret).toBe(true);
+            expect(byId[noSecret.id]?.hasSecret).toBe(false);
+            // The flag is derived; the ciphertext is never in the result.
+            for (const r of rows) expect('secretEncrypted' in r).toBe(false);
+        } finally {
+            await globalPrisma.integrationConnection.deleteMany({ where: { id: { in: [withSecret.id, noSecret.id] } } });
+        }
+    });
+
     it('upsert: forbidden for non-admin, badRequest for unknown provider', async () => {
         await expect(
             upsertIntegrationConnection(reader, { provider: PROVIDER_ID, name: 'x' }),
