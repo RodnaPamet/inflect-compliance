@@ -1914,6 +1914,7 @@
       "conceptHelp": "DORA Art. 28(3) requires financial entities to maintain, at entity and (sub)consolidated level, a register of all contractual arrangements for ICT services, flagging those that support critical or important functions. Competent authorities can request it at any time.",
       "count": "{count, plural, =1 {# arrangement} other {# arrangements}}",
       "criticalCount": "{count} supporting a critical or important function",
+      "truncatedHint": "The most critical arrangements are listed first, and the counts above cover the whole register. Filters and search apply only to the arrangements listed.",
       "colProvider": "ICT provider",
       "colFunction": "Critical / important",
       "colCriticality": "Criticality",

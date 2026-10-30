@@ -12,29 +12,15 @@ import {
     optionsFromEnum,
 } from '@/components/ui/filter/filter-definitions';
 import { CircleDot, Clock, Flag, ShieldCheck } from 'lucide-react';
+import { vendorCriticalityLabels, vendorStatusLabels } from '@/lib/vendors/labels';
 
 /** Surface-namespace resolver (`useTranslations('vendors')`). */
 type T = (key: string, values?: Record<string, unknown>) => string;
 /** Shared filter-group resolver (`useTranslations('common.filterGroups')`). */
 type TGroup = (key: string) => string;
 
-export function vendorStatusLabels(t: T): Record<string, string> {
-    return {
-        ONBOARDING: t('filterEnums.status.onboarding'),
-        ACTIVE: t('filterEnums.status.active'),
-        OFFBOARDING: t('filterEnums.status.offboarding'),
-        OFFBOARDED: t('filterEnums.status.offboarded'),
-    };
-}
-
-export function vendorCriticalityLabels(t: T): Record<string, string> {
-    return {
-        LOW: t('filterEnums.criticality.low'),
-        MEDIUM: t('filterEnums.criticality.medium'),
-        HIGH: t('filterEnums.criticality.high'),
-        CRITICAL: t('filterEnums.criticality.critical'),
-    };
-}
+// Shared with the Information Registry, so they live in `src/lib/vendors/`.
+export { vendorStatusLabels, vendorCriticalityLabels } from '@/lib/vendors/labels';
 
 function vendorReviewDueLabels(t: T): Record<string, string> {
     return {
