@@ -76,8 +76,12 @@ const EN = jest.requireActual('../../messages/en.json') as {
                 skillVersion: string;
                 skillsNone: string;
                 skillsNotRecorded: string;
+                stepStatus: Record<string, string>;
+                proposalStatus: Record<string, string>;
             };
+            status: Record<string, string>;
         };
+        proposals: { kind: Record<string, string> };
     };
 };
 const D = EN.agents.runs.detail;
@@ -174,7 +178,29 @@ describe('the run detail renders the step ledger', () => {
         );
 
         const row = document.getElementById('step-0') as HTMLElement;
-        expect(within(row).getByText('PENDING')).toBeInTheDocument();
+        // In words, not the stored code (#4532).
+        expect(within(row).getByText(D.stepStatus.PENDING)).toBeInTheDocument();
+        expect(within(row).queryByText('PENDING')).toBeNull();
+    });
+
+    it('names every step status, and shows one this build does not know as stored (#4532)', () => {
+        const statuses = ['PENDING', 'RUNNING', 'DONE', 'FAILED', 'SKIPPED'];
+        renderDetail([
+            ...statuses.map((status, i) => step({ seq: i, id: `s-${i}`, status })),
+            step({ seq: 9, id: 's-9', status: 'PARKED' }),
+        ]);
+        statuses.forEach((status, i) => {
+            const row = document.getElementById(`step-${i}`) as HTMLElement;
+            expect(within(row).getByText(D.stepStatus[status])).toBeInTheDocument();
+            expect(within(row).queryByText(status)).toBeNull();
+        });
+        expect(within(document.getElementById('step-9') as HTMLElement).getByText('PARKED')).toBeInTheDocument();
+    });
+
+    it('the meta strip names the run status in words (#4532)', () => {
+        renderDetail([step({ seq: 0, id: 's-0' })], { ...RUN, status: 'AWAITING_APPROVAL' });
+        expect(screen.getAllByText(EN.agents.runs.status.AWAITING_APPROVAL).length).toBeGreaterThan(0);
+        expect(screen.queryByText('AWAITING_APPROVAL')).toBeNull();
     });
 
     it('renders a payload as INERT TEXT behind a disclosure', () => {
@@ -209,7 +235,7 @@ describe('the run detail renders the step ledger', () => {
         ]);
         const row = document.getElementById('step-0') as HTMLElement;
         expect(within(row).getByText('get_compliance_posture')).toBeInTheDocument();
-        expect(within(row).getByText('FAILED')).toBeInTheDocument();
+        expect(within(row).getByText(D.stepStatus.FAILED)).toBeInTheDocument();
     });
 
     it('says so when a run recorded no steps at all', () => {
@@ -270,6 +296,25 @@ describe('a step names the proposals it queued', () => {
 
         const link = screen.getByTestId('step-proposal-p-1');
         expect(link.getAttribute('href')).toBe('/t/acme/agents/proposals#proposal-p-1');
+    });
+
+    it('names a proposal’s kind and status in words, as the queue does (#4532)', () => {
+        renderDetail([
+            step({
+                seq: 0,
+                id: 's-0',
+                kind: 'PROPOSE',
+                proposals: [
+                    { id: 'p-1', kind: 'EXTERNAL_WRITE', status: 'EDITED', guardVerdict: 'CLEAN' },
+                    { id: 'p-2', kind: 'NEW_KIND', status: 'NEW_STATUS', guardVerdict: 'CLEAN' },
+                ],
+            }),
+        ]);
+        expect(screen.getByTestId('step-proposal-p-1')).toHaveTextContent(
+            `${EN.agents.proposals.kind.EXTERNAL_WRITE} · ${D.proposalStatus.EDITED}`,
+        );
+        // A kind or status this build does not know is shown as stored.
+        expect(screen.getByTestId('step-proposal-p-2')).toHaveTextContent('NEW_KIND · NEW_STATUS');
     });
 
     it('renders NOTHING for a step that queued none', () => {
