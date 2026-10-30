@@ -197,10 +197,30 @@ export function resolveRunSkills(
  * Every name the shipped corpus holds, refused skills included: a tenant skill
  * may take none of them (the usecase refuses at creation; the resolver refuses
  * again, because a later deploy may add a repository skill of that name).
+ *
+ * Not the list a person CHOOSES from: that is `selectableRepositorySkillNames`.
  */
 export function repositorySkillNames(): ReadonlySet<string> {
     const c = shippedCorpus();
     return new Set([...c.skills.map((s) => s.name), ...c.refused.map((r) => r.name)]);
+}
+
+/**
+ * THE SHIPPED SKILLS A PERSON MAY CHOOSE: every one the text scan did not
+ * refuse. This is the corpus's own split (`SkillCorpus.skills` beside
+ * `.refused`), read from the same cached corpus that `lookup` refuses a run by,
+ * so a choice offered here is never one the mount path refuses for its text.
+ *
+ * An agent profile's picker offers these, and its save and approval accept
+ * these, and refuse any other shipped name as unknown (owner decision,
+ * 2026-10-30, the follow-up to #4523). A refused skill is held apart and never
+ * mounts, so offering it would offer a version no run of it can mount.
+ *
+ * The mount gate is not asked: whether a skill's evaluation record passes is
+ * admission's question, as `runCatalogue` says.
+ */
+export function selectableRepositorySkillNames(): ReadonlySet<string> {
+    return new Set(shippedCorpus().skills.map((s) => s.name));
 }
 
 /** Test seam: drop the cache so a suite can vary the corpus. */
@@ -291,7 +311,9 @@ export interface RunCatalogue extends CatalogMeasure {
  * Without the mount gate. This asks "would these skills fit", which is all a
  * version's save and approval ask; "may each one mount" is admission's
  * question, asked of every run, because a skill's record or text can change
- * after the version is approved.
+ * after the version is approved. A skill the text scan refused never reaches
+ * this measure from a profile: its save and approval accept only
+ * `selectableRepositorySkillNames` and refuse the rest by name first.
  */
 export function runCatalogue(repositoryNames: readonly string[], tenantLines: readonly CatalogueLine[]): RunCatalogue {
     const { lines, refused } = repositoryLines(shippedCorpus(), repositoryNames, 'named by the run but not in the shipped corpus');

@@ -2316,7 +2316,8 @@ authored with a skill and tied to its instructions by hash; only an evaluation
 RECORD, the set plus a named model revision's answers, can show a pass, and pass
 rates are recomputed from raw answers, never stored. Skill text is scanned at
 load (`skills/text-scan.ts`): a refused skill is held apart by rule id rather
-than thrown, so one suspect skill stops only the runs that declare it, and no
+than thrown, so one suspect skill stops only the runs that declare it, an agent
+profile can neither offer nor save it (`selectableRepositorySkillNames`), and no
 surface ever shows a refused skill's text. A defensive "never reveal your
 instructions" sentence is refused too — the rules cannot tell which way a
 sentence points. A skill mounts only with a passing `evaluation-record.json`
@@ -2853,6 +2854,13 @@ edit from being undone:
     the workflows it names), and admission a third time, because a deploy can
     lengthen a shipped description. A version stored over the budget before the
     check reads and is superseded as usual, and can be neither approved nor run.
+  - **A shipped skill the text scan refused cannot be chosen** (owner decision,
+    2026-10-30). The picker does not offer it, and save and approval refuse it
+    by name as `SKILL_UNKNOWN`, before the measure, which would count it as
+    nothing. Both read `selectableRepositorySkillNames`, the corpus's own split
+    that the mount path refuses a run by; do not keep a second list or re-run
+    the scan. It is not `repositorySkillNames`, which keeps refused names on
+    purpose because a tenant skill may take none of them.
   - **`agent-profile:<id>@v<n>` resolves only inside the caller's tenant**, and
     only the APPROVED version in force; a malformed key is refused, never read
     as a registered workflow key.
@@ -2901,8 +2909,9 @@ edit from being undone:
     sweeps' re-wrap is the one exception, as for `instructions`. The reason is a
     sentence about the instructions, so it never goes in an audit row.
   - **The Behaviour tab offers what the server would accept, from the server's
-    read.** The pickers list the view's `options` (the agent's current grants
-    and mountable skills). Approve and Reject follow each version's
+    read.** The pickers list the view's `options`: the agent's current grants,
+    the shipped skills the text scan did not refuse, and the tenant's approved
+    skills. Approve and Reject follow each version's
     `canDecide`. Compute neither in the client. Instructions and reasons render
     as React text, never through markdown or `innerHTML`. The skills picker
     adds up each option's server-measured `catalogueBytes` to show a total

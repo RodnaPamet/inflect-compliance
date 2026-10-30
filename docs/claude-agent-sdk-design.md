@@ -239,7 +239,9 @@ profile run key is refused at admission.
   - every tool must be granted now, or it is refused by name;
   - every skill must be one the agent may mount, and together their catalogue
     lines must fit the per-run budget, measured by the same measure a run of
-    the version is refused by (`SKILL_CATALOGUE_OVER_BUDGET`, #4523).
+    the version is refused by (`SKILL_CATALOGUE_OVER_BUDGET`, #4523). A shipped
+    skill the text scan refused is not one: it is refused by name as
+    `SKILL_UNKNOWN` (owner decision, 2026-10-30).
 - **Admission.** `startWorkflowRun` asks `resolveRunDefinition`, and only that
   one call changed:
   - a key that does not ask for a profile behaves exactly as before;
@@ -269,7 +271,8 @@ profile run key is refused at admission.
   - Instructions render as text, never markup.
   - An editor in a Sheet writes the next version as a DRAFT. Its tool and skill
     pickers list only what the server's read offers: the agent's current grants
-    and the skills it may mount.
+    and the skills it may mount, which leave out any shipped skill the text
+    scan refused.
   - A reviewer who is not the author sees the submitted text diffed against the
     version in force. Approve sends the hash on screen. Reject asks for a
     reason.

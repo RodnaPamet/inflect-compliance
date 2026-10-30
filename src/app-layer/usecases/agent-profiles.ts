@@ -34,7 +34,8 @@
  * scanned by the skill text scan, and text the scan refuses is refused by rule
  * id and never stored (owner decision 2). Every tool must be one the agent is
  * granted now: an ungranted tool is refused BY NAME, never dropped. Every
- * skill must be one the agent may mount, and together they must fit the
+ * skill must be one the agent may mount — a shipped skill the text scan
+ * refused is neither offered nor accepted — and together they must fit the
  * per-run catalogue budget a run of the version is refused by
  * (`SKILL_CATALOGUE_OVER_BUDGET`, #4523). Approval asks all of it again,
  * because a grant can be revoked, and a tenant skill retired or given a longer
@@ -58,7 +59,7 @@ import { AppError, ConflictError, ValidationError } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { scanSkillText } from '@/lib/agentic/flue/skills/text-scan';
-import { repositorySkillNames, runCatalogue, type CatalogueLine } from '@/lib/agentic/flue/skills/resolve';
+import { runCatalogue, selectableRepositorySkillNames, type CatalogueLine } from '@/lib/agentic/flue/skills/resolve';
 import { approvedTenantSkillsByNameWhere } from '@/lib/agentic/flue/skills/tenant-mount';
 import { MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import {
@@ -294,9 +295,17 @@ async function assertToolsGranted(db: PrismaTx, ctx: RequestContext, agentId: st
  * refuses the run. A version saved here therefore fits at admission unless
  * something it names changed in between, which approval asks again and the
  * run asks a third time.
+ *
+ * A SHIPPED SKILL THE TEXT SCAN REFUSED IS UNKNOWN HERE (owner decision,
+ * 2026-10-30). `selectableRepositorySkillNames` is the corpus's own split, the
+ * one the mount path refuses a run by, so the save and the approval refuse such
+ * a skill by name (`SKILL_UNKNOWN`) before the measure, which would otherwise
+ * count it as nothing. Approval asks again because a deploy can refuse a skill
+ * a waiting version names, and a version stored before this check was never
+ * asked.
  */
 async function assertSkillsFit(db: PrismaTx, ctx: RequestContext, refs: readonly ProfileSkillRef[]): Promise<void> {
-    const repository = repositorySkillNames();
+    const repository = selectableRepositorySkillNames();
     const tenantNames = refs.filter((r) => r.origin === 'tenant').map((r) => r.name);
     const approved = tenantNames.length
         ? await db.tenantSkillVersion.findMany({
@@ -878,9 +887,12 @@ async function memberLabels(db: PrismaTx, ctx: RequestContext, userIds: string[]
 }
 
 /**
- * The skills a profile may mount: the shipped corpus and the tenant's APPROVED
- * skills, each with the bytes its catalogue line costs, measured by
- * `runCatalogue`, which is what the save measures the chosen set by.
+ * The skills a profile may mount: the shipped skills the text scan did not
+ * refuse and the tenant's APPROVED skills, each with the bytes its catalogue
+ * line costs, measured by `runCatalogue`, which is what the save measures the
+ * chosen set by. The repository names are the ones `assertSkillsFit` accepts,
+ * from the same function, so the picker offers nothing the save refuses as
+ * unknown.
  */
 async function mountableSkills(db: PrismaTx, ctx: RequestContext): Promise<ProfileSkillOption[]> {
     const tenant = await db.tenantSkillVersion.findMany({
@@ -893,7 +905,7 @@ async function mountableSkills(db: PrismaTx, ctx: RequestContext): Promise<Profi
         if (!tenantLines.has(t.skill.name)) tenantLines.set(t.skill.name, { name: t.skill.name, description: t.description });
     }
     return [
-        ...[...repositorySkillNames()].sort().map((name) => ({
+        ...[...selectableRepositorySkillNames()].sort().map((name) => ({
             origin: 'repository' as const,
             name,
             catalogueBytes: runCatalogue([name], []).bytes,

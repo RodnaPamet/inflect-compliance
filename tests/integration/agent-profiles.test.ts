@@ -20,6 +20,12 @@
  *      over the per-run catalogue budget is refused at save and at approval,
  *      at the byte, by the same measure admission refuses the run by; a
  *      version saved before the check still reads and is superseded.
+ *  10. A REFUSED SHIPPED SKILL (owner decision, 2026-10-30). A shipped skill
+ *      the text scan refused is not offered, a save naming it is refused by
+ *      name and stores nothing, and a version stored naming it before the
+ *      check cannot be approved. The refusal is planted by moving a real
+ *      shipped skill to the corpus's `refused` list, as the scan would; the
+ *      files on disk are untouched.
  *
  * The driver decision, the registration gate and the queue are mocked at their
  * module boundary, as `tenant-skills.test.ts` does; the usecases, the resolver
@@ -54,6 +60,24 @@ jest.mock('@/lib/agentic/agent-registration-gate', () => ({
     ...jest.requireActual('@/lib/agentic/agent-registration-gate'),
     evaluateAgentRegistration: jest.fn(async () => ({ standing: 'vouched' })),
 }));
+// Section 10 plants a refused shipped skill: the named skills move from the
+// corpus's `skills` to its `refused`, which is what the text scan does to a
+// skill it refuses. Empty, the corpus is exactly the shipped one.
+let mockRefusedShipped: string[] = [];
+jest.mock('@/lib/agentic/flue/skills', () => {
+    const actual = jest.requireActual('@/lib/agentic/flue/skills') as typeof import('@/lib/agentic/flue/skills');
+    return {
+        ...actual,
+        loadSkillCorpus: (dir?: string) => {
+            const c = actual.loadSkillCorpus(dir);
+            const planted = c.skills.filter((s) => mockRefusedShipped.includes(s.name));
+            return {
+                skills: c.skills.filter((s) => !mockRefusedShipped.includes(s.name)),
+                refused: [...c.refused, ...planted.map((s) => ({ name: s.name, rules: ['skill.reveal_context' as const], guardRules: [] }))],
+            };
+        },
+    };
+});
 jest.mock('@/app-layer/jobs/queue', () => ({
     ...jest.requireActual('@/app-layer/jobs/queue'),
     enqueue: jest.fn(async () => undefined),
@@ -82,7 +106,7 @@ import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile
 import { profileRunKey } from '@/lib/agentic/agent-profile';
 import { SKILL_TEXT_RULES } from '@/lib/agentic/flue/skills/text-scan';
 import { catalogBytes, loadSkillCorpus, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
-import { runCatalogue } from '@/lib/agentic/flue/skills/resolve';
+import { resetSkillCache, runCatalogue } from '@/lib/agentic/flue/skills/resolve';
 import { resolveRunSkillMount } from '@/lib/agentic/flue/skills/tenant-mount';
 import {
     approveTenantSkillVersion,
@@ -126,6 +150,9 @@ const AGENTS = {
     budgetFirst: `ag-bfirst-${SUITE}`,
     budgetApprove: `ag-bappr-${SUITE}`,
     legacy: `ag-legacy-${SUITE}`,
+    refusedFirst: `ag-rfirst-${SUITE}`,
+    refusedSave: `ag-rsave-${SUITE}`,
+    refusedApprove: `ag-rappr-${SUITE}`,
 };
 
 const ctx = (tenantId: string, role: Role, userId: string, over: Partial<RequestContext> = {}): RequestContext =>
@@ -246,7 +273,15 @@ describeFn('agent profiles (real DB)', () => {
         await agent(TA, AGENTS.scan, USERS.authorA, 'ACTIVE', ['list_risks']);
         await agent(TA, AGENTS.retired, USERS.authorA, 'RETIRED', []);
         await agent(TB, AGENTS.b, USERS.authorB, 'ACTIVE', ['list_risks']);
-        for (const id of [AGENTS.budgetSave, AGENTS.budgetFirst, AGENTS.budgetApprove, AGENTS.legacy]) {
+        for (const id of [
+            AGENTS.budgetSave,
+            AGENTS.budgetFirst,
+            AGENTS.budgetApprove,
+            AGENTS.legacy,
+            AGENTS.refusedFirst,
+            AGENTS.refusedSave,
+            AGENTS.refusedApprove,
+        ]) {
             await agent(TA, id, USERS.authorA, 'ACTIVE', ['list_risks']);
         }
         registerWorkflow({
@@ -1082,6 +1117,109 @@ describeFn('agent profiles (real DB)', () => {
             expect(option(repo[0])).toBe(catalogBytes([corpus.find((s) => s.name === repo[0])!]));
             expect(option(AT)).toBe(MAX_CATALOG_BYTES - repoBytes);
             expect(repo.reduce((n, name) => n + option(name)!, 0) + option(AT)!).toBe(MAX_CATALOG_BYTES);
+        });
+    });
+
+    // ── 10. A refused shipped skill (owner decision, 2026-10-30) ──────
+
+    describe('a shipped skill the text scan refused cannot be chosen (owner decision, 2026-10-30)', () => {
+        type Ref = { origin: 'repository' | 'tenant'; name: string };
+
+        // Read while nothing is planted: the shipped corpus as it is. The first
+        // skill is the one the scan is made to refuse, the second stays clean.
+        const shipped = loadSkillCorpus().skills.map((s) => s.name);
+        const [REFUSED, CLEAN] = shipped;
+        const refusedRef: Ref = { origin: 'repository', name: REFUSED };
+        const cleanRef: Ref = { origin: 'repository', name: CLEAN };
+        const unknown = { reason: 'SKILL_UNKNOWN', skills: [`repository:${REFUSED}`] };
+
+        const plant = (names: string[]) => {
+            mockRefusedShipped = names;
+            resetSkillCache();
+        };
+        beforeEach(() => plant([REFUSED]));
+        afterEach(() => plant([]));
+
+        /** A refusal's details, or NO_REFUSAL. */
+        const detailsOf = async (p: Promise<unknown>): Promise<unknown> => {
+            try {
+                await p;
+            } catch (err) {
+                return (err as { details?: unknown }).details ?? `THREW:${(err as Error).message}`;
+            }
+            return 'NO_REFUSAL';
+        };
+
+        it('the picker leaves it out and offers every other shipped skill; a run naming it is refused', async () => {
+            expect(shipped.length).toBeGreaterThan(1);
+            const view = await getAgentProfile(reviewerA(), AGENTS.refusedSave);
+            const offered = view.options.skills.filter((s) => s.origin === 'repository').map((s) => s.name);
+            expect(offered).toEqual(shipped.filter((n) => n !== REFUSED).sort());
+            // The plant is the mount path's refusal, not only the picker's.
+            await expect(
+                resolveRunSkillMount(authorA(), { key: 'agent-profile:refused@v1', profile: { skillRefs: [refusedRef] } }),
+            ).rejects.toThrow(`Skill "${REFUSED}": refused by the skill text scan (skill.reveal_context)`);
+        });
+
+        it('a save naming it is refused by name and stores nothing, on both paths; a clean shipped skill still saves', async () => {
+            // The first version: no profile is created.
+            expect(await detailsOf(createAgentProfile(authorA(), AGENTS.refusedFirst, version({ skillRefs: [cleanRef, refusedRef] })))).toEqual(
+                unknown,
+            );
+            expect(await prisma.agentProfile.count({ where: { tenantId: TA, agentId: AGENTS.refusedFirst } })).toBe(0);
+
+            // A clean shipped skill is offered and saved.
+            const first = await createAgentProfile(authorA(), AGENTS.refusedSave, version({ skillRefs: [cleanRef] }));
+            expect(first.version).toBe(1);
+
+            // A later version: nothing is stored and the open draft is not retired.
+            const before = await prisma.agentProfileVersion.count({ where: { tenantId: TA } });
+            expect(
+                await detailsOf(createAgentProfileVersion(authorA(), AGENTS.refusedSave, version({ skillRefs: [cleanRef, refusedRef] }))),
+            ).toEqual(unknown);
+            expect(await prisma.agentProfileVersion.count({ where: { tenantId: TA } })).toBe(before);
+            const view = await getAgentProfile(reviewerA(), AGENTS.refusedSave);
+            expect(view.versions.map((v) => [v.version, v.status, v.skillRefs])).toEqual([[1, 'DRAFT', [cleanRef]]]);
+        });
+
+        it('a version stored naming it before the check is refused approval by name, and nothing moves', async () => {
+            const v1 = await approvedProfile(AGENTS.refusedApprove, { skillRefs: [cleanRef] });
+            const instructions = `${INSTRUCTIONS} Name the owner first.`;
+            // Written as a save before this check would have written it: the name was a shipped skill.
+            await prisma.agentProfileVersion.create({
+                data: {
+                    tenantId: TA,
+                    profileId: v1.profileId,
+                    version: 2,
+                    instructions,
+                    instructionsHash: profileInstructionsHash(instructions),
+                    toolNames: ['list_risks'],
+                    skillRefs: [cleanRef, refusedRef],
+                    modelTier: 'balanced',
+                    effort: 'medium',
+                    maxTurns: 10,
+                    outputKind: 'ANSWER_ONLY',
+                    allowedTriggers: ['TEST_RUN'],
+                    authoredByUserId: USERS.authorA,
+                },
+            });
+            await submitAgentProfileVersion(authorA(), AGENTS.refusedApprove, 2);
+            const approve = () =>
+                approveAgentProfileVersion(reviewerA(), AGENTS.refusedApprove, 2, { instructionsHash: profileInstructionsHash(instructions) });
+
+            expect(await detailsOf(approve())).toEqual(unknown);
+            let view = await getAgentProfile(reviewerA(), AGENTS.refusedApprove);
+            expect(view.profile?.currentApprovedVersion).toBe(1);
+            expect(view.versions.map((v) => [v.version, v.status])).toEqual([
+                [2, 'SUBMITTED'],
+                [1, 'APPROVED'],
+            ]);
+
+            // The refused skill is the only obstacle: with the scan no longer refusing it, the same row is approved.
+            plant([]);
+            expect(await approve()).toMatchObject({ status: 'APPROVED', supersededVersion: 1 });
+            view = await getAgentProfile(reviewerA(), AGENTS.refusedApprove);
+            expect(view.profile?.currentApprovedVersion).toBe(2);
         });
     });
 });
