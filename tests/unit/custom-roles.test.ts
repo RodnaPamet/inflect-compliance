@@ -69,6 +69,10 @@ const VALID_PERMISSIONS = getPermissionsForRole('EDITOR');
 beforeEach(() => {
     jest.clearAllMocks();
     Object.keys(mockTx).forEach(k => delete mockTx[k]);
+    // The carriage check's reads (2026-10-30): no member carries the role
+    // being saved, and the custom role being assigned is read for its base and
+    // blob. Tests that drive that rule are tests/unit/custom-role-carriage-writers.test.ts.
+    mockTx.tenantMembership = { groupBy: jest.fn(async () => []) };
 });
 
 // ─── Authorization Tests ───
@@ -361,6 +365,7 @@ describe('Custom Roles — Assign', () => {
         };
         mockTx.tenantCustomRole = {
             findFirst: jest.fn(async () => ({ id: 'cr-1', tenantId: 'tenant-1', isActive: true })),
+            findMany: jest.fn(async () => []),
         };
 
         const result = await assignCustomRole(makeCtx(), 'm-1', 'cr-1');
