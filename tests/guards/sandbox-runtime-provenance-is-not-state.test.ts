@@ -156,6 +156,66 @@ describe('no rendered string asserts a setting effective value', () => {
     });
 });
 
+describe('the PKI regeneration script exists and says what it costs', () => {
+    /*
+        #4565. The owner decided the PKI is REGENERABLE rather than backed up,
+        and that decision is only safe while the procedure exists and names its
+        consequence. A new CA invalidates every client certificate it signed —
+        there is no revocation and no grace period — so a reader who runs the
+        script without knowing that can break an inbound caller with no obvious
+        cause.
+
+        Asserted on the script's PRESENCE and on the two properties that make it
+        safe, not on its prose: it must refuse by default, and it must state the
+        client-certificate consequence somewhere a reader meets it.
+    */
+    const SCRIPT = 'deploy/openshell/regenerate-pki.sh';
+
+    it('the script is committed and executable', () => {
+        const abs = path.join(REPO_ROOT, SCRIPT);
+        expect(fs.existsSync(abs)).toBe(true);
+        // Mode matters: a procedure nobody can run is a document.
+        expect((fs.statSync(abs).mode & 0o111) !== 0).toBe(true);
+    });
+
+    it('refuses by default and needs an explicit force', () => {
+        // A script that silently regenerates over a working PKI is a footgun:
+        // the failure is invisible until an inbound call is rejected, and by
+        // then the old CA is unrecoverable.
+        const src = read(SCRIPT);
+        const lines = src.split('\n');
+        expect(lines.filter((l) => l.includes('--force')).length).toBeGreaterThanOrEqual(2);
+        // An early exit guarded on an existing CA, before anything is written.
+        expect(lines.filter((l) => /exit 2/.test(l)).length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('states the client-certificate consequence', () => {
+        // The one fact a reader must not discover afterwards.
+        const src = read(SCRIPT).toLowerCase();
+        expect(src.includes('invalidates every client certificate')).toBe(true);
+        expect(src.includes('re-issue')).toBe(true);
+    });
+
+    it('derives the SAN address rather than hardcoding one', () => {
+        // A hardcoded address produces a certificate that fails verification on
+        // any other host — the sort of thing nobody notices until mTLS refuses
+        // a connection.
+        const src = read(SCRIPT);
+        expect(src.includes('hostname -I')).toBe(true);
+        // And no literal 10.x address baked into the cert material.
+        const literals = src.split('\n').filter((l) => /IP:10\.\d+\.\d+\.\d+/.test(l));
+        expect(literals).toEqual([]);
+    });
+
+    it('the README records the decision and that it was proved by running it', () => {
+        const readme = read('deploy/openshell/README.md');
+        const lines = readme.split('\n');
+        expect(lines.filter((l) => l.includes('regenerate-pki')).length).toBeGreaterThanOrEqual(1);
+        // The decision is only auditable if the reasoning is written down.
+        expect(lines.filter((l) => /REGENERABLE, not backed up/.test(l)).length).toBe(1);
+    });
+});
+
 describe('an empty deploy value means absent, not invalid', () => {
     /*
         #4564. Compose and shell defaults produce EMPTY STRINGS, not absent
