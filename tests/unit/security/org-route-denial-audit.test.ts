@@ -93,6 +93,11 @@ jest.mock('@/app-layer/usecases/org-members', () => ({
     changeOrgMemberRole: (...a: unknown[]) => mockChangeRole(...a),
     listOrgMembers: jest.fn(),
 }));
+const mockSetAgentSwitches = jest.fn();
+jest.mock('@/app-layer/usecases/org-agent-switches', () => ({
+    setOrgAgentSwitches: (...a: unknown[]) => mockSetAgentSwitches(...a),
+    getOrgAgentSwitches: jest.fn(),
+}));
 const mockDeleteTenant = jest.fn();
 const mockCreateTenant = jest.fn();
 jest.mock('@/app-layer/usecases/org-tenants', () => ({
@@ -121,6 +126,7 @@ import { POST as initiativeLink } from '@/app/api/org/[orgSlug]/initiatives/[ini
 import { POST as widgetCreate } from '@/app/api/org/[orgSlug]/dashboard/widgets/route';
 import { PATCH as widgetUpdate } from '@/app/api/org/[orgSlug]/dashboard/widgets/[widgetId]/route';
 import { DELETE as tenantDelete } from '@/app/api/org/[orgSlug]/tenants/[tenantId]/route';
+import { PUT as agentSwitchesSet } from '@/app/api/org/[orgSlug]/agent-switches/route';
 
 type Handler = (req: NextRequest, args: { params: unknown }) => Promise<Response>;
 const asHandler = (h: unknown): Handler => h as Handler;
@@ -128,7 +134,7 @@ const asHandler = (h: unknown): Handler => h as Handler;
 const ALL_FALSE = {
     canViewPortfolio: false, canDrillDown: false, canExportReports: false,
     canManageTenants: false, canManageMembers: false, canConfigureDashboard: false,
-    canSetThreatLevel: false, canSetMaturity: false,
+    canSetThreatLevel: false, canSetMaturity: false, canManageAgentSwitches: false,
 };
 
 const ctxWith = (flags: Partial<typeof ALL_FALSE>) => ({
@@ -249,6 +255,11 @@ const ROUTES: Array<{
       body: { enabled: true },
       url: '/api/org/acme/dashboard/widgets/w-1', params: { orgSlug: 'acme', widgetId: 'w-1' },
       flag: 'canConfigureDashboard', usecase: mockUpdateWidget },
+    // #4557 — the organization's agent switches.
+    { name: 'PUT /agent-switches', handler: asHandler(agentSwitchesSet), method: 'PUT',
+      body: { toolRunner: true },
+      url: '/api/org/acme/agent-switches', params: { orgSlug: 'acme' },
+      flag: 'canManageAgentSwitches', usecase: mockSetAgentSwitches },
 ];
 
 beforeEach(() => {
@@ -257,7 +268,7 @@ beforeEach(() => {
      mockDeleteTenant, mockAddMember, mockChangeRole, mockCreateInvite,
      mockCreateTenant, mockSetThreatLevel, mockSetMaturity, mockCreateInitiative,
      mockUpdateInitiative, mockChangeStatus, mockLinkWork, mockCreateWidget,
-     mockUpdateWidget].forEach((m) => m.mockReset());
+     mockUpdateWidget, mockSetAgentSwitches].forEach((m) => m.mockReset());
     mockAppendOrgAuditEntry.mockResolvedValue({ id: 'a', entryHash: 'h', previousHash: null });
 });
 

@@ -4310,6 +4310,8 @@
     }
   },
   "findings": {
+    "accessTitle": "No access to findings",
+    "accessMessage": "Your role can't view the findings register. Ask an Owner or Admin for access.",
     "title": "Findings Register",
     "listDescription": "Issues raised in audit and assessment — owned, dated, closed.",
     "findingsCount": "{count} findings",
@@ -4863,6 +4865,8 @@
       "cellNotGranted": "{permission}: not granted. Click to grant it.",
       "cellNotHeld": "{permission}: not granted. You do not hold this permission yourself, so you cannot give it.",
       "cellGrantedNotHeld": "{permission}: granted. You do not hold this permission yourself, so you can remove it but not give it back.",
+      "cellNeedsAdminBase": "{permission}: not granted. Only a role based on Admin can have this permission.",
+      "needsAdminBaseNotice": "This role grants permissions that only a role based on Admin can have: {permissions}. Switch them off, or base the role on Admin, to save.",
       "actions": {
         "view": "View",
         "create": "Create",
@@ -6080,7 +6084,7 @@
       "cancel": "Cancel",
       "health": {
         "title": "Connection health",
-        "description": "Freshness is the time since each enabled connection last ran, whatever the result, or passed a connection test. A connection whose runs keep failing still reads Fresh, so check Last success to spot a broken credential.",
+        "description": "Freshness is the time since each enabled connection last succeeded: a successful run or a passed connection test. A failed run does not count, so a connection whose runs keep failing, for example on a revoked credential, goes Stale.",
         "colLastSuccess": "Last success",
         "colFreshness": "Freshness",
         "neverSucceeded": "Never succeeded",
@@ -6824,6 +6828,7 @@
       "risks": "Risks",
       "assets": "Assets",
       "vendors": "Vendors",
+      "findings": "Findings",
       "tests": "Tests",
       "incidents": "Incidents",
       "personnel": "Personnel",
@@ -7226,19 +7231,22 @@
       "reasonToolRunner": {
         "ENV_DISABLED": "Runs use the built-in engine because the Tool Runner engine is not turned on for this deployment. Only the deployment's operator can turn it on.",
         "DRIVER_NOT_IMPLEMENTED": "Runs use the built-in engine because this version of Inflect does not include the Tool Runner engine, even though both the deployment and this workspace ask for it.",
-        "NO_WORKFLOW_REQUESTS_IT": "Runs use the built-in engine because agent profiles are not turned on for this workspace, and they are what ask for the Tool Runner engine."
+        "NO_WORKFLOW_REQUESTS_IT": "Runs use the built-in engine because agent profiles are not turned on for this workspace, and they are what ask for the Tool Runner engine.",
+        "ORGANIZATION_OFF": "Runs use the built-in engine because your organization has not turned on the Tool Runner engine. An organization admin can turn it on in the organization's settings."
       },
       "deploymentOffStoredToolRunner": "This workspace has chosen the Tool Runner engine, so its profile runs move to it as soon as the switch is turned on.",
       "wiringHeadingToolRunner": "What a Tool Runner run needs before it can start",
       "toolRunnerTerm": {
-        "ENV": "The deployment allows the Tool Runner engine",
+        "ENV": "The Tool Runner engine is turned on for this workspace",
         "TENANT": "This workspace has chosen it",
         "BUILD": "This build ships the Tool Runner engine",
         "PROFILES": "Agent profiles are turned on for this workspace",
         "MODEL_KEY": "The deployment has an Anthropic API key",
         "REGISTERED_AGENT": "An active, risk-assessed agent is registered"
       },
-      "toolRunnerStartNote": "A Tool Runner run starts from an agent's Behaviour tab, as a Test run of one of its profile versions. It runs read-only and as that agent, under the agent's own grants and controls."
+      "toolRunnerStartNote": "A Tool Runner run starts from an agent's Behaviour tab, as a Test run of one of its profile versions. It runs read-only and as that agent, under the agent's own grants and controls.",
+      "organizationTerm": "Set by your organization",
+      "deploymentOffOrganization": "Your organization can turn on the Tool Runner engine for its workspaces in the organization's settings."
     },
     "modules": {
       "forbidden": "Only a workspace owner can turn product modules on or off. An administrator cannot grant this.",
@@ -7345,6 +7353,7 @@
       "continuity": "Business continuity",
       "processes": "Processes",
       "vendors": "Vendors",
+      "findings": "Findings",
       "tests": "Tests",
       "frameworks": "Frameworks",
       "audits": "Audits",
@@ -7424,6 +7433,26 @@
       "reachabilityNoVersion": "answered, but reported no version",
       "policyModuleLabel": "Set in",
       "ciCheckLabel": "Held by"
+    },
+    "aiResidency": {
+      "title": "Where AI runs",
+      "description": "Decide whether this workspace's data may leave the deployment for an external model provider. Every change is recorded in the audit log with the old and new value.",
+      "loadFailed": "This setting couldn't be loaded. Refresh the page to try again.",
+      "saveFailed": "The setting wasn't saved.",
+      "externalBadge": "External",
+      "localBadge": "Local only",
+      "stateExternal": "AI features may use external model providers.",
+      "stateLocal": "Nothing is sent to an external model provider.",
+      "choiceAria": "Where AI runs",
+      "externalLabel": "External provider",
+      "externalDesc": "AI features may send this workspace's data to the external model providers this deployment uses. They are listed on the sub-processor register.",
+      "localLabel": "Local only",
+      "localDesc": "Nothing is sent to an external model provider.",
+      "localWithGateway": "This deployment has a local model gateway. AI features that can run on it use it. The rest stop with a reason instead of sending data out, including the Tool Runner engine and the assistant.",
+      "localWithoutGateway": "This deployment has no local model gateway, so AI features that need a model stop with a reason instead of sending data out. Agent runs stop on either engine, and risk suggestions fall back to templates.",
+      "saved": "Saved.",
+      "save": "Save",
+      "forbidden": "Only an administrator can change where AI runs."
     }
   },
   "riskManager": {
@@ -12899,6 +12928,28 @@
       "unexpectedCreate": "Unexpected error while creating tenant.",
       "creating": "Creating…",
       "createTenant": "Create tenant"
+    },
+    "settings": {
+      "heading": "Settings",
+      "intro": "Settings that apply to every workspace in this organization.",
+      "agentSwitches": {
+        "title": "Agent features",
+        "description": "Turn agent features on or off for every workspace in this organization. Each change is recorded in the organization's audit log.",
+        "readOnly": "Only an organization admin can change these.",
+        "saveFailed": "The change wasn't saved.",
+        "agentProfiles": {
+          "label": "Agent profiles",
+          "help": "Lets each workspace give its agents written instructions, a chosen set of tools and skills, and a test run, on the agent's Behaviour tab."
+        },
+        "toolRunner": {
+          "label": "Tool Runner engine",
+          "help": "Makes the Tool Runner engine available to each workspace. A workspace owner still chooses it under Admin → AI features before any run uses it."
+        },
+        "deploymentOnBadge": "On for every workspace",
+        "deploymentOffBadge": "Off for every workspace",
+        "deploymentOn": "This deployment turns it on for every workspace, so this switch changes nothing today. Your choice applies once the deployment leaves it to organizations.",
+        "deploymentOff": "This deployment turns it off for every workspace, so this switch changes nothing today. Your choice applies once the deployment leaves it to organizations."
+      }
     }
   },
   "automation": {

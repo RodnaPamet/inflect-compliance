@@ -1,13 +1,14 @@
 /**
  * Who an identity pass acts as, decided when it RUNS (#4400).
  *
- * A leaver pass has two ways to start: the 05:00 dispatch, and the "Run now"
- * route an OWNER presses. The route asserts `admin.tenant_lifecycle` and puts
- * the caller's id in the job payload. Until #4400 the pass then built
+ * Each identity pass, leaver and joiner, has two ways to start: its daily
+ * dispatch (leaver 05:00, joiner 04:30), and the "Run now" route an OWNER
+ * presses. Both routes assert `admin.tenant_lifecycle` and put the caller's id
+ * in the job payload. Until #4400 each pass then built
  * `buildDelegatedJobContext` from that id: an ADMIN-shaped context attributed
  * to the requester, never re-checked. The check happened at ENQUEUE only, so a
  * pass queued by somebody since demoted or removed still ran with full ADMIN,
- * under their name.
+ * under their name: a disable, or a create, journalled as theirs.
  *
  * ═══ WHAT HAPPENS NOW ═══
  *
@@ -26,29 +27,32 @@
  *
  * `resolveMemberContext` says a refusal must never fall back to a system
  * context, because the write would still happen, just anonymously. That rule
- * is about work a refusal would STOP. This is not that work. The pass runs
+ * is about work a refusal would STOP. This is not that work. Each pass runs
  * every morning on the job's own authority whatever anybody asks; a request
  * changes only WHEN it runs. A refused requester therefore gets nothing the
- * schedule would not do anyway, and refusing the pass would leave a departed
- * employee's accounts enabled until 05:00 — which this subsystem treats as
- * worse. Owner decision, 2026-10-30.
+ * schedule would not do anyway. Refusing the leaver would leave a departed
+ * employee's accounts enabled until 05:00, which this subsystem treats as
+ * worse; refusing the joiner would hold back a starter's account until 04:30.
+ * Owner decision, 2026-10-30, for both.
  *
  * ═══ WHY `buildSystemContext` AND NOT THE TENANT SYSTEM USER ═══
  *
  * `buildTenantSystemJobContext` exists for a job that must write a NOT NULL
- * `User` foreign key (`Task.createdByUserId`). Nothing on the pass's path does:
- * `IntegrationExecution` carries no user column, `IdentityWriteJournal.actorUserId`
- * has no foreign key, the directory-write audit row is written with
- * `userId: null`, and the audit extension maps `SYSTEM_PRINCIPAL` to NULL. So
- * the fallback is the scheduled pass's own context, and a refused manual pass
- * is indistinguishable from the 05:00 one in everything it writes as an actor.
+ * `User` foreign key (`Task.createdByUserId`). Nothing on either pass's path
+ * does: `IntegrationExecution` carries no user column,
+ * `IdentityWriteJournal.actorUserId` (the leaver's disables, the joiner's
+ * create, group, credential and enable steps) has no foreign key, the leaver's
+ * directory-write audit row is written with `userId: null`, and the audit
+ * extension maps `SYSTEM_PRINCIPAL` to NULL. So the fallback is the scheduled
+ * pass's own context, and a refused manual pass is indistinguishable from the
+ * scheduled one in everything it writes as an actor.
  * The tenant system user would have added a third actor value to the journal,
  * created a `User` row nothing needs, and read as `manual` to any check that
  * compares a context's user id with `SYSTEM_PRINCIPAL`.
  *
  * ═══ `triggeredBy` IS READ OFF THE REQUEST, NOT THE CONTEXT ═══
  *
- * The pass used to derive it from `ctx.userId !== SYSTEM_PRINCIPAL`. With the
+ * Both passes used to derive it from `ctx.userId !== SYSTEM_PRINCIPAL`. With the
  * fallback, a manual request can run under a system context, and that check
  * would record it as `scheduled`. So it travels on `PassTrigger`, decided here
  * once, from whether anybody asked.

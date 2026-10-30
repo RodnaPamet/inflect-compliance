@@ -55,6 +55,7 @@ describeFn('Portfolio drill-down — auditor fan-out integrity (DB-backed)', () 
             canConfigureDashboard: true,
             canSetThreatLevel: true,
             canSetMaturity: true,
+            canManageAgentSwitches: true,
             },
         };
     }

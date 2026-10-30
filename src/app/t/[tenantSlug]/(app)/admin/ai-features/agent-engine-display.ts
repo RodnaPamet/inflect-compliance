@@ -31,6 +31,7 @@ import {
     type StaticDriverReason,
     type StoredDriverMode,
 } from '@/lib/agentic/agent-driver';
+import { switchActor, type AgentSwitchBasis } from '@/lib/agentic/agent-switches';
 
 /** The response of `GET /api/t/{slug}/admin/agent-driver`. */
 export interface AgentDriverSettingPayload {
@@ -40,8 +41,12 @@ export interface AgentDriverSettingPayload {
     /** Flue's operator switch and build flag. */
     envEnabled: boolean;
     implemented: boolean;
-    /** The Tool Runner's own switch and build flag (Step 2c). */
-    toolRunner: { envEnabled: boolean; implemented: boolean };
+    /**
+     * The Tool Runner's own switch and build flag (Step 2c). `envEnabled` is
+     * "available to this workspace"; `basis` says whether the deployment or the
+     * organization decided it (#4557). Absent from a server that predates it.
+     */
+    toolRunner: { envEnabled: boolean; implemented: boolean; basis?: AgentSwitchBasis };
 }
 
 /** A reasoning engine a workspace can choose. */
@@ -74,7 +79,7 @@ export type EngineTermKey =
 export interface EngineTerm {
     key: EngineTermKey;
     satisfied: boolean;
-    actor: 'operator' | 'tenant';
+    actor: 'operator' | 'organization' | 'tenant';
     count?: number;
 }
 
@@ -146,7 +151,13 @@ export function headlineFor(setting: AgentDriverSettingPayload, wiring?: FlueWir
         return 'reason.UNKNOWN';
     }
     if (!isStaticDriverReason(reason)) return 'reason.UNKNOWN';
-    return engineOf(setting) === 'TOOL_RUNNER' ? TOOL_RUNNER_REASON_MESSAGE[reason] : REASON_MESSAGE[reason];
+    if (engineOf(setting) !== 'TOOL_RUNNER') return REASON_MESSAGE[reason];
+    // The organization holds the switch (#4557): name it, not the operator,
+    // who cannot help a workspace whose organization left the engine off.
+    if (reason === 'ENV_DISABLED' && setting.toolRunner.basis === 'ORGANIZATION_OFF') {
+        return 'reasonToolRunner.ORGANIZATION_OFF';
+    }
+    return TOOL_RUNNER_REASON_MESSAGE[reason];
 }
 
 export type HeadlineTone = 'success' | 'warning' | 'info';
@@ -202,7 +213,11 @@ export function engineControlFor(setting: AgentDriverSettingPayload, canChange: 
 export function gateTermsFor(setting: AgentDriverSettingPayload): EngineTerm[] {
     if (engineOf(setting) === 'TOOL_RUNNER') {
         return [
-            { key: 'ENV', satisfied: setting.toolRunner.envEnabled, actor: 'operator' },
+            {
+                key: 'ENV',
+                satisfied: setting.toolRunner.envEnabled,
+                actor: setting.toolRunner.basis ? switchActor(setting.toolRunner.basis) : 'operator',
+            },
             { key: 'TENANT', satisfied: true, actor: 'tenant' },
             { key: 'BUILD', satisfied: setting.toolRunner.implemented, actor: 'operator' },
         ];

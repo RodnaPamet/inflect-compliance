@@ -64,6 +64,9 @@ const CONNECTION_RESPONSE_FIELDS = [
     'createdAt',
     'updatedAt',
     '_count',
+    // Whether the connection stores a secret at all, read by the usecase
+    // without reading the secret (#4581).
+    'hasSecret',
 ] as const;
 
 /**
@@ -89,8 +92,9 @@ export const GET = withApiErrorHandling(
             }
             return {
                 ...projected,
-                hasSecret: true, // secrets exist but are masked
-                secretStatus: '••••••••',
+                // A mask when a secret is stored, `none` when there is none
+                // (an internal check). Never the secret.
+                secretStatus: c.hasSecret === true ? '••••••••' : 'none',
                 webhookUrl: `${baseUrl}/api/integrations/webhooks/${c.provider}`,
             };
         }),

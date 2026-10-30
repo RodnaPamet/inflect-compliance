@@ -30,6 +30,7 @@ import {
     ownerTierClearMessage,
 } from '@/lib/roles';
 import { CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER } from '@/lib/custom-role-grant-refusal';
+import { PERMISSION_NEEDS_ADMIN_BASE, grantsNeedingAdminBase } from '@/lib/custom-role-admin-base-rule';
 import type { Role } from '@prisma/client';
 
 /**
@@ -148,6 +149,7 @@ export async function createCustomRole(ctx: RequestContext, input: CreateCustomR
 
     // A role may not contain more authority than its author holds.
     assertGrantWithinOwnAuthority(ctx, input.permissionsJson, input.baseRole);
+    assertAdminBaseOnlyPermissions(input.permissionsJson, input.baseRole);
 
     return runInTenantContext(ctx, async (db) => {
         // Check for a duplicate name among the tenant's LIVE roles.
@@ -262,6 +264,15 @@ export async function updateCustomRole(
                 : existing.permissionsJson,
             input.baseRole !== undefined ? input.baseRole : existing.baseRole,
         );
+        // The RESULTING role again, but only when the update writes one of the
+        // two halves the rule is about: a rename of a legacy role must not be
+        // refused for a grant the rename does not touch.
+        if (input.permissionsJson !== undefined || input.baseRole !== undefined) {
+            assertAdminBaseOnlyPermissions(
+                input.permissionsJson !== undefined ? input.permissionsJson : existing.permissionsJson,
+                input.baseRole !== undefined ? input.baseRole : existing.baseRole,
+            );
+        }
 
         const updated = await db.tenantCustomRole.update({
             where: { id: roleId },
@@ -365,6 +376,24 @@ function assertGrantWithinOwnAuthority(
         throw forbidden(
             `Cannot grant permissions you do not hold: ${exceeded.join(', ')}.`,
             { reason: CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER, exceeded },
+        );
+    }
+}
+
+/**
+ * Only an ADMIN-based custom role may hold the permissions in
+ * `ADMIN_BASE_ONLY_PERMISSIONS` (#4536, #4581 A; owner decisions 2026-10-30).
+ * Server code behind each asks the Admin tier, which a custom role reads from
+ * its base, so on any other base the route let the role in and the usecase
+ * refused it. The keys travel in `details.permissions` so the Roles page can
+ * name them by their labels.
+ */
+function assertAdminBaseOnlyPermissions(permissionsJson: unknown, baseRole: Role): void {
+    const refused = grantsNeedingAdminBase(permissionsJson, baseRole);
+    if (refused.length > 0) {
+        throw badRequest(
+            `Only a custom role based on Admin can hold: ${refused.join(', ')}. Switch them off, or base the role on Admin.`,
+            { reason: PERMISSION_NEEDS_ADMIN_BASE, permissions: refused },
         );
     }
 }

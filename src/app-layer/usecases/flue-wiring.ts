@@ -35,6 +35,8 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import { someWorkflowRequestsFlue, somethingRequestsToolRunner } from '@/lib/agentic/agent-driver-policy';
+import { switchActor } from '@/lib/agentic/agent-switches';
+import { agentProfilesDecisionFor } from '@/lib/agentic/agent-switches-policy';
 import { runInTenantContext } from '@/lib/db-context';
 import { env } from '@/env';
 
@@ -89,7 +91,7 @@ export interface FlueWiringTerm {
      * a dead end — an admin clicking through a term only the deployment can
      * satisfy is the shape of a support ticket.
      */
-    actor: 'operator' | 'tenant';
+    actor: 'operator' | 'organization' | 'tenant';
     /** How many of the thing there are, where the term is a count. */
     count?: number;
 }
@@ -136,13 +138,19 @@ export async function getFlueWiringState(ctx: RequestContext): Promise<FlueWirin
     );
 
     const engine = driver.mode === 'TOOL_RUNNER' ? 'TOOL_RUNNER' : 'FLUE';
+    // The gate's own call, so the checklist and the run path cannot disagree;
+    // the profile decision beside it says WHO can turn it on (#4557).
+    const [profilesRequested, profiles] =
+        engine === 'TOOL_RUNNER'
+            ? await Promise.all([somethingRequestsToolRunner(ctx.tenantSlug), agentProfilesDecisionFor(ctx.tenantSlug)])
+            : [false, null];
     const terms: FlueWiringTerm[] =
         engine === 'TOOL_RUNNER'
             ? [
-                  { key: 'ENV', satisfied: driver.toolRunner.envEnabled, actor: 'operator' },
+                  { key: 'ENV', satisfied: driver.toolRunner.envEnabled, actor: switchActor(driver.toolRunner.basis) },
                   { key: 'TENANT', satisfied: true, actor: 'tenant' },
                   { key: 'BUILD', satisfied: driver.toolRunner.implemented, actor: 'operator' },
-                  { key: 'PROFILES', satisfied: somethingRequestsToolRunner(ctx.tenantSlug), actor: 'operator' },
+                  { key: 'PROFILES', satisfied: profilesRequested, actor: profiles ? switchActor(profiles.basis) : 'operator' },
                   // Presence only: the value never leaves the server.
                   { key: 'MODEL_KEY', satisfied: Boolean(env.ANTHROPIC_API_KEY), actor: 'operator' },
                   { key: 'REGISTERED_AGENT', satisfied: agents > 0, actor: 'tenant', count: agents },

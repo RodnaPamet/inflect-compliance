@@ -31,18 +31,45 @@ export interface ProviderSelection {
      * OpenRouter provider. `EXTERNAL` (default) keeps the env-driven selection.
      */
     residency?: 'EXTERNAL' | 'LOCAL_ONLY' | null;
-    /** Per-tenant local-gateway base URL override (else `AI_LOCAL_BASE_URL`). */
+    /**
+     * The tenant's stored gateway address. Honoured only when it IS
+     * `AI_LOCAL_BASE_URL`; any other value is refused to the stub (#4545).
+     */
     localBaseUrl?: string | null;
     /** Per-tenant local-model override (else `AI_LOCAL_MODEL`). */
     localModel?: string | null;
 }
 
-/** Build a local provider from the resolved base URL, or the stub if unset. */
+/**
+ * Build a local provider against THE DEPLOYMENT'S gateway, or the stub.
+ *
+ * ── A TENANT ADDRESS IS NEVER DIALLED (#4545) ──────────────────────────
+ *
+ * `sel.localBaseUrl` is `TenantSecuritySettings.aiLocalBaseUrl`, which any
+ * `admin.manage` holder can set to any URL. This used to take it in preference
+ * to `AI_LOCAL_BASE_URL`, so a tenant administrator chose a host the server
+ * would POST to with a bare `fetch` — an SSRF — carrying the deployment's
+ * `AI_LOCAL_API_KEY` as the bearer.
+ *
+ * The rule is now Flue's (`resolveFlueModel`, `LOCAL_GATEWAY_NOT_SERVED`):
+ * what is decided here must be what is dialled there, and the only gateway
+ * this deployment dials is its own. A tenant address that restates it is
+ * honoured; any other one gets the deterministic stub, never the deployment
+ * gateway either — a LOCAL_ONLY tenant that named a gateway did not nominate
+ * this one, and its content must not go somewhere it did not choose.
+ */
 function buildLocalProvider(sel?: ProviderSelection): RiskSuggestionProvider {
-    const baseUrl = sel?.localBaseUrl || env.AI_LOCAL_BASE_URL;
+    const baseUrl = env.AI_LOCAL_BASE_URL;
+    if (sel?.localBaseUrl && sel.localBaseUrl !== baseUrl) {
+        logger.warn(
+            'Tenant local AI gateway is not one this deployment serves — using the deterministic stub',
+            { component: 'ai', reason: 'LOCAL_GATEWAY_NOT_SERVED' },
+        );
+        return new StubRiskSuggestionProvider(/* isFallbackMode */ true);
+    }
     if (!baseUrl) {
         logger.warn(
-            'Local AI gateway not configured (AI_LOCAL_BASE_URL / tenant override) — using the deterministic stub',
+            'Local AI gateway not configured (AI_LOCAL_BASE_URL) — using the deterministic stub',
             { component: 'ai' },
         );
         return new StubRiskSuggestionProvider(/* isFallbackMode */ true);

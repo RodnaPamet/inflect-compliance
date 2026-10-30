@@ -47,6 +47,7 @@ import { TenantProvider } from '@/lib/tenant-context-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { getPermissionsForRole, PERMISSION_SCHEMA, type PermissionSet } from '@/lib/permissions';
 import type { Role } from '@prisma/client';
+import { ADMIN_BASE_ONLY_PERMISSIONS } from '@/lib/custom-role-admin-base-rule';
 
 const en = require('../../messages/en.json');
 const bg = require('../../messages/bg.json');
@@ -276,18 +277,23 @@ describe('custom roles page — permissions the editor does not hold', () => {
             fireEvent.click(cell);
             expect(cell).toHaveAttribute('aria-pressed', 'false');
         }
-        const held = byId('perm-admin-members')!;
+        // A key the Admin holds that the default Reader base may carry too
+        // (`admin.members` needs an Admin base, #4581 A).
+        const held = byId('perm-admin-view')!;
         expect(held).not.toHaveAttribute('aria-disabled');
         const before = held.getAttribute('aria-pressed');
         fireEvent.click(held);
         expect(held.getAttribute('aria-pressed')).not.toBe(before);
     });
 
-    it('an Owner sees no greyed-out permission', async () => {
+    it('an Owner sees no permission greyed out for want of holding it', async () => {
         mount({ viewer: 'OWNER' });
         await openCreateGrid();
         expect(byId('roles-not-held-hint')).toBeNull();
-        expect(document.querySelectorAll('[id^="perm-"][aria-disabled="true"]')).toHaveLength(0);
+        // The greyed cells on the default Reader base are the base role's
+        // rule, not the Owner's: the Admin-base-only permissions (#4536, #4581 A).
+        const greyed = Array.from(document.querySelectorAll('[id^="perm-"][aria-disabled="true"]')).map((el) => el.id);
+        expect(greyed.sort()).toEqual(ADMIN_BASE_ONLY_PERMISSIONS.map((k) => `perm-${k.replace('.', '-')}`).sort());
     });
 
     it('a preset never grants what the editor does not hold', async () => {
@@ -304,7 +310,9 @@ describe('custom roles page — permissions the editor does not hold', () => {
         fireEvent.click(byId('preset-ADMIN')!);
         expect(byId('perm-admin-sso')).toHaveAttribute('aria-pressed', 'false');
         expect(byId('perm-evidence-download')).toHaveAttribute('aria-pressed', 'false');
-        expect(byId('perm-admin-manage')).toHaveAttribute('aria-pressed', 'true');
+        // Granted from the preset (the default Reader base may carry them; the
+        // Admin-base-only ones are this rule's, tested below).
+        expect(byId('perm-admin-view')).toHaveAttribute('aria-pressed', 'true');
         expect(byId('perm-evidence-upload')).toHaveAttribute('aria-pressed', 'true');
         expect(byId('role-exceeds-held')).toBeNull();
     });
@@ -416,5 +424,98 @@ describe('custom roles page — Delete', () => {
         expect(R.deleteMemberWarning).not.toMatch(/base role/i);
         expect(bg.admin.roles.deleteMemberWarning).toMatch(/ролята на собственото си членство/);
         expect(bg.admin.roles.deleteMemberWarning).not.toMatch(/базов/i);
+    });
+});
+
+describe('custom roles page — the Admin-base-only permissions (#4536, #4581 A)', () => {
+    const CELLS = ADMIN_BASE_ONLY_PERMISSIONS.map((k) => `perm-${k.replace('.', '-')}`);
+    const labelOf = (key: string) => permissionLabel(key.split('.')[0], key.split('.')[1]);
+    /** A Reader preset that also grants every Admin-base-only permission, as a role stored before the rule could. */
+    const legacyBlob = () => {
+        const p = getPermissionsForRole('READER') as unknown as Record<string, Record<string, boolean>>;
+        const out = { ...p };
+        for (const key of ADMIN_BASE_ONLY_PERMISSIONS) {
+            const [domain, action] = key.split('.');
+            out[domain] = { ...out[domain], [action]: true };
+        }
+        return out;
+    };
+
+    it('on a Reader base every one is locked, and an Admin preset turns none of them on', async () => {
+        mount({ viewer: 'OWNER' });
+        await openCreateGrid();
+        for (const id of CELLS) {
+            const cell = byId(id)!;
+            expect({ id, disabled: cell.getAttribute('aria-disabled') }).toEqual({ id, disabled: 'true' });
+            fireEvent.click(cell);
+            expect({ id, pressed: cell.getAttribute('aria-pressed') }).toEqual({ id, pressed: 'false' });
+        }
+        fireEvent.click(byId('preset-ADMIN')!);
+        for (const id of CELLS) expect({ id, pressed: byId(id)!.getAttribute('aria-pressed') }).toEqual({ id, pressed: 'false' });
+        // The rest of the preset still lands: these keys are not this rule's.
+        expect(byId('perm-personnel-view')).toHaveAttribute('aria-pressed', 'true');
+        expect(byId('perm-admin-view')).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('on an Admin base none is locked by this rule', async () => {
+        mount({ viewer: 'OWNER' });
+        await openCreateGrid();
+        const combobox = byId('role-base-select')!;
+        fireEvent.click(combobox);
+        fireEvent.click(await screen.findByRole('option', { name: en.roles.ADMIN }));
+        for (const id of CELLS) expect({ id, disabled: byId(id)!.getAttribute('aria-disabled') }).toEqual({ id, disabled: null });
+    });
+
+    it('a legacy Reader-based role holding them is told which, cannot save, and can switch them off to save', async () => {
+        mount({ viewer: 'OWNER', list: ok([role('cr-legacy', 'Legacy admin', 'READER', { permissionsJson: legacyBlob() })]) });
+        await screen.findByText('Legacy admin');
+        fireEvent.click(byId('edit-role-cr-legacy')!);
+        const notice = await waitForId('role-needs-admin-base');
+        for (const key of ADMIN_BASE_ONLY_PERMISSIONS) expect(notice).toHaveTextContent(labelOf(key));
+        expect(notice).not.toHaveTextContent('admin.manage');
+        expect(byId('role-submit-btn')).toBeDisabled();
+
+        for (const id of CELLS) {
+            const cell = byId(id)!;
+            expect(cell).not.toHaveAttribute('aria-disabled');
+            fireEvent.click(cell);
+            expect(cell).toHaveAttribute('aria-pressed', 'false');
+            // Once off it cannot come back on this base.
+            expect(cell).toHaveAttribute('aria-disabled', 'true');
+        }
+        expect(byId('role-needs-admin-base')).toBeNull();
+        expect(byId('role-submit-btn')).not.toBeDisabled();
+    });
+
+    it("the server's refusal is said in the page's own words, with labels", async () => {
+        mount({
+            post: {
+                ok: false,
+                status: 400,
+                body: {
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Only a custom role based on Admin can hold: admin.manage, personnel.manage.',
+                        details: { reason: 'PERMISSION_NEEDS_ADMIN_BASE', permissions: ['admin.manage', 'personnel.manage'] },
+                    },
+                },
+            },
+        });
+        await loaded();
+        fireEvent.click(byId('create-role-btn')!);
+        fireEvent.change(await waitForId('role-name-input'), { target: { value: 'Raced' } });
+        fireEvent.click(byId('role-submit-btn')!);
+        const notice = await waitForId('roles-error');
+        expect(notice).toHaveTextContent(
+            R.needsAdminBaseNotice.replace('{permissions}', `${labelOf('admin.manage')}, ${labelOf('personnel.manage')}`),
+        );
+        expect(notice).not.toHaveTextContent('admin.manage');
+    });
+
+    it('both locales name the rule', () => {
+        for (const cat of [en, bg]) {
+            expect(typeof cat.admin.roles.cellNeedsAdminBase).toBe('string');
+            expect(cat.admin.roles.needsAdminBaseNotice).toContain('{permissions}');
+        }
     });
 });

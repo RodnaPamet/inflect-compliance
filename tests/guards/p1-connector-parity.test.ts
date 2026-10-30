@@ -64,17 +64,11 @@ describe('P1 — connection-level run + per-connection outcomes', () => {
     });
 });
 
-describe('P1 — health signal reflects activity, not only PASSED', () => {
-    const uc = read(UC);
-    it('getConnectionsHealth computes latest activity of ANY status', () => {
-        const fn = uc.slice(uc.indexOf('export async function getConnectionsHealth'));
-        // A groupBy WITHOUT the status:'PASSED' filter (any-status latest run).
-        expect(fn).toMatch(/groupedAny/);
-        expect(fn).toMatch(/lastActivityAt/);
-        expect(fn).toMatch(/secondsSinceActivity/);
-        // Still tracks last success separately.
-        expect(fn).toMatch(/groupedPassed/);
-    });
+// What counts towards freshness is held by behaviour, in the
+// `getConnectionsHealth` unit tests (tests/unit/usecases/integrations*.test.ts).
+// It used to be pinned here as "activity of ANY status"; the owner reversed
+// that on 2026-10-30 (#4581 D), and freshness now counts successes only.
+describe('P1 — health panel', () => {
     it('the panel renders the test-OK nuance + activity freshness', () => {
         const panel = read(PANEL);
         expect(panel).toMatch(/integrations\.health\.testedOk/);
