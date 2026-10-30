@@ -23,8 +23,9 @@
  * The subject is globalSetup's reaction, and the fake supplies only its
  * inputs — the run lock, the marker path, and the drift outcome. The real
  * module is not loaded, so nothing here touches Postgres, migrates anything,
- * or writes to the marker four sessions share. The marker path is redirected
- * into a per-test temp directory for the same reason.
+ * or writes to this checkout's real marker, which a Jest run of this very
+ * checkout may be reading. The marker path is redirected into a per-test temp
+ * directory for the same reason.
  */
 import * as fs from 'fs';
 import * as os from 'os';

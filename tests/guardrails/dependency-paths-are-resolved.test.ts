@@ -60,13 +60,21 @@
  *
  * ═══ THE ONE THING THAT IS NOT A DEPENDENCY PATH ═══
  *
- * `node_modules/.cache/**` is a per-checkout scratch directory this repo
- * CREATES (`mkdirSync(..., { recursive: true })`) and writes: the test-DB
- * per-worker marker, the E2E TLS cert. The writer owns that path, resolution
- * does not, and it MUST stay per-checkout — two worktrees sharing one marker
- * would point both at one another's databases. So a `.cache` subpath is
+ * `node_modules/.cache/**` is a scratch directory this repo CREATES
+ * (`mkdirSync(..., { recursive: true })`) and writes: the test-DB per-worker
+ * marker, the E2E TLS cert. The writer owns that path, resolution does not —
+ * resolving it would hand back whichever `node_modules` Node found, which is
+ * not where this checkout's writer put its file. So a `.cache` subpath is
  * allowed, and that is a statement about what the path means, not an
  * allowlist entry. There is no allowlist here.
+ *
+ * The DIRECTORY is not per checkout, though, and this header once said it
+ * was. Worktrees on the dev machine symlink `node_modules` to the main
+ * checkout's, so every worktree writes into one `.cache`. Anything in it that
+ * must not be shared has to say whose it is in its FILE NAME: the per-worker
+ * marker carries the checkout tag for exactly that reason
+ * (`tests/helpers/test-db-checkout.js`, 2026-10-30). The E2E cert does not
+ * need to: it is the same throwaway localhost cert for everyone.
  *
  * ═══ THE SECOND SHAPE: `<rootDir>/node_modules/…` ═══
  *
