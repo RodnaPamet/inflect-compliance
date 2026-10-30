@@ -4858,6 +4858,8 @@
       "cellNotGranted": "{permission}: not granted. Click to grant it.",
       "cellNotHeld": "{permission}: not granted. You do not hold this permission yourself, so you cannot give it.",
       "cellGrantedNotHeld": "{permission}: granted. You do not hold this permission yourself, so you can remove it but not give it back.",
+      "cellNeedsAdminBase": "{permission}: not granted. Only a role based on Admin can have this permission.",
+      "manageNeedsAdminBaseNotice": "This role grants {permission}, which only a role based on Admin can have. Switch it off, or base the role on Admin, to save.",
       "actions": {
         "view": "View",
         "create": "Create",
