@@ -45,6 +45,16 @@
             ]
         },
         {
+            "group": "Page guides",
+            "label": "{{ui:nav.account}}",
+            "docs": [
+                "docs/user/guide/account/profile.md",
+                "docs/user/guide/account/account-security.md",
+                "docs/user/guide/account/mfa.md",
+                "docs/user/guide/account/"
+            ]
+        },
+        {
             "group": "How-to guides",
             "label": "Set up your workspace",
             "docs": [
