@@ -334,10 +334,11 @@ before the window closes, but tenant data may not reach the new processing.
 4. **For MA-C2, delete sessions at settle.** This minimises what persists at
    Anthropic. It costs Anthropic's Console view of past runs, which Inflect's
    own run timeline replaces.
-5. **Sub-processor framing for MA-C2.** Proposed: Anthropic acts as the
-   customer's own processor, used at the customer's direction, listed as an
-   opt-in per-tenant integration like GitHub and SharePoint. Confirm with
-   whoever signs the sub-processor register.
+5. **Sub-processor framing for MA-C2.** Anthropic acts as the customer's own
+   processor, used at the customer's direction, listed as an opt-in per-tenant
+   integration like GitHub and SharePoint. **Confirmed by the owner on
+   2026-10-30, as proposed.** Step 5a writes the `docs/sub-processors.md` row
+   in these words.
 6. **Transfer basis for MA-C1.** For tenants that opt in, Anthropic stores
    session data as Inflect's own sub-processor, in the US, without ZDR. Before
    the 6a notice goes out, someone must record three things on its pull request,
