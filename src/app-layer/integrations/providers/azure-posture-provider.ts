@@ -18,6 +18,7 @@ import type {
 } from '../types';
 import { runPowerpipeBenchmark, type RunBenchmarkInput } from '../cloud-posture/powerpipe-core';
 import { collectorExecForDeploy } from '../cloud-posture/sandboxed-collector-exec';
+import { sandboxDecisionRecorderForScan } from '../openshell-audit-bridge';
 
 export interface AzurePostureSecrets {
     clientId?: string;
@@ -117,12 +118,52 @@ export class AzurePostureProvider implements ScheduledCheckProvider {
 
     /** Test seam — inject the Powerpipe runner instead of shelling out. */
     private readonly exec?: RunBenchmarkInput['exec'];
+    /**
+     * Whether `exec` came from the DEPLOY rather than from a caller — #4563.
+     *
+     * The discriminator matters because only the deploy's runner is sandboxed,
+     * and only a sandboxed runner has lifecycle decisions to record. An
+     * injected test double has none, and the on-host `execFile` path has none.
+     */
+    private readonly execFromDeploy: boolean;
+
     constructor(deps: { exec?: RunBenchmarkInput['exec'] } = {}) {
         // An explicitly injected runner always wins, so every existing test
         // double behaves exactly as before. Otherwise the deploy decides, and
         // with the platform switch off — its default — this stays `undefined`
         // and the on-host `execFile` path is untouched (4.1, #3961).
-        this.exec = deps.exec ?? collectorExecForDeploy() ?? undefined;
+        // `collectorExecForDeploy()` is consulted ONCE here so the constructor's
+        // answer to "is sandboxing in play" is stable, and again per scan in
+        // `execForScan` so the recorder can be bound to that scan's tenant.
+        const deployed = deps.exec ? null : collectorExecForDeploy();
+        this.exec = deps.exec ?? deployed ?? undefined;
+        this.execFromDeploy = deployed !== null;
+    }
+
+    /**
+     * The runner for THIS scan.
+     *
+     * Identical to the constructor's `exec` except in one respect: when the
+     * DEPLOY supplied it, it is rebuilt with an audit recorder bound to this
+     * scan's tenant, which is the threading #4563 asks for. An injected double
+     * and the on-host path are returned unchanged.
+     *
+     * Per scan and not per instance because this provider is registered as a
+     * module-level singleton in `bootstrap.ts` and dispatched for every tenant
+     * — see the recorder's own note on why a constructor-bound tenant would be
+     * worse than none.
+     */
+    private execForScan(input: CheckInput): RunBenchmarkInput['exec'] {
+        if (!this.execFromDeploy) return this.exec;
+        return (
+            collectorExecForDeploy({
+                onDecision: sandboxDecisionRecorderForScan({
+                    tenantId: input.tenantId,
+                    job: 'azure-posture-collect',
+                    discriminator: input.jobRunId,
+                }),
+            }) ?? undefined
+        );
     }
 
     static benchmarkId(shorthand: string | undefined): string {
@@ -143,7 +184,10 @@ export class AzurePostureProvider implements ScheduledCheckProvider {
         const benchmarkId = AzurePostureProvider.benchmarkId(cfg.benchmark ?? input.parsed.checkType);
         const env = buildEnv(secrets, cfg);
         const secretValues = [secrets.clientSecret].filter((v): v is string => !!v);
-        const { summaryObj: _s, ...result } = await runPowerpipeBenchmark({ benchmarkId, env, secretValues, patterns: AZURE_CREDENTIAL_PATTERNS, exec: this.exec });
+        // Resolved once per scan — see `execForScan`. Azure writes no
+        // credential file, so unlike GCP this value has one consumer.
+        const exec = this.execForScan(input);
+        const { summaryObj: _s, ...result } = await runPowerpipeBenchmark({ benchmarkId, env, secretValues, patterns: AZURE_CREDENTIAL_PATTERNS, exec });
         return result;
     }
 
