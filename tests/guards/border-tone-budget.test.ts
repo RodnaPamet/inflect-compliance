@@ -56,8 +56,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import * as ts from 'typescript';
+
 import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slack';
-import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -134,8 +135,8 @@ const ROOT = path.resolve(__dirname, '../..');
 // so lines 184-538 were deleted before matching and the two
 // `border-border-default` uses at 507 and 510 were never counted. Measured
 // across all 1092 .tsx files in the scanned tree: old regex 106, and 108 from
-// BOTH correct methods independently (`codeOf`, and a TypeScript parse counting
-// string-ish nodes), differing in exactly ONE file (FileDropzone, 1 vs 3).
+// BOTH correct methods independently (a TypeScript parse, and the repo's
+// `codeOf`), differing in exactly ONE file (FileDropzone, 1 vs 3).
 //
 // Both revealed uses are correct at this tone under the convention in
 // CLAUDE.md — 507/510 are the drop area's own outer boundary and 573 a
@@ -152,8 +153,8 @@ const BORDER_DEFAULT_BUDGET = 108;
 // was comfortably inside that. An allowance must be strictly smaller
 // than the drift it is meant to catch or it is decoration.
 //
-// Two is affordable here because `countMatches` masks comments with the
-// string-aware `codeOf`, so unlike the two `<table` ratchets this count moves only when real
+// Two is affordable here because `countMatches` counts only string-ish AST
+// nodes, so unlike the two `<table` ratchets this count moves only when real
 // markup changes — a doc pass cannot touch it. A PR that migrates three
 // border sites is a PR that should record the win.
 //
@@ -161,24 +162,69 @@ const BORDER_DEFAULT_BUDGET = 108;
 // directions (#4636): a block comment ADDED elsewhere in a file could reveal
 // occurrences and push the count up with no border class in the diff, and one
 // REMOVED could hide them and let the count drift down, which this very
-// sentinel would then re-seat to a wrong floor. `codeOf` makes the claim true,
-// because it masks comments without mistaking a string for one.
+// sentinel would then re-seat to a wrong floor. Counting a parse makes the
+// claim true, because a comment is not an AST node at all.
 const DRIFT_ALLOWANCE = 2;
 
 /**
  * Occurrences of `re` in the CODE of one source file.
  *
- * `codeOf` is the repo's own comment masker (`tests/helpers/source-blocks.ts`)
- * and it is STRING-AWARE, which is the whole of this fix: it knows a `/*` inside
- * a string literal does not open a comment. Measured against a parse of the same
- * 1092 files, the two agree exactly (108 each) where the old regex said 106.
+ * Counts only string-ish AST nodes — string literals, template parts and JSX
+ * text — which is where a CSS class can appear and nowhere else. Comments are
+ * excluded BY CONSTRUCTION rather than masked first: a comment is not an AST
+ * node, so there is no masking pass to get wrong.
+ *
+ * ── WHY NOT `codeOf`, WHICH IS WHAT THIS REACHED FOR FIRST ─────────────────
+ *
+ * `codeOf` (tests/helpers/source-blocks.ts) is the repo's own masker and it IS
+ * string-aware, so it fixes the reported bug and agrees with this function at
+ * 108 over the live tree. But it is a hand-written scanner with a regex-literal
+ * heuristic, and that heuristic has a gap: a regex literal CONTAINING A QUOTE
+ * desynchronises it and the comments after it are left unmasked. Minimal case,
+ * with a control that differs only in the quote:
+ *
+ *     .replace(/"/g, "'")                 // <- the quote inside the regex
+ *     // border-border-default in prose   // <- NOT masked; counted as code
+ *
+ *     .replace(/x/g, "y")                 // control
+ *     // border-border-default in prose   // <- masked correctly
+ *
+ * It occurs for real in `src/lib/http/content-disposition.ts:56`, where two
+ * following comment lines survive masking. That matters HERE specifically,
+ * because the claim this budget rests on is that a doc pass cannot move it —
+ * and under `codeOf` a doc pass that mentions the class after such a regex
+ * would. A parser has no heuristic to get wrong. Filed separately, because
+ * `codeOf` is used at the read seam by guards that are not this one.
  *
  * Exported for the regression block at the bottom of this file, which feeds it
  * fixtures. A counter that can only be run over the live tree cannot be SHOWN to
  * count correctly — only observed not to have changed.
  */
 export function countInSource(src: string, re: RegExp): number {
-    return (codeOf(src).match(re) ?? []).length;
+    const sf = ts.createSourceFile(
+        'probe.tsx',
+        src,
+        ts.ScriptTarget.Latest,
+        /* setParentNodes */ false,
+        ts.ScriptKind.TSX,
+    );
+    let total = 0;
+    const visit = (node: ts.Node): void => {
+        if (
+            ts.isStringLiteral(node)
+            || ts.isNoSubstitutionTemplateLiteral(node)
+            || ts.isTemplateHead(node)
+            || ts.isTemplateMiddle(node)
+            || ts.isTemplateTail(node)
+            || ts.isJsxText(node)
+        ) {
+            const m = node.text.match(re);
+            if (m) total += m.length;
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    return total;
 }
 
 function countMatches(re: RegExp): number {
@@ -318,6 +364,32 @@ describe('the border counter counts code, not comment positions (#4636)', () => 
             'const c = <p>border-border-default</p>;',
         ].join('\n');
         expect(countInSource(src, RE())).toBe(3);
+    });
+
+    it('a quote inside a regex literal does not unmask the comments after it', () => {
+        // The case that decided this uses a PARSE rather than the repo's own
+        // `codeOf` masker. `codeOf` leaves these comment lines unmasked, so it
+        // would count the class mentioned in prose — which would make a doc
+        // pass able to move this budget, the one thing it must not be able to
+        // do. Lives here as an executable record so a future "just use codeOf,
+        // it's the shared helper" change fails rather than looks tidy.
+        const src = [
+            'const a = s',
+            '    .replace(/"/g, "\'")',
+            '    // border-border-default mentioned only in prose',
+            '    .replace(/x/g, "y");',
+        ].join('\n');
+        expect(countInSource(src, RE())).toBe(0);
+
+        // The control differs only in the quote, and both must answer 0 — a
+        // detector that answered 0 for the control alone would prove nothing.
+        const control = [
+            'const a = s',
+            '    .replace(/x/g, "y")',
+            '    // border-border-default mentioned only in prose',
+            '    .replace(/z/g, "w");',
+        ].join('\n');
+        expect(countInSource(control, RE())).toBe(0);
     });
 
     it('the detector can return zero, so a passing case means something', () => {
