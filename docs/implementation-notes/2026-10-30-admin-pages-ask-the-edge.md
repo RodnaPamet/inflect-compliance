@@ -53,6 +53,17 @@ agent pages (server) ── agentRegisterAffordances ─────────
   switchable (off, and on again), and the Admin base stays choosable for a role
   already built on it. The count comes from the server (`nonAdminCarriers`,
   one `groupBy`), not from the members list, which the roles page does not load.
+- **A cell's hint names one reason, in a fixed order.** The roles grid has
+  three locks besides the editor's own permissions: #4536's Personnel / manage
+  on a base other than Admin, and this page's carrier locks (the ten keys, and
+  the Admin base). They lock different cells, so the order only has to decide
+  against "not held": not held comes first, because no other change on the page
+  lets the editor give it; then the base rule; then the carrier rule. The one
+  cell two role rules meet on, Personnel / manage on a role non-Admins carry,
+  gets its own hint (`roles.cellNeedsAdminBaseCarried`), because "needs an Admin
+  base" alone would send the editor to a base they cannot pick. Presets start
+  inside all three rules, Save is held for any of them, and a refusal is re-said
+  in the server's order: grant, personnel, carriage.
 - **The members picker offers a refused custom role disabled, with the
   reason**, rather than hiding it: a role that disappears from a list reads as
   deleted. The same predicate decides the note that holds Save when a role
