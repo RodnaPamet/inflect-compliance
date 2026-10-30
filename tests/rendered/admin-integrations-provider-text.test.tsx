@@ -54,7 +54,11 @@ jest.mock('next/navigation', () => ({
 jest.mock('@/lib/tenant-context-provider', () => {
     const apiUrl = (p: string) => `/api/t/acme${p}`;
     const href = (p: string) => `/t/acme${p}`;
-    return { useTenantApiUrl: () => apiUrl, useTenantHref: () => href };
+    const { getPermissionsForRole } = jest.requireActual('@/lib/permissions');
+    // An Owner, whom the edge admits: read by `@/lib/auth/use-offers-admin-api-write`
+    // (not mocked), which decides that the page offers the edit form.
+    const owner = { edgeAdmitsAdminApi: true, appPermissions: getPermissionsForRole('OWNER'), permissions: { canAdmin: true, canWrite: true } };
+    return { useTenantApiUrl: () => apiUrl, useTenantHref: () => href, useTenantContext: () => owner };
 });
 
 // The children, stubbed — see the file docstring.
