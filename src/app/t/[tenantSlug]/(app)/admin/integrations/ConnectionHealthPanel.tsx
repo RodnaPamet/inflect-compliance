@@ -59,9 +59,18 @@ function humanizeAge(seconds: number | null): string {
  *
  * `providerLabel` turns a provider id into the name the catalogue shows. The
  * health endpoint returns only the id, and the page that renders this panel
- * already holds the names; without it the id is shown.
+ * already holds the names; without it the id is shown. `connectionName` does
+ * the same for a connection's name (one still called by its provider's English
+ * name reads as the provider's label, #4581); without it the stored name is
+ * shown.
  */
-export function ConnectionHealthPanel({ providerLabel }: { providerLabel?: (id: string) => string } = {}) {
+export function ConnectionHealthPanel({
+    providerLabel,
+    connectionName,
+}: {
+    providerLabel?: (id: string) => string;
+    connectionName?: (c: { provider: string; name: string }) => string;
+} = {}) {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const [data, setData] = useState<HealthResponse | null>(null);
@@ -108,7 +117,10 @@ export function ConnectionHealthPanel({ providerLabel }: { providerLabel?: (id: 
                 return <StatusBadge variant="info">{providerLabel ? providerLabel(id) : id}</StatusBadge>;
             },
         },
-        { accessorKey: 'name', header: t('integrations.colName'), cell: ({ getValue }) => <span className="font-medium">{getValue()}</span> },
+        {
+            accessorKey: 'name', header: t('integrations.colName'),
+            cell: ({ row }) => <span className="font-medium">{connectionName ? connectionName(row.original) : row.original.name}</span>,
+        },
         {
             id: 'lastSuccess', header: t('integrations.health.colLastSuccess'), accessorKey: 'lastSuccessAt',
             cell: ({ row }) => row.original.lastSuccessAt

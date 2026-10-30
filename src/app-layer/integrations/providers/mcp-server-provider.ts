@@ -147,8 +147,8 @@ export class McpServerProvider implements IntegrationProvider {
         + 'privileges, so an agent can never see more than that person) OR a token scope '
         + '(app-only — no such ceiling, and the scope must name your server\'s own '
         + 'audience). Anything else takes a static Authorization header value, which works '
-        + 'but expires with the token you paste. Testing the connection performs a real MCP '
-        + 'handshake and reports how many tools the server advertises. Those tools are NOT '
+        + 'but expires with the token you paste. Testing the connection performs a real '
+        + 'handshake with the tool server and reports how many tools it advertises. Those tools are NOT '
         + 'usable yet: an administrator reviews and approves them, and they must then be '
         + 'granted to a registered agent. The server must be reachable on a public address '
         + 'over HTTPS — private and link-local addresses are refused, and redirects are '
@@ -161,7 +161,9 @@ export class McpServerProvider implements IntegrationProvider {
                 label: 'Server URL',
                 type: 'string',
                 required: true,
-                description: 'HTTPS endpoint of the MCP server, e.g. https://mcp.example.com/rpc',
+                // Operator-facing: the product's word for the server, never the
+                // transport acronym (`agentic-naming-vocabulary.test.ts`, #4581).
+                description: 'HTTPS endpoint of the tool server, e.g. https://tools.example.com/rpc',
             },
             {
                 key: 'tenantId',
@@ -177,7 +179,7 @@ export class McpServerProvider implements IntegrationProvider {
                 label: 'Application (client) ID',
                 type: 'string',
                 required: false,
-                description: 'The app registration authorized against this MCP server.',
+                description: 'The app registration authorized against this tool server.',
             },
             {
                 key: 'scope',
@@ -199,12 +201,12 @@ export class McpServerProvider implements IntegrationProvider {
                 // audience as the cause.
                 description:
                     'The resource this server\'s token is for, e.g. '
-                    + 'https://mcp.example.com/.default. REQUIRED for app-only access '
+                    + 'https://tools.example.com/.default. REQUIRED for app-only access '
                     + '(client secret, no refresh token) — there is no safe default, '
                     + 'because a token minted for the wrong audience is refused as an '
                     + 'invalid token rather than as a bad secret. Optional for '
-                    + 'delegated access, which defaults to the Microsoft Entra MCP '
-                    + 'resource.',
+                    + 'delegated access, which defaults to the tool-server resource '
+                    + 'Microsoft Entra provides.',
             },
         ],
         secretFields: [
