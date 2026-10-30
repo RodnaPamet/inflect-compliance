@@ -18,6 +18,12 @@ const teardown = async () => {
 
     // Drop the per-worker DBs globalSetup created (best-effort) + clear
     // the marker. All workers have exited by now, so no live connections.
+    //
+    // THIS checkout's marker only. While the marker had one fixed name in a
+    // `node_modules` that worktrees share, this block read whichever
+    // checkout had started Jest last and dropped THAT run's databases
+    // `WITH (FORCE)`, mid-run, leaving its own behind (2026-10-30).
+    // PER_WORKER_MARKER now carries the checkout tag in its file name.
     try {
         const fs = await import('fs');
         const { Client } = await import('pg');
