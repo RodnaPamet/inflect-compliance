@@ -7,7 +7,9 @@ inflect · ai architecture · agent-flow canvas · roadmap v2 · 2026-10-29
 > TypeScript client. The owner decided on 2026-10-29 to build it in the
 > product instead: a canvas on which a user draws what an agent does, saved as
 > part of the agent's governed profile and run by a reasoning engine. Langflow
-> is not adopted. The **Current state** section is true today (main 3.338.0,
+> is not adopted, and the canvas is built on the process canvas's **tldraw**
+> renderer, not on xyflow, which that canvas is retiring (owner decision of the
+> same day). The **Current state** section is true today (main 3.338.0,
 > `a1c2f05c`). The **Roadmap** section is the plan. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
 > first for the target map, the global rules **G1–G12**, and the sequencing.
@@ -21,9 +23,9 @@ inflect · ai architecture · agent-flow canvas · roadmap v2 · 2026-10-29
 | --- | --- |
 | Layer · box | 2 — Orchestration & workflow · "Langflow (visual workflow canvas)" + "TS Client" |
 | Wave | 2 for viewing, authoring and preview (Phases 1–4); 3 for running (Phase 5) |
-| Depends on | agent profiles (on `main`); the process canvas (on `main`); for Phase 5, an engine that runs profiles — Claude engines Step 2c (`docs/claude-tool-runner-design.md`) |
+| Depends on | agent profiles (on `main`); the process canvas module and its tldraw renderer pieces (on `main`); for Phase 5, an engine that runs profiles — Claude engines Step 2c (`docs/claude-tool-runner-design.md`) |
 | Unblocks | every agent on the register visible on the canvas, however it was created; customers composing their own agent flows with no code and no CLI |
-| Owner decisions | **D-L2-1** decided 2026-10-29 (in-product canvas; Langflow not adopted); **D-L2-2** (reasoning engines enforce checkpoints, or the palette offers none) |
+| Owner decisions | **D-L2-1** decided 2026-10-29 (in-product canvas; Langflow not adopted); **D-L2-3** decided 2026-10-29 (tldraw, never xyflow); **D-L2-2** open (reasoning engines enforce checkpoints, or the palette offers none) |
 
 ## At a glance
 
@@ -34,7 +36,7 @@ evaluation record. Grey dashed: refused.
 
 ```mermaid
 flowchart LR
-  P0(["Phase 0 · decided<br/>2026-10-29<br/>in-product canvas<br/>Langflow not adopted"]):::done
+  P0(["Phase 0 · decided<br/>2026-10-29<br/>in-product canvas on tldraw<br/>Langflow not adopted"]):::done
   P1["Phase 1 · the flow inside the profile<br/>data-only flow, hashed and frozen<br/>tools only narrow<br/>acyclic and bounded"]:::todo
   P2["Phase 2 · view every agent<br/>registration form, profile form,<br/>drawn flow, registry workflow<br/>read-only, no invented order"]:::todo
   P3["Phase 3 · the canvas editor<br/>agent-flow document kind<br/>layout and logic kept apart<br/>no second write path"]:::todo
@@ -42,7 +44,8 @@ flowchart LR
   P5["Phase 5 · run and replay<br/>checkpoints enforced first<br/>invoked by the agent node<br/>live overlay on the canvas"]:::todo
   G2{{"D-L2-2<br/>checkpoint<br/>enforcement"}}:::gate
   PROF["Agent profiles<br/>approval, freeze, narrowing"]:::done
-  CANV["Process canvas<br/>renderer, drill-down, overlay"]:::done
+  CANV["Process canvas module<br/>tldraw renderer pieces"]:::done
+  XY["xyflow renderer<br/>being retired (#2962)<br/>never used here"]:::declined
   ENG["Claude engines Step 2c<br/>an engine runs profiles"]:::ext
   INS["Inspect tasks<br/>a flow cannot widen authority"]:::eval
   LF["Langflow at run time<br/>refused: outside the funnel"]:::declined
@@ -57,6 +60,7 @@ flowchart LR
   ENG -.-> P5
   P5 --- INS
   P0 -.- LF
+  CANV -.- XY
 
   classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
   classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
@@ -72,12 +76,45 @@ flowchart LR
 user draw what an agent does.**
 
 - **The process canvas** (`/processes`, `docs/processes-canvas.md`) is a
-  business-process and automation canvas on xyflow, with a tldraw renderer
-  behind a flag, snapshots and restore, a history sidebar, a diff overlay
-  (`CanvasDiffOverlay.tsx`), a command palette and an inspector
-  (`AutomationInspectorPanel.tsx`). Run replay draws on it
+  business-process and automation canvas with snapshots and restore, a history
+  sidebar, a diff overlay (`CanvasDiffOverlay.tsx`), a command palette and an
+  inspector (`AutomationInspectorPanel.tsx`). Run replay draws on it
   (`canvas-execution-overlay`), and since 2026-10-15 a human checkpoint can be
   reviewed inline on the canvas.
+- **That canvas is switching drawing engines, one tenant at a time.**
+  - `@xyflow/react` 12 is the incumbent and still every tenant's default.
+  - `tldraw` 3.15.6 replaces it under the per-tenant switch
+    `TenantSecuritySettings.processCanvasUsesTldraw` (#2960). The switch is a
+    migration flag with a scheduled end: Phase 4 of that migration (#2962)
+    removes xyflow and then the column.
+  - The tldraw pieces are on `main` under `src/components/processes/tldraw/`
+    and `src/lib/processes/`: the shape and binding utils
+    (`ProcessNodeShapeUtil`, `ProcessEdgeShapeUtil`), the rows ⇄ tldraw
+    serializer, `TldrawProcessCanvas` / `TldrawProcessMap` /
+    `TldrawProcessWorkspace`, autosave, selection, export, change diffing
+    (`canvas-changes-tldraw.ts`) and inline checkpoint review.
+  - The layout and drill-down engines name no renderer (`canvas-auto-layout.ts`
+    since #3063, `canvas-drill-filter.ts` since #3066); `auto-layout-host.ts`
+    and `drill-scope-host.ts` are their tldraw halves.
+  - The serializer's contract is that `rowsToTldraw(tldrawToRows(x))`
+    reproduces `x` exactly (#2963). Otherwise autosave writes spurious versions
+    for ever and every diff shows changes nobody made.
+- **tldraw's licence sets two rules** (`docs/dependency-risk-review.md`, the
+  `tldraw` entry):
+  - 3.x permits commercial production use, on condition that the tldraw
+    watermark is not removed. 4.x and later forbid production use without a
+    paid key, so `tldraw: { major: 3 }` in the dependency review's `REVIEWED`
+    map is a ceiling: a bump to 4.x is a licence breach, not a version
+    regression.
+  - The editor may be imported only inside the process-canvas module
+    (`src/app/t/[tenantSlug]/(app)/processes`, `src/components/processes`,
+    `src/lib/processes`), held by
+    `tests/guards/canvas-editor-stays-inside-its-module.test.ts`. The module is
+    per tenant and off by default (`processCanvasEnabled`; its layout answers
+    `notFound()` when off), and route-segment code splitting is what keeps the
+    editor out of the bundle of a tenant without the module. An import from
+    anywhere else would ship the editor to every tenant while the module still
+    read "off".
 - **Canvas and logic are two projections of one truth**
   (`src/app-layer/services/canvas-rule-sync.ts`, VR-3): `ProcessNode` owns
   geometry; `AutomationRule` owns logic; neither is written with the other's
@@ -140,6 +177,30 @@ tool calls, bypassing the funnel (G3), the residency decision (G1), the guard
 sandwich (G4), the decision log, the kill switch and the caps. A design-time
 Langflow importer is not pursued; § Not pursued records how it would be done if
 the decision is reopened.
+
+**Decided 2026-10-29 (D-L2-3): the canvas is tldraw, and it lives inside the
+process-canvas module.**
+- Every agent-flow surface is drawn by tldraw, whatever the tenant's
+  `processCanvasUsesTldraw` says: that flag migrates existing process maps, and
+  the agent-flow canvas has no existing documents to migrate. Building it on
+  xyflow would mean building it twice, once now and once when #2962 removes
+  xyflow.
+- No agent-flow module imports `@xyflow/*`. An ESLint `no-restricted-imports`
+  entry over the agent-flow files makes that structural, so #2962 can delete
+  xyflow without touching this feature.
+- The agent-flow pages are routes **inside** the process-canvas segment,
+  `/t/:slug/processes/agents/:agentId`. That keeps the editor confined, so the
+  licence guard needs no new exception and the bundle rule holds.
+- **The consequence:** an agent can be opened on the canvas only in a tenant
+  with the process-canvas module enabled. Elsewhere the agent page and the
+  Behaviour tab show no "Open on canvas" link, and the route answers
+  `notFound()` exactly as `/processes` does. Making the canvas available
+  without the module would mean adding the agent pages to the guard's
+  `ALLOWED_OUTSIDE` list, which ships the licensed editor to every tenant.
+  That is a separate decision with a licence question attached, and this
+  roadmap does not take it.
+- The tldraw version ceiling and the watermark apply unchanged. Nothing here
+  hides the watermark or proposes moving past 3.x.
 
 **The canvas edits the profile; it is not a new object.** A drawn flow becomes
 a data-only `flow` on an `AgentProfileVersion`. It therefore inherits, with no
@@ -295,17 +356,31 @@ as a node that renders and does nothing.
         (G3), so the view cannot disagree with a run.
       - Layout is computed deterministically from the graph and never stored:
         nothing to persist means nothing to write.
-- [ ] 2.2 Read-only rendering with the canvas renderer and node taxonomy: node
-      kinds for the agent hub, triggers, tools (read or propose; offered or
-      narrowed away), skills and output, with a Tooltip naming each narrowing
-      or refusal reason.
-- [ ] 2.3 Entry points: "Open on canvas" on the agent page and the Behaviour
-      tab, and drill-down from a process map's `agent` node into the agent's
-      view through the existing drill breadcrumb.
+- [ ] 2.2 Read-only rendering on **tldraw**.
+      - Agent node kinds (hub, trigger, tool, skill, output) join
+        `node-taxonomy.ts` and are drawn by tldraw shape utils beside
+        `ProcessNodeShapeUtil`, with a Tooltip naming each narrowing or refusal
+        reason.
+      - Positions come from `canvas-auto-layout.ts` (dagre, left to right)
+        through `auto-layout-host.ts`, recomputed on every open. The editor is
+        mounted read-only: no shape can be created, deleted or saved.
+      - The route is `/t/:slug/processes/agents/:agentId`, inside the
+        process-canvas segment, so `processCanvasEnabled` gates it.
+      - An ESLint `no-restricted-imports` entry refuses `@xyflow/*` in every
+        agent-flow file.
+- [ ] 2.3 Entry points.
+      - "Open on canvas" on the agent page and the Behaviour tab: a plain link
+        into the processes segment, shown only when the tenant has the module
+        on. The agent pages import nothing from the canvas, so the editor stays
+        out of their bundle.
+      - Drill-down from a process map's `agent` node into the agent's view
+        through `drill-scope-host.ts`, on tldraw maps. On a map a tenant still
+        draws with xyflow, the node offers the same link; it gains no xyflow
+        drill-down of its own.
 - [ ] 2.4 A diff for approvers of **form-edited** versions too: the projection
-      of the submitted version against the version in force, drawn by
-      `CanvasDiffOverlay`, showing tools, skills, triggers and model tier added
-      or removed.
+      of the submitted version against the version in force, computed with
+      `canvas-changes-tldraw.ts` and drawn by `CanvasDiffOverlay`, showing
+      tools, skills, triggers and model tier added or removed.
 - [ ] 2.5 Permission parity per layer: the envelope needs what the agent page
       already needs; the profile layer needs `admin.agent_registry`, as reading
       a profile does, and answers 404 when `AGENT_PROFILES` is off. Instructions
@@ -322,24 +397,34 @@ description, autonomy level, Annex I flag; grants, policy card and risk tier on 
 the Behaviour tab's profile form defines what it does (AgentProfileVersion: instructions,
 toolNames, skillRefs, modelTier, effort, maxTurns, outputKind, allowedTriggers). offerToolSet
 (src/lib/agentic/engine-tools/offer-tools.ts) computes what a run is offered and why tools are
-dropped; autonomy-ceiling.ts computes the ceiling (a NULL tier is DENY_CEILING); the process
-canvas (src/components/processes/) has a renderer, node taxonomy, CanvasDrillBreadcrumb.tsx
-and CanvasDiffOverlay.tsx; an `agent` node owns an INVOKE_AGENT rule.
+dropped; autonomy-ceiling.ts computes the ceiling (a NULL tier is DENY_CEILING). The process
+canvas is migrating from xyflow to tldraw 3.15.6 (#2960; #2962 removes xyflow); the tldraw
+pieces live in src/components/processes/tldraw/ (shape and binding utils, serializer,
+auto-layout-host.ts, drill-scope-host.ts) and src/lib/processes/ (canvas-auto-layout.ts,
+canvas-changes-tldraw.ts). tldraw may be imported only inside the process-canvas module
+(tests/guards/canvas-editor-stays-inside-its-module.test.ts); the module is gated per tenant
+by processCanvasEnabled (notFound when off). tldraw is capped at 3.x and its watermark stays
+(docs/dependency-risk-review.md). An `agent` node owns an INVOKE_AGENT rule.
 
 Task: Phase 2 — view every agent on the canvas, read-only. (1) projectAgentForCanvas(ctx,
 agentId, {versionId?}) in the usecase layer: the authority envelope from the register; plus,
 when a profile exists, triggers, model tier/effort/max turns, each tool offered or narrowed
 away (from offerToolSet — do not re-derive), skills with mount-gate state, output kind; plus
 code-registered workflow steps where relevant; plus the process maps that invoke the agent.
-Deterministic layout, never stored. (2) Read-only canvas rendering with node kinds for hub,
-trigger, tool, skill, output, and Tooltips naming every narrowing reason. (3) "Open on
-canvas" on the agent page and the Behaviour tab; drill-down from a process map's agent node.
-(4) The approver's diff of a submitted version against the version in force, for form-edited
-versions, via CanvasDiffOverlay. (5) Permission parity per layer (profile layer:
-admin.agent_registry, 404 when AGENT_PROFILES is off).
+Deterministic layout from canvas-auto-layout.ts, never stored. (2) Read-only rendering on
+TLDRAW ONLY, at /t/:slug/processes/agents/:agentId inside the processes segment: agent node
+kinds in node-taxonomy.ts drawn by tldraw shape utils, Tooltips naming every narrowing
+reason; an ESLint no-restricted-imports entry refusing @xyflow/* in agent-flow files. (3)
+"Open on canvas" links on the agent page and the Behaviour tab, shown only when
+processCanvasEnabled is on, with no canvas import outside the module; drill-down from a
+process map's agent node via drill-scope-host.ts. (4) The approver's diff of a submitted
+version against the version in force, via canvas-changes-tldraw.ts and CanvasDiffOverlay.
+(5) Permission parity per layer (profile layer: admin.agent_registry, 404 when AGENT_PROFILES
+is off).
 
 Constraints: no write path and no stored layout. A form-built agent is drawn hub-and-spoke,
-never as a sequence. Tests named for invariants: "the view's tool states equal what a run is
+never as a sequence. Add no entry to the editor guard's ALLOWED_OUTSIDE list, and do not
+touch the tldraw version or the watermark. Tests named for invariants: "the view's tool states equal what a run is
 offered", "a form-built agent is drawn with no order", "another tenant's agent cannot be
 projected" (two-tenant), "a reader without admin.agent_registry sees the envelope and not the
 profile". en + bg parity.
@@ -347,7 +432,8 @@ profile". en + bg parity.
 Done when: an agent registered through the form with no profile, one with an approved
 form-built profile, and one running a registry workflow each open on the canvas; drilling
 from a process map's agent node opens the right one; the approver sees tool changes between
-two versions drawn on the canvas.
+two versions drawn on the canvas; the editor guard passes with no new exception; and a
+tenant without the process-canvas module sees no link and gets notFound() on the route.
 ```
 
 **Hardening.**
@@ -360,6 +446,11 @@ two versions drawn on the canvas.
   test.
 - Permission parity per layer, so the canvas never shows more than the tabs
   it summarises.
+- The licence guard is kept as it is: the canvas lives inside the module, so
+  `canvas-editor-stays-inside-its-module` needs no exception, and the tldraw
+  version ceiling and watermark are untouched.
+- No xyflow: an ESLint rule, so retiring xyflow (#2962) cannot break this
+  feature.
 
 **Done when.** As stated in the prompt.
 
@@ -369,12 +460,17 @@ two versions drawn on the canvas.
 usecase, with layout and logic kept apart.
 
 **Sub-phases.**
-- [ ] 3.1 A canvas document kind `agent-flow`, reusing the process canvas's
-      renderer, node taxonomy (`node-taxonomy.ts`), inspector, history sidebar
-      and diff overlay. It opens from the agent's Behaviour tab, and its
+- [ ] 3.1 A canvas document kind `agent-flow` on **tldraw**, reusing the
+      process canvas's tldraw pieces: shape and binding utils, node taxonomy
+      (`node-taxonomy.ts`), selection, inspector, history sidebar and diff
+      overlay. It opens from the agent's Behaviour tab, and its
       palette holds the agent-flow kinds only. It is the same surface as the
       Phase 2 view, so an agent's view and its editor are one canvas.
-- [ ] 3.2 **Layout and logic kept apart**, as VR-3 does for rules.
+- [ ] 3.2 **Layout and logic kept apart**, as VR-3 does for rules. The
+      agent-flow serializer meets the canvas serializer's round-trip contract
+      (#2963): loading a version and saving it with no edit produces the same
+      `flowJson` and the same layout, byte for byte, so no spurious DRAFT
+      version is ever created.
       - Positions live in a layout record that is not part of the version and
         not hashed, so moving a box creates no new version.
       - Logic lives in `flowJson`; changing it saves a DRAFT version.
@@ -400,9 +496,11 @@ usecase, with layout and logic kept apart.
 ```text
 Context (main + Phases 1–2): AgentProfileVersion carries a validated, hashed, frozen flowJson
 saved only through usecases/agent-profiles.ts (admin.agent_registry). The process canvas
-(/processes; src/components/processes/: node-taxonomy.ts, AutomationInspectorPanel.tsx,
-CanvasHistorySidebar.tsx, CanvasDiffOverlay.tsx; docs/processes-canvas.md) is xyflow with a
-tldraw renderer flag; canvas-rule-sync.ts keeps geometry (ProcessNode) and logic
+(/processes; docs/processes-canvas.md) is migrating from xyflow to tldraw (#2960; #2962
+removes xyflow), and the agent-flow surfaces are tldraw-only inside the processes segment
+(Phase 2); its tldraw pieces are in src/components/processes/tldraw/ (shape utils,
+serializer with the #2963 round-trip contract) and src/lib/processes/ (tldraw-save.ts,
+use-tldraw-canvas-autosave.ts, use-tldraw-selection.ts); canvas-rule-sync.ts keeps geometry (ProcessNode) and logic
 (AutomationRule) apart under tests/guards/vr3-sync-invariant.test.ts. The 2026-07-29 note
 records the canvas once being a lower-privilege path to ADMIN writes.
 
@@ -410,7 +508,8 @@ Task: Phase 3 — the agent-flow canvas editor. (1) A canvas document kind `agen
 reusing the canvas renderer, taxonomy, inspector, history and diff overlay; opened from the
 agent's Behaviour tab; palette = read, propose, synthesis, subagent only. (2) Layout
 (positions) in its own record, not hashed, not versioned; logic in flowJson via the Phase 1
-usecase (a logic change saves a DRAFT version); a guard in the vr3 shape that neither write
+usecase (a logic change saves a DRAFT version); a round-trip test that load-then-save with
+no edit is byte-identical (#2963's contract); a guard in the vr3 shape that neither write
 carries the other's fields. (3) The canvas saves logic ONLY through the Phase 1 usecase; no
 new route grants a write; claimed ids verified in-tenant server-side; audit names profile +
 version. (4) Inspector: tool picker from the agent's grants, subagent picker from approved
@@ -453,7 +552,8 @@ would be given, and which parts of the drawing are enforced.
       § The decision).
 - [ ] 4.3 Submit from the canvas through the existing submit route. The
       approver sees the flow diff between this version and the one in force,
-      drawn by `CanvasDiffOverlay`; approval stays a different person,
+      computed by `canvas-changes-tldraw.ts` and drawn by `CanvasDiffOverlay`;
+      approval stays a different person,
       unchanged.
 
 **Prompt.**
