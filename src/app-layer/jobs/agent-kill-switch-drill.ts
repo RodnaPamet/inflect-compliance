@@ -209,7 +209,9 @@ async function probeBoundaryDecision(
  * THE SANDBOX ARM (5.4, #3974) — does a kill actually delete a sandbox?
  *
  * Fourth in depth, and the shallowest for a reason that is not about this code:
- * nothing in `src/` invokes `openShellToolExecutor` yet, so the set of "agents
+ * `openShellToolExecutor` now has one caller — the sandboxed collector bridge
+ * (4.1, #4443) — but it is behind `SANDBOX_EXECUTION_ENABLED`, which no deploy
+ * sets, so the set of "agents
  * running in a sandbox" is EMPTY, and there is no gateway for it to run against
  * (4.3 records that the VM is an owner cost decision). An arm that enumerated a
  * killed agent's sandboxes would therefore be dead code wearing the appearance

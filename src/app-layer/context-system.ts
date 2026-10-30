@@ -204,14 +204,15 @@ export function buildSystemContext(input: {
  * reminder, the evidence retention notifications and the agent owner-orphan
  * pass's transfer task have moved.
  *
- * **The identity leaver pass no longer calls this either** (#4400). A pass a
- * person asked for acts with that person's real membership when it runs, and
- * only while it still holds the key the route asserted; otherwise it acts with
- * the job's own authority, exactly as the scheduled pass does, and names
- * nobody (`resolvePassActor`, `usecases/identity-pass-requester.ts`). The
- * joiner pass and four jobs that act for a named member (the control-test
- * runner, agentic evidence emission, the integration passport sweep and the
- * agent kill-switch drill) still use it.
+ * **Neither identity pass calls this any more** (#4400). A leaver or joiner
+ * pass a person asked for acts with that person's real membership when it
+ * runs, and only while it still holds the key the route asserted; otherwise it
+ * acts with the job's own authority, exactly as the scheduled pass does, and
+ * names nobody (`resolvePassActor`, `usecases/identity-pass-requester.ts`).
+ * That closes #4400's list of borrowing callers. Four jobs that act for a
+ * named member still use this (the control-test runner, agentic evidence
+ * emission, the integration passport sweep and the agent kill-switch drill),
+ * each for its own reason in #4388's classification.
  */
 export function buildDelegatedJobContext(input: {
     tenantId: string;
@@ -323,9 +324,10 @@ export async function buildTenantSystemJobContext(input: {
  *
  * One shape of work is not that door, and it is narrow: work the job ALREADY
  * does on its own authority, on a schedule, whatever anybody asks, where a
- * person's request changes only WHEN it runs. The identity leaver pass is
- * that (#4400): a refused requester's pass still runs as the 05:00 pass
- * would, names nobody, and records the refusal (`resolvePassActor`). It does
+ * person's request changes only WHEN it runs. The identity leaver and joiner
+ * passes are that (#4400): a refused requester's pass still runs as the
+ * scheduled pass would, names nobody, and records the refusal
+ * (`resolvePassActor`). It does
  * not license a fallback anywhere a refusal would stop work the job would
  * otherwise never do.
  *
