@@ -67,13 +67,18 @@ interface FindingsClientProps {
     initialFilters?: Record<string, string>;
     tenantSlug: string;
     /**
-     * The coarse write tier. `createFinding` and `updateFinding` both
-     * `assertCanWrite` and nothing more (findings carry no granular key), so
-     * this alone decides whether the create button and the status actions
-     * are offered. Without it Readers, Auditors and AI admins were shown both
-     * and refused by the server.
+     * May raise a finding: `findings.create`, the key `POST /findings` asks,
+     * AND the coarse write tier `createFinding` asserts (#4535). Decides the
+     * create button and dialog.
      */
-    canWrite: boolean;
+    canCreate: boolean;
+    /**
+     * May change a finding: `findings.edit`, the key `PUT /findings/{id}`
+     * asks, AND the coarse write tier `updateFinding` asserts. Decides the
+     * status actions and the detail sheet's Edit. Without these two, Readers,
+     * Auditors and AI admins were shown writes the server refused.
+     */
+    canEdit: boolean;
     translations: {
         title: string;
         listDescription: string;
@@ -136,7 +141,8 @@ function FindingsPageInner({
     initialFindings,
     initialFilters,
     tenantSlug,
-    canWrite,
+    canCreate,
+    canEdit,
     translations: t,
     filterDefs,
 }: FindingsClientProps & { filterDefs: ReturnType<typeof buildFindingFilters> }) {
@@ -404,9 +410,9 @@ function FindingsPageInner({
             cell: ({ row }) => <StatusBadge tone="subtle" variant={STATUS_BADGE[row.original.status]}>{statusLabel(row.original.status)}</StatusBadge>,
         },
     ]),
-    // The status actions only for a role the server lets write; for any
+    // The status actions only for a role the server lets edit; for any
     // other the column would be empty, so it is not built at all.
-    ...(canWrite ? createColumns<FindingRow>([
+    ...(canEdit ? createColumns<FindingRow>([
         {
             id: 'actions',
             header: t.actions,
@@ -429,7 +435,7 @@ function FindingsPageInner({
     // status change after the filter moved painted, and refetched, the list
     // the page was no longer showing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    ], [t, canWrite, findingsKey]);
+    ], [t, canEdit, findingsKey]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call. Calling it inline in JSX would hand DataTable a fresh
@@ -451,14 +457,14 @@ function FindingsPageInner({
                     title={t.title}
                     description={t.listDescription || undefined}
                     actions={
-                        canWrite ? (
+                        canCreate ? (
                             <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowForm(!showForm)}>{t.newFinding}</Button>
                         ) : undefined
                     }
                 />
             </ListPageShell.Header>
 
-            {canWrite && (
+            {canCreate && (
                 <CreateFindingModal
                     open={showForm}
                     setOpen={setShowForm}
@@ -515,7 +521,7 @@ function FindingsPageInner({
             <FindingDetailSheet
                 findingId={openFindingId}
                 onClose={closeFinding}
-                canWrite={canWrite}
+                canWrite={canEdit}
                 tenantSlug={tenantSlug}
                 onSaved={revalidateFindingLists}
             />

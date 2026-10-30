@@ -62,7 +62,8 @@ flowchart LR
   specifier (`assistant/turn-provider.ts`). The local route is
   `AI_LOCAL_BASE_URL` / `AI_LOCAL_MODEL` / `AI_LOCAL_API_KEY` — an
   OpenAI-compatible endpoint "(Ollama / vLLM / …)" inside the operator's
-  perimeter, with a per-tenant `aiLocalBaseUrl` override.
+  perimeter. A tenant's stored `aiLocalBaseUrl` is honoured only when it is
+  that same address, and refused otherwise (#4545).
 - **The sub-processor register lists two model vendors** (OpenRouter, Anthropic)
   and no embedding vendor (`docs/sub-processors.md`). Adding one is the
   four-step process (G2) — which is why the pilot arm below is CPU-local.
@@ -194,8 +195,8 @@ external; extend the residency guard's pinned constructor set in the same diff. 
 Metric embeddings.requests{provider,outcome} + duration histogram.
 
 Constraints: no cloud embedding API. The base URL is operator config, never tenant-
-writable (a per-tenant override, if added, follows aiLocalBaseUrl's existing shape and
-checks). Name tests for invariants: "a LOCAL_ONLY tenant with no local embed route is
+writable. A per-tenant override, if added, follows aiLocalBaseUrl's rule: honoured only
+when it is the deployment's own address (#4545). Name tests for invariants: "a LOCAL_ONLY tenant with no local embed route is
 refused", "embed() never sends a specifier addressed to another provider", "the factory
 constructs nothing external for LOCAL_ONLY".
 

@@ -8,6 +8,19 @@ export type PermissionSet = {
     risks: { view: boolean; create: boolean; edit: boolean };
     assets: { view: boolean; create: boolean; edit: boolean };
     vendors: { view: boolean; create: boolean; edit: boolean };
+    /**
+     * The findings register (#4535, owner decision 2026-10-30). Findings were
+     * the one register with no key of their own: the routes relied on the
+     * usecase's coarse `assertCanRead` / `assertCanWrite`, so a custom role
+     * could not be given or refused findings apart from its base role, and a
+     * refusal wrote no `AUTHZ_DENIED` row.
+     *
+     * The defaults REPRODUCE those tiers, so no built-in role moves: `view` is
+     * `canRead` (every role), `create` and `edit` are `canWrite` (OWNER, ADMIN,
+     * EDITOR). A custom role stored before the domain existed takes its base
+     * role's default, as `parsePermissionsJson` does for any missing domain.
+     */
+    findings: { view: boolean; create: boolean; edit: boolean };
     tests: { view: boolean; create: boolean; execute: boolean };
     /**
      * NIS2 Article 23 incident response. `manage` (create incidents,
@@ -489,6 +502,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     risks: ['view', 'create', 'edit'],
     assets: ['view', 'create', 'edit'],
     vendors: ['view', 'create', 'edit'],
+    findings: ['view', 'create', 'edit'],
     tests: ['view', 'create', 'execute'],
     incidents: ['view', 'manage'],
     personnel: ['view', 'manage'],
@@ -563,6 +577,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 risks: { view: true, create: true, edit: true },
                 assets: { view: true, create: true, edit: true },
                 vendors: { view: true, create: true, edit: true },
+                findings: { view: true, create: true, edit: true },
                 tests: { view: true, create: true, execute: true },
                 incidents: { view: true, manage: true },
                 personnel: { view: true, manage: true },
@@ -595,6 +610,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 risks: { view: true, create: true, edit: true },
                 assets: { view: true, create: true, edit: true },
                 vendors: { view: true, create: true, edit: true },
+                findings: { view: true, create: true, edit: true },
                 tests: { view: true, create: true, execute: true },
                 incidents: { view: true, manage: true },
                 personnel: { view: true, manage: true },
@@ -653,6 +669,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 risks: { view: true, create: true, edit: true },
                 assets: { view: true, create: true, edit: true },
                 vendors: { view: true, create: true, edit: true },
+                findings: { view: true, create: true, edit: true },
                 tests: { view: true, create: true, execute: true },
                 incidents: { view: true, manage: false },
                 // OWNER/ADMIN only — see the `personnel` docblock above.
@@ -677,6 +694,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 risks: { view: true, create: false, edit: false },
                 assets: { view: true, create: false, edit: false },
                 vendors: { view: true, create: false, edit: false },
+                findings: { view: true, create: false, edit: false },
                 tests: { view: true, create: false, execute: false },
                 incidents: { view: true, manage: false },
                 // OWNER/ADMIN only — see the `personnel` docblock above.
@@ -751,6 +769,7 @@ function readerPermissions(): PermissionSet {
         risks: { view: true, create: false, edit: false },
         assets: { view: true, create: false, edit: false },
         vendors: { view: true, create: false, edit: false },
+        findings: { view: true, create: false, edit: false },
         tests: { view: true, create: false, execute: false },
         incidents: { view: true, manage: false },
         // OWNER/ADMIN only — see the `personnel` docblock on `PermissionSet`.
@@ -831,6 +850,13 @@ export type OrgPermissionSet = {
      * (ORG_ADMIN only); audits via ORG_MATURITY_RATING_SET.
      */
     canSetMaturity: boolean;
+    /**
+     * Turn the agent profile surface and the Tool Runner engine on or off for
+     * the organization's workspaces, where the deployment leaves them open
+     * (#4557). ORG_ADMIN; the ORG_OWNER role, when it lands, holds it too.
+     * Reading the switches takes only `canViewPortfolio`.
+     */
+    canManageAgentSwitches: boolean;
 };
 
 /**
@@ -853,6 +879,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canConfigureDashboard: true,
                 canSetThreatLevel: true,
                 canSetMaturity: true,
+                canManageAgentSwitches: true,
             };
         case 'ORG_READER':
             return {
@@ -868,6 +895,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canConfigureDashboard: false,
                 canSetThreatLevel: false,
                 canSetMaturity: false,
+                canManageAgentSwitches: false,
             };
         default: {
             // Defensive — Prisma's enum is closed, so the runtime
@@ -885,6 +913,7 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
                 canConfigureDashboard: false,
                 canSetThreatLevel: false,
                 canSetMaturity: false,
+                canManageAgentSwitches: false,
             };
         }
     }

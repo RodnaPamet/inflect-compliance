@@ -207,7 +207,7 @@ export async function resolveRunDefinition(
         return { def };
     }
 
-    if (!agentProfilesOn(ctx.tenantSlug)) {
+    if (!(await agentProfilesOn(ctx.tenantSlug))) {
         throw refuse('PROFILES_DISABLED', 'Agent profiles are not enabled for this workspace.');
     }
     const parsed = parseProfileRunKey(workflowKey);

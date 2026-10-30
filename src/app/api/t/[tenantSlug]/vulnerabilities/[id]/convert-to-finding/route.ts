@@ -10,11 +10,13 @@ type Params = { tenantSlug: string; id: string };
  * existing createFinding usecase (sourceKind='CVE').
  *
  * `assets.edit` (#4465): the conversion is drawn from the vulnerability and
- * writes onto it. There is no findings key in `PermissionSet` — creating a
- * finding is gated on the coarse write tier, which `createFinding` asserts.
+ * writes onto it. And `findings.create` (#4535), as `convert-to-risk` asks
+ * `risks.create`: it creates a finding, which the findings register's own
+ * route asks of the caller. Every built-in role holding `assets.edit` holds
+ * `findings.create` too, so only a custom role can tell them apart.
  */
 export const POST = withApiErrorHandling(
-    requirePermission<Params>('assets.edit', async (_req, { params }, ctx) => {
+    requirePermission<Params>(['assets.edit', 'findings.create'], async (_req, { params }, ctx) => {
         const { finding, nudge } = await convertVulnerabilityToFinding(ctx, params.id);
         return jsonResponse({ ...finding, nudge }, { status: 201 });
     }),

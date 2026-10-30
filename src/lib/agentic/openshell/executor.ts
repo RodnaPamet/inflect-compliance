@@ -41,9 +41,11 @@ import { logger } from '@/lib/observability/logger';
 import type { RawExecResult, ToolExecutor } from '../bounded-exec';
 import {
     DELETION_IS_SETTLED,
+    type DeletionOutcome,
     type SandboxTransport,
     unconfiguredTransport,
 } from './transport';
+import type { SandboxDecision } from './sandbox-decisions';
 
 /** Label put on every sandbox this backend creates, so a leak is attributable. */
 export const SANDBOX_OWNER_LABEL = 'inflect.dev/created-by';
@@ -78,19 +80,82 @@ export function openShellToolExecutor(
             readonly sandboxId: string;
             readonly signal: AbortSignal;
         }) => Promise<void>;
+
+        /**
+         * Record one lifecycle decision — 5.1 (#3971).
+         *
+         * Called EXACTLY ONCE per decision, and the counting is structural
+         * rather than careful: creation is outside the try so a failed create
+         * cannot also emit a delete, and the delete emits from the `finally`
+         * that already runs once.
+         *
+         * MUST NOT THROW, and the executor enforces that rather than trusting
+         * it. This module's own doctrine is that "a truncated tool output is
+         * worse than no output", and a recording failure is not a reason to
+         * discard a tool that ran — nor to skip the deletion that stops a
+         * sandbox leaking. So each call is isolated: a rejection is logged with
+         * the decision and swallowed HERE, and durability is the bridge's
+         * problem, which is where the audit writer and its outbox live.
+         *
+         * Takes a value, not a writer: `sandbox-decisions.ts` is pure data and
+         * this module reaches no database, for the same reason it reaches no
+         * gateway client without being handed one.
+         */
+        readonly onDecision?: (decision: SandboxDecision) => Promise<void>;
     } = {},
 ): ToolExecutor {
     return async (file, args, options): Promise<RawExecResult> => {
+        const record = async (decision: SandboxDecision): Promise<void> => {
+            if (!hooks.onDecision) return;
+            try {
+                await hooks.onDecision(decision);
+            } catch (e) {
+                // Swallowed on purpose — see the hook's note. Logged with the
+                // whole decision so the row that is missing can be identified
+                // from the log alone.
+                // NAMED SCALARS, not the decision object. Spreading a whole
+                // object is a shape `no-raw-prompt-logging` cannot judge, and
+                // it counted this site as a hole — correctly, since nothing in
+                // the type stops a future decision member carrying free text.
+                // Naming the fields is also what the row itself does: every
+                // fact explicit, nothing implied by a spread.
+                logger.error('a sandbox lifecycle decision was not recorded', {
+                    component: 'agentic-openshell',
+                    decisionKind: decision.kind,
+                    sandboxId: 'sandboxId' in decision ? (decision.sandboxId ?? null) : null,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        };
+
         // Outside the try: a creation failure must propagate as a REFUSAL, and
         // there is nothing to clean up because nothing was created.
-        const sandbox = await transport.createSandbox({
-            labels: { [SANDBOX_OWNER_LABEL]: SANDBOX_OWNER_VALUE },
-        });
+        let sandbox;
+        try {
+            sandbox = await transport.createSandbox({
+                labels: { [SANDBOX_OWNER_LABEL]: SANDBOX_OWNER_VALUE },
+            });
+        } catch (e) {
+            // The refusal is recorded BEFORE it propagates, because the caller
+            // may never return here. No sandboxId: there is no sandbox.
+            await record({ kind: 'execution-refused', reason: 'creation-failed' });
+            throw e;
+        }
+        await record({ kind: 'sandbox-created', sandboxId: sandbox.id });
 
         try {
             // Before the exec, and allowed to throw: see the hook's own note.
             if (hooks.onSandboxReady) {
-                await hooks.onSandboxReady({ sandboxId: sandbox.id, signal: options.signal });
+                try {
+                    await hooks.onSandboxReady({ sandboxId: sandbox.id, signal: options.signal });
+                } catch (e) {
+                    await record({
+                        kind: 'execution-refused',
+                        reason: 'provider-attach-failed',
+                        sandboxId: sandbox.id,
+                    });
+                    throw e;
+                }
             }
 
             const run = await transport.execSandbox({
@@ -115,7 +180,13 @@ export function openShellToolExecutor(
 
             return { error, stdout: run.stdout, stderr: run.stderr };
         } finally {
-            await deleteSandboxQuietly(transport, sandbox.id, options.signal);
+            const deletion = await deleteSandboxQuietly(transport, sandbox.id, options.signal);
+            await record({
+                kind: 'sandbox-deleted',
+                sandboxId: sandbox.id,
+                outcome: deletion.outcome,
+                settled: deletion.settled,
+            });
         }
     };
 }
@@ -134,11 +205,22 @@ async function deleteSandboxQuietly(
     transport: SandboxTransport,
     sandboxId: string,
     signal: AbortSignal,
-): Promise<void> {
-    try {
-        const { outcome } = await transport.deleteSandbox({ sandboxId });
+): Promise<{ readonly outcome: DeletionOutcome; readonly settled: boolean }> {
+    /*
+        RETURNS the outcome rather than discarding it — 5.1 (#3971).
 
-        if (DELETION_IS_SETTLED.includes(outcome)) return;
+        It still does not throw, for the reason below. But the audit row has to
+        say WHICH of the four outcomes happened, because flattening them into
+        "deleted" would record an assurance the gateway did not give: ACCEPTED
+        means admitted-not-performed, and UNSPECIFIED is the proto3 zero. A
+        trail that cannot distinguish "we confirmed it is gone" from "the
+        gateway took the request" is not evidence of deletion.
+    */
+    let outcome: DeletionOutcome = 'DELETION_OUTCOME_UNSPECIFIED';
+    try {
+        ({ outcome } = await transport.deleteSandbox({ sandboxId }));
+
+        if (DELETION_IS_SETTLED.includes(outcome)) return { outcome, settled: true };
 
         // ACCEPTED means admitted, not performed — the gateway's own help text
         // for it reads "Does not wait for". UNSPECIFIED is the zero value and
@@ -152,11 +234,15 @@ async function deleteSandboxQuietly(
             });
         }
         await transport.awaitDeleted({ sandboxId, signal });
+        // The wait is what settles it: the outcome stays as the gateway
+        // reported, and `settled` records that we went on to confirm.
+        return { outcome, settled: true };
     } catch (err) {
         logger.error('sandbox may have leaked: deletion did not settle', {
             component: 'agentic-openshell',
             sandboxId,
             error: err instanceof Error ? err.message : String(err),
         });
+        return { outcome, settled: false };
     }
 }

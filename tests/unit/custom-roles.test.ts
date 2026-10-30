@@ -22,6 +22,7 @@
 import { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole, PERMISSION_SCHEMA } from '@/lib/permissions';
 import type { Role } from '@prisma/client';
+import { ADMIN_BASE_ONLY_PERMISSIONS } from '@/lib/custom-role-admin-base-rule';
 
 // ─── Mock db-context ───
 const mockTx: Record<string, any> = {};
@@ -720,5 +721,98 @@ describe('listCustomRoles — permissionsJson normalisation', () => {
             isActive: true,
             _count: { memberships: 2 },
         });
+    });
+});
+
+// ─── Admin-base-only permissions (#4536, #4581 A) ───
+
+describe('Custom Roles — the Admin-base-only permissions need an ADMIN base (#4536, #4581 A)', () => {
+    /** A preset's blob with `domain.action` set as given. */
+    const withKey = (base: Role, key: string, value: boolean) => {
+        const [domain, action] = key.split('.');
+        const p = getPermissionsForRole(base) as unknown as Record<string, Record<string, boolean>>;
+        return { ...p, [domain]: { ...p[domain], [action]: value } };
+    };
+    const refusedFor = (...permissions: string[]) => ({
+        details: { reason: 'PERMISSION_NEEDS_ADMIN_BASE', permissions },
+    });
+    /** An OWNER: holds every key, so only this rule can refuse. */
+    const owner = (): RequestContext => ({ ...makeCtx('ADMIN'), role: 'OWNER', appPermissions: getPermissionsForRole('OWNER') });
+
+    describe.each(ADMIN_BASE_ONLY_PERMISSIONS.map((k) => [k]))('%s', (key) => {
+        it.each<Role>(['READER', 'EDITOR', 'AUDITOR'])('refuses to create a %s-based role holding it', async (base) => {
+            mockTx.tenantCustomRole = { findFirst: jest.fn(async () => null), create: jest.fn() };
+            await expect(
+                createCustomRole(owner(), { name: 'R', baseRole: base, permissionsJson: withKey(base, key, true) }),
+            ).rejects.toMatchObject(refusedFor(key));
+            expect(mockTx.tenantCustomRole.create).not.toHaveBeenCalled();
+        });
+
+        it('creates an ADMIN-based role holding it', async () => {
+            mockTx.tenantCustomRole = {
+                findFirst: jest.fn(async () => null),
+                create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'cr-9', ...data })),
+            };
+            await createCustomRole(owner(), { name: 'R', baseRole: 'ADMIN', permissionsJson: withKey('ADMIN', key, true) });
+            expect(mockTx.tenantCustomRole.create).toHaveBeenCalled();
+        });
+    });
+
+    it('names every refused key, not just the first', async () => {
+        mockTx.tenantCustomRole = { findFirst: jest.fn(async () => null), create: jest.fn() };
+        const editor = getPermissionsForRole('EDITOR');
+        const blob = { ...editor, admin: { ...editor.admin, manage: true, members: true } };
+        await expect(
+            createCustomRole(owner(), { name: 'R', baseRole: 'EDITOR', permissionsJson: blob }),
+        ).rejects.toMatchObject(refusedFor('admin.manage', 'admin.members'));
+    });
+
+    it('allows the admin keys a custom role may hold on any base', async () => {
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn(async () => null),
+            create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'cr-9', ...data })),
+        };
+        const reader = getPermissionsForRole('READER');
+        const blob = { ...reader, admin: { ...reader.admin, view: true, agent_registry: true, compliance_dsar_manage: true } };
+        await createCustomRole(owner(), { name: 'Agent reviewer', baseRole: 'READER', permissionsJson: blob });
+        expect(mockTx.tenantCustomRole.create).toHaveBeenCalled();
+    });
+
+    it('refuses an update that grants one on a READER base, and one that moves an ADMIN role holding one to READER', async () => {
+        const update = jest.fn();
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn(async () => ({ id: 'cr-1', tenantId: 'tenant-1', name: 'R', baseRole: 'READER', isActive: true, permissionsJson: getPermissionsForRole('READER') })),
+            update,
+        };
+        await expect(
+            updateCustomRole(makeCtx(), 'cr-1', { permissionsJson: withKey('READER', 'admin.manage', true) }),
+        ).rejects.toMatchObject(refusedFor('admin.manage'));
+
+        mockTx.tenantCustomRole.findFirst = jest.fn(async () => ({ id: 'cr-1', tenantId: 'tenant-1', name: 'R', baseRole: 'ADMIN', isActive: true, permissionsJson: withKey('ADMIN', 'personnel.manage', true) }));
+        // The ADMIN preset carries three of the list; the move names each.
+        await expect(updateCustomRole(makeCtx(), 'cr-1', { baseRole: 'READER' })).rejects.toMatchObject(
+            refusedFor('admin.manage', 'admin.members', 'personnel.manage'),
+        );
+        expect(update).not.toHaveBeenCalled();
+    });
+
+    it('a rename of a legacy role still holding one is not refused for a grant the rename does not touch', async () => {
+        const legacy = { id: 'cr-1', tenantId: 'tenant-1', name: 'Old', baseRole: 'READER', isActive: true, permissionsJson: withKey('READER', 'admin.members', true) };
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn().mockResolvedValueOnce(legacy).mockResolvedValueOnce(null),
+            update: jest.fn(async () => ({ ...legacy, name: 'New' })),
+        };
+        await expect(updateCustomRole(makeCtx(), 'cr-1', { name: 'New' })).resolves.toMatchObject({ name: 'New' });
+    });
+
+    it('switching it off on a legacy role is accepted', async () => {
+        const legacy = { id: 'cr-1', tenantId: 'tenant-1', name: 'Old', baseRole: 'READER', isActive: true, permissionsJson: withKey('READER', 'admin.members', true) };
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn(async () => legacy),
+            update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...legacy, ...data })),
+        };
+        await expect(
+            updateCustomRole(makeCtx(), 'cr-1', { permissionsJson: withKey('READER', 'admin.members', false) }),
+        ).resolves.toBeDefined();
     });
 });

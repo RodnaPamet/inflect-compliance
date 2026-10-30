@@ -30,6 +30,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage } from '@/lib/api-error';
 import { grantExceedingKeys } from '@/lib/custom-role-grant-refusal';
+import {
+    ADMIN_BASE_ONLY_PERMISSIONS,
+    adminBaseRefusalPermissions,
+    grantsNeedingAdminBase,
+    mayHoldOnBase,
+} from '@/lib/custom-role-admin-base-rule';
 import { Card, cardVariants } from '@/components/ui/card';
 import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
 import {
@@ -169,6 +175,23 @@ function withinHeld(perms: PermissionSet, held: PermissionSet): PermissionSet {
     return out as unknown as PermissionSet;
 }
 
+/**
+ * `perms` with every Admin-base-only permission off when the base role may not
+ * hold it (#4536, #4581 A): only an ADMIN-based custom role may hold them, and
+ * the server refuses any other. Applied to presets and to a base-role change,
+ * so the grid never starts from a role the server would refuse.
+ */
+function withinBase(perms: PermissionSet, baseRole: Role): PermissionSet {
+    if (baseRole === 'ADMIN') return perms;
+    let out = perms;
+    for (const key of ADMIN_BASE_ONLY_PERMISSIONS) {
+        const [domain, action] = key.split('.') as [keyof PermissionSet, string];
+        const actions = out[domain] as Record<string, boolean>;
+        if (actions[action]) out = { ...out, [domain]: { ...actions, [action]: false } };
+    }
+    return out;
+}
+
 // ─── Permission Grid Component ───
 
 /**
@@ -182,16 +205,23 @@ function PermissionGrid({
     permissions,
     onChange,
     held,
+    baseRole,
 }: {
     permissions: PermissionSet;
     onChange: (p: PermissionSet) => void;
     held: PermissionSet;
+    baseRole: Role;
 }) {
     const labels = useRolesPageText();
     const { t } = labels;
+    // A permission the base role cannot carry (#4536, #4581 A): the
+    // Admin-base-only permissions, on any base but ADMIN.
+    const needsAdminBase = (resource: keyof PermissionSet, action: string) =>
+        !mayHoldOnBase(baseRole, resource, action);
     const toggle = (resource: keyof PermissionSet, action: string) => {
         const current = (permissions[resource] as Record<string, boolean>)[action] ?? false;
         if (!current && !holdsPermission(held, resource, action)) return;
+        if (!current && needsAdminBase(resource, action)) return;
         const updated = {
             ...permissions,
             [resource]: {
@@ -234,11 +264,14 @@ function PermissionGrid({
                                     }
                                     const granted = (permissions[resource] as Record<string, boolean>)[action] ?? false;
                                     const holds = holdsPermission(held, resource, action);
-                                    const locked = !granted && !holds;
+                                    const baseBlocks = needsAdminBase(resource, action);
+                                    const locked = !granted && (!holds || baseBlocks);
                                     const permission = labels.permission(`${resource}.${action}`);
-                                    const hint = granted
-                                        ? t(holds ? 'roles.cellGranted' : 'roles.cellGrantedNotHeld', { permission })
-                                        : t(holds ? 'roles.cellNotGranted' : 'roles.cellNotHeld', { permission });
+                                    const hint = baseBlocks
+                                        ? t('roles.cellNeedsAdminBase', { permission })
+                                        : granted
+                                            ? t(holds ? 'roles.cellGranted' : 'roles.cellGrantedNotHeld', { permission })
+                                            : t(holds ? 'roles.cellNotGranted' : 'roles.cellNotHeld', { permission });
                                     return (
                                         <td key={action} className="text-center">
                                             <Tooltip content={hint}>
@@ -325,9 +358,15 @@ function RoleForm({
     const handleBaseRoleChange = (role: Role) => {
         setBaseRole(role);
         if (!initial) {
-            setPermissions(withinHeld(getPermissionsForRole(role), held));
+            setPermissions(withinBase(withinHeld(getPermissionsForRole(role), held), role));
+        } else {
+            // An existing role keeps its grid, minus what the new base cannot
+            // carry (#4536), so moving it off ADMIN does not end in a refusal.
+            setPermissions((p) => withinBase(p, role));
         }
     };
+    // Only a legacy role, stored before #4536 / #4581, can still hold one here.
+    const onWrongBase = grantsNeedingAdminBase(permissions, baseRole);
 
     return (
         <div className="space-y-default">
@@ -379,6 +418,12 @@ function RoleForm({
                 />
             </div>
 
+            {onWrongBase.length > 0 && (
+                <InlineNotice variant="warning" id="role-needs-admin-base">
+                    {t('roles.needsAdminBaseNotice', { permissions: onWrongBase.map(labels.permission).join(', ') })}
+                </InlineNotice>
+            )}
+
             {exceeding.length > 0 && (
                 <InlineNotice variant="warning" id="role-exceeds-held">
                     {t('roles.exceedsHeldNotice', {
@@ -408,7 +453,7 @@ function RoleForm({
                                     <button
                                         key={r}
                                         type="button"
-                                        onClick={() => setPermissions(withinHeld(getPermissionsForRole(r), held))}
+                                        onClick={() => setPermissions(withinBase(withinHeld(getPermissionsForRole(r), held), baseRole))}
                                         className="text-[10px] px-2 py-0.5 rounded bg-bg-elevated/50 text-content-default hover:bg-bg-muted/50 transition"
                                         id={`preset-${r}`}
                                     >
@@ -422,7 +467,7 @@ function RoleForm({
                                 {t('roles.notHeldHint')}
                             </p>
                         )}
-                        <PermissionGrid permissions={permissions} onChange={setPermissions} held={held} />
+                        <PermissionGrid permissions={permissions} onChange={setPermissions} held={held} baseRole={baseRole} />
                     </div>
                 )}
             </div>
@@ -432,7 +477,7 @@ function RoleForm({
                     variant="primary"
                     type="button"
                     onClick={() => onSubmit({ name: name.trim(), description: description.trim(), baseRole, permissionsJson: permissions })}
-                    disabled={submitting || !name.trim() || exceeding.length > 0}
+                    disabled={submitting || !name.trim() || exceeding.length > 0 || onWrongBase.length > 0}
                     loading={submitting}
                     id="role-submit-btn"
                 >
@@ -504,6 +549,12 @@ export default function CustomRolesPage() {
         const exceeded = grantExceedingKeys(body);
         if (exceeded && exceeded.length > 0) {
             return t('roles.grantRefused', { permissions: exceeded.map(labels.permission).join(', ') });
+        }
+        // #4536 / #4581 A — the server's sentence is English and names keys;
+        // the page has its own, with labels.
+        const needAdminBase = adminBaseRefusalPermissions(body);
+        if (needAdminBase !== null) {
+            return t('roles.needsAdminBaseNotice', { permissions: needAdminBase.map(labels.permission).join(', ') });
         }
         return apiErrorMessage(body, fallback);
     };

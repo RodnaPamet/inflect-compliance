@@ -136,42 +136,11 @@ export function runsProfiles(driver: AgentDriver): boolean {
     return RUNS_PROFILES[driver];
 }
 
-/**
- * Is the deployment's opt-in flag for the profile surface on? Read like
- * `AGENT_DRIVER_FLUE`: only '1' and 'true' count, so a typo is "off" rather
- * than a process that will not boot.
+/*
+ * Whether the profile surface is on for a workspace is no longer read here.
+ * Since #4557 an organization can decide it when the deployment leaves
+ * `AGENT_PROFILES` unset, so the answer needs a database read:
+ * `agentProfilesDecisionFor` in `agent-switches-policy.ts`, over the pure rule
+ * in `agent-switches.ts`. A synchronous reader of the environment alone would
+ * report a switch an organization turned on as off.
  */
-export function agentProfilesEnabled(raw: string | null | undefined): boolean {
-    if (!raw) return false;
-    const normalised = raw.trim().toLowerCase();
-    return normalised === '1' || normalised === 'true';
-}
-
-/**
- * The tenants `AGENT_PROFILES_TENANTS` names: comma-separated slugs, trimmed and
- * lower-cased, empty entries dropped (Step 1H, #4145).
- */
-export function profileTenantAllowlist(raw: string | null | undefined): ReadonlySet<string> {
-    return new Set(
-        (raw ?? '')
-            .split(',')
-            .map((s) => s.trim().toLowerCase())
-            .filter((s) => s.length > 0),
-    );
-}
-
-/**
- * Is the profile surface on for this tenant? Either the deployment's switch is
- * on, which opens it to every tenant, or the allowlist names this tenant's slug.
- * No slug (a context that carries none) is never on the allowlist, so the
- * answer fails closed.
- */
-export function agentProfilesEnabledFor(
-    flag: string | null | undefined,
-    allowlist: string | null | undefined,
-    tenantSlug: string | null | undefined,
-): boolean {
-    if (agentProfilesEnabled(flag)) return true;
-    if (typeof tenantSlug !== 'string' || tenantSlug.trim() === '') return false;
-    return profileTenantAllowlist(allowlist).has(tenantSlug.trim().toLowerCase());
-}
