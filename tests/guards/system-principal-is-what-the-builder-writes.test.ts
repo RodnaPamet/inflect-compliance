@@ -3,10 +3,15 @@
  *
  * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
  *
- * `identity-leaver-pass` decides whether a directory write was ATTENDED by
- * asking whether the context names a real person:
+ * `identity-joiner-run` and `agent-owner-orphan-pass` decide whether a pass
+ * was ATTENDED by asking whether the context names a real person:
  *
  *     ctx.userId && ctx.userId !== SYSTEM_PRINCIPAL ? 'manual' : 'scheduled'
+ *
+ * (`identity-leaver-pass` asked the same until #4400. A manual leaver pass
+ * whose requester has lost the key now runs under a system context, so it
+ * reads `triggeredBy` off the request instead, and this check would have
+ * called that run scheduled.)
  *
  * That is two facts that must match — the constant, and the value the builder
  * stamps on a system context. Nothing in the type system holds them together,

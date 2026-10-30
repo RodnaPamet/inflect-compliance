@@ -13,6 +13,8 @@ import { Heading } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { runStatusLabelKey } from '@/lib/agentic/run-labels';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 
 import type { AgentTabProps } from './types';
@@ -78,6 +80,8 @@ const TONE: Record<string, StatusBadgeVariant> = {
     PAUSED: 'neutral',
     FAILED: 'error',
     ABORTED: 'error',
+    // A run that resolved no tools is a failure, as the runs list shows it.
+    EMPTY_CATALOGUE: 'error',
 };
 
 export function RunsTab({ agentId, refreshToken }: AgentTabProps) {
@@ -88,6 +92,13 @@ export function RunsTab({ agentId, refreshToken }: AgentTabProps) {
     // (#3499). The widened `i18n-keys-resolve` caught this very draft doing
     // the same thing, which is exactly what it was widened for.
     const t = useTranslations('admin');
+    // Run statuses are named under `agents`, where the runs list reads them
+    // (#4532). One this build does not know shows its stored code.
+    const tAgents = useTranslations('agents');
+    const statusLabel = (status: string) => {
+        const key = runStatusLabelKey(status);
+        return key ? tAgents(key) : status;
+    };
     const tenantHref = useTenantHref();
     const { data, error, isLoading, mutate } = useTenantSWR<RunRow[]>(
         CACHE_KEYS.agentRuns.forAgent(agentId),
@@ -126,7 +137,7 @@ export function RunsTab({ agentId, refreshToken }: AgentTabProps) {
                 {data.map((run) => (
                     <li key={run.id} className="flex items-center gap-default py-tight">
                         <StatusBadge variant={TONE[run.status] ?? 'neutral'} icon={null}>
-                            {run.status}
+                            {statusLabel(run.status)}
                         </StatusBadge>
                         <div className="min-w-0 flex-1">
                             {/* The LINK is the point of the panel: every row
@@ -136,7 +147,7 @@ export function RunsTab({ agentId, refreshToken }: AgentTabProps) {
                                 className="font-medium hover:underline"
                                 data-testid={`agent-run-link-${run.id}`}
                             >
-                                {run.workflowKey}
+                                {getWorkflowDefinition(run.workflowKey)?.name ?? run.workflowKey}
                             </Link>
                             <p className="text-xs text-content-muted">
                                 {formatDateTime(run.startedAt)}

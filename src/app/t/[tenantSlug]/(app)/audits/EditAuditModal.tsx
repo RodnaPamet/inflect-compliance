@@ -171,7 +171,7 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
             // paths to the same toast. The modal stays open with the form
             // intact either way, so the user can retry without retyping. A
             // refusal shows the server's reason; anything else, the fallback.
-            toast.error(auditWriteFailureMessage(err, tx('editModal.saveFailed')));
+            toast.error(auditWriteFailureMessage(err, tx('editModal.saveFailed'), tx));
         } finally {
             setSaving(false);
         }

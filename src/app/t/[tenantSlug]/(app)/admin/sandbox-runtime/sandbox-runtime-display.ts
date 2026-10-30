@@ -232,3 +232,68 @@ export const RUNTIME_ROW_KINDS: readonly RuntimeRowKind[] = [
     'declared-not-observed',
     'unconfirmable',
 ] as const;
+
+/**
+ * The provenance line's shape — 5.6e (#4000).
+ *
+ * ═══ WHAT THIS DELIBERATELY CANNOT EXPRESS ═══
+ *
+ * There is no field here for a setting's value, and that is the design. The
+ * issue contrasts a statement that is true —
+ *
+ *     declared, digest sha256:… , applied 2026-10-30T… — gateway reachable,
+ *     reporting version 0.1.6
+ *
+ * with one that is not:
+ *
+ *     Telemetry: off
+ *
+ * The first is a fact about what was SENT and what ANSWERED. The second claims
+ * knowledge of the gateway's internal state that no API provides — 0.1a
+ * established there is no configuration read endpoint at all. So this type
+ * carries a digest, a timestamp and a reachability verdict, and a renderer
+ * cannot assert an effective value through it because there is nowhere to put
+ * one.
+ *
+ * ═══ FOUR REACHABILITY VERDICTS, NOT A BOOLEAN ═══
+ *
+ * `not-probed` and `unreachable` are different facts: the first means this
+ * deploy named no gateway, the second that one was named and did not answer.
+ * Collapsing them would report someone else's infrastructure as broken because
+ * we never asked. `answered-without-version` is separated for the operator
+ * debugging a blank version — the gateway did answer.
+ */
+export interface ProvenanceDisplay {
+    /** Is there a digest to show at all? */
+    readonly declared: boolean;
+    readonly configDigest: string | null;
+    readonly appliedAtIso: string | null;
+    readonly reachability: 'not-probed' | 'unreachable' | 'answered' | 'answered-without-version';
+    /** The version the gateway reported. Null unless `reachability === 'answered'`. */
+    readonly reportedVersion: string | null;
+}
+
+/**
+ * Build the provenance row from a declaration and the probe's outcome.
+ *
+ * Takes the outcome rather than re-deriving it from `reachableVersion`: a null
+ * version is produced by three different outcomes, and a renderer that inferred
+ * "unreachable" from it would report a gateway that answered as one that did
+ * not.
+ */
+export function displayForProvenance(
+    declaration: Pick<SandboxRuntimeDeclaration, 'configured' | 'configDigest' | 'reachableVersion'>,
+    appliedAtIso: string | null,
+    probeOutcome: ProvenanceDisplay['reachability'],
+): ProvenanceDisplay {
+    return {
+        declared: declaration.configured,
+        configDigest: declaration.configured ? declaration.configDigest : null,
+        appliedAtIso,
+        reachability: probeOutcome,
+        // Guarded here as well as at the probe: only an `answered` outcome may
+        // carry a version, so a future caller cannot pass one alongside
+        // `unreachable` and have it rendered.
+        reportedVersion: probeOutcome === 'answered' ? declaration.reachableVersion : null,
+    };
+}

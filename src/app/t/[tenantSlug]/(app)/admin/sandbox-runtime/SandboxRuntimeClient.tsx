@@ -43,6 +43,7 @@ import {
     displayForChannel,
     displayForEnforcement,
     displayForExecutionSwitch,
+    displayForProvenance,
     type RuntimeRowDisplay,
     type RuntimeRowKind,
 } from './sandbox-runtime-display';
@@ -54,6 +55,14 @@ import {
  */
 export interface SandboxRuntimeView extends Omit<SandboxRuntimeDeclaration, 'appliedAt'> {
     readonly appliedAtIso: string | null;
+    /**
+     * What the reachability probe concluded — 5.6e (#4000).
+     *
+     * Carried as the OUTCOME rather than inferred from `reachableVersion`,
+     * because a null version is produced by three different outcomes and the
+     * page must not report a gateway that answered as one that did not.
+     */
+    readonly probeOutcome: 'not-probed' | 'unreachable' | 'answered' | 'answered-without-version';
 }
 
 /**
@@ -98,6 +107,11 @@ export function SandboxRuntimeClient({
         reachableVersion: view.reachableVersion,
         channels: view.channels,
     };
+
+    // 5.6e (#4000). Built through the display function rather than from `view`
+    // directly, so the reachability branch and the "only an `answered` outcome
+    // carries a version" rule live in one tested place instead of in JSX.
+    const provenance = displayForProvenance(declaration, view.appliedAtIso, view.probeOutcome);
 
     function badge(display: RuntimeRowDisplay) {
         return (
@@ -174,6 +188,27 @@ export function SandboxRuntimeClient({
                             <dd className="font-mono">{view.appliedAtIso}</dd>
                         </div>
                     )}
+                    {/* The reachability probe, BESIDE the digest — 5.6e (#4000).
+                        Every branch states what was asked and what answered.
+                        None of them names a setting's value: this deployment
+                        cannot read one back, and a row claiming otherwise is
+                        the failure the whole page exists to avoid. */}
+                    <div className="flex gap-tight" data-testid="sandbox-reachability">
+                        <dt className="text-content-muted">
+                            {t('sandboxRuntime.reachabilityLabel')}
+                        </dt>
+                        <dd>
+                            {provenance.reachability === 'answered'
+                                ? t('sandboxRuntime.reachabilityAnswered', {
+                                      version: provenance.reportedVersion ?? '',
+                                  })
+                                : provenance.reachability === 'answered-without-version'
+                                  ? t('sandboxRuntime.reachabilityNoVersion')
+                                  : provenance.reachability === 'not-probed'
+                                    ? t('sandboxRuntime.reachabilityNotProbed')
+                                    : t('sandboxRuntime.reachabilityUnreachable')}
+                        </dd>
+                    </div>
                 </dl>
             )}
 

@@ -132,7 +132,11 @@ describe('Epic 64 — window.confirm() ceiling', () => {
     //
     // 2026-10-25 — −3 (15): the Security & MFA page's three session
     // revocations moved to <ConfirmDialog> (#4117).
-    const CONFIRM_CALL_CEILING = 15;
+    //
+    // 2026-10-30 — −1 (14): `NewAuditModal`'s unsaved-changes guard moved to
+    // <ConfirmDialog> (#4531). The close is deferred until the choice resolves:
+    // the close request opens the dialog and Discard closes the form.
+    const CONFIRM_CALL_CEILING = 14;
 
     it(`has at most ${CONFIRM_CALL_CEILING} native-confirm call sites under the tenant app`, () => {
         const offenders: string[] = [];
