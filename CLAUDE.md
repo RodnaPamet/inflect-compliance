@@ -866,9 +866,14 @@ new tenant-membership creation path).
   membership is changed only by another owner (an audited `ORG_AUTHZ_DENIED`
   otherwise), never leaving the org with no owner. No writer accepts the value:
   the direct add, the role change and the invite refuse it in the usecase.
-  Deploy 2 backfills the oldest ORG_ADMIN of each organization, adds the
-  last-owner trigger, and moves the owner-only powers (owner management, org
-  lifecycle, tenant management).
+  Deploy 2 backfilled the oldest ORG_ADMIN of each organization to
+  ORG_OWNER, added the `org_membership_last_owner_guard` trigger (P0001 on any
+  delete or demotion that leaves an org with no owner; an organization's own
+  cascade passes), and moved the owner-only powers: `canManageOwners` (only an
+  owner promotes to, demotes or removes an owner; the role change is the ONE
+  writer of the value) and `canManageTenants`. A new organization is owned by
+  its creator. No org delete or rename exists; when one is built it is
+  owner-only. Test teardowns delete the ORGANIZATION, not its memberships.
 - `appPermissions` on `RequestContext` is already custom-role–aware
 - **An OWNER or AI_ADMIN membership never carries a custom role** (#3720, #3699).
   A custom role REPLACES the membership's permissions, so on an OWNER it was a

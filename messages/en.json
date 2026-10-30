@@ -13188,7 +13188,8 @@
       "failedRevokeInvite": "Failed to revoke invite ({status}).",
       "unexpectedRevokeInvite": "Unexpected error revoking invite.",
       "roleOrgOwner": "Org owner",
-      "ownerNeedsOwner": "Only an organization owner can change an owner's membership"
+      "ownerNeedsOwner": "Only an organization owner can change an owner's membership",
+      "orgOwnerDesc": "Everything an org admin can do, plus managing owners and the tenants under the organization. An organization always keeps at least one owner."
     },
     "audit": {
       "title": "Audit Log",

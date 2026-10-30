@@ -112,7 +112,8 @@ describeFn('getOrgServerContext — org context resolution (integration)', () =>
         expect(ctx.role).toBe('ORG_ADMIN');
         expect(ctx.permissions.canViewPortfolio).toBe(true);
         expect(ctx.permissions.canDrillDown).toBe(true);
-        expect(ctx.permissions.canManageTenants).toBe(true);
+        // Tenant management is the owner's since #4576 deploy 2.
+        expect(ctx.permissions.canManageTenants).toBe(false);
         expect(ctx.permissions.canManageMembers).toBe(true);
     });
 
