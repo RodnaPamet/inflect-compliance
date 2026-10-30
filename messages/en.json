@@ -7755,6 +7755,8 @@
       "dataHigh": "High"
     },
     "detail": {
+      "activationNeedsReview": "This vendor can't be made Active until an assessment has been sent and its review completed with a risk rating.",
+      "saveFailed": "Couldn't save the vendor. Please try again.",
       "crumbVendors": "Vendors",
       "crumbFallback": "Vendor",
       "notFound": "Vendor not found.",
@@ -11334,6 +11336,7 @@
     "crumbList": "Access Reviews",
     "title": "Access Reviews",
     "campaignsCount": "{count, plural, one {# campaign} other {# campaigns}}",
+    "truncatedHint": "Older campaigns are not listed.",
     "resourcePlural": "access reviews",
     "resourceSingular": "access review",
     "colCampaign": "Campaign",

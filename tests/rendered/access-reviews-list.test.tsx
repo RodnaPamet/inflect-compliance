@@ -5,7 +5,8 @@
  *   2. Renders one row per campaign with the status badge,
  *      progress bar, and detail-page link.
  *   3. Empty state renders when no campaigns exist.
- *   4. Truncation banner renders when the backfill cap fired.
+ *   4. Truncation banner renders when the backfill cap fired, with a
+ *      hint that fits a page with no filters.
  *   5. Clicking "New campaign" opens the create modal.
  */
 import * as React from 'react';
@@ -145,6 +146,27 @@ describe('AccessReviewsClient', () => {
             ),
         );
         expect(screen.getByTestId('access-reviews-empty')).toBeTruthy();
+    });
+
+    it('truncation banner names what is hidden, not filters the page does not have (#4530)', async () => {
+        (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(async () => ({
+            ok: true,
+            json: async () => ({ rows: [sample({ id: 'rev_1', name: 'Q1' })], truncated: true }),
+        }));
+        render(
+            withClient(
+                <AccessReviewsClient
+                    tenantSlug="acme"
+                    canCreate
+                    initialReviews={[sample({ id: 'rev_1', name: 'Q1' })]}
+                />,
+            ),
+        );
+        const banner = await screen.findByTestId('list-truncation-banner');
+        expect(banner).toHaveTextContent('Older campaigns are not listed.');
+        // The banner's default hint is the `refine` key; this page must not
+        // fall back to it.
+        expect(banner).not.toHaveTextContent('refine');
     });
 
     it('clicking New campaign opens the create modal', () => {

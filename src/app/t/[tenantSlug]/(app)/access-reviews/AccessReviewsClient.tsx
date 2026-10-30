@@ -252,7 +252,13 @@ export function AccessReviewsClient({ tenantSlug, initialReviews, canCreate }: P
                         />
                     ) : null}
                 </div>
-                {truncated ? <TruncationBanner truncated /> : null}
+                {/* This register has no filters, so the banner's default
+                    "refine your filters" hint would point at nothing (#4530).
+                    The list is newest first, so what the cap hides is the
+                    oldest campaigns. */}
+                {truncated ? (
+                    <TruncationBanner truncated hint={t('truncatedHint')} />
+                ) : null}
             </ListPageShell.Header>
             <ListPageShell.Body>
                 {reviews.length === 0 ? (

@@ -102,7 +102,7 @@ The {{ui:accessReviews.colStatus}} and {{ui:accessReviews.colProgress}} columns 
 | **No memberships matched the requested scope — the campaign would have zero subjects.** | Nobody in the workspace is in that scope | Choose a different scope |
 | A message that includes **REVIEWER_NOT_A_MEMBER** | The reviewer is not an active member of the workspace | Choose an active member |
 | **{{ui:accessReviews.createFailed}}** | The campaign was not created, and the server gave no reason | Try again |
-| A banner saying only the first 5,000 results are shown | The workspace has more than 5,000 campaigns, and the oldest are not listed. The page has no filters to narrow it | Open an older campaign from a link to it, such as its entry on the {{ui:calendar.title}} |
+| A banner saying only the first 5,000 results are shown, and **{{ui:accessReviews.truncatedHint}}** | The workspace has more than 5,000 campaigns, and the oldest are not listed. The page has no filters to narrow it | Open an older campaign from a link to it, such as its entry on the {{ui:calendar.title}} |
 
 ## Related
 
