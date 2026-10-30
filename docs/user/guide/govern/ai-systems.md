@@ -37,7 +37,7 @@ Use the register to keep track of every AI system in scope of the EU AI Act, to 
 | Column | What it shows |
 | --- | --- |
 | {{ui:risks.aiSystems.colSystem}} | The system's name, with its provider under it |
-| {{ui:risks.aiSystems.colRiskTier}} | Its tier, as a code: PROHIBITED, HIGH, LIMITED, MINIMAL, or UNCLASSIFIED for a provisional entry that nobody has classified |
+| {{ui:risks.aiSystems.colRiskTier}} | Its tier: {{ui:risks.aiSystems.filterEnums.riskTier.PROHIBITED}}, {{ui:risks.aiSystems.filterEnums.riskTier.HIGH}}, {{ui:risks.aiSystems.filterEnums.riskTier.LIMITED}}, {{ui:risks.aiSystems.filterEnums.riskTier.MINIMAL}}, or {{ui:risks.aiSystems.filterEnums.riskTier.UNCLASSIFIED}} for a provisional entry that nobody has classified |
 | {{ui:risks.aiSystems.colBasis}} | The article or annex of the Act that decided the tier |
 | {{ui:risks.aiSystems.colRole}} | Whether the workspace is the system's provider or its deployer |
 | {{ui:risks.aiSystems.colObligations}} | How many obligations its tier links it to |
@@ -65,7 +65,12 @@ An entry created when a discovered agent is taken into the agent register starts
 
 ### Generate conformity drafts
 
-On a high-risk system's page, **{{ui:risks.aiSystems.detail.conformityHeading}}** offers three documents: the technical documentation (Annex IV), the risk management record (Article 9) and the declaration of conformity (Annex V). Click one to have a draft written. {{ui:risks.aiSystems.detail.conformityHelp}} The button then reads **{{ui:risks.aiSystems.detail.queued}}**, and a link opens the {{ui:risks.aiSystems.detail.approvalQueue}}. Only roles that can read agent activity can open that queue, so an Editor who generates a draft cannot follow the link.
+On a high-risk system's page, **{{ui:risks.aiSystems.detail.conformityHeading}}** offers three documents: **{{ui:risks.aiSystems.detail.docTypes.ANNEX_IV_TECHNICAL_DOCUMENTATION}}**, **{{ui:risks.aiSystems.detail.docTypes.ART_9_RISK_MANAGEMENT}}** and **{{ui:risks.aiSystems.detail.docTypes.ANNEX_V_DECLARATION_OF_CONFORMITY}}**. Click one to have a draft written. {{ui:risks.aiSystems.detail.conformityHelp}} The button then reads **{{ui:risks.aiSystems.detail.queued}}**.
+
+What the page says next depends on whether you can read the workspace's agent proposals:
+
+- **If you can** (Owners and Admins), a link opens the {{ui:risks.aiSystems.detail.approvalQueue}}.
+- **If you cannot** (Editors), the page says: {{ui:risks.aiSystems.detail.draftsQueuedNoQueueSingular}} **{{ui:risks.aiSystems.detail.openPolicies}}** takes you there.
 
 ## What happens next
 

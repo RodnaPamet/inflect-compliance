@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { aiActTierTone } from '@/lib/eu-ai-act/tier-display';
+import { aiActTierTone, isKnownAiActTier } from '@/lib/eu-ai-act/tier-display';
 import { buildAiSystemFilters, AI_SYSTEM_FILTER_KEYS } from './filter-defs';
 import { NewAiSystemModal } from './NewAiSystemModal';
 
@@ -42,8 +42,6 @@ interface Props {
     tenantSlug: string;
     canWrite: boolean;
 }
-
-const ROLE_LABEL: Record<string, string> = { PROVIDER: 'Provider', DEPLOYER: 'Deployer' };
 
 export function AiSystemsClient(props: Props) {
     const tx = useTranslations('risks');
@@ -125,7 +123,9 @@ function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
                     accessorFn: (r) => r.riskTier,
                     cell: ({ row }) => (
                         <StatusBadge variant={aiActTierTone(row.original.riskTier)}>
-                            {row.original.riskTier}
+                            {isKnownAiActTier(row.original.riskTier)
+                                ? tx(`aiSystems.filterEnums.riskTier.${row.original.riskTier}`)
+                                : row.original.riskTier}
                         </StatusBadge>
                     ),
                 },
@@ -144,7 +144,13 @@ function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
                     header: tx('aiSystems.colRole'),
                     accessorFn: (r) => r.deploymentRole,
                     cell: ({ row }) => (
-                        <span className="text-content-muted">{ROLE_LABEL[row.original.deploymentRole] ?? row.original.deploymentRole}</span>
+                        <span className="text-content-muted">
+                            {row.original.deploymentRole === 'PROVIDER'
+                                ? tx('aiSystems.provider')
+                                : row.original.deploymentRole === 'DEPLOYER'
+                                  ? tx('aiSystems.deployer')
+                                  : row.original.deploymentRole}
+                        </span>
                     ),
                 },
                 {

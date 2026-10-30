@@ -25,3 +25,13 @@ export const AI_ACT_TIER_TONE: Readonly<Record<StoredAiRiskTier, AiActTierTone>>
 export function aiActTierTone(tier: string): AiActTierTone {
     return (AI_ACT_TIER_TONE as Record<string, AiActTierTone>)[tier] ?? 'warning';
 }
+
+/**
+ * Is this stored value a tier the catalogue labels
+ * (`risks.aiSystems.filterEnums.riskTier.*`)? Callers show the label when it
+ * is and the stored value when it is not, so an unknown tier is never shown
+ * as a missing-key path (#4638).
+ */
+export function isKnownAiActTier(tier: string): tier is StoredAiRiskTier {
+    return Object.prototype.hasOwnProperty.call(AI_ACT_TIER_TONE, tier);
+}
