@@ -79,12 +79,8 @@
  */
 import type { Prisma } from '@prisma/client';
 
-import {
-    SYSTEM_PRINCIPAL,
-    buildDelegatedJobContext,
-    buildSystemContext,
-} from '../context-system';
 import type { RequestContext } from '../types';
+import { passRequestRecord, resolvePassActor, type PassTrigger } from './identity-pass-requester';
 import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import { recordJoinerPassOutcome } from '@/lib/observability/integration-metrics';
@@ -393,10 +389,13 @@ function persistableDecisions(decisions: readonly JoinerDecision[]) {
 
 async function writeJoinerExecutionRow(
     ctx: RequestContext,
+    trigger: PassTrigger,
     provider: string,
     status: 'PASSED' | 'NOT_APPLICABLE' | 'ERROR',
-    resultJson: Prisma.InputJsonValue,
+    // An OBJECT, so the request block is added here rather than by each caller.
+    resultJson: Prisma.InputJsonObject,
 ): Promise<void> {
+    const request = passRequestRecord(trigger);
     await runInTenantContext(ctx, (db) =>
         db.integrationExecution.create({
             data: {
@@ -404,15 +403,17 @@ async function writeJoinerExecutionRow(
                 provider,
                 automationKey: `${provider}${JOINER_PASS_AUTOMATION_SUFFIX}`,
                 status,
-                // Derived, not asserted. Read off `ctx.userId` because that
-                // is the fact: a delegated context carries a real `User.id`, a
-                // system context carries SYSTEM_PRINCIPAL. `actorType` would
-                // NOT do — both builders set 'JOB', so it cannot tell them
-                // apart.
-                triggeredBy:
-                    ctx.userId && ctx.userId !== SYSTEM_PRINCIPAL ? 'manual' : 'scheduled',
+                // Read off the REQUEST, not off `ctx.userId` (#4400). A manual
+                // pass whose requester has lost the key runs under the
+                // scheduled pass's system context, and a `ctx.userId` check
+                // would record that run as `scheduled`. `actorType` would not
+                // do either: every context a pass runs under says 'JOB'.
+                triggeredBy: trigger.triggeredBy,
                 completedAt: new Date(),
-                resultJson,
+                // A manual pass says who asked, whose authority it carried,
+                // and why it was not theirs when it was refused. A scheduled
+                // pass's row carries no such block and is otherwise unchanged.
+                resultJson: request ? { ...resultJson, request } : resultJson,
             },
         }),
     );
@@ -429,12 +430,13 @@ async function writeJoinerExecutionRow(
  */
 async function safeRecordPlan(
     ctx: RequestContext,
+    trigger: PassTrigger,
     provider: string,
     plan: JoinerPlan,
     extra: Record<string, unknown>,
 ): Promise<void> {
     try {
-        await writeJoinerExecutionRow(ctx, provider, plan.refusal ? 'NOT_APPLICABLE' : 'PASSED', {
+        await writeJoinerExecutionRow(ctx, trigger, provider, plan.refusal ? 'NOT_APPLICABLE' : 'PASSED', {
             mode: plan.mode,
             clamp: plan.clamp,
             refusal: plan.refusal,
@@ -472,11 +474,12 @@ async function safeRecordPlan(
  */
 async function safeRecordErroredPass(
     ctx: RequestContext,
+    trigger: PassTrigger,
     provider: string,
     detail: string,
 ): Promise<void> {
     try {
-        await writeJoinerExecutionRow(ctx, provider, 'ERROR', {
+        await writeJoinerExecutionRow(ctx, trigger, provider, 'ERROR', {
             mode: 'unknown',
             refusal: null,
             detail: redactDirectoryIdentifiers(detail, null),
@@ -513,36 +516,37 @@ async function safeRecordErroredPass(
 export async function runIdentityJoinerPass(input: {
     tenantId: string;
     provider: string;
-    /** A real `User.id` when a human asked; absent for the 04:30 dispatch. */
+    /**
+     * A real `User.id` when a human asked; absent for the 04:30 dispatch. A
+     * claim about who asked, never a grant: their authority is re-read below.
+     */
     requestedByUserId?: string;
     now?: Date;
 }): Promise<JoinerPassResult> {
     const now = input.now ?? new Date();
-    // `context-system`, never `context` — the latter reaches @/lib/auth -> @/auth
-    // and dies in the worker, which has no Next request to hang a session on.
+    // WHOSE AUTHORITY, decided now rather than at enqueue (#4400, owner
+    // decision 2026-10-30), exactly as the leaver pass decides it. The route
+    // asserts `admin.tenant_lifecycle` when the pass is queued, and that check
+    // used to be the only one: the pass then acted as an ADMIN-shaped context
+    // attributed to the requester, so a pass queued by somebody since demoted
+    // or removed still ran with full ADMIN under their name — and at
+    // AUTOMATIC that is a directory account CREATED in their name.
     //
-    // DELEGATED when somebody asked, mirroring the leaver (#2870, #2895). The
-    // joiner writes to no directory today, so nothing here is a disable
-    // waiting to be misattributed — but the execution row is the artefact an
-    // operator reads to reconstruct a run, and it said `scheduled` for a run a
-    // named admin started from the button.
-    // ACCEPTED, NOT OVERLOOKED (#4388, owner decision 2026-10-26). The route
-    // that queues this asserts `admin.tenant_lifecycle`, so no under-privileged
-    // user reaches it. But that check happens at ENQUEUE and is never repeated
-    // HERE: a pass queued by somebody since demoted or removed still runs, with
-    // full ADMIN, attributed to them. `resolveMemberContext` is the primitive
-    // that would close it and refuse instead -- and refusing a leaver pass
-    // leaves a departing employee's accounts enabled, which is the quiet
-    // compliance miss this codebase treats as worse than the over-grant.
-    // Closing it properly needs the per-tenant SYSTEM `User` row (#4400), so
-    // the borrow is unnecessary at all and the refusal costs nothing.
-    const ctx = input.requestedByUserId
-        ? buildDelegatedJobContext({
-              tenantId: input.tenantId,
-              job: 'identity-joiner-pass',
-              onBehalfOf: input.requestedByUserId,
-          })
-        : buildSystemContext({ tenantId: input.tenantId, job: 'identity-joiner-pass' });
+    // Now the requester's real membership is resolved. If it is ACTIVE and
+    // still holds the key, the pass acts with THEIR authority and the journal
+    // names them. If not, the pass still runs, on the job's own authority, as
+    // the 04:30 pass does: refusing it would hold back a starter's account,
+    // and the schedule would run the same pass anyway, so the request changes
+    // only when it runs. It names nobody, and its row records the request and
+    // why it was refused. See `identity-pass-requester.ts`.
+    //
+    // Resolved BEFORE the try, so the catch below has a context to record the
+    // error under; `resolvePassActor` never throws.
+    const { ctx, trigger } = await resolvePassActor({
+        tenantId: input.tenantId,
+        job: 'identity-joiner-pass',
+        requestedByUserId: input.requestedByUserId,
+    });
 
     try {
         const policy = await getIdentityWritePolicy(ctx);
@@ -608,7 +612,7 @@ export async function runIdentityJoinerPass(input: {
         // called with a mode that means "decide only". Above it, the pass is
         // reachable only when `JOINER_MAX_MODE` permits — which is the clamp
         // doing its job, and now the ONLY thing between a plan and a create.
-        await safeRecordPlan(ctx, input.provider, plan, {
+        await safeRecordPlan(ctx, trigger, input.provider, plan, {
             observedAddresses: observed.addresses.length,
             observedTruncated: observed.truncated,
             linkFreshnessMs: JOINER_LINK_FRESHNESS_MS,
@@ -649,7 +653,7 @@ export async function runIdentityJoinerPass(input: {
             error: redactDirectoryIdentifiers(detail, null),
         });
         recordJoinerPassOutcome({ provider: input.provider, outcome: 'error' });
-        await safeRecordErroredPass(ctx, input.provider, detail);
+        await safeRecordErroredPass(ctx, trigger, input.provider, detail);
         return {
             status: 'ERROR',
             mode: 'unknown',

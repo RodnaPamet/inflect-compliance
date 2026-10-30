@@ -1126,6 +1126,9 @@ export interface IdentityJoinerPassPayload {
      * `triggeredBy: 'scheduled'` on every execution row and the route could
      * only put the requester in a log line. The leaver's fix (#2870) never
      * reached here because the joiner had nothing to thread.
+     *
+     * A claim about who ASKED, never a grant (#4400), as for the leaver: the
+     * pass re-reads this member's authority when it runs (`resolvePassActor`).
      */
     requestedByUserId?: string;
     /**
