@@ -858,8 +858,11 @@ jobs:
           # it off, the same 352 files peaked at 1.5-2.1 GB and kept 1.0-1.1
           # GB (diagnostic runs 41089355501 and 41088386042). Shard 7/7's
           # intermittent climb to ~10 GB ("Ineffective mark-compacts near heap
-          # limit", exit 134) runs the same files as its 2 GB runs; with the
-          # cache off it stayed under 2 GB in every run measured. It is a V8
+          # limit", exit 134) is the same accumulation, caught once (34 live
+          # contexts at file 100, 205 at file 300) where a normal run of the
+          # same files holds ~20; with the cache off it stayed under 2 GB in
+          # every run measured. See
+          # docs/implementation-notes/2026-10-30-shard-heap-runaway.md. It is a V8
           # flag that NODE_OPTIONS refuses ("not allowed in NODE_OPTIONS"), so
           # node runs jest's bin directly instead of through npx.
           # tests/guards/in-band-shard-heap-bound.test.ts holds the flag here.
