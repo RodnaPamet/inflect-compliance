@@ -10,6 +10,11 @@
  *   2. The "Evidence status" custom metric counts each row once. An approved
  *      item due in three weeks used to be in both "Due 8–30d" and "Current".
  *   3. Recent Activity is read only by a role that can read the audit log.
+ *   4. A MITIGATED risk leaves the severity figures too (owner decision,
+ *      2026-10-30): they count the risks still needing treatment, OPEN and
+ *      MITIGATING. The same risk is still OPEN to the deadline monitor and
+ *      the compliance calendar, which ask a different question (is a review
+ *      or acceptance still due?) and keep the wider line.
  */
 import { PrismaClient, Role, MembershipStatus } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -26,6 +31,10 @@ import {
 import { ratePostureAxes } from '@/lib/charts/posture-radar';
 import { resolveNextBestAction } from '@/components/ui/next-best-action-logic';
 import { runInTenantContext } from '@/lib/db-context';
+import { runDeadlineMonitor } from '@/app-layer/jobs/deadline-monitor';
+import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
+import { takeSnapshot } from '@/app-layer/usecases/risk-snapshot';
+import { getAutomationSuggestions } from '@/app-layer/usecases/automation-suggestions';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
@@ -71,6 +80,8 @@ async function seed() {
 }
 
 async function teardown() {
+    await globalPrisma.riskSnapshot.deleteMany({ where: { tenantId: TENANT_ID } });
+    await globalPrisma.portfolioSnapshot.deleteMany({ where: { tenantId: TENANT_ID } });
     await globalPrisma.evidence.deleteMany({ where: { tenantId: TENANT_ID } });
     await globalPrisma.risk.deleteMany({ where: { tenantId: TENANT_ID } });
     await globalPrisma.tenantMembership.deleteMany({ where: { tenantId: TENANT_ID } });
@@ -140,6 +151,108 @@ describeFn('Board figures (#4458)', () => {
                 (p) => p,
             );
             expect(action).toMatchObject({ id: 'high-risks', count: 1 });
+        });
+    });
+
+    describe('a mitigated risk leaves the severity figures, and stays open for deadlines', () => {
+        let mitigatedId = '';
+        beforeAll(async () => {
+            const risk = (
+                title: string,
+                score: number,
+                status: 'OPEN' | 'MITIGATING' | 'MITIGATED',
+                nextReviewAt: Date | null = null,
+            ) =>
+                globalPrisma.risk.create({
+                    data: { tenantId: TENANT_ID, title, inherentScore: score, score, status, nextReviewAt },
+                });
+            // The decision's case: a mitigated risk scoring 12, with a review
+            // due in three days so both deadline readers can see it.
+            mitigatedId = (await risk('mitigated high', 12, 'MITIGATED', days(3))).id;
+            await risk('mitigating critical', 16, 'MITIGATING');
+            await risk('open high', 12, 'OPEN');
+        });
+        afterAll(async () => {
+            await globalPrisma.riskSnapshot.deleteMany({ where: { tenantId: TENANT_ID } });
+            await globalPrisma.portfolioSnapshot.deleteMany({ where: { tenantId: TENANT_ID } });
+            await globalPrisma.risk.deleteMany({ where: { tenantId: TENANT_ID } });
+        });
+
+        it('"high/critical" and the bands count the open and mitigating risks only', async () => {
+            const ctx = ctxFor(Role.ADMIN);
+            const [stats, sev] = await runInTenantContext(ctx, (db) =>
+                Promise.all([
+                    DashboardRepository.getStats(db, ctx),
+                    DashboardRepository.getRiskBySeverity(db, ctx),
+                ]),
+            );
+            expect(stats.highRisks).toBe(2);
+            expect(sev).toEqual({ low: 0, medium: 0, high: 1, critical: 1 });
+            // The Risks card's headline still counts every risk.
+            expect(stats.risks).toBe(3);
+        });
+
+        it('the radar and the next step leave the mitigated risk out', async () => {
+            const exec = await getExecutiveDashboard(ctxFor(Role.ADMIN));
+            const risk = ratePostureAxes(exec, (a) => a).find((r) => r.key === 'risk');
+            // Two risks still need treatment and both are severe. Counting the
+            // mitigated one this read 0 of 3.
+            expect(risk).toMatchObject({ measured: 0, total: 2 });
+            const action = resolveNextBestAction(
+                {
+                    coveragePercent: 100,
+                    overdueEvidence: 0,
+                    overdueTasks: 0,
+                    highRisks: exec.stats.highRisks,
+                },
+                (p) => p,
+            );
+            expect(action).toMatchObject({
+                id: 'high-risks',
+                count: 2,
+                href: '/risks?score=10|25&status=OPEN,MITIGATING',
+            });
+        });
+
+        it('the deadline monitor still scans its review as an open risk', async () => {
+            const { items } = await runDeadlineMonitor({
+                tenantId: TENANT_ID,
+                now: new Date(),
+                windows: [30, 7, 1],
+            });
+            expect(items).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ entityType: 'RISK', entityId: mitigatedId }),
+                ]),
+            );
+        });
+
+        it('the compliance calendar still shows its review as due, not done', async () => {
+            const result = await getComplianceCalendarEvents(ctxFor(Role.ADMIN), {
+                from: days(-1),
+                to: days(30),
+            });
+            const review = result.events.find((e) => e.id === `RISK:${mitigatedId}:risk-review`);
+            expect(review).toBeDefined();
+            expect(review!.status).not.toBe('done');
+        });
+
+        it("the risk snapshot's open count was already open and mitigating", async () => {
+            // `riskStatusNeedsTreatment` replaced an inline OPEN || MITIGATING
+            // here with no change in what it counts.
+            await takeSnapshot(globalPrisma, TENANT_ID);
+            const portfolio = await globalPrisma.portfolioSnapshot.findFirstOrThrow({
+                where: { tenantId: TENANT_ID },
+            });
+            expect(portfolio.totalRiskCount).toBe(3);
+            expect(portfolio.openRiskCount).toBe(2);
+        });
+
+        it("the automation suggestions' active-risk count was already open and mitigating", async () => {
+            // Likewise an inline `in: ['OPEN', 'MITIGATING']`, now the shared filter.
+            const { suggestions } = await getAutomationSuggestions(ctxFor(Role.ADMIN));
+            const riskTask = suggestions.find((x) => x.id === 'risk-created-task');
+            expect(riskTask?.rationale).toMatch(/^2 risks are active/);
         });
     });
 

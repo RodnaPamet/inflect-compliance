@@ -15,6 +15,7 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
 import { resolveALE } from './fair-calculator';
+import { riskStatusNeedsTreatment } from '../domain/risk-status';
 
 /** Midnight UTC of the given instant — the per-day snapshot key. */
 function dayStart(now: Date): Date {
@@ -48,7 +49,9 @@ export async function takeSnapshot(
         const ale = resolveALE({ fairAle: r.fairAle, sleAmount: r.sleAmount, aroAmount: r.aroAmount });
         if (ale != null) { totalAle += ale; quantifiedCount += 1; if (ale > maxSingleAle) maxSingleAle = ale; }
         totalScore += r.score;
-        if (r.status === 'OPEN' || r.status === 'MITIGATING') openCount += 1;
+        // `openRiskCount` has always counted OPEN + MITIGATING: the risks still
+        // needing treatment, the line the Board's severity figures now draw too.
+        if (riskStatusNeedsTreatment(r.status)) openCount += 1;
         return {
             tenantId, riskId: r.id, score: r.score, inherentScore: r.inherentScore, residualScore: r.residualScore,
             likelihood: r.likelihood, impact: r.impact, status: String(r.status),

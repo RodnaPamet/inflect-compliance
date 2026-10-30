@@ -48,17 +48,18 @@ export interface NextBestAction {
 }
 
 /**
- * The Risks list filter for the population `highRisks` counts: OPEN risks
- * (not closed, not accepted) with an inherent score of 10 or more.
+ * The Risks list filter for the population `highRisks` counts: risks still
+ * needing treatment (Open or Mitigating; not mitigated, accepted or closed)
+ * with an inherent score of 10 or more.
  *
  * Spelled out rather than imported from `app-layer/domain/risk-status`,
  * because this module sits in the shared UI tree, which takes no domain
  * imports (`tests/guards/shared-ui-coupling-ratchet.test.ts`).
  * `tests/guards/next-best-action-discipline.test.ts` builds the expected href
- * FROM that module's `HIGH_RISK_SCORE_MIN` and `OPEN_RISK_STATUSES`, so the
- * two cannot drift apart unnoticed.
+ * FROM that module's `HIGH_RISK_SCORE_MIN` and `NEEDS_TREATMENT_RISK_STATUSES`,
+ * so the two cannot drift apart unnoticed.
  */
-const OPEN_HIGH_RISKS_QUERY = "score=10|25&status=OPEN,MITIGATING,MITIGATED";
+const HIGH_RISKS_NEEDING_TREATMENT_QUERY = "score=10|25&status=OPEN,MITIGATING";
 
 export function resolveNextBestAction(
     input: NextBestActionInput,
@@ -89,8 +90,9 @@ export function resolveNextBestAction(
             id: "high-risks",
             messageKey: "highRisks",
             count: input.highRisks,
-            // The same open, score-10-and-up population the count is of.
-            href: tenantHref(`/risks?${OPEN_HIGH_RISKS_QUERY}`),
+            // The same score-10-and-up population, still needing
+            // treatment, that the count is of.
+            href: tenantHref(`/risks?${HIGH_RISKS_NEEDING_TREATMENT_QUERY}`),
         };
     }
     if (input.coveragePercent < 80) {

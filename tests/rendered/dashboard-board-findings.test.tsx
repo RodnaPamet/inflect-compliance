@@ -350,12 +350,14 @@ describe('Task Status pie', () => {
 });
 
 describe('Risk Distribution slices', () => {
-    it('open the open risks in each band, as the band counts them', () => {
+    it('open the risks still needing treatment in each band, as the band counts them', () => {
         renderBoard();
         const card = document.getElementById('risk-distribution')!;
+        // Open and Mitigating only: the band leaves Mitigated risks out
+        // (owner decision, 2026-10-30), so the list it opens must too.
         expect(legendLink(card, 'Critical', 1)).toHaveAttribute(
             'href',
-            '/t/acme/risks?score=15|25&status=OPEN,MITIGATING,MITIGATED',
+            '/t/acme/risks?score=15|25&status=OPEN,MITIGATING',
         );
     });
 });
