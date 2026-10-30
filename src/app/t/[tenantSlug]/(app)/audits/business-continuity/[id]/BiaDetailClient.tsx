@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useToastWithUndo, useToast } from '@/components/ui/hooks';
+import { apiErrorMessage } from '@/lib/api-error';
 import { DependencyPickerRow, useDepTypeLabel } from '../BiaDependencyControls';
 import { buildBiaCriticalityLabels } from '../filter-defs';
 import { BiaLinkControlModal } from './BiaLinkControlModal';
@@ -89,7 +90,18 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 const CRITICALITY_VALUES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
 
-export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlug: string }) {
+/** The server's reason for a refusal, or `fallback` when it gave none. */
+async function refusalMessage(res: Response, fallback: string): Promise<string> {
+    const body: unknown = await res.json().catch(() => null);
+    return apiErrorMessage(body, fallback);
+}
+
+/**
+ * `canWrite` — may the viewer change this analysis? Every write behind the
+ * page takes `continuity.edit` and the write tier; without it the page is
+ * read-only rather than a set of buttons that each end in a refusal (#4632).
+ */
+export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail; tenantSlug: string; canWrite: boolean }) {
     const tx = useTranslations('audits');
     const router = useRouter();
     const toast = useToast();
@@ -119,13 +131,16 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
     const [deleting, setDeleting] = useState(false);
     const biaBase = `/api/t/${tenantSlug}/business-continuity/${bia.id}`;
 
-    // PUT a partial patch; the API validates via UpdateBiaSchema.
+    // PUT a partial patch; the API validates via UpdateBiaSchema. A refusal
+    // is shown with the server's reason, so a validation error and a
+    // permission refusal no longer read the same.
     const putBia = async (patch: Record<string, unknown>): Promise<boolean> => {
         const res = await fetch(biaBase, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(patch),
         });
+        if (!res.ok) toast.error(await refusalMessage(res, tx('biaDetail.saveFailed')));
         return res.ok;
     };
 
@@ -135,8 +150,6 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
             if (await putBia({ reviewedAt: new Date().toISOString() })) {
                 toast.success(tx('biaDetail.reviewedToast'));
                 router.refresh();
-            } else {
-                toast.error(tx('biaDetail.saveFailed'));
             }
         } finally { setBusy(false); }
     };
@@ -146,7 +159,7 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
         if (res.ok) {
             router.push(`/t/${tenantSlug}/audits/business-continuity`);
         } else {
-            toast.error(tx('biaDetail.deleteFailed'));
+            toast.error(await refusalMessage(res, tx('biaDetail.deleteFailed')));
         }
     };
 
@@ -158,7 +171,7 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(draft),
             });
-            if (!res.ok) throw new Error(tx('biaDetail.addDependencyFailed'));
+            if (!res.ok) throw new Error(await refusalMessage(res, tx('biaDetail.addDependencyFailed')));
             router.refresh();
         } catch (e) {
             setDepError(e instanceof Error ? e.message : tx('biaDetail.addDependencyFailed'));
@@ -181,8 +194,9 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
         });
     };
 
+    const critLabels = buildBiaCriticalityLabels((k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]));
     const metaItems: MetaItem[] = [
-        { kind: 'status', label: tx('biaDetail.metaCriticality'), value: bia.criticality, variant: CRITICALITY_VARIANT[bia.criticality] ?? 'neutral' },
+        { kind: 'status', label: tx('biaDetail.metaCriticality'), value: critLabels[bia.criticality] ?? bia.criticality, variant: CRITICALITY_VARIANT[bia.criticality] ?? 'neutral' },
     ];
     if (bia.recovery) metaItems.push({ kind: 'status', label: tx('biaDetail.metaRecovery'), value: `#${bia.recovery.rank}`, variant: 'info' });
     if (bia.ownerUser) metaItems.push({ kind: 'text', label: tx('biaDetail.metaOwner'), value: bia.ownerUser.name ?? bia.ownerUser.email });
@@ -212,6 +226,7 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
             title={bia.name}
             meta={<MetaStrip items={metaItems} />}
             actions={
+                canWrite ? (
                 <>
                     <Button variant="secondary" size="sm" onClick={markReviewed} disabled={busy} id="bia-mark-reviewed-btn">
                         {tx('biaDetail.markReviewed')}
@@ -223,6 +238,7 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
                         {tx('biaDetail.delete')}
                     </Button>
                 </>
+                ) : undefined
             }
         >
             <div className="space-y-section">
@@ -253,10 +269,10 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
                     <ImpactProfileEditor
                         tx={tx}
                         initial={bia.impactProfile ?? []}
+                        readOnly={!canWrite}
                         onSave={async (profile) => {
                             const ok = await putBia({ impactProfile: profile });
                             if (ok) { toast.success(tx('biaDetail.saveToast')); router.refresh(); }
-                            else toast.error(tx('biaDetail.saveFailed'));
                             return ok;
                         }}
                     />
@@ -283,6 +299,7 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
                                             <span className="text-content-muted">{d.targetName ?? tx('biaDetail.depMissing')}</span>
                                         )}
                                     </span>
+                                    {canWrite && (
                                     <button
                                         type="button"
                                         onClick={() => removeDependency(d)}
@@ -291,10 +308,12 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
                                     >
                                         {tx('biaDetail.depRemove')}
                                     </button>
+                                    )}
                                 </li>
                             ))}
                         </ul>
                     )}
+                    {canWrite && (
                     <div className="space-y-tight">
                         <DependencyPickerRow
                             tenantSlug={tenantSlug}
@@ -303,6 +322,7 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
                         />
                         {depError && <p className="text-sm text-content-error">{depError}</p>}
                     </div>
+                    )}
                 </Section>
 
                 <Section title={tx('biaDetail.secLinked')}>
@@ -328,8 +348,8 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
                             size="sm"
                             variant="missing-prereqs"
                             title={tx('biaDetail.noControlsTitle')}
-                            description={tx('biaDetail.linkControlPrompt')}
-                            primaryAction={{ label: tx('biaDetail.linkControlAction'), onClick: () => setShowLinkControl(true) }}
+                            description={canWrite ? tx('biaDetail.linkControlPrompt') : undefined}
+                            primaryAction={canWrite ? { label: tx('biaDetail.linkControlAction'), onClick: () => setShowLinkControl(true) } : undefined}
                         />
                     ) : (
                         <div className="space-y-default">
@@ -354,9 +374,11 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
                                     )}
                                 </div>
                             ))}
+                            {canWrite && (
                             <Button variant="secondary" onClick={() => setShowLinkControl(true)}>
                                 {tx('biaDetail.linkControlAction')}
                             </Button>
+                            )}
                         </div>
                     )}
                 </Section>
@@ -392,7 +414,6 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
                         try {
                             const ok = await putBia(patch);
                             if (ok) { toast.success(tx('biaDetail.saveToast')); setEditing(false); router.refresh(); }
-                            else toast.error(tx('biaDetail.saveFailed'));
                         } finally { setBusy(false); }
                     }}
                     saving={busy}
@@ -416,11 +437,13 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
 // ── Impact-profile editor — the core BIA output (financial / operational /
 // reputational / legal impact ramping over time), previously render-only. ──
 function ImpactProfileEditor({
-    tx, initial, onSave,
+    tx, initial, onSave, readOnly,
 }: {
     tx: ReturnType<typeof useTranslations>;
     initial: ImpactPoint[];
     onSave: (profile: ImpactPoint[]) => Promise<boolean>;
+    /** Shows the profile without the means to change it. */
+    readOnly: boolean;
 }) {
     const [rows, setRows] = useState<ImpactPoint[]>(initial);
     const [saving, setSaving] = useState(false);
@@ -450,15 +473,18 @@ function ImpactProfileEditor({
                     <div />
                     {rows.map((p, i) => (
                         <div key={i} className="contents">
-                            <Input className="h-8 py-0" type="text" inputMode="numeric" value={String(p.atHours ?? '')} onChange={(e) => setCell(i, 'atHours', e.target.value)} aria-label={tx('biaDetail.impactAt')} />
+                            <Input className="h-8 py-0" type="text" inputMode="numeric" readOnly={readOnly} value={String(p.atHours ?? '')} onChange={(e) => setCell(i, 'atHours', e.target.value)} aria-label={tx('biaDetail.impactAt')} />
                             {DIMS.map(([k]) => (
-                                <Input key={k} className="h-8 py-0" type="text" inputMode="numeric" value={p[k] != null ? String(p[k]) : ''} onChange={(e) => setCell(i, k, e.target.value)} />
+                                <Input key={k} className="h-8 py-0" type="text" inputMode="numeric" readOnly={readOnly} value={p[k] != null ? String(p[k]) : ''} onChange={(e) => setCell(i, k, e.target.value)} />
                             ))}
+                            {readOnly ? <div /> : (
                             <button type="button" onClick={() => removeRow(i)} className="text-content-muted hover:text-content-error text-xs" aria-label={tx('biaDetail.depRemove')}>{tx('biaDetail.depRemove')}</button>
+                            )}
                         </div>
                     ))}
                 </div>
             )}
+            {!readOnly && (
             <div className="flex gap-tight">
                 <Button variant="ghost" size="sm" onClick={addRow} id="bia-impact-add-row">{tx('biaDetail.impactAddPoint')}</Button>
                 {dirty && (
@@ -467,6 +493,7 @@ function ImpactProfileEditor({
                     </Button>
                 )}
             </div>
+            )}
         </div>
     );
 }

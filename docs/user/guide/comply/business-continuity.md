@@ -17,7 +17,7 @@ Open **{{ui:nav.audits}}** under **{{ui:nav.comply}}** in the sidebar, then clic
 | Open the register and any analysis | Every role: Owner, Admin, Editor, Reader, Auditor and AI admin |
 | Create, edit, review or delete an analysis, and change its dependencies, impact profile and controls | Owner, Admin, Editor |
 
-The **{{ui:audits.bia.addBia}}** button appears only for Owners, Admins and Editors. An analysis's own page shows its **{{ui:audits.biaDetail.markReviewed}}**, **{{ui:audits.biaDetail.edit}}**, **{{ui:audits.biaDetail.delete}}** and other change buttons to every role, but only the roles above can use them: for anyone else the change fails with a message that it could not be saved.
+The **{{ui:audits.bia.addBia}}** button, and the change buttons on an analysis's own page, appear only for those roles. For anyone else an analysis's page is read-only: it shows everything, including the impact profile, with nothing to change.
 
 If your workspace uses custom roles, changing analyses needs both an editing role and your custom role's permission to edit business continuity.
 
@@ -27,7 +27,7 @@ Use the register to plan for disruption: which processes matter most, how long e
 
 ## What you see
 
-**The header.** The title, and a line counting the processes analysed, how many are critical and how many reviews are overdue. Owners, Admins and Editors also see **{{ui:audits.bia.addBia}}**, with a plus sign.
+**The header.** The title, and a line counting the processes analysed in the whole register, how many are critical and how many reviews are overdue. Owners, Admins and Editors also see **{{ui:audits.bia.addBia}}**, with a plus sign.
 
 **The filter.** Filter by **{{ui:audits.bia.fieldCriticality}}**: {{ui:audits.bia.crit.CRITICAL}}, {{ui:audits.bia.crit.HIGH}}, {{ui:audits.bia.crit.MEDIUM}} or {{ui:audits.bia.crit.LOW}}.
 
@@ -35,16 +35,18 @@ Use the register to plan for disruption: which processes matter most, how long e
 
 | Column | What it shows |
 | --- | --- |
-| # | Its place in the recovery order. 1 recovers first |
+| # | Its place in the recovery order of the whole register, the same number its own page shows. 1 recovers first |
 | {{ui:audits.bia.colProcess}} | The process or service, with the process-map step it is attached to, if any |
-| {{ui:audits.bia.colCriticality}} | How critical it is, as the stored level in capitals, such as CRITICAL |
-| RTO | The recovery time objective: how many hours it may take to bring the process back |
-| RPO | The recovery point objective: how many hours of data you can afford to lose |
-| MTPD | The maximum tolerable period of disruption: how many hours before the outage becomes unacceptable |
+| {{ui:audits.bia.colCriticality}} | How critical it is: {{ui:audits.bia.crit.CRITICAL}}, {{ui:audits.bia.crit.HIGH}}, {{ui:audits.bia.crit.MEDIUM}} or {{ui:audits.bia.crit.LOW}} |
+| {{ui:audits.bia.colRto}} | The recovery time objective: how many hours it may take to bring the process back |
+| {{ui:audits.bia.colRpo}} | The recovery point objective: how many hours of data you can afford to lose |
+| {{ui:audits.bia.colMtpd}} | The maximum tolerable period of disruption: how many hours before the outage becomes unacceptable |
 | {{ui:audits.bia.colOwner}} | The person responsible for it |
 | {{ui:audits.bia.colReviewed}} | When it was last reviewed, or **{{ui:audits.bia.reviewOverdue}}** when it has never been reviewed or the last review is more than a year old |
 
 The recovery order puts the most critical processes first. Among equally critical ones, the shortest tolerable disruption comes first, then the shortest recovery time. An analysis with no tolerable disruption set sorts after those that have one.
+
+The register shows up to 200 analyses, the first 200 in recovery order. When the workspace has more, a notice above the table says so, and the filter then applies only to the analyses shown.
 
 Click a row to open the analysis.
 
@@ -87,13 +89,14 @@ An analysis's page shows its **{{ui:audits.biaDetail.secRecoveryObjectives}}**, 
 | --- | --- | --- |
 | **{{ui:audits.bia.emptyTitle}}** | The workspace has no analyses | Owners, Admins and Editors click **{{ui:audits.bia.addBia}}** |
 | **{{ui:audits.bia.emptyMatchTitle}}** | No analysis matches the filter | {{ui:audits.bia.emptyMatchDesc}} |
-| **{{ui:audits.bia.createFailed}}** | The analysis was not created | Check that it has a name and a criticality, then try again |
+| **{{ui:audits.bia.createFailed}}**, or the reason the server gave | The analysis was not created | Follow the reason given, then try again |
 | **{{ui:audits.bia.depLoadFailed}}** | The records to pick a dependency from did not load | Choose the type again |
-| **{{ui:audits.biaDetail.saveFailed}}** | The change was not saved. Your role may not change analyses | Check your role, then try again |
-| **{{ui:audits.biaDetail.addDependencyFailed}}** | The dependency was not added | Try again |
-| **{{ui:audits.biaDetail.linkControlFailed}}** | The control was not linked | Try again |
-| **{{ui:audits.biaDetail.deleteFailed}}** | The analysis was not deleted | Check your role, then try again |
-| **{{ui:audits.biaDetail.noControlsTitle}}** | The analysis is not evidence for any control yet | Click **{{ui:audits.biaDetail.linkControlAction}}** |
+| **{{ui:audits.biaDetail.saveFailed}}**, or the reason the server gave | The change was not saved | Follow the reason given, then try again |
+| **{{ui:audits.biaDetail.addDependencyFailed}}**, or the reason the server gave | The dependency was not added | Follow the reason given, then try again |
+| **{{ui:audits.biaDetail.linkControlFailed}}**, or the reason the server gave | The control was not linked | Follow the reason given, then try again |
+| **{{ui:audits.biaDetail.deleteFailed}}**, or the reason the server gave | The analysis was not deleted | Follow the reason given, then try again |
+| **{{ui:audits.biaDetail.noControlsTitle}}** | The analysis is not evidence for any control yet | Owners, Admins and Editors click **{{ui:audits.biaDetail.linkControlAction}}** |
+| A notice that only the first results are shown | The workspace has more than 200 analyses | Nothing to fix; the register shows the 200 that recover first |
 
 ## Related
 

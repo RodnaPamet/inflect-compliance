@@ -30,7 +30,8 @@ export const GET = withApiErrorHandling(
         if (processNodeId) {
             return jsonResponse({ rows: await getBiasForProcessNode(ctx, processNodeId) });
         }
-        return jsonResponse({ rows: await listBias(ctx, { criticality: sp.get('criticality') ?? undefined }) });
+        // `{ rows, truncated, rankComplete, summary }` — `rows` as before.
+        return jsonResponse(await listBias(ctx, { criticality: sp.get('criticality') ?? undefined }));
     },
 );
 
