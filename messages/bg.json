@@ -11688,6 +11688,7 @@
     "newTaskOnDay": "Нова задача за този ден",
     "ganttEmpty": "Няма крайни срокове в този период.",
     "clickDay": "Кликнете върху ден, за да видите събитията на тази дата.",
+    "clickDayTimeline": "Времевата линия няма дни за избиране. Превключете на „Месец“ или „Топлинна карта“, за да отворите ден.",
     "eventsEmptyDay": "Няма събития за този ден.",
     "heatmapWindowLabel": "Изминала година + следващите 6 месеца",
     "ganttWindowLabel": "12-месечна хронология (фиксиран прозорец)",
@@ -11719,7 +11720,9 @@
       "treatment-milestone-due": "Етап",
       "treatment-plan-target": "Целева дата на план",
       "finding-due": "Предстояща констатация",
-      "agent-harness-acceptance-expiry": "Изтичане на приемане на harness недостиг"
+      "agent-harness-acceptance-expiry": "Изтичане на приемане на harness недостиг",
+      "vulnerability-remediation-due": "Срок за отстраняване на уязвимост",
+      "audit-scheduled": "Планиран одит"
     },
     "category": {
       "evidence": "Доказателства",
@@ -11756,7 +11759,9 @@
       "finding": "Констатации",
       "treatment-milestone": "Етапи на третиране",
       "treatment-plan": "Планове за третиране",
-      "agent-harness-acceptance": "Приемания на harness недостиг"
+      "agent-harness-acceptance": "Приемания на harness недостиг",
+      "asset-vulnerability": "Уязвимости на активи",
+      "audit": "Одити"
     },
     "filterAria": "Филтриране на крайни срокове по категория",
     "myDeadlines": "Моите крайни срокове",
