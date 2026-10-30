@@ -1014,9 +1014,10 @@ for [`convaiinnovations/laya-multilingual`](https://huggingface.co/convaiinnovat
 - **The mode picks the model.** `TenantSecuritySettings.legacyMatchAiMode` is `OFF`
   (the default), `LOCAL_ONLY` (Laya) or `EXTERNAL` (Jev).
   - The effective mode is the stricter of this setting and `aiResidency`.
-  - Saving `LOCAL_ONLY` with no Laya deployed is refused, just as
-    `aiResidency=LOCAL_ONLY` is refused without `aiLocalBaseUrl`
-    (`src/app-layer/usecases/tenant-security-settings.ts:362-367`).
+  - Saving `LOCAL_ONLY` with no Laya deployed is refused, because that mode cannot be
+    served. `aiResidency=LOCAL_ONLY` is different: it needs no gateway, because with
+    none every consumer stops rather than sends (`updateTenantSecurityConfig` in
+    `src/app-layer/usecases/tenant-security-settings.ts`).
 - **Inflect speaks one API** from `src/app-layer/ai/identity-match/`: one wire codec and
   three providers.
   - **Jev's** host is a code constant, so the external side is no fetch primitive.

@@ -31,6 +31,7 @@ function orgCtx(perms: Partial<OrgPermissionSet>): OrgContext {
             canConfigureDashboard: true,
             canSetThreatLevel: true,
             canSetMaturity: true,
+            canManageAgentSwitches: true,
             ...perms,
         },
     };

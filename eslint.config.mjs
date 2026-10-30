@@ -671,6 +671,32 @@ const config = [
             'local/require-test-prisma-transaction-budget': 'error',
         },
     },
+    {
+        // #4579 — a promise nobody awaits rejects into nothing: no error
+        // reaches the caller, the job or the request, and nothing is logged.
+        // The rule had never run anywhere. Scoped to the server code, where a
+        // swallowed rejection is both invisible and consequential (a usecase,
+        // a job, a library call), and where it measured 0 hits in app-layer
+        // and 2 intentional ones in lib, each disabled in place with its
+        // reason. The UI's ~165 hits are React handlers and effects whose
+        // callees handle their own errors; extending the rule to `.tsx` is a
+        // separate decision, not carried in on this one.
+        //
+        // The rule is TYPE-AWARE, so this block gives its files a TypeScript
+        // program (`projectService`). Do not try it with `eslint --rule`: that
+        // cannot load type information, exits 2 with a plugin error and
+        // reports nothing, which reads like a clean pass.
+        files: ['src/app-layer/**/*.ts', 'src/lib/**/*.ts', 'src/lib/**/*.tsx'],
+        languageOptions: {
+            parserOptions: {
+                projectService: true,
+                tsconfigRootDir: import.meta.dirname,
+            },
+        },
+        rules: {
+            '@typescript-eslint/no-floating-promises': 'error',
+        },
+    },
 ];
 
 export default config;
