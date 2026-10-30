@@ -8,33 +8,58 @@
  * For multi-instance, swap to Redis-backed limiter.
  *
  * This module is intentionally simple and dependency-free.
+ *
+ * ── NO TIMER, AND WHY (#4613) ──────────────────────────────────────────
+ *
+ * Stale keys are swept on a caller's turn, at most once per
+ * `SWEEP_INTERVAL_MS`, instead of by a module-level `setInterval`. An
+ * interval that is never cleared holds its callback, and the callback holds
+ * this module's scope, for the life of the process. In a server that is one
+ * module and harmless. Under Jest's in-band runner every test file loads its
+ * own copy of this module, so every file that touched the limiter left a
+ * five-minute interval behind that kept that file's whole module graph alive
+ * to the end of the shard. Heap snapshots of a shard 7/7 file run locally and
+ * of shard 2/7 on CI both traced retained test contexts to
+ * `TimersList[300000] → Timeout → _onTimeout → this module`.
+ *
+ * The sweep also judges each key by ITS OWN window. The interval swept every
+ * key with the window of whichever caller started it, so a one-minute preset
+ * that ran first trimmed a one-hour login-failure history to its last minute
+ * every five minutes, and a lockout counted over an hour was forgotten in
+ * five.
  */
 
 interface RateLimitEntry {
     timestamps: number[];
+    /** The longest window this key has been counted over. A key is stale once nothing is inside it. */
+    windowMs: number;
 }
 
 const store = new Map<string, RateLimitEntry>();
 
-// Clean up stale entries every 5 minutes
-const CLEANUP_INTERVAL = 5 * 60 * 1000;
-let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+/** How often a caller's turn may also sweep stale keys. */
+const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+let lastSweepAt = 0;
 
-function startCleanup(windowMs: number) {
-    if (cleanupTimer) return;
-    cleanupTimer = setInterval(() => {
-        const now = Date.now();
-        for (const [key, entry] of store) {
-            entry.timestamps = entry.timestamps.filter(t => now - t < windowMs);
-            if (entry.timestamps.length === 0) {
-                store.delete(key);
-            }
-        }
-    }, CLEANUP_INTERVAL);
-    // Allow Node.js to exit even if timer is running
-    if (cleanupTimer && typeof cleanupTimer === 'object' && 'unref' in cleanupTimer) {
-        cleanupTimer.unref();
+/**
+ * Drop every key with no attempt inside its own window, at most once per
+ * `SWEEP_INTERVAL_MS`. Only whole keys go: a timestamp inside its key's window
+ * is never touched here, so no decision can differ from one made without the
+ * sweep — every check filters to its own window first.
+ */
+function sweepStale(now: number): void {
+    if (now - lastSweepAt < SWEEP_INTERVAL_MS) return;
+    lastSweepAt = now;
+    for (const [key, entry] of store) {
+        if (!entry.timestamps.some((t) => now - t < entry.windowMs)) store.delete(key);
     }
+}
+
+/** The key's entry, its window widened to `windowMs` if that is longer. */
+function entryFor(key: string, windowMs: number): RateLimitEntry {
+    const entry = store.get(key) ?? { timestamps: [], windowMs };
+    if (windowMs > entry.windowMs) entry.windowMs = windowMs;
+    return entry;
 }
 
 export interface RateLimitConfig {
@@ -73,10 +98,9 @@ export function checkRateLimit(
     config: RateLimitConfig,
     units = 1,
 ): RateLimitResult {
-    startCleanup(config.windowMs);
-
     const now = Date.now();
-    const entry = store.get(key) || { timestamps: [] };
+    sweepStale(now);
+    const entry = entryFor(key, config.windowMs);
 
     // Remove timestamps outside the window
     const windowStart = now - config.windowMs;
@@ -139,10 +163,12 @@ export function resetRateLimit(key: string): void {
  */
 export function clearAllRateLimits(): void {
     store.clear();
-    if (cleanupTimer) {
-        clearInterval(cleanupTimer);
-        cleanupTimer = null;
-    }
+    lastSweepAt = 0;
+}
+
+/** For testing: how many keys the limiter is holding, so a test can see the sweep. */
+export function rateLimitKeyCount(): number {
+    return store.size;
 }
 
 // ─── Preset Configurations ──────────────────────────────────────────
@@ -504,17 +530,16 @@ function pickDelayMs(
  * to delay (and whether to short-circuit with a lockout response).
  *
  * Reuses the same sliding-window store the other rate-limit functions
- * in this file already use — one process-wide Map, cleanup timer
- * already running.
+ * in this file already use — one process-wide Map, swept on a caller's
+ * turn (see the header).
  */
 export function evaluateProgressiveRateLimit(
     key: string,
     policy: ProgressiveRateLimitPolicy,
 ): ProgressiveRateLimitDecision {
-    startCleanup(policy.windowMs);
-
     const now = Date.now();
-    const entry = store.get(key) || { timestamps: [] };
+    sweepStale(now);
+    const entry = entryFor(key, policy.windowMs);
 
     // Expire stale failures out of the count but keep the entry
     // stored; caller may be about to write a new failure.
@@ -568,9 +593,9 @@ export function recordProgressiveFailure(
     key: string,
     policy: ProgressiveRateLimitPolicy,
 ): ProgressiveRateLimitDecision {
-    startCleanup(policy.windowMs);
     const now = Date.now();
-    const entry = store.get(key) || { timestamps: [] };
+    sweepStale(now);
+    const entry = entryFor(key, policy.windowMs);
     // Trim the window before writing so the count we return is
     // current.
     const windowStart = now - policy.windowMs;
