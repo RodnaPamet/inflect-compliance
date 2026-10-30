@@ -13,7 +13,10 @@
  *     naming the tool;
  *   • a ceiling above the agent's own level is refused at the mint, so the
  *     wizard's "may only be lowered" is the usecase's rule too, not only the
- *     picker's.
+ *     picker's;
+ *   • retiring the agent revokes the key in the same cascade, and the next call
+ *     with it is 401 at `/api/mcp` and at a REST route (Step 3H, #4157). Last,
+ *     because it retires the suite's agent.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -25,6 +28,8 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { createApiKey } from '@/app-layer/usecases/api-keys';
 import { connectKeyScopes } from '@/lib/agentic/connect-wizard';
 import { POST } from '@/app/api/mcp/route';
+import { GET as listRisks } from '@/app/api/t/[tenantSlug]/risks/route';
+import { retireRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
@@ -44,14 +49,26 @@ let key = '';
 
 const ownerCtx = () => makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: OWNER });
 
-async function callTool(name: string): Promise<unknown> {
+async function callToolResponse(name: string): Promise<Response> {
     const req = new NextRequest('http://localhost/api/mcp', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} } }),
     });
-    const res = await POST(req, { params: Promise.resolve({}) } as never);
-    return res.json();
+    return POST(req, { params: Promise.resolve({}) } as never);
+}
+
+async function callTool(name: string): Promise<unknown> {
+    return (await callToolResponse(name)).json();
+}
+
+/** A REST read with the same key, as a partner integration would make it. */
+async function restRead(): Promise<Response> {
+    const req = new NextRequest(`http://localhost/api/t/${TENANT}/risks`, {
+        method: 'GET',
+        headers: { authorization: `Bearer ${key}` },
+    });
+    return listRisks(req, { params: Promise.resolve({ tenantSlug: TENANT }) } as never);
 }
 
 const contentOf = (json: unknown) => (json as { result?: { content?: unknown[] } })?.result?.content;
@@ -149,5 +166,19 @@ describeFn('a key minted by the connect wizard reaches only its agent\'s grants 
             }),
         ).rejects.toThrow(/exceeds the agent's own registered level/);
         expect(await prisma.tenantApiKey.count({ where: { tenantId: TENANT } })).toBe(1);
+    });
+
+    it('retiring the agent revokes the key in the same cascade, and a call with it afterwards is 401', async () => {
+        // Positive controls: the key works at both doors before the retirement.
+        expect((await callToolResponse(GRANTED)).status).toBe(200);
+        expect((await restRead()).status).toBe(200);
+
+        const retired = await retireRegisteredAgent(ownerCtx(), agentId);
+        expect(retired).toMatchObject({ status: 'RETIRED' });
+        const row = await prisma.tenantApiKey.findFirstOrThrow({ where: { tenantId: TENANT, agentId }, select: { revokedAt: true } });
+        expect(row.revokedAt).not.toBeNull();
+
+        expect((await callToolResponse(GRANTED)).status).toBe(401);
+        expect((await restRead()).status).toBe(401);
     });
 });

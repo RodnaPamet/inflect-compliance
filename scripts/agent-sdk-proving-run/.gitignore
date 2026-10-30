@@ -1,0 +1,5 @@
+# The snippet pasted from the connect wizard: it names the proving tenant's
+# origin and stays on the machine that runs it.
+agent.ts
+node_modules/
+package-lock.json
