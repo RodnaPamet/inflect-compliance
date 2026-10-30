@@ -35,11 +35,7 @@ import {
     type CustomRoleForCarriage,
 } from '@/lib/roles';
 import { CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER } from '@/lib/custom-role-grant-refusal';
-import {
-    PERSONNEL_MANAGE_NEEDS_ADMIN_BASE,
-    mayHoldPersonnelManage,
-    statesPersonnelManage,
-} from '@/lib/personnel-manage-rule';
+import { PERMISSION_NEEDS_ADMIN_BASE, grantsNeedingAdminBase } from '@/lib/custom-role-admin-base-rule';
 import type { Role } from '@prisma/client';
 
 /**
@@ -176,7 +172,7 @@ export async function createCustomRole(ctx: RequestContext, input: CreateCustomR
 
     // A role may not contain more authority than its author holds.
     assertGrantWithinOwnAuthority(ctx, input.permissionsJson, input.baseRole);
-    assertPersonnelManageOnAdminBase(input.permissionsJson, input.baseRole);
+    assertAdminBaseOnlyPermissions(input.permissionsJson, input.baseRole);
 
     return runInTenantContext(ctx, async (db) => {
         // Check for a duplicate name among the tenant's LIVE roles.
@@ -295,7 +291,7 @@ export async function updateCustomRole(
         // two halves the rule is about: a rename of a legacy role must not be
         // refused for a grant the rename does not touch.
         if (input.permissionsJson !== undefined || input.baseRole !== undefined) {
-            assertPersonnelManageOnAdminBase(
+            assertAdminBaseOnlyPermissions(
                 input.permissionsJson !== undefined ? input.permissionsJson : existing.permissionsJson,
                 input.baseRole !== undefined ? input.baseRole : existing.baseRole,
             );
@@ -310,13 +306,14 @@ export async function updateCustomRole(
         //
         // LAST, on purpose: the two checks above are about the role's own
         // content and read nothing, this one is about who carries it and reads
-        // the memberships. So when a save breaks both kinds (personnel.manage
-        // on a non-ADMIN base AND a new admin-only key for a non-ADMIN
-        // carrier), the content refusal (400, PERSONNEL_MANAGE_NEEDS_ADMIN_BASE)
-        // is the one returned, and the carriage refusal follows once it is
-        // fixed. The two never ask contradictory fixes of one save: personnel
-        // .manage needs an ADMIN base, which a non-ADMIN carrier refuses, so
-        // the only way to satisfy both is to switch personnel.manage off.
+        // the memberships. So when a save breaks both kinds (an
+        // Admin-base-only permission on a non-ADMIN base AND a new admin-only
+        // key for a non-ADMIN carrier), the content refusal (400,
+        // PERMISSION_NEEDS_ADMIN_BASE) is the one returned, and the carriage
+        // refusal follows once it is fixed. The two never ask contradictory
+        // fixes of one save: an Admin-base-only permission needs an ADMIN
+        // base, which a non-ADMIN carrier refuses, so the fixes that satisfy
+        // both are to switch it off, or to make every carrier ADMIN first.
         await assertCustomRoleSaveCarriableInTx(db, ctx, roleId, existing, {
             baseRole: input.baseRole !== undefined ? input.baseRole : existing.baseRole,
             permissionsJson:
@@ -430,15 +427,19 @@ function assertGrantWithinOwnAuthority(
 }
 
 /**
- * Only an ADMIN-based custom role may hold `personnel.manage` (#4536, owner
- * decision 2026-10-30). On any other base the roster read is off, so the key
- * would let a role create records it cannot list.
+ * Only an ADMIN-based custom role may hold the permissions in
+ * `ADMIN_BASE_ONLY_PERMISSIONS` (#4536, #4581 A; owner decisions 2026-10-30).
+ * Server code behind each asks the Admin tier, which a custom role reads from
+ * its base, so on any other base the route let the role in and the usecase
+ * refused it. The keys travel in `details.permissions` so the Roles page can
+ * name them by their labels.
  */
-function assertPersonnelManageOnAdminBase(permissionsJson: unknown, baseRole: Role): void {
-    if (statesPersonnelManage(permissionsJson) && !mayHoldPersonnelManage(baseRole)) {
+function assertAdminBaseOnlyPermissions(permissionsJson: unknown, baseRole: Role): void {
+    const refused = grantsNeedingAdminBase(permissionsJson, baseRole);
+    if (refused.length > 0) {
         throw badRequest(
-            'Only a custom role based on Admin can manage the personnel roster. Switch Personnel / manage off, or base the role on Admin.',
-            { reason: PERSONNEL_MANAGE_NEEDS_ADMIN_BASE },
+            `Only a custom role based on Admin can hold: ${refused.join(', ')}. Switch them off, or base the role on Admin.`,
+            { reason: PERMISSION_NEEDS_ADMIN_BASE, permissions: refused },
         );
     }
 }

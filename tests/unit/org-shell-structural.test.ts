@@ -92,8 +92,8 @@ describe('Epic O-4 — org shell structural contract', () => {
 
     it('OrgSidebarNav declares the spec nav entries', () => {
         const src = read(NAV_PATH);
-        // Order matches the Epic O-4 spec. Settings was removed from the
-        // sidebar (see the "Settings entry is not in the sidebar nav" test).
+        // Order matches the Epic O-4 spec. Settings is asserted on its own
+        // below (#4557).
         //
         // #2246 Class A — this used to assert the seven ENGLISH labels
         // against the component text. The labels migrated to next-intl, so
@@ -136,13 +136,14 @@ describe('Epic O-4 — org shell structural contract', () => {
         expect(src).toMatch(/canManageMembers/);
     });
 
-    it('Settings entry is not in the sidebar nav', () => {
+    it('Settings is in the Manage group, for org admins, with a page behind it (#4557)', () => {
         const src = read(NAV_PATH);
-        // The Settings button was removed from the org sidebar. The nav must
-        // not build a settings item — no nav.settings label and no /settings
-        // nav href. (The /settings route itself is unchanged.)
-        expect(src).not.toMatch(/label:\s*t\('nav\.settings'\)/);
-        expect(src).not.toMatch(/orgHref\('\/settings'\)/);
+        // Removed earlier while it had no org page to open; restored with the
+        // org Settings page that holds the agent switches. Gated like Members,
+        // so a reader's sidebar is unchanged.
+        expect(src).toMatch(/href:\s*orgHref\('\/settings'\),\s*label:\s*t\('nav\.settings'\),\s*icon:\s*Gear,\s*requiresManageMembers:\s*true/);
+        expect(enOrg('nav.settings')).toBe('Settings');
+        expect(fs.existsSync(path.join(ROOT, 'src/app/org/[orgSlug]/(app)/settings/page.tsx'))).toBe(true);
     });
 
     it('the unified AppShell mounts ONE drawer for both variants', () => {

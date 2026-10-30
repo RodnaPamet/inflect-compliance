@@ -812,8 +812,9 @@ export default function AdminIntegrationsPage() {
                                 },
                                 // No Secrets column: it rendered the same eight
                                 // dots on every row, internal checks with no
-                                // secret included, and the API's `hasSecret` is
-                                // a constant `true` — it said nothing (#4466).
+                                // secret included, off an API `hasSecret` that
+                                // was a constant `true` (#4466; the flag is
+                                // real since #4581, the column stays gone).
                                 {
                                     id: 'lastTest', header: t('integrations.colLastTest'), accessorKey: 'lastTestedAt',
                                     cell: ({ row }) => row.original.lastTestedAt ? (

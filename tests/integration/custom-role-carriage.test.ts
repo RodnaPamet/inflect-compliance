@@ -34,6 +34,7 @@ import { assignCustomRole, createCustomRole, updateCustomRole } from '@/app-laye
 import { updateTenantMemberRole } from '@/app-layer/usecases/tenant-admin';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
 import { CUSTOM_ROLE_ADMIN_BASE_REFUSAL, CUSTOM_ROLE_ADMIN_KEYS_REFUSAL } from '@/lib/roles';
+import { ADMIN_BASE_ONLY_PERMISSIONS } from '@/lib/custom-role-admin-base-rule';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -176,12 +177,15 @@ describeFn('only an ADMIN membership carries an admin-only custom role (real DB,
         const legacy = await member(a.tenantId, (await user('legacy-editor')).id, 'EDITOR', a.adminBuilt);
 
         await updateCustomRole(a.ownerCtx, a.adminBuilt, { name: `Renamed ${stamp}` });
-        // Narrowed: an admin-only key off, and personnel.manage off, which
-        // #4536 keeps to an ADMIN base, so the base can be lowered next.
-        const narrowed = blob('ADMIN', { agent_policy_card: false });
-        await updateCustomRole(a.ownerCtx, a.adminBuilt, {
-            permissionsJson: { ...narrowed, personnel: { ...narrowed.personnel, manage: false } },
-        });
+        // Narrowed: an admin-only key off, and every permission the Admin-base
+        // rule keeps to an ADMIN base off (#4536, #4581 A), so the base can be
+        // lowered next.
+        const narrowed = structuredClone(blob('ADMIN', { agent_policy_card: false }));
+        for (const key of ADMIN_BASE_ONLY_PERMISSIONS) {
+            const [domain, action] = key.split('.') as [keyof PermissionSet, string];
+            (narrowed[domain] as Record<string, boolean>)[action] = false;
+        }
+        await updateCustomRole(a.ownerCtx, a.adminBuilt, { permissionsJson: narrowed });
         await updateCustomRole(a.ownerCtx, a.adminBuilt, { baseRole: 'EDITOR' });
         await updateTenantMemberRole(a.ownerCtx, { membershipId: legacy.id, role: 'READER' });
         await assignCustomRole(a.ownerCtx, legacy.id, null);

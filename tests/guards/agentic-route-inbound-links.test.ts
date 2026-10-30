@@ -234,6 +234,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // The owner's checklist in that section: which of the six terms are
     // satisfied and which one blocks. Read-only, on the PUT's tenant-lifecycle key.
     't/[tenantSlug]/admin/flue-wiring/route.ts',
+    // #4557 — the organization's two agent switches (profiles, Tool Runner),
+    // which it decides for its workspaces when the deployment leaves them open.
+    // Read by every org member; written by an org admin, audited on the org's
+    // own chain. Linked from the org sidebar's Settings entry.
+    'org/[orgSlug]/agent-switches/route.ts',
     // #3484 — the SECOND capacity axis beside the monthly token budget. The
     // budget bounds spend over a month and cannot express simultaneity, so a
     // tenant inside its budget could start runs until the shared worker pool

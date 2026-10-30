@@ -12,6 +12,9 @@
  *   rendered page and be told the settings "couldn't load", which is a
  *   permission refusal wearing the costume of a broken backend. That admin
  *   sees a sentence saying an owner decides, not a control that would 403.
+ * - "Where AI runs" sits behind `admin.manage`, the key of the
+ *   security-settings endpoint it reads and writes. Somebody without it is
+ *   told an administrator decides, not shown a section that would 403.
  * - The "Agent engines" section renders for every admin (owner decision
  *   2026-10-25, #4139). It reads `GET /admin/agent-driver`, which is
  *   `admin.view`, and it decides for itself whether to offer the control.
@@ -26,6 +29,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 
 import { AiFeaturesClient } from './AiFeaturesClient';
+import { AiResidencySection } from './AiResidencySection';
 import { AgentEnginesSection } from './AgentEnginesSection';
 
 export default function AiFeaturesPage() {
@@ -56,6 +60,18 @@ export default function AiFeaturesPage() {
                 }
             >
                 <AiFeaturesClient />
+            </RequirePermission>
+
+            <RequirePermission
+                resource="admin"
+                action="manage"
+                fallback={
+                    <InlineNotice variant="info">
+                        <span data-testid="ai-residency-admin-only">{t('aiResidency.forbidden')}</span>
+                    </InlineNotice>
+                }
+            >
+                <AiResidencySection />
             </RequirePermission>
 
             <AgentEnginesSection />

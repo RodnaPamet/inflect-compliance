@@ -61,6 +61,7 @@ export function useApi<T>(
 
     useEffect(() => {
         if (url) {
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises -- an effect cannot await, and fetchData catches every failure into `error` state itself (#4579)
             fetchData();
         }
     }, [url, fetchData]);

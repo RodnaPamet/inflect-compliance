@@ -62,14 +62,17 @@ agent pages (server) ── agentRegisterAffordances ─────────
   already built on it. The count comes from the server (`nonAdminCarriers`,
   one `groupBy`), not from the members list, which the roles page does not load.
 - **A cell's hint names one reason, in a fixed order.** The roles grid has
-  three locks besides the editor's own permissions: #4536's Personnel / manage
-  on a base other than Admin, and this page's carrier locks (the ten keys, and
-  the Admin base). They lock different cells, so the order only has to decide
-  against "not held": not held comes first, because no other change on the page
-  lets the editor give it; then the base rule; then the carrier rule. The one
-  cell two role rules meet on, Personnel / manage on a role non-Admins carry,
-  gets its own hint (`roles.cellNeedsAdminBaseCarried`), because "needs an Admin
-  base" alone would send the editor to a base they cannot pick. Presets start
+  three locks besides the editor's own permissions: the Admin-base rule (#4536,
+  generalised by #4595 to `ADMIN_BASE_ONLY_PERMISSIONS`: `admin.manage`,
+  `admin.members`, `admin.owner_management`, `admin.tenant_lifecycle`,
+  `personnel.manage`) on a base other than Admin, and this page's carrier locks
+  (the ten keys, and the Admin base). The two key lists are disjoint, so the
+  order only has to decide against "not held": not held comes first, because no
+  other change on the page lets the editor give it; then the base rule; then
+  the carrier rule. The cells the two role rules meet on, the five
+  Admin-base-only cells on a role non-Admins carry, get their own hint
+  (`roles.cellNeedsAdminBaseCarried`), because "needs an Admin base" alone would
+  send the editor to a base they cannot pick. Presets start
   inside all three rules, Save is held for any of them, and a refusal is re-said
   in the server's order: grant, personnel, carriage.
 - **The members picker offers a refused custom role disabled, with the

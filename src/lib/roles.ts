@@ -348,7 +348,7 @@ export const ADMIN_API_ONLY_KEYS = [
  *
  * So for these four the rule DOES take something away. Going forward, a
  * membership that is not ADMIN cannot be given a custom role granting one, and
- * migration `20261030150000_admin_membership_only_keys_off_for_non_admin_custom_roles`
+ * migration `20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles`
  * switched them off in every stored role that only such memberships carried.
  * The paths above then refuse it as they refuse any member without the key:
  * the key's request answers 403, the run's or the tool call's is refused. The

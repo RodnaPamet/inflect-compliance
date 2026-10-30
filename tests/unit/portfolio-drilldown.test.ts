@@ -77,6 +77,7 @@ function ctxFor(overrides: Partial<OrgContext> = {}): OrgContext {
             canConfigureDashboard: true,
             canSetThreatLevel: true,
             canSetMaturity: true,
+            canManageAgentSwitches: true,
         },
         ...overrides,
     };
@@ -343,6 +344,7 @@ describe('drill-down canViewPortfolio gate', () => {
             canConfigureDashboard: false,
             canSetThreatLevel: false,
             canSetMaturity: false,
+            canManageAgentSwitches: false,
             },
         });
 
