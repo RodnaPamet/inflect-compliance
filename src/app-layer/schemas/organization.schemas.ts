@@ -74,7 +74,10 @@ export type AddOrgMemberInputType = z.infer<typeof AddOrgMemberInput>;
 export const ChangeOrgMemberRoleInput = z
     .object({
         userId: z.string().min(1, 'userId is required'),
-        role: z.enum(['ORG_ADMIN', 'ORG_READER']),
+        // ORG_OWNER since #4576 deploy 2: the role change is the ONE writer
+        // that makes an owner, and only an owner may (the usecase refuses
+        // anybody else, audited). The add and the invite never write it.
+        role: z.enum(['ORG_OWNER', 'ORG_ADMIN', 'ORG_READER']),
     })
     .strict();
 
