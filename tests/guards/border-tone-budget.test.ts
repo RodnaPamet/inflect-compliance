@@ -57,6 +57,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slack';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -121,7 +122,26 @@ const ROOT = path.resolve(__dirname, '../..');
 // carrying three of slack, one of them the use #3275 deleted with
 // `file-upload.tsx` (9d511ba13) without dropping this budget. Found when
 // projectZ #428's FileDropzone fix ran this sentinel on the merged tree.
-const BORDER_DEFAULT_BUDGET = 106;
+// 106 → 108 (2026-10-31, #4636): +2, and NOT a regression — the counter was
+// hiding two real uses. The old `countMatches` stripped comments with
+// `/\*[\s\S]*?\*\//`, which cannot tell a comment from a STRING that
+// contains `/*`. `FileDropzone.tsx:184` is
+//
+//     if (t.endsWith('/*')) return mime.startsWith(t.slice(0, -1));
+//
+// — a MIME wildcard. The regex read that as a comment opening and ran
+// non-greedily to the next `*/`, which is the JSX comment close on line 538,
+// so lines 184-538 were deleted before matching and the two
+// `border-border-default` uses at 507 and 510 were never counted. Measured
+// across all 1092 .tsx files in the scanned tree: old regex 106, and 108 from
+// BOTH correct methods independently (`codeOf`, and a TypeScript parse counting
+// string-ish nodes), differing in exactly ONE file (FileDropzone, 1 vs 3).
+//
+// Both revealed uses are correct at this tone under the convention in
+// CLAUDE.md — 507/510 are the drop area's own outer boundary and 573 a
+// discrete file-row chip, all three "this is a discrete surface" statements.
+// So the budget absorbs them rather than a migration removing them.
+const BORDER_DEFAULT_BUDGET = 108;
 
 // Tolerance before the drift sentinel reports the budget as unseated.
 //
@@ -132,11 +152,34 @@ const BORDER_DEFAULT_BUDGET = 106;
 // was comfortably inside that. An allowance must be strictly smaller
 // than the drift it is meant to catch or it is decoration.
 //
-// Two is affordable here because `countMatches` STRIPS COMMENTS before
-// matching, so unlike the two `<table` ratchets this count moves only
-// when real markup changes — a doc pass cannot touch it. A PR that
-// migrates three border sites is a PR that should record the win.
+// Two is affordable here because `countMatches` masks comments with the
+// string-aware `codeOf`, so unlike the two `<table` ratchets this count moves only when real
+// markup changes — a doc pass cannot touch it. A PR that migrates three
+// border sites is a PR that should record the win.
+//
+// That claim used to rest on a regex comment strip and was false in both
+// directions (#4636): a block comment ADDED elsewhere in a file could reveal
+// occurrences and push the count up with no border class in the diff, and one
+// REMOVED could hide them and let the count drift down, which this very
+// sentinel would then re-seat to a wrong floor. `codeOf` makes the claim true,
+// because it masks comments without mistaking a string for one.
 const DRIFT_ALLOWANCE = 2;
+
+/**
+ * Occurrences of `re` in the CODE of one source file.
+ *
+ * `codeOf` is the repo's own comment masker (`tests/helpers/source-blocks.ts`)
+ * and it is STRING-AWARE, which is the whole of this fix: it knows a `/*` inside
+ * a string literal does not open a comment. Measured against a parse of the same
+ * 1092 files, the two agree exactly (108 each) where the old regex said 106.
+ *
+ * Exported for the regression block at the bottom of this file, which feeds it
+ * fixtures. A counter that can only be run over the live tree cannot be SHOWN to
+ * count correctly — only observed not to have changed.
+ */
+export function countInSource(src: string, re: RegExp): number {
+    return (codeOf(src).match(re) ?? []).length;
+}
 
 function countMatches(re: RegExp): number {
     let total = 0;
@@ -149,12 +192,7 @@ function countMatches(re: RegExp): number {
                 continue;
             }
             if (!/\.tsx$/.test(e.name)) continue;
-            const src = fs.readFileSync(full, 'utf-8');
-            const stripped = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
-            const matches = stripped.match(re);
-            if (matches) total += matches.length;
+            total += countInSource(fs.readFileSync(full, 'utf-8'), re);
         }
     };
     walk(path.join(ROOT, 'src/app'));
@@ -200,5 +238,92 @@ describe('Border-tone budget (Roadmap-5 PR-10)', () => {
             allowance: DRIFT_ALLOWANCE,
             what: '`border-border-default` occurrences in src/app + src/components + packages/ui/src',
         });
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  The counter counts CODE, and a comment cannot move it (#4636)
+//
+// This block is the mutation proof the budget above lacked. The assertions
+// are not about the live tree — they feed `countInSource` fixtures, so they
+// fail if the counting method regresses even while the real count happens to
+// stay inside its allowance.
+//
+// Each case carries the OLD regex method beside the new one, because the
+// point is not "the number is right today" but "this method cannot be moved
+// by a comment, and the previous one could". A fixture both methods agree on
+// proves nothing about the change.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('the border counter counts code, not comment positions (#4636)', () => {
+    const RE = (): RegExp => /\bborder-border-default\b/g;
+
+    /** The method this file used until #4636, kept only to contrast with. */
+    const oldRegexCount = (src: string): number => {
+        const stripped = src
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/\/\/[^\n]*/g, '');
+        return (stripped.match(RE()) ?? []).length;
+    };
+
+    // The shape that actually shipped: a MIME wildcard string holding `/*`,
+    // then real uses, then a JSX comment close. FileDropzone.tsx to the line.
+    const SHIPPED = [
+        "const ok = (t: string) => t.endsWith('/*');",
+        "const a = 'cursor-not-allowed border-border-default bg-bg-muted';",
+        "const b = 'cursor-pointer border-border-default bg-bg-subtle';",
+        'const el = <div>{/*',
+        '  a JSX comment, whose close pairs with the MIME string above',
+        '*/}</div>;',
+    ].join('\n');
+
+    it('a string containing `/*` does not hide the uses after it', () => {
+        // Three string literals carry the class... no: two do. The MIME
+        // string carries none. So the answer is 2.
+        expect(countInSource(SHIPPED, RE())).toBe(2);
+    });
+
+    it('and the OLD method got that wrong, which is why this changed', () => {
+        // The regex opened a comment at `/*` inside the MIME string and ran
+        // to the `*/}`, deleting both real uses in between.
+        expect(oldRegexCount(SHIPPED)).toBe(0);
+    });
+
+    it('adding a block comment with no border class does not move the count', () => {
+        const before = "const a = 'border border-border-default';";
+        const after = [
+            '/* an unrelated note added by some other change */',
+            "const a = 'border border-border-default';",
+        ].join('\n');
+
+        expect(countInSource(before, RE()))
+            .toBe(countInSource(after, RE()));
+        expect(countInSource(after, RE())).toBe(1);
+    });
+
+    it('a real use inside a comment is NOT counted (the other direction)', () => {
+        const src = [
+            '/* `border-border-default` is the containment tone — see CLAUDE.md */',
+            "// another mention of border-border-default in a line comment",
+            "const a = 'border-border-subtle';",
+        ].join('\n');
+        // Prose mentioning the class must not inflate the budget. A guard
+        // whose number a doc pass can move is a guard people route around.
+        expect(countInSource(src, RE())).toBe(0);
+    });
+
+    it('counts template parts and JSX text too, not just plain strings', () => {
+        const src = [
+            'const a = `border-border-default ${x}`;',
+            'const b = cn(`${y} border-border-default`);',
+            'const c = <p>border-border-default</p>;',
+        ].join('\n');
+        expect(countInSource(src, RE())).toBe(3);
+    });
+
+    it('the detector can return zero, so a passing case means something', () => {
+        // The positive control. Every assertion above is also satisfied by a
+        // counter that always answers 0 unless this one can distinguish.
+        expect(countInSource("const a = 'border-border-subtle';", RE())).toBe(0);
+        expect(countInSource("const a = 'border-border-default';", RE())).toBe(1);
     });
 });
