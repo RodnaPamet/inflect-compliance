@@ -12,10 +12,14 @@
  *     asserts `canAudit`, and an AUDITOR may read the log).
  *
  * A custom role is judged by its own keys, so its rows are spelled out below.
+ * Every row also asks the membership's OWN role, as the edge reads it (#4581 B):
+ * a custom role's keys never open an admin page to a Reader, Editor or Auditor
+ * membership (the audit log aside, for an Auditor).
  */
 import { makeRequestContext } from '../helpers/make-context';
 import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
-import { AI_ADMIN_ADMIN_PATH_PREFIXES } from '@/lib/auth/guard';
+import { AI_ADMIN_ADMIN_PATH_PREFIXES, EDGE_ADMIN_ROLES } from '@/lib/auth/guard';
+import type { Role } from '@prisma/client';
 import {
     ADMIN_PAGE_REQUIREMENTS,
     adminPageRouteForPath,
@@ -24,8 +28,10 @@ import {
 } from '@/app/t/[tenantSlug]/(app)/admin/_lib/admin-page-requirements';
 
 const ROUTES = Object.keys(ADMIN_PAGE_REQUIREMENTS) as AdminPageRoute[];
+/** A built-in membership: its own role and its effective role are the same. */
+const builtIn = (role: string) => makeRequestContext(role, { membershipRole: role as Role });
 const admitted = (role: string, route: AdminPageRoute) =>
-    admitsAdminPage(makeRequestContext(role), ADMIN_PAGE_REQUIREMENTS[route]);
+    admitsAdminPage(builtIn(role), ADMIN_PAGE_REQUIREMENTS[route]);
 
 describe('built-in roles', () => {
     test('there is something to judge', () => {
@@ -46,13 +52,19 @@ describe('built-in roles', () => {
 });
 
 describe('custom roles are judged by their own keys', () => {
-    /** A membership whose base role is `base` and whose stored keys are `admin` / `personnel` overrides. */
+    /**
+     * A membership whose base role is `base`, whose stored keys are `admin` /
+     * `personnel` overrides, and whose own role is `membershipRole` (ADMIN
+     * unless stated: the edge admits it, so these rows test the keys).
+     */
     function custom(
         base: string,
         overrides: { admin?: Partial<PermissionSet['admin']>; personnel?: Partial<PermissionSet['personnel']> },
+        membershipRole: Role = 'ADMIN',
     ) {
         const set = getPermissionsForRole(base as never);
         return makeRequestContext(base, {
+            membershipRole,
             appPermissions: {
                 ...set,
                 admin: { ...set.admin, ...overrides.admin },
@@ -95,14 +107,61 @@ describe('custom roles are judged by their own keys', () => {
     });
 });
 
+describe('the membership\'s own role, as the edge reads it (#4581 B)', () => {
+    /** Every admin key true, every personnel key true, on `base`, carried by a `membershipRole` membership. */
+    function everything(base: string, membershipRole: Role) {
+        const set = getPermissionsForRole('ADMIN');
+        return makeRequestContext(base, { membershipRole, appPermissions: { ...getPermissionsForRole(base as never), admin: set.admin, personnel: set.personnel } });
+    }
+
+    test('the default rule is the edge\'s own set', () => {
+        expect([...EDGE_ADMIN_ROLES].sort()).toEqual(['ADMIN', 'OWNER']);
+    });
+
+    test.each(['READER', 'EDITOR', 'AUDITOR'] as Role[])(
+        'a custom role granting every admin key opens no admin.view page to a %s membership',
+        (membershipRole) => {
+            for (const base of ['ADMIN', 'EDITOR', 'READER', 'AUDITOR']) {
+                const ctx = everything(base, membershipRole);
+                const reached = ROUTES.filter((r) => admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS[r]));
+                // An AUDITOR membership keeps the audit log when its tier allows it.
+                const expected = membershipRole === 'AUDITOR' && ctx.permissions.canAudit ? ['/admin/audit-log'] : [];
+                expect({ base, reached }).toEqual({ base, reached: expected });
+            }
+        },
+    );
+
+    test('the same custom role on an ADMIN membership opens every page its keys and tier allow', () => {
+        const ctx = everything('ADMIN', 'ADMIN');
+        expect(ROUTES.filter((r) => !admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS[r]))).toEqual([]);
+    });
+
+    test('the audit log admits an AUDITOR membership and still refuses a READER or EDITOR one', () => {
+        const row = ADMIN_PAGE_REQUIREMENTS['/admin/audit-log'];
+        expect(admitsAdminPage(builtIn('AUDITOR'), row)).toBe(true);
+        expect(admitsAdminPage(makeRequestContext('AUDITOR', { membershipRole: 'READER' }), row)).toBe(false);
+        expect(admitsAdminPage(makeRequestContext('AUDITOR', { membershipRole: 'EDITOR' }), row)).toBe(false);
+    });
+
+    test('AI_ADMIN opens no gated page, whatever it holds', () => {
+        const ctx = everything('READER', 'AI_ADMIN');
+        expect(ROUTES.filter((r) => admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS[r]))).toEqual([]);
+    });
+});
+
 describe('the requirement check fails closed', () => {
     test('a requirement naming nothing admits nobody, not even an OWNER', () => {
-        expect(admitsAdminPage(makeRequestContext('OWNER'), { keys: [] })).toBe(false);
+        expect(admitsAdminPage(builtIn('OWNER'), { keys: [] })).toBe(false);
     });
 
     test('a context with no permission set is refused', () => {
-        const ctx = { ...makeRequestContext('OWNER'), appPermissions: undefined as unknown as PermissionSet };
+        const ctx = { ...builtIn('OWNER'), appPermissions: undefined as unknown as PermissionSet };
         expect(admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS['/admin'])).toBe(false);
+    });
+
+    test('a context with no membership role is refused, as an API key\'s is', () => {
+        expect(admitsAdminPage(makeRequestContext('OWNER'), ADMIN_PAGE_REQUIREMENTS['/admin'])).toBe(false);
+        expect(admitsAdminPage(makeRequestContext('OWNER'), ADMIN_PAGE_REQUIREMENTS['/admin/audit-log'])).toBe(false);
     });
 });
 

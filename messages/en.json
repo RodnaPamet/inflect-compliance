@@ -4833,10 +4833,10 @@
       "colPermissions": "Permissions",
       "editRole": "Edit role",
       "deleteRole": "Delete role",
-      "nameLabel": "Role Name *",
+      "nameLabel": "Role name",
       "namePlaceholder": "e.g. Compliance Lead",
-      "baseRoleLabel": "Base Role (fallback)",
-      "baseRoleHint": "Used for coarse authorization when custom permissions don't apply.",
+      "baseRoleLabel": "Base role",
+      "baseRoleHint": "Members carrying this role count as this role wherever Inflect checks a level of role rather than a single permission. The grid starts from its permissions.",
       "descriptionLabel": "Description",
       "descriptionPlaceholder": "Optional — describe what this role is for",
       "showGrid": "Show Permission Grid",
@@ -7828,7 +7828,8 @@
       "reachabilityNotProbed": "no health endpoint configured — not probed",
       "reachabilityUnreachable": "did not answer",
       "reachabilityAnswered": "reachable, reporting version {version}",
-      "reachabilityNoVersion": "answered, but reported no version"
+      "reachabilityNoVersion": "answered, but reported no version",
+      "probedAtLabel": "Checked"
     },
     "aiResidency": {
       "title": "Where AI runs",
@@ -11551,6 +11552,8 @@
         "toolsEmpty": "This agent is granted no tools. Grant one on the Tools tab first.",
         "skillsHint": "Only the skills this agent can mount.",
         "skillsPlaceholder": "Choose skills",
+        "skillsBudget": "{used} of {budget} bytes of skill descriptions chosen. A run pays for them on every turn.",
+        "skillsOverBudget": "These skills' descriptions total {used} bytes, over the {budget}-byte budget a run can mount. Choose fewer skills.",
         "skillOption": {
           "repository": "{name}",
           "tenant": "{name} (this workspace)"
@@ -13188,7 +13191,8 @@
       "failedRevokeInvite": "Failed to revoke invite ({status}).",
       "unexpectedRevokeInvite": "Unexpected error revoking invite.",
       "roleOrgOwner": "Org owner",
-      "ownerNeedsOwner": "Only an organization owner can change an owner's membership"
+      "ownerNeedsOwner": "Only an organization owner can change an owner's membership",
+      "orgOwnerDesc": "Everything an org admin can do, plus managing owners and the tenants under the organization. An organization always keeps at least one owner."
     },
     "audit": {
       "title": "Audit Log",

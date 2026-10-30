@@ -60,6 +60,7 @@ const FIELD_OF_REFUSAL: Readonly<Record<string, Field>> = {
     INSTRUCTIONS_REFUSED: 'instructions',
     TOOL_NOT_GRANTED: 'tools',
     SKILL_UNKNOWN: 'skills',
+    SKILL_CATALOGUE_OVER_BUDGET: 'skills',
 };
 
 const skillKey = (s: ProfileSkillRef) => `${s.origin}:${s.name}`;
@@ -118,8 +119,20 @@ export function BehaviourEditorSheet({
     );
 
     const max = view.limits.instructionsMaxChars;
+    // The chosen skills' catalogue, priced by the server per option (#4590).
+    // Lines add, so this is the figure the save checks against the budget.
+    const budget = view.limits.skillCatalogueBudgetBytes;
+    const catalogueBytes = view.options.skills
+        .filter((s) => skillKeys.includes(skillKey(s)))
+        .reduce((n, s) => n + s.catalogueBytes, 0);
+    const overBudget = catalogueBytes > budget;
     const canSave =
-        !busy && instructions.trim().length > 0 && instructions.length <= max && toolNames.length > 0 && triggers.length > 0;
+        !busy &&
+        instructions.trim().length > 0 &&
+        instructions.length <= max &&
+        toolNames.length > 0 &&
+        triggers.length > 0 &&
+        !overBudget;
 
     const fieldError = (field: Field) => (error?.field === field ? error.message : undefined);
 
@@ -130,7 +143,10 @@ export function BehaviourEditorSheet({
         const body = {
             instructions,
             toolNames,
-            skillRefs: view.options.skills.filter((s) => skillKeys.includes(skillKey(s))),
+            // The ref only: the save's schema is strict, and the cost is the server's own figure.
+            skillRefs: view.options.skills
+                .filter((s) => skillKeys.includes(skillKey(s)))
+                .map((s) => ({ origin: s.origin, name: s.name })),
             modelTier,
             effort,
             maxTurns,
@@ -228,7 +244,14 @@ export function BehaviourEditorSheet({
                         />
                     </FormField>
 
-                    <FormField label={t('field.skills')} description={t('editor.skillsHint')} error={fieldError('skills')}>
+                    <FormField
+                        label={t('field.skills')}
+                        description={t('editor.skillsHint')}
+                        error={
+                            fieldError('skills') ??
+                            (overBudget ? t('editor.skillsOverBudget', { used: catalogueBytes, budget }) : undefined)
+                        }
+                    >
                         <Combobox<true, unknown>
                             multiple
                             id="behaviour-skills"
@@ -239,6 +262,9 @@ export function BehaviourEditorSheet({
                             matchTriggerWidth
                         />
                     </FormField>
+                    <p className="text-xs text-content-muted" data-testid="behaviour-skills-budget">
+                        {t('editor.skillsBudget', { used: catalogueBytes, budget })}
+                    </p>
 
                     <FormField label={t('field.modelTier')} description={t('editor.modelTierHint')}>
                         <RadioGroup

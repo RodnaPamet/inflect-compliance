@@ -44,10 +44,23 @@
  *
  * For every built-in OWNER and ADMIN each row admits, so they see no change.
  *
+ * ═══ THE MEMBERSHIP'S OWN ROLE, AS THE EDGE READS IT ═══
+ *
+ * Every row also requires the caller's own membership role — not a custom
+ * role's base — to be one the edge admits to an admin path: OWNER or ADMIN
+ * (`EDGE_ADMIN_ROLES`), and on the audit log AUDITOR too. Without it a custom
+ * role that grants `admin.view` to a Reader, Editor or Auditor membership
+ * opened the admin pages while the edge refused almost every call they make
+ * (owner decision 2026-10-30, #4581 B). An absent membership role admits
+ * nobody, so an API-key context never opens a page.
+ *
  * This module is pure — no session, no database, no React — so the role matrix
  * is unit-tested over it directly, and the client layout can import it.
  */
+import type { Role } from '@prisma/client';
+
 import type { RequestContext } from '@/app-layer/types';
+import { EDGE_ADMIN_ROLES } from '@/lib/auth/edge-admin-roles';
 import { hasPermission, type PermissionKey } from '@/lib/security/permission-key';
 
 /** A coarse tier from `ctx.permissions`, for a read whose usecase asserts one. */
@@ -58,6 +71,11 @@ export interface AdminPageRequirement {
     readonly keys: readonly PermissionKey[];
     /** A coarse tier on `ctx.permissions` that must also hold. */
     readonly tier?: AdminPageTier;
+    /**
+     * The membership roles admitted, read off `membershipRole`. Absent means
+     * the edge's own admin roles (`EDGE_ADMIN_ROLES`: OWNER, ADMIN).
+     */
+    readonly roles?: readonly Role[];
 }
 
 /**
@@ -71,7 +89,9 @@ export const ADMIN_PAGE_REQUIREMENTS = {
     // The landing page: navigation only, gated to match the layout.
     '/admin': { keys: ['admin.view'] },
     // `listAuditLogs` asserts `canAudit`; owner decision 2026-10-29 (above).
-    '/admin/audit-log': { keys: [], tier: 'canAudit' },
+    // The page makes no admin API call, so AUDITOR is admitted beside the
+    // edge's admin roles.
+    '/admin/audit-log': { keys: [], tier: 'canAudit', roles: ['OWNER', 'ADMIN', 'AUDITOR'] },
     // BillingAccount + BillingEvent; `/billing/events` is `admin.manage`.
     '/admin/billing': { keys: ['admin.view', 'admin.manage'] },
     // `GET /devices` is `personnel.view`.
@@ -107,13 +127,20 @@ export type AdminPageRoute = keyof typeof ADMIN_PAGE_REQUIREMENTS;
 
 /**
  * Whether `ctx` meets `requirement`. Fails closed: a requirement naming neither
- * a key nor a tier would admit everybody, so it admits nobody.
+ * a key nor a tier would admit everybody, so it admits nobody, and an absent
+ * membership role admits nobody.
  */
 export function admitsAdminPage(
-    ctx: Pick<RequestContext, 'permissions' | 'appPermissions'>,
+    ctx: Pick<RequestContext, 'permissions' | 'appPermissions' | 'membershipRole'>,
     requirement: AdminPageRequirement,
 ): boolean {
     if (requirement.keys.length === 0 && requirement.tier === undefined) return false;
+    const membershipRole = ctx.membershipRole;
+    if (membershipRole == null) return false;
+    const roleAdmitted = requirement.roles
+        ? requirement.roles.includes(membershipRole)
+        : EDGE_ADMIN_ROLES.has(membershipRole);
+    if (!roleAdmitted) return false;
     if (requirement.tier !== undefined && ctx.permissions?.[requirement.tier] !== true) return false;
     const granted = ctx.appPermissions;
     if (!granted) return false;

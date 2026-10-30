@@ -50,6 +50,11 @@ export interface TenantServerContext {
     tenant: TenantRecord;
     /** The user's role within this tenant */
     role: Role;
+    /**
+     * The role on the user's own membership row, before any custom role — what
+     * the edge's admin gate reads. See `RequestContext.membershipRole`.
+     */
+    membershipRole: Role;
     /** Coarse-grained permission flags */
     permissions: Permissions;
     /** Fine-grained UI permission set */
@@ -171,6 +176,7 @@ export async function getTenantServerContext(params: {
             currencySymbol: ctx.tenant.currencySymbol ?? '€',
         },
         role: ctx.role,
+        membershipRole: ctx.membership.role,
         permissions: ctx.permissions,
         appPermissions: ctx.appPermissions,
         modules: { processCanvas: settings?.processCanvasEnabled === true },

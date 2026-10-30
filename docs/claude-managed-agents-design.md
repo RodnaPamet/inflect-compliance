@@ -627,13 +627,16 @@ works on it.
 2. setAgentDriverSetting and the PUT schema accept MANAGED_AGENTS. A tenant
    without a connected workspace is refused with a named reason. The settings
    page explains the engine in plain words, including that conversations exist
-   in the customer's workspace until each run ends.
+   in the customer's workspace until each run ends, unless the customer keeps
+   them on the connection (decision 4).
 3. The run timeline marks span-derived decision rows, so a reviewer can see that
    the per-call prompt was not visible to Inflect.
 
 Tests: an E2E spec on isolatedTenant with a faux workspace that connects,
 selects the engine and completes a Test run, then asserts the faux workspace
-holds no session.
+holds no session (the connection at its default). An integration test with the
+connection keeping sessions asserts the session remains and is recorded as
+kept.
 
 Deliver per the Definition of done. This step is Significant.
 ```
@@ -643,9 +646,10 @@ Deliver per the Definition of done. This step is Significant.
 - [ ] The flag flip is its own commit, and the deployed image was confirmed before merge.
 - [ ] A tenant without a connected workspace cannot select the engine (test).
 - [ ] After the E2E run the faux workspace holds no session.
+- [ ] On a connection that keeps sessions, the session remains and is recorded as kept (test).
 - [ ] Span-derived decision rows are labelled in the run timeline (rendered test).
 
-**Exit.** A tenant can run a profile in its own Anthropic workspace, and nothing tenant-authored stays there after the run.
+**Exit.** A tenant can run a profile in its own Anthropic workspace, and nothing tenant-authored stays there after the run unless the customer chose to keep it.
 
 #### Step 5e — Profiles that need a workspace
 
@@ -718,12 +722,13 @@ Goal: evidence from a real Anthropic workspace.
    approved profile, then run it again with the kill switch engaged mid-run.
    Record:
    - the run ids, the MODEL_CALL and TOOL_CALL counts, and the halt reason;
-   - that the workspace holds no session afterwards, checked through the
-     provider's list endpoint, with ids only.
+   - that the workspace holds no session afterwards (the connection at its
+     default), checked through the provider's list endpoint, with ids only.
 3. Edit the provisioned agent's system prompt in the Console, run again, and
    record the AGENT_DRIFTED refusal.
-4. Purge rehearsal: disconnect the workspace, and record that the recorded
-   agents are archived and no session remains.
+4. Purge rehearsal: turn on keeping sessions, run once, then disconnect the
+   workspace, and record that the recorded agents are archived and no session
+   remains, the kept one included (decision 4).
 5. Update this document's Current state, the evidence row in the Agent SDK
    document, and CLAUDE.md's "Claude agent engines" section.
 
@@ -735,7 +740,7 @@ Deliver per the Definition of done.
 - [ ] Each adversarial question is answered in the implementation note, with a test for each defect found.
 - [ ] A production run in a real workspace completed, and the workspace held no session afterwards (recorded by method and date).
 - [ ] The kill-switch drill and the drift refusal were observed for real, by run id.
-- [ ] The disconnect rehearsal archived the recorded agents and left no session.
+- [ ] The disconnect rehearsal archived the recorded agents and left no session, a kept one included.
 - [ ] The evidence row is filled from production, not from a test.
 
 **Exit.** Managed Agents has run in a real customer-shaped workspace under every Inflect control, and left nothing tenant-authored behind.

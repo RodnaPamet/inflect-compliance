@@ -250,6 +250,55 @@ absent from both VMs and is presented out of band by a person.
     differently from "did not answer".
 ```
 
+### What to put in `/opt/inflect/.env.prod` — #4564
+
+The admin page's subject is "what did this deploy declare", and it declares
+nothing until these reach the app. They go in `/opt/inflect/.env.prod` on the
+app VM, which `docker-compose.prod.yml` hands to the container through
+`env_file:` — so **no compose or apply.sh change is involved**, and nothing has
+to be interpolated.
+
+```
+SANDBOX_RUNTIME_CONFIG_DIGEST=sha256:…      # copy from config-digest.txt
+SANDBOX_RUNTIME_APPLIED_AT=2026-10-30T06:39:54Z
+SANDBOX_RUNTIME_CHANNELS=ocsf-file
+SANDBOX_RUNTIME_HEALTH_URL=http://10.132.0.28:8081
+```
+
+**All four are optional and absence is a working state**, not a broken one. With
+no digest the page reports `not-configured` for every row, which is true of a
+deploy that declared nothing.
+
+#### `SANDBOX_RUNTIME_CHANNELS` is derived, not chosen
+
+It lists the channels declared **on**, and for this deployment that is
+`ocsf-file` alone — derived from the committed artefacts rather than decided
+here:
+
+| channel | why | from |
+|---|---|---|
+| `anonymous-telemetry` | OFF | `OPENSHELL_TELEMETRY_ENABLED=false` in the unit |
+| `otlp-traces` | OFF | no active OTLP endpoint in either artefact |
+| `ocsf-file` | **ON** | the `[openshell.gateway.ocsf_log]` table in `gateway.toml` |
+| `ocsf-over-otlp` | OFF | no active `OPENSHELL_OTLP_OCSF_ENDPOINT` |
+
+Get this wrong in the permissive direction and the page under-reports where data
+can go, which is the one failure that makes it worse than no page. Note that
+`parseDeclaredChannels` **refuses the whole list** on a name this build does not
+know — a newer runtime or a typo both mean the enumeration is no longer
+exhaustive, and an incomplete list of egress paths reads exactly like a complete
+one.
+
+#### An empty value means absent, and that took a schema change
+
+Compose and shell defaults produce **empty strings**, not absent variables, and
+`SANDBOX_RUNTIME_HEALTH_URL` was `z.string().url().optional()` — which accepts
+`undefined` and rejects `''` with "Invalid URL". So an operator who left the line
+in but blank would have failed env validation and the container would not have
+started: a working state turned into an outage by a variable nobody set.
+`src/env.ts` now coerces empty to absent for that one variable, verified against
+`''`, whitespace, a real URL and a malformed one.
+
 ### The digest, and why the admin page shows provenance instead of state
 
 Effective gateway configuration is **unobservable from outside the process**.
@@ -399,6 +448,61 @@ The projection above rests entirely on the VM not being left running, and
    **The boot disk had to be labelled separately**: a disk does not inherit its
    instance's labels, so the budget would have silently excluded the single
    largest always-on charge in the table above.
+
+### The PKI is REGENERABLE, not backed up — owner decision 2026-10-30 (#4565)
+
+The CA and the JWT signing key are generated **on** this VM and exist nowhere
+else. That is deliberate — no private key should cross machines — and it means a
+disk failure loses them. There is no snapshot and no snapshot schedule, by
+decision rather than omission:
+
+- they cost one run of `regenerate-pki.sh` to remake, so a backup buys little;
+- a snapshot of a disk holding private keys is **itself a secret-bearing
+  artifact** with its own access-control problem. It would trade one exposure
+  for two.
+- it would also sit outside the $5 cap's accounting, which is currently exact.
+
+`deletionProtection` is **on**, which covers accidental loss — verified by
+attempting the delete and being refused. `regenerate-pki.sh` covers the rest.
+
+#### What regenerating costs
+
+> **A new CA invalidates every client certificate it ever signed.**
+
+The gateway authorises an inbound caller on
+`CN=openshell-client/OU=openshell-user`, signed by this CA. Any copy distributed
+to another host stops being accepted the moment the script runs. There is no
+revocation and no grace period — the old CA is simply gone.
+
+So regenerating is a **two-host operation** once a client certificate has been
+distributed: re-issue and redeploy it in the same maintenance window, or the
+app's transport fails closed against a gateway that no longer knows it.
+
+**Today nothing holds a copy**, which is why the script could be tested by
+actually running it. That changes the first time a transport ships (#4561), and
+the cost of this decision rises at that moment.
+
+#### The script was proved by running it, not by review
+
+On the live VM, 2026-10-30:
+
+```
+without --force      exit 2, refused — a PKI is already present
+with --force         layout IDENTICAL (modes and paths, 10 files)
+                     ca.crt digest ec4cd3f8… -> bba0cabd…   (genuinely new)
+                     chain verifies; client subject, server SAN, Ed25519,
+                     kid 32 bytes and mode 0400 all as before
+after restart        openshell-gateway active, readyz HTTP 200
+```
+
+The digest changing is the part that matters: it proves the run produced new
+material rather than silently doing nothing. A script that reports success and
+regenerates nothing is the failure mode worth guarding against here, because
+the output looks identical either way.
+
+It **refuses by default** and needs `--force`. A script that silently
+regenerates over a working PKI is a footgun: the failure is invisible until an
+inbound call is rejected, and by then the old CA is unrecoverable.
 
 ### The network posture, and why it opts out of the project defaults
 

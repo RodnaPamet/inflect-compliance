@@ -52,6 +52,8 @@ import type { Role } from '@prisma/client';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
 import { Tooltip } from '@/components/ui/tooltip';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ErrorState } from '@/components/ui/error-state';
@@ -371,24 +373,18 @@ function RoleForm({
     return (
         <div className="space-y-default">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
-                <div>
-                    <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                        {t('roles.nameLabel')}
-                    </label>
-                    <input
+                {/* Labelled fields, so each label names its control (#4581). */}
+                <FormField label={t('roles.nameLabel')} required>
+                    <Input
                         type="text"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         placeholder={t('roles.namePlaceholder')}
-                        className="input w-full"
                         maxLength={100}
                         id="role-name-input"
                     />
-                </div>
-                <div>
-                    <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                        {t('roles.baseRoleLabel')}
-                    </label>
+                </FormField>
+                <FormField label={t('roles.baseRoleLabel')} description={t('roles.baseRoleHint')}>
                     <Combobox
                         hideSearch
                         id="role-base-select"
@@ -397,26 +393,19 @@ function RoleForm({
                         options={baseRoleOptions}
                         matchTriggerWidth
                     />
-                    <p className="text-[10px] text-content-subtle mt-1">
-                        {t('roles.baseRoleHint')}
-                    </p>
-                </div>
+                </FormField>
             </div>
 
-            <div>
-                <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                    {t('roles.descriptionLabel')}
-                </label>
-                <input
+            <FormField label={t('roles.descriptionLabel')}>
+                <Input
                     type="text"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder={t('roles.descriptionPlaceholder')}
-                    className="input w-full"
                     maxLength={500}
                     id="role-description-input"
                 />
-            </div>
+            </FormField>
 
             {onWrongBase.length > 0 && (
                 <InlineNotice variant="warning" id="role-needs-admin-base">

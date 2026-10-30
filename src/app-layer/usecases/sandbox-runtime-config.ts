@@ -20,8 +20,10 @@ export {
     parseDeclaredChannels,
 } from '@/lib/sandbox-runtime/declarations';
 import {
+    PROBE_CACHE_TTL_MS,
     probeSandboxRuntime,
     type ProbeOutcome,
+    type ProbeResult,
 } from '@/lib/sandbox-runtime/health-probe';
 import {
     classifyVersionDrift,
@@ -94,22 +96,56 @@ export function readSandboxRuntimeDeclaration(): SandboxRuntimeDeclaration {
  * "would dress a DECLARED value in an OBSERVED one's clothes" — so the observed
  * value arrives through a different door, and only from the gateway's own body.
  */
+/**
+ * The probe's last answer, reused for `PROBE_CACHE_TTL_MS` — #4572.
+ *
+ * Module-level, so PER PROCESS rather than shared. That is the right scope: it
+ * is a latency optimisation and not a correctness mechanism, so a second
+ * instance probing independently is harmless. Keyed by URL so that changing
+ * `SANDBOX_RUNTIME_HEALTH_URL` cannot be answered from a cache built against
+ * the old one.
+ */
+let probeCache: { readonly at: number; readonly url: string; readonly result: ProbeResult } | null =
+    null;
+
+/** Exported for the test that proves the cache is actually consulted. */
+export function resetProbeCacheForTests(): void {
+    probeCache = null;
+}
+
 export async function readSandboxRuntimeDeclarationWithProbe(
     fetchImpl?: typeof fetch,
+    nowMs: () => number = Date.now,
 ): Promise<
     SandboxRuntimeDeclaration & {
         readonly probeOutcome: ProbeOutcome;
+        /** When the probe answered. Rendered, so a reused verdict is visible as one. */
+        readonly probedAtIso: string;
         readonly versionDrift: VersionDriftFinding;
     }
 > {
     const declared = readSandboxRuntimeDeclaration();
-    const probe = await probeSandboxRuntime(env.SANDBOX_RUNTIME_HEALTH_URL, fetchImpl);
+    const url = env.SANDBOX_RUNTIME_HEALTH_URL ?? '';
+    const now = nowMs();
+
+    // The DECLARATION is never cached — that is what `force-dynamic` is for, and
+    // it is read from this process's own environment so it costs nothing. Only
+    // the network observation is reused.
+    if (probeCache === null || probeCache.url !== url || now - probeCache.at >= PROBE_CACHE_TTL_MS) {
+        probeCache = {
+            at: now,
+            url,
+            result: await probeSandboxRuntime(env.SANDBOX_RUNTIME_HEALTH_URL, fetchImpl),
+        };
+    }
+
     return {
         ...declared,
         // The ONLY field the probe may set. A probe that answered must not be
         // able to change what this deploy declared.
-        reachableVersion: probe.reachableVersion,
-        probeOutcome: probe.outcome,
+        reachableVersion: probeCache.result.reachableVersion,
+        probeOutcome: probeCache.result.outcome,
+        probedAtIso: new Date(probeCache.at).toISOString(),
         /*
             5.2's SECOND anchor, narrowed to what a running gateway can
             actually be asked — #4567.
@@ -125,8 +161,14 @@ export async function readSandboxRuntimeDeclarationWithProbe(
             finding rather than silence. The gateway is stopped most of the
             time by design (#4571), so that is the common reading, and it must
             not be indistinguishable from a verified match.
+
+            READ FROM THE CACHE, like the two fields above it. #4584 made the
+            probe reusable for 30s, and a classification derived from a fresh
+            read while `reachableVersion` came from a cached one would let the
+            rendered version and the verdict about it disagree — the drift
+            check contradicting the number beside it.
         */
-        versionDrift: classifyVersionDrift({ reported: probe.reachableVersion }),
+        versionDrift: classifyVersionDrift({ reported: probeCache.result.reachableVersion }),
     };
 }
 

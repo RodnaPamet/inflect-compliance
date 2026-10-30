@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { auditLogDetailsText } from '@/lib/audit/audit-log-display';
 import { gateAdminPage } from '../_lib/admin-page-gate';
+import { ADMIN_PAGE_REQUIREMENTS, admitsAdminPage } from '../_lib/admin-page-requirements';
 import { AuditLogClient } from './AuditLogClient';
 
 export const dynamic = 'force-dynamic';
@@ -66,7 +67,9 @@ export default async function AuditLogPage({
     }));
     // An AUDITOR reaches this page without `admin.view` (owner decision
     // 2026-10-29), so the Admin crumb would lead them to the forbidden page.
-    const adminCrumb = ctx.appPermissions.admin.view
+    // The landing also needs an admin membership (#4581 B), so the crumb asks
+    // both, as the landing's own gate does.
+    const adminCrumb = admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS['/admin'])
         ? [{ label: t('title'), href: tenantHref('/admin') }]
         : [];
 

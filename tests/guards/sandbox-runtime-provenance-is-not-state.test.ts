@@ -90,7 +90,26 @@ describe('no rendered string asserts a setting effective value', () => {
         const body = (block as RegExpExecArray)[1];
         // Every interpolation in that block names `provenance` or a translation.
         const reads = [...body.matchAll(/\{(view|declaration)\.(\w+)/g)].map((m) => `${m[1]}.${m[2]}`);
-        expect(reads.filter((r) => !['view.appliedAtIso', 'view.configDigest'].includes(r))).toEqual([]);
+        /*
+            THE ALLOWLIST IS THE POINT, not a formality. Each entry is a field
+            somebody decided may appear in this block, and the guard caught the
+            third one being added (#4572) rather than letting it in silently.
+
+            All three are PROVENANCE — what was sent, when, and when we last
+            looked. None is a setting's effective value, which is the thing this
+            page cannot know and must not imply. A fourth entry should be
+            argued the same way, and a field named after a channel or a mode
+            does not belong here at all.
+        */
+        const ALLOWED_PROVENANCE_READS = [
+            'view.appliedAtIso',
+            'view.configDigest',
+            // #4572: WHEN the probe answered. The verdict may be reused for up
+            // to 30 seconds, so the age is rendered — a cached "reachable" must
+            // not read as a current one.
+            'view.probedAtIso',
+        ];
+        expect(reads.filter((r) => !ALLOWED_PROVENANCE_READS.includes(r))).toEqual([]);
     });
 
     it('the reachability strings name no reporting channel', () => {
@@ -134,5 +153,129 @@ describe('no rendered string asserts a setting effective value', () => {
                 .filter((k) => k.startsWith('reachability'))
                 .sort();
         expect(keysFor('bg')).toEqual(keysFor('en'));
+    });
+});
+
+describe('the PKI regeneration script exists and says what it costs', () => {
+    /*
+        #4565. The owner decided the PKI is REGENERABLE rather than backed up,
+        and that decision is only safe while the procedure exists and names its
+        consequence. A new CA invalidates every client certificate it signed —
+        there is no revocation and no grace period — so a reader who runs the
+        script without knowing that can break an inbound caller with no obvious
+        cause.
+
+        Asserted on the script's PRESENCE and on the two properties that make it
+        safe, not on its prose: it must refuse by default, and it must state the
+        client-certificate consequence somewhere a reader meets it.
+    */
+    const SCRIPT = 'deploy/openshell/regenerate-pki.sh';
+
+    it('the script is committed and executable', () => {
+        const abs = path.join(REPO_ROOT, SCRIPT);
+        expect(fs.existsSync(abs)).toBe(true);
+        // Mode matters: a procedure nobody can run is a document.
+        expect((fs.statSync(abs).mode & 0o111) !== 0).toBe(true);
+    });
+
+    it('refuses by default and needs an explicit force', () => {
+        // A script that silently regenerates over a working PKI is a footgun:
+        // the failure is invisible until an inbound call is rejected, and by
+        // then the old CA is unrecoverable.
+        const src = read(SCRIPT);
+        const lines = src.split('\n');
+        expect(lines.filter((l) => l.includes('--force')).length).toBeGreaterThanOrEqual(2);
+        // An early exit guarded on an existing CA, before anything is written.
+        expect(lines.filter((l) => /exit 2/.test(l)).length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('states the client-certificate consequence', () => {
+        // The one fact a reader must not discover afterwards.
+        const src = read(SCRIPT).toLowerCase();
+        expect(src.includes('invalidates every client certificate')).toBe(true);
+        expect(src.includes('re-issue')).toBe(true);
+    });
+
+    it('derives the SAN address rather than hardcoding one', () => {
+        // A hardcoded address produces a certificate that fails verification on
+        // any other host — the sort of thing nobody notices until mTLS refuses
+        // a connection.
+        const src = read(SCRIPT);
+        expect(src.includes('hostname -I')).toBe(true);
+        // And no literal 10.x address baked into the cert material.
+        const literals = src.split('\n').filter((l) => /IP:10\.\d+\.\d+\.\d+/.test(l));
+        expect(literals).toEqual([]);
+    });
+
+    it('the README records the decision and that it was proved by running it', () => {
+        const readme = read('deploy/openshell/README.md');
+        const lines = readme.split('\n');
+        expect(lines.filter((l) => l.includes('regenerate-pki')).length).toBeGreaterThanOrEqual(1);
+        // The decision is only auditable if the reasoning is written down.
+        expect(lines.filter((l) => /REGENERABLE, not backed up/.test(l)).length).toBe(1);
+    });
+});
+
+describe('an empty deploy value means absent, not invalid', () => {
+    /*
+        #4564. Compose and shell defaults produce EMPTY STRINGS, not absent
+        variables — `"${VAR:-}"` is how every optional value in this stack is
+        defaulted. `SANDBOX_RUNTIME_HEALTH_URL` was `z.string().url().optional()`,
+        which accepts `undefined` and rejects `''` with "Invalid URL", so an
+        operator who left the line in but blank would have failed env validation
+        and the container would not have started.
+
+        A working state turned into an outage by a variable nobody set. Asserted
+        on the SCHEMA rather than by booting the app, because the failure is a
+        validation one and that is where it lives.
+    */
+    it('coerces an empty or whitespace health URL to absent', async () => {
+        const { z } = await import('zod');
+        // The shape `src/env.ts` uses. Kept in step by the assertion below that
+        // the real file still preprocesses this variable.
+        const schema = z.preprocess(
+            (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+            z.string().url().optional(),
+        );
+        for (const empty of ['', '   ', '\t']) {
+            const r = schema.safeParse(empty);
+            expect(r.success).toBe(true);
+            expect(r.success && r.data).toBeUndefined();
+        }
+    });
+
+    it('still rejects a malformed URL — the coercion does not widen validation', async () => {
+        const { z } = await import('zod');
+        const schema = z.preprocess(
+            (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+            z.string().url().optional(),
+        );
+        expect(schema.safeParse('not-a-url').success).toBe(false);
+        expect(schema.safeParse('http://10.132.0.28:8081').success).toBe(true);
+    });
+
+    it('env.ts actually preprocesses that variable (not just this test)', () => {
+        // The assertions above describe a schema shape; this holds the real file
+        // to it. Without this they would pass while `env.ts` kept the raw
+        // `z.string().url().optional()` that caused the problem.
+        const src = read('src/env.ts');
+        const lines = src.split('\n');
+        const idx = lines.findIndex((l) => l.includes('SANDBOX_RUNTIME_HEALTH_URL:'));
+        expect(idx).toBeGreaterThan(-1);
+        expect(lines[idx]).toContain('z.preprocess');
+    });
+
+    it('the deploy README names all four variables an operator must set', () => {
+        // The variables are useless undocumented: nothing in the repo sets them
+        // and the page is blank until somebody does.
+        const readme = read('deploy/openshell/README.md');
+        for (const v of [
+            'SANDBOX_RUNTIME_CONFIG_DIGEST',
+            'SANDBOX_RUNTIME_APPLIED_AT',
+            'SANDBOX_RUNTIME_CHANNELS',
+            'SANDBOX_RUNTIME_HEALTH_URL',
+        ]) {
+            expect(readme.split('\n').filter((l) => l.includes(v)).length).toBeGreaterThanOrEqual(1);
+        }
     });
 });

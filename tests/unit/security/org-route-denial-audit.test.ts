@@ -134,7 +134,7 @@ const asHandler = (h: unknown): Handler => h as Handler;
 const ALL_FALSE = {
     canViewPortfolio: false, canDrillDown: false, canExportReports: false,
     canManageTenants: false, canManageMembers: false, canConfigureDashboard: false,
-    canSetThreatLevel: false, canSetMaturity: false, canManageAgentSwitches: false,
+    canSetThreatLevel: false, canSetMaturity: false, canManageAgentSwitches: false, canManageOwners: false,
 };
 
 const ctxWith = (flags: Partial<typeof ALL_FALSE>) => ({

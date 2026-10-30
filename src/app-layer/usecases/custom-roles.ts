@@ -71,6 +71,32 @@ async function findLiveCustomRoleByName(
     });
 }
 
+/** The partial unique index on a LIVE role's name (20261029190000). */
+const LIVE_NAME_INDEX = 'TenantCustomRole_tenantId_name_key';
+
+/**
+ * Whether `err` is the partial unique index refusing a second LIVE role of
+ * one name — what `findLiveCustomRoleByName` checks for, lost to a race
+ * between the check and the write (#4581). Without this the loser of the race
+ * got a 500 instead of the sentence the check would have given it.
+ */
+function isLiveNameTaken(err: unknown): boolean {
+    const e = err as {
+        code?: unknown;
+        meta?: { target?: unknown; driverAdapterError?: { cause?: { constraint?: { index?: unknown; fields?: unknown } } } };
+    } | null;
+    if (e?.code !== 'P2002') return false;
+    // The pg driver adapter names the index; the classic engine names its
+    // columns in `target`. Anything else is not recognised and stays a 500,
+    // as it was, rather than being reported as a name clash it may not be.
+    const constraint = e.meta?.driverAdapterError?.cause?.constraint;
+    if (constraint?.index === LIVE_NAME_INDEX) return true;
+    if (Array.isArray(constraint?.fields) && constraint.fields.includes('name')) return true;
+    const target = e.meta?.target;
+    if (target === LIVE_NAME_INDEX) return true;
+    return Array.isArray(target) && target.includes('name');
+}
+
 // ─── List Custom Roles ───
 
 /**
@@ -158,16 +184,25 @@ export async function createCustomRole(ctx: RequestContext, input: CreateCustomR
             throw badRequest(`A custom role named "${name}" already exists in this tenant.`);
         }
 
-        const role = await db.tenantCustomRole.create({
-            data: {
-                tenantId: ctx.tenantId,
-                name,
-                description: input.description?.trim() || null,
-                baseRole: input.baseRole,
-                permissionsJson: input.permissionsJson as object,
-                isActive: true,
-            },
-        });
+        const role = await db.tenantCustomRole
+            .create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    name,
+                    description: input.description?.trim() || null,
+                    baseRole: input.baseRole,
+                    permissionsJson: input.permissionsJson as object,
+                    isActive: true,
+                },
+            })
+            .catch((err: unknown) => {
+                // Two creates of one name at once both pass the check above;
+                // the partial unique index refuses the second (#4581).
+                if (isLiveNameTaken(err)) {
+                    throw badRequest(`A custom role named "${name}" already exists in this tenant.`);
+                }
+                throw err;
+            });
 
         await logEvent(db, ctx, {
             action: 'CUSTOM_ROLE_CREATED',
@@ -204,8 +239,10 @@ export async function updateCustomRole(
     assertCanManageMembers(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // A deleted (inactive) role is gone as far as the API is concerned: it
+        // is hidden from the list and cannot be edited or deleted again (#4581).
         const existing = await db.tenantCustomRole.findFirst({
-            where: { id: roleId, tenantId: ctx.tenantId },
+            where: { id: roleId, tenantId: ctx.tenantId, isActive: true },
         });
         if (!existing) {
             throw notFound('Custom role not found.');
@@ -274,10 +311,19 @@ export async function updateCustomRole(
             );
         }
 
-        const updated = await db.tenantCustomRole.update({
-            where: { id: roleId },
-            data,
-        });
+        const updated = await db.tenantCustomRole
+            .update({
+                where: { id: roleId },
+                data,
+            })
+            .catch((err: unknown) => {
+                // A rename racing another create or rename of the same name
+                // (#4581); see `isLiveNameTaken`.
+                if (isLiveNameTaken(err)) {
+                    throw badRequest(`A custom role named "${data.name}" already exists.`);
+                }
+                throw err;
+            });
 
         await logEvent(db, ctx, {
             action: 'CUSTOM_ROLE_UPDATED',
@@ -303,8 +349,10 @@ export async function deleteCustomRole(ctx: RequestContext, roleId: string) {
     assertCanManageMembers(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // A deleted (inactive) role is gone as far as the API is concerned: it
+        // is hidden from the list and cannot be edited or deleted again (#4581).
         const existing = await db.tenantCustomRole.findFirst({
-            where: { id: roleId, tenantId: ctx.tenantId },
+            where: { id: roleId, tenantId: ctx.tenantId, isActive: true },
         });
         if (!existing) {
             throw notFound('Custom role not found.');
