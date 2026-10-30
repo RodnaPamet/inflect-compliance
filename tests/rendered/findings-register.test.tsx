@@ -79,6 +79,7 @@ import type { Role } from '@prisma/client';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { FindingsClient } from '@/app/t/[tenantSlug]/(app)/findings/FindingsClient';
 import { computePermissions } from '@/lib/tenant-context';
+import { getPermissionsForRole } from '@/lib/permissions';
 
 const en = require('../../messages/en.json');
 const F = en.findings;
@@ -154,14 +155,25 @@ beforeEach(() => {
     }) as unknown as typeof fetch;
 });
 
-function mount(role: Role, rows: Row[] = [ROW]) {
+/**
+ * The two write props as the page computes them (#4535): the `findings.*` key
+ * the route asks AND the coarse tier the usecase asserts. `keys` overrides the
+ * role's default findings keys, standing in for a custom role.
+ */
+function abilitiesFor(role: Role, keys?: Partial<{ create: boolean; edit: boolean }>) {
+    const coarse = computePermissions(role).canWrite;
+    const findings = { ...getPermissionsForRole(role).findings, ...keys };
+    return { canCreate: coarse && findings.create, canEdit: coarse && findings.edit };
+}
+
+function mount(role: Role, rows: Row[] = [ROW], keys?: Partial<{ create: boolean; edit: boolean }>) {
     return render(
         <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}>
             <TooltipProvider>
                 <FindingsClient
                     initialFindings={rows}
                     tenantSlug="acme"
-                    canWrite={computePermissions(role).canWrite}
+                    {...abilitiesFor(role, keys)}
                     translations={TRANSLATIONS}
                 />
             </TooltipProvider>
@@ -187,6 +199,29 @@ describe('the register offers writes to the roles the server lets write', () => 
         expect(within(table()).queryByRole('button', { name: F.inProgress })).toBeNull();
         // The column that held them is gone rather than left empty.
         expect(within(table()).queryByText(en.common.actions)).toBeNull();
+    });
+
+    // #4535 — a custom role on an EDITOR base can hold one findings key and
+    // not the other; each write follows its own key.
+    it('a custom role without findings.create keeps the status actions but no Finding button', async () => {
+        mount('EDITOR', [ROW], { create: false });
+        await screen.findByText(ROW.title);
+        expect(createButton()).toBeNull();
+        expect(within(table()).getByRole('button', { name: F.inProgress })).toBeInTheDocument();
+    });
+
+    it('a custom role without findings.edit keeps the Finding button but no status actions', async () => {
+        mount('EDITOR', [ROW], { edit: false });
+        await screen.findByText(ROW.title);
+        expect(createButton()).toBeInTheDocument();
+        expect(within(table()).queryByRole('button', { name: F.inProgress })).toBeNull();
+    });
+
+    it('a findings key alone does not offer a write the coarse tier refuses', async () => {
+        mount('READER', [ROW], { create: true, edit: true });
+        await screen.findByText(ROW.title);
+        expect(createButton()).toBeNull();
+        expect(within(table()).queryByRole('button', { name: F.inProgress })).toBeNull();
     });
 });
 
@@ -417,7 +452,8 @@ describe('the register filters by status', () => {
                         initialFindings={[CLOSED_ROW]}
                         initialFilters={{ status: 'CLOSED' }}
                         tenantSlug="acme"
-                        canWrite={false}
+                        canCreate={false}
+                        canEdit={false}
                         translations={TRANSLATIONS}
                     />
                 </TooltipProvider>

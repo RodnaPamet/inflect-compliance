@@ -37,6 +37,8 @@ const EXPECTED_AI_ADMIN: { [D in keyof PermissionSet]: PermissionSet[D] } = {
     risks: { view: true, create: false, edit: false },
     assets: { view: true, create: false, edit: false },
     vendors: { view: true, create: false, edit: false },
+    // READER's coarse tier reads findings and writes none (#4535).
+    findings: { view: true, create: false, edit: false },
     tests: { view: true, create: false, execute: false },
     incidents: { view: true, manage: false },
     // The people layer is OWNER/ADMIN only (owner decision, 2026-10-29).

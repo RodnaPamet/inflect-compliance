@@ -4310,6 +4310,8 @@
     }
   },
   "findings": {
+    "accessTitle": "No access to findings",
+    "accessMessage": "Your role can't view the findings register. Ask an Owner or Admin for access.",
     "title": "Findings Register",
     "listDescription": "Issues raised in audit and assessment — owned, dated, closed.",
     "findingsCount": "{count} findings",
@@ -6824,6 +6826,7 @@
       "risks": "Risks",
       "assets": "Assets",
       "vendors": "Vendors",
+      "findings": "Findings",
       "tests": "Tests",
       "incidents": "Incidents",
       "personnel": "Personnel",
@@ -7345,6 +7348,7 @@
       "continuity": "Business continuity",
       "processes": "Processes",
       "vendors": "Vendors",
+      "findings": "Findings",
       "tests": "Tests",
       "frameworks": "Frameworks",
       "audits": "Audits",
