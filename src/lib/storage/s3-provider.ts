@@ -120,6 +120,7 @@ export class S3StorageProvider implements StorageProvider {
         });
 
         // Start the S3 fetch asynchronously
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises -- floating by design: the stream is the consumer, and the IIFE's own catch destroys it with the error (#4579)
         (async () => {
             try {
                 const response = await client.send(new GetObjectCommand({

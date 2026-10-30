@@ -12,12 +12,14 @@
  * own `tenantSlug` segment, because it runs before any context is built: a
  * route for a tenant the list does not name answers the same 404.
  *
- * Server-only: it reads the environment.
+ * Since #4557 an organization decides it for its workspaces when the
+ * deployment leaves `AGENT_PROFILES` unset, read by the workspace's own slug.
+ *
+ * Server-only: it reads the environment and the database.
  */
-import { env } from '@/env';
 import { notFound } from '@/lib/errors/types';
 
-import { agentProfilesEnabledFor } from './agent-profile';
+import { agentProfilesOnFor } from './agent-switches-policy';
 
 /** The `tenantSlug` segment from a route handler's second argument, if it has one. */
 async function routeTenantSlug(routeArgs: unknown): Promise<string | null> {
@@ -29,7 +31,7 @@ async function routeTenantSlug(routeArgs: unknown): Promise<string | null> {
 export function whenAgentProfilesEnabled<A extends unknown[], R>(handler: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
     return async (...args: A): Promise<R> => {
         const slug = await routeTenantSlug(args[1]);
-        if (!agentProfilesEnabledFor(env.AGENT_PROFILES, env.AGENT_PROFILES_TENANTS, slug)) throw notFound('Not found.');
+        if (!(await agentProfilesOnFor(slug))) throw notFound('Not found.');
         return handler(...args);
     };
 }

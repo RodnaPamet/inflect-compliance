@@ -2990,6 +2990,20 @@ description to `admin.agentEngines.engine`. A new `StaticDriverReason` must get
 a sentence in `REASON_MESSAGE`, which `satisfies` the union, so `tsc` fails
 until it does.
 
+**The two agent switches are an organization's to decide** (#4557, owner
+decision 2026-10-30). `AGENT_PROFILES` and `AGENT_DRIVER_TOOL_RUNNER` read as
+three states (`readDeploymentSwitch` in `src/lib/agentic/agent-switches.ts`):
+`1`/`true` on for every workspace, any other set value off for every workspace
+(a typo is a veto), and UNSET leaves each workspace's organization to decide
+(`Organization.agentProfilesEnabled` / `agentToolRunnerEnabled`, set by an org
+admin on `/org/:slug/settings`, audited `ORG_AGENT_SWITCHES_CHANGED`). A
+workspace with no organization stays off, and `AGENT_PROFILES_TENANTS` still
+opens the slugs it names. Every reader goes through `agentProfilesDecisionFor` /
+`toolRunnerDecisionFor` in `agent-switches-policy.ts`, which read the
+organization by the workspace's OWN id or slug. Never read either variable
+directly: that reports an organization's choice as off. The Tool Runner's
+"available" is still not "chosen": the workspace owner chooses the engine.
+
 **A new engine passes the driver conformance suite before it is switched on**
 (Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables
 hold eleven run scenarios and one admission scenario. An engine supplies an

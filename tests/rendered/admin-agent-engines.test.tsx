@@ -571,3 +571,45 @@ describe('an owner on a deployment that allows the engine', () => {
         expect(screen.getByText(COPY.boundKeyNote)).toBeInTheDocument();
     });
 });
+
+describe('the organization holds the Tool Runner switch (#4557)', () => {
+    const orgOff = setting({
+        mode: 'TOOL_RUNNER',
+        envEnabled: false,
+        effective: { driver: 'static', reason: 'ENV_DISABLED' },
+        toolRunner: { envEnabled: false, implemented: true, basis: 'ORGANIZATION_OFF' },
+    });
+    const ORG = EN.admin.agentEngines as unknown as {
+        organizationTerm: string;
+        deploymentOffOrganization: string;
+        reasonToolRunner: Record<string, string>;
+    };
+
+    it('the headline names the organization, not the operator, in both catalogues', () => {
+        arrange({ setting: orgOff, canChange: false });
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(ORG.reasonToolRunner.ORGANIZATION_OFF);
+        expect(typeof at(BG, 'admin.agentEngines.reasonToolRunner.ORGANIZATION_OFF')).toBe('string');
+    });
+
+    it('the switch term is labelled as the organization\'s', () => {
+        arrange({ setting: orgOff, canChange: false });
+        const env = screen.getByTestId('agent-engines-term-ENV');
+        expect(env).toHaveTextContent(ORG.organizationTerm);
+        expect(env).not.toHaveTextContent(COPY.operatorTerm);
+    });
+
+    it('an owner with no engine available is told the organization can turn the Tool Runner on', () => {
+        arrange({ setting: orgOff, canChange: true });
+        expect(screen.getByTestId('agent-engines-organization-can-enable')).toHaveTextContent(ORG.deploymentOffOrganization);
+    });
+
+    it('a deployment that turned it off keeps the operator\'s sentence and label', () => {
+        arrange({
+            setting: { ...orgOff, toolRunner: { envEnabled: false, implemented: true, basis: 'DEPLOYMENT_OFF' } },
+            canChange: true,
+        });
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(COPY.reasonToolRunner.ENV_DISABLED);
+        expect(screen.getByTestId('agent-engines-term-ENV')).toHaveTextContent(COPY.operatorTerm);
+        expect(screen.queryByTestId('agent-engines-organization-can-enable')).toBeNull();
+    });
+});

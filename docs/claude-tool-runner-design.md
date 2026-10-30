@@ -46,6 +46,10 @@ Inflect would host it in the worker, the same way it hosts Flue.
   tool. `toolRunnerModelFor` maps a profile tier to a model id
   (`AGENT_TOOL_RUNNER_MODEL_BALANCED` / `_DEEP`, default Sonnet 5.5 and Opus
   5.5). The Tool Runner driver is its one caller.
+  Every request is logged as `tool-runner: request` by shape only: method,
+  path, top-level body keys and whether a `thread` member was present. The
+  same shape is recorded as `wire` on the run's `MODEL_CALL` step input, so
+  the run page shows what was sent without a log read.
 - **The Tool Runner engine runs agent profiles (Step 2b, #4149, turned on in
   Step 2c, #4150).** `src/lib/agentic/tool-runner/` holds `driver.ts` (a pure
   plan that refuses with a named reason, then the hand-off), `execute.ts` (the
@@ -55,8 +59,10 @@ Inflect would host it in the worker, the same way it hosts Flue.
   and every scenario was mutation-proved. `DRIVER_IMPLEMENTED['tool-runner']` is
   true and `TOOL_RUNNER` is a WRITTEN value of `AgentDriverMode`, so a tenant
   can choose it on Admin → AI features → Agent engines, where it is described
-  "Powered by Claude". It runs only where the operator sets
-  `AGENT_DRIVER_TOOL_RUNNER`. `runsProfiles` is true for it alone, a profile's
+  "Powered by Claude". It runs only where it is available: the operator sets
+  `AGENT_DRIVER_TOOL_RUNNER=1`, or leaves it unset and the workspace's
+  organization turns the engine on in its Settings (#4557). Any other set value
+  makes it unavailable everywhere. `runsProfiles` is true for it alone, a profile's
   definition asks for it, and the Anthropic row of `docs/sub-processors.md`
   names "tenant-authored agent instructions". The builder's **Test run**
   (Behaviour tab, `POST …/profile/versions/:version/test-run`) starts a
@@ -303,6 +309,7 @@ step (1H) is merged.
 | 2c | Turn the Tool Runner engine on | 2b deployed | Significant — enables an engine, new data category at a sub-processor |
 | 2d | Skills on the Tool Runner engine | 2c | Standard (delivered, #4151) |
 | 2H | Phase 2 hardening | 2a–2d | Standard |
+| 2e | Inline sub-agents (delegation) | 2H | Significant — schema migration, new engine-supplied tool |
 | 2x | Carry thinking blocks through the assistant's loop | — (independent) | Standard (delivered by #4183) |
 
 ### Phase 2 — Tool Runner engine
@@ -610,6 +617,72 @@ Deliver per the Definition of done.
 - [ ] The evidence row is filled from production, not from a test.
 
 **Exit.** The Tool Runner engine has run customer-built agents in production, stopped when told to, and stored nothing at Anthropic.
+
+#### Step 2e — Inline sub-agents (delegation)
+
+**Goal.** A profile version can define sub-agents inline, and the Tool Runner
+engine runs them through an Inflect `delegate` tool, with every authority rule
+the parent run has. This is the owner's decision 4 of 2026-10-30 in
+`docs/claude-agent-sdk-design.md`: on in v1, inline, subset-only, one level deep.
+
+```text
+You are implementing Step 2e of the roadmap in docs/claude-tool-runner-design.md.
+Read the global rules and definition of done in the Roadmap of
+docs/claude-agent-sdk-design.md, its "Decisions for the owner" decision 4, and
+this document's Current state. Read src/lib/agentic/tool-runner/ (execute.ts,
+tools.ts, skills.ts, supplied-tools.ts), src/lib/agentic/engine-tools/ and
+src/app-layer/usecases/agent-profiles.ts. Step 2H is merged.
+
+Part 1, before any code: write a "Delegation" section in this document's design
+(not its Current state) that settles the points below, and stop for the owner
+if one of them needs a decision the owner has not made.
+
+Goal: inline sub-agents on the Tool Runner engine.
+
+1. Model. A profile version carries at most 4 sub-agents, each with a name, its
+   own instructions (sanitised, scanned by the skill text scan, encrypted,
+   size-capped as the version's are), toolNames that are a subset of the
+   version's, skillRefs that are a subset of the version's, and maxTurns no
+   higher than the version's. A sub-agent naming anything outside the version's
+   sets is refused at save by name, never dropped. The version's
+   instructionsHash covers every sub-agent's instructions, so a reviewer
+   approves all of the text the run will use. Approval re-checks all of it.
+2. The delegate tool is engine-supplied, like activate_skill, and offered only
+   to the parent when the version defines sub-agents. Its name parameter is an
+   enum of the version's sub-agent names. A sub-agent is never offered
+   delegate: delegation is one level deep.
+3. A delegation runs a nested loop with the sub-agent's instructions and tool
+   subset. Every tool call goes through runGuardedTool under the parent agent's
+   identity, with a guard source that names the sub-agent. Steps, tool calls,
+   tokens and wall clock are charged to the parent run's caps. The kill switch
+   and breaker are asked before each child model call. readOnly, output kind and
+   residency are the parent run's. The child's catalogue is measured against
+   the per-run budget.
+4. The ledger records the delegation as a TOOL_CALL step naming delegate, and
+   the child's MODEL_CALL and TOOL_CALL steps as steps of the same run,
+   labelled with the sub-agent. The run page shows them grouped under it.
+5. The Behaviour editor gains a sub-agents section, whose pickers offer only
+   the version's own tools and skills. The approval view shows every
+   sub-agent's instructions.
+
+Tests: save refusals for each subset rule and the cap of 4; the hash changes
+when only a sub-agent's text changes; a conformance scenario where a sub-agent
+asks for a tool outside its subset and is refused, and one where it asks for
+delegate and is refused; the parent's caps halt a child loop; the kill switch
+halts a child before its next model call; a two-tenant test.
+
+Deliver per the Definition of done. This step is Significant.
+```
+
+**Hardening**
+
+- [ ] A sub-agent cannot reach a tool, skill or rung its parent version does not hold (conformance scenario, on this engine).
+- [ ] A sub-agent cannot delegate (test).
+- [ ] The approved hash covers every sub-agent's instructions, and changing one sub-agent's text changes it (test).
+- [ ] Child steps are charged to the parent run's caps, and the kill switch halts a child before its next model call (tests).
+- [ ] Every child tool call is in the ledger under the parent run, labelled with the sub-agent (integration test).
+
+**Exit.** A customer can give their agent sub-agents, and each one can do less than its parent, never more.
 
 #### Step 2x — Carry thinking blocks through the assistant's loop
 
