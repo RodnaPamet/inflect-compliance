@@ -20,7 +20,7 @@ import { getTranslations } from 'next-intl/server';
 
 import {
     readSandboxExecutionPlatformEnabled,
-    readSandboxRuntimeDeclaration,
+    readSandboxRuntimeDeclarationWithProbe,
 } from '@/app-layer/usecases/sandbox-runtime-config';
 
 import { gateAdminPage } from '../_lib/admin-page-gate';
@@ -39,7 +39,12 @@ export default async function SandboxRuntimePage({
     // Awaited for the metadata title only; the rows translate client-side.
     await getTranslations('admin');
 
-    const declaration = readSandboxRuntimeDeclaration();
+    // PROBED here, in the server component, because the health port is
+    // internal: the browser cannot reach it and must not be asked to try. The
+    // probe is bounded at two seconds and an unreachable gateway is the normal
+    // case — the VM is deliberately stopped most of the time (#4448) — so this
+    // adds a verdict to the page rather than a failure mode.
+    const declaration = await readSandboxRuntimeDeclarationWithProbe();
 
     // ISO text, not a Date. `toISOString` is the string the deploy recorded,
     // not one re-rendered in the viewer's timezone — an "applied at" that shifts
@@ -48,6 +53,7 @@ export default async function SandboxRuntimePage({
         configured: declaration.configured,
         configDigest: declaration.configDigest,
         reachableVersion: declaration.reachableVersion,
+        probeOutcome: declaration.probeOutcome,
         channels: declaration.channels,
         appliedAtIso: declaration.appliedAt === null ? null : declaration.appliedAt.toISOString(),
     };

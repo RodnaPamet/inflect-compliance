@@ -103,6 +103,13 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         why: 'NIS2 Article 23 incident response — privileged security-team mutations (incidents.manage) + member-visibility reads (incidents.view).',
     },
     {
+        relPath: 'src/app/api/t/[tenantSlug]/findings',
+        why:
+            'The findings register (#4535). In scope as a WHOLE root, so a route ' +
+            'added under it cannot arrive gated only by the coarse tier, which ' +
+            'writes no AUTHZ_DENIED row and cannot tell a custom role apart.',
+    },
+    {
         relPath: 'src/app/api/t/[tenantSlug]/access-reviews',
         why:
             'Access-review campaigns (Step 5a). Every route under this root is ' +

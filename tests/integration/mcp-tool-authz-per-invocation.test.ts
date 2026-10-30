@@ -82,6 +82,11 @@ let keyProposeReader = '';
 let keyProposeEditor = '';
 // An OWNER principal with a custom role that denies `risks.view` — block 2.
 let keyRiskBlind = '';
+// The same principal on a key that may read the audit log (`admin:write`
+// resolves to ADMIN), for the grounding feed: `get_tenant_context` returns its
+// audit-log rows only to a context holding `canAudit` (owner decision,
+// 2026-10-30), so the domain filter on those rows needs one that does.
+let keyRiskBlindAuditReader = '';
 // A full-authority tenant-A key, and its tenant-B twin — block 3.
 let keyOwnerA = '';
 let keyOwnerB = '';
@@ -302,6 +307,9 @@ describeFn('an agent cannot exceed the human it speaks for', () => {
             TENANT_A, editorId, ['mcp:propose', 'risks:read'], agentA,
         );
         keyRiskBlind = await mintKey(TENANT_A, blindId, WIDE_READ_SCOPES, agentA);
+        keyRiskBlindAuditReader = await mintKey(
+            TENANT_A, blindId, [...WIDE_READ_SCOPES, 'admin:write'], agentA,
+        );
         keyOwnerA = await mintKey(TENANT_A, ownerA, WIDE_READ_SCOPES, agentA);
         keyOwnerB = await mintKey(TENANT_B, ownerB, WIDE_READ_SCOPES, agentB);
         keyUngrantedTool = await mintKey(TENANT_A, ownerA, WIDE_READ_SCOPES, agentNoTools);
@@ -473,7 +481,17 @@ describeFn('an agent cannot exceed the human it speaks for', () => {
                 });
             }
 
-            const { json } = await callTool(keyRiskBlind, 'get_tenant_context');
+            // The audit-log gate first: the key that may read the domain may
+            // not read the audit log, so it gets the counts and no rows at all.
+            const plain = resultOf((await callTool(keyRiskBlind, 'get_tenant_context')).json) as {
+                stats?: unknown;
+                recentActivity?: unknown[];
+            };
+            expect(plain.stats).toBeDefined();
+            expect(plain.recentActivity).toEqual([]);
+
+            // Then the domain filter, on a key whose context may read the log.
+            const { json } = await callTool(keyRiskBlindAuditReader, 'get_tenant_context');
             const ctx = resultOf(json) as { recentActivity?: Array<{ entity: string }> };
             const entities = (ctx.recentActivity ?? []).map((r) => r.entity);
 

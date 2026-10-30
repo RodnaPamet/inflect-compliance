@@ -14,6 +14,7 @@
 import { RequestContext } from '../types';
 import { assertCanReadAutomation } from '../automation';
 import { runInTenantContext } from '@/lib/db-context';
+import { needsTreatmentRiskStatusFilter } from '../domain/risk-status';
 
 export type SuggestionActionType = 'NOTIFY_USER' | 'CREATE_TASK';
 
@@ -30,7 +31,7 @@ export interface RuleSuggestion {
 }
 
 export interface SuggestionPosture {
-    /** Risks in an active state (OPEN / MITIGATING). */
+    /** Risks still needing treatment (OPEN / MITIGATING). */
     activeRiskCount: number;
     /** Trigger events already covered by an ENABLED rule — excluded. */
     coveredEvents: ReadonlySet<string>;
@@ -105,7 +106,7 @@ export async function getAutomationSuggestions(
     return runInTenantContext(ctx, async (db) => {
         const [activeRiskCount, enabledRules] = await Promise.all([
             db.risk.count({
-                where: { tenantId: ctx.tenantId, status: { in: ['OPEN', 'MITIGATING'] } },
+                where: { tenantId: ctx.tenantId, status: needsTreatmentRiskStatusFilter() },
             }),
             db.automationRule.findMany({
                 where: { tenantId: ctx.tenantId, status: 'ENABLED', deletedAt: null },

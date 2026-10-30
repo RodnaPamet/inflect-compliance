@@ -41,6 +41,7 @@ jest.mock('@/app-layer/repositories/AuditRepository', () => ({
         update: jest.fn(),
         createChecklistItem: jest.fn(),
         updateChecklistItem: jest.fn(),
+        lockStatus: jest.fn(),
     },
 }));
 
@@ -85,12 +86,15 @@ const mockCreateFinding = createFinding as jest.MockedFunction<typeof createFind
 const mockCreateTask = createTask as jest.MockedFunction<typeof createTask>;
 const mockSanitize = sanitizePlainText as jest.MockedFunction<typeof sanitizePlainText>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
+const mockLockStatus = AuditRepository.lockStatus as jest.MockedFunction<typeof AuditRepository.lockStatus>;
 
 beforeEach(() => {
     jest.clearAllMocks();
     mockSanitize.mockImplementation((s: string | null | undefined) => `SANITISED(${s})`);
     mockCreate.mockResolvedValue({ id: 'a1', title: 'SANITISED(Q4 audit)' } as never);
     mockUpdate.mockResolvedValue({ id: 'a1' } as never);
+    // An open audit unless a test says otherwise (#4531).
+    mockLockStatus.mockResolvedValue({ status: 'IN_PROGRESS' });
     mockCreateFinding.mockResolvedValue({ id: 'f1' } as never);
     mockCreateTask.mockResolvedValue({ id: 't1', key: 'TASK-1' } as never);
 });
@@ -445,9 +449,12 @@ describe('updateAudit — the status moves the audits hub offers', () => {
         ]));
     });
 
-    it.each(offered)('%s → %s passes the schema and reaches the row', async (_from, to) => {
+    it.each(offered)('%s → %s passes the schema and reaches the row', async (from, to) => {
         const body = UpdateAuditSchema.parse({ status: to });
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeUpdateDb() as never));
+        // From the status the hub offers it from: the read-only rule (#4531)
+        // must admit every move the hub offers, Completed → In Progress included.
+        mockLockStatus.mockResolvedValueOnce({ status: from });
 
         await updateAudit(makeRequestContext('EDITOR'), 'a1', body);
 
@@ -463,5 +470,77 @@ describe('updateAudit — the status moves the audits hub offers', () => {
             updateAudit(makeRequestContext('READER'), 'a1', { status: 'CANCELLED' }),
         ).rejects.toThrow(/permission to modify/);
         expect(mockUpdate).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * A COMPLETED or CANCELLED audit is read-only (#4531, owner decision
+ * 2026-10-30). COMPLETED accepts only the move back to IN_PROGRESS; CANCELLED
+ * accepts nothing. A refusal writes nothing at all: no field, no checklist
+ * result, no FAIL cascade, no audit-log row.
+ */
+describe('updateAudit — a completed or cancelled audit is read-only', () => {
+    const ctx = makeRequestContext('EDITOR');
+    const failItem = [{ id: 'ci-1', prompt: 'Access reviewed', result: 'NOT_TESTED', auditId: 'a1' }];
+
+    async function attempt(status: string, body: Record<string, unknown>) {
+        const db = fakeUpdateDb({ priorItems: failItem });
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+        mockLockStatus.mockResolvedValueOnce({ status });
+        return updateAudit(ctx, 'a1', UpdateAuditSchema.parse(body));
+    }
+
+    function expectNothingWritten() {
+        expect(mockUpdate).not.toHaveBeenCalled();
+        expect(mockUpdateItem).not.toHaveBeenCalled();
+        expect(mockCreateFinding).not.toHaveBeenCalled();
+        expect(mockCreateTask).not.toHaveBeenCalled();
+        expect(mockLog).not.toHaveBeenCalled();
+    }
+
+    it.each([
+        ['an edit to a field', { title: 'Renamed' }],
+        ['a checklist FAIL, which would raise a finding', { checklistUpdates: [{ id: 'ci-1', result: 'FAIL' }] }],
+        ['a move to CANCELLED', { status: 'CANCELLED' }],
+        ['a move to PLANNED', { status: 'PLANNED' }],
+        ['a reopen that also edits a field', { status: 'IN_PROGRESS', title: 'Renamed' }],
+    ])('refuses %s on a COMPLETED audit, writing nothing', async (_what, body) => {
+        await expect(attempt('COMPLETED', body)).rejects.toMatchObject({
+            status: 409,
+            details: { reason: 'AUDIT_COMPLETED_READ_ONLY' },
+        });
+        expectNothingWritten();
+    });
+
+    it('accepts the move back to IN_PROGRESS on a COMPLETED audit', async () => {
+        await attempt('COMPLETED', { status: 'IN_PROGRESS' });
+        expect(mockUpdate.mock.calls[0][3].status).toBe('IN_PROGRESS');
+    });
+
+    it.each([
+        ['an edit to a field', { title: 'Renamed' }],
+        ['a checklist FAIL, which would raise a finding', { checklistUpdates: [{ id: 'ci-1', result: 'FAIL' }] }],
+        ['a reopen to IN_PROGRESS', { status: 'IN_PROGRESS' }],
+        ['a reopen to PLANNED', { status: 'PLANNED' }],
+    ])('refuses %s on a CANCELLED audit, writing nothing', async (_what, body) => {
+        await expect(attempt('CANCELLED', body)).rejects.toMatchObject({
+            status: 409,
+            details: { reason: 'AUDIT_CANCELLED_READ_ONLY' },
+        });
+        expectNothingWritten();
+    });
+
+    it.each(['PLANNED', 'IN_PROGRESS'])('still accepts edits and a checklist FAIL on a %s audit', async (status) => {
+        await attempt(status, { title: 'Renamed', checklistUpdates: [{ id: 'ci-1', result: 'FAIL' }] });
+        expect(mockUpdate).toHaveBeenCalled();
+        expect(mockUpdateItem).toHaveBeenCalled();
+        expect(mockCreateFinding).toHaveBeenCalled();
+    });
+
+    it('an audit that is not this tenant’s is not found, and nothing is written', async () => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeUpdateDb() as never));
+        mockLockStatus.mockResolvedValueOnce(null);
+        await expect(updateAudit(ctx, 'a1', { title: 'x' })).rejects.toMatchObject({ status: 404 });
+        expectNothingWritten();
     });
 });

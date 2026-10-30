@@ -34,6 +34,8 @@
  *                             removed principal loses it. Returns null as a
  *                             REFUSAL; falling back to a system context there
  *                             re-opens the escalation it exists to close.
+ *                             (`resolveMemberContextWithReason` is the same
+ *                             resolution with the refusal named.)
  *   resolveInitiatorContext   the same, for a job that does what one member
  *                             ASKED for (an evidence import, a SharePoint
  *                             sync; a queued workflow run reads its
@@ -46,7 +48,7 @@
  *                             The key's authority now AND the member's, never
  *                             more than either. Refuses with a named reason.
  */
-import type { Role } from '@prisma/client';
+import type { MembershipStatus, Role } from '@prisma/client';
 import { computePermissions, type Permissions } from '@/lib/tenant-context';
 import {
     getPermissionsForRole,
@@ -172,10 +174,12 @@ export function buildSystemContext(input: {
  * reason the first callers borrowed a real member's id, and it is not
  * something a context helper can wish away.
  *
- * THE FK ARGUMENT DOES NOT COVER EVERY CALLER. It was written for two and
- * there are now nine (#4388 classifies them). Where the id comes from a
- * `requestedByUserId` the constraint is satisfied either way, so the ADMIN
- * grant below is not the FK's doing and must be justified on its own.
+ * THE FK ARGUMENT DOES NOT COVER EVERY CALLER. It was written for two, and
+ * #4388 classified nine. Where the id is a person who ASKED for the work, the
+ * ADMIN grant below is not the FK's doing and nothing justifies it: a context
+ * built here is never re-checked, so a requester demoted or removed while the
+ * job waited would still act with full ADMIN, attributed to them. Such a job
+ * resolves the requester's real membership when it runs instead (#4400).
  *
  * What this fixes is the half that IS fixable today: the row now carries
  * `actorType: 'JOB'`, so the trail reads "a job did this, attributed to
@@ -198,8 +202,17 @@ export function buildSystemContext(input: {
  * `buildTenantSystemJobContext` instead** (#4400): it writes as the
  * tenant's SYSTEM user, so the row names no person. The policy review
  * reminder, the evidence retention notifications and the agent owner-orphan
- * pass's transfer task have moved; the other callers move one per pull
- * request, each with a test that the row no longer names a person.
+ * pass's transfer task have moved.
+ *
+ * **Neither identity pass calls this any more** (#4400). A leaver or joiner
+ * pass a person asked for acts with that person's real membership when it
+ * runs, and only while it still holds the key the route asserted; otherwise it
+ * acts with the job's own authority, exactly as the scheduled pass does, and
+ * names nobody (`resolvePassActor`, `usecases/identity-pass-requester.ts`).
+ * That closes #4400's list of borrowing callers. Four jobs that act for a
+ * named member still use this (the control-test runner, agentic evidence
+ * emission, the integration passport sweep and the agent kill-switch drill),
+ * each for its own reason in #4388's classification.
  */
 export function buildDelegatedJobContext(input: {
     tenantId: string;
@@ -309,9 +322,22 @@ export async function buildTenantSystemJobContext(input: {
  * from the other side — the write would still happen, just anonymously.
  * The right response is to skip that principal's item and say so.
  *
+ * One shape of work is not that door, and it is narrow: work the job ALREADY
+ * does on its own authority, on a schedule, whatever anybody asks, where a
+ * person's request changes only WHEN it runs. The identity leaver and joiner
+ * passes are that (#4400): a refused requester's pass still runs as the
+ * scheduled pass would, names nobody, and records the refusal
+ * (`resolvePassActor`). It does
+ * not license a fallback anywhere a refusal would stop work the job would
+ * otherwise never do.
+ *
  * Mirrors `resolveActorCtx` in `automation/action-executor.ts`, which
  * closed the identical hole for automation rules, and reuses the same
  * `computePermissions` so the two cannot drift.
+ *
+ * A caller that must SAY why it was refused reads the same resolution through
+ * `resolveMemberContextWithReason`; this is that function with the reason
+ * dropped, so the two cannot disagree about who is refused.
  */
 export async function resolveMemberContext(input: {
     tenantId: string;
@@ -319,27 +345,63 @@ export async function resolveMemberContext(input: {
     job: string;
     discriminator?: string;
 }): Promise<RequestContext | null> {
+    const resolved = await resolveMemberContextWithReason(input);
+    return resolved.ok ? resolved.ctx : null;
+}
+
+/**
+ * `resolveMemberContext`'s answer, with the refusal named.
+ *
+ * `NOT_A_MEMBER` is a membership row that does not exist, which is what
+ * removing somebody from a tenant leaves (`removeTenantMember` deletes the
+ * row). `NOT_ACTIVE` is a row whose status is anything but ACTIVE, carried so
+ * the record can say which.
+ */
+export type MemberContextResolution =
+    | { ok: true; ctx: RequestContext }
+    | { ok: false; reason: 'NOT_A_MEMBER' }
+    | { ok: false; reason: 'NOT_ACTIVE'; status: MembershipStatus };
+
+/**
+ * `resolveMemberContext` for a caller that records WHY a principal was refused
+ * (#4400: a manually requested identity pass whose requester has since left
+ * or been deactivated runs anyway, on the job's own authority, and its record
+ * names the reason). One query, one resolution; a refusal is still a refusal,
+ * and this function never falls back to anything.
+ */
+export async function resolveMemberContextWithReason(input: {
+    tenantId: string;
+    userId: string;
+    job: string;
+    discriminator?: string;
+}): Promise<MemberContextResolution> {
     const membership = await prisma.tenantMembership.findUnique({
         where: { tenantId_userId: { tenantId: input.tenantId, userId: input.userId } },
         include: { customRole: true, tenant: { select: { slug: true } } },
     });
-    if (!membership || membership.status !== 'ACTIVE') return null;
+    if (!membership) return { ok: false, reason: 'NOT_A_MEMBER' };
+    if (membership.status !== 'ACTIVE') {
+        return { ok: false, reason: 'NOT_ACTIVE', status: membership.status };
+    }
 
     const effectiveRole = membership.customRole?.baseRole ?? membership.role;
     const suffix = input.discriminator ? `-${input.discriminator}` : '';
     return {
-        requestId: `${input.job}-${input.tenantId}${suffix}`,
-        userId: input.userId,
-        tenantId: input.tenantId,
-        tenantSlug: membership.tenant?.slug,
-        role: effectiveRole,
-        permissions: computePermissions(effectiveRole),
-        appPermissions: membership.customRole
-            ? parsePermissionsJson(
-                  membership.customRole.permissionsJson,
-                  membership.customRole.baseRole,
-              )
-            : getPermissionsForRole(membership.role),
+        ok: true,
+        ctx: {
+            requestId: `${input.job}-${input.tenantId}${suffix}`,
+            userId: input.userId,
+            tenantId: input.tenantId,
+            tenantSlug: membership.tenant?.slug,
+            role: effectiveRole,
+            permissions: computePermissions(effectiveRole),
+            appPermissions: membership.customRole
+                ? parsePermissionsJson(
+                      membership.customRole.permissionsJson,
+                      membership.customRole.baseRole,
+                  )
+                : getPermissionsForRole(membership.role),
+        },
     };
 }
 

@@ -1,7 +1,7 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
-import { HIGH_RISK_SCORE_MIN, openRiskStatusFilter } from '../domain/risk-status';
+import { HIGH_RISK_SCORE_MIN, needsTreatmentRiskStatusFilter } from '../domain/risk-status';
 import { URGENCY_MS } from '@/lib/urgency';
 import {
     evidenceExpiryScopeWhere,
@@ -67,10 +67,11 @@ export interface DashboardStats {
 
     // ── Alert indicators ──
     /**
-     * OPEN risks (not closed, not accepted) with an inherent score of 10 or
-     * more — the High and Critical bands of `RiskBySeverity`, so the Risks
-     * card's "N high/critical" equals the Risk Distribution card's High +
-     * Critical. See `app-layer/domain/risk-status`.
+     * Risks still needing treatment (OPEN or MITIGATING) with an inherent
+     * score of 10 or more — the High and Critical bands of `RiskBySeverity`,
+     * so the Risks card's "N high/critical" equals the Risk Distribution
+     * card's High + Critical. Mitigated, accepted and closed risks are left
+     * out. See `app-layer/domain/risk-status`.
      */
     highRisks: number;
     pendingEvidence: number;
@@ -402,7 +403,7 @@ export class DashboardRepository {
                 where: {
                     tenantId,
                     deletedAt: null,
-                    status: openRiskStatusFilter(),
+                    status: needsTreatmentRiskStatusFilter(),
                     inherentScore: { gte: HIGH_RISK_SCORE_MIN },
                 },
             }),
@@ -495,7 +496,7 @@ export class DashboardRepository {
     }
 
     /**
-     * OPEN-risk counts by severity tier.
+     * Counts by severity tier of the risks still needing treatment.
      *
      * Severity tiers are derived from inherentScore (1–25):
      *   - Low: 1–4
@@ -503,16 +504,18 @@ export class DashboardRepository {
      *   - High: 10–14
      *   - Critical: 15–25
      *
-     * Closed and accepted risks are excluded from every tier, so a closed
-     * critical risk no longer holds the next-step card on "review
-     * high-severity risks" or pulls down the posture radar's Risk axis,
-     * which rates "the share of open risks".
+     * Only OPEN and MITIGATING risks are in a tier. Closed and accepted risks
+     * left in #4496 (owner decision, 2026-10-29), and mitigated ones leave
+     * too (owner decision, 2026-10-30): their treatment is done, so a
+     * mitigated critical risk no longer holds the next-step card on "review
+     * high-severity risks" or pulls down the posture radar's Risk axis. The
+     * daily snapshot's `risksLow`..`risksCritical` are written from this.
      *
      * Uses 4 parallel count queries with range filters on an indexed column.
      */
     static async getRiskBySeverity(db: PrismaTx, ctx: RequestContext): Promise<RiskBySeverity> {
         const tenantId = ctx.tenantId;
-        const base = { tenantId, deletedAt: null, status: openRiskStatusFilter() };
+        const base = { tenantId, deletedAt: null, status: needsTreatmentRiskStatusFilter() };
 
         const [low, medium, high, critical] = await Promise.all([
             db.risk.count({ where: { ...base, inherentScore: { gte: 1, lte: 4 } } }),

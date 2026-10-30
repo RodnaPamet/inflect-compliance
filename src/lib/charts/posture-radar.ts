@@ -248,7 +248,8 @@ export function ratePostureAxes(
     // dividing the two numbers on the page.
     const evidenceTracked = evidenceExpiry.current + evidenceExpiry.overdue;
 
-    // Risk posture — the share of open risks NOT in the top two severity
+    // Risk posture — the share of risks still needing treatment (Open,
+    // Mitigating; `riskBySeverity` counts no others) NOT in the top two severity
     // bands. Counting every risk equally would let a hundred low risks
     // mask four critical ones, which is the opposite of what the hero says.
     const riskTotal =

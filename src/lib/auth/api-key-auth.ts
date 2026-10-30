@@ -134,6 +134,11 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     risks:      { read: ['view'], write: ['create', 'edit'] },
     assets:     { read: ['view'], write: ['create', 'edit'] },
     vendors:    { read: ['view'], write: ['create', 'edit'] },
+    // #4535 — the same two groups as the neighbouring registers. Keys that
+    // existed before the domain were migrated to the scopes reproducing what
+    // the coarse tier gave them (`findings:read` for every live non-`*` key,
+    // `findings:write` for one with a write scope).
+    findings:   { read: ['view'], write: ['create', 'edit'] },
     tests:      { read: ['view'], write: ['create', 'execute'] },
     incidents:  { read: ['view'], admin: ['manage'] },
     personnel:  { read: ['view'], admin: ['manage'] },

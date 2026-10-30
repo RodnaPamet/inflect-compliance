@@ -29,7 +29,7 @@ The breadcrumb reads **{{ui:findings.list.crumbDashboard}}** › **{{ui:findings
 
 Readers, Auditors and AI admins see no **{{ui:findings.newFinding}}** button, no {{ui:common.actions}} column and no **{{ui:findings.detail.edit}}** button.
 
-If your workspace uses custom roles, creating and changing findings follows the built-in role your custom role is based on, not the custom role's own permissions.
+If your workspace uses custom roles, the role's own **{{ui:admin.resourceLabels.findings}}** permissions decide: **{{ui:admin.roles.actions.view}}** to open the register, **{{ui:admin.roles.actions.create}}** to create a finding, and **{{ui:admin.roles.actions.edit}}** to edit one or move its status. Creating and changing also need a base role that can make changes: Owner, Admin or Editor. A role without view sees **{{ui:findings.accessTitle}}** instead of the register.
 
 ## What it is for
 

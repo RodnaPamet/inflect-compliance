@@ -107,8 +107,14 @@ describe('LOCAL_ONLY residency invariant', () => {
         },
     );
 
-    it('a per-tenant local base URL overrides the env default', () => {
+    it('a tenant gateway address that is not the deployment\'s is never dialled: the stub, and nothing external (#4545)', () => {
         const provider = getProvider({ residency: 'LOCAL_ONLY', localBaseUrl: 'http://tenant-gw:9000', localModel: 'mistral' });
+        expect(provider).not.toBeInstanceOf(LocalRiskSuggestionProvider);
+        expectNoExternalConstruction();
+    });
+
+    it('a tenant gateway address that restates the deployment\'s is honoured', () => {
+        const provider = getProvider({ residency: 'LOCAL_ONLY', localBaseUrl: 'http://local-gateway:8080', localModel: 'mistral' });
         expect(provider).toBeInstanceOf(LocalRiskSuggestionProvider);
         expectNoExternalConstruction();
     });

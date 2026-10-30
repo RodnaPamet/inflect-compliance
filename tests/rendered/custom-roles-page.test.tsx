@@ -294,11 +294,14 @@ describe('custom roles page — permissions the editor does not hold', () => {
         expect(held.getAttribute('aria-pressed')).not.toBe(before);
     });
 
-    it('an Owner sees no greyed-out permission', async () => {
+    it('an Owner sees no permission greyed out for want of holding it', async () => {
         mount({ viewer: 'OWNER' });
         await openCreateGrid();
         expect(byId('roles-not-held-hint')).toBeNull();
-        expect(document.querySelectorAll('[id^="perm-"][aria-disabled="true"]')).toHaveLength(0);
+        // The one greyed cell on the default Reader base is the base role's
+        // rule, not the Owner's: Personnel / manage needs an Admin base (#4536).
+        const greyed = Array.from(document.querySelectorAll('[id^="perm-"][aria-disabled="true"]')).map((el) => el.id);
+        expect(greyed).toEqual(['perm-personnel-manage']);
     });
 
     it('a preset never grants what the editor does not hold', async () => {
@@ -519,6 +522,66 @@ describe('custom roles page — a role carried by members who are not Admins', (
         );
     });
 
+    /**
+     * The two role rules lock different cells — Personnel / manage needs an
+     * Admin base (#4536), the admin-membership-only keys need Admin carriers —
+     * but on a role non-Admins carry they meet: the base that would free
+     * Personnel / manage is locked too. Its hint says both, rather than send the
+     * editor to a base they cannot pick.
+     */
+    async function hintOf(id: string): Promise<HTMLElement> {
+        const user = userEvent.setup();
+        await user.hover(byId(id)!);
+        return screen.findByRole('tooltip');
+    }
+
+    it("Personnel / manage on a carried role's hint names both rules", async () => {
+        await editRole({ nonAdminCarriers: 1 });
+        expect(byId('perm-personnel-manage')).toHaveAttribute('aria-disabled', 'true');
+        expect(await hintOf('perm-personnel-manage')).toHaveTextContent(
+            R.cellNeedsAdminBaseCarried.replace('{permission}', permissionLabel('personnel', 'manage')),
+        );
+    });
+
+    it('on a role only Admins carry the same cell names the base rule alone', async () => {
+        await editRole({ nonAdminCarriers: 0 });
+        expect(await hintOf('perm-personnel-manage')).toHaveTextContent(
+            R.cellNeedsAdminBase.replace('{permission}', permissionLabel('personnel', 'manage')),
+        );
+    });
+
+    it('a permission the editor does not hold says so first, whatever else locks it', async () => {
+        const admin = getPermissionsForRole('ADMIN');
+        mount({
+            list: ok([role('cr-1', 'Carried', 'READER', { nonAdminCarriers: 1 })]),
+            held: {
+                ...admin,
+                personnel: { ...admin.personnel, manage: false },
+                admin: { ...admin.admin, agent_policy_card: false },
+            },
+        });
+        await screen.findByText('Carried');
+        fireEvent.click(byId('edit-role-cr-1')!);
+        await waitForId('perm-admin-sso');
+        expect(await hintOf('perm-personnel-manage')).toHaveTextContent(
+            R.cellNotHeld.replace('{permission}', permissionLabel('personnel', 'manage')),
+        );
+    });
+
+    it('…for an admin-membership-only key too', async () => {
+        const admin = getPermissionsForRole('ADMIN');
+        mount({
+            list: ok([role('cr-1', 'Carried', 'READER', { nonAdminCarriers: 1 })]),
+            held: { ...admin, admin: { ...admin.admin, agent_policy_card: false } },
+        });
+        await screen.findByText('Carried');
+        fireEvent.click(byId('edit-role-cr-1')!);
+        await waitForId('perm-admin-sso');
+        expect(await hintOf('perm-admin-agent_policy_card')).toHaveTextContent(
+            R.cellNotHeld.replace('{permission}', permissionLabel('admin', 'agent_policy_card')),
+        );
+    });
+
     it('the Admin base is not choosable, with its reason; the others are', async () => {
         await editRole({ nonAdminCarriers: 1 });
         const picks = await waitFor(() => {
@@ -597,5 +660,74 @@ describe('custom roles page — a role carried by members who are not Admins', (
         expect(notice).toHaveTextContent(permissionLabel('admin', 'agent_skill_author'));
         expect(notice).toHaveTextContent(R.carriageRefusedKeys.split('{permissions}')[0].trim());
         expect(notice).not.toHaveTextContent('admin.agent_skill_author');
+    });
+});
+
+describe('custom roles page — Personnel / manage needs an Admin base (#4536)', () => {
+    const legacyBlob = () => {
+        const p = getPermissionsForRole('READER');
+        return { ...p, personnel: { view: false, manage: true } };
+    };
+
+    it('on a Reader base the cell is locked, and an Admin preset does not turn it on', async () => {
+        mount();
+        await openCreateGrid();
+        const cell = byId('perm-personnel-manage')!;
+        expect(cell).toHaveAttribute('aria-disabled', 'true');
+        fireEvent.click(cell);
+        expect(cell).toHaveAttribute('aria-pressed', 'false');
+        fireEvent.click(byId('preset-ADMIN')!);
+        expect(byId('perm-personnel-manage')).toHaveAttribute('aria-pressed', 'false');
+        // The read is not this rule's: the Admin preset still grants it.
+        expect(byId('perm-personnel-view')).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('a legacy Reader-based role holding it is told, cannot save, and can switch it off to save', async () => {
+        mount({ list: ok([role('cr-legacy', 'Legacy roster', 'READER', { permissionsJson: legacyBlob() })]) });
+        await screen.findByText('Legacy roster');
+        fireEvent.click(byId('edit-role-cr-legacy')!);
+        const notice = await waitForId('role-manage-needs-admin-base');
+        expect(notice).toHaveTextContent(permissionLabel('personnel', 'manage'));
+        expect(byId('role-submit-btn')).toBeDisabled();
+
+        const cell = byId('perm-personnel-manage')!;
+        expect(cell).not.toHaveAttribute('aria-disabled');
+        fireEvent.click(cell);
+        expect(cell).toHaveAttribute('aria-pressed', 'false');
+        // Once off it cannot come back on this base.
+        expect(cell).toHaveAttribute('aria-disabled', 'true');
+        expect(byId('role-manage-needs-admin-base')).toBeNull();
+        expect(byId('role-submit-btn')).not.toBeDisabled();
+    });
+
+    it("the server's refusal is said in the page's own words", async () => {
+        mount({
+            post: {
+                ok: false,
+                status: 400,
+                body: {
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Only a custom role based on Admin can manage the personnel roster.',
+                        details: { reason: 'PERSONNEL_MANAGE_NEEDS_ADMIN_BASE' },
+                    },
+                },
+            },
+        });
+        await loaded();
+        fireEvent.click(byId('create-role-btn')!);
+        fireEvent.change(await waitForId('role-name-input'), { target: { value: 'Raced' } });
+        fireEvent.click(byId('role-submit-btn')!);
+        const notice = await waitForId('roles-error');
+        expect(notice).toHaveTextContent(
+            R.manageNeedsAdminBaseNotice.replace('{permission}', permissionLabel('personnel', 'manage')),
+        );
+    });
+
+    it('both locales name the rule', () => {
+        for (const cat of [en, bg]) {
+            expect(typeof cat.admin.roles.cellNeedsAdminBase).toBe('string');
+            expect(typeof cat.admin.roles.manageNeedsAdminBaseNotice).toBe('string');
+        }
     });
 });
