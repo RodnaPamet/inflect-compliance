@@ -110,6 +110,9 @@
         "docs/ai-architecture/weaviate.md": {
             "class": "living"
         },
+        "docs/ai-architecture/web-bot-auth.md": {
+            "class": "living"
+        },
         "docs/api-consumer-guide.md": {
             "class": "authoritative"
         },
