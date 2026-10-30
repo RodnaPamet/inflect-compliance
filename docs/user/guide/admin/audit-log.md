@@ -10,7 +10,7 @@ The {{ui:admin.auditLog}} page shows this workspace's audit log, newest first, a
 
 Click **{{ui:nav.admin}}**, the gear icon at the bottom of the sidebar. The {{ui:admin.title}} page opens. Under {{ui:admin.section.security}}, click **{{ui:admin.auditLog}}**. The breadcrumb reads **{{ui:admin.crumb.dashboard}}** › **{{ui:admin.title}}** › **{{ui:admin.auditLog}}**.
 
-Auditors cannot open the {{ui:admin.title}} page, so the gear does not lead them here. Use a link to the page instead. For an Auditor the breadcrumb leaves out {{ui:admin.title}}.
+Auditors cannot open the {{ui:admin.title}} page, so the gear does not lead them here. Instead, on the dashboard, click **{{ui:dashboard.activity.viewAuditLog}}** under the **{{ui:dashboard.recentActivity}}** card; Owners and Admins see that link too. For an Auditor the breadcrumb leaves out {{ui:admin.title}}.
 
 ## Who can use it
 
@@ -66,6 +66,7 @@ To find who made a change, look for its action and the time you expect. For an o
 
 ## Related
 
+- [{{ui:dashboard.recentActivity}}](../overview/dashboard.md), the dashboard card that shows the latest entries and links here.
 - [{{ui:admin.members.title}}](members.md), whose every change is recorded here.
 - [{{ui:admin.roles.title}}](roles.md), whose changes are recorded here.
 - [{{ui:admin.security.title}}](security.md), whose changes are recorded here.
