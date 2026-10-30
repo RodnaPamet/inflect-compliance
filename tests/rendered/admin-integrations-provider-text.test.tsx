@@ -151,13 +151,7 @@ function serve(connections: unknown[], routes: Record<string, Route> = {}, list?
     }) as unknown as typeof fetch;
 }
 
-const sent = (method: string, path: string) =>
-    calls.filter((c) => c.method === method && c.url.endsWith(path));
 
-const refusal = (message: string, status = 400): Reply => ({
-    status,
-    body: { error: { code: 'BAD_REQUEST', message, requestId: 'req-1' } },
-});
 
 async function renderPage() {
     render(<AdminIntegrationsPage />);
