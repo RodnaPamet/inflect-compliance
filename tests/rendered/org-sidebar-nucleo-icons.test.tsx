@@ -62,21 +62,21 @@ function mount(collapsed: boolean) {
 afterEach(() => { mockCollapsed = false; });
 
 describe('OrgSidebarNav renders every Nucleo glyph it imports', () => {
-    it('mounts EXPANDED with all seven nav entries, so seven glyphs really render', () => {
+    it('mounts EXPANDED with all eight nav entries, so eight glyphs really render', () => {
         const { container } = mount(false);
 
-        // Seven nav rows + the collapse toggle + sign-out. If any icon import
+        // Eight nav rows (Settings since #4557) + the collapse toggle + sign-out. If any icon import
         // were undefined, render() above would already have thrown.
         const links = container.querySelectorAll('a[href^="/org/globex"]');
-        expect(links.length).toBe(7);
+        expect(links.length).toBe(8);
 
         // An <svg> per nav row is what proves the glyph COMPONENT ran, not just
         // that a row exists — a row whose icon failed would render without one.
         links.forEach((a) => expect(a.querySelector('svg')).not.toBeNull());
 
-        // The denominator, stated: 7 nav + 1 toggle + 1 sign-out = 9 render
-        // sites across 9 distinct imported symbols.
-        expect(container.querySelectorAll('svg').length).toBeGreaterThanOrEqual(9);
+        // The denominator, stated: 8 nav + 1 toggle + 1 sign-out = 10 render
+        // sites across 10 distinct imported symbols.
+        expect(container.querySelectorAll('svg').length).toBeGreaterThanOrEqual(10);
     });
 
     it('mounts COLLAPSED — the branch a phone-default suite would otherwise never execute', () => {

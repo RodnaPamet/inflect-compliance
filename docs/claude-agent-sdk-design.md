@@ -286,6 +286,15 @@ profile run key is refused at admission.
   what the switch being off shows: no tab, a 404 on every route and
   `PROFILES_DISABLED` at admission. A context with no slug is never named.
   `AGENT_PROFILES` on still opens the surface to every tenant.
+- **With `AGENT_PROFILES` unset, the workspace's organization decides** (#4557,
+  owner decision 2026-10-30). An org admin turns profiles on or off for every
+  workspace under the organization on the org's Settings page
+  (`Organization.agentProfilesEnabled`, audited as `ORG_AGENT_SWITCHES_CHANGED`).
+  `0`, or any other set value, closes the surface to every workspace the
+  allowlist does not name; a workspace with no organization stays closed. One
+  reader answers for every surface: `agentProfilesDecisionFor` in
+  `src/lib/agentic/agent-switches-policy.ts`, over the rule in
+  `agent-switches.ts`.
 - **The read is the builder's.** For an agent with no profile,
   `getAgentProfile` answers `profile: null` instead of refusing. Each answer
   carries:

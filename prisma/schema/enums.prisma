@@ -110,6 +110,9 @@ enum OrgAuditAction {
   /// no longer exists. Hence an org-level entry — not for a second copy of the
   /// fact, but for a reader who can get at it.
   ORG_TENANT_DELETED
+  /// An org admin turned an agent switch on or off for the organization's
+  /// workspaces (#4557). Carries both values of each switch that moved.
+  ORG_AGENT_SWITCHES_CHANGED
 }
 
 enum MembershipStatus {

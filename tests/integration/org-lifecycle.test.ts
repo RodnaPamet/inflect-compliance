@@ -65,6 +65,7 @@ describeFn('Epic O-2 — full organization lifecycle (DB-backed)', () => {
                 canConfigureDashboard: role === 'ORG_ADMIN',
                 canSetThreatLevel: role === 'ORG_ADMIN',
                 canSetMaturity: role === 'ORG_ADMIN',
+                canManageAgentSwitches: role === 'ORG_ADMIN',
             },
         };
     }

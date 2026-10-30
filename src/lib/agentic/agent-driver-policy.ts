@@ -32,7 +32,8 @@ import {
     STATIC_DRIVER,
     type AgentDriverDecision,
 } from './agent-driver';
-import { agentProfilesEnabledFor } from './agent-profile';
+import { readDeploymentSwitch } from './agent-switches';
+import { agentProfilesOnFor, toolRunnerDecisionFor } from './agent-switches-policy';
 import { listWorkflowDefinitions } from './workflow-registry';
 
 /**
@@ -46,20 +47,29 @@ import { listWorkflowDefinitions } from './workflow-registry';
  */
 export async function resolveDriverForTenant(tenantId: string): Promise<AgentDriverDecision> {
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
-    const toolRunnerEnvEnabled = flueEnvEnabled(env.AGENT_DRIVER_TOOL_RUNNER);
 
-    // Short-circuit BEFORE the query. When every engine's switch is off the
+    // Short-circuit BEFORE any query. When every engine's switch is off the
     // tenant's value cannot change the answer, so reading it would be a
     // per-run database round trip that is guaranteed not to matter — on the
     // hot path of every agentic run, for every tenant, in every deployment
-    // that has not enabled this. BOTH switches: with either on, the stored
-    // value decides which one is asked.
-    if (!envEnabled && !toolRunnerEnvEnabled) {
+    // that has not enabled this. The Tool Runner's switch is OFF only when the
+    // deployment says so; UNSET leaves it to the tenant's organization (#4557),
+    // which is one read, and only on that path.
+    if (!envEnabled && readDeploymentSwitch(env.AGENT_DRIVER_TOOL_RUNNER) === 'OFF') {
         return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };
     }
 
+    let toolRunnerEnvEnabled = false;
     let stored: string | null = null;
     try {
+        // The organization's half of the Tool Runner switch (#4557), read only
+        // when the deployment left it open. Inside the same `try` as the
+        // stored mode, so an unread switch takes the same fallback: static,
+        // never a grant.
+        toolRunnerEnvEnabled = (await toolRunnerDecisionFor({ tenantId })).on;
+        if (!envEnabled && !toolRunnerEnvEnabled) {
+            return { driver: STATIC_DRIVER, reason: 'ENV_DISABLED' };
+        }
         // AS TEXT (#4224), through the reader the settings usecase also uses.
         // Through the generated client a stored value this build's enum does not
         // contain THREW, and the catch below turned it into
@@ -111,17 +121,17 @@ export async function resolveDriverForTenant(tenantId: string): Promise<AgentDri
  * a profile run admission has already admitted, and narrowing it there without
  * the slug would send an allowlisted tenant's profile runs to the static engine.
  */
-export function narrowToWhatAWorkflowAsksFor(
+export async function narrowToWhatAWorkflowAsksFor(
     decision: AgentDriverDecision,
     tenantSlug?: string | null,
-): AgentDriverDecision {
+): Promise<AgentDriverDecision> {
     if (decision.driver === 'flue') {
         return someWorkflowRequestsFlue()
             ? decision
             : { driver: STATIC_DRIVER, reason: 'NO_WORKFLOW_REQUESTS_IT' };
     }
     if (decision.driver === 'tool-runner') {
-        return somethingRequestsToolRunner(tenantSlug)
+        return (await somethingRequestsToolRunner(tenantSlug))
             ? decision
             : { driver: STATIC_DRIVER, reason: 'NO_WORKFLOW_REQUESTS_IT' };
     }
@@ -138,9 +148,9 @@ export function narrowToWhatAWorkflowAsksFor(
  * it by name. Without this the page would report the engine as live in a
  * workspace where nothing can start a run on it.
  */
-export function somethingRequestsToolRunner(tenantSlug: string | null | undefined): boolean {
+export async function somethingRequestsToolRunner(tenantSlug: string | null | undefined): Promise<boolean> {
     if (listWorkflowDefinitions().some((d) => d.driver === 'tool-runner')) return true;
-    return agentProfilesEnabledFor(env.AGENT_PROFILES, env.AGENT_PROFILES_TENANTS, tenantSlug);
+    return agentProfilesOnFor(tenantSlug);
 }
 
 /**
