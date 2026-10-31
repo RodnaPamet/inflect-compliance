@@ -20,8 +20,9 @@
  * PROVENANCE: document structures are authored from Regulation (EU) 2024/1689
  * (Annex IV, Article 9, Annex V). Nothing derives from any third-party source.
  */
-import { assertCanWrite } from '../policies/common';
-import { badRequest } from '@/lib/errors/types';
+import { assertCanRead, assertCanWrite } from '../policies/common';
+import { badRequest, conflict } from '@/lib/errors/types';
+import { runInTenantContext } from '@/lib/db-context';
 import { createAgentProposal } from './agent-proposals';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 import { getAiSystem } from './ai-system';
@@ -159,6 +160,48 @@ const BUILDERS = {
 } as const;
 
 /**
+ * #4777 — where a conformity draft came from, on the proposal's plain
+ * `proposedBySessionRef` column (its payload is encrypted). The page reads it
+ * back to list the drafts already queued for a system, and a second PENDING
+ * draft of the same document is refused.
+ */
+const CONFORMITY_ORIGIN_PREFIX = 'ai-system-conformity';
+export function conformityDraftOrigin(aiSystemId: string, docType: string): string {
+    return `${CONFORMITY_ORIGIN_PREFIX}:${aiSystemId}:${docType}`;
+}
+
+export interface ConformityDraftSummary {
+    proposalId: string;
+    docType: string;
+    status: string;
+    createdAt: Date;
+}
+
+/**
+ * The conformity drafts queued for one AI system, newest first. A read under
+ * the registry's own gate: it returns which document, its review status and
+ * when, never the draft's text.
+ */
+export async function listConformityDrafts(ctx: RequestContext, aiSystemId: string): Promise<ConformityDraftSummary[]> {
+    assertCanRead(ctx);
+    const prefix = `${CONFORMITY_ORIGIN_PREFIX}:${aiSystemId}:`;
+    const rows = await runInTenantContext(ctx, (db) =>
+        db.agentProposal.findMany({
+            where: { tenantId: ctx.tenantId, kind: 'POLICY', proposedBySessionRef: { startsWith: prefix } },
+            orderBy: { createdAt: 'desc' },
+            take: 30,
+            select: { id: true, status: true, createdAt: true, proposedBySessionRef: true },
+        }),
+    );
+    return rows.map((r) => ({
+        proposalId: r.id,
+        docType: (r.proposedBySessionRef ?? '').slice(prefix.length),
+        status: r.status,
+        createdAt: r.createdAt,
+    }));
+}
+
+/**
  * Generate a DRAFT conformity artifact for a HIGH-risk AI system and route it
  * through the propose-not-commit approval queue. Returns the proposal id — a
  * human must approve it before any policy/document row exists.
@@ -181,6 +224,19 @@ export async function generateConformityDraft(ctx: RequestContext, aiSystemId: s
         );
     }
 
+    // #4777 — one draft of a document waits for review at a time. The page
+    // used to forget a queued draft on reload and offer the button again.
+    const origin = conformityDraftOrigin(system.id, docType);
+    const waiting = await runInTenantContext(ctx, (db) =>
+        db.agentProposal.findFirst({
+            where: { tenantId: ctx.tenantId, kind: 'POLICY', proposedBySessionRef: origin, status: 'PENDING' },
+            select: { id: true },
+        }),
+    );
+    if (waiting) {
+        throw conflict('A draft of this document is already waiting for review. Approve or reject it before generating another.');
+    }
+
     const { title, content } = BUILDERS[docType](system);
 
     // Propose-not-commit: this NEVER calls createPolicy/publishPolicy directly.
@@ -198,6 +254,7 @@ export async function generateConformityDraft(ctx: RequestContext, aiSystemId: s
         // "no card governed this" is a different fact from "this row predates
         // pinning".
         policyCardVersion: await resolvePolicyCardPin(ctx.tenantId, ctx.agentId),
+        proposedBySessionRef: origin,
     });
 
     return { proposalId: proposal.id, docType, aiSystemId, status: proposal.status };
