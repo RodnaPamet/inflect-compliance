@@ -853,7 +853,23 @@ const SINK_FLOOR = 30;
 //
 // Still tightens HOLES_PER_SINK_CEILING, since the sink is counted beside the
 // hole.
-const MEASURED_HOLES = 217;
+// 217 -> 223 on 2026-10-31 (#4568). The kill switch gained a SECOND audit sink,
+// recording what a kill actually reached in the sandbox runtime, and the rule
+// counts one hole per logged field: a summary plus five `after` members.
+//
+// Nothing at that sink can carry a prompt, and the types are what say so. Four
+// of the six are NUMBERS computed by `sweepOpenSandboxLeases` — attempted,
+// deleted, failed — and the fifth is `coverage`, a closed three-member union
+// (`running-work-only` | `transport-absent` | `agent-scoped-no-subjects`). The
+// sixth is a template over those same locals. The sweep never sees a prompt: it
+// reads sandbox ids off `OpenShellSandboxLease` and calls a delete.
+//
+// The values were resolved into LOCALS before the sink first, which is the
+// narrowing this file asks for — and the intermediate attempt that replaced the
+// template with `String(...)` concatenation made it WORSE, 218 to 223, because
+// each of those calls is another helper the rule cannot open. Recorded because
+// the obvious fix was the wrong one.
+const MEASURED_HOLES = 223;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field

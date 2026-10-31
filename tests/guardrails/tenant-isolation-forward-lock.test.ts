@@ -28,6 +28,13 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /** Models with a dedicated two-tenant BEHAVIOURAL isolation test. */
 const ISOLATION_TESTED: Readonly<Record<string, string>> = {
+    // #4568 — the lease's isolation case opens a lease in each of two tenants
+    // and asserts a sweep in one reaches only its own. RLS enforces it in the
+    // database too (`FORCE ROW LEVEL SECURITY` + `tenant_isolation`), which is
+    // why the test runs every call inside `runInTenantContext` rather than on
+    // the global client: on the global client the insert's `WITH CHECK` would
+    // refuse it, so a passing test there would prove nothing about isolation.
+    OpenShellSandboxLease: 'tests/unit/agentic/openshell-sandbox-lease.test.ts',
     // #3861 — all three. The VALUE here is a path, not prose: "every dedicated
     // isolation-test file exists" resolves it with `exists()`, so a reason
     // written in this slot would fail that sibling test. What the one file

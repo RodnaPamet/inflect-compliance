@@ -504,6 +504,15 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // #4568 — the kill switch's only read is "every live sandbox of this
+    // tenant", which `@@index([tenantId, openedAt])` serves leading-column.
+    OpenShellSandboxLease:
+        'The one list read is listOpenSandboxLeases: filter (tenantId), order by ' +
+        'openedAt ascending, which is exactly the (tenantId, openedAt) index the ' +
+        'model carries — leading column and sort both. The only other read is by ' +
+        'sandboxId, served by its unique index. There is no third shape: the table ' +
+        'holds one row per LIVE sandbox, so it is small by construction rather than ' +
+        'by a retention sweep.',
     // #3744 — the two reads in `a2a-reply-delivery.ts` are both covered by
     // indexes the table already carries, so no composite is added for them.
     PeerAgentReplyDelivery:
