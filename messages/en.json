@@ -9076,7 +9076,7 @@
       "linkRelationHeader": "Relation",
       "linkCreatedHeader": "Created",
       "linkActionsHeader": "Actions",
-      "removeLink": "× Remove",
+      "removeLink": "Remove",
       "linksEmptyTitle": "No links yet",
       "linksEmptyDesc": "Cross-link this task to related tasks, controls, evidence, or risks using the Link button above.",
       "linksResourcePlural": "links",
@@ -9251,7 +9251,12 @@
       "FRAMEWORK_REQUIREMENT": "Framework Requirement",
       "ASSET": "Asset",
       "RISK": "Risk",
-      "EVIDENCE": "Evidence"
+      "EVIDENCE": "Evidence",
+      "POLICY": "Policy",
+      "FILE": "File",
+      "AUDIT_PACK": "Audit pack",
+      "VENDOR": "Vendor",
+      "INCIDENT": "Incident"
     },
     "checklist": {
       "heading": "Steps",
@@ -9268,6 +9273,13 @@
         "OPERATE": "Operate",
         "REVIEW": "Review"
       }
+    },
+    "linkRelation": {
+      "RELATES_TO": "Relates to",
+      "EVIDENCE_FOR": "Evidence for",
+      "BLOCKED_BY": "Blocked by",
+      "CAUSED_BY": "Caused by",
+      "MITIGATED_BY": "Mitigated by"
     }
   },
   "processes": {

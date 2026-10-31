@@ -47,6 +47,7 @@ jest.mock('next-intl', () => {
             const v = resolve(ns, key);
             return typeof v === 'string' ? v : key;
         };
+        t.has = (key: string) => resolve(ns, key) !== undefined;
         return t;
     };
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };
@@ -503,6 +504,20 @@ describe('task detail — each write control follows its route’s key', () => {
 
         return { ...overview, ...evidence, ...links };
     }
+
+    it('names each link\'s type and relation in words, not the stored codes (#4698)', async () => {
+        renderPage();
+        await waitForTaskLoaded();
+        fireEvent.click(screen.getByRole('tab', { name: /links/i }));
+        await screen.findByText('Access control policy');
+
+        expect(screen.getByText('Control')).toBeInTheDocument();
+        expect(screen.getByText('Relates to')).toBeInTheDocument();
+        expect(screen.queryByText('CONTROL')).toBeNull();
+        expect(screen.queryByText('RELATES TO')).toBeNull();
+        // The cross is the button's icon, not part of its label.
+        expect(document.getElementById(`remove-link-${LINK_ID}`)).toHaveTextContent(/^Remove$/);
+    });
 
     const EVERYTHING = {
         statusPicker: true,
