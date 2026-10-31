@@ -24,6 +24,7 @@ import { Heading } from '@/components/ui/typography';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { apiErrorMessage } from '@/lib/api-error';
+import { incidentRefusal } from '@/lib/incident-refusals';
 import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { PHASE_ORDER } from '@/lib/incidents/deadlines';
 import {
@@ -79,11 +80,6 @@ interface IncidentEvidenceLink {
     forensicCategory: string | null;
     evidence: { id: string; title: string; type: string; status: string } | null;
 }
-
-const forensicCategoryOptions = FORENSIC_EVIDENCE_CHECKLIST.map((c) => ({
-    value: c.key,
-    label: c.label,
-}));
 
 const SEVERITY_TONE: Record<string, StatusBadgeVariant> = {
     LOW: 'neutral', MEDIUM: 'info', HIGH: 'warning', CRITICAL: 'error',
@@ -145,6 +141,19 @@ export default function IncidentDetailPage() {
     // (no coarse tier on either), so that one key is what shows the controls.
     // OWNER and ADMIN hold it by default; a custom role may grant it.
     const canManage = !!appPermissions?.incidents?.manage;
+    // #4697 — the runbook, forensic checklist and roles are reference text
+    // kept in English in `src/data/incident-containment.ts`; the page reads
+    // each one from `incidents.containment`, falling back to that English.
+    const stepLabel = (step: { key: string; label: string }) =>
+        tx.has(`containment.steps.${step.key}`) ? tx(`containment.steps.${step.key}`) : step.label;
+    const forensicText = (cat: { key: string; label: string; hint: string }, part: 'label' | 'hint') =>
+        tx.has(`containment.forensic.${cat.key}.${part}`) ? tx(`containment.forensic.${cat.key}.${part}`) : cat[part];
+    const roleText = (r: { key: string; role: string; responsibility: string }, part: 'role' | 'responsibility') =>
+        tx.has(`containment.roles.${r.key}.${part}`) ? tx(`containment.roles.${r.key}.${part}`) : r[part];
+    const forensicCategoryOptions = FORENSIC_EVIDENCE_CHECKLIST.map((c) => ({
+        value: c.key,
+        label: forensicText(c, 'label'),
+    }));
     const post = async (
         path: string,
         body: unknown,
@@ -159,10 +168,11 @@ export default function IncidentDetailPage() {
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                // Show the server's reason (e.g. "already in its final phase"),
-                // falling back to the generic message only when it sent none.
+                // A refusal the page can name is said in the user's language
+                // (#4697); otherwise the server's reason, then the generic one.
                 const body = await res.json().catch(() => null);
-                throw new Error(apiErrorMessage(body, tx('detail.actionFailed')));
+                const reason = incidentRefusal(body);
+                throw new Error(reason ? tx(`detail.refused.${reason}`) : apiErrorMessage(body, tx('detail.actionFailed')));
             }
             await query.mutate();
             return true;
@@ -364,7 +374,7 @@ export default function IncidentDetailPage() {
                                                                 completed: e.target.checked,
                                                             })
                                                         }
-                                                        aria-label={step.label}
+                                                        aria-label={stepLabel(step)}
                                                     />
                                                 ) : (
                                                     // Read-only: the step's state, without a
@@ -387,7 +397,7 @@ export default function IncidentDetailPage() {
                                                             : 'text-sm text-content-default'
                                                     }
                                                 >
-                                                    {step.label}
+                                                    {stepLabel(step)}
                                                 </span>
                                             </li>
                                         );
@@ -493,7 +503,7 @@ export default function IncidentDetailPage() {
                     </section>
 
                     {/* Forensic evidence collection checklist. */}
-                    <section className="space-y-default" aria-label="Forensic evidence checklist">
+                    <section className="space-y-default" aria-label={tx('detail.forensicChecklistAria')}>
                         <div className="flex items-center justify-between">
                             <Heading level={2}>{tx('detail.forensicHeading')}</Heading>
                             {canManage && (
@@ -523,9 +533,9 @@ export default function IncidentDetailPage() {
                                     >
                                         <div className="space-y-tight">
                                             <div className="text-sm font-medium text-content-emphasis">
-                                                {cat.label}
+                                                {forensicText(cat, 'label')}
                                             </div>
-                                            <div className="text-xs text-content-muted">{cat.hint}</div>
+                                            <div className="text-xs text-content-muted">{forensicText(cat, 'hint')}</div>
                                         </div>
                                         <StatusBadge variant={links.length > 0 ? 'success' : 'neutral'}>
                                             {links.length > 0 ? tx('detail.nLinked', { count: links.length }) : tx('detail.noneLinked')}
@@ -576,12 +586,12 @@ export default function IncidentDetailPage() {
                         <Heading level={2}>{tx('detail.rolesHeading')}</Heading>
                         <ul className="space-y-tight">
                             {INCIDENT_RESPONSE_RACI.map((r) => (
-                                <li key={r.role} className="flex flex-wrap items-baseline gap-tight text-sm">
-                                    <span className="font-medium text-content-emphasis">{r.role}</span>
+                                <li key={r.key} className="flex flex-wrap items-baseline gap-tight text-sm">
+                                    <span className="font-medium text-content-emphasis">{roleText(r, 'role')}</span>
                                     <span className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs font-semibold text-content-muted">
                                         {r.raci}
                                     </span>
-                                    <span className="text-content-muted">{r.responsibility}</span>
+                                    <span className="text-content-muted">{roleText(r, 'responsibility')}</span>
                                 </li>
                             ))}
                         </ul>

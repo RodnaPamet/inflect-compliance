@@ -36,6 +36,12 @@ export interface ContainmentRunbook {
 /**
  * Per-incident-type containment runbooks. Keys are stable
  * (`<TYPE>-<n>`) so completion state survives label edits.
+ *
+ * The English text here is the source the page falls back to. The page
+ * reads each title, step, role and forensic category from
+ * `messages/<locale>.json` under `incidents.containment` (#4697), and
+ * tests/unit/incident-containment-messages.test.ts holds every key here
+ * to a message in each locale.
  */
 export const INCIDENT_CONTAINMENT_RUNBOOKS: Readonly<
     Record<Exclude<IncidentTypeKey, 'OTHER'>, ContainmentRunbook>
@@ -91,6 +97,8 @@ export const INCIDENT_CONTAINMENT_RUNBOOKS: Readonly<
  * IC does not enforce role assignment.
  */
 export interface IncidentRole {
+    /** Stable key; the page's labels are `incidents.containment.roles.<key>` (#4697). */
+    key: string;
     role: string;
     /** RACI — Responsible / Accountable / Consulted / Informed. */
     raci: 'R' | 'A' | 'C' | 'I' | string;
@@ -98,12 +106,12 @@ export interface IncidentRole {
 }
 
 export const INCIDENT_RESPONSE_RACI: ReadonlyArray<IncidentRole> = [
-    { role: 'Incident Commander', raci: 'A', responsibility: 'Owns the response end-to-end; declares severity; coordinates the team and decisions.' },
-    { role: 'Security / Technical Lead', raci: 'R', responsibility: 'Drives containment, eradication, and recovery; directs the technical investigation.' },
-    { role: 'Forensics / Investigation', raci: 'R', responsibility: 'Collects and preserves evidence; establishes the timeline and root cause.' },
-    { role: 'DPO / Legal', raci: 'C', responsibility: 'Owns the regulatory/legal determination (NIS2 Art. 23, GDPR Art. 33/34) and notifications.' },
-    { role: 'Communications', raci: 'C', responsibility: 'Manages internal and external messaging, including authority and customer comms.' },
-    { role: 'IT / Operations', raci: 'R', responsibility: 'Executes isolation, failover, restoration, and infrastructure changes.' },
+    { key: 'INCIDENT_COMMANDER', role: 'Incident Commander', raci: 'A', responsibility: 'Owns the response end-to-end; declares severity; coordinates the team and decisions.' },
+    { key: 'TECHNICAL_LEAD', role: 'Security / Technical Lead', raci: 'R', responsibility: 'Drives containment, eradication, and recovery; directs the technical investigation.' },
+    { key: 'FORENSICS', role: 'Forensics / Investigation', raci: 'R', responsibility: 'Collects and preserves evidence; establishes the timeline and root cause.' },
+    { key: 'DPO_LEGAL', role: 'DPO / Legal', raci: 'C', responsibility: 'Owns the regulatory/legal determination (NIS2 Art. 23, GDPR Art. 33/34) and notifications.' },
+    { key: 'COMMUNICATIONS', role: 'Communications', raci: 'C', responsibility: 'Manages internal and external messaging, including authority and customer comms.' },
+    { key: 'IT_OPERATIONS', role: 'IT / Operations', raci: 'R', responsibility: 'Executes isolation, failover, restoration, and infrastructure changes.' },
 ];
 
 /**

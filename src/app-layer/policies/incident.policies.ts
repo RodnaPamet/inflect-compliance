@@ -1,5 +1,6 @@
 import { RequestContext } from '../types';
 import { forbidden } from '@/lib/errors/types';
+import type { IncidentRefusal } from '@/lib/incident-refusals';
 
 /**
  * Authorization for the NIS2 Article 23 incident-response surface.
@@ -19,6 +20,6 @@ export function assertCanViewIncidents(ctx: RequestContext): void {
 
 export function assertCanManageIncidents(ctx: RequestContext): void {
     if (!ctx.appPermissions.incidents.manage) {
-        throw forbidden('You do not have permission to manage incidents.');
+        throw forbidden('You do not have permission to manage incidents.', { reason: 'INCIDENT_MANAGE_DENIED' satisfies IncidentRefusal });
     }
 }
