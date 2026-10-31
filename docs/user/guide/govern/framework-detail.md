@@ -24,7 +24,7 @@ See how far your workspace is towards meeting a framework: which of its requirem
 
 ## What you see
 
-**The header.** The framework's name, its **{{ui:frameworks.detail.version}}** and its **{{ui:frameworks.detail.kind}}**, and a short description. On the right: **{{ui:frameworks.detail.browseTemplates}}**, and, for Owners and Admins, **{{ui:frameworks.detail.installPack}}**.
+**The header.** The framework's name, its **{{ui:frameworks.detail.version}}** and its **{{ui:frameworks.detail.kind}}**, and a short description. On the right: **{{ui:frameworks.detail.browseTemplates}}**, **{{ui:frameworks.detail.compareRequirements}}**, which opens the [{{ui:frameworks.diff.heading}}](framework-diff.md) page, and, for Owners and Admins, **{{ui:frameworks.detail.installPack}}**.
 
 **The tabs.**
 

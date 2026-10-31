@@ -21,8 +21,9 @@ export async function computeRequirementsDiff(
 
     const fwFrom = await db.framework.findFirst({ where: { key: frameworkKeyFrom } });
     const fwTo = await db.framework.findFirst({ where: { key: frameworkKeyTo } });
-    if (!fwFrom) throw notFound(`Framework "${frameworkKeyFrom}" not found`);
-    if (!fwTo) throw notFound(`Framework "${frameworkKeyTo}" not found`);
+    // Named by side, so the page can say WHICH framework is missing (#4732).
+    if (!fwFrom) throw notFound(`Framework "${frameworkKeyFrom}" not found`, { reason: 'DIFF_FROM_NOT_FOUND' });
+    if (!fwTo) throw notFound(`Framework "${frameworkKeyTo}" not found`, { reason: 'DIFF_TO_NOT_FOUND' });
 
     const reqsFrom = await db.frameworkRequirement.findMany({
         where: { frameworkId: fwFrom.id, deprecatedAt: null },
@@ -38,7 +39,10 @@ export async function computeRequirementsDiff(
 
     const added: Array<{ code: string; title: string; section: string | null | undefined }> = [];
     const removed: Array<{ code: string; title: string; section: string | null | undefined }> = [];
-    const changed: Array<{ code: string; changes: string[]; from: { title: string; section: string | null | undefined }; to: { title: string; section: string | null | undefined } }> = [];
+    // `description` rides beside title and section: a description change was
+    // counted and named, and the page had nothing to show for it (#4732).
+    type ChangedSide = { title: string; section: string | null | undefined; description: string | null };
+    const changed: Array<{ code: string; changes: string[]; from: ChangedSide; to: ChangedSide }> = [];
 
     // Added in "to" but not in "from"
     for (const [code, req] of toMap) {
@@ -66,8 +70,8 @@ export async function computeRequirementsDiff(
                 changed.push({
                     code,
                     changes,
-                    from: { title: reqFrom.title, section: reqFrom.section || reqFrom.category },
-                    to: { title: reqTo.title, section: reqTo.section || reqTo.category },
+                    from: { title: reqFrom.title, section: reqFrom.section || reqFrom.category, description: reqFrom.description ?? null },
+                    to: { title: reqTo.title, section: reqTo.section || reqTo.category, description: reqTo.description ?? null },
                 });
             }
         }

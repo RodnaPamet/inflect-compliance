@@ -317,6 +317,10 @@ export default function FrameworkDetailPage() {
                     <Link href={tenantHref(`/frameworks/${frameworkKey}/templates`)} className={buttonVariants({ variant: 'secondary' })} id="browse-templates-cta">
                         {t('detail.browseTemplates')}
                     </Link>
+                    {/* #4732 — the requirements diff had no way in but a typed URL. */}
+                    <Link href={tenantHref(`/frameworks/${frameworkKey}/diff`)} className={buttonVariants({ variant: 'secondary' })} id="compare-requirements-cta">
+                        {t('detail.compareRequirements')}
+                    </Link>
                     <RequirePermission resource="frameworks" action="install">
                         <Link href={tenantHref(`/frameworks/${frameworkKey}/install`)} className={buttonVariants({ variant: 'primary' })} id="install-pack-cta">
                             {t('detail.installPack')}
