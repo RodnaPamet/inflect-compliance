@@ -23,6 +23,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { useToast } from '@/components/ui/hooks';
+import { GatedDocumentsAdmin } from './GatedDocumentsAdmin';
 
 interface Framework { key: string; statusLabel: string; badge?: string }
 interface Document { label: string; url: string }
@@ -229,6 +230,9 @@ export function TrustCenterAdminClient({ tenantSlug, initial, canPublish }: Prop
                     </div>
                 </section>
             </div>
+
+            {/* Documents on request and their access requests (#4649). */}
+            <GatedDocumentsAdmin tenantSlug={tenantSlug} />
 
             {/* Publishing is a serious, gravity-carrying action but not a
                 DESTRUCTIVE delete — the confirm copy conveys the gravity; the

@@ -7172,7 +7172,45 @@
       "toastPublishFailed": "Could not change publish state",
       "confirmTitle": "Publish this page to the public internet?",
       "confirmDesc": "This page will be publicly accessible at {path} with no login required. Confirm the content above contains only information safe to publish.",
-      "confirmLabel": "Publish Trust Center"
+      "confirmLabel": "Publish Trust Center",
+      "gated": {
+        "title": "Documents on request",
+        "intro": "Documents a visitor has to ask for, such as a SOC 2 report or a penetration test summary. The public page lists them by name, and nobody can open one until you approve their request.",
+        "emptyDocuments": "No documents on request yet",
+        "labelField": "Name shown to visitors",
+        "fileField": "File",
+        "upload": "Upload",
+        "uploading": "Uploading…",
+        "added": "Document added",
+        "addFailed": "The document could not be added.",
+        "needLabelAndFile": "Give the document a name and choose a file.",
+        "loadFailed": "Couldn't load the documents on request. Reload the page to try again.",
+        "addedOn": "Added {date}",
+        "requestsTitle": "Access requests",
+        "requestsIntro": "Each request names who asked, for which document, and whether they accepted the non-disclosure terms. Approving one creates a download link that works once and expires in 7 days. Send it to the requester yourself.",
+        "emptyRequests": "No access requests yet",
+        "requestsLoadFailed": "Couldn't load the access requests. Reload the page to try again.",
+        "status": {
+          "REQUESTED": "Requested",
+          "APPROVED": "Approved",
+          "DENIED": "Denied"
+        },
+        "ndaAccepted": "NDA accepted",
+        "requestedOn": "Requested {date}",
+        "downloadedOn": "Downloaded {date}",
+        "expiresOn": "Link expires {date}",
+        "approve": "Approve",
+        "approving": "Approving…",
+        "approveFailed": "The request could not be approved.",
+        "linkTitle": "Download link for {name}",
+        "linkHint": "This link is shown only now. It works once and expires in 7 days. Send it to {email}.",
+        "copyLink": "Copy link",
+        "copyLinkOk": "Link copied",
+        "emailLink": "Email it",
+        "mailSubject": "Your access to {document}",
+        "mailBody": "Here is your link to {document}. It works once and expires in 7 days:\n\n{link}",
+        "dismissLink": "Done"
+      }
     },
     "vendorTemplates": {
       "title": "Vendor questionnaire templates",
@@ -14218,7 +14256,22 @@
       "securityPosture": "Security posture",
       "documents": "Documents",
       "securityContact": "Security contact",
-      "footer": "Published {date} · Trust Center"
+      "footer": "Published {date} · Trust Center",
+      "gated": {
+        "title": "Documents on request",
+        "intro": "Ask for any of these and the team will review your request.",
+        "request": "Request access",
+        "name": "Your name",
+        "email": "Work email",
+        "company": "Company",
+        "nda": "I accept the non-disclosure terms for this document",
+        "submit": "Send request",
+        "sending": "Sending…",
+        "received": "Request received. If it is approved, you will be sent a download link.",
+        "failed": "The request could not be sent. Please try again.",
+        "unavailable": "This document is no longer offered.",
+        "cancel": "Cancel"
+      }
     },
     "vendorAssessment": {
       "loading": "Loading questionnaire…",
