@@ -145,9 +145,8 @@ sinkhole in `/etc/hosts`:
 0.0.0.0 events.telemetry.data.nvidia.com
 ```
 
-Verified working — `curl` to the endpoint returns HTTP 000 — and there is **no
-GCP egress firewall rule**, confirmed against the live project. So the honest
-statement of coverage is:
+Verified working — `curl` to the endpoint returns HTTP 000. What the sinkhole
+alone covered, and did not:
 
 | | |
 |---|---|
@@ -156,13 +155,58 @@ statement of coverage is:
 | a connection to a literal address | not denied |
 | an image rebuild that drops the hosts entry | not denied, and silent |
 
-The env var and the sinkhole are two independent controls and both are weak in
-different ways, which is better than one. Neither is a network rule. A
-deny-by-default egress policy is the strong shape and is real work: the endpoint
-is CDN-hosted, so an IP rule would rot, and an allowlist has to admit ghcr.io
-and three clouds' APIs, all CDN-hosted too. Tracked on #4566 alongside the
-collector allowlist, because both need the same answer about egress to hosts
-whose addresses move.
+### THE NETWORK RULE NOW EXISTS — owner decision 2026-10-31 (#4566)
+
+A **global network firewall policy** with an FQDN object, so the denial holds in
+the data plane regardless of what any process does to `/etc/hosts`:
+
+```
+policy       inflect-egress-telemetry-deny      (global, logging enabled)
+rule 1000    EGRESS  deny  all protocols
+             dest-fqdns: events.telemetry.data.nvidia.com
+association  network:default
+```
+
+**FQDN rather than an IP rule**, because an IP rule would rot: the endpoint sits
+behind a CDN and a moved address would silently restore egress — a control that
+decays with no signal. Google resolves the name on its side, so an address
+change is handled; a NAME change is not, and that residual is real.
+
+**VPC-wide rather than scoped to the gateway VM, deliberately.** Targeting one
+instance in a network firewall policy needs secure tags, and this project has
+none; and nothing in this project has any reason to reach NVIDIA's telemetry
+sink, so the wider scope is the stronger control rather than a compromise. Both
+production apps were checked immediately after the association and answered
+`200`.
+
+**Verified by a probe with a positive control, and then attributably.** The
+gateway VM is the wrong place to test from — its `/etc/hosts` entry would block
+the name whether or not the firewall worked, which is a probe with no
+discriminating power. Measured from the **app** VM, which carries no such entry:
+
+```
+/etc/hosts entries for the name      0
+https://ghcr.io                      301 in 0.18s   <- positive control
+https://events.telemetry…            000 at 20s     <- denied
+same, --resolve to the literal IP    000 at 20s     <- not name resolution
+```
+
+And the data plane says so itself, which is what makes this evidence rather
+than inference:
+
+```
+DENY  network:default/firewallPolicy:inflect-egress-telemetry-deny  18.198.233.49
+```
+
+Logging is on for exactly that reason: a control nobody can see fire is a
+configuration, not a control.
+
+So there are now **three** independent controls — the env var, the sinkhole, and
+the network rule — and the first two remain, weak in their own ways, because
+three independent weak controls fail in different places. A full deny-by-default
+egress policy is still not built, and still real work: an allowlist has to admit
+ghcr.io and three clouds' APIs, all CDN-hosted. That half stays open on #4569's
+neighbour territory rather than being implied closed here.
 
 ## Inbound authentication
 
