@@ -28,7 +28,7 @@ Use the page to see what your scanners report, sort real problems from noise, an
 
 ## What you see
 
-**The header.** The title, then a line counting the recent scan runs and the open critical findings. Before any scan arrives, it reads **{{ui:securityTesting.descEmpty}}** On the right, **{{ui:securityTesting.viewAllVulnerabilities}}** opens the vulnerabilities register, and, for Owners, Admins and Editors, **{{ui:securityTesting.uploadScan}}**.
+**The header.** The title, then a line counting the recent scan runs and every open critical finding in the workspace. Before any scan arrives, it reads **{{ui:securityTesting.descEmpty}}** On the right, **{{ui:securityTesting.viewAllVulnerabilities}}** opens the vulnerabilities register, and, for Owners, Admins and Editors, **{{ui:securityTesting.uploadScan}}**.
 
 **The filter.** Filter the findings by:
 
@@ -38,13 +38,13 @@ Use the page to see what your scanners report, sort real problems from noise, an
 | {{ui:securityTesting.filters.severity}} | {{ui:securityTesting.filterEnums.severity.CRITICAL}}, {{ui:securityTesting.filterEnums.severity.HIGH}}, {{ui:securityTesting.filterEnums.severity.MEDIUM}}, {{ui:securityTesting.filterEnums.severity.LOW}} |
 | {{ui:securityTesting.filters.status}} | {{ui:securityTesting.filterEnums.status.OPEN}}, {{ui:securityTesting.filterEnums.status.TRIAGED}}, {{ui:securityTesting.filterEnums.status.FIXED}}, {{ui:securityTesting.filterEnums.status.FALSE_POSITIVE}}, {{ui:securityTesting.filterEnums.status.ACCEPTED}} |
 
-**The findings.** One row per finding the scanners reported, up to 500:
+**The findings.** One row per finding the scanners reported, most severe first, up to 500. When there are more, a notice above the table says so: the 500 shown are the most severe, and the filter applies only to them.
 
 | Column | What it shows |
 | --- | --- |
-| {{ui:securityTesting.colSeverity}} | How serious the finding is, as the scanner's level in capitals, such as CRITICAL or HIGH |
+| {{ui:securityTesting.colSeverity}} | How serious the finding is: {{ui:securityTesting.filterEnums.severity.CRITICAL}}, {{ui:securityTesting.filterEnums.severity.HIGH}}, {{ui:securityTesting.filterEnums.severity.MEDIUM}} or {{ui:securityTesting.filterEnums.severity.LOW}} |
 | {{ui:securityTesting.colFinding}} | The finding's title, with the scanner's rule under it |
-| {{ui:securityTesting.colSource}} | The scanner and the kind of scan |
+| {{ui:securityTesting.colSource}} | The scanner and the kind of scan, such as {{ui:securityTesting.scanType.SAST}} or {{ui:securityTesting.scanType.SECRETS}} |
 | {{ui:securityTesting.colLocation}} | Where it was found, such as a file and line |
 | {{ui:securityTesting.colMapsTo}} | The OWASP Top 10 categories and NIST secure software development practices the weakness falls under, when the scanner names one |
 | {{ui:securityTesting.colStatus}} | The finding's status. Owners, Admins and Editors get a list to change it |
@@ -55,11 +55,11 @@ The same finding reported again by a later scan is kept as one row, not repeated
 
 | Column | What it shows |
 | --- | --- |
-| {{ui:securityTesting.colOutcome}} | PASS, FAIL or ERROR. A scan fails when it reported a finding of high severity or above, unless the pipeline said otherwise |
+| {{ui:securityTesting.colOutcome}} | {{ui:securityTesting.runOutcome.PASS}}, {{ui:securityTesting.runOutcome.FAIL}} or {{ui:securityTesting.runOutcome.ERROR}}. A scan fails when it reported a finding of high severity or above, unless the pipeline said otherwise |
 | {{ui:securityTesting.colSourceScan}} | The scanner and the kind of scan |
 | {{ui:securityTesting.colRepo}} | The code repository or branch scanned, when the pipeline named one |
 | {{ui:securityTesting.colRan}} | When the scan arrived |
-| {{ui:securityTesting.colVia}} | API for a scan sent by your pipeline, UPLOAD for one uploaded on this page |
+| {{ui:securityTesting.colVia}} | {{ui:securityTesting.ingestedVia.API}} for a scan sent by your pipeline, {{ui:securityTesting.ingestedVia.UPLOAD}} for one uploaded on this page |
 | {{ui:securityTesting.colFindings}} | How many findings the scan reported |
 
 ## What you can do
@@ -80,7 +80,7 @@ Choose a status in the finding's status list:
 | {{ui:securityTesting.filterEnums.status.FALSE_POSITIVE}} | The scanner was wrong |
 | {{ui:securityTesting.filterEnums.status.ACCEPTED}} | The risk is accepted and will not be fixed |
 
-The change shows at once. If it is refused, the old status comes back and a message says the finding could not be updated.
+The change shows at once. If it is refused, the old status comes back and a message gives the reason.
 
 ## What happens next
 
@@ -96,8 +96,10 @@ The change shows at once. If it is refused, the old status comes back and a mess
 | **{{ui:securityTesting.emptyMatchTitle}}** | No finding matches the filter | {{ui:securityTesting.emptyMatchDesc}} |
 | **{{ui:securityTesting.runsEmptyTitle}}** | No scan has arrived yet | {{ui:securityTesting.runsEmptyDesc}} |
 | **{{ui:securityTesting.uploadParseError}}** | The file you chose could not be read | Choose the scanner's SARIF output file |
-| **{{ui:securityTesting.uploadError}}** | The scan was not taken in. The file may not be a valid SARIF report, or your role may not upload | Check the file and your role, then try again |
-| **{{ui:securityTesting.updateFailed}}** | The status was not changed | Try again |
+| **{{ui:securityTesting.uploadInvalidSarif}}**, with the part of the file that was wrong | The file is not a scan report the page can read | Export the report from the scanner again, in SARIF format |
+| **{{ui:securityTesting.uploadError}}**, or the reason the server gave | The scan was not taken in | Follow the reason given, then try again |
+| **{{ui:securityTesting.updateFailed}}**, or the reason the server gave | The status was not changed | Follow the reason given, then try again |
+| A notice that only the first results are shown | There are more than 500 findings | Nothing to fix; the most severe 500 are shown |
 
 ## Related
 

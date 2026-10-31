@@ -105,7 +105,7 @@ export function ControlExceptionsPanel({
     const [renewTargetId, setRenewTargetId] = useState<string | null>(null);
 
     const invalidate = () => {
-        swrMutate(apiBase);
+        void swrMutate(apiBase);
     };
 
     return (

@@ -124,12 +124,12 @@ export default function SsoAdminPage() {
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (canManage) fetchProviders();
+        if (canManage) void fetchProviders();
     }, [canManage, fetchProviders]);
 
     function retryLoad() {
         setLoading(true);
-        fetchProviders();
+        void fetchProviders();
     }
 
     // ── Load existing provider into form ──

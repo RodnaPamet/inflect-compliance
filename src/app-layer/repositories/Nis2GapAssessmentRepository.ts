@@ -130,6 +130,27 @@ export class Nis2GapAssessmentRepository {
         return db.nis2SelfAssessment.findFirst({ where: { id, tenantId: ctx.tenantId } });
     }
 
+    /**
+     * Read a run's status under `FOR SHARE`, held until the transaction ends.
+     * It conflicts with `markAssessmentCompleted`'s UPDATE, so an answer
+     * written in the same transaction either lands before the run is
+     * finalised (finalising then waits for it) or sees COMPLETED and is
+     * refused. A plain read would leave a window between the status check and
+     * the write. Null when the run does not exist in this tenant.
+     */
+    static async lockAssessmentStatusForShare(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+    ): Promise<{ status: string } | null> {
+        const rows = await db.$queryRaw<Array<{ status: string }>>`
+            SELECT "status"
+              FROM "Nis2SelfAssessment"
+             WHERE "id" = ${id} AND "tenantId" = ${ctx.tenantId}
+               FOR SHARE`;
+        return rows[0] ?? null;
+    }
+
     static async listAnswers(db: PrismaTx, ctx: RequestContext, assessmentId: string) {
         return db.nis2SelfAssessmentAnswer.findMany({
             where: { tenantId: ctx.tenantId, assessmentId },

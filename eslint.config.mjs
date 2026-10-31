@@ -674,19 +674,23 @@ const config = [
     {
         // #4579 — a promise nobody awaits rejects into nothing: no error
         // reaches the caller, the job or the request, and nothing is logged.
-        // The rule had never run anywhere. Scoped to the server code, where a
-        // swallowed rejection is both invisible and consequential (a usecase,
-        // a job, a library call), and where it measured 0 hits in app-layer
-        // and 2 intentional ones in lib, each disabled in place with its
-        // reason. The UI's ~165 hits are React handlers and effects whose
-        // callees handle their own errors; extending the rule to `.tsx` is a
-        // separate decision, not carried in on this one.
+        // The rule had never run anywhere. It first covered the server code
+        // (0 hits in app-layer, 2 intentional ones in lib, each disabled in
+        // place with its reason).
+        //
+        // #4585 extended it to all of `src/`, the UI included (owner decision,
+        // 2026-10-30). The UI's ~165 hits were said to be handlers whose
+        // callees handle their own errors; measured, that held for most and
+        // not for all. Three pages could hang on a network failure and sixteen
+        // loaders let the rejection escape. Those now handle it, and every
+        // other UI call site marks its promise `void` because the callee owns
+        // the failure. A new one has to make the same choice.
         //
         // The rule is TYPE-AWARE, so this block gives its files a TypeScript
         // program (`projectService`). Do not try it with `eslint --rule`: that
         // cannot load type information, exits 2 with a plugin error and
         // reports nothing, which reads like a clean pass.
-        files: ['src/app-layer/**/*.ts', 'src/lib/**/*.ts', 'src/lib/**/*.tsx'],
+        files: ['src/**/*.ts', 'src/**/*.tsx'],
         languageOptions: {
             parserOptions: {
                 projectService: true,

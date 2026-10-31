@@ -58,7 +58,7 @@ export function IntegrationOwnerCard({ connectionId }: { connectionId: string })
 
     useEffect(() => {
         let alive = true;
-        (async () => {
+        void (async () => {
             try {
                 const res = await fetch(apiUrl('/admin/integrations'));
                 if (!res.ok) throw new Error('load');

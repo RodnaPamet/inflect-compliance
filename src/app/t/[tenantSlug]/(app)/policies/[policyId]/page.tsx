@@ -225,15 +225,17 @@ export default function PolicyDetailPage() {
         try {
             const res = await fetch(apiUrl(`/policies/${policyId}/activity`));
             if (res.ok) setActivities(await res.json());
+        } catch {
+            // A network failure keeps what is shown, as a non-ok response does.
         } finally {
             setActivitiesLoading(false);
         }
     }, [apiUrl, policyId]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchPolicy(); }, [fetchPolicy]);
+    useEffect(() => { void fetchPolicy(); }, [fetchPolicy]);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { if (tab === 'activity') fetchActivity(); }, [tab, fetchActivity]);
+    useEffect(() => { if (tab === 'activity') void fetchActivity(); }, [tab, fetchActivity]);
 
     /**
      * Load a version into the editor — always the NEWEST one (#4127).

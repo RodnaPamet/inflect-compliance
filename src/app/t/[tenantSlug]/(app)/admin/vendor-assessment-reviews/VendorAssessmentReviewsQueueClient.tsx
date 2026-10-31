@@ -63,6 +63,8 @@ export function VendorAssessmentReviewsQueueClient() {
                 return;
             }
             setRows((await res.json()) as ReviewableRow[]);
+        } catch {
+            setError(t('reviewQueue.loadErrorNetwork'));
         } finally {
             setLoading(false);
         }
@@ -70,7 +72,7 @@ export function VendorAssessmentReviewsQueueClient() {
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        refresh();
+        void refresh();
     }, [refresh]);
 
     const columns = useMemo(

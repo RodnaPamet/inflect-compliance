@@ -53,7 +53,7 @@ export default function MfaChallengePage() {
     }, [apiUrl]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { checkEnrollment(); }, [checkEnrollment]);
+    useEffect(() => { void checkEnrollment(); }, [checkEnrollment]);
 
     const handleVerify = async () => {
         if (code.length !== 6 || !/^\d{6}$/.test(code)) {
@@ -90,7 +90,7 @@ export default function MfaChallengePage() {
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && code.length === 6) {
-            handleVerify();
+            void handleVerify();
         }
     };
 

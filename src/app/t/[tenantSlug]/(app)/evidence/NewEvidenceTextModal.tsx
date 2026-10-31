@@ -151,7 +151,7 @@ export function NewEvidenceTextModal({
             // Revalidate every `/evidence?…` SWR cache entry so the list
             // page refreshes regardless of which filter view was active.
             const evidenceUrlPrefix = apiUrl(CACHE_KEYS.evidence.list());
-            swrMutate(
+            void swrMutate(
                 (key) =>
                     typeof key === 'string' &&
                     (key === evidenceUrlPrefix ||

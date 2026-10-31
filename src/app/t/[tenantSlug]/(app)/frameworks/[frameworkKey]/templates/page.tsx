@@ -100,7 +100,7 @@ export default function TemplateLibraryPage() {
         // its loading state for ever. The `finally` is the fix; the empty
         // `catch` is deliberate, since `fetchTemplates` already owns its own
         // error reporting and this effect has nothing to add to it.
-        (async () => {
+        void (async () => {
             try {
                 const [fwRes] = await Promise.all([
                     fetch(apiUrl(`/frameworks/${frameworkKey}`)),
@@ -118,7 +118,7 @@ export default function TemplateLibraryPage() {
     // R14-PR7 — debounced search retired with the input. Filter
     // state changes (category, section) re-fetch immediately.
     useEffect(() => {
-        fetchTemplates();
+        void fetchTemplates();
     }, [category, section, fetchTemplates]);
 
     // Both installs check `res.ok` and show the server's own message. They

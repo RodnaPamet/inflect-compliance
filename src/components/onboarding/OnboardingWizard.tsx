@@ -203,7 +203,7 @@ export default function OnboardingWizard() {
     }, [tenantSlug, permissions.canAdmin, t]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { loadState(); }, [loadState]);
+    useEffect(() => { void loadState(); }, [loadState]);
 
     // ─── Start onboarding ───
     const handleStart = async () => {
@@ -789,7 +789,7 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
 
     useEffect(() => {
         let cancelled = false;
-        (async () => {
+        void (async () => {
             try {
                 const list = await apiFetch<InstallableFramework[]>(apiUrl(tenantSlug, 'frameworks'));
                 if (!cancelled) setFrameworks(list);

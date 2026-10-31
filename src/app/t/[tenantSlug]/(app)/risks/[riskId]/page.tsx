@@ -507,7 +507,7 @@ export default function RiskDetailPage() {
                             hideSearch
                             id="risk-status-select"
                             selected={STATUS_OPTIONS.find(o => o.value === risk.status) ?? null}
-                            setSelected={(opt) => { if (opt) handleStatusChange(opt.value); }}
+                            setSelected={(opt) => { if (opt) void handleStatusChange(opt.value); }}
                             options={STATUS_OPTIONS}
                             placeholder={t('detail.statusPlaceholder')}
                             // Item 29 — brand-color the status action (matches the

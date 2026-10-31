@@ -2,14 +2,34 @@
  * Structural ratchet — the Trivy image scan must NOT rebuild the image.
  *
  * The `docker` job builds the image once and exports it as a tarball
- * artifact; the `trivy` job downloads that artifact and `docker load`s
- * it. A previous shape rebuilt the image inside `trivy` via
+ * artifact; the `trivy` job downloads that artifact and scans the TAR
+ * ITSELF. A previous shape rebuilt the image inside `trivy` via
  * `docker/build-push-action` (~7.5 min wasted per run, since each job
  * runs on a fresh runner with no shared daemon and the GHA layer cache
  * barely helps the final assemble+load).
  *
  * This test fails CI if a future change reintroduces the in-job
  * rebuild, or breaks the artifact handoff.
+ *
+ * ── WHAT THE HANDOFF ASSERTION USED TO BE, AND WHY IT CHANGED (#4647) ──
+ *
+ * It was a text match for `docker load --input`, standing in for "the
+ * job consumes the artifact". #4647 removed that step: `docker load`
+ * plus Trivy's `image-ref:` re-export meant three copies of one 10.5 GB
+ * image on a runner that can have 34 GB free, and the scan died
+ * `no space left on device`. Trivy now reads the tar in place.
+ *
+ * The replacement is STRICTER rather than looser, which is the only
+ * direction a guard may be rewritten in when the thing it names goes
+ * away. `docker load --input` was satisfied by that text appearing
+ * ANYWHERE in the job, while the scan target lived in a separate
+ * `image-ref:` the assertion never read — so the old guard passed
+ * happily with `image-ref: ghcr.io/…:latest` beside a vestigial load
+ * line, which is precisely the "scanned bytes are not the shipped
+ * bytes" mutation the second describe block in this file exists to
+ * catch. The new one binds every scan step's target to the artifact
+ * path BY NAME, and counts the steps so it cannot pass over an empty
+ * set.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -45,9 +65,40 @@ describe('trivy job reuses the docker artifact (no rebuild)', () => {
         expect(trivy).not.toMatch(/docker\/setup-buildx-action/);
     });
 
-    it('trivy downloads the image artifact and loads it', () => {
+    it('trivy downloads the image artifact and scans THAT TAR, by name', () => {
         expect(trivy).toMatch(/actions\/download-artifact/);
-        expect(trivy).toMatch(/docker load --input/);
+
+        // The path the `docker` job wrote and this job downloaded. Built
+        // from the same pieces the workflow uses, so a change to either
+        // side has to change this line too.
+        const tar = '/tmp/image-${{ github.sha }}.tar';
+        expect(trivy).toContain(`path: /tmp`);
+        expect(trivy).toContain(`input: "${tar}"`);
+
+        // EVERY trivy-action step in the job scans that tar — asserted as
+        // a count over the extracted steps, not as "the string appears
+        // somewhere", because the defect being prevented is one scan step
+        // pointed at a different artefact than its neighbour.
+        const steps = trivy
+            .split('\n')
+            .reduce<string[][]>((acc, line) => {
+                if (/uses:\s*aquasecurity\/trivy-action@/.test(line)) acc.push([line]);
+                else if (acc.length && !/^\s{6}- /.test(line)) acc[acc.length - 1].push(line);
+                else if (acc.length) acc.push([]);
+                return acc;
+            }, [])
+            .filter((g) => g.length && /trivy-action@/.test(g[0]))
+            .map((g) => g.join('\n'));
+
+        // The denominator beside the result: both assertions below are
+        // satisfied by zero steps, and this job has two.
+        expect(steps.length).toBe(2);
+        expect(steps.filter((st) => st.includes(`input: "${tar}"`)).length).toBe(steps.length);
+
+        // And none of them may name an image reference instead — that is
+        // the shape that scans something other than what the docker job
+        // built (a daemon tag, or a already-published registry image).
+        expect(steps.filter((st) => /image-ref:/.test(st))).toEqual([]);
     });
 
     it('docker job exports the image tarball as an artifact', () => {

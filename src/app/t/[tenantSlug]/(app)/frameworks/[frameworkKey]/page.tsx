@@ -137,7 +137,7 @@ export default function FrameworkDetailPage() {
         // header rendering identical (it carries no data the tree
         // doesn't, but `<FrameworkExplorer>` shouldn't be the source
         // of truth for the page title).
-        (async () => {
+        void (async () => {
             setError(null);
             try {
                 const [fwRes, treeRes, packRes, covRes] = await Promise.all([
