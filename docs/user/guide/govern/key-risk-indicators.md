@@ -23,12 +23,13 @@ Give each important risk an early warning. When a reading crosses a threshold, t
 
 ## What you see
 
-**{{ui:risks.kri.newKri}}**, for roles that can create one: **{{ui:risks.kri.name}}**, **{{ui:risks.kri.unit}}**, the two thresholds **{{ui:risks.kri.greenMax}}** and **{{ui:risks.kri.amberMax}}**, **{{ui:risks.kri.target}}**, **{{ui:risks.kri.riskLabel}}**, **{{ui:risks.kri.directionLabel}}**, **{{ui:risks.kri.frequencyLabel}}**, **{{ui:risks.kri.ownerLabel}}** and **{{ui:risks.kri.descriptionLabel}}**.
+**{{ui:risks.kri.newKri}}**, for roles that can create one: **{{ui:risks.kri.name}}**, **{{ui:risks.kri.unit}}**, the two thresholds, **{{ui:risks.kri.target}}**, **{{ui:risks.kri.riskLabel}}**, **{{ui:risks.kri.directionLabel}}**, **{{ui:risks.kri.frequencyLabel}}**, **{{ui:risks.kri.ownerLabel}}** and **{{ui:risks.kri.descriptionLabel}}**. The thresholds read **{{ui:risks.kri.greenMax}}** and **{{ui:risks.kri.amberMax}}** when higher is worse, and **{{ui:risks.kri.greenMin}}** and **{{ui:risks.kri.amberMin}}** when lower is worse, so each says which readings it covers.
 
 **The indicators.** One card each, with:
 
 - its name, and **{{ui:risks.kri.inactive}}** if it has been switched off;
-- its latest reading with its colour, or **{{ui:risks.kri.noData}}**;
+- the risk it watches, as a link, and its owner;
+- its latest reading with its colour in words, or **{{ui:risks.kri.noData}}**;
 - a small trend line of recent readings;
 - its target, how often it is measured and its thresholds.
 
@@ -42,11 +43,11 @@ Fill in at least a name, set the thresholds and the direction, and click **{{ui:
 
 ### Record a reading
 
-On an indicator's card, type the value under **{{ui:risks.kri.recordReading}}** and click **{{ui:risks.kri.add}}**. The reading is coloured against the thresholds. If it is worse than the previous one and the indicator is linked to a risk, a remediation task may be created for that risk; a message tells you when it is.
+On an indicator's card, type the value under **{{ui:risks.kri.recordReading}}** and click **{{ui:risks.kri.add}}**. A value that is not a number is refused with **{{ui:risks.kri.readingNotNumber}}**. The reading is coloured against the thresholds. If it is worse than the previous one and the indicator is linked to a risk, a remediation task may be created for that risk; a message tells you when it is.
 
 ### Edit, deactivate or delete an indicator
 
-Use **{{ui:risks.kri.edit}}**, **{{ui:risks.kri.deactivate}}** (or **{{ui:risks.kri.activate}}**) and **{{ui:risks.kri.delete}}** at the bottom of its card. Deleting an indicator removes all its readings and cannot be undone.
+Use **{{ui:risks.kri.edit}}**, **{{ui:risks.kri.deactivate}}** (or **{{ui:risks.kri.activate}}**) and **{{ui:risks.kri.delete}}** at the bottom of its card. Deleting an indicator removes all its readings and cannot be undone. If an edit or a deletion is refused, the reason appears in its dialog and the dialog stays open.
 
 ## Empty and error states
 
@@ -54,7 +55,8 @@ Use **{{ui:risks.kri.edit}}**, **{{ui:risks.kri.deactivate}}** (or **{{ui:risks.
 | --- | --- | --- |
 | **{{ui:risks.kri.empty}}** | The workspace has no indicators | Owners, Admins and Editors create one |
 | **{{ui:risks.kri.loadError}}** | The indicators could not load | Reload the page |
-| **{{ui:risks.kri.saveError}}** | The last change was not saved | Try again |
+| **{{ui:risks.kri.saveError}}** | The last change could not be saved | Try again |
+| **{{ui:risks.kri.writeRestricted}}** | Your role cannot change indicators | Ask an Owner, Admin or Editor |
 
 ## Related
 

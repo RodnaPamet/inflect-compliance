@@ -31,20 +31,21 @@ Get a first draft of a risk register quickly, or check an existing one for gaps,
 - its title, category and confidence;
 - whether it came from the AI or from the baseline set used when the AI is unavailable;
 - its description, threat and vulnerability;
-- a suggested likelihood and impact, with the band they fall in on your matrix;
+- a suggested likelihood and impact on your workspace's matrix scale, with the band they fall in;
 - the reasoning: why this risk, the asset characteristics behind it, and the control themes and controls that would reduce it.
 
 ## What you can do
 
 1. Choose frameworks, assets and context, then click **{{ui:risks.ai.generateBtn}}**. Generating takes a few seconds.
 2. Go through the suggestions and click **{{ui:risks.ai.accept}}** or **{{ui:risks.ai.reject}}** on each.
-3. Click the apply button at the bottom to add the accepted suggestions to the register.
+3. To correct one first, click **{{ui:risks.ai.edit}}**, change its **{{ui:risks.ai.editTitleLabel}}**, **{{ui:risks.ai.editDescriptionLabel}}**, **{{ui:risks.ai.likelihoodShort}}** or **{{ui:risks.ai.impactShort}}**, and click **{{ui:risks.ai.saveAccept}}**. The suggestion is marked **{{ui:risks.ai.edited}}**, and your version is the one added.
+4. Click the apply button at the bottom to add the accepted suggestions to the register.
 
 **{{ui:risks.ai.dismissAll}}** discards the whole set without adding anything.
 
 ## What happens next
 
-Each accepted suggestion becomes a risk in the register, with the status Open and the suggested likelihood and impact. A suggestion whose title matches a risk you already have is not added again. Review each new risk on its own page.
+Each accepted suggestion becomes a risk in the register, with the status Open and the likelihood and impact it carried, your corrections included. A suggestion whose title matches a risk you already have is linked to that risk instead of being added again, and the result says how many were linked that way. Review each new risk on its own page.
 
 ## Empty and error states
 
@@ -52,6 +53,7 @@ Each accepted suggestion becomes a risk in the register, with the status Open an
 | --- | --- | --- |
 | **{{ui:risks.ai.fallbackNotice}}** | The AI was not available, so these are the standard baseline suggestions | Review them the same way, or try again later |
 | **{{ui:risks.ai.assetsNone}}** | The workspace has no assets to choose from | Generate without assets, or add assets first |
+| **{{ui:risks.ai.assetsLoadFailed}}** | The asset list could not load | Click **{{ui:risks.ai.loadAssets}}** again |
 | **{{ui:risks.ai.selectOne}}** | You applied with nothing accepted | Accept at least one suggestion |
 | **{{ui:risks.ai.generationFailed}}**, or the reason the server gave | No suggestions were generated | Follow the reason, then try again |
 | **{{ui:risks.ai.applyFailed}}**, or the reason the server gave | Nothing was added | Follow the reason, then try again |

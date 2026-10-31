@@ -25,11 +25,11 @@ Keep the reasoning behind a system's EU AI Act tier in one place, see what it ob
 
 **The header.** The system's name, its tier, the clause that decided it and whether you provide or deploy it.
 
-**{{ui:risks.aiSystems.detail.classificationHeading}}.** **{{ui:risks.aiSystems.colRiskTier}}**, **{{ui:risks.aiSystems.detail.rowDrivingClause}}**, **{{ui:risks.aiSystems.colBasis}}**, **{{ui:risks.aiSystems.provider}}**, **{{ui:risks.aiSystems.detail.rowPurpose}}** and **{{ui:risks.aiSystems.new.useContextLabel}}**. A provisional entry, one nobody has classified yet, carries a notice saying so.
+**{{ui:risks.aiSystems.detail.classificationHeading}}.** **{{ui:risks.aiSystems.detail.rowStatus}}** (**{{ui:risks.aiSystems.detail.status_ACTIVE}}** or **{{ui:risks.aiSystems.detail.status_RETIRED}}**), **{{ui:risks.aiSystems.colRiskTier}}**, **{{ui:risks.aiSystems.detail.rowDrivingClause}}**, **{{ui:risks.aiSystems.colBasis}}**, **{{ui:risks.aiSystems.provider}}**, **{{ui:risks.aiSystems.detail.rowPurpose}}** and **{{ui:risks.aiSystems.new.useContextLabel}}**. A provisional entry, one nobody has classified yet, carries a notice saying so.
 
-**The linked obligations.** The EU AI Act requirements that apply to the system, each with its code and title.
+**The linked obligations.** The EU AI Act requirements that apply to the system, each with its framework's name, its code and its title. Click a title to open the framework.
 
-**{{ui:risks.aiSystems.detail.conformityHeading}}.** For a high-risk system only: one button per document.
+**{{ui:risks.aiSystems.detail.conformityHeading}}.** For a high-risk system only: one button per document, and **{{ui:risks.aiSystems.detail.draftsHeading}}**, the drafts already queued for this system, each with its document, its review status and the date.
 
 ## What you can do
 
@@ -39,7 +39,7 @@ Click **{{ui:risks.aiSystems.detail.classify}}** and answer every question. The 
 
 ### Generate a conformity draft
 
-For a high-risk system, click the document you need. A draft is created for a person to review; nothing is published, and a declaration of conformity is never issued on its own. The button then reads **{{ui:risks.aiSystems.detail.queued}}**, and a line tells you where to review the draft.
+For a high-risk system, click the document you need. A draft is created for a person to review; nothing is published, and a declaration of conformity is never issued on its own. The button then reads **{{ui:risks.aiSystems.detail.queued}}**, and a line tells you where to review the draft. While a draft of a document waits for review, its button stays off, even after a reload; once the draft is approved or rejected, you can generate another.
 
 ## Empty and error states
 
