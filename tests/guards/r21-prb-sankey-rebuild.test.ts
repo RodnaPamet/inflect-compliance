@@ -90,7 +90,9 @@ describe('Sankey — flat theme-token design (restored, theme-aware)', () => {
         });
 
         it('shows each column kind label + node count', () => {
-            expect(SANKEY).toMatch(/\{c\.label\}/);
+            // #4794 — the kind label is translated (`common.ui.sankeyColumn.<kind>`),
+            // no longer the dataset's hard-coded English `c.label`.
+            expect(SANKEY).toMatch(/t\(`sankeyColumn\.\$\{c\.kind\}`/);
             expect(SANKEY).toMatch(/\(\{c\.count\}\)/);
         });
     });
