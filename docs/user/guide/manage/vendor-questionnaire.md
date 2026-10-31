@@ -12,7 +12,7 @@ A vendor reaches the page only from the link in their invitation email. The link
 
 You send the invitation from the vendor's page in the [{{ui:vendors.title}}](vendors.md) register, by sending it an assessment.
 
-A reminder email links to the questionnaire without the key, because the key is not stored. Opened from a reminder, the page asks the vendor to use the original invitation instead.
+A reminder email carries a fresh key, so its link opens the questionnaire. The new key replaces the old one: the link in the invitation, and in any earlier reminder, stops working, so the vendor should use the most recent email. The new link expires when the invitation's did.
 
 ## Who can use it
 
@@ -60,7 +60,8 @@ Once submitted, the page shows **{{ui:external.vendorAssessment.submittedTitle}}
 | What the vendor sees | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:external.vendorAssessment.loading}}** | The questionnaire is loading | Wait a moment |
-| **{{ui:external.vendorAssessment.missingTokenTitle}}** | The page was opened without the personal key, for example from a reminder email | {{ui:external.vendorAssessment.errorMissingToken}} |
+| **{{ui:external.vendorAssessment.missingTokenTitle}}** | The page was opened without the personal key, for example from an address typed by hand | {{ui:external.vendorAssessment.errorMissingToken}} |
+| **{{ui:external.vendorAssessment.errorTitle}}** with **{{ui:external.vendorAssessment.errorDefault}}** | The link is not the current one: a later reminder replaced it, or it was withdrawn | Use the link in your most recent email about the questionnaire, or ask your contact |
 | **{{ui:external.vendorAssessment.errorTitle}}** with **{{ui:external.vendorAssessment.errorExpired}}** | The questionnaire has expired | Ask your contact for a new invitation |
 | **{{ui:external.vendorAssessment.errorTitle}}** with **{{ui:external.vendorAssessment.errorWrongStatus}}** | It was already submitted or closed | Nothing more to do; ask your contact if you need to change something |
 | **{{ui:external.vendorAssessment.networkTitle}}** | The page could not reach the server | Check your connection and click **{{ui:external.vendorAssessment.retry}}** |

@@ -13,6 +13,10 @@
  * Mutation rate limiting is the default API_MUTATION_LIMIT — the route
  * is authenticated and `currentPassword` must verify, so the abuse
  * surface is already small.
+ *
+ * Every refusal carries a `code` from `CHANGE_PASSWORD_REFUSALS` beside its
+ * English `error`, so the account page can say it in the reader's language
+ * (#4645); the sentence stays for API callers.
  */
 import { z } from 'zod';
 
@@ -26,6 +30,17 @@ import {
 } from '@/lib/auth/passwords';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { changePassword } from '@/lib/auth/password-management';
+import type { ChangePasswordRefusal } from '@/lib/auth/change-password-refusals';
+
+const POLICY_REFUSAL = {
+    empty: 'PASSWORD_EMPTY',
+    too_short: 'PASSWORD_TOO_SHORT',
+    too_long: 'PASSWORD_TOO_LONG',
+} as const satisfies Record<string, ChangePasswordRefusal>;
+
+function refuse(code: ChangePasswordRefusal, error: string) {
+    return jsonResponse({ error, code }, { status: 400 });
+}
 
 const ChangePasswordSchema = z
     .object({
@@ -42,33 +57,24 @@ export const POST = withApiErrorHandling(
         }
 
         if (body.newPassword === body.currentPassword) {
-            return jsonResponse(
-                {
-                    error:
-                        'Your new password must be different from your current password.',
-                },
-                { status: 400 },
+            return refuse(
+                'SAME_AS_CURRENT',
+                'Your new password must be different from your current password.',
             );
         }
 
         // ── New-password policy (length floor/ceiling) ──
         const policy = validatePasswordPolicy(body.newPassword);
         if (!policy.ok) {
-            return jsonResponse(
-                { error: describePasswordPolicyFailure(policy.reason) },
-                { status: 400 },
-            );
+            return refuse(POLICY_REFUSAL[policy.reason], describePasswordPolicyFailure(policy.reason));
         }
 
         // ── Breached-password screening (fails open on a HIBP outage) ──
         const hibp = await checkPasswordAgainstHIBP(body.newPassword);
         if (hibp.breached) {
-            return jsonResponse(
-                {
-                    error:
-                        'This password appears in known data breaches. Please choose a different password.',
-                },
-                { status: 400 },
+            return refuse(
+                'PASSWORD_BREACHED',
+                'This password appears in known data breaches. Please choose a different password.',
             );
         }
 
@@ -80,15 +86,9 @@ export const POST = withApiErrorHandling(
             { requestId },
         );
         if (!result.ok) {
-            return jsonResponse(
-                {
-                    error:
-                        result.reason === 'no_password'
-                            ? 'This account signs in with a social provider and has no password to change.'
-                            : 'Your current password is incorrect.',
-                },
-                { status: 400 },
-            );
+            return result.reason === 'no_password'
+                ? refuse('NO_PASSWORD', 'This account signs in with a social provider and has no password to change.')
+                : refuse('CURRENT_PASSWORD_INCORRECT', 'Your current password is incorrect.');
         }
 
         // Every session — including this one — is now revoked.
