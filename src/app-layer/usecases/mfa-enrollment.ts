@@ -11,6 +11,7 @@
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/auth';
 import { appendAuditEntry } from '@/lib/audit';
+import { logEvent } from '../events/audit';
 import { logger } from '@/lib/observability';
 import type { RequestContext } from '../types';
 import type { VerifyMfaInputType } from '../schemas/mfa.schemas';
@@ -88,6 +89,17 @@ export async function startMfaEnrollment(
 
     const uri = generateTotpUri(secret, user.email);
 
+    // Starting changes nothing a sign-in checks — the row is unverified until
+    // a code proves it, and the route refuses a start over a verified one —
+    // but it is the first half of adding a factor, so it is recorded (#4646).
+    await logEvent(prisma, ctx, {
+        action: 'MFA_ENROLLMENT_STARTED',
+        entityType: 'UserMfaEnrollment',
+        entityId: enrollment.id,
+        details: 'Started setting up an authenticator app for MFA',
+        detailsJson: mfaAccessDetails(ctx.userId, 'mfa_enrollment_started'),
+    });
+
     return {
         secret,
         uri,
@@ -144,6 +156,15 @@ export async function verifyMfaEnrollment(
     });
 
     recordMfaEnrolled({ method: 'totp' });
+    // The second factor now applies at sign-in: the event an auditor of an
+    // authentication control most needs, and it was not recorded (#4646).
+    await logEvent(prisma, ctx, {
+        action: 'MFA_ENROLLED',
+        entityType: 'UserMfaEnrollment',
+        entityId: enrollment.id,
+        details: 'Verified an authenticator app for MFA',
+        detailsJson: mfaAccessDetails(ctx.userId, 'mfa_enrolled'),
+    });
     return { success: true, enrollmentId: enrollment.id };
 }
 
@@ -224,10 +245,43 @@ export async function removeMfaEnrollment(
         },
     });
 
+    // A second factor taken away — by its owner, or by an admin for somebody
+    // else — is recorded, naming whose it was (#4646). Nothing removed,
+    // nothing recorded.
+    if (result.count > 0) {
+        const byAdmin = effectiveUserId !== ctx.userId;
+        await logEvent(prisma, ctx, {
+            action: 'MFA_REMOVED',
+            // The enrolment row is gone; the member whose factor it was is not.
+            entityType: 'User',
+            entityId: effectiveUserId,
+            details: byAdmin
+                ? 'Removed another member\'s MFA authenticator'
+                : 'Removed their own MFA authenticator',
+            detailsJson: mfaAccessDetails(
+                effectiveUserId,
+                byAdmin ? 'mfa_removed_by_admin' : 'mfa_removed',
+            ),
+        });
+    }
+
     return { removed: result.count > 0 };
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
+
+/**
+ * The `detailsJson` of an MFA enrolment change. `access` is the category an
+ * auditor filters authentication events on; its schema is strict and its
+ * operations a closed set, so the change is an access `permission_changed`
+ * and `detail` names which one.
+ */
+function mfaAccessDetails(
+    targetUserId: string,
+    detail: 'mfa_enrollment_started' | 'mfa_enrolled' | 'mfa_removed' | 'mfa_removed_by_admin',
+) {
+    return { category: 'access', operation: 'permission_changed', targetUserId, detail } as const;
+}
 
 /**
  * Record a refused attempt to strip another user's MFA.

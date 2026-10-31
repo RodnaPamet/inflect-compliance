@@ -103,3 +103,17 @@ describe('personal MFA page — refusals', () => {
         expect(screen.queryByText('MFA removed.')).toBeNull();
     });
 });
+
+describe('personal MFA page — the workspace policy reads as a word (#4646)', () => {
+    it('labels the policy and says "workspace", not "tenant"', async () => {
+        const en = jest.requireActual('../../messages/en.json');
+        mount({ verified: false });
+        const line = await waitFor(() => {
+            const el = screen.getByText(en.mfa.tenantPolicy, { exact: false });
+            return el;
+        });
+        expect(line.textContent).toContain(`${en.mfa.tenantPolicy} ${en.admin.security.policy.OPTIONAL.label}`);
+        expect(line.textContent).not.toContain('OPTIONAL');
+        expect(en.mfa.tenantPolicy).not.toMatch(/tenant/i);
+    });
+});
