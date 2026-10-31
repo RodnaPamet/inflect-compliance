@@ -38,6 +38,7 @@ import {
 } from '@/lib/roles';
 import { assertCustomRoleCarriageInTx } from './custom-roles';
 import { recordInviteSent, recordInviteRedeemed } from '@/lib/observability/business-metrics';
+import type { InviteRefusal } from '@/lib/invite-refusals';
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -310,6 +311,72 @@ export async function previewInviteByToken(
     };
 }
 
+// ─── inviteSignInOutcome ─────────────────────────────────────────────
+
+export type InviteSignInOutcome =
+    | { kind: 'ACCEPTED'; slug: string }
+    | { kind: 'PENDING' }
+    | { kind: 'REFUSED'; reason: InviteRefusal; tenantName: string | null };
+
+/**
+ * What became of an invite that "Sign in to accept" handed to the sign-in
+ * callback (#4689).
+ *
+ * The callback redeems the `inflect_invite_token` cookie and, on a refusal,
+ * only logs it: no response reaches the person, and an email mismatch has
+ * already burnt the invite. So `/invite/result`, where that flow lands after
+ * sign-in, reads the invite's stored state and the signed-in user's
+ * membership to say what happened:
+ *
+ *   - ACCEPTED: the user holds an ACTIVE membership in the invite's workspace
+ *     and the invite is spent.
+ *   - PENDING: the invite is still live (the callback did not redeem it), so
+ *     the invite page can offer Accept again.
+ *   - REFUSED: the reason the redemption would have given.
+ *
+ * Reads only the one invite the caller's own cookie names, and answers about
+ * the caller alone, so it discloses nothing the invite link did not.
+ */
+export async function inviteSignInOutcome(input: {
+    token: string;
+    userId: string;
+    userEmail: string;
+}): Promise<InviteSignInOutcome> {
+    const invite = await prisma.tenantInvite.findUnique({
+        where: { token: input.token },
+        select: {
+            tenantId: true,
+            email: true,
+            acceptedAt: true,
+            revokedAt: true,
+            expiresAt: true,
+            tenant: { select: { name: true, slug: true } },
+        },
+    });
+    if (!invite) return { kind: 'REFUSED', reason: 'INVITE_NOT_FOUND', tenantName: null };
+
+    const tenantName = invite.tenant.name;
+    if (invite.revokedAt) return { kind: 'REFUSED', reason: 'INVITE_REVOKED', tenantName };
+
+    if (invite.acceptedAt) {
+        const membership = await prisma.tenantMembership.findFirst({
+            where: { tenantId: invite.tenantId, userId: input.userId, status: 'ACTIVE' },
+            select: { id: true },
+        });
+        if (membership) return { kind: 'ACCEPTED', slug: invite.tenant.slug };
+        const sameEmail =
+            invite.email.toLowerCase().trim() === input.userEmail.toLowerCase().trim();
+        return {
+            kind: 'REFUSED',
+            reason: sameEmail ? 'INVITE_NOT_COMPLETED' : 'INVITE_EMAIL_MISMATCH',
+            tenantName,
+        };
+    }
+
+    if (invite.expiresAt < new Date()) return { kind: 'REFUSED', reason: 'INVITE_EXPIRED', tenantName };
+    return { kind: 'PENDING' };
+}
+
 // ─── redeemInvite ────────────────────────────────────────────────────
 
 export interface RedeemResult {
@@ -370,10 +437,10 @@ export async function redeemInvite(input: {
             where: { token: input.token },
             select: { acceptedAt: true, revokedAt: true, expiresAt: true },
         });
-        if (!inv) throw notFound('Invite not found');
-        if (inv.revokedAt) throw gone('Invite has been revoked');
-        if (inv.expiresAt < new Date()) throw gone('Invite has expired');
-        if (inv.acceptedAt) throw gone('Invite has already been redeemed');
+        if (!inv) throw notFound('Invite not found', { reason: 'INVITE_NOT_FOUND' satisfies InviteRefusal });
+        if (inv.revokedAt) throw gone('Invite has been revoked', { reason: 'INVITE_REVOKED' satisfies InviteRefusal });
+        if (inv.expiresAt < new Date()) throw gone('Invite has expired', { reason: 'INVITE_EXPIRED' satisfies InviteRefusal });
+        if (inv.acceptedAt) throw gone('Invite has already been redeemed', { reason: 'INVITE_ALREADY_REDEEMED' satisfies InviteRefusal });
         throw internal('Invite redemption race condition');
     }
 
@@ -403,6 +470,7 @@ export async function redeemInvite(input: {
         throw forbidden(
             'Invite email does not match signed-in user. ' +
                 'Ask your admin to send a new invite to your email address.',
+            { reason: 'INVITE_EMAIL_MISMATCH' satisfies InviteRefusal },
         );
     }
 

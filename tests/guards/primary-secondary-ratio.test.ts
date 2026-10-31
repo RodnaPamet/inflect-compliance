@@ -454,6 +454,14 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // requires to be primary, and it is bought by the Statement of Applicability's
 // per-row "map control" button, a row action that R7-PR1's demotion of row
 // actions had missed. The panel's Edit trigger is secondary. Net change: zero.
+// 2026-10-31 — #4689 invite page: 173 stays, PAID FOR. The invite page's
+// "Accept invitation" was a hand-rolled brand-filled <button> this counter
+// could not see; on the Button primitive it is counted, and it is the page's
+// one action. It is bought by the AI risk suggestions page's per-row Accept
+// toggle, which rendered primary once a row was accepted: a row action (the
+// R7-PR1 rule), whose accepted state its success fill already carries. The
+// sign-in link beside it renders through `buttonVariants` and the new
+// /invite/result page's one link is secondary. Net change: zero.
 const MAX_PRIMARY_COUNT = 173;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));

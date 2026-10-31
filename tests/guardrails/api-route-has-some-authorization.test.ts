@@ -350,9 +350,6 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
     { handler: 'api/invites/[token]/route.ts#POST', klass: 'CAPABILITY_TOKEN',
       mechanism: /redeemInvite/,
       note: 'Redemption. The route requires a session first, then redeemInvite claims the token atomically (acceptedAt/revokedAt/expiresAt predicate on updateMany) and burns it on an email mismatch.' },
-    { handler: 'api/invites/[token]/accept-redirect/route.ts#GET', klass: 'CAPABILITY_TOKEN',
-      mechanism: /redeemInvite/,
-      note: 'Post-OAuth callbackUrl for the same redemption: unauthenticated callers are bounced to /login, and the token itself is checked by the same redeemInvite atomic claim.' },
     { handler: 'api/invites/[token]/start-signin/route.ts#GET', klass: 'CAPABILITY_TOKEN',
       // FINDING, not corroboration. This route verifies NOTHING: it copies the
       // URL segment verbatim into an HttpOnly 10-minute cookie and redirects
@@ -883,7 +880,8 @@ describe('every API route handler has SOME authorization (layer 2)', () => {
         const members = EXEMPT_HANDLERS.filter((e) => e.klass === 'CAPABILITY_TOKEN');
         // Positive companion: the class is populated, so an empty offender
         // list below is evidence rather than an empty scan.
-        expect(members.length).toBeGreaterThanOrEqual(14);
+        // 13 since #4689 deleted the GET invite redeemer (`accept-redirect`).
+        expect(members.length).toBeGreaterThanOrEqual(13);
         expect(EXEMPT_CLASSES.CAPABILITY_TOKEN.mechanism).toBeUndefined();
 
         // Routes drawn from classes that CANNOT hold a capability token: two
@@ -982,7 +980,8 @@ describe('every API route handler has SOME authorization (layer 2)', () => {
         // to sit here claiming to catch a run where "nothing was mutated at
         // all" — it could not: every offender path `continue`s, so zero
         // offenders already implies every checkable member incremented.
-        expect(checkable.length).toBeGreaterThanOrEqual(14);
+        // 13 since #4689 deleted the GET invite redeemer (`accept-redirect`).
+        expect(checkable.length).toBeGreaterThanOrEqual(13);
     });
 
     it('PRE_TENANT_AUTH membership stays confined to /api/auth/', () => {
