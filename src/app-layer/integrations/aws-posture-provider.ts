@@ -443,9 +443,10 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
      * for every tenant; see the recorder's note on why a constructor-bound
      * tenant is worse than none.
      */
-    private execForScan(input: CheckInput): AwsCollectorExec | undefined {
+    private execForScan(input: CheckInput, benchmarkId: string): AwsCollectorExec | undefined {
         if (!this.execFromDeploy) return this.exec;
         const sandboxed = collectorExecForDeploy({
+            benchmarkId,
             onDecision: sandboxDecisionRecorderForScan({
                 tenantId: input.tenantId,
                 job: 'aws-posture-collect',
@@ -561,7 +562,7 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         // `validateConnection` is left alone deliberately: it is a different
         // binary, run at CONFIG time to tell an admin their credential works,
         // and sandboxing it would make saving a connection depend on a gateway.
-        const res = await (this.execForScan(input) ?? runCli)(
+        const res = await (this.execForScan(input, benchmark) ?? runCli)(
             'powerpipe',
             ['benchmark', 'run', benchmark, '--output', 'json'],
             env,

@@ -114,6 +114,23 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
         'Names a zone inside our own Google Cloud project. No new external service.',
     SANDBOX_RUNTIME_GATEWAY_INSTANCE:
         'Names one Compute Engine instance we operate. No new external service.',
+    // #4561 — the gRPC endpoint and the three PEM PATHS. The endpoint is an
+    // INTERNAL VPC address of our own gateway VM, reached over mTLS; the three
+    // paths are local files on the app VM. No third party is named, nothing
+    // leaves the VPC, and the key itself never appears here — the variable
+    // holds a path because the owner decision of 2026-10-30 delivers the key
+    // out of band as a root-owned 0400 file.
+    SANDBOX_RUNTIME_GATEWAY_ENDPOINT:
+        'host:port of OUR OWN gateway VM on the internal VPC address (#4561). ' +
+        'Reached over mTLS with a client certificate; no third party, and nothing ' +
+        'leaves the VPC.',
+    SANDBOX_RUNTIME_CA_CERT_PATH:
+        'Local path to the CA certificate our own gateway presents. A path, not a key.',
+    SANDBOX_RUNTIME_CLIENT_CERT_PATH:
+        'Local path to our client certificate. A path, not a key.',
+    SANDBOX_RUNTIME_CLIENT_KEY_PATH:
+        'Local path to the client private key, delivered out of band as a root-owned ' +
+        '0400 file. The VALUE never reaches this file or any environment.',
     SANDBOX_EXECUTION_ENABLED:
         'Deployment feature flag for whether agent tool calls run inside the ' +
         'sandbox runtime (#3995/#3996). Chooses a LOCAL execution path; no ' +
