@@ -3817,7 +3817,8 @@
         "added": "Item added to pack",
         "addError": "Could not add the item. Please try again.",
         "cancel": "Cancel",
-        "submit": "Add to pack"
+        "submit": "Add to pack",
+        "noneOfType": "There is nothing of this type to add."
       },
       "revokeShareModal": {
         "title": "Revoke share link?",
@@ -3874,6 +3875,25 @@
         "removed": "Item removed from the pack",
         "undo": "Undo",
         "error": "Could not remove the item. Please try again."
+      },
+      "showAllItems": "Show all {count}",
+      "refused": {
+        "PACK_NOT_FOUND": "This pack no longer exists. It may have been deleted.",
+        "PACK_NOT_DRAFT": "This pack is frozen, so its items can no longer change.",
+        "PACK_ALREADY_FROZEN": "This pack is already frozen.",
+        "PACK_EMPTY": "Add at least one item before you freeze the pack.",
+        "PACK_DRAFT_NOT_SHAREABLE": "Freeze the pack before you share it.",
+        "PACK_DRAFT_NOT_CLONEABLE": "Freeze the pack before you clone it for a retest.",
+        "PACK_ITEM_NOT_FOUND": "That item is no longer in the pack.",
+        "PACK_ITEM_REF_INVALID": "That item no longer exists in this workspace.",
+        "SHARE_NOT_FOUND": "That share link no longer exists.",
+        "SHARE_ALREADY_REVOKED": "That share link is already revoked.",
+        "ENTRY_NOT_FOUND": "That auditor entry is no longer on this pack.",
+        "ENTRY_NOT_RESOLVABLE": "A comment has nothing to resolve.",
+        "ENTRY_ALREADY_RESOLVED": "That entry is already resolved.",
+        "ENTRY_NOT_MATERIALISABLE": "Only a finding or an evidence request can become a finding.",
+        "ENTRY_RESOLVED_WITHOUT_FINDING": "That entry is resolved, but its finding was not created. Reopen the entry to try again.",
+        "ENTRY_BEING_MATERIALISED": "Another reviewer is creating the finding from this entry. Refresh in a moment."
       }
     },
     "auditor": {
