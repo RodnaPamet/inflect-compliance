@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { AssessmentStatus } from '@prisma/client';
 import { RequestContext } from '../types';
 import { VendorRepository, VendorDocumentRepository, VendorLinkRepository, VendorFilters, VendorListParams, INFORMATION_REGISTER_CAP } from '../repositories/VendorRepository';
 import { QuestionnaireRepository, VendorAssessmentRepository } from '../repositories/AssessmentRepository';
@@ -602,7 +603,17 @@ export async function getVendorMetrics(ctx: RequestContext) {
         const vendors = await db.vendor.findMany({
             take: 5000,
             where: { tenantId: ctx.tenantId },
-            include: { assessments: { orderBy: { createdAt: 'desc' }, take: 1 } },
+            // #4799 — the latest COMPLETED assessment, as the dashboard's
+            // "Assessment risk" caption says. Reading the latest of any status
+            // let a newer draft hide an older completed rating, and made a
+            // vendor with a completed assessment count as having none.
+            include: {
+                assessments: {
+                    where: { status: { in: COMPLETED_ASSESSMENT_STATUS_LIST } },
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                },
+            },
         });
 
         const byCriticality: Record<string, number> = {};
@@ -619,10 +630,14 @@ export async function getVendorMetrics(ctx: RequestContext) {
             byCriticality[v.criticality] = (byCriticality[v.criticality] || 0) + 1;
             byStatus[v.status] = (byStatus[v.status] || 0) + 1;
 
-            const latestAssessment = v.assessments[0];
-            if (latestAssessment?.riskRating) {
-                byRiskRating[latestAssessment.riskRating] = (byRiskRating[latestAssessment.riskRating] || 0) + 1;
+            const latestCompleted = v.assessments[0];
+            if (latestCompleted?.riskRating) {
+                byRiskRating[latestCompleted.riskRating] = (byRiskRating[latestCompleted.riskRating] || 0) + 1;
             }
+
+            // An offboarded vendor has no review, renewal or assessment due
+            // (#4799); it still counts in the totals and breakdowns above.
+            if (v.status === 'OFFBOARDED') continue;
 
             if (v.nextReviewAt && v.nextReviewAt < now) overdueReview++;
             else if (v.nextReviewAt && v.nextReviewAt <= in30) upcomingReview++;
@@ -630,12 +645,11 @@ export async function getVendorMetrics(ctx: RequestContext) {
             if (v.contractRenewalAt && v.contractRenewalAt < now) overdueRenewal++;
             else if (v.contractRenewalAt && v.contractRenewalAt <= in30) upcomingRenewal++;
 
-            // High-criticality vendor whose latest assessment is NOT a
-            // completed review (no assessment, or still SENT/IN_PROGRESS/
-            // SUBMITTED). Previously keyed on the legacy APPROVED status, so
-            // G-3 REVIEWED/CLOSED vendors were mis-counted here forever.
-            if (['HIGH', 'CRITICAL'].includes(v.criticality)
-                && (!latestAssessment || !COMPLETED_ASSESSMENT_STATUSES.has(latestAssessment.status))) {
+            // High-criticality vendor with no COMPLETED assessment at all. The
+            // read above returns only completed ones, so an in-progress
+            // reassessment of a vendor assessed before no longer counts as
+            // "no assessment" (#4799).
+            if (['HIGH', 'CRITICAL'].includes(v.criticality) && !latestCompleted) {
                 highRiskNoAssessment++;
             }
 
@@ -696,7 +710,8 @@ export async function getVendorMetrics(ctx: RequestContext) {
 // assessment can NEVER satisfy — so it was unsatisfiable (and dead: no route
 // called it). These two predicates are the single source of truth for the
 // activation gate + the highRiskNoAssessment metric.
-const COMPLETED_ASSESSMENT_STATUSES = new Set(['REVIEWED', 'CLOSED', 'APPROVED']);
+const COMPLETED_ASSESSMENT_STATUS_LIST: AssessmentStatus[] = ['REVIEWED', 'CLOSED', 'APPROVED'];
+const COMPLETED_ASSESSMENT_STATUSES = new Set<string>(COMPLETED_ASSESSMENT_STATUS_LIST);
 
 /** A completed review carrying a risk rating — the bar for activation. */
 function isActivationEligible(
