@@ -1160,7 +1160,63 @@
       "regulatoryFine": "Regulatory fine",
       "reputationDamage": "Reputation damage",
       "competitiveLoss": "Competitive-advantage loss",
-      "secondaryLossPlaceholder": "Amount"
+      "secondaryLossPlaceholder": "Amount",
+      "factors": {
+        "tef": "Threat event frequency",
+        "vulnerability": "Vulnerability",
+        "plm": "Primary loss magnitude",
+        "slef": "Secondary loss event frequency",
+        "slm": "Secondary loss magnitude"
+      },
+      "units": {
+        "perYear": "/yr",
+        "probability": "0–1",
+        "perEvent": "per event"
+      },
+      "warnings": {
+        "rangeInverted": "{factor}: range is inverted (expected min ≤ mode ≤ max, got {min}/{mode}/{max})",
+        "rangeTooWide": "{factor}: range spans more than 3 orders of magnitude ({min} → {max}) — consider calibrating with a reference event",
+        "boundsProbability": "{factor} is a probability — every bound lives on 0–1",
+        "boundsNegative": "{factor} cannot be negative — negative values invert the model"
+      },
+      "reflect": {
+        "tefOccurs": "most likely: a threat event occurs {frequency}",
+        "tefExpected": "most likely: a threat event is expected {frequency}",
+        "vulnerability": "most likely: an attempted event succeeds with {probability}",
+        "plm": "most likely: each primary loss event costs {amount}",
+        "slef": "most likely: secondary losses follow {probability} of primary events",
+        "slm": "most likely: each secondary fallout costs {amount}",
+        "spread": "{base} — that's a ~{ratio}× spread; anchor it with a reference event",
+        "freqNever": "never (zero events expected)",
+        "freqPerYear": "about {n}× per year",
+        "freqEveryYears": "about one event every {years} years",
+        "probZero": "0% — impossible by your model; did you mean 0.5?",
+        "probNegative": "negative — probabilities live on 0..1",
+        "probCertain": "certain (100% chance)",
+        "probOneIn": "a 1-in-{oneIn} chance ({percent}%)"
+      },
+      "priors": {
+        "technical": {
+          "tef": "Reference: ransomware/intrusion attempts for a mid-size org typically land at TEF 0.05–0.5/yr",
+          "loss": "Reference: single-incident response + recovery commonly runs €50K–€500K"
+        },
+        "operational": {
+          "tef": "Reference: significant process/outage events typically 0.5–4/yr",
+          "loss": "Reference: per-incident operational losses commonly €10K–€250K"
+        },
+        "compliance": {
+          "tef": "Reference: regulator findings/audit events typically 0.1–1/yr",
+          "loss": "Reference: fines + remediation commonly €25K–€2M depending on regime"
+        },
+        "financial": {
+          "tef": "Reference: material financial-control failures typically 0.1–0.5/yr",
+          "loss": "Reference: single-event financial losses commonly €50K–€1M"
+        },
+        "reputational": {
+          "tef": "Reference: public-trust incidents typically 0.05–0.3/yr",
+          "loss": "Reference: churn + PR response commonly €100K–€5M (hardest to calibrate — use customer-lifetime maths)"
+        }
+      }
     },
     "assessment": {
       "kriBreachedOne": "Key risk indicator \"{name}\" is breached (RED).",
@@ -1945,7 +2001,17 @@
       "resourceSingular": "arrangement",
       "resourcePlural": "arrangements"
     },
-    "loadError": "Couldn't load risks. Check your connection and try again."
+    "loadError": "Couldn't load risks. Check your connection and try again.",
+    "categories": {
+      "technical": "Technical",
+      "operational": "Operational",
+      "compliance": "Compliance",
+      "strategic": "Strategic",
+      "financial": "Financial",
+      "reputational": "Reputational",
+      "physical": "Physical",
+      "humanResources": "Human resources"
+    }
   },
   "controls": {
     "title": "Controls Library",

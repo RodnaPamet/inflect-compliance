@@ -144,6 +144,20 @@ describe('EditRiskModal (R6/R8/R9)', () => {
     });
 });
 
+describe('risk categories read in the user\'s language (#4692)', () => {
+    it('labels each stored category from risks.categories, keeping the stored value', () => {
+        const { buildRiskCategoryOptions, riskCategoryLabel } = require('@/app/t/[tenantSlug]/(app)/risks/_shared/risk-options');
+        const en = require('../../messages/en.json');
+        const t = (key: string) => key.split('.').reduce((o: Record<string, unknown>, k) => o?.[k] as Record<string, unknown>, en.risks) as unknown as string;
+        const options = buildRiskCategoryOptions(t);
+        expect(options).toContainEqual({ value: 'Human Resources', label: 'Human resources' });
+        expect(options).toHaveLength(8);
+        expect(riskCategoryLabel(t, 'Technical')).toBe(en.risks.categories.technical);
+        // A value outside the list is shown as stored.
+        expect(riskCategoryLabel(t, 'Legacy bucket')).toBe('Legacy bucket');
+    });
+});
+
 describe('NewRiskModal source (R3/R4/R7/R10)', () => {
     const src = read('NewRiskModal.tsx');
     it('R3 — owner is a UserCombobox bound to ownerUserId, labelled "Owner"', () => {

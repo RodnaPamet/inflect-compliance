@@ -29,7 +29,7 @@ import { Pen2 } from '@inflect/ui/components/ui/icons/nucleo';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { useTenantMembers } from '@/components/ui/user-combobox';
-import { buildRiskTreatmentOptions, canonicalTreatmentLabel, buildRiskStatusOptions, riskStatusLabel, RISK_CATEGORY_OPTIONS } from '../_shared/risk-options';
+import { buildRiskTreatmentOptions, canonicalTreatmentLabel, buildRiskStatusOptions, riskStatusLabel, buildRiskCategoryOptions, riskCategoryLabel } from '../_shared/risk-options';
 import { cn } from '@inflect/ui/lib/cn';
 import { cardVariants } from '@/components/ui/card';
 import { EditRiskModal, type EditRiskForm } from './_modals/EditRiskModal';
@@ -456,7 +456,9 @@ export default function RiskDetailPage() {
                         ...(risk.treatmentOwner
                             ? [
                                   {
-                                      label: t('detail.owner'),
+                                      // #4692 — the free-text treatment owner, named as
+                                      // the overview names it, beside the assigned member.
+                                      label: t('detail.treatmentOwner'),
                                       value: risk.treatmentOwner,
                                   } as const,
                               ]
@@ -472,7 +474,7 @@ export default function RiskDetailPage() {
                                           riskMembers?.find(
                                               (m) => m.id === risk.ownerUserId,
                                           )?.email ??
-                                          'Assigned',
+                                          t('detail.assigned'),
                                   } as const,
                               ]
                             : []),
@@ -687,7 +689,7 @@ export default function RiskDetailPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
                     <div>
                         <Eyebrow>{t('detail.category')}</Eyebrow>
-                        <p className="text-sm">{risk.category || '—'}</p>
+                        <p className="text-sm">{risk.category ? riskCategoryLabel(t, risk.category) : '—'}</p>
                     </div>
                     <div>
                         <Eyebrow>{t('detail.treatmentOwner')}</Eyebrow>
@@ -793,7 +795,7 @@ export default function RiskDetailPage() {
                     saving={saving}
                     error={error}
                     tenantSlug={tenant.tenantSlug}
-                    categoryOptions={RISK_CATEGORY_OPTIONS}
+                    categoryOptions={buildRiskCategoryOptions(t)}
                     treatmentOptions={TREATMENT_OPTIONS}
                     onCancel={() => setEditing(false)}
                     onSubmit={handleSave}

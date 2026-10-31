@@ -38,31 +38,54 @@ export type FairFieldKey =
     | 'secondaryLossEventFrequency'
     | 'secondaryLossMagnitude';
 
-/** "0.1/yr" → "about once every 10 years"; "12/yr" → "about 12×/year". */
-export function reflectFrequency(perYear: number): string {
-    if (perYear <= 0) return 'never (zero events expected)';
-    if (perYear >= 1) {
-        const n = Math.round(perYear * 10) / 10;
-        return `about ${n}× per year`;
-    }
+/**
+ * A frequency as the parts a sentence is built from (#4692), so the panel
+ * can word it in the user's language. `reflectFrequency` words it in English.
+ */
+export type FrequencyPhrase =
+    | { kind: 'never' }
+    | { kind: 'perYear'; n: number }
+    | { kind: 'everyYears'; years: number };
+
+export function frequencyPhrase(perYear: number): FrequencyPhrase {
+    if (perYear <= 0) return { kind: 'never' };
+    if (perYear >= 1) return { kind: 'perYear', n: Math.round(perYear * 10) / 10 };
     const years = 1 / perYear;
-    const rounded = years >= 10 ? Math.round(years) : Math.round(years * 10) / 10;
-    return `about one event every ${rounded} years`;
+    return { kind: 'everyYears', years: years >= 10 ? Math.round(years) : Math.round(years * 10) / 10 };
 }
 
-/** "0.25" → "1-in-4 chance". */
-export function reflectProbability(p: number): string {
+/** A probability as the parts a sentence is built from (#4692). */
+export type ProbabilityPhrase =
+    | { kind: 'zero' }
+    | { kind: 'negative' }
+    | { kind: 'certain' }
+    | { kind: 'oneIn'; oneIn: number; percent: number };
+
+export function probabilityPhrase(p: number): ProbabilityPhrase {
     // polish #8 — an exact 0 is rarely intentional on a FAIR
     // probability input; it collapses ALE to zero and silently
     // removes the risk from the simulation. The "did you mean" nudge
     // shifts the user from "I'm done" to "wait, is that right?"
     // without forcing a value.
-    if (p === 0) return '0% — impossible by your model; did you mean 0.5?';
-    if (p < 0) return 'negative — probabilities live on 0..1';
-    if (p >= 1) return 'certain (100% chance)';
+    if (p === 0) return { kind: 'zero' };
+    if (p < 0) return { kind: 'negative' };
+    if (p >= 1) return { kind: 'certain' };
     const oneIn = 1 / p;
-    const rounded = oneIn >= 10 ? Math.round(oneIn) : Math.round(oneIn * 10) / 10;
-    return `a 1-in-${rounded} chance (${Math.round(p * 100)}%)`;
+    return {
+        kind: 'oneIn',
+        oneIn: oneIn >= 10 ? Math.round(oneIn) : Math.round(oneIn * 10) / 10,
+        percent: Math.round(p * 100),
+    };
+}
+
+/** "0.1/yr" → "about once every 10 years"; "12/yr" → "about 12×/year". */
+export function reflectFrequency(perYear: number): string {
+    return ENGLISH_REFLECTION_WORDS.frequency(frequencyPhrase(perYear));
+}
+
+/** "0.25" → "1-in-4 chance". */
+export function reflectProbability(p: number): string {
+    return ENGLISH_REFLECTION_WORDS.probability(probabilityPhrase(p));
 }
 
 /**
@@ -99,9 +122,30 @@ export function reflectFairInput(key: FairFieldKey, value: number | null): strin
 
 // ─── Reasonableness warnings ─────────────────────────────────────────
 
+/**
+ * What a warning says, as a code the panel words in the user's language
+ * (#4692). `message` stays the English sentence, for logs and tests.
+ */
+export type CalibrationCode =
+    | 'probabilityRange'
+    | 'scale1to10'
+    | 'negativeLoss'
+    | 'negativeTef'
+    | 'negativeContact'
+    | 'tefMisScaled'
+    | 'rangeInverted'
+    | 'rangeTooWide'
+    | 'boundsProbability'
+    | 'boundsNegative';
+
 export interface CalibrationWarning {
     field: FairFieldKey | 'pertRange';
     message: string;
+    code: CalibrationCode;
+    /** The calibrated factor a range warning is about. */
+    factor?: FairFactorKey;
+    /** The numbers the sentence quotes. */
+    params?: Record<string, number>;
 }
 
 export interface FairPointValues {
@@ -145,26 +189,26 @@ export function validateFairInputs(v: FairPointValues): CalibrationWarning[] {
     for (const f of PROBABILITY_FIELDS) {
         const val = v[f];
         if (val !== null && (val < 0 || val > 1)) {
-            warnings.push({ field: f, message: `${f} is a probability — expected 0–1, got ${val}` });
+            warnings.push({ field: f, code: 'probabilityRange', params: { value: val }, message: `${f} is a probability — expected 0–1, got ${val}` });
         }
     }
     for (const f of SCALE_1_10_FIELDS) {
         const val = v[f];
         if (val !== null && (val < 1 || val > 10)) {
-            warnings.push({ field: f, message: `${f} is on the FAIR 1–10 scale, got ${val}` });
+            warnings.push({ field: f, code: 'scale1to10', params: { value: val }, message: `${f} is on the FAIR 1–10 scale, got ${val}` });
         }
     }
     for (const f of MONEY_FIELDS) {
         const val = v[f];
         if (val !== null && val < 0) {
-            warnings.push({ field: f, message: `${f} is a loss amount — negative values invert the model` });
+            warnings.push({ field: f, code: 'negativeLoss', message: `${f} is a loss amount — negative values invert the model` });
         }
     }
     if (v.threatEventFrequency !== null && v.threatEventFrequency < 0) {
-        warnings.push({ field: 'threatEventFrequency', message: 'TEF cannot be negative' });
+        warnings.push({ field: 'threatEventFrequency', code: 'negativeTef', message: 'TEF cannot be negative' });
     }
     if (v.contactFrequency !== null && v.contactFrequency < 0) {
-        warnings.push({ field: 'contactFrequency', message: 'Contact frequency cannot be negative' });
+        warnings.push({ field: 'contactFrequency', code: 'negativeContact', message: 'Contact frequency cannot be negative' });
     }
     if (
         v.threatEventFrequency !== null &&
@@ -174,6 +218,7 @@ export function validateFairInputs(v: FairPointValues): CalibrationWarning[] {
     ) {
         warnings.push({
             field: 'threatEventFrequency',
+            code: 'tefMisScaled',
             message:
                 'TEF override is far above contact × P(action) — one of the three is probably mis-scaled',
         });
@@ -199,12 +244,16 @@ export function validatePertTriple(label: string, t: PertTriple): CalibrationWar
     if (!(t.min <= t.mode && t.mode <= t.max)) {
         warnings.push({
             field: 'pertRange',
+            code: 'rangeInverted',
+            params: { min: t.min, mode: t.mode, max: t.max },
             message: `${label}: range is inverted (expected min ≤ mode ≤ max, got ${t.min}/${t.mode}/${t.max})`,
         });
     }
     if (t.min > 0 && t.max / t.min > 1000) {
         warnings.push({
             field: 'pertRange',
+            code: 'rangeTooWide',
+            params: { min: t.min, max: t.max },
             message: `${label}: range spans more than 3 orders of magnitude (${t.min} → ${t.max}) — consider calibrating with a reference event`,
         });
     }
@@ -251,32 +300,73 @@ const isComplete = (t: TripleDraft): t is { min: number; mode: number; max: numb
  * with a reference event"). Wide ranges are legitimate calibration —
  * the sentence makes the width READ, it never blocks.
  */
-export function reflectTriple(key: FairFactorKey, t: TripleDraft): string | null {
+export function reflectTriple(
+    key: FairFactorKey,
+    t: TripleDraft,
+    words: ReflectionWords = ENGLISH_REFLECTION_WORDS,
+): string | null {
     if (t.mode == null || Number.isNaN(t.mode)) return null;
     let base: string;
     switch (key) {
         case 'tef':
-            base = `most likely: a threat event ${t.mode >= 1 ? 'occurs' : 'is expected'} ${reflectFrequency(t.mode)}`;
+            base = words.tef(t.mode >= 1, words.frequency(frequencyPhrase(t.mode)));
             break;
         case 'vulnerability':
-            base = `most likely: an attempted event succeeds with ${reflectProbability(t.mode)}`;
+            base = words.vulnerability(words.probability(probabilityPhrase(t.mode)));
             break;
         case 'plm':
-            base = `most likely: each primary loss event costs ${formatCompactCurrency(t.mode)}`;
+            base = words.plm(formatCompactCurrency(t.mode));
             break;
         case 'slef':
-            base = `most likely: secondary losses follow ${reflectProbability(t.mode)} of primary events`;
+            base = words.slef(words.probability(probabilityPhrase(t.mode)));
             break;
         case 'slm':
-            base = `most likely: each secondary fallout costs ${formatCompactCurrency(t.mode)}`;
+            base = words.slm(formatCompactCurrency(t.mode));
             break;
     }
     if (isComplete(t) && t.min > 0 && t.max / t.min >= 10) {
-        const ratio = Math.round(t.max / t.min);
-        return `${base} — that's a ~${ratio}× spread; anchor it with a reference event`;
+        return words.spread(base, Math.round(t.max / t.min));
     }
     return base;
 }
+
+/**
+ * The sentences a reflection is made of (#4692). The panel passes a set
+ * built from its translations; anything else gets English.
+ */
+export interface ReflectionWords {
+    tef(occurs: boolean, frequency: string): string;
+    vulnerability(probability: string): string;
+    plm(amount: string): string;
+    slef(probability: string): string;
+    slm(amount: string): string;
+    spread(base: string, ratio: number): string;
+    frequency(f: FrequencyPhrase): string;
+    probability(p: ProbabilityPhrase): string;
+}
+
+export const ENGLISH_REFLECTION_WORDS: ReflectionWords = {
+    tef: (occurs, frequency) => `most likely: a threat event ${occurs ? 'occurs' : 'is expected'} ${frequency}`,
+    vulnerability: (probability) => `most likely: an attempted event succeeds with ${probability}`,
+    plm: (amount) => `most likely: each primary loss event costs ${amount}`,
+    slef: (probability) => `most likely: secondary losses follow ${probability} of primary events`,
+    slm: (amount) => `most likely: each secondary fallout costs ${amount}`,
+    spread: (base, ratio) => `${base} — that's a ~${ratio}× spread; anchor it with a reference event`,
+    frequency: (f) =>
+        f.kind === 'never'
+            ? 'never (zero events expected)'
+            : f.kind === 'perYear'
+              ? `about ${f.n}× per year`
+              : `about one event every ${f.years} years`,
+    probability: (p) =>
+        p.kind === 'zero'
+            ? '0% — impossible by your model; did you mean 0.5?'
+            : p.kind === 'negative'
+              ? 'negative — probabilities live on 0..1'
+              : p.kind === 'certain'
+                ? 'certain (100% chance)'
+                : `a 1-in-${p.oneIn} chance (${p.percent}%)`,
+};
 
 /**
  * RQ3-2 — warn-only checks across the five calibrated ranges:
@@ -294,7 +384,7 @@ export function validateFairTriples(
     for (const key of FAIR_FACTOR_KEYS) {
         const t = triples[key];
         const label = FAIR_FACTOR_LABELS[key];
-        if (isComplete(t)) warnings.push(...validatePertTriple(label, t));
+        if (isComplete(t)) warnings.push(...validatePertTriple(label, t).map((w) => ({ ...w, factor: key })));
         const bounds = [t.min, t.mode, t.max].filter(
             (v): v is number => v != null && !Number.isNaN(v),
         );
@@ -302,12 +392,16 @@ export function validateFairTriples(
             if (bounds.some((v) => v < 0 || v > 1)) {
                 warnings.push({
                     field: 'pertRange',
+                    code: 'boundsProbability',
+                    factor: key,
                     message: `${label} is a probability — every bound lives on 0–1`,
                 });
             }
         } else if (bounds.some((v) => v < 0)) {
             warnings.push({
                 field: 'pertRange',
+                code: 'boundsNegative',
+                factor: key,
                 message: `${label} cannot be negative — negative values invert the model`,
             });
         }
