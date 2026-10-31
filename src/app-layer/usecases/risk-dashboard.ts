@@ -78,7 +78,15 @@ export interface DashboardPayload {
     simulation: LatestSimulationPayload | null;
     /** Canonical matrix config so the heatmap renders the tenant's bands. */
     matrix: RiskMatrixConfigShape;
+    /**
+     * #4768 — the slots whose branch threw. A thrown branch becomes `null`
+     * (or `[]` for risks), which on its own reads exactly like "nothing to
+     * show"; this list is how the page tells the two apart.
+     */
+    failed: DashboardSlot[];
 }
+
+export type DashboardSlot = 'risks' | 'analytics' | 'coherence' | 'staleness' | 'appetite' | 'simulation';
 
 /**
  * One read per dashboard mount instead of six. Each constituent
@@ -121,7 +129,16 @@ export async function getRiskDashboard(ctx: RequestContext): Promise<DashboardPa
             ? { config: appetiteConfigRes.value, status: appetiteStatusRes.value }
             : null;
 
+    const failed: DashboardSlot[] = [];
+    if (risksRes.status === 'rejected') failed.push('risks');
+    if (analyticsRes.status === 'rejected') failed.push('analytics');
+    if (coherenceRes.status === 'rejected') failed.push('coherence');
+    if (stalenessRes.status === 'rejected') failed.push('staleness');
+    if (appetite === null) failed.push('appetite');
+    if (simulationRes.status === 'rejected') failed.push('simulation');
+
     return {
+        failed,
         risks: risksRes.status === 'fulfilled' ? (risksRes.value as DashboardRisk[]) : [],
         analytics: analyticsRes.status === 'fulfilled' ? analyticsRes.value : null,
         coherence: coherenceRes.status === 'fulfilled' ? coherenceRes.value : null,

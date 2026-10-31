@@ -128,4 +128,19 @@ describe('getRiskDashboard', () => {
         (getRiskMatrixConfig as jest.Mock).mockRejectedValue(new Error('matrix down'));
         await expect(getRiskDashboard(readerCtx)).rejects.toThrow('matrix down');
     });
+
+    it('#4768 — names the slots whose branch threw, and only those', async () => {
+        expect((await getRiskDashboard(readerCtx)).failed).toEqual([]);
+        (getRiskQuantitativeAnalytics as jest.Mock).mockRejectedValue(new Error('a'));
+        (getAppetiteStatus as jest.Mock).mockRejectedValue(new Error('b'));
+        (getLatestSimulation as jest.Mock).mockRejectedValue(new Error('c'));
+        expect((await getRiskDashboard(readerCtx)).failed).toEqual(['analytics', 'appetite', 'simulation']);
+    });
+
+    it('#4768 — no simulation yet is not a failure', async () => {
+        (getLatestSimulation as jest.Mock).mockResolvedValue(null);
+        const payload = await getRiskDashboard(readerCtx);
+        expect(payload.simulation).toBeNull();
+        expect(payload.failed).not.toContain('simulation');
+    });
 });
