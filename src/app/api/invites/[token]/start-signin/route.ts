@@ -2,9 +2,10 @@
  * GET /api/invites/:token/start-signin
  *
  * Sets a short-lived HttpOnly cookie carrying the invite token, then
- * redirects the user to /login. After the user completes OAuth, the
- * signIn callback reads the cookie and calls redeemInvite to create
- * their TenantMembership.
+ * redirects the user to /login. After the user signs in, the signIn
+ * callback reads the cookie and calls redeemInvite to create their
+ * TenantMembership, and the sign-in lands on /invite/result, which says
+ * what became of the invite: the callback can only log a refusal (#4689).
  *
  * This is the entry point for the "Sign in to accept" flow on the
  * /invite/:token page. The invite preview page links here instead of
@@ -36,9 +37,11 @@ export const GET = withApiErrorHandling(async (
 ): Promise<NextResponse> => {
     const { token } = await ctx.params;
 
-    const response = NextResponse.redirect(
-        new URL('/login', resolvePublicOrigin(req)),
-    );
+    // The destination names no token: /invite/result reads it back from the
+    // cookie set below, so the token stays out of the URL after sign-in.
+    const loginUrl = new URL('/login', resolvePublicOrigin(req));
+    loginUrl.searchParams.set('callbackUrl', '/invite/result');
+    const response = NextResponse.redirect(loginUrl);
 
     response.cookies.set('inflect_invite_token', token, {
         httpOnly: true,

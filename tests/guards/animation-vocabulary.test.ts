@@ -108,6 +108,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf, cssCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -135,9 +136,7 @@ describe('Animation vocabulary discipline (Roadmap-6 PR-1)', () => {
                 // Strip line comments + block comments first so the
                 // documentation note in globals.css explaining the
                 // retirement doesn't trip the scanner.
-                const stripped = raw
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = codeOf(raw);
                 const lines = stripped.split('\n');
                 lines.forEach((line, i) => {
                     if (/\banimate-slideIn\b/.test(line)) {
@@ -170,7 +169,7 @@ describe('Animation vocabulary discipline (Roadmap-6 PR-1)', () => {
     // mirrors.
 
     const stripComments = (src: string) =>
-        src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+        codeOf(src);
 
     /** `theme.extend.animation` keys from the repo's own Tailwind config. */
     const configAnimationNames = (): Set<string> => {
@@ -339,7 +338,7 @@ describe('Animation vocabulary discipline (Roadmap-6 PR-1)', () => {
         // .animate-slideIn class definition was removed; only the
         // documentation comment remains. The comment uses
         // `slideIn` but isn't an executable rule.
-        const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+        const stripped = cssCodeOf(css);
         expect(stripped).not.toMatch(/@keyframes\s+slideIn\b/);
         expect(stripped).not.toMatch(/\.animate-slideIn\s*\{/);
     });

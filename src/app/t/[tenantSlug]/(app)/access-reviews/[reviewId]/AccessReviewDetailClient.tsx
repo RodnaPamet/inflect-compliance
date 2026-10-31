@@ -44,6 +44,7 @@ import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { CAMPAIGN_MODIFY_ROLES, TENANT_ROLES, type CampaignModifyRole } from '@/lib/roles';
 import { apiErrorMessage } from '@/lib/api-error';
+import { MEMBER_DECISION_REFUSAL } from '@/lib/access-review/member-decision-rules';
 import { Heading } from '@/components/ui/typography';
 import {
     AGENT_CAMPAIGNS_IMPLEMENTED,
@@ -264,14 +265,38 @@ function readPackSummary(value: unknown): PackSummary {
     };
 }
 
-async function postJson(url: string, body?: unknown): Promise<void> {
+/**
+ * A request the server refused, worded for the person (#4699): the named
+ * reason in their language when the page knows it, else the server's
+ * message, else the action's own sentence. Never "HTTP 409".
+ */
+class AccessReviewRefusal extends Error {}
+
+type Translate = (key: string) => string;
+
+export function refusalText(t: Translate & { has?: (key: string) => boolean }, body: unknown, fallback: string): string {
+    const reason = (body as { error?: { details?: { reason?: unknown } } } | null)?.error?.details?.reason;
+    if (typeof reason === 'string' && KNOWN_REFUSALS.has(reason) && (t.has?.(`refused.${reason}`) ?? false)) {
+        return t(`refused.${reason}`);
+    }
+    return apiErrorMessage(body, fallback);
+}
+
+const KNOWN_REFUSALS: ReadonlySet<string> = new Set<string>(Object.values(MEMBER_DECISION_REFUSAL));
+
+/** The sentence for a caught error: a refusal's own, else the generic one. */
+function caughtText(err: unknown, fallback: string): string {
+    return err instanceof AccessReviewRefusal ? err.message : fallback;
+}
+
+async function postJson(url: string, describe: (body: unknown) => string, body?: unknown): Promise<void> {
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!res.ok) {
-        throw new Error(apiErrorMessage(await res.json().catch(() => null), `HTTP ${res.status}`));
+        throw new AccessReviewRefusal(describe(await res.json().catch(() => null)));
     }
 }
 
@@ -486,11 +511,11 @@ export function AccessReviewDetailClient({
         setAgentBusy(true);
         setConnectedError(null);
         try {
-            await postJson(url, body);
+            await postJson(url, (b) => refusalText(t, b, t('submitFailed')), body);
             await Promise.all([mutateReview(), mutatePacks()]);
             void swrMutate(CACHE_KEYS.accessReviews.list());
         } catch (err) {
-            setConnectedError(err instanceof Error ? err.message : t('unknownError'));
+            setConnectedError(caughtText(err, t('unknownError')));
         } finally {
             setAgentBusy(false);
         }
@@ -672,10 +697,10 @@ export function AccessReviewDetailClient({
         setRegenerating(true);
         setRegenerateError(null);
         try {
-            await postJson(`${apiBase}/evidence/regenerate`);
+            await postJson(`${apiBase}/evidence/regenerate`, (b) => refusalText(t, b, t('unknownError')));
             await reviewQuery.mutate();
         } catch (err) {
-            setRegenerateError(err instanceof Error ? err.message : t('unknownError'));
+            setRegenerateError(caughtText(err, t('unknownError')));
         } finally {
             setRegenerating(false);
         }
@@ -1566,11 +1591,11 @@ function UndoVerdictDialog({
             if (!res.ok) {
                 // The server's message, not its envelope (#4130): `res.text()`
                 // rendered the raw JSON — braces, code and requestId — here.
-                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('submitFailed')));
+                throw new AccessReviewRefusal(refusalText(t, await res.json().catch(() => null), t('submitFailed')));
             }
             onSuccess();
         } catch (err) {
-            setError(err instanceof Error ? err.message : t('unknownError'));
+            setError(caughtText(err, t('unknownError')));
         } finally {
             setSubmitting(false);
         }
@@ -1682,11 +1707,11 @@ function DecisionDialog({
             });
             if (!res.ok) {
                 // The server's message, not its envelope (#4130).
-                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('submitFailed')));
+                throw new AccessReviewRefusal(refusalText(t, await res.json().catch(() => null), t('submitFailed')));
             }
             onSuccess();
         } catch (err) {
-            setError(err instanceof Error ? err.message : t('unknownError'));
+            setError(caughtText(err, t('unknownError')));
         } finally {
             setSubmitting(false);
         }
@@ -1836,11 +1861,11 @@ function CampaignSettingsDialog({
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('settingsFailed')));
+                throw new AccessReviewRefusal(refusalText(t, await res.json().catch(() => null), t('settingsFailed')));
             }
             onSuccess();
         } catch (err) {
-            setError(err instanceof Error ? err.message : t('unknownError'));
+            setError(caughtText(err, t('unknownError')));
         } finally {
             setSubmitting(false);
         }
@@ -1922,11 +1947,11 @@ function CloseDialog({
                 headers: { 'Content-Type': 'application/json' },
             });
             if (!res.ok) {
-                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('closeFailed')));
+                throw new AccessReviewRefusal(refusalText(t, await res.json().catch(() => null), t('closeFailed')));
             }
             onSuccess();
         } catch (err) {
-            setError(err instanceof Error ? err.message : t('unknownError'));
+            setError(caughtText(err, t('unknownError')));
         } finally {
             setSubmitting(false);
         }

@@ -436,10 +436,8 @@ describe('Still Surface — the canonical four variants', () => {
                     if (e.name === 'node_modules') continue;
                     walk(full);
                 } else if (/\.tsx?$/.test(e.name)) {
-                    const body = fs
-                        .readFileSync(full, 'utf8')
-                        .replace(/\/\*[\s\S]*?\*\//g, '')
-                        .replace(/\/\/[^\n]*/g, '');
+                    const body = codeOf(fs
+                        .readFileSync(full, 'utf8'));
                     if (/destructive-outline/.test(body)) {
                         offenders.push(path.relative(ROOT, full));
                     }

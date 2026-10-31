@@ -14,7 +14,11 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { ProgressBar } from '@/components/ui/progress-bar';
 import { useEnterSubmit } from '@/components/ui/hooks';
+import Link from 'next/link';
 import {
     Building2,
     Map,
@@ -30,12 +34,14 @@ import {
     Sparkles,
     ClipboardCheck,
     Landmark,
+    X,
 } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@inflect/ui/lib/cn';
+import { isOnboardingRefusal } from '@/lib/onboarding-refusals';
 import { Nis2SelfAssessmentStep } from './Nis2SelfAssessmentStep';
 import { AiGovSelfAssessmentStep } from './AiGovSelfAssessmentStep';
 import { SovereigntySelfAssessmentStep } from './SovereigntySelfAssessmentStep';
@@ -130,6 +136,18 @@ export function latestFrameworkInstall(stepData: StepData | null | undefined): {
     };
 }
 
+/**
+ * The steps whose automation failed on its latest run (#4701): the server
+ * stores `{ failed: true, ranAt }` under `stepData._actionResults[step]`, and a
+ * later successful run overwrites it. Exported for the rendered test.
+ */
+export function failedAutomationSteps(stepData: StepData | null | undefined): { step: string; ranAt: string }[] {
+    const results = (stepData?._actionResults ?? {}) as Record<string, { failed?: unknown; ranAt?: unknown }>;
+    return Object.entries(results)
+        .filter(([, r]) => r && r.failed === true)
+        .map(([step, r]) => ({ step, ranAt: String(r.ranAt ?? '') }));
+}
+
 interface OnboardingState {
     status: string;
     currentStep: string;
@@ -145,6 +163,21 @@ function apiUrl(tenantSlug: string, path: string) {
     return `/api/t/${tenantSlug}/onboarding/${path}`;
 }
 
+/**
+ * A refused wizard request. The API's envelope is `{ error: { code, message,
+ * details } }`; reading it as a string used to put the JSON itself on screen
+ * (#4701). `reason` is the named refusal, when there is one.
+ */
+class OnboardingRequestError extends Error {
+    constructor(
+        message: string,
+        readonly reason: string | null,
+        readonly framework: string | null,
+    ) {
+        super(message);
+    }
+}
+
 async function apiFetch<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
     const res = await fetch(url, {
         method,
@@ -152,13 +185,34 @@ async function apiFetch<T>(url: string, method = 'GET', body?: unknown): Promise
         body: body ? JSON.stringify(body) : undefined,
     });
     if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Request failed' }));
-        const msg = typeof err.error === 'string' ? err.error
-            : typeof err.message === 'string' ? err.message
-            : JSON.stringify(err.error ?? err);
-        throw new Error(msg || `HTTP ${res.status}`);
+        const parsed = (await res.json().catch(() => null)) as
+            | { error?: string | { message?: unknown; details?: { reason?: unknown; framework?: unknown } } }
+            | null;
+        const err = parsed?.error;
+        const message = typeof err === 'string' ? err : typeof err?.message === 'string' ? err.message : '';
+        const details = typeof err === 'object' ? err.details : undefined;
+        throw new OnboardingRequestError(
+            message,
+            typeof details?.reason === 'string' ? details.reason : null,
+            typeof details?.framework === 'string' ? details.framework : null,
+        );
     }
     return res.json();
+}
+
+/**
+ * The sentence for a failed wizard request. A refusal the server names is
+ * shown in the user's language; anything else falls back to the server's
+ * message, then to the action's own sentence.
+ */
+function describeError(t: OnboardingT, e: unknown, fallback: string): string {
+    if (e instanceof OnboardingRequestError) {
+        if (isOnboardingRefusal(e.reason)) {
+            return t(`wizard.refused.${e.reason}`, { framework: e.framework ?? '' });
+        }
+        if (e.message) return e.message;
+    }
+    return fallback;
 }
 
 // ─── Main Wizard Component ───
@@ -180,6 +234,8 @@ export default function OnboardingWizard() {
     const [successBanner, setSuccessBanner] = useState(false);
     // The `ranAt` of an install-failure notice the user closed this session.
     const [dismissedInstallRun, setDismissedInstallRun] = useState<string | null>(null);
+    // The `ranAt`s of automation-failure notices the user closed this session.
+    const [dismissedFailureRuns, setDismissedFailureRuns] = useState<string[]>([]);
 
     // ─── Load state ───
     const loadState = useCallback(async () => {
@@ -196,7 +252,7 @@ export default function OnboardingWizard() {
             const idx = computeVisibleSteps(sd).findIndex(st => st.key === s.currentStep);
             if (idx >= 0) setActiveStepIdx(idx);
         } catch (e) {
-            setError(e instanceof Error ? e.message : t('wizard.errors.loadState'));
+            setError(describeError(t, e, t('wizard.errors.loadState')));
         } finally {
             setLoading(false);
         }
@@ -212,7 +268,7 @@ export default function OnboardingWizard() {
             const s = await apiFetch<OnboardingState>(apiUrl(tenantSlug, 'start'), 'POST');
             setState(s);
         } catch (e) {
-            setError(e instanceof Error ? e.message : t('wizard.errors.start'));
+            setError(describeError(t, e, t('wizard.errors.start')));
         } finally {
             setSaving(false);
         }
@@ -226,7 +282,7 @@ export default function OnboardingWizard() {
             await apiFetch(apiUrl(tenantSlug, 'step'), 'POST', { step, action: 'save', data });
             setLocalData(prev => ({ ...prev, [step]: data }));
         } catch (e) {
-            setError(e instanceof Error ? e.message : t('wizard.errors.save'));
+            setError(describeError(t, e, t('wizard.errors.save')));
         } finally {
             setSaving(false);
         }
@@ -250,7 +306,7 @@ export default function OnboardingWizard() {
             const nextIdx = activeStepIdx + 1;
             if (nextIdx < vis.length) setActiveStepIdx(nextIdx);
         } catch (e) {
-            setError(e instanceof Error ? e.message : t('wizard.errors.completeStep'));
+            setError(describeError(t, e, t('wizard.errors.completeStep')));
         } finally {
             setSaving(false);
         }
@@ -270,7 +326,7 @@ export default function OnboardingWizard() {
             });
             await loadState();
         } catch (e) {
-            setError(e instanceof Error ? e.message : t('wizard.errors.skipStep'));
+            setError(describeError(t, e, t('wizard.errors.skipStep')));
         } finally {
             setSaving(false);
         }
@@ -290,7 +346,7 @@ export default function OnboardingWizard() {
             });
             await loadState();
         } catch (e) {
-            setError(e instanceof Error ? e.message : t('wizard.errors.skipStep'));
+            setError(describeError(t, e, t('wizard.errors.skipStep')));
         } finally {
             setSaving(false);
         }
@@ -311,7 +367,7 @@ export default function OnboardingWizard() {
             });
             await loadState();
         } catch (e) {
-            setError(e instanceof Error ? e.message : t('wizard.errors.skipStep'));
+            setError(describeError(t, e, t('wizard.errors.skipStep')));
         } finally {
             setSaving(false);
         }
@@ -333,7 +389,7 @@ export default function OnboardingWizard() {
                 router.push(tenantHref('/dashboard'));
             }, 2000);
         } catch (e) {
-            setError(e instanceof Error ? e.message : t('wizard.errors.finish'));
+            setError(describeError(t, e, t('wizard.errors.finish')));
         } finally {
             setSaving(false);
         }
@@ -471,6 +527,10 @@ export default function OnboardingWizard() {
     const installRun = latestFrameworkInstall(state.stepData);
     const installFailures =
         installRun && installRun.ranAt !== dismissedInstallRun ? installRun.failures : [];
+    // #4701 — a step whose automation threw is stored with `failed: true`.
+    const automationFailures = failedAutomationSteps(state.stepData)
+        .filter((f) => !dismissedFailureRuns.includes(f.ranAt))
+        .map((f) => ({ ...f, labelKey: STEPS.find((st) => st.key === f.step)?.labelKey ?? 'wizard.unknownStep' }));
 
     return (
         <div className="space-y-default animate-fadeIn" data-testid="onboarding-wizard">
@@ -486,11 +546,25 @@ export default function OnboardingWizard() {
             </div>
 
             {error && (
-                <div className={cn(cardVariants({ density: 'compact' }), 'border-border-error text-sm text-content-error flex items-center gap-tight')}>
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <InlineNotice variant="error" onDismiss={() => setError(null)} id="onboarding-error">
                     {error}
-                    <button onClick={() => setError(null)} className="ml-auto text-content-error hover:text-content-emphasis text-xs">&times;</button>
-                </div>
+                </InlineNotice>
+            )}
+
+            {automationFailures.length > 0 && (
+                <InlineNotice
+                    variant="error"
+                    title={t('wizard.automationFailed.title')}
+                    onDismiss={() => setDismissedFailureRuns(automationFailures.map((f) => f.ranAt))}
+                    id="onboarding-automation-failed"
+                >
+                    <ul className="list-disc pl-4">
+                        {automationFailures.map((f) => (
+                            <li key={f.step}>{t(f.labelKey)}</li>
+                        ))}
+                    </ul>
+                    <p className="mt-1">{t('wizard.automationFailed.hint')}</p>
+                </InlineNotice>
             )}
 
             {installFailures.length > 0 && (
@@ -520,10 +594,12 @@ export default function OnboardingWizard() {
                     <div className="p-4 border-b border-border-subtle">
                         <p className="text-xs text-content-muted font-medium uppercase tracking-wider">{t('wizard.progress')}</p>
                         <div className="flex items-center gap-tight mt-2">
-                            <div className="flex-1 bg-bg-default rounded-full h-2 overflow-hidden">
-                                <div className="h-full bg-[var(--brand-default)] rounded-full transition-all duration-500"
-                                    style={{ width: `${visibleSteps.length ? (visibleCompletedCount / visibleSteps.length) * 100 : 0}%` }} />
-                            </div>
+                            <ProgressBar
+                                className="flex-1"
+                                value={visibleCompletedCount}
+                                max={visibleSteps.length || 1}
+                                aria-label={t('wizard.progress')}
+                            />
                             <span className="text-xs text-content-muted font-medium">{visibleCompletedCount}/{visibleSteps.length}</span>
                         </div>
                     </div>
@@ -698,13 +774,16 @@ function CompanyProfileStep({ data, onUpdate }: { data: StepData; onUpdate: (d: 
     return (
         <div className="space-y-default max-w-lg animate-fadeIn">
             <p className="text-sm text-content-muted mb-4">{t('wizard.companyProfile.intro')}</p>
-            <div>
-                <label className="input-label">{t('wizard.companyProfile.nameLabel')}</label>
-                <input className="input" placeholder={t('wizard.companyProfile.namePlaceholder')} value={data.name || ''}
-                    onChange={(e) => onUpdate({ name: e.target.value })} data-testid="company-name" />
-            </div>
-            <div>
-                <label className="input-label">{t('wizard.companyProfile.industryLabel')}</label>
+            <FormField label={t('wizard.companyProfile.nameLabel')}>
+                <Input
+                    id="onboarding-company-name"
+                    placeholder={t('wizard.companyProfile.namePlaceholder')}
+                    value={data.name || ''}
+                    onChange={(e) => onUpdate({ name: e.target.value })}
+                    data-testid="company-name"
+                />
+            </FormField>
+            <FormField label={t('wizard.companyProfile.industryLabel')}>
                 <Combobox
                     hideSearch
                     selected={industryOptions.find(o => o.value === (data.industry || '')) ?? null}
@@ -713,15 +792,17 @@ function CompanyProfileStep({ data, onUpdate }: { data: StepData; onUpdate: (d: 
                     placeholder={t('wizard.companyProfile.industryPlaceholder')}
                     matchTriggerWidth
                 />
-            </div>
+            </FormField>
             <div className="grid grid-cols-2 gap-compact">
-                <div>
-                    <label className="input-label">{t('wizard.companyProfile.countryLabel')}</label>
-                    <input className="input" placeholder={t('wizard.companyProfile.countryPlaceholder')} value={data.country || ''}
-                        onChange={(e) => onUpdate({ country: e.target.value })} />
-                </div>
-                <div>
-                    <label className="input-label">{t('wizard.companyProfile.sizeLabel')}</label>
+                <FormField label={t('wizard.companyProfile.countryLabel')}>
+                    <Input
+                        id="onboarding-company-country"
+                        placeholder={t('wizard.companyProfile.countryPlaceholder')}
+                        value={data.country || ''}
+                        onChange={(e) => onUpdate({ country: e.target.value })}
+                    />
+                </FormField>
+                <FormField label={t('wizard.companyProfile.sizeLabel')}>
                     <Combobox
                         hideSearch
                         selected={sizeOptions.find(o => o.value === (data.size || '')) ?? null}
@@ -730,17 +811,16 @@ function CompanyProfileStep({ data, onUpdate }: { data: StepData; onUpdate: (d: 
                         placeholder={t('wizard.companyProfile.sizePlaceholder')}
                         matchTriggerWidth
                     />
-                </div>
+                </FormField>
             </div>
             {/* Screening toggle — gates the conditional AI-governance
                 self-assessment step (also triggered by selecting an AI
                 framework). */}
             <label className="flex items-start gap-tight cursor-pointer rounded-lg border border-border-subtle p-3">
-                <input
-                    type="checkbox"
+                <Checkbox
                     className="mt-0.5"
                     checked={data.usesAiSystems === true}
-                    onChange={(e) => onUpdate({ usesAiSystems: e.target.checked })}
+                    onCheckedChange={(v) => onUpdate({ usesAiSystems: v === true })}
                     data-testid="company-uses-ai"
                 />
                 <span className="text-sm">
@@ -794,7 +874,7 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
                 const list = await apiFetch<InstallableFramework[]>(apiUrl(tenantSlug, 'frameworks'));
                 if (!cancelled) setFrameworks(list);
             } catch (e) {
-                if (!cancelled) setLoadError(e instanceof Error ? e.message : t('wizard.frameworks.loadError'));
+                if (!cancelled) setLoadError(describeError(t, e, t('wizard.frameworks.loadError')));
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -949,9 +1029,16 @@ function AssetSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: Step
         <div className="space-y-default max-w-lg animate-fadeIn">
             <p className="text-sm text-content-muted mb-4">{t('wizard.assets.intro')}</p>
             <div className="flex gap-tight">
-                <input className="input flex-1" placeholder={t('wizard.assets.placeholder')} value={newAsset}
-                    onChange={(e) => setNewAsset(e.target.value)} onKeyDown={assetKeyDown} data-testid="asset-input" />
-                <Button variant="primary" onClick={addAsset}>{t('wizard.assets.add')}</Button>
+                <Input
+                    className="flex-1"
+                    aria-label={t('wizard.assets.placeholder')}
+                    placeholder={t('wizard.assets.placeholder')}
+                    value={newAsset}
+                    onChange={(e) => setNewAsset(e.target.value)}
+                    onKeyDown={assetKeyDown}
+                    data-testid="asset-input"
+                />
+                <Button variant="secondary" onClick={addAsset}>{t('wizard.assets.add')}</Button>
             </div>
             {assets.length > 0 && (
                 <div className="space-y-1">
@@ -961,7 +1048,13 @@ function AssetSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: Step
                                 <Server className="w-3.5 h-3.5 text-content-subtle" />
                                 <span className="text-content-emphasis">{a}</span>
                             </div>
-                            <button onClick={() => removeAsset(a)} className="text-content-subtle hover:text-content-error text-xs">&times;</button>
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                icon={<X className="size-3.5" aria-hidden="true" />}
+                                aria-label={t('wizard.assets.remove', { name: a })}
+                                onClick={() => removeAsset(a)}
+                            />
                         </div>
                     ))}
                 </div>
@@ -1000,8 +1093,11 @@ function ControlInstallStep({ data, onUpdate, allData }: { data: StepData; onUpd
                 </div>
             )}
             <label className="flex items-center gap-tight text-sm text-content-default cursor-pointer">
-                <input type="checkbox" checked={data.confirmed || false} onChange={(e) => onUpdate({ confirmed: e.target.checked })}
-                    className="w-4 h-4 rounded border-border-default bg-bg-default text-brand-500 focus:ring-brand-500" />
+                <Checkbox
+                    checked={data.confirmed === true}
+                    onCheckedChange={(v) => onUpdate({ confirmed: v === true })}
+                    data-testid="controls-confirm"
+                />
                 {t('wizard.controls.confirm')}
             </label>
         </div>
@@ -1023,8 +1119,11 @@ function RiskRegisterStep({ data, onUpdate }: { data: StepData; onUpdate: (d: St
                 <p className="text-xs text-content-muted leading-relaxed">{t('wizard.risks.starterBody')}</p>
             </div>
             <label className="flex items-center gap-tight text-sm text-content-default cursor-pointer">
-                <input type="checkbox" checked={data.generate !== false} onChange={(e) => onUpdate({ generate: e.target.checked })}
-                    className="w-4 h-4 rounded border-border-default bg-bg-default text-brand-500 focus:ring-brand-500" />
+                <Checkbox
+                    checked={data.generate !== false}
+                    onCheckedChange={(v) => onUpdate({ generate: v === true })}
+                    data-testid="risks-generate"
+                />
                 {t('wizard.risks.generate')}
             </label>
         </div>
@@ -1035,6 +1134,7 @@ function RiskRegisterStep({ data, onUpdate }: { data: StepData; onUpdate: (d: St
 
 function TeamSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: StepData) => void }) {
     const t = useTranslations('onboarding');
+    const tenantHref = useTenantHref();
     const emails: string[] = data.inviteEmails || [];
     const [newEmail, setNewEmail] = useState('');
 
@@ -1055,11 +1155,22 @@ function TeamSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: StepD
 
     return (
         <div className="space-y-default max-w-lg animate-fadeIn">
+            {/* #4701 — this step keeps a list; it sends nothing. An invite
+                needs a role, which the wizard does not ask, so people are
+                invited from the members page. */}
             <p className="text-sm text-content-muted mb-4">{t('wizard.team.intro')}</p>
             <div className="flex gap-tight">
-                <input className="input flex-1" placeholder={t('wizard.team.placeholder')} type="email" value={newEmail}
-                    onChange={(e) => setNewEmail(e.target.value)} onKeyDown={emailKeyDown} data-testid="invite-email" />
-                <Button variant="primary" onClick={addEmail}>{t('wizard.team.invite')}</Button>
+                <Input
+                    className="flex-1"
+                    aria-label={t('wizard.team.placeholder')}
+                    placeholder={t('wizard.team.placeholder')}
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    onKeyDown={emailKeyDown}
+                    data-testid="invite-email"
+                />
+                <Button variant="secondary" onClick={addEmail}>{t('wizard.team.add')}</Button>
             </div>
             {emails.length > 0 && (
                 <div className="space-y-1">
@@ -1069,12 +1180,26 @@ function TeamSetupStep({ data, onUpdate }: { data: StepData; onUpdate: (d: StepD
                                 <Users className="w-3.5 h-3.5 text-content-subtle" />
                                 <span className="text-content-emphasis">{e}</span>
                             </div>
-                            <button onClick={() => removeEmail(e)} className="text-content-subtle hover:text-content-error text-xs">&times;</button>
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                icon={<X className="size-3.5" aria-hidden="true" />}
+                                aria-label={t('wizard.team.remove', { email: e })}
+                                onClick={() => removeEmail(e)}
+                            />
                         </div>
                     ))}
                 </div>
             )}
-            <p className="text-xs text-content-subtle">{t('wizard.team.inviteLater')}</p>
+            <p className="text-xs text-content-subtle">
+                {t.rich('wizard.team.inviteFrom', {
+                    link: (chunks) => (
+                        <Link href={tenantHref('/admin/members')} className="underline" id="onboarding-team-members-link">
+                            {chunks}
+                        </Link>
+                    ),
+                })}
+            </p>
         </div>
     );
 }
@@ -1093,7 +1218,7 @@ function ReviewStep({ completedSteps, allData }: { completedSteps: string[]; all
         { key: 'ASSET_SETUP', label: t('wizard.steps.assets'), detail: t('wizard.review.assetsAdded', { count: (allData['ASSET_SETUP']?.assets || []).length }) },
         { key: 'CONTROL_BASELINE_INSTALL', label: t('wizard.steps.controls'), detail: allData['CONTROL_BASELINE_INSTALL']?.confirmed ? t('wizard.review.baselineConfirmed') : t('wizard.review.pendingConfirmation') },
         { key: 'INITIAL_RISK_REGISTER', label: t('wizard.review.riskRegister'), detail: allData['INITIAL_RISK_REGISTER']?.generate !== false ? t('wizard.review.starterWillGenerate') : t('wizard.review.skipped') },
-        { key: 'TEAM_SETUP', label: t('wizard.steps.team'), detail: t('wizard.review.invitationsPending', { count: (allData['TEAM_SETUP']?.inviteEmails || []).length }) },
+        { key: 'TEAM_SETUP', label: t('wizard.steps.team'), detail: t('wizard.review.toInvite', { count: (allData['TEAM_SETUP']?.inviteEmails || []).length }) },
     ];
 
     return (

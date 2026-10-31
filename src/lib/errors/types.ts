@@ -57,8 +57,8 @@ export class ValidationError extends AppError {
 }
 
 export class NotFoundError extends AppError {
-    constructor(message: string = 'Not Found') {
-        super(message, 'NOT_FOUND', 404, true);
+    constructor(message: string = 'Not Found', details?: unknown) {
+        super(message, 'NOT_FOUND', 404, true, details);
         this.name = 'NotFoundError';
     }
 }
@@ -97,8 +97,8 @@ export class RateLimitedError extends AppError {
 }
 
 export class GoneError extends AppError {
-    constructor(message: string = 'Gone') {
-        super(message, 'GONE', 410, true);
+    constructor(message: string = 'Gone', details?: unknown) {
+        super(message, 'GONE', 410, true, details);
         this.name = 'GoneError';
     }
 }
@@ -181,8 +181,8 @@ export const unauthorized = (message: string = 'Unauthorized') =>
 export const forbidden = (message: string = 'Forbidden', details?: unknown) =>
     new ForbiddenError(message, details);
 
-export const notFound = (message: string = 'Not Found') =>
-    new NotFoundError(message);
+export const notFound = (message: string = 'Not Found', details?: unknown) =>
+    new NotFoundError(message, details);
 
 export const conflict = (message: string = 'Conflict') =>
     new ConflictError(message);
@@ -190,8 +190,8 @@ export const conflict = (message: string = 'Conflict') =>
 export const rateLimited = (message: string = 'Too many requests') =>
     new RateLimitedError(message);
 
-export const gone = (message: string = 'Gone') =>
-    new GoneError(message);
+export const gone = (message: string = 'Gone', details?: unknown) =>
+    new GoneError(message, details);
 
 export const internal = (message: string = 'Internal Server Error') =>
     new InternalError(message);

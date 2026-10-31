@@ -143,9 +143,7 @@ describe('Epic 64 — window.confirm() ceiling', () => {
         for (const file of walk(TENANT_APP)) {
             const src = read(file);
             // Strip comments first so doc-comment mentions don't count.
-            const stripped = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/.*$/gm, '');
+            const stripped = codeOf(src);
             // Match BOTH bare `confirm(` (the global) and `window.confirm(`
             // — the second is what people write when their linter complains
             // about implicit globals.

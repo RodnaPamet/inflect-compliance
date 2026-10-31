@@ -469,9 +469,7 @@ describe('every site that names a worker DB agrees', () => {
         // syntax someone else typed.
         const offenders = ['tests/setup/globalSetup.ts', 'tests/setup/teardown.ts']
             .filter((f) => {
-                const code = read(f)
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/^\s*\/\/.*$/gm, '');
+                const code = codeOf(read(f));
                 return /_w\$\{/.test(code) || /['\`]_w['\`]\s*\+/.test(code);
             });
         expect(offenders).toEqual([]);

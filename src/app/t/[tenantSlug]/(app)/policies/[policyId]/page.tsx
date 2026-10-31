@@ -10,6 +10,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
+import { humanizeDetail } from '@/components/controls-shared/PanelActivityFeed';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
@@ -136,6 +137,21 @@ const EVENT_LABEL_KEYS: Record<string, string> = {
     POLICY_ATTESTED: 'detail.event.attested', POLICY_ACK_REQUESTED: 'detail.event.ackRequested',
     POLICY_CONTROL_LINKED: 'detail.event.controlLinked', POLICY_CONTROL_UNLINKED: 'detail.event.controlUnlinked',
     POLICY_ROLLED_BACK: 'detail.event.rolledBack',
+    // #4695 — every action the policy usecases write has a label; an action
+    // without one reads "Changed", never its code.
+    POLICY_UNARCHIVED: 'detail.event.unarchived',
+    POLICY_APPROVAL_SUPERSEDED: 'detail.event.approvalSuperseded',
+    POLICY_PUBLISH_BYPASS: 'detail.event.publishBypass',
+    POLICY_EVIDENCE_LINKED: 'detail.event.evidenceLinked',
+    POLICY_EVIDENCE_UNLINKED: 'detail.event.evidenceUnlinked',
+    POLICY_EVIDENCE_ITEM_ADDED: 'detail.event.evidenceItemAdded',
+    POLICY_ACK_CARRIED_FORWARD: 'detail.event.ackCarriedForward',
+    POLICY_LINKED_SHAREPOINT: 'detail.event.sharepointLinked',
+    POLICY_UNLINKED_SHAREPOINT: 'detail.event.sharepointUnlinked',
+    POLICY_SYNCED_TO_SHAREPOINT: 'detail.event.sharepointSyncedTo',
+    POLICY_SYNCED_FROM_SHAREPOINT: 'detail.event.sharepointSyncedFrom',
+    POLICY_EXTERNAL_CHANGE_PROPOSED: 'detail.event.externalChangeProposed',
+    SOFT_DELETE: 'detail.event.deleted',
 };
 
 // No file upload: the editor's former "File Upload" mode posted to an
@@ -813,8 +829,8 @@ export default function PolicyDetailPage() {
                         }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus className="-ml-0.5 -mr-2.5" />{t('detail.version')}</button>
                     )}
                     {canAdmin && policy.status !== 'ARCHIVED' && (
-                        <Button variant="ghost" size="sm" className="text-content-muted hover:text-content-error" onClick={() => setArchiveOpen(true)} disabled={actionLoading === 'archive'} id="archive-btn">
-                            {actionLoading === 'archive' ? '...' : t('detail.archive')}
+                        <Button variant="ghost" size="sm" className="text-content-muted hover:text-content-error" onClick={() => setArchiveOpen(true)} disabled={actionLoading === 'archive'} loading={actionLoading === 'archive'} id="archive-btn">
+                            {t('detail.archive')}
                         </Button>
                     )}
                 </>
@@ -1071,8 +1087,8 @@ export default function PolicyDetailPage() {
                                     </div>
                                     <div className="flex gap-tight">
                                         {canRequestApprovalFor(v) && (
-                                            <Button variant="secondary" size="sm" onClick={() => requestApproval(v.id)} disabled={!!actionLoading} id={`request-approval-${v.versionNumber}`}>
-                                                {actionLoading === 'approve-' + v.id ? '...' : t('detail.requestApproval')}
+                                            <Button variant="secondary" size="sm" onClick={() => requestApproval(v.id)} disabled={!!actionLoading} loading={actionLoading === 'approve-' + v.id} id={`request-approval-${v.versionNumber}`}>
+                                                {t('detail.requestApproval')}
                                             </Button>
                                         )}
                                         {/* Only on the version a publish would be
@@ -1081,8 +1097,8 @@ export default function PolicyDetailPage() {
                                             cycle kept the button and every click was
                                             refused. */}
                                         {canAdmin && v.id === publishableId && (
-                                            <Button variant="primary" size="sm" onClick={() => publishVersion(v.id)} disabled={!!actionLoading} id={`publish-version-${v.versionNumber}`}>
-                                                {actionLoading === 'publish-' + v.id ? '...' : t('detail.publish')}
+                                            <Button variant="primary" size="sm" onClick={() => publishVersion(v.id)} disabled={!!actionLoading} loading={actionLoading === 'publish-' + v.id} id={`publish-version-${v.versionNumber}`}>
+                                                {t('detail.publish')}
                                             </Button>
                                         )}
                                     </div>
@@ -1130,8 +1146,8 @@ export default function PolicyDetailPage() {
                                                                 (a.requestedBy?.id != null && a.requestedBy.id === currentUserId) ||
                                                                 (v.createdBy?.id != null && v.createdBy.id === currentUserId);
                                                             const approveBtn = (
-                                                                <Button variant="primary" size="xs" onClick={isSelfApproval ? undefined : () => decideApproval(a.id, 'APPROVED')} disabled={isSelfApproval || !!actionLoading} id={`approve-${a.id}`}>
-                                                                    {actionLoading === 'decide-' + a.id ? '...' : t('detail.approve')}
+                                                                <Button variant="primary" size="xs" onClick={isSelfApproval ? undefined : () => decideApproval(a.id, 'APPROVED')} disabled={isSelfApproval || !!actionLoading} loading={actionLoading === 'decide-' + a.id} id={`approve-${a.id}`}>
+                                                                    {t('detail.approve')}
                                                                 </Button>
                                                             );
                                                             return (
@@ -1301,12 +1317,13 @@ export default function PolicyDetailPage() {
                                             <span className="font-medium text-content-emphasis text-xs">
                                                 {EVENT_LABEL_KEYS[evt.action]
                                                     ? t(EVENT_LABEL_KEYS[evt.action])
-                                                    : evt.action.replace('POLICY_', '').replace(/_/g, ' ')}
+                                                    : t('detail.event.other')}
                                             </span>
                                             <span className="text-xs text-content-subtle">{relativeTime(evt.createdAt)}</span>
                                         </div>
                                         <p className="text-xs text-content-muted mt-0.5 truncate">
-                                            {evt.user?.name || t('detail.systemActor')}{evt.details ? ` — ${evt.details.split('\n')[0]}` : ''}
+                                            {evt.user?.name || t('detail.systemActor')}
+                                            {humanizeDetail(evt.details) ? ` — ${humanizeDetail(evt.details)}` : ''}
                                         </p>
                                     </div>
                                 </div>

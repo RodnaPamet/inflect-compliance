@@ -39,6 +39,7 @@ jest.mock('@/lib/prisma', () => ({
         },
         tenantMembership: {
             upsert: jest.fn(),
+            findFirst: jest.fn(),
         },
         $transaction: jest.fn(),
     },
@@ -62,6 +63,7 @@ import {
     listPendingInvites,
     previewInviteByToken,
     redeemInvite,
+    inviteSignInOutcome,
 } from '@/app-layer/usecases/tenant-invites';
 import { prisma } from '@/lib/prisma';
 import { runInTenantContext } from '@/lib/db-context';
@@ -72,6 +74,7 @@ import { makeRequestContext } from '../../helpers/make-context';
 const mockInviteFindUnique = prisma.tenantInvite.findUnique as jest.MockedFunction<typeof prisma.tenantInvite.findUnique>;
 const mockInviteUpdateMany = prisma.tenantInvite.updateMany as jest.MockedFunction<typeof prisma.tenantInvite.updateMany>;
 const mockTransaction = prisma.$transaction as jest.MockedFunction<any>;
+const mockMembershipFindFirst = prisma.tenantMembership.findFirst as jest.MockedFunction<typeof prisma.tenantMembership.findFirst>;
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 const mockAppendAudit = appendAuditEntry as jest.MockedFunction<typeof appendAuditEntry>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
@@ -455,5 +458,95 @@ describe('redeemInvite — atomic claim + email binding', () => {
                 entity: 'TenantMembership',
             }),
         );
+    });
+});
+
+describe('redeemInvite — each refusal names its reason (#4689)', () => {
+    const input = { token: 'tok', userId: 'u-1', userEmail: 'a@example.com' };
+    const future = new Date(Date.now() + 86_400_000);
+    const past = new Date(Date.now() - 86_400_000);
+
+    async function reasonOf(): Promise<unknown> {
+        try {
+            await redeemInvite(input);
+        } catch (e) {
+            return (e as { details?: { reason?: unknown } }).details?.reason;
+        }
+        throw new Error('expected a refusal');
+    }
+
+    it.each([
+        ['INVITE_NOT_FOUND', null],
+        ['INVITE_REVOKED', { acceptedAt: null, revokedAt: new Date(), expiresAt: future }],
+        ['INVITE_EXPIRED', { acceptedAt: null, revokedAt: null, expiresAt: past }],
+        ['INVITE_ALREADY_REDEEMED', { acceptedAt: new Date(), revokedAt: null, expiresAt: future }],
+    ])('%s', async (reason, row) => {
+        mockInviteUpdateMany.mockResolvedValue({ count: 0 });
+        mockInviteFindUnique.mockResolvedValue(row as never);
+        await expect(reasonOf()).resolves.toBe(reason);
+    });
+
+    it('INVITE_EMAIL_MISMATCH', async () => {
+        mockInviteUpdateMany.mockResolvedValue({ count: 1 });
+        mockInviteFindUnique.mockResolvedValue({
+            id: 'inv-1', tenantId: 't-1', email: 'other@example.com', role: 'EDITOR',
+            invitedById: 'u-0', createdAt: new Date(),
+        } as never);
+        await expect(reasonOf()).resolves.toBe('INVITE_EMAIL_MISMATCH');
+    });
+});
+
+describe('inviteSignInOutcome — what became of an invite redeemed at sign-in (#4689)', () => {
+    const input = { token: 'tok', userId: 'u-1', userEmail: 'Invitee@Example.com' };
+    const future = new Date(Date.now() + 86_400_000);
+    const past = new Date(Date.now() - 86_400_000);
+    const row = (over: Record<string, unknown>) => ({
+        tenantId: 't-1',
+        email: 'invitee@example.com',
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: future,
+        tenant: { name: 'Acme', slug: 'acme' },
+        ...over,
+    });
+
+    it('ACCEPTED when the invite is spent and the user is an active member', async () => {
+        mockInviteFindUnique.mockResolvedValue(row({ acceptedAt: new Date() }) as never);
+        mockMembershipFindFirst.mockResolvedValue({ id: 'm-1' } as never);
+        await expect(inviteSignInOutcome(input)).resolves.toEqual({ kind: 'ACCEPTED', slug: 'acme' });
+        expect(mockMembershipFindFirst).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { tenantId: 't-1', userId: 'u-1', status: 'ACTIVE' } }),
+        );
+    });
+
+    it('EMAIL_MISMATCH when it was spent by a sign-in under another address', async () => {
+        mockInviteFindUnique.mockResolvedValue(row({ acceptedAt: new Date(), email: 'other@example.com' }) as never);
+        mockMembershipFindFirst.mockResolvedValue(null);
+        await expect(inviteSignInOutcome(input)).resolves.toEqual({
+            kind: 'REFUSED', reason: 'INVITE_EMAIL_MISMATCH', tenantName: 'Acme',
+        });
+    });
+
+    it('NOT_COMPLETED when it was spent under the right address but no membership exists', async () => {
+        mockInviteFindUnique.mockResolvedValue(row({ acceptedAt: new Date() }) as never);
+        mockMembershipFindFirst.mockResolvedValue(null);
+        await expect(inviteSignInOutcome(input)).resolves.toMatchObject({ reason: 'INVITE_NOT_COMPLETED' });
+    });
+
+    it('REVOKED, EXPIRED and NOT_FOUND', async () => {
+        mockInviteFindUnique.mockResolvedValue(row({ revokedAt: new Date() }) as never);
+        await expect(inviteSignInOutcome(input)).resolves.toMatchObject({ reason: 'INVITE_REVOKED' });
+        mockInviteFindUnique.mockResolvedValue(row({ expiresAt: past }) as never);
+        await expect(inviteSignInOutcome(input)).resolves.toMatchObject({ reason: 'INVITE_EXPIRED' });
+        mockInviteFindUnique.mockResolvedValue(null);
+        await expect(inviteSignInOutcome(input)).resolves.toEqual({
+            kind: 'REFUSED', reason: 'INVITE_NOT_FOUND', tenantName: null,
+        });
+    });
+
+    it('PENDING when the invite is still live', async () => {
+        mockInviteFindUnique.mockResolvedValue(row({}) as never);
+        await expect(inviteSignInOutcome(input)).resolves.toEqual({ kind: 'PENDING' });
+        expect(mockMembershipFindFirst).not.toHaveBeenCalled();
     });
 });

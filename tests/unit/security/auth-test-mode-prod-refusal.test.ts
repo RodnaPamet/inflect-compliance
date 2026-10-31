@@ -52,7 +52,7 @@ import { codeOf } from '../../helpers/source-blocks';
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const readSrc = (p: string) => codeOf(read(p));
 const codeOnly = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 describe('AUTH_TEST_MODE is refused in production', () => {
     it('the env schema rejects "1" when NODE_ENV is production', () => {
@@ -233,7 +233,13 @@ describe('every harness that boots production with AUTH_TEST_MODE=1 is exempted'
         // other one killing the harness, with a different error message.
         const envSrc = codeOnly(read('src/env.ts'));
         const declAt = envSrc.indexOf('AUTH_TEST_MODE: z');
-        const decl = envSrc.slice(declAt, declAt + 900);
+        // To the end of its superRefine, not a byte count: comments are
+        // blanked rather than removed (#4659), so a fixed window measured in
+        // characters covers less code than it used to.
+        const declEnd = envSrc.indexOf('}),', declAt);
+        expect(declAt).toBeGreaterThanOrEqual(0);
+        expect(declEnd).toBeGreaterThan(declAt);
+        const decl = envSrc.slice(declAt, declEnd);
         expect(decl).toMatch(/NEXT_TEST_MODE === '1'\)\s*return;/);
         expect(decl).toMatch(/SYNTHETIC_TEST_HARNESS === '1'\)\s*return;/);
 

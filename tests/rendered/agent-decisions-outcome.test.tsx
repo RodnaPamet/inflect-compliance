@@ -80,6 +80,7 @@ import {
     DecisionsClient,
     type DecisionRow,
 } from '@/app/t/[tenantSlug]/(app)/agents/decisions/DecisionsClient';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -90,7 +91,7 @@ function outcomeValues(): string[] {
     if (!block) throw new Error('enum AiHumanOutcome not found in prisma/schema/enums.prisma');
     return block[1]
         .split('\n')
-        .map((l) => l.replace(/\/\/.*$/, '').trim())
+        .map((l) => codeOf(l).trim())
         .filter((l) => /^[A-Z_]+$/.test(l));
 }
 

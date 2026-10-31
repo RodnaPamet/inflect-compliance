@@ -93,7 +93,28 @@ export type RouteHandler<
     TResponse = Response | NextResponse,
 > = (
     req: NextRequest,
-    routeArgs: { params: TParams },
+    // PROMISE OR PLAIN, AND BOTH ARE REAL CALL SHAPES.
+    //
+    // This read `{ params: TParams }`, which contradicted the comment inside
+    // the wrapper below: Next 15+ hands the route export a PROMISE. Nothing
+    // caught it. The async-params ratchet
+    // (`tests/guards/async-params-route-typing.test.ts`) flags `params:` followed
+    // by an object-type brace and deliberately allows `params:` followed by an
+    // IDENTIFIER, to permit a destructure — so `params: TParams` read as
+    // migrated while the generic was instantiated synchronously. And the only
+    // thing that DOES see it, `tsc` over `.next/types/validator.ts`, never runs
+    // in CI: the Typecheck job has no build step, so that generated file does
+    // not exist there. It surfaces only after a local build (#4672 session).
+    //
+    // The union is the honest contract rather than a widening. The wrapper
+    // awaits, and `await` on a non-thenable returns it unchanged — which is why
+    // the docblock below promises both shapes stay correct, and why 78 unit-test
+    // call sites pass a plain object. It still forces the await: a property read
+    // off `TParams | Promise<TParams>` does not compile, so this cannot
+    // re-admit the `params.tenantSlug === undefined` bug the wrapper describes.
+    // And it satisfies Next, whose constraint is checked contravariantly: a
+    // handler accepting the wider type is usable where the Promise is passed.
+    routeArgs: { params: TParams | Promise<TParams> },
 ) => Promise<TResponse>;
 
 // ─── Audit + logging ────────────────────────────────────────────────

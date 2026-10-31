@@ -122,6 +122,24 @@ function scannerStatusVariant(status: string): StatusBadgeVariant {
 // usecase consts (VULN_STATUSES / SCANNER_FINDING_STATUSES) into this client
 // component; that would bundle server code.
 const VULN_STATUS_VALUES = ['OPEN', 'MITIGATING', 'MITIGATED', 'ACCEPTED', 'FALSE_POSITIVE'] as const;
+
+type Translator = ReturnType<typeof useTranslations>;
+
+/**
+ * A stored code in words (#4693): the label under `prefix` when one exists,
+ * else the code itself. `caseInsensitive` matches a free-text column whose
+ * writers disagree on case (classification is `Internal` from the form and
+ * `INTERNAL` from onboarding).
+ */
+function labelFor(t: Translator, prefix: string, value: string, keys?: readonly string[]): string {
+    const exact = `${prefix}.${value}`;
+    if (t.has(exact)) return t(exact);
+    const match = keys?.find((k) => k.toLowerCase() === value.toLowerCase());
+    return match ? t(`${prefix}.${match}`) : value;
+}
+
+const CLASSIFICATION_KEYS = ['Public', 'Internal', 'Confidential', 'Restricted'] as const;
+const RESIDENCY_KEYS = ['EU', 'UK', 'US', 'Other'] as const;
 const SCANNER_STATUS_VALUES = ['OPEN', 'TRIAGED', 'FIXED', 'FALSE_POSITIVE', 'ACCEPTED'] as const;
 
 export default function AssetDetailPage() {
@@ -133,6 +151,8 @@ export default function AssetDetailPage() {
     const canConvertToRisk = canConvertVuln && appPermissions.risks.create;
     const canConvertToFinding = canConvertVuln && appPermissions.findings.create;
     const t = useTranslations('assets');
+    const tVuln = useTranslations('vulnerabilities');
+    const tScan = useTranslations('securityTesting');
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     const assetId = params.id as string;
@@ -309,12 +329,12 @@ export default function AssetDetailPage() {
     }, [scannerRows, scannerOverrides, showResolved]);
 
     const vulnStatusOptions = useMemo<ComboboxOption[]>(
-        () => VULN_STATUS_VALUES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') })),
-        [],
+        () => VULN_STATUS_VALUES.map((s) => ({ value: s, label: labelFor(tVuln, 'filterEnums.status', s) })),
+        [tVuln],
     );
     const scannerStatusOptions = useMemo<ComboboxOption[]>(
-        () => SCANNER_STATUS_VALUES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') })),
-        [],
+        () => SCANNER_STATUS_VALUES.map((s) => ({ value: s, label: labelFor(tScan, 'filterEnums.status', s) })),
+        [tScan],
     );
 
     // Modal-form P2 — the inline-edit panel is replaced by an
@@ -531,7 +551,7 @@ export default function AssetDetailPage() {
                                   {
                                       kind: 'status' as const,
                                       label: t('colHeaders.criticality'),
-                                      value: asset.criticality,
+                                      value: labelFor(t, 'filterEnums.criticality', asset.criticality),
                                       variant: critColor(asset.criticality),
                                   },
                               ]
@@ -539,7 +559,7 @@ export default function AssetDetailPage() {
                         {
                             kind: 'status' as const,
                             label: t('detail.status'),
-                            value: asset.status || 'ACTIVE',
+                            value: labelFor(t, 'filterEnums.status', asset.status || 'ACTIVE'),
                             variant:
                                 asset.status === 'RETIRED'
                                     ? 'neutral'
@@ -628,7 +648,9 @@ export default function AssetDetailPage() {
                                 header: t('detail.vuln.severity'),
                                 cell: ({ row }) => (
                                     <StatusBadge variant={severityVariant(row.original.cve?.cvssSeverity)} size="sm">
-                                        {row.original.cve?.cvssSeverity ?? t('detail.vuln.none')}
+                                        {row.original.cve?.cvssSeverity
+                                            ? labelFor(t, 'vulnSeverity', row.original.cve.cvssSeverity)
+                                            : t('detail.vuln.none')}
                                     </StatusBadge>
                                 ),
                             },
@@ -645,7 +667,7 @@ export default function AssetDetailPage() {
                                     if (!permissions.canWrite) {
                                         return (
                                             <StatusBadge variant={vulnStatusVariant(r.status)} size="sm">
-                                                {r.status}
+                                                {labelFor(tVuln, 'filterEnums.status', r.status)}
                                             </StatusBadge>
                                         );
                                     }
@@ -664,7 +686,7 @@ export default function AssetDetailPage() {
                             {
                                 id: 'matchedVia',
                                 header: t('detail.vuln.matchedVia'),
-                                cell: ({ row }) => <span className="text-sm text-content-muted">{row.original.matchedVia}</span>,
+                                cell: ({ row }) => <span className="text-sm text-content-muted">{labelFor(tVuln, 'matchedViaLabels', row.original.matchedVia)}</span>,
                             },
                             {
                                 id: 'owner',
@@ -805,15 +827,15 @@ export default function AssetDetailPage() {
                             />
                         }
                         columns={[
-                            { id: 'severity', header: t('detail.vuln.scannerSeverity'), accessorFn: (r: AssetScannerFindingRow) => r.severity, cell: ({ row }: { row: { original: AssetScannerFindingRow } }) => <StatusBadge variant={severityVariant(row.original.severity)} size="sm">{row.original.severity}</StatusBadge> },
+                            { id: 'severity', header: t('detail.vuln.scannerSeverity'), accessorFn: (r: AssetScannerFindingRow) => r.severity, cell: ({ row }: { row: { original: AssetScannerFindingRow } }) => <StatusBadge variant={severityVariant(row.original.severity)} size="sm">{labelFor(tScan, 'filterEnums.severity', row.original.severity)}</StatusBadge> },
                             { id: 'title', header: t('detail.vuln.scannerFinding'), accessorFn: (r: AssetScannerFindingRow) => r.title, cell: ({ row }: { row: { original: AssetScannerFindingRow } }) => <span className="text-sm">{row.original.title}</span> },
                             { id: 'rule', header: t('detail.vuln.scannerRule'), accessorFn: (r: AssetScannerFindingRow) => r.ruleId, cell: ({ row }: { row: { original: AssetScannerFindingRow } }) => <span className="text-xs text-content-muted">{row.original.ruleId}</span> },
                             { id: 'location', header: t('detail.vuln.scannerLocation'), accessorFn: (r: AssetScannerFindingRow) => r.location ?? '—', cell: ({ row }: { row: { original: AssetScannerFindingRow } }) => <span className="text-xs text-content-muted">{row.original.location ?? '—'}</span> },
-                            { id: 'source', header: t('detail.vuln.scannerSource'), accessorFn: (r: AssetScannerFindingRow) => r.scannerRun?.source ?? '—', cell: ({ row }: { row: { original: AssetScannerFindingRow } }) => <span className="text-xs text-content-muted">{row.original.scannerRun?.source ?? '—'}</span> },
+                            { id: 'source', header: t('detail.vuln.scannerSource'), accessorFn: (r: AssetScannerFindingRow) => r.scannerRun?.source ?? '—', cell: ({ row }: { row: { original: AssetScannerFindingRow } }) => <span className="text-xs text-content-muted">{row.original.scannerRun?.source ? labelFor(tScan, 'filterEnums.source', row.original.scannerRun.source) : '—'}</span> },
                             { id: 'status', header: t('detail.vuln.scannerStatus'), accessorFn: (r: AssetScannerFindingRow) => r.status, cell: ({ row }: { row: { original: AssetScannerFindingRow } }) => {
                                 const r = row.original;
                                 if (!permissions.canWrite) {
-                                    return <StatusBadge variant={scannerStatusVariant(r.status)} size="sm">{r.status.replace(/_/g, ' ')}</StatusBadge>;
+                                    return <StatusBadge variant={scannerStatusVariant(r.status)} size="sm">{labelFor(tScan, 'filterEnums.status', r.status)}</StatusBadge>;
                                 }
                                 return (
                                     <Combobox
@@ -950,7 +972,7 @@ export default function AssetDetailPage() {
                             tone={asset.rollups.vulnerabilities.openCount > 0 ? 'attention' : 'default'}
                             description={asset.rollups.vulnerabilities.maxSeverity ? (
                                 <StatusBadge variant={severityVariant(asset.rollups.vulnerabilities.maxSeverity)} size="sm">
-                                    {asset.rollups.vulnerabilities.maxSeverity}
+                                    {labelFor(t, 'vulnSeverity', asset.rollups.vulnerabilities.maxSeverity)}
                                 </StatusBadge>
                             ) : undefined}
                         />
@@ -1013,7 +1035,7 @@ export default function AssetDetailPage() {
                     </div>
                 )}
                 <>
-                        {asset.classification && <div><Eyebrow>{t('detail.classification')}</Eyebrow><p className="text-sm">{asset.classification}</p></div>}
+                        {asset.classification && <div><Eyebrow>{t('detail.classification')}</Eyebrow><p className="text-sm">{labelFor(t, 'formOptions.classification', asset.classification, CLASSIFICATION_KEYS)}</p></div>}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
                             <div>
                                 <Eyebrow>{t('detail.owner')}</Eyebrow>
@@ -1044,7 +1066,7 @@ export default function AssetDetailPage() {
                                     <p className="text-sm">—</p>
                                 )}
                             </div>
-                            <div><Eyebrow>{t('detail.dataResidency')}</Eyebrow><p className="text-sm">{asset.dataResidency || '—'}</p></div>
+                            <div><Eyebrow>{t('detail.dataResidency')}</Eyebrow><p className="text-sm">{asset.dataResidency ? labelFor(t, 'formOptions.residency', asset.dataResidency, RESIDENCY_KEYS) : '—'}</p></div>
                             {/* Structured retention-expiry date (the machine date the
                                 data-lifecycle sweep acts on) — distinct from the free-text
                                 retention note below. */}

@@ -52,9 +52,7 @@ function walk(dir: string, results: string[] = []): string[] {
 }
 
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+    return codeOf(src);
 }
 
 // Capture EntityDetailLayout / PageHeader JSX blocks, then check for

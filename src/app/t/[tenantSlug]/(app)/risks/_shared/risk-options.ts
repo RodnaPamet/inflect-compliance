@@ -18,7 +18,7 @@ export type {
     TreatmentDecisionValue,
     TreatmentStrategyValue,
 } from '@/lib/risk-treatment-vocabulary';
-import { RISK_CATEGORIES } from '@/lib/risk/categories';
+import { RISK_CATEGORIES, riskCategoryMessageKey } from '@/lib/risk/categories';
 
 /**
  * Shared risk-treatment decision options in the canonical vocabulary.
@@ -117,3 +117,18 @@ export const RISK_CATEGORY_OPTIONS: ComboboxOption[] = RISK_CATEGORIES.map((c) =
     value: c,
     label: c,
 }));
+
+/**
+ * `RISK_CATEGORIES` as `<Combobox>` options with translated labels (#4692).
+ * The VALUE stays the stored English word; only the label is the user's
+ * language. `t = useTranslations('risks')`.
+ */
+export function buildRiskCategoryOptions(t: (key: string) => string): ComboboxOption[] {
+    return RISK_CATEGORIES.map((c) => ({ value: c, label: riskCategoryLabel(t, c) }));
+}
+
+/** A stored category in words, or the stored value for one outside the list. */
+export function riskCategoryLabel(t: (key: string) => string, value: string): string {
+    const key = riskCategoryMessageKey(value);
+    return key ? t(`categories.${key}`) : value;
+}

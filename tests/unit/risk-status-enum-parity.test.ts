@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { SetRiskStatusSchema, BulkRiskStatusSchema } from '@/lib/schemas';
 import { RISK_STATUS_VALUES } from '@/app/t/[tenantSlug]/(app)/risks/_shared/risk-options';
+import { codeOf } from '../helpers/source-blocks';
 
 /** The `status` enum member of a `z.object({ status: z.enum([...]) })`. */
 function statusOptionsOf(schema: { shape: Record<string, unknown> }): string[] {
@@ -36,7 +37,7 @@ function prismaRiskStatusValues(): string[] {
     if (!block) throw new Error('enum RiskStatus not found in enums.prisma');
     return block[1]
         .split('\n')
-        .map((l) => l.replace(/\/\/.*$/, '').trim())
+        .map((l) => codeOf(l).trim())
         .filter(Boolean)
         .sort();
 }

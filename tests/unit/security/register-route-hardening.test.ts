@@ -28,11 +28,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { TENANT_CREATE_LIMIT, API_MUTATION_LIMIT } from '@/lib/security/rate-limit';
+import { codeOf } from '../../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const codeOnly = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 const ROUTE = 'src/app/api/auth/register/route.ts';
 

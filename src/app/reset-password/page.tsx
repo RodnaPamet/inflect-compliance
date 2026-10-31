@@ -9,6 +9,14 @@ import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { Heading } from '@/components/ui/typography';
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/password-limits';
+import { isResetPasswordRefusal, type ResetPasswordRefusal } from '@/lib/auth/reset-password-refusals';
+
+/**
+ * A refusal the route names, said from the catalogue instead of the route's
+ * English sentence (#4688). A link refusal also offers a new link.
+ */
+const LINK_REFUSALS: ReadonlySet<ResetPasswordRefusal> = new Set(['RESET_LINK_EXPIRED', 'RESET_LINK_INVALID']);
 
 function ResetPasswordForm() {
     const t = useTranslations('auth.reset');
@@ -18,11 +26,13 @@ function ResetPasswordForm() {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
+    const [linkRefused, setLinkRefused] = useState(false);
     const [loading, setLoading] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setError('');
+        setLinkRefused(false);
 
         if (!newPassword || !confirmPassword) {
             setError(t('fillBoth'));
@@ -32,8 +42,12 @@ function ResetPasswordForm() {
             setError(t('passwordsNoMatch'));
             return;
         }
-        if (newPassword.length < 8) {
+        if (newPassword.length < MIN_PASSWORD_LENGTH) {
             setError(t('tooShort'));
+            return;
+        }
+        if (newPassword.length > MAX_PASSWORD_LENGTH) {
+            setError(t('tooLong'));
             return;
         }
 
@@ -48,8 +62,19 @@ function ResetPasswordForm() {
                 window.location.href = '/login?reset=success';
                 return;
             }
-            const data = await res.json().catch(() => ({}));
-            setError(typeof data?.error === 'string' ? data.error : t('couldNotReset'));
+            if (res.status === 429) {
+                setError(t('tooManyAttempts'));
+            } else {
+                const data: unknown = await res.json().catch(() => null);
+                const code = data && typeof data === 'object' ? (data as { code?: unknown }).code : undefined;
+                if (isResetPasswordRefusal(code)) {
+                    setError(t(`refused.${code}`));
+                    setLinkRefused(LINK_REFUSALS.has(code));
+                } else {
+                    const sentence = data && typeof data === 'object' ? (data as { error?: unknown }).error : undefined;
+                    setError(typeof sentence === 'string' && sentence ? sentence : t('couldNotReset'));
+                }
+            }
         } catch {
             setError(t('couldNotReset'));
         }
@@ -98,6 +123,18 @@ function ResetPasswordForm() {
                             {error && (
                                 <InlineNotice variant="error" className="mb-4" icon={null}>
                                     {error}
+                                    {linkRefused && (
+                                        <>
+                                            {' '}
+                                            <a
+                                                href="/forgot-password"
+                                                id="reset-request-new-link"
+                                                className="underline underline-offset-2"
+                                            >
+                                                {t('requestNewLink')}
+                                            </a>
+                                        </>
+                                    )}
                                 </InlineNotice>
                             )}
 

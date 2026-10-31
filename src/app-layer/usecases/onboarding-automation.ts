@@ -18,7 +18,10 @@ import { OnboardingRepository } from '../repositories/OnboardingRepository';
 import { RiskRepository } from '../repositories/RiskRepository';
 import { badRequest, isAppError } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
+import type { OnboardingRefusal } from '@/lib/onboarding-refusals';
 import type { AssetType, TaskType } from '@prisma/client';
+import { STARTER_RISK_TEXT, STARTER_TASK_TEXT } from '@/data/onboarding-starter-content';
+import { DEFAULT_LOCALE, type Locale } from '@/lib/locale-constants';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type StepData = Record<string, any>;
@@ -87,6 +90,33 @@ export const STARTER_RISKS: StarterRisk[] = [
     { title: 'Physical Security Breach', category: 'Physical Security', threat: 'Unauthorized physical access', vulnerability: 'Weak physical access controls', likelihood: 1, impact: 3, assetTypes: [], frameworks: ['iso27001'] },
 ];
 
+/** The five tasks the Team step creates. English; other languages in `STARTER_TASK_TEXT`. */
+export const STARTER_TASKS: ReadonlyArray<{ title: string; description: string; type: TaskType }> = [
+    { title: 'Review and assign control owners', description: 'Go through the control register and assign owners to each control. This ensures accountability.', type: 'TASK' },
+    { title: 'Schedule evidence collection cadence', description: 'Set up recurring evidence collection for key controls. Quarterly or monthly depending on control frequency.', type: 'TASK' },
+    { title: 'Complete risk assessment review', description: 'Review the generated risk register and validate risk ratings. Adjust likelihood and impact as needed.', type: 'TASK' },
+    { title: 'Define incident response procedure', description: 'Document your incident response plan including detection, containment, eradication, and recovery steps.', type: 'TASK' },
+    { title: 'Set up vendor due diligence process', description: 'Establish the process for evaluating and monitoring third-party vendors for compliance.', type: 'TASK' },
+];
+
+/**
+ * A starter risk's text in the user's language (#4701), the English
+ * catalogue for `en` or for a risk the language has no entry for. A
+ * canonical category stays as stored (see `onboarding-starter-content.ts`).
+ */
+export function localizedStarterRisk(risk: StarterRisk, locale: Locale): StarterRisk {
+    if (locale === 'en') return risk;
+    const text = STARTER_RISK_TEXT[locale][risk.title];
+    return text ? { ...risk, ...text, category: text.category ?? risk.category } : risk;
+}
+
+/** A starter task's text in the user's language (#4701). */
+export function localizedStarterTask(task: (typeof STARTER_TASKS)[number], locale: Locale): (typeof STARTER_TASKS)[number] {
+    if (locale === 'en') return task;
+    const text = STARTER_TASK_TEXT[locale][task.title];
+    return text ? { ...task, ...text } : task;
+}
+
 /**
  * Filter the starter-risk catalog to the rules applicable for the chosen
  * frameworks and inferred asset types. A risk with no frameworks/assetTypes
@@ -136,6 +166,11 @@ export interface StepActionResult {
     details: string;
     /** FRAMEWORK_INSTALL only: every pack that failed to install. */
     failures?: FrameworkInstallFailure[];
+    /**
+     * True when the step's automation threw (#4701). The step stays
+     * completed; the wizard names it, and continuing from it again retries.
+     */
+    failed?: boolean;
 }
 
 /**
@@ -147,6 +182,8 @@ export async function runStepAction(
     step: string,
     stepData: StepData,
     allData: StepData,
+    // The language the starter risks and tasks are written in (#4701).
+    locale: Locale = DEFAULT_LOCALE,
 ): Promise<StepActionResult | null> {
     switch (step) {
         case 'FRAMEWORK_SELECTION':
@@ -156,9 +193,9 @@ export async function runStepAction(
         case 'CONTROL_BASELINE_INSTALL':
             return executeControlInstall(ctx, allData);
         case 'INITIAL_RISK_REGISTER':
-            return executeRiskGeneration(ctx, allData);
+            return executeRiskGeneration(ctx, allData, locale);
         case 'TEAM_SETUP':
-            return executeTeamSetup(ctx, allData);
+            return executeTeamSetup(ctx, allData, locale);
         default:
             return null; // COMPANY_PROFILE and REVIEW_AND_FINISH have no automation
     }
@@ -194,11 +231,17 @@ export async function assertFrameworkPackChoices(ctx: RequestContext, frameworkS
         if (packs.length <= 1) continue;
         const chosen = chosenPacksFor(frameworkStep, fw);
         if (chosen.length === 0) {
-            throw badRequest(`Choose at least one pack of ${fw} to continue.`);
+            throw badRequest(`Choose at least one pack of ${fw} to continue.`, {
+                reason: 'ONBOARDING_NO_PACK' satisfies OnboardingRefusal,
+                framework: fw,
+            });
         }
         const unknown = chosen.filter((k) => !packs.includes(k));
         if (unknown.length > 0) {
-            throw badRequest(`Not a pack of ${fw}: ${unknown.join(', ')}`);
+            throw badRequest(`Not a pack of ${fw}: ${unknown.join(', ')}`, {
+                reason: 'ONBOARDING_UNKNOWN_PACK' satisfies OnboardingRefusal,
+                framework: fw,
+            });
         }
     }
 }
@@ -346,7 +389,7 @@ async function executeControlInstall(ctx: RequestContext, allData: StepData): Pr
 
 // ─── Risk Register Generation (deterministic) ───
 
-async function executeRiskGeneration(ctx: RequestContext, allData: StepData): Promise<StepActionResult> {
+async function executeRiskGeneration(ctx: RequestContext, allData: StepData, locale: Locale): Promise<StepActionResult> {
     const generate = allData['INITIAL_RISK_REGISTER']?.generate;
     if (generate === false) {
         return { action: 'RISK_GENERATION', created: 0, skipped: 0, details: 'User opted out of risk generation' };
@@ -371,10 +414,12 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData): Pr
         const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
         const maxScale = tenant?.maxRiskScale || 5;
 
-        for (const risk of applicableRisks) {
-            // Idempotent: check existing by title
+        for (const catalogueRisk of applicableRisks) {
+            const risk = localizedStarterRisk(catalogueRisk, locale);
+            // Idempotent: check existing by title, in either language, so a
+            // re-run in another language does not add the same risk again.
             const existing = await db.risk.findFirst({
-                where: { tenantId: ctx.tenantId, title: risk.title },
+                where: { tenantId: ctx.tenantId, title: { in: [...new Set([catalogueRisk.title, risk.title])] } },
             });
             if (existing) {
                 skipped++;
@@ -425,23 +470,16 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData): Pr
 
 // ─── Team Setup / Starter Tasks ───
 
-async function executeTeamSetup(ctx: RequestContext, allData: StepData): Promise<StepActionResult> {
+async function executeTeamSetup(ctx: RequestContext, allData: StepData, locale: Locale): Promise<StepActionResult> {
     let created = 0;
     let skipped = 0;
 
-    const starterTasks = [
-        { title: 'Review and assign control owners', description: 'Go through the control register and assign owners to each control. This ensures accountability.', type: 'TASK' },
-        { title: 'Schedule evidence collection cadence', description: 'Set up recurring evidence collection for key controls. Quarterly or monthly depending on control frequency.', type: 'TASK' },
-        { title: 'Complete risk assessment review', description: 'Review the generated risk register and validate risk ratings. Adjust likelihood and impact as needed.', type: 'TASK' },
-        { title: 'Define incident response procedure', description: 'Document your incident response plan including detection, containment, eradication, and recovery steps.', type: 'TASK' },
-        { title: 'Set up vendor due diligence process', description: 'Establish the process for evaluating and monitoring third-party vendors for compliance.', type: 'TASK' },
-    ];
-
     await runInTenantContext(ctx, async (db) => {
-        for (const task of starterTasks) {
-            // Idempotent: check if task with this exact title already exists
+        for (const catalogueTask of STARTER_TASKS) {
+            const task = localizedStarterTask(catalogueTask, locale);
+            // Idempotent: check for a task with this title, in either language.
             const existing = await db.task.findFirst({
-                where: { tenantId: ctx.tenantId, title: task.title },
+                where: { tenantId: ctx.tenantId, title: { in: [...new Set([catalogueTask.title, task.title])] } },
             });
             if (existing) {
                 skipped++;
@@ -453,7 +491,7 @@ async function executeTeamSetup(ctx: RequestContext, allData: StepData): Promise
                     tenantId: ctx.tenantId,
                     title: task.title,
                     description: task.description,
-                    type: task.type as TaskType,
+                    type: task.type,
                     status: 'OPEN',
                     createdByUserId: ctx.userId,
                     assigneeUserId: ctx.userId,

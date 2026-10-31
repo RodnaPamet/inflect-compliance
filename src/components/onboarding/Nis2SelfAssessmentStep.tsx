@@ -26,6 +26,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
+import { ProgressBar } from '@/components/ui/progress-bar';
 import { Loader2 } from 'lucide-react';
 
 // Required CC BY 4.0 attribution — MUST render wherever the questions show.
@@ -61,20 +62,10 @@ type AssessmentState = {
     progress: { answered: number; total: number };
 };
 
-const ANSWER_OPTIONS: { value: AnswerVal; label: string }[] = [
-    { value: 'NA', label: 'Not applicable' },
-    { value: 'NO', label: 'No' },
-    { value: 'PARTIALLY', label: 'Partially' },
-    { value: 'YES', label: 'Yes' },
-];
-
-const RESPONDENT_LABEL: Record<string, string> = {
-    CEO: 'CEO / Management',
-    IT: 'IT',
-    HR: 'HR',
-    PROCUREMENT: 'Procurement',
-    ANYONE: 'Anyone',
-};
+// The step's own words are `onboarding.nis2Step.*` (#4701). The questions
+// and domain names are the source's (English and German only, CC BY 4.0) and
+// are shown as published.
+const ANSWER_OPTIONS: readonly AnswerVal[] = ['NA', 'NO', 'PARTIALLY', 'YES'];
 
 function criticalityVariant(c: string): 'error' | 'warning' | 'info' | 'neutral' {
     if (c === 'CRITICAL') return 'error';
@@ -93,6 +84,9 @@ export function Nis2SelfAssessmentStep({
     onSkip?: () => void;
 }) {
     const t = useTranslations('common.ui');
+    const tn = useTranslations('onboarding.nis2Step');
+    const label = (group: 'answer' | 'respondent' | 'criticality', value: string) =>
+        tn.has(`${group}.${value}`) ? tn(`${group}.${value}`) : value;
     const locale = useLocale();
     const lang = locale === 'de' ? 'de' : 'en';
     const [state, setState] = useState<AssessmentState | null>(null);
@@ -109,18 +103,18 @@ export function Nis2SelfAssessmentStep({
         setLoading(true);
         try {
             const res = await fetch(base);
-            if (!res.ok) throw new Error('Failed to load the NIS2 assessment.');
+            if (!res.ok) throw new Error('load refused');
             const data: AssessmentState = await res.json();
             setState(data);
             const map: Record<string, Answer> = {};
             for (const a of data.answers) map[a.questionId] = a;
             setAnswers(map);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to load the NIS2 assessment.');
+        } catch {
+            setError(tn('loadFailed'));
         } finally {
             setLoading(false);
         }
-    }, [base]);
+    }, [base, tn]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -137,28 +131,28 @@ export function Nis2SelfAssessmentStep({
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ answer, note }),
                 });
-                if (!res.ok) throw new Error('Failed to save answer.');
-            } catch (e) {
-                setError(e instanceof Error ? e.message : 'Failed to save answer.');
+                if (!res.ok) throw new Error('save refused');
+            } catch {
+                setError(tn('saveFailed'));
             } finally {
                 setSavingId(null);
             }
         },
-        [base],
+        [base, tn],
     );
 
     const handleComplete = useCallback(async () => {
         setCompleting(true);
         try {
             const res = await fetch(`${base}/complete`, { method: 'POST' });
-            if (!res.ok) throw new Error('Failed to complete the assessment.');
+            if (!res.ok) throw new Error('complete refused');
             onCompleted?.();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to complete the assessment.');
+        } catch {
+            setError(tn('completeFailed'));
         } finally {
             setCompleting(false);
         }
-    }, [base, onCompleted]);
+    }, [base, onCompleted, tn]);
 
     const questionsByDomain = useMemo(() => {
         const m = new Map<number, Question[]>();
@@ -173,7 +167,7 @@ export function Nis2SelfAssessmentStep({
     if (loading) {
         return (
             <div className="flex items-center gap-tight text-content-muted text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading the NIS2 self-assessment…
+                <Loader2 className="w-4 h-4 animate-spin" /> {tn('loading')}
             </div>
         );
     }
@@ -185,26 +179,21 @@ export function Nis2SelfAssessmentStep({
 
     const answeredCount = Object.keys(answers).length;
     const total = state.questions.length;
-    const overallPct = total ? Math.round((answeredCount / total) * 100) : 0;
 
     return (
         <div className="space-y-section" data-testid="nis2-self-assessment">
             <div className="space-y-tight">
-                <p className="text-sm text-content-muted">
-                    You selected NIS2. Answer these gap-assessment questions to find
-                    your compliance gaps. Your answers save automatically — you can
-                    leave and return any time.
-                </p>
+                <p className="text-sm text-content-muted">{tn('intro')}</p>
                 {/* Overall progress */}
                 <div className="flex items-center gap-tight">
-                    <div className="flex-1 bg-bg-default rounded-full h-2 overflow-hidden">
-                        <div
-                            className="h-full bg-[var(--brand-default)] rounded-full transition-all duration-500"
-                            style={{ width: `${overallPct}%` }}
-                        />
-                    </div>
+                    <ProgressBar
+                        className="flex-1"
+                        value={answeredCount}
+                        max={total || 1}
+                        aria-label={tn('progressAria')}
+                    />
                     <span className="text-xs text-content-muted font-medium">
-                        {answeredCount}/{total} answered
+                        {tn('answeredCount', { answered: answeredCount, total })}
                     </span>
                 </div>
             </div>
@@ -260,7 +249,7 @@ export function Nis2SelfAssessmentStep({
                                                         variant={criticalityVariant(q.criticality)}
                                                         size="sm"
                                                     >
-                                                        {q.criticality}
+                                                        {label('criticality', q.criticality)}
                                                     </StatusBadge>
                                                 </div>
                                                 <div className="flex items-center gap-tight flex-wrap text-xs text-content-muted">
@@ -268,11 +257,11 @@ export function Nis2SelfAssessmentStep({
                                                         {q.legalBasis}
                                                     </span>
                                                     <span className="rounded bg-bg-subtle px-1.5 py-0.5">
-                                                        Best answered by: {RESPONDENT_LABEL[q.respondent] ?? q.respondent}
+                                                        {tn('bestAnsweredBy', { respondent: label('respondent', q.respondent) })}
                                                     </span>
                                                     {dimmed && (
                                                         <span className="italic">
-                                                            depends on {q.dependsOn.join(', ')}
+                                                            {tn('dependsOn', { questions: q.dependsOn.join(', ') })}
                                                         </span>
                                                     )}
                                                 </div>
@@ -283,17 +272,19 @@ export function Nis2SelfAssessmentStep({
                                                         saveAnswer(q.id, v as AnswerVal, answers[q.id]?.note ?? null)
                                                     }
                                                 >
-                                                    {ANSWER_OPTIONS.map((opt) => (
+                                                    {ANSWER_OPTIONS.map((value) => (
                                                         <label
-                                                            key={opt.value}
+                                                            key={value}
                                                             className="flex items-center gap-tight text-sm cursor-pointer"
                                                         >
-                                                            <RadioGroupItem value={opt.value} />
-                                                            {opt.label}
+                                                            <RadioGroupItem value={value} />
+                                                            {label('answer', value)}
                                                         </label>
                                                     ))}
                                                 </RadioGroup>
                                                 <NoteField
+                                                    addLabel={tn('addNote')}
+                                                    placeholder={tn('notePlaceholder')}
                                                     initial={answers[q.id]?.note ?? ''}
                                                     saving={savingId === q.id}
                                                     onSave={(note) =>
@@ -319,24 +310,22 @@ export function Nis2SelfAssessmentStep({
             <div className="flex items-center justify-between gap-compact border-t border-border-subtle pt-4">
                 {confirmSkip ? (
                     <div className="flex items-center gap-tight text-sm">
-                        <span className="text-content-muted">
-                            You can complete this later from the NIS2 dashboard.
-                        </span>
+                        <span className="text-content-muted">{tn('skipLater')}</span>
                         <Button variant="ghost" size="sm" onClick={() => setConfirmSkip(false)}>
-                            Keep going
+                            {tn('keepGoing')}
                         </Button>
                         <Button variant="secondary" size="sm" onClick={() => onSkip?.()}>
-                            Skip for now
+                            {tn('skipForNow')}
                         </Button>
                     </div>
                 ) : (
                     <Button variant="ghost" size="sm" onClick={() => setConfirmSkip(true)}>
-                        Skip for now
+                        {tn('skipForNow')}
                     </Button>
                 )}
                 <Button variant="primary" onClick={handleComplete} disabled={completing}>
                     {completing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                    Complete assessment
+                    {tn('complete')}
                 </Button>
             </div>
 
@@ -347,7 +336,7 @@ export function Nis2SelfAssessmentStep({
                 href={`/t/${tenantSlug}/audits/nis2-gap`}
                 className="inline-block text-sm text-brand-default underline hover:text-content-emphasis"
             >
-                View your NIS2 Gap Assessment →
+                {tn('viewGapAssessment')}
             </a>
 
             {/* CC BY 4.0 attribution — required wherever the questions render */}
@@ -359,7 +348,7 @@ export function Nis2SelfAssessmentStep({
                     rel="noopener noreferrer"
                     className="underline hover:text-content-muted"
                 >
-                    source
+                    {tn('source')}
                 </a>
             </p>
         </div>
@@ -368,11 +357,15 @@ export function Nis2SelfAssessmentStep({
 
 /** Collapsed-by-default optional note for one answer; saves on blur. */
 function NoteField({
+    addLabel,
+    placeholder,
     initial,
     saving,
     onSave,
     disabled,
 }: {
+    addLabel: string;
+    placeholder: string;
     initial: string;
     saving: boolean;
     onSave: (note: string) => void;
@@ -388,7 +381,7 @@ function NoteField({
                 onClick={() => setOpen(true)}
                 className="text-xs text-content-muted underline hover:text-content-default"
             >
-                Add a note
+                {addLabel}
             </button>
         );
     }
@@ -396,7 +389,7 @@ function NoteField({
         <textarea
             className="w-full rounded-md border border-border-subtle bg-bg-default p-2 text-sm"
             rows={2}
-            placeholder="Optional note (saved automatically)…"
+            placeholder={placeholder}
             value={val}
             disabled={saving}
             onChange={(e) => setVal(e.target.value)}

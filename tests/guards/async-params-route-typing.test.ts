@@ -38,6 +38,8 @@ function routeFiles(dir: string): string[] {
  * `params:` immediately followed by an object-type open-brace -- that
  * is the regression.
  */
+const REPO_ROOT = path.resolve(__dirname, '../..');
+
 const SYNC_PARAMS = /\bparams\s*:\s*\{/;
 
 function syncParamHits(src: string): number[] {
@@ -50,6 +52,71 @@ function syncParamHits(src: string): number[] {
     }
     return hits;
 }
+
+/**
+ * The WRAPPER TYPES a route's params too, and this guard could not see it.
+ *
+ * `SYNC_PARAMS` above flags `params:` followed by an object-type brace and
+ * deliberately allows `params:` followed by an IDENTIFIER, so a destructure
+ * passes. `src/lib/security/permission-middleware.ts` declared
+ *
+ *     routeArgs: { params: TParams },
+ *
+ * which is `params:` + an identifier — so it read as migrated while the generic
+ * was instantiated SYNCHRONOUSLY, on all 368 routes that go through
+ * `requirePermission`. The file's own docblock said the opposite one function
+ * below ("the route export receives `params` as a Promise"), so the comment and
+ * the type disagreed and nothing adjudicated.
+ *
+ * Nothing else covers it either. The only check that DOES see it is `tsc` over
+ * `.next/types/validator.ts`, where Next asserts each route module against
+ * `RouteHandlerConfig` — and CI never runs that combination: the `Typecheck`
+ * job has no build step, so the generated file does not exist there, and
+ * `next build` passed with the bug. It surfaced only from a local build.
+ *
+ * So this block checks the TYPES THE WRAPPERS DECLARE, by name. It is a source
+ * scan rather than a build, because the point is to catch it in `Ratchets`
+ * without adding ~20 minutes to a required check.
+ */
+const PARAM_TYPING_WRAPPERS: ReadonlyArray<{ readonly file: string; readonly type: string }> = [
+    { file: 'src/lib/security/permission-middleware.ts', type: 'RouteHandler' },
+];
+
+describe('the wrappers that type a route\'s params accept a Promise', () => {
+    it('names a real population (an empty list passes everything below)', () => {
+        expect(PARAM_TYPING_WRAPPERS.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it.each(PARAM_TYPING_WRAPPERS)(
+        '$file: $type accepts a Promise for params',
+        ({ file, type }) => {
+            const src = fs.readFileSync(path.resolve(REPO_ROOT, file), 'utf8');
+            const decl = src.slice(src.indexOf(`export type ${type}<`));
+            expect(decl).not.toBe('');
+
+            // The declaration up to its closing `=> ` — the parameter list.
+            const params = decl.slice(0, decl.indexOf('=>'));
+            // `params:` must reach a Promise. Sync-only is the regression, and
+            // `params: TParams` is exactly how it hid: an identifier, so the
+            // route-file regex above cannot judge it.
+            expect(params).toMatch(/params\s*:[^,;]*Promise</);
+        },
+    );
+
+    it('the detector would SEE the shape that shipped', () => {
+        // The positive control, and it is not optional here: the assertion
+        // above is a `toMatch` over a slice, which passes on any string that
+        // happens to contain `Promise<`. This pins that the SYNC form fails.
+        const sync = 'export type RouteHandler<T> = (\n    req: NextRequest,\n'
+            + '    routeArgs: { params: T },\n) => Promise<Response>;';
+        const params = sync.slice(0, sync.indexOf('=>'));
+        expect(params).not.toMatch(/params\s*:[^,;]*Promise</);
+
+        const fixed = sync.replace('params: T }', 'params: T | Promise<T> }');
+        const fixedParams = fixed.slice(0, fixed.indexOf('=>'));
+        expect(fixedParams).toMatch(/params\s*:[^,;]*Promise</);
+    });
+});
 
 describe('async-params route typing', () => {
     const files = routeFiles(API_DIR);

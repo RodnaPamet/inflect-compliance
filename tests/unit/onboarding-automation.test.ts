@@ -600,3 +600,45 @@ describe('storeActionResult', () => {
         expect(payload.TEAM_SETUP.action).toBe('T');
     });
 });
+
+describe('starter content in the user’s language (#4701)', () => {
+    it('writes the starter risks in Bulgarian, keeping a canonical category as stored', async () => {
+        const db = mockDbHolder.db;
+        await runStepAction(ctx, 'INITIAL_RISK_REGISTER', {}, {
+            FRAMEWORK_SELECTION: { selectedFrameworks: ['iso27001'] },
+            ASSET_SETUP: { assets: ['Customer Portal'] },
+        }, 'bg');
+        const created = db.risk.create.mock.calls.map((c: any) => c[0].data);
+        const app = created.find((d: any) => d.title === 'Неоторизиран достъп до приложението');
+        expect(app).toMatchObject({ category: 'Контрол на достъпа', threat: 'Достъп от неоторизиран потребител' });
+        // 'Compliance' is a canonical category the risk pages label on display.
+        const compliance = created.find((d: any) => d.title === 'Несъответствие с регулаторните изисквания');
+        expect(compliance.category).toBe('Compliance');
+        expect(created.some((d: any) => d.title === 'Unauthorized Access to Application')).toBe(false);
+    });
+
+    it('treats a risk already made in the other language as existing', async () => {
+        const db = mockDbHolder.db;
+        await runStepAction(ctx, 'INITIAL_RISK_REGISTER', {}, {
+            FRAMEWORK_SELECTION: { selectedFrameworks: ['iso27001'] },
+            ASSET_SETUP: { assets: ['Customer Portal'] },
+        }, 'bg');
+        const where = db.risk.findFirst.mock.calls[0][0].where;
+        expect(where.title.in).toEqual(expect.arrayContaining(['Unauthorized Access to Application', 'Неоторизиран достъп до приложението']));
+    });
+
+    it('writes the starter tasks in Bulgarian', async () => {
+        const db = mockDbHolder.db;
+        await runStepAction(ctx, 'TEAM_SETUP', {}, {}, 'bg');
+        const titles = db.task.create.mock.calls.map((c: any) => c[0].data.title);
+        expect(titles).toContain('Прегледайте и назначете собственици на контролите');
+        expect(titles).not.toContain('Review and assign control owners');
+    });
+
+    it('keeps English for an English user', async () => {
+        const db = mockDbHolder.db;
+        await runStepAction(ctx, 'TEAM_SETUP', {}, {}, 'en');
+        expect(db.task.create.mock.calls.map((c: any) => c[0].data.title)).toContain('Review and assign control owners');
+        expect(db.task.findFirst.mock.calls[0][0].where.title).toEqual({ in: ['Review and assign control owners'] });
+    });
+});

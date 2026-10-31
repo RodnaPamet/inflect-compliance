@@ -67,6 +67,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { repoRelativeFiles } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -100,7 +101,7 @@ const DESTRUCTIVE_SEGMENTS = new Set([
 const ROUTE_GATE = /require(?:Any|All)?Permissions?\s*[(<]|requireOrgPermission\s*[(<]/;
 
 const stripComments = (s: string): string =>
-    s.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    codeOf(s);
 
 /**
  * Every route that still authorizes only in its usecase, so its refusals are

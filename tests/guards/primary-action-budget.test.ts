@@ -115,8 +115,10 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // Cross-entity link/unlink panel — multiple pairwise actions
     "src/components/TraceabilityPanel.tsx": 6,
 
-    // Multi-step wizard — each step has its own region/submit
-    "src/components/onboarding/OnboardingWizard.tsx": 6,
+    // Multi-step wizard — each state has its own region/submit.
+    // 6 -> 4 (#4701): the asset and team steps' Add buttons, which add a line
+    // to a list on screen with the step's Continue, are secondary.
+    "src/components/onboarding/OnboardingWizard.tsx": 4,
 
     // Org-level list with multiple modal CTAs (invite/edit/remove)
     "src/app/org/[orgSlug]/(app)/members/MembersTable.tsx": 5,

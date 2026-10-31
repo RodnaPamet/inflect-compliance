@@ -19,6 +19,7 @@
  */
 import { repoFiles, repoRelative } from '../helpers/repo-files';
 import { readFileSync } from 'fs';
+import { codeOf } from '../helpers/source-blocks';
 
 /** The one file allowed to create a proposal, and the guard it must call. */
 const SEAM = 'src/app-layer/usecases/agent-proposals.ts';
@@ -29,10 +30,9 @@ const CREATE_CALL = /\bagentProposal\s*\.\s*(create|createMany|upsert)\s*\(/g;
 
 /** Comments carry these words while documenting the rule; source must not. */
 function codeOnly(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
+    return codeOf(src)
         .split('\n')
-        .map((l) => l.replace(/\/\/.*$/, ''))
+        .map((l) => codeOf(l))
         .join('\n');
 }
 

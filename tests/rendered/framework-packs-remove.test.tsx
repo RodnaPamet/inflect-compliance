@@ -89,11 +89,16 @@ const CHOSEN: string = en.frameworks.detail.packChosen;
 
 type Pack = { id: string; key: string; name: string; chosen: boolean };
 let serverPacks: Pack[] = [];
+// Reads that answer 500 (#4694), by the query they carry.
+let failingReads: string[] = [];
 const fetchMock = jest.fn();
 
 function installFetch() {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (failingReads.some((r) => url.includes(r))) {
+            return { ok: false, status: 500, json: async () => ({ error: { code: 'INTERNAL', message: 'boom' } }) } as unknown as Response;
+        }
         let body: unknown;
         if (init?.method === 'POST' && url.includes('action=remove-pack')) {
             const { packKey } = JSON.parse(String(init.body)) as { packKey: string };
@@ -148,6 +153,7 @@ beforeEach(() => {
     customCalls.length = 0;
     __resetPendingUndoToastsForTest();
     canInstall = true;
+    failingReads = [];
     serverPacks = [
         { id: 'p1', key: 'EU_UAS_OPEN_A1', name: 'A1', chosen: false },
         { id: 'p2', key: 'EU_UAS_OPEN_A2', name: 'A2', chosen: true },
@@ -224,5 +230,38 @@ describe('Packs tab — removing a chosen pack (#4372)', () => {
         expect(screen.getAllByText(CHOSEN)).toHaveLength(2);
         expect(byId('remove-pack-EU_UAS_OPEN_A2')).toBeNull();
         expect(byId('remove-pack-EU_UAS_OPEN_A3')).toBeNull();
+    });
+});
+
+describe('framework page — a failed read says so (#4694)', () => {
+    it('names the kind in words in the header', async () => {
+        await renderPacksTab();
+        expect(screen.getByText(en.frameworks.kinds.regulation)).toBeInTheDocument();
+        expect(screen.queryByText('REGULATION')).toBeNull();
+    });
+
+    it('a failed packs read is an error with a retry, not "no packs"', async () => {
+        failingReads = ['action=packs'];
+        await renderPacksTab();
+        expect(await screen.findByText(en.frameworks.detail.packsLoadFailed)).toBeInTheDocument();
+        expect(screen.queryByText(en.frameworks.detail.packsEmpty)).toBeNull();
+        expect(byId('framework-packs-load-failed-retry')).not.toBeNull();
+    });
+
+    it('a failed coverage read is an error on the Coverage tab, not a blank tab', async () => {
+        failingReads = ['action=coverage'];
+        await renderPacksTab();
+        const tab = await screen.findByRole('tab', { name: /Coverage/ });
+        await act(async () => { fireEvent.click(tab); });
+        expect(await screen.findByText(en.frameworks.detail.coverageLoadFailed)).toBeInTheDocument();
+    });
+
+    it('a failed requirements read is an error, not "Loading tree…" for good', async () => {
+        failingReads = ['/tree'];
+        await renderPacksTab();
+        const tab = await screen.findByRole('tab', { name: /Requirements/ });
+        await act(async () => { fireEvent.click(tab); });
+        expect(await screen.findByText(en.frameworks.detail.treeLoadFailed)).toBeInTheDocument();
+        expect(screen.queryByText(en.frameworks.detail.loadingTree)).toBeNull();
     });
 });

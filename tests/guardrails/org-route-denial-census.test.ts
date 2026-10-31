@@ -33,6 +33,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { repoRelativeFiles, REPO_ROOT } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 /**
  * The gate whose denials are audited on the org surface.
@@ -47,7 +48,7 @@ import { repoRelativeFiles, REPO_ROOT } from '../helpers/repo-files';
 const ORG_ROUTE_GATE = /requireOrgPermission\s*[(<]/;
 
 const stripComments = (s: string): string =>
-    s.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    codeOf(s);
 
 /**
  * Mutations that legitimately have no org permission gate.

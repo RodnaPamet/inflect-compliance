@@ -30,6 +30,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const SRC = path.join(process.cwd(), 'src');
 
@@ -44,7 +45,7 @@ function walk(dir: string): string[] {
 }
 
 const stripComments = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 /**
  * Known OAuth2 token endpoints. Matched against comment-stripped source, so a

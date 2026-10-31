@@ -89,7 +89,6 @@ async function renderSignedInInvitee() {
     });
     const ui = await InvitePage({
         params: Promise.resolve({ token: 'tok-abc' }),
-        searchParams: Promise.resolve({}),
     });
     render(ui);
     return screen.getByRole('button', { name: 'Accept invitation' });
@@ -131,18 +130,54 @@ describe('/invite/[token] — accepting as the signed-in invitee', () => {
         expect(fetchMock.mock.invocationCallOrder[1]).toBeLessThan(pushMock.mock.invocationCallOrder[0]);
     });
 
-    it('on a refusal, stays on the page with the server reason and does not navigate', async () => {
-        const reason =
+    it('on a named refusal, stays on the page with the translated reason and does not navigate (#4689)', async () => {
+        const english =
             'Invite email does not match signed-in user. Ask your admin to send a new invite to your email address.';
-        stubFetch({ status: 403, body: { error: { code: 'FORBIDDEN', message: reason } } });
+        stubFetch({
+            status: 403,
+            body: { error: { code: 'FORBIDDEN', message: english, details: { reason: 'INVITE_EMAIL_MISMATCH' } } },
+        });
         const accept = await renderSignedInInvitee();
 
         fireEvent.click(accept);
 
-        expect(await screen.findByRole('alert')).toHaveTextContent(reason);
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent(
+            'This invitation was sent to a different email address from the account you signed in with',
+        );
+        // The page's own sentence, not the server's English.
+        expect(alert).not.toHaveTextContent(english);
         expect(pushMock).not.toHaveBeenCalled();
         expect(calls().map((c) => c.url)).toEqual(['/api/invites/tok-abc']);
         // The control is usable again, so the user can retry or switch account.
         expect(screen.getByRole('button', { name: 'Accept invitation' })).not.toBeDisabled();
+    });
+    it('falls back to the server message for a refusal that names no reason', async () => {
+        stubFetch({ status: 429, body: { error: { code: 'RATE_LIMITED', message: 'Too many requests' } } });
+        const accept = await renderSignedInInvitee();
+
+        fireEvent.click(accept);
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Too many requests');
+    });
+
+    it('renders nothing from the query string (#4689)', async () => {
+        authMock.mockResolvedValue({ user: { id: 'u-1', email: 'invitee@example.com' } });
+        previewMock.mockResolvedValue({
+            tenantName: 'Acme',
+            tenantSlug: 'acme',
+            role: 'EDITOR',
+            expiresAt: new Date('2026-11-01T00:00:00Z'),
+            matchesSession: true,
+        });
+        // A link once could put any sentence here, beside the workspace's name.
+        const ui = await (InvitePage as unknown as (p: unknown) => ReturnType<typeof InvitePage>)({
+            params: Promise.resolve({ token: 'tok-abc' }),
+            searchParams: Promise.resolve({ error: 'Your account is locked. Call +1 555 0100.' }),
+        });
+        render(ui);
+
+        expect(screen.queryByText(/Call \+1 555 0100/)).not.toBeInTheDocument();
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 });

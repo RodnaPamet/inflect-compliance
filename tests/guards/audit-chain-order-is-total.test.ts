@@ -35,6 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { REPO_ROOT } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 const FILES = [
     'src/lib/audit/audit-writer.ts',
@@ -52,9 +53,7 @@ const FILES = [
  */
 function orderBys(rel: string): string[] {
     const raw = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
-    const code = raw
-        .replace(/\/\*[\s\S]*?\*\//g, '')   // block comments and docblocks
-        .replace(/^\s*\/\/[^\n]*$/gm, '')     // whole-line // comments
+    const code = codeOf(raw)     // whole-line // comments
         .replace(/^\s*--[^\n]*$/gm, '');      // whole-line SQL comments
     return [...code.matchAll(/ORDER BY ([^`\n]+)/gi)].map((m) => m[1].trim().replace(/\s+/g, ' '));
 }

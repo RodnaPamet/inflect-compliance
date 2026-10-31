@@ -203,10 +203,11 @@ describe('enforceFeatureGate shares the predicate', () => {
 */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../../helpers/source-blocks';
 
 /** Strip comments so a mention in prose is not read as a call. */
 function codeOnly(source: string): string {
-    return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    return codeOf(source);
 }
 
 /**

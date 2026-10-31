@@ -121,6 +121,31 @@ describe('ControlExceptionsPanel', () => {
         await screen.findByTestId('control-exception-row-cex_b');
     });
 
+    it('names each status, and a renewal by its predecessor rather than an id slice (#4691)', async () => {
+        installFetch([
+            makeExceptionRow({ id: 'cex_old_0123456789', status: 'EXPIRED' }),
+            makeExceptionRow({ id: 'cex_new', status: 'REJECTED', renewedFromId: 'cex_old_0123456789' }),
+        ]);
+        render(
+            withClient(
+                <ControlExceptionsPanel
+                    tenantSlug="acme"
+                    controlId="c1"
+                    compensatingControlChoices={compensatingChoices}
+                    defaultRiskAcceptedByUserId="u_admin"
+                    canWrite
+                    canAdmin
+                />,
+            ),
+        );
+        const renewal = await screen.findByTestId('control-exception-row-cex_new');
+        // The test translator returns keys: a label key, never the raw code.
+        expect(renewal).toHaveTextContent('status.REJECTED');
+        expect(renewal).toHaveTextContent('renewedFrom');
+        expect(renewal).not.toHaveTextContent('cex_old_');
+        expect(screen.getByTestId('control-exception-row-cex_old_0123456789')).toHaveTextContent('status.EXPIRED');
+    });
+
     it('header badge surfaces an in-force exception as "Excepted until <date>"', async () => {
         installFetch([
             makeExceptionRow({

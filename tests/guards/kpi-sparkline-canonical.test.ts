@@ -10,6 +10,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -78,9 +79,7 @@ describe('Canonical KPI sparklines — shared pipeline adoption', () => {
  * pass without having migrated anything.
  */
 const codeOnly = (src: string): string =>
-    src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/.*$/gm, '');
+    codeOf(src);
 
 describe('Policies KPI cards read the SERVER count, not the loaded array', () => {
     const src = codeOnly(read(CLIENTS.Policies));

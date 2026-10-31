@@ -40,6 +40,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createServer, type Server } from 'node:http';
 import { Agent, fetch as undiciFetch } from 'undici';
+import { codeOf } from '../helpers/source-blocks';
 
 /**
  * Agents created by `pinnedAgent`, closed in `afterAll`.
@@ -141,12 +142,8 @@ describe('a pinned undici dispatcher can actually carry a request', () => {
  */
 describe('the egress call does not cross the undici version boundary', () => {
     it('calls undici fetch, never the global one', () => {
-        const src = fs
-            .readFileSync(path.join(process.cwd(), 'src/app-layer/automation/webhook-safety.ts'), 'utf8')
-            // Comments MUST be stripped: this module's own prose discusses the
-            // global `fetch(` at length, and would satisfy the check by itself.
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/^\s*\/\/.*$/gm, '');
+        const src = codeOf(fs
+            .readFileSync(path.join(process.cwd(), 'src/app-layer/automation/webhook-safety.ts'), 'utf8'));
 
         expect(src).toMatch(/from 'undici'/);
         expect(src).toMatch(/undiciFetch\(/);

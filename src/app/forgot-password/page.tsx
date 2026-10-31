@@ -14,20 +14,32 @@ export default function ForgotPasswordPage() {
     const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [submitted, setSubmitted] = useState(false);
+    const [rateLimited, setRateLimited] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setLoading(true);
+        setRateLimited(false);
         try {
-            await fetch('/api/auth/forgot-password', {
+            const res = await fetch('/api/auth/forgot-password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email }),
             });
+            // The one outcome the page does tell apart (#4687): the limit is
+            // keyed on the network address, not the account, so saying it
+            // reveals nothing about any account. Claiming "sent" left the
+            // person waiting for an email that was never going to arrive.
+            if (res.status === 429) {
+                setRateLimited(true);
+                setLoading(false);
+                return;
+            }
         } catch {
             // Uniform response is the whole point — we never branch on
-            // outcome. Network errors get the same "submitted" state so
-            // the UI never leaks whether the email is registered.
+            // whether an account exists. Network errors get the same
+            // "submitted" state so the UI never leaks whether the email is
+            // registered.
         }
         setSubmitted(true);
         setLoading(false);
@@ -75,6 +87,11 @@ export default function ForgotPasswordPage() {
                             <p className="text-content-muted text-sm mb-4">
                                 {t('resetIntro')}
                             </p>
+                            {rateLimited && (
+                                <InlineNotice variant="error" className="mb-4" icon={null}>
+                                    {t('tooManyRequests')}
+                                </InlineNotice>
+                            )}
                             <form onSubmit={handleSubmit} className="space-y-default">
                                 <FormField label={t('emailLabel')} required>
                                     <Input

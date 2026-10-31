@@ -15,17 +15,22 @@ import { getTranslations } from 'next-intl/server';
 import { previewInviteByToken } from '@/app-layer/usecases/tenant-invites';
 import { formatDateLong } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
-import { InlineNotice } from '@/components/ui/inline-notice';
+import { buttonVariants } from '@/components/ui/button-variants';
+import { AppIcon } from '@/components/icons/AppIcon';
 import { InviteAcceptButton } from './InviteAcceptButton';
 
 interface InvitePageProps {
     params: Promise<{ token: string }>;
-    searchParams: Promise<{ error?: string }>;
 }
 
-export default async function InvitePage({ params, searchParams }: InvitePageProps) {
+// The page renders nothing from the query string (#4689). It used to print
+// `?error=` verbatim, so any link to a live invite could put a sentence of
+// the link-maker's choosing beside the workspace's name; the only writer of
+// that parameter was a GET route that redeemed the invite on a plain visit,
+// and it is gone. A refusal is now shown by the Accept button, from the
+// redemption's named reason, and by /invite/result after sign-in.
+export default async function InvitePage({ params }: InvitePageProps) {
     const { token } = await params;
-    const { error: errorParam } = await searchParams;
     const session = await auth();
     const sessionEmail = session?.user?.email ?? null;
 
@@ -38,7 +43,7 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
         return (
             <main className="min-h-screen bg-bg-default flex items-center justify-center p-4">
                 <div className="max-w-md w-full bg-bg-default rounded-lg border border-border-subtle p-8 text-center">
-                    <div className="text-4xl mb-4">&#x26A0;&#xFE0F;</div>
+                    <AppIcon name="warning" size={40} className="mx-auto mb-4 text-content-warning" aria-hidden="true" />
                     <Heading level={1} className="mb-2">
                         {t('notAvailableTitle')}
                     </Heading>
@@ -62,7 +67,8 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
     const isReady = session && preview.matchesSession;
 
     // start-signin sets the inflect_invite_token cookie then redirects to /login.
-    // After OAuth the signIn callback reads the cookie and calls redeemInvite.
+    // After sign-in the signIn callback reads the cookie and calls redeemInvite,
+    // and the person lands on /invite/result, which says what became of it.
     const loginUrl = `/api/invites/${token}/start-signin`;
 
     return (
@@ -86,22 +92,13 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
                     {t('expires', { date: expiryLabel })}
                 </p>
 
-                {errorParam && (
-                    <InlineNotice
-                        variant="error"
-                        icon={null}
-                        className="mb-4 text-center"
-                    >
-                        {errorParam}
-                    </InlineNotice>
-                )}
-
                 {isReady ? (
                     <InviteAcceptButton token={token} />
                 ) : (
                     <a
                         href={loginUrl}
-                        className="block w-full text-center rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+                        id="invite-sign-in-link"
+                        className={buttonVariants({ variant: 'primary', className: 'w-full' })}
                     >
                         {t('signInToAccept')}
                     </a>

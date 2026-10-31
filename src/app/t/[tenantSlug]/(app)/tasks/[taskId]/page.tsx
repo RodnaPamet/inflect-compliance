@@ -1810,8 +1810,13 @@ function TaskLinksTable({
                 {
                     id: 'entityType',
                     header: t('detail.linkTypeHeader'),
+                    // #4698 — the type and relation in words, not the stored codes.
                     cell: ({ row }) => (
-                        <StatusBadge variant="info">{row.original.entityType}</StatusBadge>
+                        <StatusBadge variant="info">
+                            {t.has(`linkEntity.${row.original.entityType}`)
+                                ? t(`linkEntity.${row.original.entityType}`)
+                                : row.original.entityType}
+                        </StatusBadge>
                     ),
                 },
                 {
@@ -1845,7 +1850,9 @@ function TaskLinksTable({
                     header: t('detail.linkRelationHeader'),
                     cell: ({ row }) => (
                         <span className="text-xs text-content-muted">
-                            {row.original.relation?.replace(/_/g, ' ') || '—'}
+                            {row.original.relation && t.has(`linkRelation.${row.original.relation}`)
+                                ? t(`linkRelation.${row.original.relation}`)
+                                : row.original.relation || '—'}
                         </span>
                     ),
                 },
@@ -1873,6 +1880,7 @@ function TaskLinksTable({
                                       variant="ghost"
                                       size="sm"
                                       className="text-content-error"
+                                      icon={<Xmark className="size-3.5" aria-hidden="true" />}
                                       id={`remove-link-${row.original.id}`}
                                       onClick={() => onRemove(row.original.id)}
                                   >

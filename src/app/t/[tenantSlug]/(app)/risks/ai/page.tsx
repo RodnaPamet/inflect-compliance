@@ -598,8 +598,11 @@ export default function AIRiskAssessmentPage() {
                                             </>
                                         ) : (
                                             <>
+                                                {/* A row's decision toggle is secondary in both states
+                                                    (the R7-PR1 row-action rule); the success fill and
+                                                    the label carry the accepted state. */}
                                                 <Button
-                                                    variant={dec === 'accept' ? 'primary' : 'secondary'}
+                                                    variant="secondary"
                                                     size="xs"
                                                     className={dec === 'accept' ? 'bg-bg-success-emphasis text-content-emphasis' : ''}
                                                     onClick={() => setDecision(item.id, 'accept')}

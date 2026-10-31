@@ -50,6 +50,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -76,9 +77,7 @@ describe('Loading-text typographic discipline (Roadmap-6 PR-6)', () => {
                 if (!/\.tsx$/.test(e.name)) continue;
                 const rel = path.relative(ROOT, full);
                 const raw = fs.readFileSync(full, 'utf-8');
-                const stripped = raw
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = codeOf(raw);
                 const lines = stripped.split('\n');
                 lines.forEach((line, i) => {
                     if (VIOLATION_RE.test(line)) {
