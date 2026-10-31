@@ -111,7 +111,10 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { KeyboardShortcutProvider } from '@/lib/hooks/use-keyboard-shortcut';
 
 const EN = (jest.requireActual('../../messages/en.json') as {
-    policies: { detail: Record<string, string>; filterEnums: { status: Record<string, string> } };
+    policies: {
+        detail: Record<string, string> & { event: Record<string, string> };
+        filterEnums: { status: Record<string, string> };
+    };
     approval: Record<string, string>;
 }).policies;
 
@@ -403,3 +406,34 @@ describe('archiving says what it does (#4279)', () => {
         expect(document.getElementById('mark-reviewed-btn')).toBeNull();
     });
 });
+
+describe('the activity tab reads in words (#4695)', () => {
+    it('labels every policy action, says "Changed" for an unknown one, and humanises the detail', async () => {
+        const v1 = version(1, 'one');
+        const policy = policyFixture({ status: 'DRAFT', currentVersion: v1, versions: [v1] });
+        fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+            if (init?.method && init.method !== 'GET') return json({});
+            if (url === '/api/t/acme/policies/p1') return json(policy);
+            if (url.startsWith('/api/t/acme/policies/p1/activity')) {
+                return json([
+                    { id: 'a1', action: 'POLICY_PUBLISH_BYPASS', details: 'Published v2 without approval', createdAt: '2026-10-30T10:00:00.000Z', user: { id: 'u1', name: 'Ana' } },
+                    { id: 'a2', action: 'POLICY_SOMETHING_NEW', details: 'Context: {"policyId":"cabcdefghijklmnopqrstuvwx"}', createdAt: '2026-10-30T09:00:00.000Z', user: null },
+                ]);
+            }
+            return json([]);
+        });
+        await renderPage();
+        openTab(EN.detail.tabActivity);
+
+        const feed = await waitFor(() => {
+            const el = document.getElementById('activity-feed');
+            expect(el).toHaveTextContent(EN.detail.event.publishBypass);
+            return el as HTMLElement;
+        });
+        expect(feed).toHaveTextContent(EN.detail.event.other);
+        expect(feed).not.toHaveTextContent('SOMETHING NEW');
+        expect(feed).not.toHaveTextContent('policyId');
+        expect(feed).toHaveTextContent(`${EN.detail.systemActor}`);
+    });
+});
+
