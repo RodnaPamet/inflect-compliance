@@ -111,9 +111,11 @@ describe('Tier C never becomes editable', () => {
 describe('the citation on the page points at something real', () => {
     it('the named CI check is a test that actually exists', () => {
         /*
-            The page tells an admin "held by <check>". If that name drifts, the
-            page cites a test that no longer runs and the affordance becomes
-            worse than a disabled switch — it is a false reassurance.
+            The page tells an admin, in plain words, that the rule is held by
+            an automated check (#4825: it no longer prints the check's name or
+            the module path). The constants still name them for engineers. If
+            the name drifts, the plain sentence is backed by a test that no
+            longer runs, and the reassurance becomes false.
 
             Asserted by searching the guard directories for the literal test
             name, so a rename fails HERE and the renamer updates the citation in
