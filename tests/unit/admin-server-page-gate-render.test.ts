@@ -363,3 +363,28 @@ describe('the gated pages here are the gated pages there', () => {
         expect(Object.keys(PAGES).sort()).toEqual(Object.keys(ADMIN_PAGE_REQUIREMENTS).sort());
     });
 });
+
+describe('the admin index offers Modules to Owners only (#4819)', () => {
+    /** Whether any element in the tree carries this `id` prop. */
+    function hasId(el: unknown, id: string): boolean {
+        if (!el || typeof el !== 'object') return false;
+        if (Array.isArray(el)) return el.some((child) => hasId(child, id));
+        const node = el as Element;
+        if (node.props?.id === id) return true;
+        return hasId(node.props?.children, id);
+    }
+
+    test('an OWNER sees the Modules button', async () => {
+        const el = await render('/admin', 'OWNER');
+        expect(hasId(el, 'modules-pill-btn')).toBe(true);
+        expect(hasId(el, 'ai-features-pill-btn')).toBe(true);
+    });
+
+    test('an ADMIN does not: the page behind it is Owner-only', async () => {
+        const el = await render('/admin', 'ADMIN');
+        expect(hasId(el, 'modules-pill-btn')).toBe(false);
+        // The rest of the index is unchanged for an Admin.
+        expect(hasId(el, 'ai-features-pill-btn')).toBe(true);
+        expect(hasId(el, 'billing-pill-btn')).toBe(true);
+    });
+});

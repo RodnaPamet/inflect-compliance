@@ -77,7 +77,11 @@ export default async function AdminPage({
                 // section of its own: what the workspace HAS sits with the other
                 // workspace-shaped settings, and one module does not make a
                 // category.
-                { href: '/admin/modules', id: 'modules-pill-btn', icon: <Grid3x3 className={iconCls} />, label: t('nav.modules') },
+                // Owner-only: an Admin who clicked it met a forbidden page
+                // (#4819), so the button is offered only where it opens.
+                ...(gate.ctx.appPermissions?.admin?.tenant_lifecycle
+                    ? [{ href: '/admin/modules', id: 'modules-pill-btn', icon: <Grid3x3 className={iconCls} />, label: t('nav.modules') }]
+                    : []),
                 // AI switches and agent engines. Beside modules rather than in
                 // the security section: this decides what the workspace HAS,
                 // like a module, and not who may reach it. The pill is visible
