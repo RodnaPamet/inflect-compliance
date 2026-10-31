@@ -26,6 +26,7 @@ import { frameworkOrderKey } from '../framework-order';
 import { apiErrorMessage } from '@/lib/api-error';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { frameworkKindLabel } from '../framework-kind-label';
+import { frameworkHasClauseTracker } from '@/lib/compliance/iso27001-clauses';
 
 type Tab = 'requirements' | 'packs' | 'coverage' | 'builder';
 
@@ -308,6 +309,11 @@ export default function FrameworkDetailPage() {
             }
             actions={
                 <>
+                    {frameworkHasClauseTracker(frameworkKey) && (
+                        <Link href={tenantHref('/clauses')} className={buttonVariants({ variant: 'secondary' })} id="clause-tracker-link">
+                            {t('detail.clauseTracker')}
+                        </Link>
+                    )}
                     <Link href={tenantHref(`/frameworks/${frameworkKey}/templates`)} className={buttonVariants({ variant: 'secondary' })} id="browse-templates-cta">
                         {t('detail.browseTemplates')}
                     </Link>

@@ -685,7 +685,15 @@
     "inProgress": "В процес",
     "ready": "Готова",
     "needsReview": "Нужен преглед",
-    "loadingAria": "Зареждане на клаузите"
+    "loadingAria": "Зареждане на клаузите",
+    "statusSaved": "Статусът е запазен.",
+    "saveFailed": "Промяната не беше запазена. Опитайте отново.",
+    "notes": "Бележки",
+    "notesPlaceholder": "Какво е направено по тази клауза и какво остава",
+    "saveNotes": "Запази бележките",
+    "savingNotes": "Запазване…",
+    "notesSaved": "Бележките са запазени.",
+    "noNotes": "Все още няма бележки"
   },
   "assets": {
     "title": "Инвентар на активите",
@@ -8882,7 +8890,8 @@
       "coverageLoadFailed": "Покритието не можа да се зареди.",
       "retry": "Опитай отново",
       "coverageAria": "Покритие на рамката",
-      "sectionCoverageAria": "Покритие на {section}"
+      "sectionCoverageAria": "Покритие на {section}",
+      "clauseTracker": "Клаузи 4–10"
     },
     "diff": {
       "loading": "Зареждане на разликите…",
