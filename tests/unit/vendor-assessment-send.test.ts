@@ -566,3 +566,42 @@ describe('sendAssessment — in-flight query shape', () => {
         });
     });
 });
+
+describe('sendAssessment — each refusal names its reason (#4696)', () => {
+    async function reasonOf(run: () => Promise<unknown>): Promise<unknown> {
+        try {
+            await run();
+        } catch (e) {
+            return (e as { details?: { reason?: unknown } }).details?.reason;
+        }
+        throw new Error('expected a refusal');
+    }
+
+    test('an invalid email', async () => {
+        await expect(
+            reasonOf(() => sendAssessment(makeCtx(), 'v-1', 't-1', { ...VALID_INPUT, respondentEmail: 'nope' })),
+        ).resolves.toBe('SEND_RESPONDENT_EMAIL_INVALID');
+    });
+
+    test('a draft template', async () => {
+        mockTx.vendor.findFirst.mockResolvedValueOnce({ id: 'v-1', name: 'Acme' });
+        mockTx.vendorAssessmentTemplate.findFirst.mockResolvedValueOnce({ id: 't-1', name: 'SOC 2', isPublished: false });
+        await expect(reasonOf(() => sendAssessment(makeCtx(), 'v-1', 't-1', VALID_INPUT))).resolves.toBe('SEND_TEMPLATE_DRAFT');
+    });
+
+    test('a questionnaire already waiting for an answer', async () => {
+        mockTx.vendor.findFirst.mockResolvedValueOnce({ id: 'v-1', name: 'Acme' });
+        mockTx.vendorAssessmentTemplate.findFirst.mockResolvedValueOnce({ id: 't-1', name: 'SOC 2', isPublished: true });
+        mockTx.vendorAssessment.findFirst.mockResolvedValueOnce({ id: 'a-prev' });
+        await expect(reasonOf(() => sendAssessment(makeCtx(), 'v-1', 't-1', VALID_INPUT))).resolves.toBe('SEND_ALREADY_IN_FLIGHT');
+    });
+
+    test('vendorSendRefusal reads a known reason and ignores anything else', () => {
+        const { vendorSendRefusal } = require('@/lib/vendor-assessment-refusals');
+        expect(vendorSendRefusal({ error: { details: { reason: 'SEND_ALREADY_IN_FLIGHT' } } })).toBe('SEND_ALREADY_IN_FLIGHT');
+        expect(vendorSendRefusal({ error: { details: { reason: 'SOMETHING_ELSE' } } })).toBeNull();
+        expect(vendorSendRefusal({ error: 'x' })).toBeNull();
+        expect(vendorSendRefusal(null)).toBeNull();
+    });
+});
+
