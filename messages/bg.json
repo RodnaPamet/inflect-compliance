@@ -12218,7 +12218,9 @@
     "colType": "Тип",
     "colCriticality": "Критичност",
     "emptyAssets": "Всички критични активи са покрити от контроли",
+    "emptyAssetsNone": "Все още няма активи с висока или критична важност",
     "emptyRisks": "Всички рискове са смекчени чрез контроли",
+    "emptyRisksNone": "Все още няма рискове в регистъра",
     "uncoveredAssets": "Непокрити критични активи",
     "unmappedRisks": "Несвързани рискове",
     "topControls": "Топ контроли по покритие на риска",
@@ -12229,9 +12231,40 @@
     "loadingAria": "Зареждане на таблото за покритие",
     "riskWordOne": "риск",
     "riskWordOther": "риска",
+    "assetWordOne": "актив",
+    "assetWordOther": "активи",
     "vsTestCoverage": "Това показва как рисковете, активите и контролите се защитават взаимно. За покритие с тестови планове и изпълнения по рамки вижте",
     "testCoverageLink": "Таблото за тестове →",
-    "barProcess": "Контроли в процес"
+    "barProcess": "Контроли в процес",
+    "nothingToCover": "Все още няма какво да се покрива",
+    "showingOf": "Показани са {shown} от {total}.",
+    "viewAllAssets": "Преглед на активите",
+    "viewAllRisks": "Преглед на рисковете",
+    "riskStatus": {
+      "OPEN": "Отворен",
+      "MITIGATING": "В процес на смекчаване",
+      "MITIGATED": "Смекчен",
+      "ACCEPTED": "Приет",
+      "CLOSED": "Затворен"
+    },
+    "assetType": {
+      "INFORMATION": "Информация",
+      "SYSTEM": "Система",
+      "SERVICE": "Услуга",
+      "DATA_STORE": "Хранилище за данни",
+      "VENDOR": "Доставчик",
+      "PEOPLE_PROCESS": "Хора / процес",
+      "APPLICATION": "Приложение",
+      "INFRASTRUCTURE": "Инфраструктура",
+      "PROCESS": "Процес",
+      "OTHER": "Друго"
+    },
+    "criticality": {
+      "LOW": "Ниска",
+      "MEDIUM": "Средна",
+      "HIGH": "Висока",
+      "CRITICAL": "Критична"
+    }
   },
   "accessReviews": {
     "crumbDashboard": "Табло",
