@@ -31,9 +31,9 @@ Six cards.
 | Item | What it shows |
 | --- | --- |
 | {{ui:admin.privacy.encryption.perTenantDek}} | **{{ui:admin.privacy.encryption.active}}** when the workspace's content is encrypted under a key of its own; **{{ui:admin.privacy.encryption.globalKeyOnly}}** when only the platform's shared key protects it |
-| {{ui:admin.privacy.encryption.rotation}} | **{{ui:admin.privacy.encryption.rotationInFlight}}** while the workspace's key is being replaced; **{{ui:admin.privacy.encryption.rotationIdle}}** otherwise |
+| {{ui:admin.privacy.encryption.rotation}} | **{{ui:admin.privacy.encryption.rotationInFlight}}** while the workspace's key is being replaced; **{{ui:admin.privacy.encryption.rotationIdle}}** otherwise. No button here starts a rotation; it is done on request |
 
-**{{ui:admin.privacy.residency.title}}.** The {{ui:admin.privacy.residency.region}}, and whether infrastructure exists in that region (**{{ui:admin.privacy.residency.provisioned}}** or **{{ui:admin.privacy.residency.notProvisioned}}**). The region is a commitment recorded when the workspace was created, not a reading of where its data sits; the card's notice says so.
+**{{ui:admin.privacy.residency.title}}.** The {{ui:admin.privacy.residency.region}}, by name, such as {{ui:admin.privacy.residency.regionName.EU_WEST_1}}, and whether infrastructure exists in that region (**{{ui:admin.privacy.residency.provisioned}}** or **{{ui:admin.privacy.residency.notProvisioned}}**). The region is a commitment recorded when the workspace was created, not a reading of where its data sits; the card's notice says so. Moving a workspace to another region is a migration, done on request.
 
 **{{ui:admin.privacy.retention.title}}.**
 
@@ -43,17 +43,17 @@ Six cards.
 | {{ui:admin.privacy.retention.evidencePurge}} | How long expired, archived evidence is kept before its files are erased |
 | {{ui:admin.privacy.retention.evidenceWithRule}} | How many evidence items carry their own retention date |
 
-The first two are platform-wide; the card says so.
+The first two are platform-wide; the card says so. Its link, **{{ui:admin.privacy.retention.evidenceLink}}**, opens the evidence library, where each item's retention date is set.
 
-**{{ui:admin.privacy.subProcessors.title}}.** How many of the workspace's vendors are marked as sub-processors, and how many sub-processor relationships are recorded. Each relationship is kept on the vendor's own page.
+**{{ui:admin.privacy.subProcessors.title}}.** How many of the workspace's vendors are marked as sub-processors, and how many sub-processor relationships are recorded. Each relationship is kept on the vendor's own page; the card's link, **{{ui:admin.privacy.subProcessors.vendorsLink}}**, opens the vendor list.
 
-**{{ui:admin.privacy.auditStream.title}}.** **{{ui:admin.privacy.yes}}** when the workspace sends its audit trail to an external system such as a SIEM; **{{ui:admin.privacy.no}}** otherwise.
+**{{ui:admin.privacy.auditStream.title}}.** **{{ui:admin.privacy.yes}}** when the workspace sends its audit trail to an external system such as a SIEM; **{{ui:admin.privacy.no}}** otherwise. No page sets streaming up; it is set up on request.
 
 **{{ui:admin.privacy.dsar.title}}.** Whether the {{ui:admin.privacy.dsar.register}} is available, and whether requests are fulfilled automatically or by hand. Today they are fulfilled by hand, and a notice, **{{ui:admin.privacy.dsar.manualTitle}}**, says what that means. A link, **{{ui:admin.privacy.dsar.openRegister}}**, opens the register.
 
 ## What you can do
 
-Read the page, and open the request register from its last card. To change an item, go to the page that owns it:
+Read the page, and follow its links: the evidence library from {{ui:admin.privacy.retention.title}}, the vendor list from {{ui:admin.privacy.subProcessors.title}}, and the request register from the last card. To change an item, go to the page that owns it:
 
 | Item | Where it is set |
 | --- | --- |

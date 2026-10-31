@@ -3,7 +3,6 @@
  * workspace (not "the tenant"), points to where each item is set, and says
  * plainly that no page sets up audit streaming.
  */
-import * as React from 'react';
 import { render, screen, cleanup } from '@testing-library/react';
 
 const EN = jest.requireActual('../../messages/en.json') as { admin: { privacy: Record<string, unknown> } };

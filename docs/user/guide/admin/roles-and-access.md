@@ -24,7 +24,7 @@ Use it to answer "who can do what here?" in one view, for an access review or an
 
 ## What you see
 
-Under the title, a sentence names the workspace and shows your own role.
+Under the title, a sentence names the workspace and shows your own role by name.
 
 **{{ui:admin.rbac.teamMembers}}.** Everyone who has a membership in the workspace, in the order they joined:
 
@@ -32,12 +32,13 @@ Under the title, a sentence names the workspace and shows your own role.
 | --- | --- |
 | {{ui:admin.rbac.colName}} | Their name, or — |
 | {{ui:admin.rbac.colEmail}} | Their email address |
-| {{ui:admin.rbac.colRole}} | Their built-in role: OWNER, ADMIN, EDITOR, READER, AUDITOR or AI_ADMIN |
+| {{ui:admin.rbac.colRole}} | Their built-in role: {{ui:roles.OWNER}}, {{ui:roles.ADMIN}}, {{ui:roles.EDITOR}}, {{ui:roles.READER}}, {{ui:roles.AUDITOR}} or {{ui:roles.AI_ADMIN}}. When the membership carries a custom role, its name shows below |
+| {{ui:admin.rbac.colStatus}} | {{ui:admin.rbac.status.ACTIVE}}, {{ui:admin.rbac.status.INVITED}} (waiting to be accepted), {{ui:admin.rbac.status.DEACTIVATED}} or {{ui:admin.rbac.status.REMOVED}} |
 | {{ui:admin.rbac.colJoined}} | When their membership was created |
 
-The list includes memberships that have been deactivated, removed, or invited and waiting to be accepted, and does not say which. A member's custom role, if they have one, is not shown here; [{{ui:admin.members.title}}](members.md) shows both.
+A member with a custom role can do what that role grants, not what their built-in role grants.
 
-**{{ui:admin.rbac.permissionMatrix}}.** One row per permission, one column per built-in role, and a tick where the role has the permission. Each row names an area of the product in the {{ui:admin.rbac.resource}} column, such as risks, evidence or admin, and what can be done there in the {{ui:admin.rbac.action}} column, such as view, create, edit or approve. The matrix shows the built-in roles only; a custom role grants whatever it was built with.
+**{{ui:admin.rbac.permissionMatrix}}.** One row per permission, one column per built-in role, and a tick where the role has the permission. Each row names an area of the product in the {{ui:admin.rbac.resource}} column, such as risks, evidence or admin, and what can be done there in the {{ui:admin.rbac.action}} column, such as view, create, edit or approve, in the same words the [{{ui:admin.nav.roles}}](roles.md) page uses. A note above it says: {{ui:admin.rbac.matrixNote}}
 
 ## What you can do
 
