@@ -55,11 +55,6 @@ const TAB_PAGES: TabPageEntry[] = [
         note: "Task detail — tabs for Overview / Links / Comments / Activity.",
     },
     {
-        file: "src/app/t/[tenantSlug]/(app)/mapping/page.tsx",
-        migrated: false,
-        note: "Framework mapping page — tab pattern in the multi-framework view.",
-    },
-    {
         file: "src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx",
         migrated: false,
         note: "Admin SSO page — tabs for OIDC / SAML provider configuration.",
@@ -132,7 +127,9 @@ describe("Tab primitive adoption registry", () => {
         // Drift detector — a new tab-pattern detail page must
         // either land here with `migrated: false` and a written
         // note, or migrate directly to <TabSelect> at landing time.
-        expect(TAB_PAGES.length).toBeGreaterThanOrEqual(8);
+        // 7 since the standalone /mapping page was folded into ISO 27001's
+        // Coverage tab: it left the codebase rather than migrating.
+        expect(TAB_PAGES.length).toBeGreaterThanOrEqual(7);
         expect(TAB_PAGES.length).toBeLessThanOrEqual(14);
     });
 });

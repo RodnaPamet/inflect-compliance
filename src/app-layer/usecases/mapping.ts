@@ -9,6 +9,19 @@ import {
 import { runInTenantContext } from '@/lib/db-context';
 import { isCoverageQualifyingEvidence } from '@/lib/compliance/coverage-evidence';
 import { parseIsoClause } from '@/lib/controls/control-taxonomy';
+import { isFrameworkInUse } from './framework/coverage';
+
+/**
+ * The catalogue keys each estimated framework is stored under: the seeded
+ * catalogue's short key and the YAML library's versioned one.
+ */
+const SOC2_FRAMEWORK_KEYS = ['SOC2', 'SOC2-2017'] as const;
+const NIS2_FRAMEWORK_KEYS = ['NIS2', 'NIS2-2022'] as const;
+
+async function anyInUse(ctx: RequestContext, keys: readonly string[]): Promise<boolean> {
+    const answers = await Promise.all(keys.map((key) => isFrameworkInUse(ctx, key)));
+    return answers.some(Boolean);
+}
 
 /**
  * The ISO 27001 Annex A clause a control refers to, or null.
@@ -38,7 +51,7 @@ export async function getFrameworkMappings(ctx: RequestContext) {
     const NIS2_REQS = getNIS2Requirements();
     const MAPPINGS = getGuidanceMappings();
 
-    return runInTenantContext(ctx, async (db) => {
+    const readiness = await runInTenantContext(ctx, async (db) => {
         const controls = await MappingRepository.getControlsWithEvidence(db, ctx);
 
         // Build SOC 2 readiness view
@@ -101,4 +114,15 @@ export async function getFrameworkMappings(ctx: RequestContext) {
 
         return { soc2: soc2Categories, nis2: nis2Areas, mappings: MAPPINGS };
     });
+
+    // Whether the workspace already uses each framework (the Frameworks
+    // page's "Installed" rule). The estimate is shown only for a framework
+    // that is not in use: once it is, its own page has the real coverage and
+    // an estimate beside it would only compete with it.
+    const [soc2InUse, nis2InUse] = await Promise.all([
+        anyInUse(ctx, SOC2_FRAMEWORK_KEYS),
+        anyInUse(ctx, NIS2_FRAMEWORK_KEYS),
+    ]);
+
+    return { ...readiness, inUse: { soc2: soc2InUse, nis2: nis2InUse } };
 }

@@ -44,12 +44,20 @@ jest.mock('@/app-layer/libraries', () => ({
     ]),
 }));
 
+// Whether SOC 2 / NIS2 are in use is the Frameworks page's own rule; stubbed
+// here, keyed by framework key.
+const inUseKeys = new Set<string>();
+jest.mock('@/app-layer/usecases/framework/coverage', () => ({
+    isFrameworkInUse: jest.fn(async (_ctx: unknown, key: string) => inUseKeys.has(key)),
+}));
+
 import { MappingRepository } from '@/app-layer/repositories/MappingRepository';
 import { getFrameworkMappings } from '@/app-layer/usecases/mapping';
 import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
     jest.clearAllMocks();
+    inUseKeys.clear();
 });
 
 const readerCtx = makeRequestContext('READER');
@@ -125,6 +133,17 @@ describe('getFrameworkMappings — return shape', () => {
         expect(res).toHaveProperty('nis2');
         expect(res).toHaveProperty('mappings');
         expect(res.mappings).toHaveLength(2);
+    });
+
+    it('says whether the workspace already uses SOC 2 and NIS2, under either key', async () => {
+        (MappingRepository.getControlsWithEvidence as jest.Mock).mockResolvedValue([]);
+        expect((await getFrameworkMappings(readerCtx)).inUse).toEqual({ soc2: false, nis2: false });
+
+        inUseKeys.add('SOC2-2017');
+        expect((await getFrameworkMappings(readerCtx)).inUse).toEqual({ soc2: true, nis2: false });
+
+        inUseKeys.add('NIS2');
+        expect((await getFrameworkMappings(readerCtx)).inUse).toEqual({ soc2: true, nis2: true });
     });
 
     it('rejects when caller lacks read permission', async () => {

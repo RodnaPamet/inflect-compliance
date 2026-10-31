@@ -145,7 +145,6 @@ export const MAIN_PAGES: readonly string[] = [
     '/findings',
     '/framework-updates',
     '/issues',
-    '/mapping',
     '/notifications',
     '/policies',
     '/processes',
