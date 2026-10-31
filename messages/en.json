@@ -1753,12 +1753,11 @@
       "create": "Create",
       "empty": "No KRIs yet. Create one to track a leading indicator with RAG thresholds.",
       "noData": "No data",
-      "trendAria": "reading trend",
-      "targetPrefix": "Target {value} · ",
-      "thresholds": "green ≤ {green} · amber ≤ {amber}",
+      "trendAria": "Reading trend",
+      "thresholds": "Green ≤ {green} · Amber ≤ {amber}",
       "reassess": "Re-assess the linked risk →",
       "recordReading": "Record reading",
-      "valuePlaceholder": "value",
+      "valuePlaceholder": "Value",
       "add": "Add",
       "riskLabel": "Linked risk",
       "riskNone": "No linked risk",
@@ -1789,7 +1788,19 @@
       "editTitle": "Edit indicator",
       "deleteTitle": "Delete indicator?",
       "deleteConfirm": "Delete \"{name}\" and all its readings? This cannot be undone.",
-      "remediationSpawned": "Breach recorded — a remediation task was created for the linked risk."
+      "remediationSpawned": "Breach recorded — a remediation task was created for the linked risk.",
+      "writeRestricted": "Your role can't change key risk indicators. Ask an Owner, Admin or Editor.",
+      "readingNotNumber": "Enter a number.",
+      "ragReading": "{rag} · {value}",
+      "rag": {
+        "GREEN": "Green",
+        "AMBER": "Amber",
+        "RED": "Red"
+      },
+      "thresholdsLower": "Green ≥ {green} · Amber ≥ {amber}",
+      "greenMin": "Green ≥",
+      "amberMin": "Amber ≥",
+      "targetLine": "Target {value}"
     },
     "lossEvents": {
       "breadcrumb": "Loss events",
