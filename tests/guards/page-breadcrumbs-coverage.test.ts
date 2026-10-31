@@ -71,7 +71,6 @@ const EXEMPT_FILES = new Set<string>([
     // Self-contained creation/import flows with their own back-step
     // navigation. Breadcrumbs would compete with the wizard's own
     // step indicators.
-    "src/app/t/[tenantSlug]/(app)/assets/import/page.tsx",
     "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx",
     "src/app/t/[tenantSlug]/(app)/tasks/new/page.tsx",
     "src/app/t/[tenantSlug]/(app)/policies/new/page.tsx",

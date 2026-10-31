@@ -14,6 +14,7 @@ import { getAssetCriticality } from '@/lib/asset-criticality';
 import { cn } from '@inflect/ui/lib/cn';
 import { parseCsvRecords } from '@/lib/csv/parse-csv';
 import { apiErrorMessage } from '@/lib/api-error';
+import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 
 const ASSET_TYPES = [
     'INFORMATION', 'APPLICATION', 'SYSTEM', 'SERVICE', 'DATA_STORE',
@@ -89,7 +90,9 @@ export default function AssetImportPage() {
         };
 
         return records.map((rec): ParsedRow => {
-            const name = rec.name ?? '';
+            // Trimmed (#4800): a blank-looking name passed the preview and was
+            // refused by the server in an untranslated sentence.
+            const name = (rec.name ?? '').trim();
             const rawType = col(rec, 'type');
             const rawStatus = col(rec, 'status');
             const c = cia(col(rec, 'confidentiality'));
@@ -158,6 +161,15 @@ export default function AssetImportPage() {
         // One bulk request instead of N sequential POSTs. The server dedupes by
         // name (in-batch + against existing assets) and resolves free-text
         // owners to members; criticality is derived from CIA server-side.
+        // #4800 — the server numbers its rows by position in the POSTED array,
+        // which holds only the valid rows; the preview numbers by position in
+        // the file. Map the server's numbers back to file rows so "Row 3"
+        // means one line in both lists.
+        const fileRowOf: number[] = rows
+            .map((row, i) => ({ row, i }))
+            .filter(({ row }) => !row.error)
+            .map(({ i }) => i + 1);
+        const toFileRow = (serverRow: number) => fileRowOf[serverRow - 1] ?? serverRow;
         const assets = validRows.map((row) => {
             const a: Record<string, unknown> = { name: row.name, type: row.type };
             if (row.status) a.status = row.status;
@@ -195,16 +207,16 @@ export default function AssetImportPage() {
                 });
                 if (!res.ok) {
                     const data = await res.json().catch(() => ({}));
-                    throw new Error(apiErrorMessage(data, `Status ${res.status}`));
+                    throw new Error(apiErrorMessage(data, t('import.requestFailed')));
                 }
                 const data = await res.json();
                 created = data.created ?? 0;
                 skipped = data.skipped ?? 0;
                 for (const e of (data.errors ?? []) as { row: number; name: string; message: string }[]) {
-                    errors.push(`${t('import.rowLabel', { num: e.row, name: e.name || '—' })}: ${e.message}`);
+                    errors.push(`${t('import.rowLabel', { num: toFileRow(e.row), name: e.name || '—' })}: ${e.message}`);
                 }
                 for (const s of (data.skippedRows ?? []) as { row: number; name: string; reason: string }[]) {
-                    skippedRows.push(s);
+                    skippedRows.push({ ...s, row: toFileRow(s.row) });
                 }
             } catch (err) {
                 failed = true;
@@ -231,6 +243,7 @@ export default function AssetImportPage() {
     return (
         <div className="space-y-section animate-fadeIn max-w-4xl">
             <BackAffordance />
+            <PageBreadcrumbs items={[{ label: t('breadcrumbDashboard'), href: href('/dashboard') }, { label: t('title'), href: href('/assets') }, { label: t('import.breadcrumb') }]} />
             <div>
                 <Heading level={1}>{t('import.title')}</Heading>
                 <p className="text-content-muted text-sm">{tenant.tenantName}</p>
@@ -244,8 +257,8 @@ export default function AssetImportPage() {
                     {/* Template-literal so the quoted-CSV example's `"` stay plain
                         text (react/no-unescaped-entities) — and it doubles as a
                         demo of the quoted-field parsing the importer now supports. */}
-                    {`Name,Type,Status,Owner,Classification,Location,Confidentiality,Integrity,Availability,ExternalRef,Dependencies,BusinessProcesses,Retention,DataResidency,CPE,Vendor,Product,Version
-Prod DB,DATA_STORE,ACTIVE,DBA,Confidential,eu-west-1,5,5,4,CMDB-1042,"Auth service, Billing",Checkout,7 years,EU,cpe:2.3:a:postgresql:postgresql:16,postgresql,postgresql,16`}
+                    {`Name,Type,Status,Owner,Classification,Location,Confidentiality,Integrity,Availability,ExternalRef,Dependencies,BusinessProcesses,Retention,RetentionUntil,DataResidency,CPE,Vendor,Product,Version
+Prod DB,DATA_STORE,ACTIVE,DBA,Confidential,eu-west-1,5,5,4,CMDB-1042,"Auth service, Billing",Checkout,7 years,2033-12-31,EU,cpe:2.3:a:postgresql:postgresql:16,postgresql,postgresql,16`}
                 </pre>
             </div>
 
@@ -272,7 +285,14 @@ Prod DB,DATA_STORE,ACTIVE,DBA,Confidential,eu-west-1,5,5,4,CMDB-1042,"Auth servi
                         const previewCols = createColumns<ParsedRow & { _idx: number }>([
                             { id: 'num', header: '#', accessorKey: '_idx', cell: ({ getValue }) => <span className="text-xs text-content-subtle">{getValue()}</span> },
                             { accessorKey: 'name', header: t('import.colName'), cell: ({ getValue }) => <span className="text-sm">{getValue() || '—'}</span> },
-                            { id: 'type', header: t('import.colType'), accessorKey: 'type', cell: ({ getValue }) => <span className="text-xs text-content-muted">{getValue() || '—'}</span> },
+                            {
+                id: 'type', header: t('import.colType'), accessorKey: 'type',
+                // The type in words (#4800), not the stored value.
+                cell: ({ getValue }) => {
+                    const v = getValue() as string | undefined;
+                    return <span className="text-xs text-content-muted">{v && ASSET_TYPES.includes(v) ? t(`assetTypes.${v}` as Parameters<typeof t>[0]) : v || '—'}</span>;
+                },
+            },
                             {
                                 id: 'criticality',
                                 header: t('import.colCriticality'),
