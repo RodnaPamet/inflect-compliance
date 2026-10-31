@@ -7,6 +7,15 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { Heading } from '@/components/ui/typography';
 import { Card } from '@/components/ui/card';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { readinessBand, readinessVariant } from '@/lib/readiness/bands';
+import Link from 'next/link';
+
+const BAND_TEXT_CLASS = {
+    ready: 'text-content-success',
+    nearly: 'text-content-warning',
+    atRisk: 'text-content-error',
+} as const;
 
 // getFrameworkMappings (mapping.ts) — soc2/nis2 requirement rows augmented
 // with computed coverage. (Element fields documented for the typed `data`
@@ -19,6 +28,8 @@ interface MappingItem {
     coverage: number;
     implementedCount: number;
     controlCount: number;
+    /** Related controls with coverage-qualifying evidence. */
+    evidenceCount: number;
 }
 interface FrameworkMappings {
     soc2: MappingItem[];
@@ -66,14 +77,23 @@ export default function MappingPage() {
                     ]}
                     className="mb-1"
                 />
-                <Heading level={1} className="sr-only">{t('title')}</Heading>
+                <Heading level={1}>{t('title')}</Heading>
                 <p className="text-content-muted text-sm">{t('subtitle')}</p>
             </div>
+
+            {/* #4737 — the figures come from the guidance table that relates
+                ISO 27001 Annex A controls to SOC 2 criteria and NIS2 areas,
+                not from the workspace's own SOC 2 or NIS2 mappings. Said once,
+                where the figures start. */}
+            <InlineNotice variant="info" id="mapping-estimate-notice">
+                {t('estimateNote')}{' '}
+                <Link href={tenantHref('/frameworks')} className="font-medium underline">{t('frameworksLink')}</Link>
+            </InlineNotice>
 
             {/* Epic 60 — ToggleGroup replaces raw btn-primary/btn-secondary
                 toggle, giving us radiogroup ARIA + keyboard arrow nav. */}
             <ToggleGroup
-                ariaLabel="Framework"
+                ariaLabel={t('frameworkToggle')}
                 options={[
                     { value: 'soc2', label: t('soc2') },
                     { value: 'nis2', label: t('nis2') },
@@ -83,46 +103,45 @@ export default function MappingPage() {
             />
 
             <div className="space-y-compact">
-                {items.map((item) => (
-                    <Card key={item.code}>
+                {items.map((item) => {
+                    // #4737 — "no related control" is not 0% implemented: a
+                    // criterion the guidance relates to no control of yours
+                    // says so, rather than a red 0% over "0/0 controls".
+                    const related = item.controlCount > 0;
+                    return (
+                    <Card key={item.code} data-testid={`mapping-item-${item.code}`}>
                         <div className="flex items-center justify-between mb-2">
                             <div>
                                 <span className="text-xs font-mono text-[var(--brand-default)] mr-2">{item.code}</span>
                                 <span className="font-medium text-sm">{item.title}</span>
                             </div>
-                            <span
-                                className={`text-sm font-bold ${
-                                    item.coverage >= 80
-                                        ? 'text-content-success'
-                                        : item.coverage >= 50
-                                          ? 'text-content-warning'
-                                          : 'text-content-error'
-                                }`}
-                            >
-                                {item.coverage}%
-                            </span>
+                            {related ? (
+                                <span className={`text-sm font-bold ${BAND_TEXT_CLASS[readinessBand(item.coverage)]}`}>
+                                    {item.coverage}%
+                                </span>
+                            ) : (
+                                <span className="text-xs text-content-subtle">{t('relatedNone')}</span>
+                            )}
                         </div>
                         <p className="text-xs text-content-muted mb-3">{item.description}</p>
-                        <div className="flex items-center gap-compact">
-                            <div className="flex-1">
-                                {/* Epic 59 ProgressBar primitive. */}
-                                <ProgressBar
-                                    value={item.coverage}
-                                    size="sm"
-                                    variant={
-                                        item.coverage >= 80
-                                            ? 'success'
-                                            : item.coverage >= 50
-                                                ? 'warning'
-                                                : 'error'
-                                    }
-                                    aria-label={`${item.title} coverage`}
-                                />
+                        {related && (
+                            <div className="flex items-center gap-compact">
+                                <div className="flex-1">
+                                    {/* Epic 59 ProgressBar primitive, in the readiness bands. */}
+                                    <ProgressBar
+                                        value={item.coverage}
+                                        size="sm"
+                                        variant={readinessVariant(item.coverage) as 'success' | 'warning' | 'error'}
+                                        aria-label={t('coverageAria', { title: item.title })}
+                                    />
+                                </div>
+                                <span className="text-xs text-content-subtle">{t('controls', { implemented: item.implementedCount, total: item.controlCount })}</span>
+                                <span className="text-xs text-content-subtle">{t('withEvidence', { count: item.evidenceCount, total: item.controlCount })}</span>
                             </div>
-                            <span className="text-xs text-content-subtle">{t('controls', { implemented: item.implementedCount, total: item.controlCount })}</span>
-                        </div>
+                        )}
                     </Card>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );
