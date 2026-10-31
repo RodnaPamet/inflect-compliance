@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { getTenantCtx } from '@/app-layer/context';
 import { getAiSystem } from '@/app-layer/usecases/ai-system';
+import { mayReadAgentActivity } from '@/lib/permissions';
 import { AiSystemDetailClient, type AiSystemDetail } from './AiSystemDetailClient';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +29,8 @@ export default async function AiSystemDetailPage({
             system={JSON.parse(JSON.stringify(system!))}
             tenantSlug={resolved.tenantSlug}
             canWrite={ctx.permissions.canWrite}
+            // The queue a conformity draft is sent to; its page reads the same predicate.
+            canOpenApprovalQueue={mayReadAgentActivity(ctx.appPermissions?.admin)}
         />
     );
 }

@@ -377,7 +377,7 @@ function FileDropzoneInner(
             // it, not an upload that failed. Swallowing it loudly would be
             // worse than swallowing it quietly: there is no error surface here
             // that `runOne` has not already used.
-            (async () => {
+            void (async () => {
                 const settled: FileUploadEntry[] = [];
                 try {
                     for (const entry of accepted) {

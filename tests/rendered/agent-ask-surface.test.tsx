@@ -22,7 +22,7 @@
  * key and fails the text assertion rather than silently rendering blank.
  */
 import * as React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { axe } from 'jest-axe';
 
 jest.mock('next/navigation', () => ({
@@ -42,8 +42,15 @@ jest.mock('next-intl', () => {
             (o: unknown, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
             en,
         );
+        // Dotted keys resolve, as next-intl's do: the page reads
+        // `refusal.NO_AGENT_DESIGNATED` and `detail.stepStatus.DONE`.
+        const lookup = (key: string): unknown =>
+            key.split('.').reduce(
+                (o: unknown, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
+                dict,
+            );
         const t = (key: string, params?: Record<string, unknown>) => {
-            let v = (dict as Record<string, unknown> | undefined)?.[key];
+            let v = lookup(key);
             if (typeof v !== 'string') return key;
             if (params) {
                 for (const [p, val] of Object.entries(params)) {
@@ -52,6 +59,7 @@ jest.mock('next-intl', () => {
             }
             return v as string;
         };
+        t.has = (key: string) => typeof lookup(key) === 'string';
         return t;
     };
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };
@@ -138,7 +146,11 @@ describe('answered', () => {
         // The calls are ALWAYS visible — not behind a toggle. Asserted by
         // finding them without interacting first.
         expect(screen.getByText('list_controls')).toBeInTheDocument();
-        expect(screen.getByText('DONE')).toBeInTheDocument();
+        // The step and run outcomes read as words, from the Agent runs page's
+        // vocabulary (#4629) — not `DONE` / `COMPLETED`.
+        expect(screen.getByText('Done')).toBeInTheDocument();
+        expect(screen.getByText('Completed')).toBeInTheDocument();
+        expect(screen.queryByText('DONE')).toBeNull();
         expect(screen.getByText('claude-sonnet-5-5')).toBeInTheDocument();
         expect(screen.getByText('1234')).toBeInTheDocument();
     });
@@ -173,7 +185,7 @@ describe('answered', () => {
         render(<AskClient tenantSlug="acme" maxChars={MAX} />);
         await ask();
         await waitFor(() => expect(screen.getByText('agent_suspended')).toBeInTheDocument());
-        expect(screen.getByText('FAILED')).toBeInTheDocument();
+        expect(screen.getByText('Failed')).toBeInTheDocument();
     });
 });
 
@@ -212,7 +224,7 @@ describe('empty catalogue — the state most likely to be mistaken for an answer
 });
 
 describe('refused', () => {
-    it('shows the funnel refusal with its named reason, as given', async () => {
+    it('says a known refusal in words, naming the fix', async () => {
         // THE REAL ENVELOPE. `withApiErrorHandling` sends `ApiErrorResponse`
         // — `{ error: { code, message, requestId? } }` — and this fixture
         // said `{ error: '<string>' }`, matching a cast in the client rather
@@ -236,10 +248,25 @@ describe('refused', () => {
         await ask();
 
         await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
-        // The CODE reaches the reader. Flattening it to "something went wrong"
-        // is what turns a self-service fix into a support request.
-        expect(screen.getByText(/NO_AGENT_DESIGNATED/)).toBeInTheDocument();
-        expect(screen.getByText(/designated no interactive agent/)).toBeInTheDocument();
+        // The NAMED reason reaches the reader, in words: what is wrong and
+        // what fixes it. Flattening it to "something went wrong" is what turns
+        // a self-service fix into a support request — and so is the operator's
+        // `CODE: detail`, which this page used to print as given (#4629).
+        expect(screen.getByRole('alert').textContent).toContain('No agent answers questions in this workspace yet');
+        expect(screen.getByRole('alert').textContent).toContain('Use for Ask');
+        expect(screen.queryByText(/NO_AGENT_DESIGNATED/)).toBeNull();
+    });
+
+    it('shows a refusal this page has no words for as its sentence, without the code', async () => {
+        wireFetch(null, {
+            postStatus: 403,
+            postBody: { error: { code: 'FORBIDDEN', message: 'BUDGET_EXHAUSTED: The monthly agent budget is spent.' } },
+        });
+        render(<AskClient tenantSlug="acme" maxChars={MAX} />);
+        await ask();
+        await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+        expect(screen.getByText('The monthly agent budget is spent.')).toBeInTheDocument();
+        expect(screen.queryByText(/BUDGET_EXHAUSTED/)).toBeNull();
     });
 
     it('cannot render a non-string reason, whatever shape the body arrives in', async () => {
@@ -294,6 +321,47 @@ describe('running', () => {
         // rather than settling on a run that has not finished.
         await waitFor(() => expect(screen.getByRole('button', { name: 'Asking…' })).toBeInTheDocument());
         expect(screen.queryByText(/Three controls/)).toBeNull();
+        // After the first status check too: that check fills the result with
+        // the RUNNING run, and the message used to vanish then (#4629).
+        await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+        expect(screen.getByText('Working on it')).toBeInTheDocument();
+    });
+
+    it('after a timeout, offers Check again, which resumes the SAME run (#4629)', async () => {
+        jest.useFakeTimers();
+        try {
+            let status = 'RUNNING';
+            const fetchMock = jest.fn(async (_url: string, init?: { method?: string }) =>
+                init?.method === 'POST'
+                    ? ({ ok: true, status: 202, json: async () => ({ runId: 'run-9' }) } as unknown as Response)
+                    : ({
+                          ok: true, status: 200,
+                          json: async () => settled({
+                              runId: 'run-9', status,
+                              answer: status === 'RUNNING' ? null : 'Ready now.', toolCalls: [],
+                          }),
+                      } as unknown as Response),
+            );
+            (global as unknown as { fetch: unknown }).fetch = fetchMock;
+            render(<AskClient tenantSlug="acme" maxChars={MAX} />);
+            await ask();
+            for (let i = 0; i < 120 && !screen.queryByTestId('agent-ask-timed-out'); i++) {
+                await act(async () => { await jest.advanceTimersByTimeAsync(1_500); });
+            }
+            const notice = screen.getByTestId('agent-ask-timed-out');
+            // It no longer sends the asker to the agent register, which an
+            // Editor or Reader cannot open.
+            expect(notice.textContent).not.toMatch(/agent register/);
+
+            status = 'COMPLETED';
+            await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check again' })); });
+            await act(async () => { await jest.advanceTimersByTimeAsync(0); });
+            expect(screen.getByText('Ready now.')).toBeInTheDocument();
+            const polled = fetchMock.mock.calls.filter(([, init]) => !init?.method).map(([url]) => String(url));
+            expect(new Set(polled)).toEqual(new Set(['/api/t/acme/agents/questions/run-9']));
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });
 

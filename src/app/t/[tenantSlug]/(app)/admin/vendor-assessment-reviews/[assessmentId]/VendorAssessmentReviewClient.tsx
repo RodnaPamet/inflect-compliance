@@ -161,6 +161,8 @@ export function VendorAssessmentReviewClient({
             setOverrides(seedOverrides);
             setFinalRating(data.riskRating);
             setReviewerNotes(data.reviewerNotes ?? '');
+        } catch {
+            setError(t('assessmentReview.loadErrorNetwork'));
         } finally {
             setLoading(false);
         }
@@ -168,7 +170,7 @@ export function VendorAssessmentReviewClient({
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        refresh();
+        void refresh();
     }, [refresh]);
 
     const editable = useMemo(

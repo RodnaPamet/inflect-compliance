@@ -85,7 +85,8 @@ describeFn('business impact analysis (integration)', () => {
         await createBia(ctx, { name: 'Payment Processing', criticality: 'CRITICAL', mtpdHours: 4, rtoHours: 2 });
         await createBia(ctx, { name: 'Internal Wiki', criticality: 'LOW', mtpdHours: 240 });
 
-        const rows = await listBias(ctx);
+        const { rows, rankComplete } = await listBias(ctx);
+        expect(rankComplete).toBe(true);
         expect(rows.length).toBeGreaterThanOrEqual(2);
         const critical = rows.find((r) => r.name === 'Payment Processing')!;
         const low = rows.find((r) => r.name === 'Internal Wiki')!;

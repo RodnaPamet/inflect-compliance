@@ -27,7 +27,7 @@ DORA Article 28(3) requires financial entities to keep a register of all their c
 
 **The header.** The title, with an information icon explaining the requirement. Under it, the legal basis, a count of the arrangements and of how many support a critical or important function, and a note saying what the register is built from and which DORA fields Inflect does not hold, such as LEI codes and contract values.
 
-**The filter.** **{{ui:risks.informationRegistry.searchPlaceholder}}** searches the providers' names, legal names and countries. The filter offers **{{ui:risks.informationRegistry.colCriticality}}** and **{{ui:risks.informationRegistry.colStatus}}**, with their options as codes: CRITICAL, HIGH, MEDIUM, LOW; and ACTIVE, ONBOARDING, OFFBOARDED and SUSPENDED. No vendor has the status SUSPENDED, and a vendor that is being offboarded cannot be filtered for.
+**The filter.** **{{ui:risks.informationRegistry.searchPlaceholder}}** searches the providers' names, legal names and countries. The filter offers **{{ui:risks.informationRegistry.colCriticality}}** and **{{ui:risks.informationRegistry.colStatus}}**, with the same options as the vendor list: {{ui:vendors.filterEnums.criticality.low}}, {{ui:vendors.filterEnums.criticality.medium}}, {{ui:vendors.filterEnums.criticality.high}} and {{ui:vendors.filterEnums.criticality.critical}}; and {{ui:vendors.filterEnums.status.onboarding}}, {{ui:vendors.filterEnums.status.active}}, {{ui:vendors.filterEnums.status.offboarding}} and {{ui:vendors.filterEnums.status.offboarded}}.
 
 **The register.** One row per vendor, most critical first:
 
@@ -35,11 +35,11 @@ DORA Article 28(3) requires financial entities to keep a register of all their c
 | --- | --- |
 | {{ui:risks.informationRegistry.colProvider}} | The vendor's name, with its legal name under it. The legal name is the one a supervisor matches against |
 | {{ui:risks.informationRegistry.colFunction}} | **{{ui:risks.informationRegistry.functionYes}}** when the vendor's criticality is Critical or High, otherwise **{{ui:risks.informationRegistry.functionNo}}** |
-| {{ui:risks.informationRegistry.colCriticality}} | The vendor's criticality, as a code |
+| {{ui:risks.informationRegistry.colCriticality}} | The vendor's criticality |
 | {{ui:risks.informationRegistry.colCountry}} | The vendor's country |
-| {{ui:risks.informationRegistry.colDataAccess}} | How much of your data the vendor can reach, as a code |
+| {{ui:risks.informationRegistry.colDataAccess}} | How much of your data the vendor can reach: {{ui:vendors.form.dataNone}}, {{ui:vendors.form.dataLow}}, {{ui:vendors.form.dataMedium}} or {{ui:vendors.form.dataHigh}} |
 | {{ui:risks.informationRegistry.colContractEnd}} | When the contract is up for renewal |
-| {{ui:risks.informationRegistry.colStatus}} | The vendor's status, as a code |
+| {{ui:risks.informationRegistry.colStatus}} | The vendor's status |
 | {{ui:risks.informationRegistry.colOwner}} | The person responsible for the vendor |
 
 A field the vendor has no value for reads **{{ui:risks.informationRegistry.notRecorded}}**. Click a row to open the vendor.
@@ -48,7 +48,7 @@ A field the vendor has no value for reads **{{ui:risks.informationRegistry.notRe
 
 ### Keep the register complete
 
-The register shows every vendor in the workspace that has not been deleted, up to 1,000. To add an arrangement, add the vendor; to correct a row, edit the vendor. Fill in each vendor's legal name, country, data access, contract renewal date and owner, so its row has no **{{ui:risks.informationRegistry.notRecorded}}** gaps. Set the criticality to Critical or High for every vendor that supports a critical or important function.
+The register lists every vendor in the workspace that has not been deleted, up to 1,000, most critical first. Past 1,000 it says so, and the counts in the header still cover every vendor. To add an arrangement, add the vendor; to correct a row, edit the vendor. Fill in each vendor's legal name, country, data access, contract renewal date and owner, so its row has no **{{ui:risks.informationRegistry.notRecorded}}** gaps. Set the criticality to Critical or High for every vendor that supports a critical or important function.
 
 ## What happens next
 
@@ -61,6 +61,7 @@ The register shows every vendor in the workspace that has not been deleted, up t
 | --- | --- | --- |
 | **{{ui:risks.informationRegistry.empty}}** | The workspace has no vendors | {{ui:risks.informationRegistry.emptyDesc}} |
 | **{{ui:risks.informationRegistry.emptyFilteredTitle}}** | No vendor matches the filter or search | {{ui:risks.informationRegistry.emptyFilteredDesc}} |
+| A notice that the first 1,000 are shown, then: {{ui:risks.informationRegistry.truncatedHint}} | The workspace has more than 1,000 vendors, and only the 1,000 most critical are listed | To reach a vendor that is not listed, open it from [{{ui:vendors.title}}](../manage/vendors.md), which pages through every vendor |
 
 ## Related
 

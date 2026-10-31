@@ -449,9 +449,9 @@ export default function ApiKeysPage() {
     }, [apiUrl]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchKeys(); }, [fetchKeys]);
+    useEffect(() => { void fetchKeys(); }, [fetchKeys]);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchAgents(); }, [fetchAgents]);
+    useEffect(() => { void fetchAgents(); }, [fetchAgents]);
 
     // ─── Create ───
     async function handleCreate() {

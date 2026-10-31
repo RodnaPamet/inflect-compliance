@@ -8,6 +8,7 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { apiErrorMessage } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Combobox } from '@/components/ui/combobox';
@@ -108,7 +109,7 @@ export function BiaLinkControlModal({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ controlId: selectedId }),
             });
-            if (!res.ok) throw new Error(tx('biaDetail.linkControlFailed'));
+            if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => null), tx('biaDetail.linkControlFailed')));
             await onLinked();
         } catch (e) {
             setSubmitError(e instanceof Error ? e.message : tx('biaDetail.linkControlFailed'));

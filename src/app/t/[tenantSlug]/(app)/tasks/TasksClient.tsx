@@ -866,7 +866,7 @@ function TasksPageInner({
             .finally(() => {
                 // Mirror the prior `onSettled` semantics — clear selection +
                 // fan out invalidation to sibling filter variants.
-                invalidateAllTasks();
+                void invalidateAllTasks();
                 setSelected(new Set());
             });
     };

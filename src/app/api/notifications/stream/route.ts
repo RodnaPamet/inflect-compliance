@@ -33,10 +33,7 @@
 
 import { NextRequest } from 'next/server';
 import { getLegacyCtx } from '@/app-layer/context';
-import {
-    subscribeToNotifications,
-    type NotificationEvent,
-} from '@/lib/notifications/notification-bus';
+import { notificationStreamResponse } from '@/lib/notifications/notification-sse';
 
 // Use Node runtime (not Edge) so the long-lived ReadableStream
 // + setInterval heartbeat stay on the same process as the
@@ -47,82 +44,16 @@ export const runtime = 'nodejs';
 // Disable Next.js's default response caching for SSE.
 export const dynamic = 'force-dynamic';
 
-const HEARTBEAT_INTERVAL_MS = 25_000;
-
-const encoder = new TextEncoder();
-
-function sseFormat(event: NotificationEvent): string {
-    // SSE wire format: `data: <json>\n\n`. No `event:` field —
-    // the bell handles a single message kind so the default
-    // `message` event type works fine.
-    return `data: ${JSON.stringify(event)}\n\n`;
-}
-
+/**
+ * The session's own workspace — the bell in the org chrome, which has no open
+ * workspace. Inside a workspace the bell uses
+ * `/api/t/:slug/notifications/stream` instead (#4643). The stream itself is
+ * `notificationStreamResponse`, shared by both.
+ */
 export async function GET(req: NextRequest): Promise<Response> {
     // Auth: same `getLegacyCtx` guard the REST list route uses.
     // Throws on unauthenticated; middleware-level guards already
     // handle the 401 surface for the route prefix.
     const ctx = await getLegacyCtx(req);
-
-    const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
-            let closed = false;
-
-            const safeEnqueue = (chunk: string) => {
-                if (closed) return;
-                try {
-                    controller.enqueue(encoder.encode(chunk));
-                } catch {
-                    // Stream already torn down (client disconnected
-                    // mid-flush). Drop the chunk silently.
-                    closed = true;
-                }
-            };
-
-            // Initial comment so the client knows the channel is
-            // open. EventSource doesn't fire `onopen` for some
-            // browsers until at least one byte has been received.
-            safeEnqueue(': connected\n\n');
-
-            const unsubscribe = subscribeToNotifications({
-                tenantId: ctx.tenantId,
-                userId: ctx.userId,
-                send: (event) => safeEnqueue(sseFormat(event)),
-            });
-
-            const heartbeat = setInterval(() => {
-                safeEnqueue(': hb\n\n');
-            }, HEARTBEAT_INTERVAL_MS);
-
-            const cleanup = () => {
-                if (closed) return;
-                closed = true;
-                clearInterval(heartbeat);
-                unsubscribe();
-                try {
-                    controller.close();
-                } catch {
-                    // Already closed by upstream — fine.
-                }
-            };
-
-            // Client closed the tab, navigated away, or lost the
-            // network. The browser sends a TCP FIN which Next
-            // surfaces as an `abort` on the request signal.
-            req.signal.addEventListener('abort', cleanup);
-        },
-    });
-
-    return new Response(stream, {
-        status: 200,
-        headers: {
-            'Content-Type': 'text/event-stream; charset=utf-8',
-            // Disable proxy buffering — without this, nginx / Cloud
-            // Run buffer SSE bytes and the client doesn't see them
-            // until the buffer fills.
-            'Cache-Control': 'no-cache, no-transform',
-            'X-Accel-Buffering': 'no',
-            Connection: 'keep-alive',
-        },
-    });
+    return notificationStreamResponse(ctx, req.signal);
 }

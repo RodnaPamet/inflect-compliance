@@ -48,7 +48,7 @@ export default function DiffPage() {
     const [activeTab, setActiveTab] = useState<'added' | 'removed' | 'changed'>('added');
 
     useEffect(() => {
-        (async () => {
+        void (async () => {
             try {
                 if (fromKey) {
                     const diffRes = await fetch(apiUrl(`/frameworks/${frameworkKey}?action=diff&from=${fromKey}`));

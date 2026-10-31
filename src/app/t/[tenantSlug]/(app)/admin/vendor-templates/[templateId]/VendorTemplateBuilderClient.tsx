@@ -144,6 +144,8 @@ export function VendorTemplateBuilderClient({
             }));
             setSections(grouped);
             setDirty(false);
+        } catch {
+            setError(t('templateBuilder.loadErrorNetwork'));
         } finally {
             setLoading(false);
         }
@@ -151,7 +153,7 @@ export function VendorTemplateBuilderClient({
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        refresh();
+        void refresh();
     }, [refresh]);
 
     const editable = useMemo(

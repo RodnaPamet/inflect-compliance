@@ -60,7 +60,7 @@ Choose it in **{{ui:reports.frameworkLabel}}**. The cards and the readiness repo
 
 ### Export a PDF
 
-Click **{{ui:reports.exportPdf}}** on the gap analysis card or beside the readiness report. The PDF downloads to your computer. Owners, Admins and Editors also get a save button beside it, which saves the PDF to the workspace's files instead, so it can be attached as evidence; a browser message confirms the file's name and size.
+Click **{{ui:reports.exportPdf}}** on the gap analysis card or beside the readiness report. The PDF downloads to your computer. Owners, Admins and Editors also get a save button beside it, which saves the PDF to the workspace's files instead, so it can be attached as evidence. A message at the corner of the page confirms it, with the file's name and size.
 
 ### Export the Statement of Applicability
 
@@ -77,7 +77,8 @@ On an ISO 27001 framework, click **{{ui:reports.exportCsv}}** on its card for a 
 | --- | --- | --- |
 | **{{ui:reports.loadingReadiness}}** | The report for the chosen framework is loading | Wait a moment |
 | **{{ui:reports.readinessLoadError}}** | The readiness report did not load | Choose the framework again, or reload the page |
-| A browser message that the export failed | The PDF was not made. The message does not say why | Try again; if your plan limits PDF exports, ask an Owner |
+| A message giving the reason the export was refused, such as your plan not including PDF exports | The PDF was not made | Follow the reason given; for a plan limit, ask an Owner |
+| **{{ui:panels.pdf.failed}}** | The PDF was not made, and the server gave no reason, or the connection failed | Try again |
 | No Statement of Applicability card | The chosen framework is not ISO 27001 | Choose an ISO 27001 framework, if the workspace uses one |
 
 ## Related

@@ -4,13 +4,13 @@ route: /t/[tenantSlug]/notifications
 
 # {{ui:notifications.title}}
 
-Inflect sends you a notification when something needs you: a policy to acknowledge, evidence approved or rejected, a vendor review due, questions assigned to you. You read them from the bell at the top of the page, and the {{ui:notifications.title}} page lists the latest ones for one workspace.
+Inflect sends you a notification when something needs you: a policy to acknowledge, evidence approved or rejected, a vendor review due, questions assigned to you. You read them from the bell at the top of the page, and the {{ui:notifications.title}} page lists the latest ones for the workspace you have open.
 
 ## Where to find it
 
-**The bell.** The bell at the top right of every page shows how many notifications you have not read. Click it to open the list.
+**The bell.** The bell at the top right of every page shows how many notifications you have not read in the workspace you have open. Click it to open the list.
 
-**The page.** The {{ui:notifications.title}} page has no link in the app. Open it by going to `notifications` under the workspace's address, for example `…/t/your-workspace/notifications`. The breadcrumb reads **{{ui:notifications.crumbDashboard}}** › **{{ui:notifications.title}}**.
+**The page.** Click **{{ui:panels.bell.viewAll}}** at the bottom of the bell's list. The breadcrumb reads **{{ui:notifications.crumbDashboard}}** › **{{ui:notifications.title}}**.
 
 ## Who can use it
 
@@ -24,15 +24,15 @@ Use the bell to keep up with what needs your attention and to jump straight to i
 
 **The bell's list.** Your latest notifications, newest first, each with its title and message. An unread one is marked. Click a notification to mark it read and, when it is about a record, to open that record. **{{ui:panels.bell.markAllRead}}** at the top marks them all read. When there is nothing, the list reads **{{ui:panels.bell.allClear}}**.
 
-The bell's list belongs to the workspace you first joined. If you belong to several workspaces, it shows that workspace's notifications whichever workspace you have open, and notifications from the others do not appear in it.
+The bell shows the notifications of the workspace you have open. If you belong to several workspaces, switching workspace switches the bell's list and its count. On organization pages, which belong to no workspace, it shows those of the workspace you first joined, and has no link to the page.
 
-**The page.** The 50 latest notifications for the workspace in the address, newest first. Each shows an icon for its kind, its message and when it was sent. An unread one has a coloured edge and **{{ui:notifications.markRead}}**; a read one is faded. The page does not show a notification's title or link to the record it is about.
+**The page.** The 50 latest notifications for the workspace, newest first. Each shows an icon for its kind, its title, its message and when it was sent, and **{{ui:notifications.open}}** when it is about a record. An unread one has a coloured edge and **{{ui:notifications.markRead}}**; a read one is faded.
 
 ## What you can do
 
 ### Mark a notification read
 
-On the page, click **{{ui:notifications.markRead}}**. In the bell, click the notification, or **{{ui:panels.bell.markAllRead}}** for all of them. The change shows at once. If it cannot be saved, the page shows the notification as unread again.
+On the page, click **{{ui:notifications.markRead}}**, or **{{ui:notifications.open}}**, which opens the record and marks the notification read. In the bell, click the notification, or **{{ui:panels.bell.markAllRead}}** for all of them. The change shows at once. If it cannot be saved, the page shows the notification as unread again.
 
 ## What happens next
 
@@ -43,7 +43,9 @@ On the page, click **{{ui:notifications.markRead}}**. In the bell, click the not
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:notifications.noNotifications}}** | You have no notifications in this workspace. The page also shows this while it is still loading | Wait a moment; nothing else to do |
+| **{{ui:notifications.loading}}** | The page is loading | Wait a moment |
+| **{{ui:notifications.noNotifications}}** | You have no notifications in this workspace | Nothing to do |
+| **{{ui:notifications.loadError}}** | The list could not be loaded | Reload the page |
 | **{{ui:panels.bell.sessionExpired}}**, in the bell | You were signed out | Click **{{ui:panels.bell.sessionExpiredAction}}** |
 
 ## Related

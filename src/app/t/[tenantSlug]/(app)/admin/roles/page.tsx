@@ -635,7 +635,7 @@ export default function CustomRolesPage() {
     }, [apiUrl, t]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchRoles(); }, [fetchRoles]);
+    useEffect(() => { void fetchRoles(); }, [fetchRoles]);
 
     /**
      * A refused create or update, in the user's language. The "you cannot

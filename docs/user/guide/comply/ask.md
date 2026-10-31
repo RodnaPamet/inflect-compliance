@@ -16,8 +16,11 @@ Open **{{ui:nav.agentsAsk}}** under **{{ui:nav.comply}}** in the sidebar.
 | --- | --- |
 | Open the page and ask a question | Owner, Admin, Editor, Reader, Auditor and AI admin |
 | Read an answer | Only the person who asked |
+| Choose which agent answers | Owner, Admin, AI admin, on the agent's page in the [agent register](../manage/agents.md) |
 
 The page and its answers need read access to the workspace's controls, which every built-in role has. If your workspace uses custom roles, the page follows your custom role's own permission to read controls; without it, the page reads **{{ui:agents.ask.accessTitle}}**.
+
+Questions are answered by the one agent the workspace has chosen for this page. Until one is chosen, every question is refused with a message that says so.
 
 The agent reads as you. It can reach only records you could open yourself, and it can only read: it cannot change, create or propose anything.
 
@@ -35,7 +38,7 @@ Use it for questions that would otherwise take several pages to answer, such as 
 - **{{ui:agents.ask.noAnswerTitle}}**, when the agent finished without writing one.
 - **{{ui:agents.ask.emptyCatalogueTitle}}**, when the agent was given no tools to read records with. Nothing it could say would be based on your records, so the page shows no answer.
 
-**{{ui:agents.ask.callsHeading}}.** Below the answer, always open: every lookup the agent made, in order. Each row shows its number, the name of the tool the agent used, and its outcome, such as DONE. A refused lookup also shows the code of the reason it was refused, and a lookup the workspace's AI safeguards flagged shows their verdict. When the agent looked nothing up, the list reads **{{ui:agents.ask.noCalls}}**
+**{{ui:agents.ask.callsHeading}}.** Below the answer, always open: every lookup the agent made, in order. Each row shows its number, the name of the tool the agent used, and its outcome, such as {{ui:agents.runs.detail.stepStatus.DONE}} or {{ui:agents.runs.detail.stepStatus.FAILED}}. A refused lookup also shows the code of the reason it was refused, and a lookup the workspace's AI safeguards flagged or quarantined shows their verdict. When the agent looked nothing up, the list reads **{{ui:agents.ask.noCalls}}**
 
 **The run's details.** At the bottom:
 
@@ -43,15 +46,15 @@ Use it for questions that would otherwise take several pages to answer, such as 
 | --- | --- |
 | {{ui:agents.ask.model}} | The AI model that answered, or **{{ui:agents.ask.noModel}}** when no model was used |
 | {{ui:agents.ask.tokens}} | How much model capacity the answer used |
-| {{ui:agents.ask.status}} | How the run ended, as a code such as COMPLETED or FAILED |
+| {{ui:agents.ask.status}} | How the run ended, such as {{ui:agents.runs.status.COMPLETED}} or {{ui:agents.runs.status.FAILED}} |
 
 ## What you can do
 
 ### Ask a question
 
-Type your question and click **{{ui:agents.ask.ask}}**. The button reads **{{ui:agents.ask.asking}}** while the agent works, and the box is locked. At first the page shows **{{ui:agents.ask.runningTitle}}**; that message goes once the agent has started, while the page keeps waiting for the answer.
+Type your question and click **{{ui:agents.ask.ask}}**. The button reads **{{ui:agents.ask.asking}}** while the agent works, the box is locked, and the page shows **{{ui:agents.ask.runningTitle}}** until the answer arrives.
 
-The page waits about two minutes. If the agent has not finished by then, it stops waiting and says so. The agent may still finish, but this page cannot show you its answer afterwards; ask again if you need it.
+The page waits about two minutes. If the agent has not finished by then, it stops waiting, says so, and offers **{{ui:agents.ask.checkAgain}}**, which looks at the same question's run again. It keeps that offer until you ask another question or leave the page.
 
 You can ask up to 20 questions an hour. Each question starts fresh: the agent does not remember your earlier questions, and the page keeps no history of them. Leaving the page drops the answer on screen.
 
@@ -66,10 +69,10 @@ You can ask up to 20 questions an hour. Each question starts fresh: the agent do
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:agents.ask.accessTitle}}** | Your role cannot read controls | Ask an Owner or Admin for access |
-| **{{ui:agents.ask.refusedBadge}}**, with a reason | The question was not run. The reason says why: for example, the question was empty or too long, or the workspace has no agent chosen to answer questions, or that agent has been stopped | For a question problem, change the question and ask again. For anything about the agent, ask an Owner or Admin |
+| **{{ui:agents.ask.refusedBadge}}**, with a reason | The question was not run. The reason says why: for example, the question was empty or too long, no agent has been chosen to answer questions, or that agent has been stopped | For a question problem, change the question and ask again. For anything about the agent, ask an Owner, Admin or AI admin |
 | **{{ui:agents.ask.refusedBadge}}** and **{{ui:agents.ask.refusedUnknown}}** | The question was refused without a reason | Try again; if it keeps happening, ask an Owner or Admin |
 | The counter turns red, with a message that the question is too long | The question is over 2,000 characters, and **{{ui:agents.ask.ask}}** stays unavailable | Shorten it |
-| **{{ui:agents.ask.timedOut}}** | The page stopped waiting after about two minutes | Ask again, or ask an Owner, Admin, AI admin or Auditor to look it up on the agent runs page |
+| **{{ui:agents.ask.timedOut}}** | The page stopped waiting after about two minutes | Click **{{ui:agents.ask.checkAgain}}** after a moment |
 | **{{ui:agents.ask.noAnswerTitle}}** | The agent finished without an answer | Read the lookups it made, then rephrase and ask again |
 | **{{ui:agents.ask.emptyCatalogueTitle}}** | The agent has no tools to read records with | Ask an Owner, Admin or AI admin to give it tools |
 

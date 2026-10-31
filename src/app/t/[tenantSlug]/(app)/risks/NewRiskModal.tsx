@@ -194,7 +194,7 @@ export function NewRiskModal({
             await linkSelectedControls(risk.id);
             // Bridge to the SWR cache that RisksClient reads from.
             const risksUrlPrefix = apiUrl(CACHE_KEYS.risks.list());
-            swrMutate(
+            void swrMutate(
                 (key) =>
                     typeof key === 'string' &&
                     (key === risksUrlPrefix || key.startsWith(`${risksUrlPrefix}?`)),

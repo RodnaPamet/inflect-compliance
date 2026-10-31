@@ -244,7 +244,7 @@ export function AccessReviewsClient({ tenantSlug, initialReviews, canCreate }: P
                         <CreateCampaignButton
                             tenantSlug={tenantSlug}
                             onCreated={(reviewId) => {
-                                reviewsQuery.mutate();
+                                void reviewsQuery.mutate();
                                 router.push(
                                     `/t/${tenantSlug}/access-reviews/${reviewId}`,
                                 );

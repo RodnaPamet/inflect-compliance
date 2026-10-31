@@ -20,11 +20,11 @@ Open **{{ui:nav.audits}}** under **{{ui:nav.comply}}** in the sidebar, then clic
 | Start a re-assessment | Owner, Admin |
 | Create risks, controls and tasks from the gaps | Owner, Admin, Editor |
 | Assign the questions to people, and finalise the run | Owner, Admin |
-| Answer questions assigned to you | The person assigned, if they are an Owner, Admin or Editor. Owners and Admins can also answer anyone's |
+| Answer questions assigned to you | The person assigned, whatever their role. Owners and Admins can also answer anyone's |
 
-**{{ui:audits.nis2Gap.rerun}}** appears for Owners, Admins and Editors, but only Owners and Admins can use it: for an Editor it fails with **{{ui:audits.nis2Gap.rerunFailed}}** The assignment panel appears only for Owners and Admins, and the list of gaps to create only for Owners, Admins and Editors.
+**{{ui:audits.nis2Gap.rerun}}** and the assignment panel appear only for Owners and Admins, and the list of gaps to create only for Owners, Admins and Editors.
 
-Questions can be assigned to any member, but a Reader, Auditor or AI admin who is assigned questions cannot submit their answers.
+Questions can be assigned to any member, and being assigned is what lets a person answer them: a Reader, Auditor or AI admin can submit the questions given to them.
 
 ## What it is for
 
@@ -32,7 +32,7 @@ Use the page to measure your NIS2 position, find the gaps that carry fines or pe
 
 ## What you see
 
-**The header.** **{{ui:audits.nis2Gap.viewCoverage}}** opens the NIS2 framework's control coverage, which is a different measure: how many NIS2 requirements your controls cover. Owners, Admins and Editors also see **{{ui:audits.nis2Gap.rerun}}**.
+**The header.** **{{ui:audits.nis2Gap.viewCoverage}}** opens the NIS2 framework's control coverage, which is a different measure: how many NIS2 requirements your controls cover. Owners and Admins also see **{{ui:audits.nis2Gap.rerun}}**.
 
 **The scores.** Three cards for the latest run:
 
@@ -46,20 +46,20 @@ Use the page to measure your NIS2 position, find the gaps that carry fines or pe
 
 **{{ui:audits.nis2Gap.maturityByDomain}}.** A radar chart with the score of each of the questionnaire's 15 domains. Until the run has answers, it reads **{{ui:audits.nis2Gap.radarEmpty}}**
 
-**{{ui:audits.nis2Gap.histTitle}}.** Every run, newest first: whether it was the **{{ui:audits.nis2Gap.runBaseline}}** taken during onboarding or a **{{ui:audits.nis2Gap.runReassessment}}**, its score, its gaps, how many questions were answered, its status as a code such as COMPLETED, and its date.
+**{{ui:audits.nis2Gap.histTitle}}.** Every run, newest first: whether it was the **{{ui:audits.nis2Gap.runBaseline}}** taken during onboarding or a **{{ui:audits.nis2Gap.runReassessment}}**, its score, its gaps, how many questions were answered, its status, such as {{ui:audits.nis2Gap.runStatus.COMPLETED}}, and its date.
 
 **{{ui:audits.nis2Gap.prioritisedGaps}}.** The latest run's gaps, most urgent first:
 
 | Column | What it shows |
 | --- | --- |
 | {{ui:audits.nis2Gap.gapCol}} | The question, in plain words. Questions are written in English and German, so the English text shows in other languages |
-| {{ui:audits.nis2Gap.gapCrit}} | How critical the gap is, as a code such as CRITICAL |
-| {{ui:audits.nis2Gap.gapLiability}} | **{{ui:audits.nis2Gap.personalLiability}}** when management can be held personally liable, **{{ui:audits.nis2Gap.fineExposure}}** when it carries a fine, or the consequence as a code |
-| {{ui:audits.nis2Gap.gapAnswer}} | The answer given, as a code such as NO or PARTIALLY |
-| {{ui:audits.nis2Gap.gapEffort}} | How long the fix is likely to take, as a code |
+| {{ui:audits.nis2Gap.gapCrit}} | How critical the gap is: {{ui:audits.nis2Gap.crit.CRITICAL}}, {{ui:audits.nis2Gap.crit.HIGH}}, {{ui:audits.nis2Gap.crit.MEDIUM}} or {{ui:audits.nis2Gap.crit.LOW}} |
+| {{ui:audits.nis2Gap.gapLiability}} | **{{ui:audits.nis2Gap.personalLiability}}** when management can be held personally liable, **{{ui:audits.nis2Gap.fineExposure}}** when it carries a fine, or another consequence, such as {{ui:audits.nis2Gap.consequence.AUDIT_FINDING}} |
+| {{ui:audits.nis2Gap.gapAnswer}} | The answer given, such as {{ui:audits.nis2Gap.answer.NO}} or {{ui:audits.nis2Gap.answer.PARTIALLY}} |
+| {{ui:audits.nis2Gap.gapEffort}} | How long the fix is likely to take, from {{ui:audits.nis2Gap.effort.QUICK_WIN}} to {{ui:audits.nis2Gap.effort.MONTHS}} |
 | {{ui:audits.nis2Gap.gapLegalBasis}} | The article of the directive behind it |
 
-**{{ui:audits.nis2Gap.createThese}}.** For Owners, Admins and Editors, when there are gaps to act on: one suggestion per gap, each saying whether it would create a risk, a task, a new control, or link an existing control, with its criticality, the reason and the legal basis.
+**{{ui:audits.nis2Gap.createThese}}.** For Owners, Admins and Editors, when there are gaps to act on: one suggestion per gap, each labelled with what it would do, with its criticality, the reason and the legal basis. **{{ui:audits.nis2Gap.kind.RISK}}**, **{{ui:audits.nis2Gap.kind.TASK}}** and **{{ui:audits.nis2Gap.kind.CONTROL_CREATE}}** create one; **{{ui:audits.nis2Gap.kind.CONTROL_LINK}}** reuses an existing control.
 
 At the bottom, the questionnaire's source and licence.
 
@@ -71,7 +71,7 @@ Click **{{ui:audits.nis2Gap.rerun}}**. A new run starts, and the message **{{ui:
 
 ### Assign the questions to people
 
-While the latest run is a re-assessment that is not finished, Owners and Admins see **{{ui:audits.nis2Gap.assignTitle}}**. The questions are split into five groups, each meant for a different person: governance for the chief executive, technical questions for IT, training for HR, supply chain for procurement, and a general group. Choose a member for each group and click **{{ui:audits.nis2Gap.dispatch}}**. Each person gets a task and a notification with a link to their questions, and sees only those. Assigning a group again to the same person sends nothing new. Each group then shows its status and how many questions it holds.
+While the latest run is a re-assessment that is not finished, Owners and Admins see **{{ui:audits.nis2Gap.assignTitle}}**. The questions are split into five groups, each meant for a different person: {{ui:audits.nis2Gap.respondentRole.CEO}}, {{ui:audits.nis2Gap.respondentRole.IT}}, {{ui:audits.nis2Gap.respondentRole.HR}}, {{ui:audits.nis2Gap.respondentRole.PROCUREMENT}} and {{ui:audits.nis2Gap.respondentRole.ANYONE}}. Choose a member for each group and click **{{ui:audits.nis2Gap.dispatch}}**. Each person gets a task and a notification with a link to their questions, and sees only those. Assigning a group again to the same person sends nothing new. Each group then shows its status and how many questions it holds.
 
 The onboarding baseline cannot be assigned. While it is the latest run, the panel offers **{{ui:audits.nis2Gap.baselineDelegateAction}}** instead.
 
@@ -79,9 +79,9 @@ When everyone has submitted, click **{{ui:audits.nis2Gap.finalize}}** to complet
 
 ### Answer your questions
 
-Open the link in your notification, or in the task you were given. The **{{ui:audits.respond.title}}** page lists only the questions assigned to you, grouped by domain, each with its legal basis. Choose an answer for each: YES, PARTIALLY, NO or NA. Then click the submit button, which counts your answers. The message **{{ui:audits.respond.submitted}}** confirms it.
+Open the link in your notification, or in the task you were given. The **{{ui:audits.respond.title}}** page lists only the questions assigned to you, grouped by domain, each with its legal basis. Choose an answer for each: {{ui:audits.nis2Gap.answer.YES}}, {{ui:audits.nis2Gap.answer.PARTIALLY}}, {{ui:audits.nis2Gap.answer.NO}} or {{ui:audits.nis2Gap.answer.NA}}. Then click the submit button, which counts your answers. The message **{{ui:audits.respond.submitted}}** confirms it.
 
-Once you have submitted, the page says **{{ui:audits.respond.alreadySubmitted}}**, but the submit button is gone, so you cannot change your answers from the page.
+Once you have submitted, the page says **{{ui:audits.respond.alreadySubmitted}}** That holds until an Owner or Admin finalises the run. After that the page says **{{ui:audits.respond.finalized}}**, and the answers can only be read.
 
 ### Turn gaps into remediation
 
@@ -100,11 +100,11 @@ In **{{ui:audits.nis2Gap.createThese}}**, tick the suggestions you want, then cl
 | --- | --- | --- |
 | **{{ui:audits.nis2Gap.loading}}** | The page is loading | Wait a moment |
 | **{{ui:audits.nis2Gap.loadFailed}}** | The page could not load | Refresh the page |
-| **{{ui:audits.nis2Gap.rerunFailed}}** | The re-assessment did not start. Your role may not start one | Ask an Owner or Admin |
-| **{{ui:audits.nis2Gap.applyFailed}}** | Nothing was created | Try again |
+| **{{ui:audits.nis2Gap.rerunFailed}}**, or the reason the server gave | The re-assessment did not start | Follow the reason given |
+| **{{ui:audits.nis2Gap.applyFailed}}**, or the reason the server gave | Nothing was created | Follow the reason given, then try again |
 | **{{ui:audits.nis2Gap.dispatchFailed}}**, **{{ui:audits.nis2Gap.finalizeFailed}}**, or the reason the server gave | The step was not done | Follow the reason given |
 | **{{ui:audits.respond.loadFailed}}**, or a reason | Your questions did not load, for example because the assignment belongs to someone else | Open the link from your own notification |
-| **{{ui:audits.respond.submitFailed}}**, or a reason | Your answers were not saved. Your role may not submit answers | Ask an Owner or Admin to submit them for you |
+| **{{ui:audits.respond.submitFailed}}**, or a reason | Your answers were not saved, for example because the run was finalised while you were answering | Follow the reason given |
 
 ## Related
 

@@ -608,7 +608,7 @@ export default function ControlDetailPage() {
     const removeContributor = (userId: string) => {
         const previous = pageDataQuery.data;
         if (previous) {
-            pageDataQuery.mutate(
+            void pageDataQuery.mutate(
                 {
                     ...previous,
                     control: {
@@ -636,12 +636,12 @@ export default function ControlDetailPage() {
             },
             undoAction: () => {
                 if (previous) {
-                    pageDataQuery.mutate(previous, { revalidate: false });
+                    void pageDataQuery.mutate(previous, { revalidate: false });
                 }
             },
             onError: () => {
                 if (previous) {
-                    pageDataQuery.mutate(previous, { revalidate: false });
+                    void pageDataQuery.mutate(previous, { revalidate: false });
                 }
                 toast.error(tx('detailPage.errors.removeContributorFailed'));
             },
@@ -748,7 +748,7 @@ export default function ControlDetailPage() {
         // payload so undo restores even after a concurrent change.
         const previous = evidenceSWR.data;
         if (previous) {
-            evidenceSWR.mutate(
+            void evidenceSWR.mutate(
                 {
                     ...previous,
                     links: previous.links.filter(
@@ -772,12 +772,12 @@ export default function ControlDetailPage() {
             },
             undoAction: () => {
                 if (previous) {
-                    evidenceSWR.mutate(previous, { revalidate: false });
+                    void evidenceSWR.mutate(previous, { revalidate: false });
                 }
             },
             onError: () => {
                 if (previous) {
-                    evidenceSWR.mutate(previous, { revalidate: false });
+                    void evidenceSWR.mutate(previous, { revalidate: false });
                 }
             },
         });
@@ -954,7 +954,7 @@ export default function ControlDetailPage() {
                         hideSearch
                         id="control-status-select"
                         selected={STATUS_CB_OPTIONS.find(o => o.value === control.status) ?? null}
-                        setSelected={(opt) => { if (opt) changeStatus(opt.value); }}
+                        setSelected={(opt) => { if (opt) void changeStatus(opt.value); }}
                         options={STATUS_CB_OPTIONS}
                         disabled={changingStatus}
                         placeholder={tx('status')}

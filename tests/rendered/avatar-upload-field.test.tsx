@@ -12,6 +12,13 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 
+// The field re-mints the session and refreshes the route after a change
+// (#4644); neither is what these cases are about.
+jest.mock('next/navigation', () => ({
+    useRouter: () => ({ refresh: jest.fn(), push: jest.fn(), replace: jest.fn() }),
+}));
+jest.mock('@/lib/auth/refresh-session-claims', () => ({ refreshSessionClaims: async () => undefined }));
+
 import { AvatarUploadField } from '@/app/account/profile/AvatarUploadField';
 
 const originalFetch = global.fetch;

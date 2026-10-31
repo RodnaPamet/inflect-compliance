@@ -35,6 +35,7 @@ import {
     ANNEX_III_AREAS,
     ART50_TRANSPARENCY_CASES,
 } from '@/lib/eu-ai-act/classification';
+import { isKnownAiActTier } from '@/lib/eu-ai-act/tier-display';
 
 /** The answer "this question does not apply" — a choice, never a default. */
 export const NOT_APPLICABLE = 'NOT_APPLICABLE';
@@ -129,7 +130,12 @@ export function ClassifyAiSystemModal({
                 return;
             }
             const result = (await res.json().catch(() => null)) as { riskTier?: string } | null;
-            toast.success(tx('aiSystems.detail.classifyModal.saved', { tier: result?.riskTier ?? '' }));
+            const tier = result?.riskTier ?? '';
+            toast.success(
+                tx('aiSystems.detail.classifyModal.saved', {
+                    tier: isKnownAiActTier(tier) ? tx(`aiSystems.filterEnums.riskTier.${tier}`) : tier,
+                }),
+            );
             onClose();
             router.refresh();
         } catch {

@@ -192,6 +192,8 @@ jest.mock('@/app-layer/repositories/EvidenceRepository', () => ({
 jest.mock('@/app-layer/repositories/Nis2GapAssessmentRepository', () => ({
     Nis2GapAssessmentRepository: {
         upsertAnswer: (...a: unknown[]) => mockNis2UpsertAnswer(...a),
+        // An open run, so the submit reaches the write this file is about.
+        lockAssessmentStatusForShare: async () => ({ status: 'IN_PROGRESS' }),
     },
 }));
 

@@ -30,6 +30,7 @@ import {
     getControlBiaSurface,
     getIncidentBiaContext,
     CONTINUITY_REQUIREMENT_CODES,
+    BIA_RANK_POPULATION_CAP,
 } from '@/app-layer/usecases/business-impact-analysis';
 import { runInTenantContext } from '@/lib/db-context';
 import { deriveRecoveryPriority } from '@/app-layer/services/bia-recovery-priority';
@@ -55,20 +56,36 @@ beforeEach(() => {
     mockDerive.mockImplementation(actualPriority.deriveRecoveryPriority);
 });
 
+type PopulationRow = { id: string; criticality: string; mtpdHours: number | null; rtoHours: number | null; reviewedAt?: Date | null };
+
+/**
+ * The register reads twice: the ranking population (a `select` of four
+ * columns), then the page by id. This answers each from one list, so a test
+ * states the register once.
+ */
+function registerDb(population: PopulationRow[]) {
+    return withDb({
+        businessImpactAnalysis: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            findMany: jest.fn(async (args: any) => {
+                if (args.select) return population.map((p) => ({ reviewedAt: null, ...p }));
+                const ids: string[] = args.where.id.in;
+                return population.filter((p) => ids.includes(p.id)).map((p) => ({ ...p, name: p.id }));
+            }),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+}
+
 describe('listBias — recovery ordering', () => {
     it('re-orders the page by recovery priority rather than trusting the database order', async () => {
-        const db = withDb({
-            businessImpactAnalysis: {
-                findMany: jest.fn().mockResolvedValue([
-                    { id: 'b-low', criticality: 'LOW', mtpdHours: 1, rtoHours: 1 },
-                    { id: 'b-crit-slow', criticality: 'CRITICAL', mtpdHours: 48, rtoHours: 24 },
-                    { id: 'b-crit-fast', criticality: 'CRITICAL', mtpdHours: 2, rtoHours: 1 },
-                ]),
-            },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any);
+        registerDb([
+            { id: 'b-low', criticality: 'LOW', mtpdHours: 1, rtoHours: 1 },
+            { id: 'b-crit-slow', criticality: 'CRITICAL', mtpdHours: 48, rtoHours: 24 },
+            { id: 'b-crit-fast', criticality: 'CRITICAL', mtpdHours: 2, rtoHours: 1 },
+        ]);
 
-        const rows = await listBias(ctx);
+        const { rows } = await listBias(ctx);
 
         // Criticality first, then tightest MTPD — the LOW row leads on MTPD
         // and still recovers last.
@@ -77,44 +94,80 @@ describe('listBias — recovery ordering', () => {
         expect(rows[0].recovery?.rationale).toBe('CRITICAL criticality · MTPD 2h · RTO 1h → recovery #1');
     });
 
-    it('sorts BIAs the ranker could not place LAST, in their original relative order', async () => {
-        // Only one of the three rows comes back ranked — the shape you get
-        // when the ranking input was truncated. `rankFor` returns null for the
-        // other two and they fall to the 999 sentinel, which must sink them
-        // rather than float them (a `?? 0` would put the unrankable first).
-        mockDerive.mockReturnValue([{ id: 'b-ranked', rank: 7, rationale: 'HIGH criticality → recovery #7' }]);
-        const db = withDb({
-            businessImpactAnalysis: {
-                findMany: jest.fn().mockResolvedValue([
-                    { id: 'b-ghost-a', criticality: 'CRITICAL', mtpdHours: 1, rtoHours: 1 },
-                    { id: 'b-ranked', criticality: 'HIGH', mtpdHours: 99, rtoHours: 99 },
-                    { id: 'b-ghost-b', criticality: 'CRITICAL', mtpdHours: 2, rtoHours: 1 },
-                ]),
-            },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any);
-
-        const rows = await listBias(ctx);
-
-        expect(rows.map((r) => r.id)).toStrictEqual(['b-ranked', 'b-ghost-a', 'b-ghost-b']);
-        expect(rows.map((r) => r.recovery)).toStrictEqual([
-            { id: 'b-ranked', rank: 7, rationale: 'HIGH criticality → recovery #7' },
-            null,
-            null,
+    it('picks the page by recovery rank over the whole register, not by the criticality spelling (#4632)', async () => {
+        // Alphabetically CRITICAL < HIGH < LOW < MEDIUM, so a page cut by the
+        // stored string kept the Low analysis and dropped the Medium one.
+        const db = registerDb([
+            { id: 'b-low', criticality: 'LOW', mtpdHours: 1, rtoHours: 1 },
+            { id: 'b-medium', criticality: 'MEDIUM', mtpdHours: 1, rtoHours: 1 },
+            { id: 'b-critical', criticality: 'CRITICAL', mtpdHours: 1, rtoHours: 1 },
         ]);
-        expect(db.businessImpactAnalysis.findMany).toHaveBeenCalledTimes(1);
+
+        const register = await listBias(ctx, { take: 2 });
+
+        expect(register.rows.map((r) => [r.id, r.recovery?.rank])).toStrictEqual([['b-critical', 1], ['b-medium', 2]]);
+        expect(register.truncated).toBe(true);
+        expect(register.rankComplete).toBe(true);
+        // The page read asks for exactly the ranked ids.
+        expect(db.businessImpactAnalysis.findMany.mock.calls[1][0].where).toStrictEqual({
+            tenantId: 't-acme', id: { in: ['b-critical', 'b-medium'] },
+        });
     });
 
-    it('clamps take at 500 and only filters by criticality when one was asked for', async () => {
-        const db = withDb({
-            businessImpactAnalysis: { findMany: jest.fn().mockResolvedValue([]) },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any);
+    it('ranks a filtered page in the WHOLE register, so its "#" matches the analysis page', async () => {
+        registerDb([
+            { id: 'b-crit', criticality: 'CRITICAL', mtpdHours: 1, rtoHours: 1 },
+            { id: 'b-high-a', criticality: 'HIGH', mtpdHours: 2, rtoHours: 1 },
+            { id: 'b-high-b', criticality: 'HIGH', mtpdHours: 9, rtoHours: 1 },
+        ]);
 
-        await listBias(ctx, { take: 5_000, criticality: 'HIGH' });
+        const { rows, truncated } = await listBias(ctx, { criticality: 'HIGH' });
+
+        expect(rows.map((r) => [r.id, r.recovery?.rank])).toStrictEqual([['b-high-a', 2], ['b-high-b', 3]]);
+        expect(truncated).toBe(false);
+    });
+
+    it('counts the summary over the register, not the page', async () => {
+        const recent = new Date(Date.now() - 86_400_000);
+        registerDb([
+            { id: 'b-1', criticality: 'CRITICAL', mtpdHours: 1, rtoHours: 1, reviewedAt: recent },
+            { id: 'b-2', criticality: 'CRITICAL', mtpdHours: 2, rtoHours: 1, reviewedAt: null },
+            { id: 'b-3', criticality: 'LOW', mtpdHours: 3, rtoHours: 1, reviewedAt: recent },
+        ]);
+
+        const { rows, summary } = await listBias(ctx, { take: 1 });
+
+        expect(rows).toHaveLength(1);
+        expect(summary).toStrictEqual({ total: 3, critical: 2, overdue: 1 });
+        // The row's badge is decided here too, not by the browser's clock.
+        expect(rows[0]).toMatchObject({ id: 'b-1', reviewOverdue: false });
+    });
+
+    it('reads the ranking population one past its cap, and says when the register is past it', async () => {
+        const population = Array.from({ length: BIA_RANK_POPULATION_CAP + 1 }, (_, i) => ({
+            id: `b-${String(i).padStart(5, '0')}`, criticality: 'LOW', mtpdHours: null, rtoHours: null,
+        }));
+        const db = registerDb(population);
+
+        const register = await listBias(ctx);
 
         expect(db.businessImpactAnalysis.findMany.mock.calls[0][0]).toStrictEqual({
-            where: { tenantId: 't-acme', criticality: 'HIGH' },
+            where: { tenantId: 't-acme' },
+            select: { id: true, criticality: true, mtpdHours: true, rtoHours: true, reviewedAt: true },
+            orderBy: { id: 'asc' },
+            take: BIA_RANK_POPULATION_CAP + 1,
+        });
+        expect(register.rankComplete).toBe(false);
+        expect(register.truncated).toBe(true);
+        expect(register.summary.total).toBe(BIA_RANK_POPULATION_CAP);
+    });
+
+    it('clamps take at 500 and reads no page when nothing matches', async () => {
+        const db = registerDb([{ id: 'b-1', criticality: 'LOW', mtpdHours: 1, rtoHours: 1 }]);
+
+        await listBias(ctx, { take: 5_000 });
+        expect(db.businessImpactAnalysis.findMany.mock.calls[1][0]).toStrictEqual({
+            where: { tenantId: 't-acme', id: { in: ['b-1'] } },
             include: {
                 // No `processNode` include: a BIA names its node by natural
                 // key now, which Prisma cannot join. attachProcessNodes()
@@ -122,14 +175,14 @@ describe('listBias — recovery ordering', () => {
                 ownerUser: { select: { id: true, name: true, email: true } },
                 _count: { select: { dependencies: true } },
             },
-            orderBy: [{ criticality: 'asc' }, { mtpdHours: 'asc' }],
-            take: 500,
+            take: 1,
         });
 
-        await listBias(ctx);
-
-        expect(db.businessImpactAnalysis.findMany.mock.calls[1][0].where).toStrictEqual({ tenantId: 't-acme' });
-        expect(db.businessImpactAnalysis.findMany.mock.calls[1][0].take).toBe(200);
+        db.businessImpactAnalysis.findMany.mockClear();
+        const none = await listBias(ctx, { criticality: 'HIGH' });
+        expect(none.rows).toStrictEqual([]);
+        // The population read only — no page read for an empty page.
+        expect(db.businessImpactAnalysis.findMany).toHaveBeenCalledTimes(1);
     });
 
     it('refuses a context without read permission before opening a tenant transaction', async () => {

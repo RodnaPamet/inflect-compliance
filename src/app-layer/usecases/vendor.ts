@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { RequestContext } from '../types';
-import { VendorRepository, VendorDocumentRepository, VendorLinkRepository, VendorFilters, VendorListParams } from '../repositories/VendorRepository';
+import { VendorRepository, VendorDocumentRepository, VendorLinkRepository, VendorFilters, VendorListParams, INFORMATION_REGISTER_CAP } from '../repositories/VendorRepository';
 import { QuestionnaireRepository, VendorAssessmentRepository } from '../repositories/AssessmentRepository';
 import { assertCanReadVendors, assertCanManageVendors, assertCanManageVendorDocs } from '../policies/vendor.policies';
 import { assertCanAdmin } from '../policies/common';
@@ -82,7 +82,21 @@ export async function listVendors(
  */
 export async function listInformationRegister(ctx: RequestContext) {
     assertCanReadVendors(ctx);
-    return runInTenantContext(ctx, (db) => VendorRepository.listInformationRegister(db, ctx));
+    return runInTenantContext(ctx, async (db) => {
+        // One past the cap, so "exactly the cap" and "more than the cap" are
+        // told apart rather than guessed (#4639). The header figures are
+        // counted over the whole register, so a cut-short list never
+        // undercounts the arrangements supporting critical functions.
+        const read = await VendorRepository.listInformationRegister(db, ctx, { take: INFORMATION_REGISTER_CAP + 1 });
+        const counts = await VendorRepository.informationRegisterCounts(db, ctx);
+        const truncated = read.length > INFORMATION_REGISTER_CAP;
+        return {
+            rows: truncated ? read.slice(0, INFORMATION_REGISTER_CAP) : read,
+            truncated,
+            total: counts.total,
+            criticalOrImportant: counts.criticalOrImportant,
+        };
+    });
 }
 
 /**

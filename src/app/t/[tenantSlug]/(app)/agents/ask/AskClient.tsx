@@ -100,10 +100,16 @@ const POLL_MS = 1_500;
  */
 const POLL_MAX_ATTEMPTS = Math.ceil(120_000 / POLL_MS);
 
-type Phase = 'idle' | 'running' | 'settled' | 'refused';
+type Phase = 'idle' | 'running' | 'settled' | 'refused' | 'timedOut';
+
+/** `CODE: detail`, the shape every refusal on this path takes. */
+const REFUSAL_SHAPE = /^([A-Za-z][A-Za-z0-9_]*):\s*([\s\S]*)$/;
 
 export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxChars: number }) {
     const t = useTranslations('agents.ask');
+    // Run, step and guard vocabularies are the Agent runs page's, so a status
+    // reads the same in both places (#4532, #4629).
+    const tRuns = useTranslations('agents.runs');
     const [question, setQuestion] = useState('');
     const [phase, setPhase] = useState<Phase>('idle');
     const [result, setResult] = useState<AskResult | null>(null);
@@ -124,6 +130,35 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
      * arguing about when it would matter.
      */
     const pollRef = useRef<((runId: string, attempt: number) => Promise<void>) | null>(null);
+    /** The run being waited on, so "Check again" can resume it after a timeout. */
+    const [runId, setRunId] = useState<string | null>(null);
+
+    /** A label from the runs vocabulary, or the code itself when it has none. */
+    const runsLabel = useCallback(
+        (group: string, code: string): string => {
+            const key = `${group}.${code}`;
+            return tRuns.has(key as Parameters<typeof tRuns.has>[0]) ? tRuns(key as Parameters<typeof tRuns>[0]) : code;
+        },
+        [tRuns],
+    );
+
+    /**
+     * What a refusal says to the asker. The server's refusals are
+     * `CODE: detail`, written for an operator — one names an environment
+     * variable, another an agent id. A code this page knows is said in words
+     * (#4629); for any other, the detail is shown without its code.
+     */
+    const refusalText = useCallback(
+        (body: unknown): string => {
+            const message = apiErrorMessage(body, t('refusedUnknown'));
+            const m = REFUSAL_SHAPE.exec(message);
+            if (!m) return message;
+            const key = `refusal.${m[1]}`;
+            if (t.has(key as Parameters<typeof t.has>[0])) return t(key as Parameters<typeof t>[0]);
+            return m[2].trim() || t('refusedUnknown');
+        },
+        [t],
+    );
 
     // Cleared on unmount so a pending poll cannot set state on a gone
     // component — and so navigating away actually stops the requests.
@@ -142,7 +177,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
             const res = await fetch(`/api/t/${tenantSlug}/agents/questions/${runId}`);
             if (!res.ok) {
                 const body: unknown = await res.json().catch(() => null);
-                setRefusal(apiErrorMessage(body, t('refusedUnknown')));
+                setRefusal(refusalText(body));
                 setPhase('refused');
                 return;
             }
@@ -156,14 +191,16 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
             if (attempt >= POLL_MAX_ATTEMPTS) {
                 // The run is still live and we have stopped waiting. Said as a
                 // timeout rather than left spinning: a spinner that never ends
-                // is indistinguishable from a page that is broken.
-                setRefusal(t('timedOut'));
-                setPhase('refused');
+                // is indistinguishable from a page that is broken. It used to
+                // send the asker to the agent register, which an Editor or
+                // Reader cannot open; the run id is kept instead, so "Check
+                // again" resumes the same run (#4629).
+                setPhase('timedOut');
                 return;
             }
             timer.current = setTimeout(() => void pollRef.current?.(runId, attempt + 1), POLL_MS);
         },
-        [tenantSlug, t],
+        [tenantSlug, refusalText],
     );
 
     // In an effect, not during render: assigning a ref while rendering is its
@@ -176,6 +213,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
         setPhase('running');
         setResult(null);
         setRefusal(null);
+        setRunId(null);
         const res = await fetch(`/api/t/${tenantSlug}/agents/questions`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -187,13 +225,21 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
             // switch", "ask a shorter question" — and flattening them into one
             // "something went wrong" is what makes a support request necessary.
             const body: unknown = await res.json().catch(() => null);
-            setRefusal(apiErrorMessage(body, t('refusedUnknown')));
+            setRefusal(refusalText(body));
             setPhase('refused');
             return;
         }
-        const { runId } = (await res.json()) as { runId: string };
+        const started = (await res.json()) as { runId: string };
+        setRunId(started.runId);
+        await poll(started.runId, 1);
+    }, [tenantSlug, question, poll, refusalText]);
+
+    /** Resume waiting on the run a timeout stopped watching. */
+    const checkAgain = useCallback(async () => {
+        if (!runId) return;
+        setPhase('running');
         await poll(runId, 1);
-    }, [tenantSlug, question, poll, t]);
+    }, [runId, poll]);
 
     return (
         <div className="space-y-section">
@@ -245,8 +291,21 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                 </div>
             )}
 
-            {phase === 'running' && result === null && (
+            {/* For the whole wait, not only until the first status check: the
+                first poll fills `result` with the RUNNING run, and gating on
+                `result === null` left nothing on screen for up to two minutes
+                but a disabled button (#4629). */}
+            {phase === 'running' && (
                 <EmptyState title={t('runningTitle')} description={t('runningDescription')} />
+            )}
+
+            {phase === 'timedOut' && (
+                <div className={cn(cardVariants(), 'space-y-default')} role="status" data-testid="agent-ask-timed-out">
+                    <p className="text-sm text-content-default">{t('timedOut')}</p>
+                    <Button variant="secondary" size="sm" onClick={() => void checkAgain()}>
+                        {t('checkAgain')}
+                    </Button>
+                </div>
             )}
 
             {phase === 'settled' && result !== null && (
@@ -287,7 +346,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                                         <span className="font-mono text-content-muted">{c.seq}</span>
                                         <span className="text-content-default">{c.tool ?? t('unnamedTool')}</span>
                                         <StatusBadge variant={c.outcome === 'DONE' ? 'success' : 'error'}>
-                                            {c.outcome}
+                                            {runsLabel('detail.stepStatus', c.outcome)}
                                         </StatusBadge>
                                         {/* The refusal CODE the server chose to
                                             disclose — never an exception
@@ -295,8 +354,11 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                                         {c.refusal !== null && (
                                             <span className="font-mono text-xs text-content-muted">{c.refusal}</span>
                                         )}
-                                        {c.guardVerdict !== null && (
-                                            <StatusBadge variant="warning">{c.guardVerdict}</StatusBadge>
+                                        {/* Every step records a verdict, CLEAN by
+                                            default; only one the AI Guard
+                                            raised is worth a warning. */}
+                                        {c.guardVerdict !== null && c.guardVerdict !== 'CLEAN' && (
+                                            <StatusBadge variant="warning">{runsLabel('detail.guard', c.guardVerdict)}</StatusBadge>
                                         )}
                                     </li>
                                 ))}
@@ -318,7 +380,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                         </div>
                         <div>
                             <dt className="text-content-muted">{t('status')}</dt>
-                            <dd className="font-mono text-content-default">{result.status}</dd>
+                            <dd className="text-content-default">{runsLabel('status', result.status)}</dd>
                         </div>
                     </dl>
                 </div>

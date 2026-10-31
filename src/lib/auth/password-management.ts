@@ -269,6 +269,20 @@ export type ChangePasswordResult =
     | { ok: false; reason: 'no_password' | 'wrong_password' };
 
 /**
+ * Does this account have a password it could change? Accounts that sign in
+ * only through Google, Microsoft or SSO have no `passwordHash`, and the
+ * account security page offers them no change-password form (#4645) rather
+ * than refusing `no_password` after all three fields are filled in.
+ */
+export async function accountHasPassword(userId: string): Promise<boolean> {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { passwordHash: true },
+    });
+    return Boolean(user?.passwordHash);
+}
+
+/**
  * Change the password for an already-authenticated user.
  * `newPassword` MUST already have passed `validatePasswordPolicy` +
  * `checkPasswordAgainstHIBP` at the route boundary.

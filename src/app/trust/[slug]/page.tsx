@@ -12,6 +12,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getPublicTrustCenter } from '@/lib/trust-center/public';
+import { getPublicGatedDocuments } from '@/lib/trust-center/gated';
+import { GatedDocumentRequests } from './GatedDocumentRequests';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +46,9 @@ export default async function TrustCenterPage({
     const t = await getTranslations('external.trustCenter');
     const tc = await getPublicTrustCenter(slug);
     if (!tc) notFound();
+    // The curated gated read (same isolation contract): document ids and
+    // labels only, for the request form. Never a file reference.
+    const gated = await getPublicGatedDocuments(slug);
 
     return (
         <main className="mx-auto max-w-3xl px-6 py-12 space-y-section">
@@ -94,6 +99,10 @@ export default async function TrustCenterPage({
                         ))}
                     </ul>
                 </section>
+            )}
+
+            {gated && gated.documents.length > 0 && (
+                <GatedDocumentRequests slug={slug} ndaRequired={gated.ndaRequired} documents={gated.documents} />
             )}
 
             {tc.securityContact && (

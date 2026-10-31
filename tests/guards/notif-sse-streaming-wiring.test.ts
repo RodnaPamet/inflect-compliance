@@ -68,34 +68,50 @@ describe('PR-C SSE notification streaming wiring', () => {
         });
     });
 
-    describe('2. SSE route', () => {
-        const PATH_ROUTE = 'src/app/api/notifications/stream/route.ts';
+    describe('2. SSE routes and the stream they share', () => {
+        // Two routes since #4643: the session's (org chrome) and the open
+        // workspace's. Both resolve who is listening and hand the stream to
+        // `notificationStreamResponse`, which holds what used to be inline in
+        // the first route — so the stream properties are asserted there, once.
+        const PATH_SESSION_ROUTE = 'src/app/api/notifications/stream/route.ts';
+        const PATH_WORKSPACE_ROUTE = 'src/app/api/t/[tenantSlug]/notifications/stream/route.ts';
+        const PATH_SSE = 'src/lib/notifications/notification-sse.ts';
 
-        it('file exists at the canonical path', () => {
-            expect(existsSync(path.join(ROOT, PATH_ROUTE))).toBe(true);
+        it('both routes exist at their canonical paths, and the shared stream does', () => {
+            expect(existsSync(path.join(ROOT, PATH_SESSION_ROUTE))).toBe(true);
+            expect(existsSync(path.join(ROOT, PATH_WORKSPACE_ROUTE))).toBe(true);
+            expect(existsSync(path.join(ROOT, PATH_SSE))).toBe(true);
         });
 
-        it('uses Node runtime + force-dynamic (long-lived stream)', () => {
-            const s = read(PATH_ROUTE);
+        it('the session route uses Node runtime + force-dynamic, and hands its signal to the shared stream', () => {
+            const s = read(PATH_SESSION_ROUTE);
             expect(s).toMatch(/export const runtime = ['"]nodejs['"]/);
             expect(s).toMatch(/export const dynamic = ['"]force-dynamic['"]/);
+            expect(s).toMatch(/return notificationStreamResponse\(ctx, req\.signal\)/);
         });
 
-        it('returns Content-Type: text/event-stream with no-cache + X-Accel-Buffering', () => {
-            const s = read(PATH_ROUTE);
+        it('the workspace route uses Node runtime + force-dynamic, and hands its signal to the shared stream', () => {
+            const s = read(PATH_WORKSPACE_ROUTE);
+            expect(s).toMatch(/export const runtime = ['"]nodejs['"]/);
+            expect(s).toMatch(/export const dynamic = ['"]force-dynamic['"]/);
+            expect(s).toMatch(/return notificationStreamResponse\(ctx, req\.signal\)/);
+        });
+
+        it('the stream returns Content-Type: text/event-stream with no-cache + X-Accel-Buffering', () => {
+            const s = read(PATH_SSE);
             expect(s).toMatch(/['"]Content-Type['"]:\s*['"]text\/event-stream/);
             expect(s).toMatch(/['"]Cache-Control['"]:\s*['"]no-cache, no-transform['"]/);
             expect(s).toMatch(/['"]X-Accel-Buffering['"]:\s*['"]no['"]/);
         });
 
-        it('subscribes on connect + unsubscribes on req abort', () => {
-            const s = read(PATH_ROUTE);
+        it('the stream subscribes on connect + unsubscribes on abort', () => {
+            const s = read(PATH_SSE);
             expect(s).toMatch(/subscribeToNotifications\(/);
-            expect(s).toMatch(/req\.signal\.addEventListener\(['"]abort['"]/);
+            expect(s).toMatch(/signal\.addEventListener\(['"]abort['"]/);
         });
 
-        it('emits an SSE heartbeat comment on a fixed cadence (proxy-keep-alive)', () => {
-            const s = read(PATH_ROUTE);
+        it('the stream emits an SSE heartbeat comment on a fixed cadence (proxy-keep-alive)', () => {
+            const s = read(PATH_SSE);
             expect(s).toMatch(/HEARTBEAT_INTERVAL_MS/);
             expect(s).toMatch(/setInterval\(/);
             // SSE comment line — starts with `:` per the wire format.
@@ -133,11 +149,12 @@ describe('PR-C SSE notification streaming wiring', () => {
     describe('4. Client (notifications-bell) cutover to EventSource', () => {
         const PATH_BELL = 'src/components/layout/notifications-bell.tsx';
 
-        it('opens an EventSource against /api/notifications/stream', () => {
+        it("opens an EventSource against the base it lists from — the open workspace's, or the session's", () => {
             const s = read(PATH_BELL);
-            expect(s).toMatch(
-                /new EventSource\(['"]\/api\/notifications\/stream['"]/,
-            );
+            expect(s).toMatch(/new EventSource\(`\$\{notificationsUrl\}\/stream`/);
+            // The base names both routes (#4643).
+            expect(s).toMatch(/`\/api\/t\/\$\{encodeURIComponent\(tenantSlug\)\}\/notifications`/);
+            expect(s).toMatch(/: ['"]\/api\/notifications['"]/);
         });
 
         it('guards EventSource construction with typeof check (SSR + jsdom safe)', () => {

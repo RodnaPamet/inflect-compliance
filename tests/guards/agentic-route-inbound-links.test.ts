@@ -267,6 +267,9 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // read and made by an operator holding admin.agent_registry, and no page
     // drives it yet.
     't/[tenantSlug]/admin/agents/[agentId]/service-principal-link/route.ts',
+    // #4629 — "Use for Ask" on the agent's page designates or clears the agent
+    // that answers questions on Ask, under the register key.
+    't/[tenantSlug]/admin/agents/[agentId]/interactive/route.ts',
     // #4143 (Claude agents 1a) — agent profiles: what an agent should do,
     // approved by a second person. API-only and behind AGENT_PROFILES until the
     // builder page lands in Step 1b, which links them; no engine runs a profile

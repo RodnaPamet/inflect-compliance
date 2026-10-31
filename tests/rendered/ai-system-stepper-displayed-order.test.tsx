@@ -220,7 +220,7 @@ async function renderDetail(
     pathname.current = `/t/acme/risks/ai-systems/${systemId}`;
     const view = render(
         <Wrapper>
-            <AiSystemDetailClient system={detail(systemId)} tenantSlug="acme" canWrite />
+            <AiSystemDetailClient system={detail(systemId)} tenantSlug="acme" canWrite canOpenApprovalQueue={false} />
         </Wrapper>,
     );
     await waitFor(() => {

@@ -39,7 +39,7 @@ jest.mock('@/env', () => ({
 }));
 
 const tenantDb: any = {
-    vendorAssessment: { findFirst: jest.fn() },
+    vendorAssessment: { findFirst: jest.fn(), update: jest.fn(async () => ({})) },
 };
 jest.mock('@/lib/db-context', () => {
     const actual = jest.requireActual('@/lib/db-context');
@@ -58,6 +58,7 @@ beforeEach(() => {
     auditCalls.length = 0;
     enqueueCalls.length = 0;
     tenantDb.vendorAssessment.findFirst.mockReset();
+    tenantDb.vendorAssessment.update.mockClear();
     (enqueueEmail as jest.Mock).mockClear();
     (enqueueEmail as jest.Mock).mockImplementation(async (_db: any, args: any) => {
         enqueueCalls.push(args);
@@ -185,5 +186,50 @@ describe('sendAssessmentReminder', () => {
 
         const result = await sendAssessmentReminder(ctx, 'a-1');
         expect(result.notificationQueued).toBe(false);
+    });
+});
+
+// ─── #4650: a reminder carries a fresh link ────────────────────────────
+
+describe('sendAssessmentReminder issues a fresh link (#4650)', () => {
+    const { createHash } = jest.requireActual('crypto') as typeof import('crypto');
+
+    it('links with a new key, and stores only its hash in place of the old one', async () => {
+        tenantDb.vendorAssessment.findFirst.mockResolvedValueOnce(happyAssessment());
+
+        await sendAssessmentReminder(ctx, 'a-1');
+
+        const url = new URL(enqueueCalls[0].payload.responseUrl);
+        expect(url.origin + url.pathname).toBe('https://test.local/vendor-assessment/a-1');
+        const raw = url.searchParams.get('t');
+        expect(raw).toMatch(/^[A-Za-z0-9_-]{40,}$/);
+
+        expect(tenantDb.vendorAssessment.update).toHaveBeenCalledTimes(1);
+        const update = tenantDb.vendorAssessment.update.mock.calls[0][0];
+        expect(update.where).toEqual({ id: 'a-1', tenantId: ctx.tenantId });
+        // The stored value is the hash of the emailed key, never the key.
+        expect(update.data).toEqual({ externalAccessTokenHash: createHash('sha256').update(raw!).digest('hex') });
+        // The expiry is untouched: a reminder never extends access.
+        expect(update.data).not.toHaveProperty('externalAccessTokenExpiresAt');
+
+        expect(auditCalls[0].detailsJson.after).toMatchObject({ linkReissued: true, notificationQueued: true });
+    });
+
+    it('keeps the old key when nothing was sent, so the vendor is never left with only a dead link', async () => {
+        (enqueueEmail as jest.Mock).mockResolvedValueOnce(null);
+        tenantDb.vendorAssessment.findFirst.mockResolvedValueOnce(happyAssessment());
+
+        await sendAssessmentReminder(ctx, 'a-1');
+
+        expect(tenantDb.vendorAssessment.update).not.toHaveBeenCalled();
+        expect(auditCalls[0].detailsJson.after).toMatchObject({ linkReissued: false, notificationQueued: false });
+    });
+
+    it('refuses a revoked link before sending or rotating anything', async () => {
+        tenantDb.vendorAssessment.findFirst.mockResolvedValueOnce(happyAssessment({ revokedAt: new Date() }));
+
+        await expect(sendAssessmentReminder(ctx, 'a-1')).rejects.toThrow(/revoked/i);
+        expect(enqueueCalls).toHaveLength(0);
+        expect(tenantDb.vendorAssessment.update).not.toHaveBeenCalled();
     });
 });
