@@ -314,8 +314,20 @@ export default function FrameworkDetailPage() {
                             {t('detail.clauseTracker')}
                         </Link>
                     )}
+                    {/* #4737 — the SOC 2 / NIS2 estimate is worked out from
+                        ISO 27001 controls, so it is offered from ISO 27001's
+                        page; nothing linked it at all. */}
+                    {frameworkHasClauseTracker(frameworkKey) && (
+                        <Link href={tenantHref('/mapping')} className={buttonVariants({ variant: 'secondary' })} id="mapping-estimate-link">
+                            {t('detail.mappingEstimate')}
+                        </Link>
+                    )}
                     <Link href={tenantHref(`/frameworks/${frameworkKey}/templates`)} className={buttonVariants({ variant: 'secondary' })} id="browse-templates-cta">
                         {t('detail.browseTemplates')}
+                    </Link>
+                    {/* #4732 — the requirements diff had no way in but a typed URL. */}
+                    <Link href={tenantHref(`/frameworks/${frameworkKey}/diff`)} className={buttonVariants({ variant: 'secondary' })} id="compare-requirements-cta">
+                        {t('detail.compareRequirements')}
                     </Link>
                     <RequirePermission resource="frameworks" action="install">
                         <Link href={tenantHref(`/frameworks/${frameworkKey}/install`)} className={buttonVariants({ variant: 'primary' })} id="install-pack-cta">

@@ -8,7 +8,7 @@ The {{ui:frameworkUpdates.title}} page tells you when a framework you use publis
 
 ## Where to find it
 
-Click the notification that announces the update, in the bell at the top of any page. Every active member of a workspace that uses the framework gets one. The breadcrumb reads **{{ui:frameworkUpdates.crumbDashboard}}** › **{{ui:frameworkUpdates.crumbTitle}}**.
+Click the notification that announces the update, in the bell at the top of any page. Every active member of a workspace that uses the framework gets one. While an update waits for review, the [{{ui:frameworks.list.heading}}](frameworks.md) page also links here, above the frameworks. The breadcrumb reads **{{ui:frameworkUpdates.crumbDashboard}}** › **{{ui:frameworkUpdates.crumbTitle}}**.
 
 ## Who can use it
 
@@ -16,6 +16,8 @@ Click the notification that announces the update, in the bell at the top of any 
 | --- | --- |
 | See the updates | Every role |
 | Dismiss an update, mark it reviewed, or create findings from it | Owner, Admin, Editor |
+
+Every other role sees, on a new update: {{ui:frameworkUpdates.restricted}}
 
 ## What it is for
 
@@ -25,10 +27,12 @@ Keep up with a standard as it changes. When a new version adds requirements, you
 
 One card per update, newest first, with:
 
-- its status, **NEW**, **REVIEWED** or **DISMISSED**;
-- the framework and the two versions, and when the update arrived;
+- its status, **{{ui:frameworkUpdates.status.NEW}}**, **{{ui:frameworkUpdates.status.REVIEWED}}** or **{{ui:frameworkUpdates.status.DISMISSED}}**;
+- the framework's name and the two versions, and when the update arrived;
+- the publisher's note on what changed, when there is one;
 - **{{ui:frameworkUpdates.impactLabel}}** how many requirements are new for you, and how many of your controls were flagged for re-review;
-- the codes of the requirements added, changed and removed.
+- **{{ui:frameworkUpdates.flaggedControls}}** each of those controls by code and name, linking to it;
+- the requirements added, changed and removed, each by code and title, linking to the framework.
 
 ## What you can do
 
@@ -42,7 +46,7 @@ Click **{{ui:frameworkUpdates.markReviewed}}** once you have dealt with it, or *
 
 ## What happens next
 
-- When the update arrived, each control mapped to a changed requirement that was implemented or being implemented was set to need review. Filter the [{{ui:controls.list.pageTitle}}](controls.md) page to **{{ui:controls.statusLabels.NEEDS_REVIEW}}** to find them.
+- When the update arrived, each control mapped to a changed requirement that was implemented or being implemented was set to need review. They are listed on the update; a control you have since deleted is left out.
 - Map a control to each new requirement on the framework's page to close the gap. See [A framework](framework-detail.md).
 
 ## Empty and error states
@@ -50,7 +54,8 @@ Click **{{ui:frameworkUpdates.markReviewed}}** once you have dealt with it, or *
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:frameworkUpdates.emptyTitle}}** | {{ui:frameworkUpdates.emptyDescription}} | Nothing to do |
-| A message in red above the updates | The action was refused or failed | Follow what it says, then try again |
+| **{{ui:frameworkUpdates.notFound}}** | Someone removed the update | Reload the page |
+| A message in red naming the action, such as **{{ui:frameworkUpdates.failed.materialize}}** | The action failed | Try again |
 
 ## Related
 

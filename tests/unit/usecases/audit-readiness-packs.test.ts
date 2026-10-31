@@ -781,6 +781,30 @@ describe('previewDefaultPack', () => {
         expect(taskWhere.deletedAt).toBeNull();
     });
 
+    // A newly installed framework: every mapped control NOT_STARTED, so no
+    // control is operating, and every task open. Its tasks are the backlog
+    // the auditor is shown, and they keep the pack from being empty — the
+    // E2E cycle → pack → freeze flow froze an empty pack before this.
+    it("takes the open tasks of the framework's controls even when none is operating yet", async () => {
+        mockTdb.auditCycle.findFirst.mockResolvedValueOnce({ id: 'c-1', frameworkKey: 'ISO27001' });
+        mockTdb.framework.findFirst.mockResolvedValueOnce({ id: 'fw-iso' });
+        mockTdb.controlRequirementLink.findMany.mockResolvedValueOnce([{ controlId: 'ctrl-1' }, { controlId: 'ctrl-2' }]);
+        mockTdb.control.findMany.mockResolvedValueOnce([]); // none operating
+        mockTdb.policy.findMany.mockResolvedValueOnce([]);
+        mockTdb.task.findMany.mockResolvedValueOnce([{ id: 't-1' }, { id: 't-2' }]);
+
+        const result = await previewDefaultPack(ctx, 'c-1');
+
+        expect(result.selection.controls.count).toBe(0);
+        expect(result.selection.issues.ids).toEqual(['t-1', 't-2']);
+        expect(result.totalItems).toBe(2);
+        const taskWhere = mockTdb.task.findMany.mock.calls[0][0].where;
+        expect(taskWhere.OR).toEqual([
+            { controlId: { in: ['ctrl-1', 'ctrl-2'] } },
+            { links: { some: { entityType: 'CONTROL', entityId: { in: ['ctrl-1', 'ctrl-2'] } } } },
+        ]);
+    });
+
     it('puts no task in a default pack that has no control (#4727)', async () => {
         mockTdb.auditCycle.findFirst.mockResolvedValueOnce({ id: 'c-1', frameworkKey: 'SOC2' });
         mockTdb.framework.findFirst.mockResolvedValueOnce({ id: 'fw-soc2' });

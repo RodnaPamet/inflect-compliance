@@ -306,7 +306,7 @@ export function Nis2GapLifecycleClient({
                             className={cn(buttonVariants({ variant: 'secondary' }))}
                             id="nis2-gap-coverage-link"
                         >
-                            {tx('nis2Gap.viewCoverage')}
+                            {tx('nis2Gap.viewReadiness')}
                         </Link>
                         {/* The self-assessment page answers the latest run. Offered
                             while that run takes answers, to the roles it admits,

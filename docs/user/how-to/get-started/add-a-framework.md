@@ -70,7 +70,7 @@ Removing a pack does not delete or change any control, task or mapping it instal
 | **You do not have permission to install frameworks.** after you click an install button | Your role cannot add frameworks. It may have changed after you opened the page | Ask an Owner or Admin |
 | The template library shows no **{{ui:frameworks.templates.install}}** buttons and no tick boxes | Your role cannot add controls from a framework | Ask an Owner or Admin |
 | {{ui:frameworks.templates.installFailed}} in the template library | The install did not finish | Reload the page. Controls that now exist read {{ui:frameworks.templates.installed}}. Install the rest again |
-| The install button reads {{ui:frameworks.install.allInstalled}} and is greyed out | Every control in the pack is already in your workspace | Nothing to do. The framework is already in place |
+| The install button reads {{ui:frameworks.install.allInstalled}} and is greyed out | Every control in the pack is already in your workspace, with all its requirement mappings | Nothing to do. The framework is already in place |
 | {{ui:frameworks.install.choosePacksRequired}} | The framework has more than one pack and you have not ticked any | Tick at least one pack, then click the preview button |
 | **{{ui:frameworks.detail.removePack}}** is greyed out | It is the only pack you have chosen for this framework | Install the pack you want first, then remove this one |
 | No **{{ui:frameworks.detail.removePack}}** button on the {{ui:frameworks.detail.packsTab}} tab | Your role cannot add frameworks, or the framework has only one pack | Ask an Owner or Admin. A single-pack framework always counts all of its requirements |

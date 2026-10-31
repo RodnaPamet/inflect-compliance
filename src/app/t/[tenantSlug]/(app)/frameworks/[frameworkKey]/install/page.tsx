@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import { apiErrorMessage } from '@/lib/api-error';
+import { frameworkInstallRefusal } from '@/lib/framework-install-refusals';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,8 @@ interface InstallPreviewTemplate {
     tasks: number;
     requirements: { code: string; title: string }[];
     alreadyInstalled: boolean;
+    /** Mappings the existing control is missing; a re-install restores them. */
+    missingMappings?: number;
 }
 interface InstallPreview {
     // previewPackInstall names one pack; previewPacksInstall lists the chosen ones.
@@ -49,6 +51,8 @@ interface InstallPreview {
     totalTemplates: number;
     newControls: number;
     existingControls: number;
+    /** Requirement mappings missing from controls that already exist (#4731). */
+    missingMappings?: number;
     templates: InstallPreviewTemplate[];
 }
 interface InstallResult {
@@ -95,7 +99,14 @@ export default function InstallWizardPage() {
     const multiPack = packs.length > 1;
     const [chosenPacks, setChosenPacks] = useState<string[]>([]);
     const [preview, setPreview] = useState<InstallPreview | null>(null);
-    const [loading, setLoading] = useState(true);
+    // #4731 — a failed read is not "not found", and an empty pack list is not
+    // a failed one: each says what it is, and a failure offers a retry.
+    const [loadState, setLoadState] = useState<'loading' | 'ready' | 'notFound' | 'failed'>('loading');
+    const [loadAttempt, setLoadAttempt] = useState(0);
+    // Kept as data and worded at render, so the preview effect does not
+    // depend on the translator.
+    const [previewFailure, setPreviewFailure] = useState<{ status: number; body: unknown } | 'network' | null>(null);
+    const [previewAttempt, setPreviewAttempt] = useState(0);
     const [installing, setInstalling] = useState(false);
     const [result, setResult] = useState<InstallResult | null>(null);
     const [error, setError] = useState('');
@@ -103,15 +114,35 @@ export default function InstallWizardPage() {
     // Step: 'select' | 'preview' | 'done'
     const [step, setStep] = useState<'select' | 'preview' | 'done'>('select');
 
+    /**
+     * What a refused preview or install tells the person: the named refusal
+     * in their language, the role note for a 403, else the fallback. The
+     * server's English sentence and the browser's "Failed to fetch" are not
+     * shown (#4731).
+     */
+    const refusalText = useCallback(
+        (status: number, body: unknown, fallback: string) => {
+            const code = frameworkInstallRefusal(body);
+            if (code) return tx(`install.refused.${code}`);
+            if (status === 403) return tx('install.restricted');
+            return fallback;
+        },
+        [tx],
+    );
+
     useEffect(() => {
+        let cancelled = false;
         void (async () => {
             try {
                 const [fwRes, packRes] = await Promise.all([
                     fetch(apiUrl(`/frameworks/${frameworkKey}`)),
                     fetch(apiUrl(`/frameworks/${frameworkKey}?action=packs`)),
                 ]);
-                if (fwRes.ok) setFramework(await fwRes.json());
-                if (packRes.ok) {
+                if (cancelled) return;
+                if (fwRes.status === 404) { setLoadState('notFound'); return; }
+                if (!fwRes.ok || !packRes.ok) { setLoadState('failed'); return; }
+                setFramework(await fwRes.json());
+                {
                     const ps = await packRes.json();
                     setPacks(ps);
                     // Auto-select if only one pack or requested. With several
@@ -127,23 +158,47 @@ export default function InstallWizardPage() {
                         setSelectedPack(ps[0].key);
                     }
                 }
-            } catch { /* ignore */ }
-            setLoading(false);
+                if (!cancelled) setLoadState('ready');
+            } catch {
+                if (!cancelled) setLoadState('failed');
+            }
         })();
-    }, [apiUrl, frameworkKey, requestedPack]);
+        return () => { cancelled = true; };
+    }, [apiUrl, frameworkKey, requestedPack, loadAttempt]);
+
+    const retryLoad = () => {
+        setLoadState('loading');
+        setLoadAttempt((n) => n + 1);
+    };
 
     // Fetch preview when pack selected
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (!selectedPack) { setPreview(null); return; }
-        // `.catch` mirrors the non-ok branch: a rejection yields no preview
-        // rather than leaving the PREVIOUS pack's preview on screen under the
-        // newly selected pack's name, which is the misleading outcome.
-        fetch(apiUrl(`/frameworks/${frameworkKey}?action=preview&packKey=${selectedPack}`))
-            .then(r => r.ok ? r.json() : null)
-            .then(p => { setPreview(p); if (p) setStep('preview'); })
-            .catch(() => setPreview(null));
-    }, [selectedPack, apiUrl, frameworkKey]);
+        if (!selectedPack) { setPreview(null); setPreviewFailure(null); return; }
+        let cancelled = false;
+        // A failure yields no preview — never the PREVIOUS pack's preview under
+        // the newly selected pack's name — and says so (#4731: it used to do
+        // nothing, so choosing the pack looked ignored).
+        fetch(apiUrl(`/frameworks/${frameworkKey}?action=preview&packKey=${encodeURIComponent(selectedPack)}`))
+            .then(async (r) => {
+                const body = await r.json().catch(() => null);
+                if (cancelled) return;
+                if (!r.ok) {
+                    setPreview(null);
+                    setPreviewFailure({ status: r.status, body });
+                    return;
+                }
+                setPreviewFailure(null);
+                setPreview(body);
+                if (body) setStep('preview');
+            })
+            .catch(() => {
+                if (cancelled) return;
+                setPreview(null);
+                setPreviewFailure('network');
+            });
+        return () => { cancelled = true; };
+    }, [selectedPack, apiUrl, frameworkKey, previewAttempt]);
 
     const toggleChosen = (key: string) =>
         setChosenPacks((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
@@ -152,14 +207,18 @@ export default function InstallWizardPage() {
         if (chosenPacks.length === 0) return;
         setError('');
         const keys = packs.map((p) => p.key).filter((k) => chosenPacks.includes(k));
-        const res = await fetch(apiUrl(`/frameworks/${frameworkKey}?action=preview&packKeys=${keys.map(encodeURIComponent).join(',')}`));
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            setError(apiErrorMessage(err, tx('install.installFailed')));
-            return;
+        try {
+            const res = await fetch(apiUrl(`/frameworks/${frameworkKey}?action=preview&packKeys=${keys.map(encodeURIComponent).join(',')}`));
+            const body = await res.json().catch(() => null);
+            if (!res.ok) {
+                setError(refusalText(res.status, body, tx('install.previewFailed')));
+                return;
+            }
+            setPreview(body);
+            setStep('preview');
+        } catch {
+            setError(tx('install.networkError'));
         }
-        setPreview(await res.json());
-        setStep('preview');
     };
 
     const handleInstall = async () => {
@@ -175,23 +234,45 @@ export default function InstallWizardPage() {
                         : { packKey: selectedPack },
                 ),
             });
+            const body = await res.json().catch(() => null);
             if (!res.ok) {
-                const err = await res.json().catch(() => ({ error: tx('install.installFailed') }));
-                setError(apiErrorMessage(err, tx('install.installFailed')));
+                setError(refusalText(res.status, body, tx('install.installFailed')));
                 return;
             }
-            const data = await res.json();
-            setResult(data);
+            setResult(body);
             setStep('done');
-        } catch (e) {
-            setError(e instanceof Error ? e.message : tx('install.networkError'));
+        } catch {
+            setError(tx('install.networkError'));
         } finally {
             setInstalling(false);
         }
     };
 
-    if (loading) return <div className="p-8 animate-pulse text-content-muted">{tx('install.loading')}</div>;
-    if (!framework) return <div className="p-8 text-content-error">{tx('install.notFound')}</div>;
+    if (loadState === 'loading') return <div className="p-8 animate-pulse text-content-muted">{tx('install.loading')}</div>;
+    if (loadState === 'failed') {
+        return (
+            <div className="max-w-2xl mx-auto space-y-section">
+                <BackAffordance />
+                <InlineNotice variant="error" id="install-load-failed">
+                    {tx('install.loadFailed')}
+                </InlineNotice>
+                <Button variant="secondary" onClick={retryLoad} id="install-load-retry">{tx('install.retry')}</Button>
+            </div>
+        );
+    }
+    if (loadState === 'notFound' || !framework) return <div className="p-8 text-content-error">{tx('install.notFound')}</div>;
+
+    const previewError = previewFailure === null
+        ? ''
+        : previewFailure === 'network'
+            ? tx('install.networkError')
+            : refusalText(previewFailure.status, previewFailure.body, tx('install.previewFailed'));
+
+    /** "{count} templates • v{version}", or without a version when the pack has none. */
+    const packMeta = (p: FrameworkPackSummary) =>
+        p.version
+            ? tx('install.packMeta', { count: p._count?.templateLinks || 0, version: p.version })
+            : tx('install.packMetaUnversioned', { count: p._count?.templateLinks || 0 });
 
     return (
         <div className="max-w-2xl mx-auto space-y-section">
@@ -250,7 +331,7 @@ export default function InstallWizardPage() {
                                     <div>
                                         <div className="text-sm font-medium text-content-emphasis">{p.name}</div>
                                         {p.description && <div className="text-xs text-content-muted mt-0.5">{p.description}</div>}
-                                        <div className="text-xs text-content-subtle mt-0.5">{tx('install.packMeta', { count: p._count?.templateLinks || 0, version: p.version || tx('install.latest') })}</div>
+                                        <div className="text-xs text-content-subtle mt-0.5">{packMeta(p)}</div>
                                     </div>
                                 </label>
                             );
@@ -294,10 +375,18 @@ export default function InstallWizardPage() {
                                     />
                                     <div>
                                         <div className="text-sm font-medium text-content-emphasis">{p.name}</div>
-                                        <div className="text-xs text-content-subtle">{tx('install.packMeta', { count: p._count?.templateLinks || 0, version: p.version || tx('install.latest') })}</div>
+                                        <div className="text-xs text-content-subtle">{packMeta(p)}</div>
                                     </div>
                                 </label>
                             ))}
+                        </div>
+                    )}
+                    {previewError && (
+                        <div className="flex flex-wrap items-center gap-compact" id="install-preview-error">
+                            <p className="text-sm text-content-error">{previewError}</p>
+                            <Button variant="secondary" size="sm" onClick={() => setPreviewAttempt((n) => n + 1)} id="install-preview-retry">
+                                {tx('install.retry')}
+                            </Button>
                         </div>
                     )}
                 </div>
@@ -327,12 +416,21 @@ export default function InstallWizardPage() {
                                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.alreadyInstalled ? 'bg-bg-success-emphasis' : 'bg-[var(--brand-default)]'}`} />
                                     <code className="text-xs text-content-subtle font-mono w-24 flex-shrink-0">{t.code}</code>
                                     <span className="text-content-default flex-1">{t.title}</span>
-                                    {t.alreadyInstalled && <span className="text-xs text-content-success">{tx('install.exists')}</span>}
+                                    {t.alreadyInstalled && (t.missingMappings ?? 0) > 0 && (
+                                        <span className="text-xs text-content-warning">{tx('install.missingCount', { count: t.missingMappings ?? 0 })}</span>
+                                    )}
+                                    {t.alreadyInstalled && (t.missingMappings ?? 0) === 0 && <span className="text-xs text-content-success">{tx('install.exists')}</span>}
                                     {!t.alreadyInstalled && <span className="text-xs text-[var(--brand-default)]">{tx('install.tasksCount', { count: t.tasks })}</span>}
                                 </div>
                             ))}
                         </div>
                     </div>
+
+                    {(preview.missingMappings ?? 0) > 0 && (
+                        <InlineNotice variant="info" id="install-restore-notice">
+                            {tx('install.mappingsToRestore', { count: preview.missingMappings ?? 0 })}
+                        </InlineNotice>
+                    )}
 
                     {error && (
                         <div className={cn(cardVariants({ density: 'none' }), 'border-border-error bg-bg-error text-content-error text-sm')}>{error}</div>
@@ -346,17 +444,22 @@ export default function InstallWizardPage() {
                             variant="primary"
                             className="flex-1"
                             onClick={handleInstall}
-                            disabled={installing || preview.newControls === 0}
+                            // #4731 — a re-install also restores the mappings an
+                            // existing control lost, so it is offered while any is
+                            // missing, not only for new controls.
+                            disabled={installing || (preview.newControls === 0 && (preview.missingMappings ?? 0) === 0)}
                             id="confirm-install-btn"
                         >
                             {installing ? (
                                 <span className="flex items-center gap-tight">
                                     {tx('install.installing')}
                                 </span>
-                            ) : preview.newControls === 0 ? (
-                                tx('install.allInstalled')
-                            ) : (
+                            ) : preview.newControls > 0 ? (
                                 tx('install.installN', { count: preview.newControls })
+                            ) : (preview.missingMappings ?? 0) > 0 ? (
+                                tx('install.restoreN', { count: preview.missingMappings ?? 0 })
+                            ) : (
+                                tx('install.allInstalled')
                             )}
                         </Button>
                     </div>
@@ -366,8 +469,11 @@ export default function InstallWizardPage() {
             {/* Step 3: Done */}
             {canInstall && step === 'done' && result && (
                 <div className={cn(cardVariants({ density: 'none' }), 'text-center space-y-default')} id="install-result">
-                    <div className="text-4xl"></div>
-                    <Heading level={1}>{tx('install.successHeading')}</Heading>
+                    <Heading level={1}>
+                        {result.controlsCreated === 0 && result.mappingsCreated > 0
+                            ? tx('install.restoredHeading')
+                            : tx('install.successHeading')}
+                    </Heading>
                     <div className="grid grid-cols-3 gap-default">
                         <div className="p-3 rounded-lg bg-bg-success">
                             <KPIStat id="result-controls" value={result.controlsCreated} label={tx('install.controlsCreated')} tone="success" />

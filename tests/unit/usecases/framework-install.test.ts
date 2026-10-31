@@ -91,12 +91,12 @@ describe('previewPackInstall', () => {
         ).resolves.toBeDefined();
     });
 
-    it('throws notFound when pack does not exist', async () => {
+    it('throws notFound when pack does not exist, naming the reason', async () => {
         mockPackFind.mockResolvedValueOnce(null);
 
         await expect(
             previewPackInstall(makeRequestContext('ADMIN'), 'no-such-pack'),
-        ).rejects.toThrow(/Pack not found/);
+        ).rejects.toMatchObject({ message: expect.stringMatching(/Pack not found/), details: { reason: 'PACK_NOT_FOUND' } });
     });
 
     it('counts new vs already-installed controls correctly', async () => {
@@ -114,9 +114,10 @@ describe('previewPackInstall', () => {
             fn({
                 control: {
                     findMany: jest.fn().mockResolvedValue([
-                        { code: 'A.5.1' }, // already installed
+                        { id: 'c-1', code: 'A.5.1' }, // already installed
                     ]),
                 },
+                controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
             } as never),
         );
 
@@ -128,6 +129,50 @@ describe('previewPackInstall', () => {
         expect(result.totalTemplates).toBe(3);
         expect(result.newControls).toBe(2);
         expect(result.existingControls).toBe(1);
+        expect(result.missingMappings).toBe(0);
+    });
+
+    // #4731 — a re-install restores the mappings an existing control lost,
+    // so the preview says how many, and the wizard offers the install.
+    it('counts the requirement mappings missing from controls that already exist', async () => {
+        mockPackFind.mockResolvedValueOnce({
+            key: 'iso27001-2022',
+            name: 'ISO 27001:2022',
+            framework: { key: 'ISO27001', name: 'ISO', version: '2022' },
+            templateLinks: [
+                {
+                    template: {
+                        code: 'A.5.1', title: 'X', tasks: [],
+                        requirementLinks: [
+                            { requirementId: 'r-1', requirement: { code: '5.1', title: 'a' } },
+                            { requirementId: 'r-2', requirement: { code: '5.2', title: 'b' } },
+                        ],
+                    },
+                },
+                {
+                    template: {
+                        code: 'A.5.9', title: 'New', tasks: [],
+                        requirementLinks: [{ requirementId: 'r-9', requirement: { code: '5.9', title: 'c' } }],
+                    },
+                },
+            ],
+        } as never);
+        const linkFindMany = jest.fn().mockResolvedValue([{ controlId: 'c-1', requirementId: 'r-1' }]);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                control: { findMany: jest.fn().mockResolvedValue([{ id: 'c-1', code: 'A.5.1' }]) },
+                controlRequirementLink: { findMany: linkFindMany },
+            } as never),
+        );
+
+        const result = await previewPackInstall(makeRequestContext('ADMIN'), 'iso27001-2022');
+
+        // r-2 is missing from A.5.1; A.5.9 is a new control, whose mappings
+        // are created rather than restored, so it does not count here.
+        expect(result.missingMappings).toBe(1);
+        expect(result.templates.find((t) => t.code === 'A.5.1')?.missingMappings).toBe(1);
+        expect(result.templates.find((t) => t.code === 'A.5.9')?.missingMappings).toBe(0);
+        expect(linkFindMany.mock.calls[0][0].where.controlId).toEqual({ in: ['c-1'] });
     });
 });
 
@@ -174,7 +219,7 @@ describe('installPack — RBAC + idempotency + audit', () => {
         ).rejects.toThrow(/Pack not found/);
     });
 
-    it('skips controls that already exist (idempotent) but still upserts requirement links', async () => {
+    it('skips controls that already exist (idempotent) but restores their missing requirement links, and counts them', async () => {
         mockPackFind.mockResolvedValueOnce({
             key: 'iso27001-2022',
             name: 'ISO',
@@ -196,7 +241,7 @@ describe('installPack — RBAC + idempotency + audit', () => {
         const controlCreate = jest.fn();
         const taskCreate = jest.fn();
         const linkCreate = jest.fn();
-        const linkUpsert = jest.fn();
+        const linkCreateMany = jest.fn().mockResolvedValue({ count: 1 });
 
         mockRunInTx.mockImplementationOnce(async (_ctx, fn, _opts) =>
             fn({
@@ -208,7 +253,7 @@ describe('installPack — RBAC + idempotency + audit', () => {
                 tenantFrameworkPack: { upsert: jest.fn() },
                 controlRequirementLink: {
                     create: linkCreate,
-                    upsert: linkUpsert,
+                    createMany: linkCreateMany,
                 },
                 policy: { findMany: jest.fn().mockResolvedValue([]) },
                 policyControlLink: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
@@ -223,16 +268,16 @@ describe('installPack — RBAC + idempotency + audit', () => {
         // failure (network blip, timeout).
         expect(controlCreate).not.toHaveBeenCalled();
         expect(taskCreate).not.toHaveBeenCalled();
-        // BUT requirement links still upsert so a partial previous
-        // install can converge.
-        expect(linkUpsert).toHaveBeenCalledWith(expect.objectContaining({
-            where: {
-                controlId_requirementId: {
-                    controlId: 'existing-c', requirementId: 'req-1',
-                },
-            },
-        }));
+        // BUT a missing requirement link is restored, so a partial previous
+        // install, or a mapping removed since, converges — and the result
+        // counts it (#4731), since that is what a re-install is for.
+        expect(linkCreateMany).toHaveBeenCalledWith({
+            data: [{ tenantId: expect.any(String), controlId: 'existing-c', requirementId: 'req-1' }],
+            skipDuplicates: true,
+        });
+        expect(linkCreate).not.toHaveBeenCalled();
         expect(result.controlsCreated).toBe(0);
+        expect(result.mappingsCreated).toBe(1);
     });
 
     it('emits FRAMEWORK_PACK_INSTALLED audit', async () => {
@@ -371,7 +416,10 @@ describe('installPacks / previewPacksInstall — choosing several packs of one f
             ] as never)
             .mockResolvedValueOnce([A2, A3] as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { findMany: jest.fn().mockResolvedValue([{ code: 'UAS-CORE-01' }]) } } as never),
+            fn({
+                control: { findMany: jest.fn().mockResolvedValue([{ id: 'c-core', code: 'UAS-CORE-01' }]) },
+                controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
+            } as never),
         );
 
         const preview = await previewPacksInstall(makeRequestContext('READER'), 'EU-UAS-OPS', ['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3']);

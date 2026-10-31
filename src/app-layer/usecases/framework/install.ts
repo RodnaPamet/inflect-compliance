@@ -2,16 +2,56 @@
 import { RequestContext } from '../../types';
 import { assertCanViewFrameworks, assertCanInstallFrameworkPack } from '../../policies/framework.policies';
 import { logEvent } from '../../events/audit';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
+import type { FrameworkInstallRefusal } from '@/lib/framework-install-refusals';
 import { prisma } from '@/lib/prisma';
 import { getEffectivePlan } from '@/lib/billing/entitlements';
 import { recordFrameworkInstalled } from '@/lib/observability/business-metrics';
 import { controlDataFromTemplate, resolveRelatedPolicyIds } from '../control/template-projection';
 import { taskFromTemplateTask, installableTemplateTasks } from '../control/task-from-template';
 import { LIVE_TEMPLATE_TASKS } from '../../repositories/ControlTemplateRepository';
+import type { FrameworkTemplateRefusal } from '@/lib/framework-template-refusals';
 
 // в”Ђв”Ђв”Ђ Pack Install (tenant-scoped, idempotent) в”Ђв”Ђв”Ђ
+
+interface TemplateForPreview {
+    code: string;
+    requirementLinks: { requirementId: string }[];
+}
+
+/**
+ * Which templates already have a control in this workspace, and how many of
+ * each one's requirement mappings that control is missing (#4731).
+ *
+ * Installing again restores them (`installPacksInTenant` re-creates the
+ * mappings and policy links of a control that already exists), so the wizard
+ * offers the install while any is missing. It used to offer it only for new
+ * controls, which left a workspace that had lost its mappings with no way
+ * back but mapping each requirement by hand.
+ */
+async function installedState(db: PrismaTx, tenantId: string, templates: readonly TemplateForPreview[]) {
+    const controls = await db.control.findMany({
+        where: { tenantId, code: { in: templates.map((t) => t.code) } },
+        select: { id: true, code: true },
+    });
+    const controlIdByCode = new Map(controls.map((c) => [c.code, c.id]));
+    const links = controls.length === 0
+        ? []
+        : await db.controlRequirementLink.findMany({
+            where: { tenantId, controlId: { in: controls.map((c) => c.id) } },
+            select: { controlId: true, requirementId: true },
+        });
+    const linked = new Set(links.map((l) => `${l.controlId}:${l.requirementId}`));
+    const missingByCode = new Map<string, number>();
+    for (const t of templates) {
+        const controlId = controlIdByCode.get(t.code);
+        if (!controlId) continue;
+        missingByCode.set(t.code, t.requirementLinks.filter((rl) => !linked.has(`${controlId}:${rl.requirementId}`)).length);
+    }
+    const missingMappings = [...missingByCode.values()].reduce((n, m) => n + m, 0);
+    return { existingCodes: new Set(controlIdByCode.keys()), missingByCode, missingMappings };
+}
 
 export async function previewPackInstall(ctx: RequestContext, packKey: string) {
     assertCanViewFrameworks(ctx);
@@ -29,17 +69,12 @@ export async function previewPackInstall(ctx: RequestContext, packKey: string) {
             framework: true,
         },
     });
-    if (!pack) throw notFound('Pack not found');
+    if (!pack) throw notFound('Pack not found', { reason: 'PACK_NOT_FOUND' satisfies FrameworkInstallRefusal });
 
-    // Check which controls already exist for this tenant
-    const existingControls = await runInTenantContext(ctx, (db) =>
-        db.control.findMany({
-            where: { tenantId: ctx.tenantId, code: { in: pack.templateLinks.map((l) => l.template.code) } },
-            select: { code: true },
-        })
+    // Which controls already exist for this tenant, and what they are missing.
+    const { existingCodes, missingByCode, missingMappings } = await runInTenantContext(ctx, (db) =>
+        installedState(db, ctx.tenantId, pack.templateLinks.map((l) => l.template)),
     );
-
-    const existingCodes = new Set(existingControls.map((c) => c.code));
 
     return {
         packKey: pack.key,
@@ -48,12 +83,14 @@ export async function previewPackInstall(ctx: RequestContext, packKey: string) {
         totalTemplates: pack.templateLinks.length,
         newControls: pack.templateLinks.filter((l) => !existingCodes.has(l.template.code)).length,
         existingControls: pack.templateLinks.filter((l) => existingCodes.has(l.template.code)).length,
+        missingMappings,
         templates: pack.templateLinks.map((l) => ({
             code: l.template.code,
             title: l.template.title,
             tasks: l.template.tasks.length,
             requirements: l.template.requirementLinks.map((rl) => ({ code: rl.requirement.code, title: rl.requirement.title })),
             alreadyInstalled: existingCodes.has(l.template.code),
+            missingMappings: missingByCode.get(l.template.code) ?? 0,
         })),
     };
 }
@@ -154,13 +191,17 @@ async function installPacksInTenant(ctx: RequestContext, packs: PackForInstall[]
                     where: { tenantId: ctx.tenantId, code: tmpl.code },
                 });
                 if (existing) {
-                    // Still ensure requirement links exist
-                    for (const rl of tmpl.requirementLinks) {
-                        await tdb.controlRequirementLink.upsert({
-                            where: { controlId_requirementId: { controlId: existing.id, requirementId: rl.requirementId } },
-                            create: { tenantId: ctx.tenantId, controlId: existing.id, requirementId: rl.requirementId },
-                            update: {},
+                    // Restore any requirement mapping the control has lost, and
+                    // count it: a re-install is how a workspace repairs them
+                    // (#4731), so the result says how many came back.
+                    if (tmpl.requirementLinks.length > 0) {
+                        const restored = await tdb.controlRequirementLink.createMany({
+                            data: tmpl.requirementLinks.map((rl) => ({
+                                tenantId: ctx.tenantId, controlId: existing.id, requirementId: rl.requirementId,
+                            })),
+                            skipDuplicates: true,
                         });
+                        mappingsCreated += restored.count;
                     }
                     await linkPolicies(existing.id, tmpl.relatedPolicies);
                     continue;
@@ -232,7 +273,7 @@ export async function installPack(ctx: RequestContext, packKey: string) {
         where: { key: packKey },
         include: PACK_INSTALL_INCLUDE,
     });
-    if (!pack) throw notFound('Pack not found');
+    if (!pack) throw notFound('Pack not found', { reason: 'PACK_NOT_FOUND' satisfies FrameworkInstallRefusal });
 
     const [counts] = await installPacksInTenant(ctx, [pack]);
     const result = { ...counts, framework: pack.framework.key };
@@ -317,17 +358,17 @@ export async function removeChosenPack(ctx: RequestContext, frameworkKey: string
  */
 async function assertChosenPacks(frameworkKey: string, packKeys: readonly string[]): Promise<string[]> {
     const keys = [...new Set(packKeys.map((k) => k.trim()).filter(Boolean))];
-    if (keys.length === 0) throw badRequest('Choose at least one pack to install.');
+    if (keys.length === 0) throw badRequest('Choose at least one pack to install.', { reason: 'NO_PACK_CHOSEN' satisfies FrameworkInstallRefusal });
     const found = await prisma.frameworkPack.findMany({
         where: { key: { in: keys } },
         select: { key: true, framework: { select: { key: true } } },
     });
     const known = new Set(found.map((p) => p.key));
     const missing = keys.filter((k) => !known.has(k));
-    if (missing.length > 0) throw notFound(`Pack not found: ${missing.join(', ')}`);
+    if (missing.length > 0) throw notFound(`Pack not found: ${missing.join(', ')}`, { reason: 'PACK_NOT_FOUND' satisfies FrameworkInstallRefusal });
     const foreign = found.filter((p) => p.framework.key !== frameworkKey).map((p) => p.key);
     if (foreign.length > 0) {
-        throw badRequest(`Not a pack of ${frameworkKey}: ${foreign.sort().join(', ')}`);
+        throw badRequest(`Not a pack of ${frameworkKey}: ${foreign.sort().join(', ')}`, { reason: 'PACK_OF_OTHER_FRAMEWORK' satisfies FrameworkInstallRefusal });
     }
     return keys;
 }
@@ -367,14 +408,10 @@ export async function previewPacksInstall(ctx: RequestContext, frameworkKey: str
             if (!templates.has(l.template.code)) templates.set(l.template.code, l.template);
         }
     }
-    const existingControls = await runInTenantContext(ctx, (db) =>
-        db.control.findMany({
-            where: { tenantId: ctx.tenantId, code: { in: [...templates.keys()] } },
-            select: { code: true },
-        })
-    );
-    const existingCodes = new Set(existingControls.map((c) => c.code));
     const list = [...templates.values()];
+    const { existingCodes, missingByCode, missingMappings } = await runInTenantContext(ctx, (db) =>
+        installedState(db, ctx.tenantId, list),
+    );
     const fw = packs[0].framework;
 
     return {
@@ -384,12 +421,14 @@ export async function previewPacksInstall(ctx: RequestContext, frameworkKey: str
         totalTemplates: list.length,
         newControls: list.filter((t) => !existingCodes.has(t.code)).length,
         existingControls: list.filter((t) => existingCodes.has(t.code)).length,
+        missingMappings,
         templates: list.map((t) => ({
             code: t.code,
             title: t.title,
             tasks: t.tasks.length,
             requirements: t.requirementLinks.map((rl) => ({ code: rl.requirement.code, title: rl.requirement.title })),
             alreadyInstalled: existingCodes.has(t.code),
+            missingMappings: missingByCode.get(t.code) ?? 0,
         })),
     };
 }
@@ -446,7 +485,7 @@ export async function installSingleTemplate(ctx: RequestContext, templateCode: s
         where: { code: templateCode },
         include: { tasks: LIVE_TEMPLATE_TASKS, requirementLinks: true },
     });
-    if (!tmpl) throw notFound('Template not found');
+    if (!tmpl) throw notFound('Template not found', { reason: 'TEMPLATE_NOT_FOUND' satisfies FrameworkTemplateRefusal });
 
     return runInTenantContext(ctx, async (tdb) => {
         // Idempotent: check existing
@@ -581,8 +620,8 @@ export async function bulkInstallTemplates(
     templateCodes: string[]
 ) {
     assertCanInstallFrameworkPack(ctx);
-    if (!templateCodes || templateCodes.length === 0) throw badRequest('At least one template code required');
-    if (templateCodes.length > 100) throw badRequest('Max 100 templates per batch');
+    if (!templateCodes || templateCodes.length === 0) throw badRequest('At least one template code required', { reason: 'NO_TEMPLATE_CHOSEN' satisfies FrameworkTemplateRefusal });
+    if (templateCodes.length > 100) throw badRequest('Max 100 templates per batch', { reason: 'TOO_MANY_TEMPLATES' satisfies FrameworkTemplateRefusal });
 
     const db = prisma;
     const templates = await db.controlTemplate.findMany({
@@ -591,7 +630,7 @@ export async function bulkInstallTemplates(
     });
     const foundCodes = new Set(templates.map((t) => t.code));
     const notFound_codes = templateCodes.filter((c) => !foundCodes.has(c));
-    if (notFound_codes.length > 0) throw badRequest(`Templates not found: ${notFound_codes.join(', ')}`);
+    if (notFound_codes.length > 0) throw badRequest(`Templates not found: ${notFound_codes.join(', ')}`, { reason: 'TEMPLATE_NOT_FOUND' satisfies FrameworkTemplateRefusal });
 
     return runInTenantContext(ctx, async (tdb) => {
         let controlsCreated = 0;

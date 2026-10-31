@@ -56,7 +56,7 @@ The link stops working at once, and revoking cannot be undone. The link stays in
 
 ## About {{ui:audits.hub.auditorManagement}}
 
-The {{ui:audits.hub.lifecycleTitle}} section of the {{ui:audits.title}} page also links to **{{ui:audits.hub.auditorManagement}}**. That page keeps a list of named external auditors and the packs each one is meant to see. Adding an auditor there sends them no invitation and gives them no way into Inflect, and neither does granting them a pack there. To let an auditor read a pack, send them a share link.
+The {{ui:audits.hub.lifecycleTitle}} section of the {{ui:audits.title}} page also links to **{{ui:audits.hub.auditorManagement}}**. That page keeps a list of named external auditors and the packs each one is meant to see. Adding an auditor there sends them no invitation and gives them no way into Inflect, and neither does recording a pack against them there. To let an auditor read a pack, send them a share link.
 
 Only Owners and Admins can see the list. Anyone else reads **{{ui:audits.auditorsAdmin.restrictedTitle}}** on that page. **{{ui:audits.auditorsAdmin.revokeAccount}}** marks the auditor revoked and removes the packs recorded for them on that page. It does not revoke a share link you sent them: revoke that on the pack's page.
 

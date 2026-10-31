@@ -14,23 +14,31 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { TimeSeriesChart, Bars, XAxis, YAxis } from '@/components/ui/charts';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { formatDate } from '@inflect/ui/lib/format-date';
+import { useTenantContext } from '@/lib/tenant-context-provider';
 
 // CC BY 4.0 attribution — carries everywhere derived NIS2 content renders.
 const NIS2_ATTRIBUTION =
     'NIS2 gap-assessment questions © NISD2 contributors (Kardashev Catalyst UG / nisd2.eu), CC BY 4.0';
 const NIS2_SOURCE_URL = 'https://github.com/NISD2/nis2-gap-assessment-schema';
 
+// The closed vocabularies of the gap (`src/lib/schemas/nis2-gap-assessment.ts`,
+// `Nis2Gap` in usecases/nis2-readiness.ts). Each is worded from
+// `frameworks.readiness.<field>.<value>` (#4733: they were printed as stored).
+type Criticality = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+type TimeToFix = 'QUICK_WIN' | 'DAYS' | 'WEEKS' | 'MONTHS';
+type GapAnswer = 'NA' | 'NO' | 'PARTIALLY' | 'YES';
+type PriorityTier = 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
 type Gap = {
     questionId: string;
     domainId: number;
-    criticality: string;
+    criticality: Criticality;
     consequence: string;
     fineExposure: boolean;
-    timeToFix: string;
+    timeToFix: TimeToFix;
     legalBasis: string;
-    answer: string;
+    answer: GapAnswer;
     priority: number;
-    priorityTier: string;
+    priorityTier: PriorityTier;
     plainText: { en: string; de: string };
 };
 type DomainScore = { domainId: number; code: string; name: { en: string; de: string }; score: number; answered: number; total: number };
@@ -47,7 +55,7 @@ type Payload = {
     focusAreas: Array<{ domainId: number; code: string; name: { en: string; de: string }; score: number }>;
 };
 
-function critVariant(c: string): 'error' | 'warning' | 'info' | 'neutral' {
+function critVariant(c: Criticality): 'error' | 'warning' | 'info' | 'neutral' {
     if (c === 'CRITICAL') return 'error';
     if (c === 'HIGH') return 'warning';
     if (c === 'MEDIUM') return 'info';
@@ -57,7 +65,15 @@ function critVariant(c: string): 'error' | 'warning' | 'info' | 'neutral' {
 export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
     const locale = useLocale();
     const t = useTranslations('frameworks');
-    const lang = locale === 'de' ? 'de' : 'en';
+    // #4733 — the question bank is the upstream dataset's, in English and
+    // German; the product ships English and Bulgarian. The questions and
+    // domain names are shown in English, and a reader in another language is
+    // told so once, rather than reading a page that silently mixes the two.
+    const lang = 'en' as const;
+    const questionsInEnglish = locale !== 'en';
+    // `materializeNis2Gaps` asks `assertCanWrite`: a role the server refuses
+    // is not offered the button (#4733), and is told why.
+    const canWrite = useTenantContext().permissions.canWrite;
     const base = `/api/t/${tenantSlug}/onboarding/nis2-assessment`;
 
     const [data, setData] = useState<Payload | null>(null);
@@ -69,12 +85,14 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
 
     const load = useCallback(async () => {
         setLoading(true);
+        setError(null);
         try {
             const res = await fetch(`${base}/readiness`);
-            if (!res.ok) throw new Error(t('readiness.loadFailed'));
-            setData(await res.json());
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t('readiness.loadFailed'));
+            if (res.ok) setData(await res.json());
+            else setError(t('readiness.loadFailed'));
+        } catch {
+            // Never the browser's "Failed to fetch".
+            setError(t('readiness.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -92,17 +110,22 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
 
     const handleMaterialize = useCallback(async () => {
         setMaterializing(true);
+        setError(null);
         try {
             const res = await fetch(`${base}/materialize`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ minCriticality: 'HIGH', createTasks: true }),
             });
-            if (!res.ok) throw new Error(t('readiness.createFailed'));
+            if (!res.ok) {
+                // A refusal is the role's, not a fault to retry (#4733).
+                setError(res.status === 403 ? t('readiness.createRestricted') : t('readiness.createFailed'));
+                return;
+            }
             const r = await res.json();
             setNotice(t('readiness.created', { created: r.created, tasks: r.tasksCreated, reopened: r.reopened, closed: r.closed }));
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t('readiness.createFailed'));
+        } catch {
+            setError(t('readiness.createFailed'));
         } finally {
             setMaterializing(false);
         }
@@ -121,10 +144,10 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
     const gapColumns = useMemo(
         () => createColumns<Gap>([
             { accessorKey: 'plainText', header: t('readiness.colGap'), cell: ({ row }) => <span>{row.original.plainText?.[lang]}</span> },
-            { accessorKey: 'criticality', header: t('readiness.colCriticality'), cell: ({ row }) => <StatusBadge variant={critVariant(row.original.criticality)} size="sm">{row.original.criticality}</StatusBadge> },
-            { accessorKey: 'answer', header: t('readiness.colAnswer'), cell: ({ row }) => <span className="text-content-muted">{row.original.answer}</span> },
-            { accessorKey: 'priority', header: t('readiness.colPriority'), cell: ({ row }) => <StatusBadge variant={row.original.priorityTier === 'URGENT' ? 'error' : row.original.priorityTier === 'HIGH' ? 'warning' : 'neutral'} size="sm">{row.original.priorityTier}</StatusBadge> },
-            { accessorKey: 'timeToFix', header: t('readiness.colEffort'), cell: ({ row }) => <span className="text-content-muted">{row.original.timeToFix}</span> },
+            { accessorKey: 'criticality', header: t('readiness.colCriticality'), cell: ({ row }) => <StatusBadge variant={critVariant(row.original.criticality)} size="sm">{t(`readiness.criticality.${row.original.criticality}`)}</StatusBadge> },
+            { accessorKey: 'answer', header: t('readiness.colAnswer'), cell: ({ row }) => <span className="text-content-muted">{t(`readiness.answer.${row.original.answer}`)}</span> },
+            { accessorKey: 'priority', header: t('readiness.colPriority'), cell: ({ row }) => <StatusBadge variant={row.original.priorityTier === 'URGENT' ? 'error' : row.original.priorityTier === 'HIGH' ? 'warning' : 'neutral'} size="sm">{t(`readiness.priorityTier.${row.original.priorityTier}`)}</StatusBadge> },
+            { accessorKey: 'timeToFix', header: t('readiness.colEffort'), cell: ({ row }) => <span className="text-content-muted">{t(`readiness.timeToFix.${row.original.timeToFix}`)}</span> },
             { accessorKey: 'legalBasis', header: t('readiness.colLegalBasis'), cell: ({ row }) => <span className="text-xs text-content-muted">{row.original.legalBasis}</span> },
         ]),
         [lang, t],
@@ -138,7 +161,14 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
     if (loading) {
         return <div className="flex items-center gap-tight p-6 text-content-muted text-sm"><Loader2 className="w-4 h-4 animate-spin" /> {t('readiness.loading')}</div>;
     }
-    if (error && !data) return <p className="p-6 text-sm text-content-error">{error}</p>;
+    if (error && !data) {
+        return (
+            <div className="space-y-default p-6">
+                <InlineNotice variant="error" id="nis2-readiness-load-failed">{error}</InlineNotice>
+                <Button variant="secondary" onClick={() => { void load(); }} id="nis2-readiness-retry">{t('readiness.retry')}</Button>
+            </div>
+        );
+    }
     if (!data) return null;
 
     const sortedDomains = [...data.readiness.score.byDomain].sort((a, b) => a.score - b.score);
@@ -154,6 +184,10 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
             <InlineNotice variant="info">
                 {t.rich('readiness.disclaimer', { strong: (c) => <strong>{c}</strong> })}
             </InlineNotice>
+
+            {questionsInEnglish && (
+                <p className="text-xs text-content-subtle" id="nis2-readiness-english-note">{t('readiness.questionsInEnglish')}</p>
+            )}
 
             {notice && <InlineNotice variant="success">{notice}</InlineNotice>}
             {error && <p className="text-sm text-content-error">{error}</p>}
@@ -198,11 +232,19 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
             <div className="space-y-tight">
                 <div className="flex items-center justify-between gap-compact flex-wrap">
                     <Heading level={3}>{t('readiness.prioritizedGaps')}</Heading>
-                    <Button variant="primary" onClick={() => setConfirmOpen(true)} disabled={materializing || eligibleCount === 0}>
-                        {materializing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                        {t('readiness.createFindings')}
-                    </Button>
+                    {canWrite && (
+                        <Button variant="primary" onClick={() => setConfirmOpen(true)} disabled={materializing || eligibleCount === 0} id="nis2-create-findings-btn">
+                            {materializing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                            {t('readiness.createFindings')}
+                        </Button>
+                    )}
                 </div>
+                {!canWrite && (
+                    <p className="text-xs text-content-subtle" id="nis2-create-findings-restricted">{t('readiness.createRestricted')}</p>
+                )}
+                {canWrite && eligibleCount === 0 && (
+                    <p className="text-xs text-content-subtle" id="nis2-create-findings-none">{t('readiness.createFindingsNone')}</p>
+                )}
                 <DataTable data={data.readiness.gaps} columns={gapColumns} getRowId={(r) => r.questionId} />
             </div>
 

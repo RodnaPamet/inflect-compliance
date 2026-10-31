@@ -1,7 +1,7 @@
 import { getTenantCtx } from '@/app-layer/context';
-import { listTenantFrameworkDeltas } from '@/app-layer/usecases/framework-delta';
+import { listTenantFrameworkUpdateViews } from '@/app-layer/usecases/framework-delta';
 
-import { FrameworkUpdatesClient, type DeltaRow } from './FrameworkUpdatesClient';
+import { FrameworkUpdatesClient } from './FrameworkUpdatesClient';
 
 /**
  * Framework updates (Epic Regwatch 2A). When a framework version lands in the
@@ -16,22 +16,10 @@ export default async function FrameworkUpdatesPage({
 }) {
     const { tenantSlug } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
-    const deltas = await listTenantFrameworkDeltas(ctx, {});
+    // #4736 — names, titles, the changelog and the flagged controls, read
+    // in bounded batches by the usecase.
+    const rows = await listTenantFrameworkUpdateViews(ctx);
+    const canWrite = ctx.permissions.canWrite;
 
-    const rows: DeltaRow[] = deltas.map((d) => ({
-        id: d.id,
-        frameworkKey: d.frameworkKey,
-        fromVersion: d.fromVersion,
-        toVersion: d.toVersion,
-        newGapCount: d.newGapCount,
-        flaggedControlCount: d.flaggedControlCount,
-        status: d.status,
-        createdAt: d.createdAt.toISOString(),
-        changelog: d.diff?.changelog ?? null,
-        addedCodes: JSON.parse(d.diff?.addedCodesJson ?? '[]') as string[],
-        changedCodes: JSON.parse(d.diff?.changedCodesJson ?? '[]') as string[],
-        removedCodes: JSON.parse(d.diff?.removedCodesJson ?? '[]') as string[],
-    }));
-
-    return <FrameworkUpdatesClient tenantSlug={tenantSlug} initialDeltas={rows} />;
+    return <FrameworkUpdatesClient tenantSlug={tenantSlug} initialDeltas={rows} canWrite={canWrite} />;
 }

@@ -8,7 +8,7 @@ The {{ui:frameworks.readiness.heading}} page turns your answers to the NIS2 gap 
 
 ## Where to find it
 
-On the NIS2 gap assessment page, click **{{ui:audits.nis2Gap.viewCoverage}}**. The page exists for NIS2 only: for any other framework it shows {{ui:frameworks.readiness.onlyNis2}}
+On the NIS2 gap assessment page, click **{{ui:audits.nis2Gap.viewReadiness}}**. The page exists for NIS2 only: for any other framework it shows {{ui:frameworks.readiness.onlyNis2}}
 
 ## Who can use it
 
@@ -16,6 +16,8 @@ On the NIS2 gap assessment page, click **{{ui:audits.nis2Gap.viewCoverage}}**. T
 | --- | --- |
 | View the score, the domains and the gaps | Everyone who can see audits |
 | Create findings and tasks from the gaps | Owner, Admin, Editor |
+
+Every other role sees, under the gap list: {{ui:frameworks.readiness.createRestricted}}
 
 ## What it is for
 
@@ -36,6 +38,8 @@ The score is not the NIS2 control coverage shown on an audit cycle's readiness p
 **{{ui:frameworks.readiness.overTime}}.** The score at each point it was recorded, once there are at least two.
 
 **{{ui:frameworks.readiness.domainBreakdown}}.** Each of the assessment's domains with its **{{ui:frameworks.readiness.colScore}}** and how many of its questions are **{{ui:frameworks.readiness.colAnswered}}**, weakest first. Above the table, the domains to start with.
+
+The questions and domain names come from the assessment's source dataset, in English. In another language, the page says so: {{ui:frameworks.readiness.questionsInEnglish}}
 
 **{{ui:frameworks.readiness.prioritizedGaps}}.** One row per gap, most urgent first, with the **{{ui:frameworks.readiness.colGap}}**, its **{{ui:frameworks.readiness.colCriticality}}**, your **{{ui:frameworks.readiness.colAnswer}}**, its **{{ui:frameworks.readiness.colPriority}}**, the **{{ui:frameworks.readiness.colEffort}}** to fix it and its **{{ui:frameworks.readiness.colLegalBasis}}** in the directive. A gap's priority weighs how critical it is, what failing it costs, whether it carries a fine and how quickly it can be fixed.
 
@@ -62,8 +66,8 @@ Go back to the NIS2 gap assessment and run it again. The score, the domains and 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | {{ui:frameworks.readiness.onlyNis2}} | The page was opened for another framework | Open it from the NIS2 gap assessment |
-| **{{ui:frameworks.readiness.loadFailed}}** | The score could not load | Reload the page |
-| **{{ui:frameworks.readiness.createFindings}}** unavailable | No gap is high or critical | Nothing to turn into findings |
+| **{{ui:frameworks.readiness.loadFailed}}** | The score could not load | Click **{{ui:frameworks.readiness.retry}}** |
+| {{ui:frameworks.readiness.createFindingsNone}} | No gap is high or critical, so **{{ui:frameworks.readiness.createFindings}}** is greyed out | Nothing to turn into findings |
 | **{{ui:frameworks.readiness.createFailed}}** | No finding was created | Try again |
 
 ## Related

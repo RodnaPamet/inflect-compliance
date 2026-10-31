@@ -1,5 +1,6 @@
 import { getTenantCtx } from '@/app-layer/context';
 import { listFrameworks, computeCoverage } from '@/app-layer/usecases/framework';
+import { countNewTenantFrameworkDeltas } from '@/app-layer/usecases/framework-delta';
 
 import { FrameworksClient } from './FrameworksClient';
 
@@ -14,6 +15,9 @@ export default async function FrameworksPage({
     const ctx = await getTenantCtx({ tenantSlug });
 
     const frameworks = await listFrameworks(ctx);
+    // #4736 — the list links the update review while one waits. A failed
+    // count hides the notice rather than the page.
+    const newUpdates = await countNewTenantFrameworkDeltas(ctx).catch(() => 0);
 
     // Fetch coverage for each framework in parallel.
     const coverages: Record<string, Awaited<ReturnType<typeof computeCoverage>>> = {};
@@ -39,6 +43,7 @@ export default async function FrameworksPage({
             tenantSlug={tenantSlug}
             // The key the install API checks — see FrameworksClient.
             canInstall={ctx.appPermissions.frameworks.install}
+            newUpdates={newUpdates}
         />
     );
 }

@@ -110,6 +110,28 @@ let mockDbInstance: any;
 describe('coverageSummary', () => {
     const ctx = { tenantId: 'tenant-1', userId: 'user-1', role: 'ADMIN', permissions: { canRead: true, canWrite: true } } as any;
 
+    // #4739 — the gap lists show at most ten rows, and the counts beside them
+    // are counted apart, so 40 untreated risks no longer read as "10".
+    it('counts every gap, not just the rows it lists', async () => {
+        mockDbInstance = mockDb({});
+        mockDbInstance.risk.count = jest.fn()
+            .mockResolvedValueOnce(50) // total risks
+            .mockResolvedValueOnce(40); // unmapped risks
+        mockDbInstance.asset.count = jest.fn()
+            .mockResolvedValueOnce(15) // active assets
+            .mockResolvedValueOnce(12) // uncovered high/critical
+            .mockResolvedValueOnce(14); // high/critical
+        const result = await coverageSummary(ctx);
+
+        expect(result.unmappedRisksTotal).toBe(40);
+        expect(result.uncoveredCriticalAssetsTotal).toBe(12);
+        expect(result.totalCriticalAssets).toBe(14);
+        const unmappedRead = mockDbInstance.risk.findMany.mock.calls[0][0];
+        expect(unmappedRead.take).toBe(10);
+        // The count asks the same question as the capped read.
+        expect(mockDbInstance.risk.count.mock.calls[1][0].where).toEqual(unmappedRead.where);
+    });
+
     it('returns the correct shape', async () => {
         mockDbInstance = mockDb({});
         const result = await coverageSummary(ctx);

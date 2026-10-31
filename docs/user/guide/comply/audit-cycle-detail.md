@@ -15,7 +15,7 @@ Open **{{ui:nav.audits}}** under **{{ui:nav.comply}}**, click **{{ui:audits.hub.
 | Action | Roles |
 | --- | --- |
 | View the cycle, its packs and its fieldwork audits | Everyone who can see audits |
-| Change the cycle's status | Owner, Admin, Editor |
+| Change the cycle's status, and edit its name and audit period | Owner, Admin, Editor |
 | Create the default pack | Owner, Admin, Editor |
 | Assemble the reliance pack | Owner, Admin |
 
@@ -27,7 +27,7 @@ Keep one audit's preparation in one place. The cycle names the framework and ver
 
 ## What you see
 
-**The header.** The cycle's name, its **{{ui:audits.cycleDetail.framework}}**, **{{ui:audits.cycleDetail.version}}** and **{{ui:audits.cycleDetail.status}}**: **{{ui:audits.cycleStatus.PLANNING}}**, **{{ui:audits.cycleStatus.IN_PROGRESS}}**, **{{ui:audits.cycleStatus.READY}}** or **{{ui:audits.cycleStatus.COMPLETE}}**. On the right, if you can change it, the status list, and **{{ui:audits.cycles.viewReadiness}}**.
+**The header.** The cycle's name, its **{{ui:audits.cycleDetail.framework}}** by name, **{{ui:audits.cycleDetail.version}}**, **{{ui:audits.cycleDetail.period}}** (or **{{ui:audits.cycleDetail.periodNotSet}}**) and **{{ui:audits.cycleDetail.status}}**: **{{ui:audits.cycleStatus.PLANNING}}**, **{{ui:audits.cycleStatus.IN_PROGRESS}}**, **{{ui:audits.cycleStatus.READY}}** or **{{ui:audits.cycleStatus.COMPLETE}}**. On the right, if you can change them, **{{ui:audits.cycleDetail.edit}}** and the status list, and **{{ui:audits.cycles.viewReadiness}}**.
 
 **{{ui:audits.cycleDetail.defaultPackPreview}}.** What a default pack for this cycle would hold today: how many **{{ui:audits.cycleDetail.controls}}**, **{{ui:audits.cycleDetail.policies}}**, **{{ui:audits.cycleDetail.evidence}}** and **{{ui:audits.cycleDetail.issues}}**, and the total.
 
@@ -43,6 +43,12 @@ Keep one audit's preparation in one place. The cycle names the framework and ver
 
 Choose the new status from the list in the header. The change is saved straight away, and the cycles list shows it too. Any status can be chosen from any other.
 
+### Correct the name or the audit period
+
+1. Click **{{ui:audits.cycleDetail.edit}}**.
+2. Change the **{{ui:audits.cycleDetail.nameLabel}}**, or the period. {{ui:audits.cycleDetail.periodHint}} Clear the dates to leave the period unset.
+3. Click **{{ui:audits.cycleDetail.save}}**. The page says **{{ui:audits.cycleDetail.saved}}**
+
 ### Create the default pack
 
 Click **{{ui:audits.cycleDetail.pack}}** in **{{ui:audits.cycleDetail.defaultPackPreview}}**. A draft pack is created, named after the framework, and filled with:
@@ -50,7 +56,7 @@ Click **{{ui:audits.cycleDetail.pack}}** in **{{ui:audits.cycleDetail.defaultPac
 - the controls mapped to the cycle's framework that are implemented or need review (every such control, if none is mapped);
 - the workspace's published policies, preferring those about security or access control for ISO 27001, and about incidents, continuity, access control and suppliers for NIS2;
 - the approved evidence linked to those controls;
-- every open task in the workspace, shown as **{{ui:audits.cycleDetail.issues}}**.
+- the open tasks of the controls mapped to the cycle's framework, whatever the control's status, shown as **{{ui:audits.cycleDetail.issues}}**. Tasks from elsewhere in the workspace are left out.
 
 The pack opens. Check its items, remove what the auditor should not see, then freeze it. See [An audit pack](audit-pack-detail.md).
 
@@ -64,7 +70,7 @@ Click **{{ui:audits.cycles.viewReadiness}}**. See [Audit cycle readiness](audit-
 
 ### Open a pack or the fieldwork audits
 
-Click a pack to open it. Click a fieldwork audit, or **{{ui:audits.cycleDetail.viewInHub}}**, to open the audits page showing this cycle's audits.
+Click a pack to open it. Click a fieldwork audit to open it on the audits page, or **{{ui:audits.cycleDetail.viewInHub}}** to see all of this cycle's audits there.
 
 ## What happens next
 
@@ -82,6 +88,7 @@ Click a pack to open it. Click a fieldwork audit, or **{{ui:audits.cycleDetail.v
 | **{{ui:audits.cycleDetail.createPackError}}**, or a reason the pack was refused | No pack was created | Follow the reason given, then try again |
 | **{{ui:audits.cycleDetail.addItemsError}}** | The pack exists, but not every item went in | Add the missing items on the pack's page |
 | **{{ui:audits.cycleDetail.statusError}}**, or a reason the change was refused | The status did not change | Follow the reason given, then try again |
+| **{{ui:audits.cycleDetail.saveError}}** | The name or the period did not change | Try again |
 | **{{ui:audits.cycleDetail.relianceError}}**, or a reason in red under **{{ui:audits.cycleDetail.reliancePack}}** | No reliance pack was assembled | Follow the reason given |
 
 ## Related
