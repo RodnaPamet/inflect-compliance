@@ -95,8 +95,6 @@ On **{{ui:tasks.detail.tabComments}}**, type in the box and click **{{ui:tasks.d
 | **{{ui:tasks.detail.failedStatus}}**, **{{ui:tasks.detail.assignFailed}}**, **{{ui:tasks.detail.addLinkFailed}}** or **{{ui:tasks.detail.addCommentFailed}}**, or the reason it was refused | The change was not saved | Follow the reason given, then try again |
 | **{{ui:tasks.detail.evidenceLoadErrorTitle}}** | The evidence could not load | Reload the page |
 
-On **{{ui:tasks.detail.tabLinks}}**, the type and relation of each link are shown as stored, not translated.
-
 ## Related
 
 - [{{ui:tasks.list.srTitle}}](tasks.md), every task in the workspace.

@@ -38,7 +38,13 @@ Click **{{ui:invite.acceptInvitation}}**. You are taken straight into the worksp
 1. Click **{{ui:invite.signInToAccept}}**. You go to the sign-in page.
 2. Within ten minutes, sign in with the email address the invitation was sent to: with Google, Microsoft, or your email and password.
 
-The invitation is accepted as you sign in, and the workspace is added to your workspaces. See [{{ui:login.signIn}}](sign-in.md).
+The invitation is accepted as you sign in. You are then taken to one of three places:
+
+- **The workspace's dashboard**, when the invitation was accepted.
+- **This invitation page again**, when the invitation is still waiting. Click **{{ui:invite.acceptInvitation}}** there.
+- **{{ui:invite.result.title}}**, when it could not be accepted. The page says why, names the address you signed in with, and offers **{{ui:invite.result.toWorkspaces}}**.
+
+See [{{ui:login.signIn}}](sign-in.md).
 
 If you sign in with Google or Microsoft using the invited email address, any invitation waiting for that address is accepted as you sign in, even without clicking the link.
 
@@ -53,9 +59,12 @@ If you sign in with Google or Microsoft using the invited email address, any inv
 | --- | --- | --- |
 | **{{ui:invite.notAvailableTitle}}** | {{ui:invite.notAvailableBody}} | Ask the workspace's administrator to send a new invitation |
 | A line naming the address you are signed in with | You are signed in with a different email address from the one invited | Sign out, then sign in with the invited address |
-| A reason the invitation could not be accepted, such as an invitation that has expired or was sent to another address | The invitation was not accepted | Follow the reason given, or ask for a new invitation. The reason is in English, whatever language you use the app in |
+| {{ui:invite.refused.INVITE_EXPIRED}} | The invitation is more than seven days old | Ask the workspace's administrator to send a new invitation |
+| {{ui:invite.refused.INVITE_REVOKED}} | An administrator withdrew it | Ask for a new invitation |
+| {{ui:invite.refused.INVITE_ALREADY_REDEEMED}} | Somebody already used this link | Ask for a new invitation if it was not you |
+| {{ui:invite.refused.INVITE_EMAIL_MISMATCH}} | You signed in with a different address from the one invited, so the invitation can no longer be used | Ask for a new invitation to the address you sign in with |
 | **{{ui:invite.acceptFailed}}** | The invitation was not accepted, and the server gave no reason | Try again |
-| You signed in, but the workspace is not in your list | The invitation could not be accepted as you signed in, for example because you signed in with a different email address | Open the invitation link again and follow what it shows |
+| **{{ui:invite.result.title}}** after signing in | The invitation could not be accepted as you signed in. The page gives the reason | Follow the reason given |
 
 ## Related
 

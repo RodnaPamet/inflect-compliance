@@ -106,8 +106,6 @@ On **{{ui:policies.detail.tabAcknowledgements}}**, once a version is published, 
 | **{{ui:policies.detail.errSaveReview}}** | The review schedule was not saved | Try again |
 | **{{ui:policies.detail.activityEmpty}}** | Nothing has been recorded yet | Nothing to do |
 
-Some events on **{{ui:policies.detail.tabActivity}}** show their internal name, with the words separated by spaces, and the text after the person's name is the system's own note, in English.
-
 ## Related
 
 - [{{ui:policies.title}}](policies.md), every policy in the workspace.

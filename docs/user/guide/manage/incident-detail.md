@@ -82,9 +82,10 @@ On **{{ui:incidents.detail.tabs.timeline}}**, click **{{ui:incidents.detail.addE
 | {{ui:incidents.detail.notReportableText}} | The incident has not been marked reportable, so no deadlines are running | Decide whether it is, and click **{{ui:incidents.detail.markReportable}}** if so |
 | **{{ui:incidents.detail.noneLinked}}** beside an evidence category | No evidence has been linked for it yet | Link evidence |
 | **{{ui:incidents.detail.controlsEmpty}}** | No control is linked | Link the controls from the control's page |
-| **{{ui:incidents.detail.actionFailed}}**, or a reason in red | The action was refused | Follow the reason given, then try again |
-
-The runbook steps, the forensic evidence categories and the response roles are in English, whatever language you use the app in.
+| **{{ui:incidents.detail.refused.INCIDENT_PHASE_FINAL}}** | The incident has reached its last phase | Nothing more to advance |
+| **{{ui:incidents.detail.refused.INCIDENT_NOT_REPORTABLE}}** | You tried to file a report before marking the incident reportable | Click **{{ui:incidents.detail.markReportable}}** first |
+| **{{ui:incidents.detail.refused.INCIDENT_EVIDENCE_NOT_FOUND}}** | The evidence record you chose was deleted | Choose another record |
+| **{{ui:incidents.detail.actionFailed}}**, or another sentence in red | The action was refused | Follow what the sentence says, then try again |
 
 ## Related
 

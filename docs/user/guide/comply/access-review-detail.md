@@ -76,7 +76,6 @@ A campaign with no subjects, or with any subject still undecided, cannot be clos
 | **{{ui:accessReviews.truncatedTitle}}** | The scope held more subjects than one campaign can, and only part of it was taken | Split the review into several campaigns |
 | **{{ui:accessReviews.coverageUnverifiedTitle}}** | The subjects came from an application's connector, and nothing checked the list was complete | Check the application's own user list against it |
 | **{{ui:accessReviews.submitFailed}}**, **{{ui:accessReviews.closeFailed}}**, or a reason the server gave | The decision was not recorded, or the campaign was not closed | Follow the reason given, then try again |
-| "HTTP" and a number | A request failed and the server gave no reason | Reload the page and try again |
 
 ## Related
 

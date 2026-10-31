@@ -103,11 +103,11 @@ When the control cannot be put in place as designed, click **{{ui:panels.excepti
 | **{{ui:controls.detailPage.objectiveEmpty}}** | The control has no objective, requirements or tasks | Edit the control and add an objective |
 | **{{ui:controls.detailPage.policiesEmptyTitle}}** | No policy is linked to the control | Link the control from a policy's page |
 | **{{ui:panels.exceptions.emptyExceptions}}** | No exception has been requested | Nothing to do |
-| The status picker goes back to the old status | The change was refused, and the page does not say why | Reload the page, check you can still edit controls, and try again |
-| **{{ui:controls.detailPage.errors.applicabilityFailed}}** | The applicability was not saved | Try again |
+| **{{ui:controls.detailPage.errors.statusUpdateFailed}}**, or the reason the status change was refused | The status was not saved, and the picker goes back to the old status | Follow the reason given, then try again |
+| **{{ui:controls.detailPage.errors.applicabilityFailed}}**, or the reason it was refused | The applicability was not saved | Follow the reason given, then try again |
 | **{{ui:controls.detailPage.errors.titleMinLength}}** | The name is shorter than three characters | Give it a longer name |
 | **{{ui:controls.detailPage.errors.updateFailed}}**, or the reason it was refused | The edit was not saved | Follow the reason given, then try again |
-| **{{ui:controls.detailPage.errors.addContributorFailed}}** or **{{ui:controls.detailPage.errors.removeContributorFailed}}** | The contributor was not added or removed | Try again |
+| **{{ui:controls.detailPage.errors.addContributorFailed}}** or the reason it was refused, or **{{ui:controls.detailPage.errors.removeContributorFailed}}** | The contributor was not added or removed | Follow the reason given, then try again |
 | **{{ui:controls.detailPage.couldntLoadEvidence}}** or **{{ui:controls.detailPage.couldntLoadActivity}}** | That tab could not load | Reload the page |
 | **{{ui:controls.detailPage.syncFailedBadge}}** or **{{ui:controls.detailPage.syncConflictBadge}}** | The integration that feeds the control could not sync it, or found changes on both sides | Hover over the badge for the reason, then check the integration |
 

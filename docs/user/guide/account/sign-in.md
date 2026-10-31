@@ -62,6 +62,16 @@ If you have forgotten your password, click **{{ui:login.forgotPassword}}**. See 
 
 A new workspace is created for your organisation, you are its Owner, and you are signed in to it. **{{ui:login.signInLink}}** switches back to signing in.
 
+### Create an account to accept an invitation
+
+If a colleague invited you and you do not sign in with Google or Microsoft, you need a password account first.
+
+1. On the invitation page, click **{{ui:invite.signInToAccept}}**.
+2. On the sign-in page, click **{{ui:login.registerLink}}**. The heading changes to **{{ui:login.registerAccount}}**, and the page says: {{ui:login.inviteAccountOnly}}
+3. Fill in **{{ui:login.name}}**, the email address the invitation was sent to, and a **{{ui:login.password}}**, then click **{{ui:login.submitRegister}}**.
+
+You are signed in, and the invitation is accepted. No workspace of your own is created. See [{{ui:invite.invitedTitle}}](accept-an-invite.md).
+
 ### Request a new verification email
 
 Type your email address in the box at the bottom and click **{{ui:login.resend}}**. The page answers **{{ui:login.resendSent}}**, whether or not the address has an account, so the page never reveals who has one.
@@ -88,8 +98,14 @@ Type your email address in the box at the bottom and click **{{ui:login.resend}}
 | **{{ui:login.errors.ssoIncomplete}}** | Single sign-on started but did not finish | Try again, or ask the workspace's administrator |
 | **{{ui:login.errors.ssoStartFromSignIn}}** | Single sign-on was started from somewhere other than this page | Start it again from **{{ui:login.sso.continue}}** |
 | **{{ui:login.errors.signInFailed}}** | Sign-in failed for another reason | Try again |
+| {{ui:login.emailNotVerified}} | Your password is right, but you have not confirmed your email address yet | Open the link in the verification email, or request a new one in the box at the bottom |
 | **{{ui:login.linkExpired}}** or **{{ui:login.linkInvalid}}** | The email verification link you followed cannot be used | Request a new one in the box at the bottom |
-| The reason the registration was refused, such as an email address that is already registered or a password that is too short | The organisation was not created | Follow the reason given. The reason is in English, whatever language you use the app in |
+| {{ui:login.refused.EMAIL_ALREADY_REGISTERED}} | You already have an account | Sign in, or use **{{ui:login.forgotPassword}}** |
+| {{ui:login.refused.PASSWORD_TOO_SHORT}}, {{ui:login.refused.PASSWORD_TOO_LONG}} or {{ui:login.refused.PASSWORD_BREACHED}} | The password does not meet the rules | Choose another password |
+| {{ui:login.refused.INVITE_EMAIL_MISMATCH}} | You are creating an account to accept an invitation, with a different email address from the one invited | Use the invited address |
+| {{ui:login.refused.INVITE_UNAVAILABLE}} | The invitation you are creating an account for has expired, was withdrawn, or was already used | Ask for a new invitation |
+| {{ui:login.tooManyRegistrations}} | Too many accounts were created from your network in the last hour | Wait an hour, then try again |
+| **{{ui:login.registrationFailed}}** | The account was not created, for another reason | Try again |
 
 ## Related
 

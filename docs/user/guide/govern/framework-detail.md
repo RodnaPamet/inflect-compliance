@@ -67,10 +67,10 @@ On **{{ui:frameworks.detail.builderTab}}**, drag sections and requirements into 
 | --- | --- | --- |
 | **{{ui:frameworks.detail.notFound}}** | The framework does not exist, or is not available to the workspace | Go back to **{{ui:nav.frameworks}}** |
 | **{{ui:frameworks.detail.loadFailed}}** | The page could not load | Reload the page |
-| **{{ui:frameworks.detail.packsEmpty}}** | The framework has no packs, or they could not be loaded | Reload the page to check |
-| The **{{ui:frameworks.detail.coverageTab}}** tab is blank | The coverage could not be loaded | Reload the page |
-| **{{ui:frameworks.detail.loadingTree}}** that does not go away | The requirements could not be loaded | Reload the page |
+| **{{ui:frameworks.detail.packsEmpty}}** | The framework has no packs | Nothing to do |
+| **{{ui:frameworks.detail.treeLoadFailed}}**, **{{ui:frameworks.detail.packsLoadFailed}}** or **{{ui:frameworks.detail.coverageLoadFailed}}** | That part of the page could not load | Click **{{ui:frameworks.detail.retry}}** |
 | **{{ui:frameworks.detail.reorderRestricted}}** | You are not an Owner or Admin | Ask one to change the order |
+| **{{ui:frameworks.detail.reorderFailed}}** | The new order was not saved | Try again |
 | **{{ui:frameworks.detail.packRemoveFailed}}** | The pack is still in scope | Reload the page and try again |
 | **{{ui:frameworks.detail.inherited.emptyTitle}}** | No framework you hold controls on is mapped to this one | Nothing to do |
 | **{{ui:frameworks.detail.inherited.errorTitle}}** | The inherited coverage could not load | Click **{{ui:frameworks.detail.inherited.retry}}** |

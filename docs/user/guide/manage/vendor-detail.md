@@ -94,7 +94,10 @@ On **{{ui:vendors.detail.tabs.subprocessors}}**, pick the vendor that acts as a 
 | **{{ui:vendors.detail.linksEmptyTitle}}**, **{{ui:vendors.detail.bundlesEmptyTitle}}** or **{{ui:vendors.detail.subsEmptyTitle}}** | That tab has nothing yet | Add what is missing |
 | **{{ui:vendors.detail.templatesNonePublished}}** | There is no published questionnaire template to send | Publish one first: {{ui:vendors.detail.templatesNoneHint}} |
 | **{{ui:vendors.detail.inviteExpired}}** or **{{ui:vendors.detail.inviteRevoked}}** | The respondent's link no longer works | Click **{{ui:vendors.detail.resendInvite}}** |
-| **{{ui:vendors.detail.sendFailed}}**, or a reason the send was refused | The questionnaire was not sent. The reason is in English, whatever language you use the app in | Follow the reason given, then try again |
+| **{{ui:vendors.detail.sendRefused.SEND_RESPONDENT_EMAIL_INVALID}}** | The respondent's email address is not valid | Correct it and send again |
+| **{{ui:vendors.detail.sendRefused.SEND_TEMPLATE_DRAFT}}** | The template chosen is still a draft | Publish the template, or choose a published one |
+| **{{ui:vendors.detail.sendRefused.SEND_ALREADY_IN_FLIGHT}}** | The respondent already has this questionnaire to answer | Click **{{ui:vendors.detail.resendInvite}}** on the waiting questionnaire |
+| **{{ui:vendors.detail.sendFailed}}** | The questionnaire was not sent, for another reason | Try again |
 | **{{ui:vendors.detail.loadDocsFailed}}**, **{{ui:vendors.detail.loadLinksFailed}}**, **{{ui:vendors.detail.loadBundlesFailed}}** or **{{ui:vendors.detail.loadSubsFailed}}** | That tab could not load | Reload the page |
 
 ## Related
