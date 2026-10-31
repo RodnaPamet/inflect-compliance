@@ -568,8 +568,13 @@ needed):
 - [ ] **C0 — measure.** On the VM: each container's peak memory and CPU over a
       working day, including the nightly jobs (vendor monitor 02:00, identity
       chain 03:00–05:00), with free memory and disk. Record the figures in
-      this table, replacing "not measured". This is read-only inspection, done
-      directly on the VM (CLAUDE.md, Production VM).
+      this table, replacing "not measured". The `VM capacity` workflow
+      (`.github/workflows/vm-capacity.yml`, dispatch-only, read-only, behind
+      the `production` reviewer like `Scanner VM`) prints exactly this: per
+      container the peak since it started (cgroup `memory.peak`), anonymous
+      and page-cache memory, average CPU and OOM kills, and optional samples.
+      A session cannot do it itself: this environment's proxy carries HTTPS
+      only, so no SSH or IAP tunnel reaches the VM from a session.
 - [ ] **C1 — limit today's stack.** A memory limit and CPU cap on each of the
       eight services, at 1.5× its measured peak, in
       `deploy/docker-compose.prod.yml`, applied with `deploy/apply.sh`. A
