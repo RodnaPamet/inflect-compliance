@@ -9747,7 +9747,7 @@
         }
       }
     },
-    "governanceLink": "Automation graph →",
+    "governanceLink": "Automation graph",
     "mobileHint": "Process maps are edited on a larger screen. Open this page on a desktop to design the canvas.",
     "mobileEmpty": "No process maps yet.",
     "steps": "{count, plural, one {# step} other {# steps}}",
@@ -9811,17 +9811,27 @@
       "feedUnavailable": "Recent activity is unavailable right now."
     },
     "governance": {
+      "unknownMap": "A map not in this list",
+      "connections": "Connections between maps",
+      "healthLegend": "The ring and badge show each map's last 30 days: Healthy at 90% successful runs or more, Degraded from 70%, Failing below 70%, and No runs when the map has not run.",
+      "health": {
+        "green": "Healthy",
+        "amber": "Degraded",
+        "red": "Failing",
+        "unknown": "No runs"
+      },
+      "edgeKind": {
+        "subflow-call": "sub-flow call",
+        "shared-rule": "shared rule"
+      },
       "crumbDashboard": "Dashboard",
       "crumbProcesses": "Processes",
       "crumbGraph": "Governance graph",
-      "heading": "Automation governance graph",
-      "description": "Every automation map, sized by rule volume and ringed by 30-day execution health, with the sub-flow calls between them.",
       "building": "Building the topology…",
       "empty": "No process maps yet — create an automation workflow to populate the graph.",
       "rulesCount": "{count, plural, one {# rule} other {# rules}}",
       "noRuns": "no runs",
       "successPct": "{pct}% success",
-      "subflowCalls": "Sub-flow calls",
       "topologyHeading": "Automation topology",
       "topologyDescription": "A system-of-record map of your automation flows — rule counts, 30-day success rates, and sub-flow calls between maps. This is not compliance coverage.",
       "canvasMode": {

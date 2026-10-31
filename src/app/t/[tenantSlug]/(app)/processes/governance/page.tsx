@@ -39,6 +39,15 @@ interface GovernanceEdge {
     kind: 'subflow-call' | 'shared-rule';
 }
 
+// #4801 — health was a ring colour alone. Each card now names it too, in the
+// badge variant that matches the ring, so it reads without colour.
+const HEALTH_BADGE: Record<Health, 'success' | 'warning' | 'error' | 'neutral'> = {
+    green: 'success',
+    amber: 'warning',
+    red: 'error',
+    unknown: 'neutral',
+};
+
 const HEALTH_RING: Record<Health, string> = {
     green: 'ring-content-success',
     amber: 'ring-content-warning',
@@ -56,7 +65,8 @@ export default function GovernanceGraphPage() {
     const tenantHref = useTenantHref();
     const nodes = data?.nodes ?? [];
     const edges = data?.edges ?? [];
-    const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? id;
+    // An edge to a map outside the list printed the map's raw id (#4801).
+    const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? t('governance.unknownMap');
 
     return (
         <div className="space-y-section p-default" data-testid="governance-graph-page">
@@ -73,6 +83,11 @@ export default function GovernanceGraphPage() {
                 <p className="text-sm text-content-muted">
                     {t('governance.topologyDescription')}
                 </p>
+                {nodes.length > 0 && (
+                    <p className="text-xs text-content-subtle mt-1" id="governance-health-legend">
+                        {t('governance.healthLegend')}
+                    </p>
+                )}
             </div>
 
             {isLoading && <p className="text-sm text-content-subtle">{t('governance.building')}</p>}
@@ -115,7 +130,10 @@ export default function GovernanceGraphPage() {
                                 {t('governance.canvasMode.AUTOMATION')}
                             </StatusBadge>
                         </div>
-                        <div className="mt-2 flex items-center gap-default text-xs text-content-muted tabular-nums">
+                        <div className="mt-2 flex flex-wrap items-center gap-default text-xs text-content-muted tabular-nums">
+                            <StatusBadge size="sm" variant={HEALTH_BADGE[n.health]} data-governance-health-label={n.health}>
+                                {t(`governance.health.${n.health}` as Parameters<typeof t>[0])}
+                            </StatusBadge>
                             <span>{t('governance.rulesCount', { count: n.ruleCount })}</span>
                             <span>
                                 {n.successRate === null
@@ -129,12 +147,12 @@ export default function GovernanceGraphPage() {
 
             {edges.length > 0 && (
                 <div className="space-y-default">
-                    <Heading level={3}>{t('governance.subflowCalls')}</Heading>
+                    <Heading level={3}>{t('governance.connections')}</Heading>
                     <ul className="space-y-tight text-sm text-content-muted" data-testid="governance-edges">
                         {edges.map((e) => (
                             <li key={e.id} data-governance-edge={e.id}>
                                 {nameOf(e.source)} → {nameOf(e.target)}{' '}
-                                <span className="text-content-subtle">({e.kind})</span>
+                                <span className="text-content-subtle">({t(`governance.edgeKind.${e.kind}` as Parameters<typeof t>[0])})</span>
                             </li>
                         ))}
                     </ul>
