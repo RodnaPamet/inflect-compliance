@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { Sparkles, Shield, CreditCard, KeyRound, ShieldCheck, ShieldPlus, Users, UserCog, CloudCog, Plug, Palette, Grid3x3, Gauge, Bell, ScrollText, Globe, Laptop, GraduationCap, ClipboardList, ClipboardCheck, Lock } from 'lucide-react';
-import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
+import { Cube, Robot } from '@inflect/ui/components/ui/icons/nucleo';
 import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
@@ -98,6 +98,9 @@ export default async function AdminPage({
                 { href: '/admin/security', id: 'security-pill-btn', icon: <ShieldCheck className={iconCls} />, label: t('nav.security') },
                 { href: '/admin/trust-center', id: 'trust-center-pill-btn', icon: <Globe className={iconCls} />, label: t('nav.trustCenter') },
                 { href: '/admin/audit-log', id: 'audit-log-pill-btn', icon: <ScrollText className={iconCls} />, label: t('auditLog') },
+                // #4813: the sandbox runtime page had no way in; it takes
+                // `admin.view`, as every pill on this page does.
+                { href: '/admin/sandbox-runtime', id: 'sandbox-runtime-pill-btn', icon: <Cube className={iconCls} />, label: t('nav.sandboxRuntime') },
                 // AGENTIC UI 1/4 (#2442): the agent register, the proposal
                 // queue, activity, receipts and quarantine all moved out from
                 // behind this pill to `/agents`, a sidebar destination. What

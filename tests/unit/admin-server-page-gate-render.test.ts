@@ -388,3 +388,27 @@ describe('the admin index offers Modules to Owners only (#4819)', () => {
         expect(hasId(el, 'billing-pill-btn')).toBe(true);
     });
 });
+
+describe('the admin index offers the Sandbox runtime page (#4813)', () => {
+    /** The element in the tree that carries this `id` prop, if any. */
+    function byId(el: unknown, id: string): { props: Record<string, unknown> } | null {
+        if (!el || typeof el !== 'object') return null;
+        if (Array.isArray(el)) {
+            for (const child of el) {
+                const hit = byId(child, id);
+                if (hit) return hit;
+            }
+            return null;
+        }
+        const node = el as { props?: Record<string, unknown> };
+        if (node.props?.id === id) return node as { props: Record<string, unknown> };
+        return byId(node.props?.children, id);
+    }
+
+    test.each(['ADMIN', 'OWNER'])('an %s gets a button for it, which opens it', async (role) => {
+        const el = await render('/admin', role);
+        const pill = byId(el, 'sandbox-runtime-pill-btn');
+        expect(pill).not.toBeNull();
+        expect(String(pill!.props.href)).toMatch(/\/admin\/sandbox-runtime$/);
+    });
+});

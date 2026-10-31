@@ -163,7 +163,8 @@ export function SandboxRuntimeClient({
             <BackAffordance />
             <PageBreadcrumbs
                 items={[
-                    { label: t('nav.sandboxRuntime'), href: tenantHref('/admin/sandbox-runtime') },
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
                     { label: t('sandboxRuntime.breadcrumb') },
                 ]}
             />
