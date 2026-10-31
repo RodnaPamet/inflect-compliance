@@ -157,7 +157,10 @@ describe('RQ3-6 — the register page surfaces the predicted-vs-actual overlay',
         expect(page).toMatch(/data-testid="loss-events-rollup"/);
         expect(page).toMatch(/loss-events-empty/);
         expect(page).toMatch(/t\('lossEvents\.emptyActuals'\)/);
-        expect(enMessages.risks.lossEvents.emptyActuals).toMatch(/forecasting stack is unfalsifiable/);
+        // #4773 — the empty state still says why it matters (nothing can be
+        // scored yet), in plain words rather than "the forecasting stack is
+        // unfalsifiable".
+        expect(enMessages.risks.lossEvents.emptyActuals).toMatch(/nothing can be compared with the forecasts/);
         expect(page).toMatch(/loss-events-form/);
         expect(page).toMatch(/loss-events-list/);
         expect(page).toMatch(/loss-events-by-year/);
