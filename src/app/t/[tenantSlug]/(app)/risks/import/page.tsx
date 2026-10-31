@@ -9,6 +9,7 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { parseCsvRecords } from '@/lib/csv/parse-csv';
 import { cn } from '@inflect/ui/lib/cn';
@@ -28,6 +29,11 @@ type ParsedRow = {
     outOfScale?: Array<{ field: 'likelihood' | 'impact'; value: number; max: number }>;
 };
 
+/** #4775 — an import that ran, or one the server refused before it ran. */
+type ImportResult =
+    | { kind: 'done'; created: number; skipped: number; errors: Array<{ row: number; title: string; message: string }> }
+    | { kind: 'failed'; message: string };
+
 export default function RiskImportPage() {
     const apiUrl = useTenantApiUrl();
     const href = useTenantHref();
@@ -35,6 +41,7 @@ export default function RiskImportPage() {
     // The import route checks `risks.create` and the usecase the write tier.
     const canWrite = riskCanCreate(tenant);
     const t = useTranslations('riskManager');
+    const tRisks = useTranslations('risks');
     // Clamp imported L/I to the tenant's configured scale, not a hardcoded
     // 5 — a 6-level tenant's "6" is valid and must not be silently dropped.
     const { config: matrixConfig } = useRiskMatrixConfig();
@@ -42,12 +49,17 @@ export default function RiskImportPage() {
     const fileRef = useRef<HTMLInputElement>(null);
     const [rows, setRows] = useState<ParsedRow[]>([]);
     const [importing, setImporting] = useState(false);
-    const [result, setResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+    const [result, setResult] = useState<ImportResult | null>(null);
+    // #4775 — rows with no title, which the preview leaves out, counted
+    // rather than dropped without a word; and a file the browser could not read.
+    const [untitled, setUntitled] = useState(0);
+    const [readError, setReadError] = useState(false);
 
-    const parseCSV = (text: string): ParsedRow[] => {
+    const parseCSV = (text: string): { rows: ParsedRow[]; untitled: number } => {
         // Robust quoted-CSV parse (handles commas/quotes/newlines inside cells).
         const records = parseCsvRecords(text);
-        return records
+        const untitledCount = records.filter((rec) => !rec.title).length;
+        const parsed = records
             .map((rec): ParsedRow | null => {
                 const title = rec.title;
                 if (!title) return null;
@@ -72,16 +84,26 @@ export default function RiskImportPage() {
                 return row;
             })
             .filter((r): r is ParsedRow => r !== null);
+        return { rows: parsed, untitled: untitledCount };
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         setResult(null);
+        setReadError(false);
         const reader = new FileReader();
         reader.onload = (ev) => {
             const text = ev.target?.result as string;
-            setRows(parseCSV(text));
+            const parsed = parseCSV(text);
+            setRows(parsed.rows);
+            setUntitled(parsed.untitled);
+        };
+        // #4775 — a file the browser cannot read used to do nothing at all.
+        reader.onerror = () => {
+            setRows([]);
+            setUntitled(0);
+            setReadError(true);
         };
         reader.readAsText(file);
     };
@@ -114,13 +136,10 @@ export default function RiskImportPage() {
                 skipped: number;
                 errors: { row: number; title: string; message: string }[];
             };
-            setResult({
-                created: data.created,
-                skipped: data.skipped,
-                errors: data.errors.map((e) => `Row ${e.row} "${e.title}": ${e.message}`),
-            });
+            setResult({ kind: 'done', created: data.created, skipped: data.skipped, errors: data.errors });
         } catch (err) {
-            setResult({ created: 0, skipped: 0, errors: [extractMutationError(err)] });
+            // #4775 — a refused import is a failure, not "Import Complete — 0 of N".
+            setResult({ kind: 'failed', message: extractMutationError(err) });
         } finally {
             setImporting(false);
         }
@@ -142,6 +161,7 @@ export default function RiskImportPage() {
     return (
         <div className="space-y-section animate-fadeIn max-w-4xl">
             <BackAffordance />
+            <PageBreadcrumbs items={[{ label: tRisks('breadcrumbRoot'), href: href('/risks') }, { label: t('importBreadcrumb') }]} />
             <div>
                 <Heading level={1}>{t('importTitle')}</Heading>
                 <p className="text-content-muted text-sm">{tenant.tenantName}</p>
@@ -150,7 +170,8 @@ export default function RiskImportPage() {
             {/* Format info */}
             <div className={cn(cardVariants({ density: 'compact' }), 'border-border-emphasis/50')}>
                 <Heading level={3} className="mb-2">{t('csvFormat')}</Heading>
-                <p className="text-xs text-content-muted">{t('csvDesc')}</p>
+                {/* #4775 — the scale is the workspace matrix's, which the preview checks against. */}
+                <p className="text-xs text-content-muted">{t('csvDesc', { likelihoodMax: matrixConfig.likelihoodLevels, impactMax: matrixConfig.impactLevels })}</p>
                 <pre className="mt-2 text-xs text-content-subtle bg-bg-page/50 p-2 rounded overflow-x-auto">
                     title,description,category,likelihood,impact,owner{'\n'}
                     Unauthorized access,Risk of unauthorized data access,Technical,4,5,CISO
@@ -181,7 +202,7 @@ export default function RiskImportPage() {
                             { id: 'num', header: '#', accessorKey: '_idx', cell: ({ getValue }) => <span className="text-xs text-content-subtle">{getValue()}</span> },
                             { accessorKey: 'title', header: t('colTitle'), cell: ({ getValue }) => <span className="text-sm">{getValue()}</span> },
                             { id: 'category', header: t('colCategory'), accessorKey: 'category', cell: ({ getValue }) => <span className="text-xs text-content-muted">{getValue() || '—'}</span> },
-                            { id: 'lxi', header: t('colLxI'), accessorFn: (r) => `${r.likelihood ?? 3}×${r.impact ?? 3}`, cell: ({ row, getValue }) => {
+                            { id: 'lxi', header: t('colLikelihoodImpact'), accessorFn: (r) => `${r.likelihood ?? 3}×${r.impact ?? 3}`, cell: ({ row, getValue }) => {
                                 const oos = row.original.outOfScale;
                                 return (
                                     <div className="flex flex-col gap-0.5">
@@ -223,14 +244,30 @@ export default function RiskImportPage() {
                 potentially flash the warning before/after the parser
                 catches up. */}
             {/* eslint-disable-next-line react-hooks/refs */}
-            {rows.length === 0 && fileRef.current?.files?.length ? (
+            {!readError && rows.length === 0 && fileRef.current?.files?.length ? (
                 <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-warning')}>{t('noValidRows')}</div>
             ) : null}
+            {readError && (
+                <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-error')} role="alert" data-testid="import-read-error">{t('fileReadError')}</div>
+            )}
+            {untitled > 0 && !result && (
+                <p className="text-xs text-content-warning" data-testid="import-untitled">{t('untitledRows', { count: untitled })}</p>
+            )}
 
             {/* Result */}
-            {result && (
-                <div className={cn(cardVariants(), 'space-y-default')}>
-                    <p className="text-lg font-semibold text-content-success">
+            {result?.kind === 'failed' && (
+                <div className={cn(cardVariants(), 'space-y-default')} data-testid="import-failed">
+                    <p className="text-lg font-semibold text-content-error">{t('importFailed')}</p>
+                    <p className="text-sm text-content-error" role="alert">{result.message}</p>
+                    <p className="text-sm text-content-muted">{t('importFailedNothingCreated')}</p>
+                    <Button variant="secondary" onClick={() => setResult(null)} id="import-back-to-preview">
+                        {t('backToPreview')}
+                    </Button>
+                </div>
+            )}
+            {result?.kind === 'done' && (
+                <div className={cn(cardVariants(), 'space-y-default')} data-testid="import-done">
+                    <p className={cn('text-lg font-semibold', result.created > 0 ? 'text-content-success' : 'text-content-emphasis')}>
                         {t('importComplete', { created: result.created, total: rows.length })}
                     </p>
                     {result.skipped > 0 && (
@@ -242,7 +279,7 @@ export default function RiskImportPage() {
                         <div className="space-y-1">
                             <p className="text-sm text-content-error font-medium">{t('errors')}:</p>
                             {result.errors.map((e, i) => (
-                                <p key={i} className="text-xs text-content-error">{e}</p>
+                                <p key={i} className="text-xs text-content-error">{t('rowError', { row: e.row, title: e.title, message: e.message })}</p>
                             ))}
                         </div>
                     )}
@@ -250,7 +287,7 @@ export default function RiskImportPage() {
                         <Link href={href('/risks')} className={buttonVariants({ variant: 'primary' })}>
                             {t('viewRegister')}
                         </Link>
-                        <Button variant="secondary" onClick={() => { setResult(null); setRows([]); if (fileRef.current) fileRef.current.value = ''; }}>
+                        <Button variant="secondary" onClick={() => { setResult(null); setRows([]); setUntitled(0); if (fileRef.current) fileRef.current.value = ''; }}>
                             {t('importMore')}
                         </Button>
                     </div>
