@@ -59,6 +59,22 @@ export interface CollectorSandboxPolicy {
 }
 
 /** The scratch path, named once so the policy and the exec agree. */
+/**
+ * The ONE AWS region the operator boundary permits — #4569.
+ *
+ * A deployment constant, not a parameter. 124 of the AWS endpoints are
+ * `<prefix>.<region>.amazonaws.com`, so the policy has to name a region; making
+ * it an argument would change `collectorSandboxPolicy`'s signature, and that
+ * signature's stability is itself a recorded tripwire for #3966's deferred
+ * per-residency-class backstop.
+ *
+ * `eu-west-1` matches the placeholder the AWS connection form already shows and
+ * this product's EU residency posture. A connection configured elsewhere fails
+ * CLOSED: the host is absent from the policy, so the query fails and the
+ * collection reports ERROR rather than a quiet PASSED.
+ */
+export const COLLECTOR_AWS_REGION = 'eu-west-1';
+
 export const COLLECTOR_SCRATCH_DIR = '/var/tmp/powerpipe';
 
 /** Non-root, and pinned: `run_as` root would make the read-only root advisory. */
@@ -90,9 +106,191 @@ export function providerOfBenchmark(benchmarkId: string): CollectorProvider {
  * not per-service, for the reason in the docblock above.
  */
 const PROVIDER_ENDPOINTS: Readonly<Record<CollectorProvider, ReadonlyArray<{ host: string; reason: string }>>> = {
+    //
+    // ═══ EXPLICIT PER-SERVICE, NOT `*.amazonaws.com` (#4569) ═══
+    //
+    // The wildcard was not merely unprovable, it was MASKING a real failure.
+    // `openshell-prover` declined to decide a policy mixing `*.amazonaws.com`
+    // with `sts.amazonaws.com` — "overlapping exact and wildcard endpoints with
+    // different implicit destination IP modes" — and the issue recorded that as
+    // `unsupported`. Removing the redundant exact host to settle the shape
+    // changed the verdict to `exceeds_boundary`, with a counterexample:
+    //
+    //     host a.amazonaws.com, destination_ip 8.8.8.8
+    //
+    // So the policy really did permit more than the operator boundary, and the
+    // shape complaint had been standing in front of that.
+    //
+    // ═══ DERIVED FROM TWO PINNED SOURCES, NOTHING HAND-WRITTEN ═══
+    //
+    // The same method that fixed GCP, and it had to be: 33 of these prefixes
+    // differ from the plugin's own package name, so a hand mapping would have
+    // been wrong 33 times. `cloudwatch` is `monitoring`, `cloudwatchlogs` is
+    // `logs`, `costexplorer` is `ce`, `ecr` is `api.ecr`.
+    //
+    //   PREFIX      aws-sdk-go-v2 @ 407b01fa1982d76a380501a2862a6d4d1c475db0
+    //               service/<pkg>/internal/endpoints/endpoints.go, the template
+    //               whose suffix is `amazonaws.com` — NOT the first one listed.
+    //               S3 lists its dual-stack template first, so "first Hostname"
+    //               yielded `s3.dualstack` and would have denied every S3
+    //               control. The 141 service packages come from the plugin's
+    //               own `aws/service.go`, which builds every client it can use.
+    //
+    //   REGIONAL?   botocore `endpoints.json`, keyed by endpoint prefix:
+    //               `isRegionalized: false` means one global host. Eleven are.
+    //               Three services it does not list are treated as regional,
+    //               which is what their own SDK template says.
+    //
+    // ═══ ONE REGION, AND THAT IS THE BOUNDARY'S STATEMENT ═══
+    //
+    // 124 of these are `<prefix>.<region>.amazonaws.com`. The region is a
+    // DEPLOYMENT CONSTANT rather than a parameter, which keeps
+    // `collectorSandboxPolicy` a pure function of the benchmark — a property
+    // `flue-provider-is-never-set-per-run` asserts by ARITY, deliberately, as
+    // the tripwire for #3966's deferred per-residency-class backstop. A region
+    // parameter would have tripped that guard for an unrelated reason.
+    //
+    // A connection configured for a different region fails CLOSED — the host is
+    // not in the policy, so the query fails and the collection reports ERROR,
+    // never a quiet PASSED. That is the same observable-failure argument the
+    // GCP list rests on, and it is what makes one region an honest default
+    // rather than a silent restriction.
     aws: [
-        { host: '*.amazonaws.com', reason: 'service APIs the benchmark queries, region-resolved by the SDK' },
-        { host: 'sts.amazonaws.com', reason: 'credential identity resolution before any service call' },
+        { host: 'account.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: 'budgets.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: 'ce.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: 'cloudfront.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: 'health.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: 'iam.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: 'organizations.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: 'route53.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: 'savingsplans.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: 'shield.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: 'waf.amazonaws.com', reason: 'global endpoint, queried by the AWS plugin' },
+        { host: `access-analyzer.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `acm.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `acm-pca.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `amplify.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `api.ecr.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `api.ecr-public.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `api.pricing.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `api.sagemaker.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `apigateway.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `appconfig.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `application-autoscaling.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `apprunner.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `appstream2.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `appsync.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `athena.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `auditmanager.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `autoscaling.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `backup.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `batch.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `bedrock.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `bedrock-agent.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `bedrock-agentcore-control.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `cassandra.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `cloudcontrolapi.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `cloudformation.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `cloudsearch.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `cloudtrail.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `codeartifact.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `codebuild.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `codecommit.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `codedeploy.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `codepipeline.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `codestar-notifications.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `cognito-identity.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `cognito-idp.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `config.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `connect.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `cost-optimization-hub.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `datasync.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `dax.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `directconnect.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `dlm.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `dms.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `drs.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `ds.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `dynamodb.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `ec2.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `ecs.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `eks.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `elasticache.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `elasticbeanstalk.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `elasticfilesystem.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `elasticloadbalancing.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `elasticmapreduce.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `email.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `es.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `events.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `firehose.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `fms.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `fsx.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `glacier.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `globalaccelerator.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `glue.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `guardduty.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `identitystore.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `ingest.timestream.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `inspector.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `inspector2.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `iot.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `kafka.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `kafkaconnect.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `kinesis.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `kinesisanalytics.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `kinesisvideo.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `kms.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `lakeformation.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `lambda.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `lightsail.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `logs.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `macie2.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `mediastore.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `memory-db.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `mgn.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `monitoring.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `mq.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `network-firewall.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `oam.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `pinpoint.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `pipes.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `quicksight.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `ram.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `rds.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `redshift.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `redshift-serverless.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `resource-explorer-2.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `rolesanywhere.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `route53domains.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `route53resolver.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `s3.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `s3-control.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `s3tables.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `scheduler.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `secretsmanager.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `securityhub.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `securitylake.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `serverlessrepo.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `servicecatalog.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `servicediscovery.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `servicequotas.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `sns.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `sqs.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `ssm.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `ssm-incidents.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `sso.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `states.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `sts.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `support.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `synthetics.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `tagging.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `transfer.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `waf-regional.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `wafv2.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `wellarchitected.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
+        { host: `workspaces.${COLLECTOR_AWS_REGION}.amazonaws.com`, reason: 'queried by the AWS plugin' },
     ],
     azure: [
         { host: 'management.azure.com', reason: 'the ARM control plane every azure_compliance control reads' },

@@ -62,8 +62,281 @@ network_policies:
   operator-boundary:
     endpoints:
     # ── aws ──
-    # OMITTED (unprovable wildcard): *.amazonaws.com
-    - host: sts.amazonaws.com
+    # EXPLICIT per service (#4569). The wildcard is gone: it was not merely
+    # unprovable, it EXCEEDED this boundary — counterexample a.amazonaws.com.
+    # Derived, not hand-written: prefixes from aws-sdk-go-v2's own endpoint
+    # templates, the regional/global split from botocore's endpoints.json, and
+    # the service set from the steampipe plugin's aws/service.go. Region
+    # eu-west-1 is the one this boundary permits — see COLLECTOR_AWS_REGION.
+    - host: account.amazonaws.com
+      port: 443
+    - host: budgets.amazonaws.com
+      port: 443
+    - host: ce.amazonaws.com
+      port: 443
+    - host: cloudfront.amazonaws.com
+      port: 443
+    - host: health.amazonaws.com
+      port: 443
+    - host: iam.amazonaws.com
+      port: 443
+    - host: organizations.amazonaws.com
+      port: 443
+    - host: route53.amazonaws.com
+      port: 443
+    - host: savingsplans.amazonaws.com
+      port: 443
+    - host: shield.amazonaws.com
+      port: 443
+    - host: waf.amazonaws.com
+      port: 443
+    - host: access-analyzer.eu-west-1.amazonaws.com
+      port: 443
+    - host: acm.eu-west-1.amazonaws.com
+      port: 443
+    - host: acm-pca.eu-west-1.amazonaws.com
+      port: 443
+    - host: amplify.eu-west-1.amazonaws.com
+      port: 443
+    - host: api.ecr.eu-west-1.amazonaws.com
+      port: 443
+    - host: api.ecr-public.eu-west-1.amazonaws.com
+      port: 443
+    - host: api.pricing.eu-west-1.amazonaws.com
+      port: 443
+    - host: api.sagemaker.eu-west-1.amazonaws.com
+      port: 443
+    - host: apigateway.eu-west-1.amazonaws.com
+      port: 443
+    - host: appconfig.eu-west-1.amazonaws.com
+      port: 443
+    - host: application-autoscaling.eu-west-1.amazonaws.com
+      port: 443
+    - host: apprunner.eu-west-1.amazonaws.com
+      port: 443
+    - host: appstream2.eu-west-1.amazonaws.com
+      port: 443
+    - host: appsync.eu-west-1.amazonaws.com
+      port: 443
+    - host: athena.eu-west-1.amazonaws.com
+      port: 443
+    - host: auditmanager.eu-west-1.amazonaws.com
+      port: 443
+    - host: autoscaling.eu-west-1.amazonaws.com
+      port: 443
+    - host: backup.eu-west-1.amazonaws.com
+      port: 443
+    - host: batch.eu-west-1.amazonaws.com
+      port: 443
+    - host: bedrock.eu-west-1.amazonaws.com
+      port: 443
+    - host: bedrock-agent.eu-west-1.amazonaws.com
+      port: 443
+    - host: bedrock-agentcore-control.eu-west-1.amazonaws.com
+      port: 443
+    - host: cassandra.eu-west-1.amazonaws.com
+      port: 443
+    - host: cloudcontrolapi.eu-west-1.amazonaws.com
+      port: 443
+    - host: cloudformation.eu-west-1.amazonaws.com
+      port: 443
+    - host: cloudsearch.eu-west-1.amazonaws.com
+      port: 443
+    - host: cloudtrail.eu-west-1.amazonaws.com
+      port: 443
+    - host: codeartifact.eu-west-1.amazonaws.com
+      port: 443
+    - host: codebuild.eu-west-1.amazonaws.com
+      port: 443
+    - host: codecommit.eu-west-1.amazonaws.com
+      port: 443
+    - host: codedeploy.eu-west-1.amazonaws.com
+      port: 443
+    - host: codepipeline.eu-west-1.amazonaws.com
+      port: 443
+    - host: codestar-notifications.eu-west-1.amazonaws.com
+      port: 443
+    - host: cognito-identity.eu-west-1.amazonaws.com
+      port: 443
+    - host: cognito-idp.eu-west-1.amazonaws.com
+      port: 443
+    - host: config.eu-west-1.amazonaws.com
+      port: 443
+    - host: connect.eu-west-1.amazonaws.com
+      port: 443
+    - host: cost-optimization-hub.eu-west-1.amazonaws.com
+      port: 443
+    - host: datasync.eu-west-1.amazonaws.com
+      port: 443
+    - host: dax.eu-west-1.amazonaws.com
+      port: 443
+    - host: directconnect.eu-west-1.amazonaws.com
+      port: 443
+    - host: dlm.eu-west-1.amazonaws.com
+      port: 443
+    - host: dms.eu-west-1.amazonaws.com
+      port: 443
+    - host: drs.eu-west-1.amazonaws.com
+      port: 443
+    - host: ds.eu-west-1.amazonaws.com
+      port: 443
+    - host: dynamodb.eu-west-1.amazonaws.com
+      port: 443
+    - host: ec2.eu-west-1.amazonaws.com
+      port: 443
+    - host: ecs.eu-west-1.amazonaws.com
+      port: 443
+    - host: eks.eu-west-1.amazonaws.com
+      port: 443
+    - host: elasticache.eu-west-1.amazonaws.com
+      port: 443
+    - host: elasticbeanstalk.eu-west-1.amazonaws.com
+      port: 443
+    - host: elasticfilesystem.eu-west-1.amazonaws.com
+      port: 443
+    - host: elasticloadbalancing.eu-west-1.amazonaws.com
+      port: 443
+    - host: elasticmapreduce.eu-west-1.amazonaws.com
+      port: 443
+    - host: email.eu-west-1.amazonaws.com
+      port: 443
+    - host: es.eu-west-1.amazonaws.com
+      port: 443
+    - host: events.eu-west-1.amazonaws.com
+      port: 443
+    - host: firehose.eu-west-1.amazonaws.com
+      port: 443
+    - host: fms.eu-west-1.amazonaws.com
+      port: 443
+    - host: fsx.eu-west-1.amazonaws.com
+      port: 443
+    - host: glacier.eu-west-1.amazonaws.com
+      port: 443
+    - host: globalaccelerator.eu-west-1.amazonaws.com
+      port: 443
+    - host: glue.eu-west-1.amazonaws.com
+      port: 443
+    - host: guardduty.eu-west-1.amazonaws.com
+      port: 443
+    - host: identitystore.eu-west-1.amazonaws.com
+      port: 443
+    - host: ingest.timestream.eu-west-1.amazonaws.com
+      port: 443
+    - host: inspector.eu-west-1.amazonaws.com
+      port: 443
+    - host: inspector2.eu-west-1.amazonaws.com
+      port: 443
+    - host: iot.eu-west-1.amazonaws.com
+      port: 443
+    - host: kafka.eu-west-1.amazonaws.com
+      port: 443
+    - host: kafkaconnect.eu-west-1.amazonaws.com
+      port: 443
+    - host: kinesis.eu-west-1.amazonaws.com
+      port: 443
+    - host: kinesisanalytics.eu-west-1.amazonaws.com
+      port: 443
+    - host: kinesisvideo.eu-west-1.amazonaws.com
+      port: 443
+    - host: kms.eu-west-1.amazonaws.com
+      port: 443
+    - host: lakeformation.eu-west-1.amazonaws.com
+      port: 443
+    - host: lambda.eu-west-1.amazonaws.com
+      port: 443
+    - host: lightsail.eu-west-1.amazonaws.com
+      port: 443
+    - host: logs.eu-west-1.amazonaws.com
+      port: 443
+    - host: macie2.eu-west-1.amazonaws.com
+      port: 443
+    - host: mediastore.eu-west-1.amazonaws.com
+      port: 443
+    - host: memory-db.eu-west-1.amazonaws.com
+      port: 443
+    - host: mgn.eu-west-1.amazonaws.com
+      port: 443
+    - host: monitoring.eu-west-1.amazonaws.com
+      port: 443
+    - host: mq.eu-west-1.amazonaws.com
+      port: 443
+    - host: network-firewall.eu-west-1.amazonaws.com
+      port: 443
+    - host: oam.eu-west-1.amazonaws.com
+      port: 443
+    - host: pinpoint.eu-west-1.amazonaws.com
+      port: 443
+    - host: pipes.eu-west-1.amazonaws.com
+      port: 443
+    - host: quicksight.eu-west-1.amazonaws.com
+      port: 443
+    - host: ram.eu-west-1.amazonaws.com
+      port: 443
+    - host: rds.eu-west-1.amazonaws.com
+      port: 443
+    - host: redshift.eu-west-1.amazonaws.com
+      port: 443
+    - host: redshift-serverless.eu-west-1.amazonaws.com
+      port: 443
+    - host: resource-explorer-2.eu-west-1.amazonaws.com
+      port: 443
+    - host: rolesanywhere.eu-west-1.amazonaws.com
+      port: 443
+    - host: route53domains.eu-west-1.amazonaws.com
+      port: 443
+    - host: route53resolver.eu-west-1.amazonaws.com
+      port: 443
+    - host: s3.eu-west-1.amazonaws.com
+      port: 443
+    - host: s3-control.eu-west-1.amazonaws.com
+      port: 443
+    - host: s3tables.eu-west-1.amazonaws.com
+      port: 443
+    - host: scheduler.eu-west-1.amazonaws.com
+      port: 443
+    - host: secretsmanager.eu-west-1.amazonaws.com
+      port: 443
+    - host: securityhub.eu-west-1.amazonaws.com
+      port: 443
+    - host: securitylake.eu-west-1.amazonaws.com
+      port: 443
+    - host: serverlessrepo.eu-west-1.amazonaws.com
+      port: 443
+    - host: servicecatalog.eu-west-1.amazonaws.com
+      port: 443
+    - host: servicediscovery.eu-west-1.amazonaws.com
+      port: 443
+    - host: servicequotas.eu-west-1.amazonaws.com
+      port: 443
+    - host: sns.eu-west-1.amazonaws.com
+      port: 443
+    - host: sqs.eu-west-1.amazonaws.com
+      port: 443
+    - host: ssm.eu-west-1.amazonaws.com
+      port: 443
+    - host: ssm-incidents.eu-west-1.amazonaws.com
+      port: 443
+    - host: sso.eu-west-1.amazonaws.com
+      port: 443
+    - host: states.eu-west-1.amazonaws.com
+      port: 443
+    - host: sts.eu-west-1.amazonaws.com
+      port: 443
+    - host: support.eu-west-1.amazonaws.com
+      port: 443
+    - host: synthetics.eu-west-1.amazonaws.com
+      port: 443
+    - host: tagging.eu-west-1.amazonaws.com
+      port: 443
+    - host: transfer.eu-west-1.amazonaws.com
+      port: 443
+    - host: waf-regional.eu-west-1.amazonaws.com
+      port: 443
+    - host: wafv2.eu-west-1.amazonaws.com
+      port: 443
+    - host: wellarchitected.eu-west-1.amazonaws.com
+      port: 443
+    - host: workspaces.eu-west-1.amazonaws.com
       port: 443
     # ── azure ──
     - host: management.azure.com

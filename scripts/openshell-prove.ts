@@ -114,7 +114,25 @@ function main(): void {
         // the JSON on BOTH paths rather than from the throw.
         let raw = '';
         try {
-            raw = execFileSync(bin, ['check', '--boundary', BOUNDARY, candidate, '-o', 'json'], {
+            /*
+                THE SOLVER BUDGET IS EXPLICIT, because the default stopped being
+                enough — measured on 2026-10-31.
+
+                `--timeout` defaults to 10s, which sufficed while the boundary
+                held 41 endpoints. #4569 replaced `*.amazonaws.com` with 135
+                explicit hosts, taking the boundary to 175, and at 10s the
+                solver returned `inconclusive` with `reason_code:
+                solver_timeout` — for GCP as well, which had been proving fine.
+                A timeout is NOT a pass and `openshell:prove` already treats it
+                as a failure, so this would have gone red rather than quiet.
+
+                At 60s all three prove `within_boundary` and the whole run takes
+                ~35s. 120s is set rather than 60 for headroom on a slower
+                machine; the honest claim is "10s is too small and 60s is
+                enough", not a derived per-proof figure, because a run that
+                finishes inside its bound cannot tell you how close it came.
+            */
+            raw = execFileSync(bin, ['check', '--boundary', BOUNDARY, candidate, '-o', 'json', '--timeout', '120s'], {
                 encoding: 'utf8',
             });
         } catch (e) {
