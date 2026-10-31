@@ -1,5 +1,14 @@
 /**
- * POST /api/auth/register  body: { action: 'register', email, password, name, orgName }
+ * POST /api/auth/register  body: { action: 'register', email, password, name, orgName? }
+ *
+ * With `orgName`: a new workspace, and the account as its Owner. Without it:
+ * an account only, for the pending invitation in the request's
+ * `inflect_invite_token` cookie, which must have been sent to the same email
+ * (#4689). Accepting an invite by password used to need a throwaway
+ * workspace; the sign-in that follows redeems the invitation as usual.
+ *
+ * Every refusal carries a code from `REGISTER_REFUSALS` beside its English
+ * sentence, so the sign-in page can say it in the user's language (#4686).
  *
  * Register is the ONLY credentials flow still served by this route.
  * Login was served here historically via `action: 'login'` before the
@@ -9,7 +18,10 @@
  * semantics. All production login now flows through NextAuth
  * `/api/auth/callback/credentials`.
  */
+import { cookies } from 'next/headers';
 import prisma from '@/lib/prisma';
+import { previewInviteByToken } from '@/app-layer/usecases/tenant-invites';
+import type { RegisterRefusal } from '@/lib/auth/register-refusals';
 import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
@@ -60,10 +72,22 @@ export const POST = withApiErrorHandling(
     { rateLimit: { config: TENANT_CREATE_LIMIT, scope: 'self-service-register' } },
 );
 
-async function handleRegister(body: { email: string; password: string; name: string; orgName: string }) {
-    const { email: rawEmail, password, name, orgName } = body;
-    if (!rawEmail || !password || !name || !orgName) {
-        return jsonResponse({ error: 'Missing required fields' }, { status: 400 });
+const POLICY_REFUSAL = {
+    empty: 'PASSWORD_EMPTY',
+    too_short: 'PASSWORD_TOO_SHORT',
+    too_long: 'PASSWORD_TOO_LONG',
+} as const satisfies Record<string, RegisterRefusal>;
+
+/** Every refusal carries its code beside the English sentence (#4686). */
+function refuse(code: RegisterRefusal, error: string, status = 400) {
+    return jsonResponse({ error, code }, { status });
+}
+
+async function handleRegister(body: { email: string; password: string; name: string; orgName?: string }) {
+    const { email: rawEmail, password, name } = body;
+    const orgName = body.orgName?.trim() || null;
+    if (!rawEmail || !password || !name) {
+        return refuse('REGISTER_FIELDS_MISSING', 'Missing required fields');
     }
 
     // Enforce password policy at the set-password boundary. Login
@@ -71,16 +95,13 @@ async function handleRegister(body: { email: string; password: string; name: str
     // users aren't locked out by a later rule bump.
     const policy = validatePasswordPolicy(password);
     if (!policy.ok) {
-        return jsonResponse(
-            {
-                error:
-                    policy.reason === 'too_short'
-                        ? 'Password must be at least 8 characters'
-                        : policy.reason === 'too_long'
-                          ? 'Password is too long'
-                          : 'Password is required',
-            },
-            { status: 400 },
+        return refuse(
+            POLICY_REFUSAL[policy.reason],
+            policy.reason === 'too_short'
+                ? 'Password must be at least 8 characters'
+                : policy.reason === 'too_long'
+                  ? 'Password is too long'
+                  : 'Password is required',
         );
     }
 
@@ -89,12 +110,9 @@ async function handleRegister(body: { email: string; password: string; name: str
     // logs the password or its hash.
     const hibp = await checkPasswordAgainstHIBP(password);
     if (hibp.breached) {
-        return jsonResponse(
-            {
-                error:
-                    'This password appears in known data breaches. Please choose a different password.',
-            },
-            { status: 400 },
+        return refuse(
+            'PASSWORD_BREACHED',
+            'This password appears in known data breaches. Please choose a different password.',
         );
     }
 
@@ -108,12 +126,43 @@ async function handleRegister(body: { email: string; password: string; name: str
         where: { emailHash: hashForLookup(email) },
     });
     if (existing) {
-        return jsonResponse({ error: 'Email already registered' }, { status: 409 });
+        return refuse('EMAIL_ALREADY_REGISTERED', 'Email already registered', 409);
+    }
+
+    // No workspace name: an account only, and only for a live invitation
+    // sent to this email (#4689). Without that, an unnamed registration
+    // would make an account that belongs nowhere, so it is refused. The
+    // email check runs here rather than at redemption, which burns the
+    // invitation on a mismatch.
+    if (!orgName) {
+        const token = (await cookies()).get('inflect_invite_token')?.value;
+        if (!token) {
+            return refuse('WORKSPACE_NAME_REQUIRED', 'A workspace name is required.');
+        }
+        const invite = await previewInviteByToken(token, email);
+        if (!invite) {
+            return refuse('INVITE_UNAVAILABLE', 'The invitation for this account is no longer available.');
+        }
+        if (!invite.matchesSession) {
+            return refuse('INVITE_EMAIL_MISMATCH', 'Register with the email address the invitation was sent to.');
+        }
+        const user = await prisma.user.create({
+            data: { email, emailHash: hashForLookup(email), passwordHash: await hashPassword(password), name },
+        });
+        recordUserSignup({ signupSource: 'credentials' });
+        await issueEmailVerification(email, { userId: user.id }).catch(() => undefined);
+        return jsonResponse({
+            user: { id: user.id, email: user.email, name: user.name, role: null },
+            // The sign-in that follows redeems the invitation; no workspace
+            // is created here.
+            tenant: null,
+            emailVerificationRequired: env.AUTH_REQUIRE_EMAIL_VERIFICATION === '1',
+        });
     }
 
     // Create tenant (Epic B.2: with a wrapped per-tenant DEK primed
     // into the manager's cache — no unwrap round-trip on first use).
-    const slug = String(orgName).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36);
+    const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36);
     const tenant = await createTenantWithDek({
         name: orgName,
         slug,

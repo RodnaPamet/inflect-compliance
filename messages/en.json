@@ -350,6 +350,21 @@
       "failed": "We couldn't check that workspace. Try again.",
       "chooseProvider": "Choose how to sign in",
       "continueWith": "Continue with {name}"
+    },
+    "registerAccount": "Create your account",
+    "inviteAccountOnly": "You are creating an account to accept your invitation. No new organization is created.",
+    "emailNotVerified": "Confirm your email address first: open the link in the email we sent you. If it has expired, send a new one below.",
+    "tooManyRegistrations": "Too many sign-ups from this network. Wait an hour, then try again.",
+    "refused": {
+      "REGISTER_FIELDS_MISSING": "Fill in every field.",
+      "PASSWORD_EMPTY": "Enter a password.",
+      "PASSWORD_TOO_SHORT": "Your password must be at least 8 characters long.",
+      "PASSWORD_TOO_LONG": "Your password can be at most 128 characters long.",
+      "PASSWORD_BREACHED": "This password appears in known data breaches. Choose a different one.",
+      "EMAIL_ALREADY_REGISTERED": "An account with this email already exists. Sign in instead, or reset your password.",
+      "WORKSPACE_NAME_REQUIRED": "Enter a name for your organization.",
+      "INVITE_UNAVAILABLE": "Your invitation is no longer available. Ask your admin to send a new one.",
+      "INVITE_EMAIL_MISMATCH": "Register with the email address your invitation was sent to."
     }
   },
   "nav": {

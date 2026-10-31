@@ -1195,24 +1195,22 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
     },
     "password": {
       "type": "string",
-      "minLength": 8
+      "minLength": 1
     },
     "name": {
       "type": "string",
       "minLength": 1
     },
     "orgName": {
-      "type": "string",
-      "minLength": 1
+      "type": "string"
     }
   },
   "required": [
     "email",
     "password",
-    "name",
-    "orgName"
+    "name"
   ],
-  "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
+  "description": "Self-service signup payload. With \`orgName\`, creates a workspace and makes the new account its Owner. Without it, creates an account only, and only for the pending invitation in the request's invite cookie, sent to the same email. The password must be 8 to 128 characters and is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
 }"
 `;
 

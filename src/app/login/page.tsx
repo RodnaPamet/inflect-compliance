@@ -6,9 +6,13 @@ import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { Input } from '@/components/ui/input';
 import { Heading } from '@/components/ui/typography';
 import { postSignInPath } from '@/lib/auth/redirect-path';
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/password-limits';
+import { EMAIL_NOT_VERIFIED_SIGN_IN_ERROR, isRegisterRefusal } from '@/lib/auth/register-refusals';
 import { loginErrorKey, ssoRequiredWorkspace } from './login-error';
 import { SsoSignIn } from './SsoSignIn';
 
@@ -43,6 +47,10 @@ function LoginForm() {
     const errorCode = searchParams?.get('error');
     const t = useTranslations('login');
     const [mode, setMode] = useState<'login' | 'register'>('login');
+    // Arriving from "Sign in to accept" on an invitation (#4689): registering
+    // makes an account only, and the sign-in that follows redeems the
+    // invitation, so no workspace is created and none is asked for.
+    const forInvite = callbackUrl === '/invite/result';
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
@@ -98,10 +106,24 @@ function LoginForm() {
                 const res = await fetch('/api/auth/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'register', email, password, name, orgName }),
+                    body: JSON.stringify(
+                        forInvite
+                            ? { action: 'register', email, password, name }
+                            : { action: 'register', email, password, name, orgName },
+                    ),
                 });
                 const data = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(extractErrorMessage(data?.error, t('registrationFailed')));
+                if (!res.ok) {
+                    // A named refusal in the user's language (#4686); the
+                    // route's English sentence only for one it does not name.
+                    if (res.status === 429) throw new Error(t('tooManyRegistrations'));
+                    const code: unknown = data?.code;
+                    throw new Error(
+                        isRegisterRefusal(code)
+                            ? t(`refused.${code}`)
+                            : extractErrorMessage(data?.error, t('registrationFailed')),
+                    );
+                }
                 // After registration, sign in with credentials
             }
 
@@ -121,6 +143,9 @@ function LoginForm() {
                     notice.searchParams.set('error', result.error);
                     window.location.href = notice.toString();
                     return;
+                }
+                if (result.error === EMAIL_NOT_VERIFIED_SIGN_IN_ERROR) {
+                    throw new Error(t('emailNotVerified'));
                 }
                 const raw = extractErrorMessage(result.error, t('loginFailed'));
                 throw new Error(raw === 'CredentialsSignin' ? t('invalidCredentials') : raw);
@@ -188,7 +213,7 @@ function LoginForm() {
                 {/* Form */}
                 <Card className="animate-fadeIn">
                     <Heading level={2} className="mb-6">
-                        {mode === 'login' ? t('signIn') : t('register')}
+                        {mode === 'login' ? t('signIn') : forInvite ? t('registerAccount') : t('register')}
                     </Heading>
 
                     {error && (
@@ -292,26 +317,42 @@ function LoginForm() {
                                 lookups. Don't drop this id without updating
                                 tests/e2e/e2e-utils.ts. */}
                             <form id="credentials-form" onSubmit={handleCredentialsSubmit} method="post" action="#" className="space-y-default">
+                                {mode === 'register' && forInvite && (
+                                    <p id="login-invite-account-only" className="text-sm text-content-muted">
+                                        {t('inviteAccountOnly')}
+                                    </p>
+                                )}
                                 {mode === 'register' && (
                                     <>
-                                        <div>
-                                            <label htmlFor="login-name" className="input-label">{t('name')}</label>
-                                            <input id="login-name" className="input" name="name" value={name} onChange={(e) => setName(e.target.value)} required placeholder={t('namePlaceholder')} />
-                                        </div>
-                                        <div>
-                                            <label htmlFor="login-org-name" className="input-label">{t('orgName')}</label>
-                                            <input id="login-org-name" className="input" name="orgName" value={orgName} onChange={(e) => setOrgName(e.target.value)} required placeholder={t('orgPlaceholder')} />
-                                        </div>
+                                        <FormField label={t('name')} required>
+                                            <Input id="login-name" name="name" value={name} onChange={(e) => setName(e.target.value)} required placeholder={t('namePlaceholder')} />
+                                        </FormField>
+                                        {!forInvite && (
+                                            <FormField label={t('orgName')} required>
+                                                <Input id="login-org-name" name="orgName" value={orgName} onChange={(e) => setOrgName(e.target.value)} required placeholder={t('orgPlaceholder')} />
+                                            </FormField>
+                                        )}
                                     </>
                                 )}
-                                <div>
-                                    <label htmlFor="login-email" className="input-label">{t('email')}</label>
-                                    <input id="login-email" className="input" type="email" name="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder={t('emailPlaceholder')} />
-                                </div>
-                                <div>
-                                    <label htmlFor="login-password" className="input-label">{t('password')}</label>
-                                    <input id="login-password" className="input" type="password" name="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder={t('passwordPlaceholder')} minLength={6} />
-                                </div>
+                                <FormField label={t('email')} required>
+                                    <Input id="login-email" type="email" name="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder={t('emailPlaceholder')} />
+                                </FormField>
+                                <FormField label={t('password')} required>
+                                    {/* The policy's limits when SETTING a password. Sign-in
+                                        checks none: an account whose password predates the
+                                        policy must still get in (#4686). */}
+                                    <Input
+                                        id="login-password"
+                                        type="password"
+                                        name="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        required
+                                        placeholder={t('passwordPlaceholder')}
+                                        minLength={mode === 'register' ? MIN_PASSWORD_LENGTH : undefined}
+                                        maxLength={mode === 'register' ? MAX_PASSWORD_LENGTH : undefined}
+                                    />
+                                </FormField>
                                 <div className="text-right -mt-2">
                                     <a href="/forgot-password" className="text-xs text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">{t('forgotPassword')}</a>
                                 </div>
