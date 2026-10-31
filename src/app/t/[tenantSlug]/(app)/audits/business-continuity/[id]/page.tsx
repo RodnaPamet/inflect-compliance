@@ -19,5 +19,13 @@ export default async function BiaDetailPage({
     } catch {
         notFound();
     }
-    return <BiaDetailClient bia={bia} tenantSlug={resolved.tenantSlug} />;
+    return (
+        <BiaDetailClient
+            bia={bia}
+            tenantSlug={resolved.tenantSlug}
+            // The same flag as the register's create button: every write behind
+            // this page takes `continuity.edit` and the write tier (#4632).
+            canWrite={ctx.permissions.canWrite && ctx.appPermissions.continuity.edit}
+        />
+    );
 }

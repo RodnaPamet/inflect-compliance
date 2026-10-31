@@ -221,7 +221,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     useEffect(() => {
         if (!selectedParam || consumedSelectedParam.current === selectedParam) return;
         consumedSelectedParam.current = selectedParam;
-        loadAudit(selectedParam);
+        void loadAudit(selectedParam);
         // loadAudit is re-created every render; the ref guard is what makes
         // this run once.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,7 +275,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                 body: { checklistUpdates: [{ id: itemId, result }] },
             });
             toast.success(tx('detail.checklistSaved'));
-            loadAudit(selected.id);
+            void loadAudit(selected.id);
         } catch (err) {
             toast.error(auditWriteFailureMessage(err, tx('detail.checklistError'), tx));
         }
@@ -688,8 +688,8 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                     onCreated={() => {
                         // #8 — reload the detail AND revalidate the list key so the
                         // row's _count.findings stops showing a stale count.
-                        loadAudit(selected.id);
-                        auditsQuery.mutate();
+                        void loadAudit(selected.id);
+                        void auditsQuery.mutate();
                     }}
                 />
             )}
@@ -728,7 +728,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                         // state, not a cache entry. The LIST revalidation is the
                         // mutation's own, so calling `auditsQuery.mutate()` here
                         // would just be a second request for the same key.
-                        loadAudit(selected.id);
+                        void loadAudit(selected.id);
                     }}
                 />
             )}

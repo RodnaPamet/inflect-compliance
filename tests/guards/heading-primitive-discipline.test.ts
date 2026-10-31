@@ -65,6 +65,11 @@ const ALLOWLIST: AllowlistEntry[] = [
         reason:
             'External public surface (Trust Center, /trust/<slug>, no auth, no app shell). Intentionally minimal markup on a separate visual ledger from the in-app type scale — and deliberately import-isolated from app primitives (see trust-center-coverage.test.ts), so it renders semantic-token HTML directly rather than pulling in the <Heading> primitive.',
     },
+    {
+        file: 'src/app/trust/[slug]/GatedDocumentRequests.tsx',
+        reason:
+            'The same public Trust Center page, split out because its request form is a client component (#4649). Its section heading is the page\'s own raw <h2> with the same classes as every sibling section, so the page keeps one heading style.',
+    },
 ];
 
 const ALLOWLIST_PATHS = new Set(ALLOWLIST.map((e) => e.file));

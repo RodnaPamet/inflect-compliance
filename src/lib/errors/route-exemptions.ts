@@ -335,6 +335,15 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
             'wire format. Auth via getLegacyCtx pre-stream; per-chunk ' +
             'errors close the channel via req.signal abort.',
     },
+    {
+        file: 't/[tenantSlug]/notifications/stream/route.ts',
+        category: 'sse_stream',
+        reason:
+            "The open workspace's notification stream (#4643): the same " +
+            'text/event-stream body as notifications/stream, through the ' +
+            'shared notificationStreamResponse, so it cannot be wrapped ' +
+            'either. Auth via getTenantCtx + assertCanRead pre-stream.',
+    },
     // The agent-run replay tail (#3472). Same category and the same reason as
     // the bell above, with two differences worth stating rather than leaving a
     // reader to diff the files:

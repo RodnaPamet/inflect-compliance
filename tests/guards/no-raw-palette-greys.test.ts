@@ -23,17 +23,13 @@
  *
  * Allowlist
  *
- *   • `src/app/audit/shared/[token]/page.tsx` — public share-link
- *     pack page rendered for external auditors. Has its own
- *     deliberate dark surface vocabulary outside the canonical
- *     dark/light system. Allowlisted with reason.
- *   • `src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx`
- *     — external vendor-facing assessment surface. Same reason.
- *
- *   Both surfaces sit OUTSIDE the authenticated tenant shell;
- *   they're rendered for users who don't have a session and don't
- *   participate in the tenant's theme system. Their bespoke greys
- *   are deliberate.
+ *   Empty. The public audit-pack viewer (`audit/shared/[token]`) and the
+ *   vendor questionnaire (`vendor-assessment/[assessmentId]`) were the
+ *   entries, on the reasoning that pages outside the tenant shell keep a
+ *   bespoke palette. Both have since been tokenised (the audit viewer in
+ *   #4651), which showed the reasoning was wrong: a page outside the
+ *   shell still follows the viewer's theme. Add an entry only with a
+ *   surface that genuinely cannot use the tokens.
  *
  * What this ratchet does NOT police
  *
@@ -53,14 +49,7 @@ const SCAN_ROOT = path.join(ROOT, 'src/app');
 const RAW_GREY_RE =
     /\btext-(?:gray|slate|neutral|zinc|stone)-\d+\b/;
 
-const ALLOWLIST_FILES = new Set<string>([
-    // Public audit-pack share view (rendered for external
-    // auditors via a share token; sits outside the tenant
-    // theme system and uses a bespoke dark vocabulary).
-    'src/app/audit/shared/[token]/page.tsx',
-    // External vendor-assessment surface (vendor-facing
-    // outside-the-shell page; same reasoning).
-]);
+const ALLOWLIST_FILES = new Set<string>([]);
 
 interface Hit {
     file: string;

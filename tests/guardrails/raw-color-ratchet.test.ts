@@ -46,26 +46,16 @@ const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b
 //            failure the drift sentinel below now makes visible — this
 //            ratchet had none, which is why the slack survived months
 //            of green CI.
+//   51 → 0   (2026-10-31, #4651) the last hotspot, the public audit-pack
+//            viewer `audit/shared/[token]/page.tsx`, was tokenised. It
+//            painted `bg-slate-900` + `text-white` — a hand-rolled copy
+//            of the dark theme — so it ignored a viewer's light theme.
+//            Every class had a semantic-token equivalent.
 //
-// The ONE remaining hotspot, and it is the whole count:
-//   51  audit/shared/[token]/page.tsx  — public audit-pack viewer.
-//       Unauthenticated, mounts no app shell, and has no layout.tsx of
-//       its own. It is NOT a print or light surface: it paints
-//       `bg-slate-900` + `text-white` and shades with slate-700/800 —
-//       a hand-rolled replica of the app's dark theme. So the classes
-//       here have semantic-token equivalents; nothing about the surface
-//       resists tokenisation.
-//
-// Every other file the old comment listed (reports/soa/print/
-// SoAPrintView.tsx, login/page.tsx, error.tsx, not-found.tsx,
-// security/mfa/page.tsx) now matches zero times — they were tokenised
-// and the enumeration was never updated. Do not re-add a surface here
-// without re-running the count.
-//
-// Read this number together with EXEMPT_DIRS below: exempting the audit
-// viewer would take the count to 0 and leave this ratchet asserting
-// nothing across all of src/app.
-const BASELINE = 51;
+// Zero is the point now: src/app carries no raw palette colour, so any
+// new one fails here. Do not add a surface to EXEMPT_DIRS to make room —
+// the audit viewer showed that a public, shell-less page does not need one.
+const BASELINE = 0;
 
 // How far above the live count `BASELINE` may sit before the sentinel
 // reports it as unspent headroom. Five, matching the model sentinel in

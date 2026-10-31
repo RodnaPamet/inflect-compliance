@@ -169,9 +169,11 @@ export function VendorAssessmentClient({
                     <h1 className="text-xl font-semibold text-content-emphasis mb-2">
                         {/* Three distinct situations that used to share one
                             screen. A missing token is not a dead link — the
-                            reminder email deliberately omits it. A network
+                            address was opened without its key. A network
                             failure is not a dead link either; it says nothing
-                            about the invitation at all. */}
+                            about the invitation at all. A reminder now carries
+                            a fresh key and retires the earlier one (#4650), so
+                            the copy points at the most recent email. */}
                         {errorReason === 'missing_token'
                             ? t('missingTokenTitle')
                             : errorReason === 'network'
@@ -361,7 +363,7 @@ export function VendorAssessmentClient({
                 <form
                     onSubmit={(e) => {
                         e.preventDefault();
-                        handleSubmit();
+                        void handleSubmit();
                     }}
                     className="space-y-page"
                 >

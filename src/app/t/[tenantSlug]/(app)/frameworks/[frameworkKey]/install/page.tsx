@@ -104,7 +104,7 @@ export default function InstallWizardPage() {
     const [step, setStep] = useState<'select' | 'preview' | 'done'>('select');
 
     useEffect(() => {
-        (async () => {
+        void (async () => {
             try {
                 const [fwRes, packRes] = await Promise.all([
                     fetch(apiUrl(`/frameworks/${frameworkKey}`)),

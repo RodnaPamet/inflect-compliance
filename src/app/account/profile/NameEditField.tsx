@@ -17,6 +17,8 @@ import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { Heading } from '@/components/ui/typography';
+import { apiErrorMessage } from '@/lib/api-error';
+import { refreshSessionClaims } from '@/lib/auth/refresh-session-claims';
 
 /** Split an existing single display name into first / rest-as-last. */
 function splitName(name: string | null): { first: string; last: string } {
@@ -54,16 +56,14 @@ export function NameEditField({ initialName }: { initialName: string | null }) {
             });
             if (res.ok) {
                 setSuccess(true);
-                // Server components (owner columns, this page) re-read the new
-                // name; the top-bar name refreshes on next sign-in (JWT claim).
+                // Re-mint the session so the top bar and this form read the
+                // new name now rather than at the next sign-in (#4644), then
+                // re-render the server components with it.
+                await refreshSessionClaims();
                 router.refresh();
             } else {
-                const data = await res.json().catch(() => ({}));
-                setError(
-                    typeof data?.error === 'string'
-                        ? data.error
-                        : t('couldNotSaveName'),
-                );
+                const data: unknown = await res.json().catch(() => null);
+                setError(apiErrorMessage(data, t('couldNotSaveName')));
             }
         } catch {
             setError(t('couldNotSaveName'));

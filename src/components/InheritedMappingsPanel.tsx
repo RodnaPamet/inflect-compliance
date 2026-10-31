@@ -55,7 +55,7 @@ export function InheritedMappingsPanel({
         let cancelled = false;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
-        (async () => {
+        void (async () => {
             try {
                 const res = await fetch(endpoint);
                 const data = res.ok ? await res.json() : [];

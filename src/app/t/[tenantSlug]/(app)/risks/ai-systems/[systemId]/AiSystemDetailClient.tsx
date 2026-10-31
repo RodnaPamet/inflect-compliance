@@ -10,6 +10,12 @@
  * write (`canWrite`, the classify usecase's own `assertCanWrite`), which opens
  * the questionnaire answered in full (#3712). The dialog is loaded on demand:
  * only an unclassified entry ever opens it.
+ *
+ * The approval-queue link after a draft is queued is shown only to a viewer
+ * who may read agent proposals (`canOpenApprovalQueue`, the queue page's own
+ * `mayReadAgentActivity`). Generating needs only `canWrite`, so an Editor can
+ * queue a draft and would otherwise be linked to a page that refuses them;
+ * they are told where an approved draft lands instead (#4638).
  */
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -24,7 +30,7 @@ import { Button } from '@/components/ui/button';
 import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { aiActTierTone } from '@/lib/eu-ai-act/tier-display';
+import { aiActTierTone, isKnownAiActTier } from '@/lib/eu-ai-act/tier-display';
 import { apiErrorMessage } from '@/lib/api-error';
 
 const ClassifyAiSystemModal = dynamic(() => import('./ClassifyAiSystemModal').then((m) => m.ClassifyAiSystemModal));
@@ -55,12 +61,15 @@ interface Props {
     system: AiSystemDetail;
     tenantSlug: string;
     canWrite: boolean;
+    /** May this viewer open the agent proposals queue a draft is sent to? */
+    canOpenApprovalQueue: boolean;
 }
 
+/** The conformity documents a HIGH-risk system can draft, labelled by `aiSystems.detail.docTypes.*`. */
 const DOC_TYPES = [
-    { id: 'ANNEX_IV_TECHNICAL_DOCUMENTATION', label: 'Technical Documentation (Annex IV)' },
-    { id: 'ART_9_RISK_MANAGEMENT', label: 'Risk Management record (Art. 9)' },
-    { id: 'ANNEX_V_DECLARATION_OF_CONFORMITY', label: 'Declaration of Conformity (Annex V)' },
+    'ANNEX_IV_TECHNICAL_DOCUMENTATION',
+    'ART_9_RISK_MANAGEMENT',
+    'ANNEX_V_DECLARATION_OF_CONFORMITY',
 ] as const;
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -72,8 +81,12 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     );
 }
 
-export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
+export function AiSystemDetailClient({ system, tenantSlug, canWrite, canOpenApprovalQueue }: Props) {
     const tx = useTranslations('risks');
+    const tierLabel = isKnownAiActTier(system.riskTier)
+        ? tx(`aiSystems.filterEnums.riskTier.${system.riskTier}`)
+        : system.riskTier;
+    const roleLabel = system.deploymentRole === 'PROVIDER' ? tx('aiSystems.provider') : tx('aiSystems.deployer');
     // #107 READ side. Null `listKey`, so this is published-order-or-nothing:
     // the registry at /risks/ai-systems renders server-side, so its rows never
     // land in an SWR cache entry and a fallback read would fire a fresh
@@ -140,12 +153,12 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
                 titleAdornment={stepper}
                 description={
                     system.riskTier === 'UNCLASSIFIED'
-                        ? tx('aiSystems.detail.notClassifiedLine', { role: system.deploymentRole === 'PROVIDER' ? tx('aiSystems.provider') : tx('aiSystems.deployer') })
-                        : tx('aiSystems.detail.metaLine', { tier: system.riskTier, clause: system.classificationClauseId ?? tx('aiSystems.detail.unclassified'), role: system.deploymentRole === 'PROVIDER' ? tx('aiSystems.provider') : tx('aiSystems.deployer') })
+                        ? tx('aiSystems.detail.notClassifiedLine', { role: roleLabel })
+                        : tx('aiSystems.detail.metaLine', { tier: tierLabel, clause: system.classificationClauseId ?? tx('aiSystems.detail.unclassified'), role: roleLabel })
                 }
                 actions={
                     <StatusBadge variant={aiActTierTone(system.riskTier)}>
-                        {system.riskTier}
+                        {tierLabel}
                     </StatusBadge>
                 }
             />
@@ -173,7 +186,7 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
                     </div>
                 )}
                 <Row label={tx('aiSystems.colRiskTier')}>
-                    <StatusBadge variant={aiActTierTone(system.riskTier)}>{system.riskTier}</StatusBadge>
+                    <StatusBadge variant={aiActTierTone(system.riskTier)}>{tierLabel}</StatusBadge>
                 </Row>
                 <Row label={tx('aiSystems.detail.rowDrivingClause')}>{system.classificationClauseId ?? '—'}</Row>
                 <Row label={tx('aiSystems.colBasis')}>{system.classificationRationale ?? '—'}</Row>
@@ -216,18 +229,18 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
                     <div className="flex flex-col gap-tight sm:flex-row sm:flex-wrap">
                         {DOC_TYPES.map((d) => (
                             <Button
-                                key={d.id}
+                                key={d}
                                 variant="secondary"
                                 size="sm"
-                                disabled={!canWrite || busy === d.id || queued.includes(d.id)}
-                                onClick={() => generate(d.id)}
+                                disabled={!canWrite || busy === d || queued.includes(d)}
+                                onClick={() => generate(d)}
                             >
-                                {busy === d.id ? tx('aiSystems.detail.generating') : queued.includes(d.id) ? tx('aiSystems.detail.queued') : d.label}
+                                {busy === d ? tx('aiSystems.detail.generating') : queued.includes(d) ? tx('aiSystems.detail.queued') : tx(`aiSystems.detail.docTypes.${d}`)}
                             </Button>
                         ))}
                     </div>
-                    {queued.length > 0 && (
-                        <p className="mt-3 text-sm text-content-muted">
+                    {queued.length > 0 && canOpenApprovalQueue && (
+                        <p className="mt-3 text-sm text-content-muted" id="ai-system-drafts-queued">
                             {queued.length > 1
                                 ? tx('aiSystems.detail.draftsQueuedPlural')
                                 : tx('aiSystems.detail.draftsQueuedSingular')}
@@ -235,6 +248,16 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
                                 {tx('aiSystems.detail.approvalQueue')}
                             </Link>
                             .
+                        </p>
+                    )}
+                    {queued.length > 0 && !canOpenApprovalQueue && (
+                        <p className="mt-3 text-sm text-content-muted" id="ai-system-drafts-queued">
+                            {queued.length > 1
+                                ? tx('aiSystems.detail.draftsQueuedNoQueuePlural')
+                                : tx('aiSystems.detail.draftsQueuedNoQueueSingular')}{' '}
+                            <Link href={`/t/${tenantSlug}/policies`} className="text-content-link underline">
+                                {tx('aiSystems.detail.openPolicies')}
+                            </Link>
                         </p>
                     )}
                 </Card>

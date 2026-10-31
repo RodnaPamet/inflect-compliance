@@ -39,6 +39,30 @@ export async function listPublicTrustCenterDocuments(slug: string): Promise<Publ
     return docs;
 }
 
+export interface PublicGatedListing {
+    /** Whether a request must accept the trust center's non-disclosure terms. */
+    ndaRequired: boolean;
+    /** The GATED documents, by id and label only — never fileRecordId. */
+    documents: Array<{ id: string; label: string }>;
+}
+
+/**
+ * What the public page offers on request (#4649): an ENABLED trust center's
+ * gated documents, and whether a request must accept its NDA. Null for a
+ * missing or disabled slug, like every read here.
+ */
+export async function getPublicGatedDocuments(slug: string): Promise<PublicGatedListing | null> {
+    const tc = await prisma.trustCenter.findFirst({ where: { slug, enabled: true }, select: { id: true, ndaRequired: true } });
+    if (!tc) return null;
+    const documents = await prisma.trustCenterDocument.findMany({
+        where: { trustCenterId: tc.id, gated: true },
+        select: { id: true, label: true },
+        orderBy: { label: 'asc' },
+        take: 200,
+    });
+    return { ndaRequired: tc.ndaRequired, documents };
+}
+
 export interface AccessRequestInput {
     requesterName: string;
     requesterEmail: string;

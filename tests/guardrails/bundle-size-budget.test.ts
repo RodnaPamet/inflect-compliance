@@ -271,7 +271,16 @@ const BUDGETS_KB: Record<string, number> = {
     // is split differently. 168 of 180 routes moved 2–5 KB in the same build.
     // main had 1.1 KB left in this bucket, so a repartition of that size was
     // going to trip it from any PR. 668 is measured + ~3, the convention.
-    'controls': 668,
+    //
+    // Raised 668 → 669 by the notifications bell fix (#4643, #4666), the
+    // measured delta rounded up (the #4305 precedent), not measured + 4.
+    // CI's webpack build, a PR changing no shared client code (#4667) against
+    // this one: `controls/…/tests/[planId]/page` 667.9 → 668.1 KB, +0.2, and
+    // every other bucket moved by the same 0.2. What grew is the bell, which
+    // the top chrome mounts on every workspace page: it now chooses the open
+    // workspace's list, stream and mark-read URLs, and links to the inbox.
+    // Main had 0.1 KB left here, so no change to the chrome could pass it.
+    'controls': 669,
     // Catch-all for any other tenant page.
     'tenant-default': 682,
     // Auth / public / org pages.

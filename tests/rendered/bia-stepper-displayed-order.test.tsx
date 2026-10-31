@@ -86,6 +86,7 @@ function makeRow(id: string, name: string, criticality: string, rank: number): B
         rpoHours: 1,
         mtpdHours: 24,
         reviewedAt: '2026-06-01T00:00:00.000Z',
+        reviewOverdue: false,
         processNode: null,
         ownerUser: null,
         recovery: { rank, rationale: 'seeded' },
@@ -103,6 +104,8 @@ const ROWS: BiaRow[] = [
     makeRow('bia_2', 'Marketing site', 'MEDIUM', 2),
     makeRow('bia_3', 'Customer support desk', 'CRITICAL', 3),
 ];
+
+const SUMMARY = { total: ROWS.length, critical: 2, overdue: 0 };
 
 function makeDetail(row: BiaRow): BiaDetail {
     return {
@@ -162,7 +165,7 @@ describe('BIA stepper', () => {
 
         const list = render(
             <Wrapper>
-                <BusinessContinuityClient initialRows={ROWS} tenantSlug="acme" canWrite />
+                <BusinessContinuityClient initialRows={ROWS} summary={SUMMARY} truncated={false} rankComplete tenantSlug="acme" canWrite />
             </Wrapper>,
         );
 
@@ -178,7 +181,7 @@ describe('BIA stepper', () => {
 
         render(
             <Wrapper>
-                <BiaDetailClient bia={makeDetail(ROWS[0])} tenantSlug="acme" />
+                <BiaDetailClient bia={makeDetail(ROWS[0])} tenantSlug="acme" canWrite />
             </Wrapper>,
         );
 
@@ -201,7 +204,7 @@ describe('BIA stepper', () => {
         const Wrapper = makeSharedCache();
         render(
             <Wrapper>
-                <BiaDetailClient bia={makeDetail(ROWS[0])} tenantSlug="acme" />
+                <BiaDetailClient bia={makeDetail(ROWS[0])} tenantSlug="acme" canWrite />
             </Wrapper>,
         );
         expect(screen.queryByTestId('entity-prev-next-nav')).not.toBeInTheDocument();

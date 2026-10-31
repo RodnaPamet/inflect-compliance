@@ -24,6 +24,7 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { apiErrorMessage } from '@/lib/api-error';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -105,7 +106,9 @@ export function NewBiaModal({ tenantSlug, processNodeId, onClose, onCreated }: P
                     dependencies: dependencies.map((d) => ({ dependsOnType: d.dependsOnType, dependsOnId: d.dependsOnId })),
                 }),
             });
-            if (!res.ok) throw new Error(tx('bia.createFailed'));
+            // The server's reason, not a fixed sentence (#4632): a dependency
+            // that no longer exists and a refused permission read differently.
+            if (!res.ok) throw new Error(apiErrorMessage(await res.json().catch(() => null), tx('bia.createFailed')));
             const created = (await res.json()) as { id: string };
             await onCreated(created.id);
         } catch (e) {

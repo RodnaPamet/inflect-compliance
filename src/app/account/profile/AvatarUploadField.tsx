@@ -12,7 +12,10 @@
  * then only has to validate + store the bytes.
  */
 import { useRef, useState, type ChangeEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { apiErrorMessage } from '@/lib/api-error';
+import { refreshSessionClaims } from '@/lib/auth/refresh-session-claims';
 import { cn } from '@inflect/ui/lib/cn';
 
 import { InitialsAvatar } from '@/components/ui/initials-avatar';
@@ -73,12 +76,22 @@ export function AvatarUploadField({
     initialImage,
 }: AvatarUploadFieldProps) {
     const t = useTranslations('account.profile');
+    const router = useRouter();
     const fileRef = useRef<HTMLInputElement>(null);
     const [image, setImage] = useState<string | null>(initialImage);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const displayValue = name || email;
+
+    /**
+     * Re-mint the session so the top bar's photo follows the change now rather
+     * than at the next sign-in (#4644). Best-effort, like the helper itself.
+     */
+    async function sessionPhotoChanged() {
+        await refreshSessionClaims();
+        router.refresh();
+    }
 
     async function handlePick(e: ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0];
@@ -96,15 +109,16 @@ export function AvatarUploadField({
                 credentials: 'same-origin',
             });
             if (!res.ok) {
-                const payload = await res.json().catch(() => ({}));
-                throw new Error(
-                    payload.error || payload.message || t('uploadFailed'),
-                );
+                // `{ error: { code, message } }` — read the message, not the
+                // object, which printed as "[object Object]" (#4644).
+                const payload: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(payload, t('uploadFailed')));
             }
             const { imageUrl } = (await res.json()) as { imageUrl: string };
             // Cache-bust the preview — the serve URL is stable, so the
             // browser would otherwise show the previous image.
             setImage(`${imageUrl}?t=${Date.now()}`);
+            await sessionPhotoChanged();
         } catch (err) {
             setError(err instanceof Error ? err.message : t('uploadFailed'));
         } finally {
@@ -120,8 +134,12 @@ export function AvatarUploadField({
                 method: 'DELETE',
                 credentials: 'same-origin',
             });
-            if (!res.ok) throw new Error(t('couldNotRemovePhoto'));
+            if (!res.ok) {
+                const payload: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(payload, t('couldNotRemovePhoto')));
+            }
             setImage(null);
+            await sessionPhotoChanged();
         } catch (err) {
             setError(
                 err instanceof Error ? err.message : t('couldNotRemovePhoto'),

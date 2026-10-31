@@ -185,4 +185,28 @@ describeFn('JWT membership claims refresh', () => {
         await applyMembershipClaims(token);
         expect(token.memberships).toStrictEqual([]);
     });
+
+    it('carries the display name and photo the profile page saved, and clears a removed photo (#4644)', async () => {
+        const s = stamp();
+        const email = `claims-profile-${s}@example.com`;
+        const user = await makeUser(email);
+
+        // Minted at sign-in with the provider's values.
+        const token = { ...tokenFor(email), name: 'Old Name', picture: 'https://idp.example/old.png' } as JWT;
+
+        // The profile page writes the row; the next refresh reads it.
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { name: 'Ada Lovelace', image: `/api/account/avatar/${user.id}` },
+        });
+        await applyMembershipClaims(token);
+        expect(token.name).toBe('Ada Lovelace');
+        expect(token.picture).toBe(`/api/account/avatar/${user.id}`);
+
+        // Removing the photo is a NULL `image`; the token must not keep the old one.
+        await prisma.user.update({ where: { id: user.id }, data: { image: null } });
+        await applyMembershipClaims(token);
+        expect(token.picture).toBeNull();
+        expect(token.name).toBe('Ada Lovelace');
+    });
 });

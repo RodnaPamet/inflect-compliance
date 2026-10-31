@@ -155,9 +155,9 @@ export async function resolveInteractiveAgent(ctx: RequestContext): Promise<Inte
             ok: false,
             refusal: 'NO_AGENT_DESIGNATED',
             detail:
-                'This workspace has designated no interactive agent. Designate one on the agent register ' +
-                '(admin.agent_registry); there is deliberately no default, because a default would change ' +
-                'which agent answers whenever the register changes.',
+                'This workspace has designated no interactive agent. Open an agent in the register and ' +
+                'choose "Use for Ask" (admin.agent_registry); there is deliberately no default, because a ' +
+                'default would change which agent answers whenever the register changes.',
         };
     }
 
@@ -198,7 +198,7 @@ export async function resolveInteractiveAgent(ctx: RequestContext): Promise<Inte
             detail:
                 `The designated interactive agent (${agentId}) is not an agent this workspace holds. The ` +
                 'designation is kept rather than cleared when an agent is retired, so this is what an ' +
-                'operator sees after a retirement — re-designate on the agent register.',
+                'operator sees after a retirement — choose "Use for Ask" on another agent in the register.',
         };
     }
 

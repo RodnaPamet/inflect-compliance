@@ -207,7 +207,8 @@ declare module 'next-auth/jwt' {
  * low-latency path for the create-then-navigate flow.
  *
  * This is the single source of truth for those claims; all three callers
- * use it so they can never drift.
+ * use it so they can never drift. It also refreshes the display name and
+ * photo, for the same reason and on the same cadence.
  *
  * `fallbackUserId` is consulted only when the email→User lookup misses
  * (a defensive sign-in edge case before the adapter commits the row);
@@ -237,6 +238,15 @@ export async function applyMembershipClaims(
     if (dbUser) {
         token.userId = dbUser.id;
         token.sessionVersion = dbUser.sessionVersion;
+
+        // The display name and photo, re-read with the claims, so a change made
+        // on the profile page reaches the top bar and the profile form on the
+        // next refresh rather than at the next sign-in (#4644). The row is the
+        // source of truth: the OAuth adapter never updates it after the first
+        // sign-in, so it holds the person's own edits. A removed photo is a
+        // NULL `image`, and must clear the token's picture too.
+        token.name = dbUser.name ?? null;
+        token.picture = dbUser.image ?? null;
 
         // A session opened by single sign-on is scoped to the tenant whose
         // identity provider vouched for the user: its claims name that

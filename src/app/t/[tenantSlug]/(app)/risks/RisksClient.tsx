@@ -461,7 +461,7 @@ function RisksPageInner({
         if (action === 'delete') {
             const idSet = new Set(ids);
             setSelected(new Set());
-            risksQuery.mutate(
+            void risksQuery.mutate(
                 // guardrail-ignore: optimistic-delete cache update (drops the just-deleted rows for the undo window), NOT display refiltering — the server still owns the list filter and mutate() restores on Undo/failure.
                 (cur) => (cur ? { ...cur, rows: cur.rows.filter((r: RiskListItem) => !idSet.has(r.id)) } : cur),
                 { revalidate: false },

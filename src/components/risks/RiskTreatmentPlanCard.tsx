@@ -142,8 +142,8 @@ export function RiskTreatmentPlanCard({
     const [completeOpen, setCompleteOpen] = useState(false);
 
     const invalidate = () => {
-        swrMutate(apiBase);
-        if (activeSummary?.id) swrMutate(`${apiBase}/${activeSummary.id}`);
+        void swrMutate(apiBase);
+        if (activeSummary?.id) void swrMutate(`${apiBase}/${activeSummary.id}`);
     };
 
     return (

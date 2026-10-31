@@ -192,11 +192,36 @@ describeFn('Control Test Flow — Integration', () => {
             December asserts January of the next year rather than month 12.
         */
         const due = updatedPlan!.nextDueAt!;
-        expect(due.getDate()).toBe(now.getDate());
-        expect(due.getMonth()).toBe((now.getMonth() + 1) % 12);
-        expect(due.getFullYear()).toBe(
-            now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear(),
-        );
+        // ONE MONTH ON, WITH THE DAY CLAMPED TO WHAT THE TARGET MONTH HAS.
+        //
+        // That is `addMonthsClamped`'s contract and the owner's decision recorded in
+        // `src/app-layer/utils/cadence.ts`: 31 January + 1 month is 28 February, not
+        // 3 March. This read `expect(due.getDate()).toBe(now.getDate())`, which agrees
+        // with the product only on days 1-28.
+        //
+        // It false-reddened EVERY pull request in the repository on 2026-10-31, because
+        // 31 October + 1 month is 30 November: expected 31, received 30, in a DB test
+        // about control runs that no diff had touched. The sibling assertion in
+        // `tests/unit/test-plan-cadence-and-bulk-gate.test.ts` already had the clamped
+        // shape, and its own comment records this same class costing #3183 eighteen
+        // days. This is the instance that fix did not reach.
+        //
+        // `setDate(1)` comes BEFORE `setMonth` deliberately: on a 31st, `setMonth`
+        // alone overflows into the month after the one being asserted. Letting Date
+        // carry the year also retires the hand-rolled `% 12` and the December
+        // conditional this replaces.
+        const target = new Date(now);
+        target.setDate(1);
+        target.setMonth(target.getMonth() + 1);
+        const daysInTarget = new Date(
+            target.getFullYear(),
+            target.getMonth() + 1,
+            0,
+        ).getDate();
+
+        expect(due.getFullYear()).toBe(target.getFullYear());
+        expect(due.getMonth()).toBe(target.getMonth());
+        expect(due.getDate()).toBe(Math.min(now.getDate(), daysInTarget));
         // And still in the future, which the calendar assertions alone would
         // not catch if the helper ever returned the PREVIOUS month.
         expect(due.getTime()).toBeGreaterThan(now.getTime());

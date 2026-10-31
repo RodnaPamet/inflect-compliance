@@ -5,6 +5,7 @@ import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '
 import { validateVendorTags } from '../schemas/json-columns.schemas';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { parseEnumListFilter } from '../domain/list-filter';
+import { CRITICAL_FUNCTION_CRITICALITIES } from '@/lib/dora/critical-function';
 
 export interface VendorFilters {
     status?: string;
@@ -76,6 +77,13 @@ const informationRegisterSelect = {
     owner: { select: { name: true } },
 } as const;
 
+/**
+ * The register's display cap. A tenant with more live arrangements than this
+ * sees the most critical first, a notice that the list is cut short, and
+ * header counts taken over the whole register (#4639).
+ */
+export const INFORMATION_REGISTER_CAP = 1000;
+
 /** Row shape returned by `VendorRepository.listInformationRegister`. */
 export type InformationRegisterRow = Prisma.VendorGetPayload<{
     select: typeof informationRegisterSelect;
@@ -99,8 +107,25 @@ export class VendorRepository {
             where: { tenantId: ctx.tenantId, deletedAt: null },
             orderBy: [{ criticality: 'desc' }, { name: 'asc' }],
             select: informationRegisterSelect,
-            take: options.take ?? 1000,
+            take: options.take ?? INFORMATION_REGISTER_CAP,
         });
+    }
+
+    /**
+     * The register's two header figures, counted over every live arrangement
+     * rather than over the rows a capped read returned: how many there are,
+     * and how many support a critical or important function.
+     */
+    static async informationRegisterCounts(
+        db: PrismaTx,
+        ctx: RequestContext,
+    ): Promise<{ total: number; criticalOrImportant: number }> {
+        const where = { tenantId: ctx.tenantId, deletedAt: null };
+        const total = await db.vendor.count({ where });
+        const criticalOrImportant = await db.vendor.count({
+            where: { ...where, criticality: { in: [...CRITICAL_FUNCTION_CRITICALITIES] } },
+        });
+        return { total, criticalOrImportant };
     }
 
     static async list(
