@@ -5201,7 +5201,16 @@
       "colJoined": "Присъединил се",
       "emptyMembers": "Все още няма членове.",
       "memberSingular": "член",
-      "membersPlural": "членове"
+      "membersPlural": "членове",
+      "colStatus": "Статус",
+      "customRole": "Персонализирана роля: {name}",
+      "status": {
+        "ACTIVE": "Активен",
+        "INVITED": "Поканен",
+        "DEACTIVATED": "Деактивиран",
+        "REMOVED": "Премахнат"
+      },
+      "matrixNote": "Само вградените роли. Член с персонализирана роля може да прави това, което позволява тази роля."
     },
     "roles": {
       "crumbSelf": "Персонализирани роли",
