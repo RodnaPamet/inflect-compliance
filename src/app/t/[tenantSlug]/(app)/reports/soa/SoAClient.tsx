@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
     FilterX, Link2, FileText, AlertTriangle,
     CheckCircle2, XCircle, HelpCircle,
-    Plus, MessageSquare, Printer,
+    Plus, MessageSquare, Printer, Download,
 } from 'lucide-react';
 import type { SoAReportDTO, SoAEntryDTO } from '@/lib/dto/soa';
 import { Modal } from '@/components/ui/modal';
@@ -24,6 +24,9 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@inflect/ui/lib/cn';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 import { formatDate } from '@inflect/ui/lib/format-date';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { RequirePermission } from '@/components/require-permission';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // ─── Types ───
 
@@ -50,11 +53,15 @@ function ApplicabilityBadge({ value }: { value: boolean | null }) {
     return <StatusBadgePrimitive variant="error">{t('soaView.unmapped')}</StatusBadgePrimitive>;
 }
 
+/** The `ControlStatus` enum, worded from `soaView.controlStatus.*` (#4740). */
+type ControlStatusValue = 'NOT_STARTED' | 'PLANNED' | 'IN_PROGRESS' | 'IMPLEMENTING' | 'IMPLEMENTED' | 'NEEDS_REVIEW' | 'NOT_APPLICABLE';
+
 function StatusBadge({ value }: { value: string | null }) {
+    const t = useTranslations('reports');
     if (!value) return <span className="text-content-subtle text-xs">—</span>;
     return (
         <StatusBadgePrimitive variant={CONTROL_STATUS_VARIANT[value] || 'neutral'}>
-            {value.replace(/_/g, ' ')}
+            {t(`soaView.controlStatus.${value as ControlStatusValue}`)}
         </StatusBadgePrimitive>
     );
 }
@@ -127,6 +134,18 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
 
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
 
+    /**
+     * What a refused map or justification says (#4740): a role that cannot
+     * change controls is told so; another refusal shows the server's reason;
+     * only a failure to reach it reads "please try again".
+     */
+    const refusalText = async (res: Response, fallback: string) => {
+        if (res.status === 403) return t('soaView.writeRestricted');
+        if (res.status >= 500) return fallback;
+        const body: unknown = await res.json().catch(() => null);
+        return apiErrorMessage(body, fallback);
+    };
+
     // ─── Filtering ───
 
     const filteredEntries = useMemo(() => {
@@ -156,7 +175,10 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ requirementId: mapModal.requirementId, controlId }),
             });
-            if (!res.ok) throw new Error('Failed to map');
+            if (!res.ok) {
+                toast.error(await refusalText(res, t('soaView.mapFailed')));
+                return;
+            }
             setMapModal(null);
             setMapSearch('');
             router.refresh();
@@ -180,7 +202,10 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                     applicabilityJustification: justText,
                 }),
             });
-            if (!res.ok) throw new Error('Failed to save');
+            if (!res.ok) {
+                toast.error(await refusalText(res, t('soaView.justificationFailed')));
+                return;
+            }
             setJustModal(null);
             setJustText('');
             router.refresh();
@@ -219,12 +244,19 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
         // gets `space-y-section` so summary / banner / filters /
         // table breathe at the canonical 32px rhythm.
         <div className="space-y-section animate-fadeIn">
-            {/* Eyebrow + summary line — section-level, not page-level */}
-            <div>
-                <p className="text-sm text-content-muted">
-                    {report.frameworkName} — {t('soaView.requirementsCount', { count: summary.total })}
-                </p>
-            </div>
+            {/* #4740 — this is the page's only parent (`/reports/soa`), so it
+                carries the page's title and breadcrumbs: the Reports page it
+                was once embedded in does not render it. */}
+            <PageHeader
+                breadcrumbs={[
+                    { label: t('crumbDashboard'), href: `/t/${tenantSlug}/dashboard` },
+                    { label: t('title'), href: `/t/${tenantSlug}/reports` },
+                    { label: t('soa') },
+                ]}
+                title={t('soa')}
+                titleId="soa-heading"
+                description={`${report.frameworkName} — ${t('soaView.requirementsCount', { count: summary.total })}`}
+            />
 
             {/* R2-P3 — the Statement of Applicability is an ISO-27001-Annex-A
                 artifact. For a non-ISO framework, say so and point at that
@@ -314,6 +346,20 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                     <Printer className="w-3.5 h-3.5" /> {t('soaView.print')}
                 </a>
 
+                {/* #4740 — the CSV an auditor asks for, here as well as on the
+                    Reports card, behind the same `reports.export` key the
+                    export route asks. */}
+                <RequirePermission resource="reports" action="export">
+                    <a
+                        href={`/api/t/${tenantSlug}/reports/soa/export.csv?framework=${encodeURIComponent(report.framework)}`}
+                        className={buttonVariants({ variant: 'ghost' })}
+                        id="soa-export-csv"
+                        download
+                    >
+                        <Download className="w-3.5 h-3.5" /> {t('exportCsv')}
+                    </a>
+                </RequirePermission>
+
                 <span className="text-xs text-content-subtle ml-auto">
                     {t('soaView.filteredCount', { filtered: filteredEntries.length, total: report.entries.length })}
                 </span>
@@ -352,9 +398,10 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                                 onToggle={() => setExpandedRow(expandedRow === entry.requirementId ? null : entry.requirementId)}
                                 canEdit={canEdit}
                                 onMap={() => setMapModal({ requirementId: entry.requirementId, requirementCode: entry.requirementCode })}
-                                onJustify={(controlId, controlCode) => {
+                                onJustify={(controlId, controlCode, current) => {
                                     setJustModal({ controlId, controlCode, requirementCode: entry.requirementCode });
-                                    setJustText('');
+                                    // An existing reason opens for editing, not blank.
+                                    setJustText(current ?? '');
                                 }}
                                 tenantSlug={tenantSlug}
                             />
@@ -527,7 +574,7 @@ function SoARow({
     onToggle: () => void;
     canEdit: boolean;
     onMap: () => void;
-    onJustify: (controlId: string, controlCode: string) => void;
+    onJustify: (controlId: string, controlCode: string, current?: string) => void;
     tenantSlug: string;
 }) {
     const t = useTranslations('reports');
@@ -604,7 +651,7 @@ function SoARow({
                                         </a>
                                         <span className="text-content-emphasis">{c.title}</span>
                                         <StatusBadgePrimitive variant={c.applicability === 'APPLICABLE' ? 'success' : 'neutral'}>
-                                            {c.applicability}
+                                            {c.applicability === 'APPLICABLE' ? t('soaView.applicable') : t('soaView.notApplicable')}
                                         </StatusBadgePrimitive>
                                         <StatusBadge value={c.status} />
                                     </div>
@@ -623,6 +670,18 @@ function SoARow({
                                                 onClick={(e) => { e.stopPropagation(); onJustify(c.controlId, c.code || c.controlId.slice(0, 8)); }}
                                             >
                                                 <MessageSquare className="w-3.5 h-3.5" /> {t('soaView.justify')}
+                                            </Button>
+                                        )}
+                                        {/* #4740 — a reason already given can be corrected
+                                            here, not only on the control's page. */}
+                                        {c.applicability === 'NOT_APPLICABLE' && c.justification && canEdit && (
+                                            <Button
+                                                variant="ghost"
+                                                size="xs"
+                                                onClick={(e) => { e.stopPropagation(); onJustify(c.controlId, c.code || c.controlId.slice(0, 8), c.justification ?? ''); }}
+                                                id={`soa-edit-justification-${c.controlId}`}
+                                            >
+                                                <MessageSquare className="w-3.5 h-3.5" /> {t('soaView.editJustification')}
                                             </Button>
                                         )}
                                     </div>

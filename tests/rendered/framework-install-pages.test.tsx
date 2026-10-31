@@ -290,20 +290,22 @@ describe('the template library', () => {
         expect(document.querySelector('#template-list input[type="checkbox"]')).toBeNull();
     });
 
-    it("shows the server's message when a single install is refused", async () => {
+    it('says who can install when a single install is refused, in the reader\'s language', async () => {
+        // #4735 — the server's English sentence was shown as it came.
         permissions.frameworks.install = true;
         postHandler = () => ({ ok: false, status: 403, body: { error: { code: 'FORBIDDEN', message: 'You do not have permission to install frameworks.' } } });
         render(<TemplateLibraryPage />);
         await screen.findByText('Policies');
         fireEvent.click(screen.getAllByText(en.frameworks.templates.install)[0]);
-        expect(await screen.findByText('You do not have permission to install frameworks.')).toBeTruthy();
+        expect(await screen.findByText(en.frameworks.templates.installRestricted)).toBeTruthy();
+        expect(screen.queryByText('You do not have permission to install frameworks.')).toBeNull();
     });
 
     it('keeps the selection when a bulk install fails, and says why', async () => {
         permissions.frameworks.install = true;
         postHandler = (url) =>
             url.includes('action=bulk-install')
-                ? { ok: false, status: 400, body: { error: { code: 'BAD_REQUEST', message: 'Templates not found: A-5.2' } } }
+                ? { ok: false, status: 400, body: { error: { code: 'BAD_REQUEST', message: 'Templates not found: A-5.2', details: { reason: 'TEMPLATE_NOT_FOUND' } } } }
                 : undefined;
         render(<TemplateLibraryPage />);
         await screen.findByText('Policies');
@@ -316,7 +318,7 @@ describe('the template library', () => {
         await act(async () => {
             fireEvent.click(bulk);
         });
-        expect(await screen.findByText('Templates not found: A-5.2')).toBeTruthy();
+        expect(await screen.findByText(en.frameworks.templates.refused.TEMPLATE_NOT_FOUND)).toBeTruthy();
         // Still selected: both boxes ticked and the bulk button still offered.
         const boxes = Array.from(document.querySelectorAll<HTMLInputElement>('#template-list input[type="checkbox"]'));
         expect(boxes).toHaveLength(2);

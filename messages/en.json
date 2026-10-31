@@ -4694,14 +4694,20 @@
     }
   },
   "mapping": {
-    "title": "Framework Mapping",
-    "subtitle": "Cross-framework readiness view. All descriptions are original paraphrases.",
+    "title": "SOC 2 and NIS2 estimate",
+    "subtitle": "How far your ISO 27001 controls go towards SOC 2 and NIS2, by the standard guidance that relates them. All descriptions are original paraphrases.",
     "loading": "Loading framework mappings...",
     "loadError": "Couldn't load the framework mappings. Reload the page to try again.",
     "soc2": "SOC 2",
     "nis2": "NIS2",
     "controls": "{implemented}/{total} controls",
-    "crumbDashboard": "Dashboard"
+    "crumbDashboard": "Dashboard",
+    "estimateNote": "These figures are an estimate from your ISO 27001 controls: each criterion counts the Annex A controls the guidance relates to it. Your own SOC 2 and NIS2 mappings, and their real coverage, are on those frameworks' pages.",
+    "frameworksLink": "Open the frameworks",
+    "frameworkToggle": "Framework",
+    "relatedNone": "No ISO 27001 control of yours relates to this",
+    "coverageAria": "{title} implementation",
+    "withEvidence": "{count}/{total} with evidence"
   },
   "reports": {
     "title": "Reports & Exports",
@@ -4749,15 +4755,26 @@
       "saveJustification": "Save justification",
       "mappedControls": "Mapped Controls",
       "justify": "Justify",
+      "editJustification": "Edit justification",
       "evidenceItems": "Evidence: {count} items",
       "openTasks": "Open tasks: {count}",
       "lastTest": "Last test:",
       "mapFailed": "Could not map the control. Please try again.",
       "justificationFailed": "Could not save the justification. Please try again.",
+      "writeRestricted": "Only a role that can edit controls, such as an Owner, Admin or Editor, can map controls or record a justification.",
       "mapSearchPlaceholder": "Search controls…",
       "excepted": "Excepted",
       "exceptedUntil": "Excepted until {date}",
-      "print": "Print"
+      "print": "Print",
+      "controlStatus": {
+        "NOT_STARTED": "Not started",
+        "PLANNED": "Planned",
+        "IN_PROGRESS": "In progress",
+        "IMPLEMENTING": "Implementing",
+        "IMPLEMENTED": "Implemented",
+        "NEEDS_REVIEW": "Needs review",
+        "NOT_APPLICABLE": "Not applicable"
+      }
     },
     "soaPrint": {
       "printPreview": "SoA Print Preview",
@@ -8872,6 +8889,7 @@
     "list": {
       "heading": "Compliance Frameworks",
       "description": "Browse standards, install control packs, and track requirement coverage",
+      "updatesWaiting": "{count, plural, one {# framework update is} other {# framework updates are}} waiting for review",
       "importFramework": "Import framework",
       "installed": "In use",
       "inUseHint": "At least one of this framework's requirements has a mapped control",
@@ -8962,7 +8980,8 @@
       "retry": "Try again",
       "coverageAria": "Framework coverage",
       "sectionCoverageAria": "{section} coverage",
-      "clauseTracker": "Clauses 4–10"
+      "clauseTracker": "Clauses 4–10",
+      "mappingEstimate": "SOC 2 and NIS2 estimate"
     },
     "diff": {
       "loading": "Loading diff…",
@@ -9050,7 +9069,10 @@
     },
     "templates": {
       "loading": "Loading template library...",
+      "loadFailed": "Could not load the template library.",
+      "retry": "Retry",
       "heading": "Template Library — {name}",
+      "headingFallback": "Template Library",
       "templatesCount": "{count} templates",
       "installedCount": "{count} installed",
       "availableCount": "{count} available",
@@ -9070,7 +9092,22 @@
       "defaultTasks": "Default Tasks",
       "suggestedEvidence": "Suggested Evidence",
       "installFailed": "The install did not finish. Reload the page to see what was added.",
-      "emptyFilter": "No templates match your filters."
+      "installRestricted": "Only an Owner or Admin, or a member whose custom role allows installing frameworks, can install templates.",
+      "emptyFilter": "No templates match your filters.",
+      "searchPlaceholder": "Search templates…",
+      "frequency": {
+        "AD_HOC": "Ad hoc",
+        "DAILY": "Daily",
+        "WEEKLY": "Weekly",
+        "MONTHLY": "Monthly",
+        "QUARTERLY": "Quarterly",
+        "ANNUALLY": "Annually"
+      },
+      "refused": {
+        "TEMPLATE_NOT_FOUND": "A chosen template is no longer in the catalogue. Reload the page.",
+        "NO_TEMPLATE_CHOSEN": "Choose at least one template to install.",
+        "TOO_MANY_TEMPLATES": "Install at most 100 templates at a time."
+      }
     },
     "loadingAria": "Loading frameworks",
     "readiness": {
@@ -12305,7 +12342,9 @@
     "colType": "Type",
     "colCriticality": "Criticality",
     "emptyAssets": "All critical assets are covered by controls",
+    "emptyAssetsNone": "There are no high or critical assets yet",
     "emptyRisks": "All risks are mitigated by controls",
+    "emptyRisksNone": "There are no risks in the register yet",
     "uncoveredAssets": "Uncovered Critical Assets",
     "unmappedRisks": "Unmapped Risks",
     "topControls": "Top Controls by Risk Coverage",
@@ -12316,9 +12355,40 @@
     "loadingAria": "Loading coverage dashboard",
     "riskWordOne": "risk",
     "riskWordOther": "risks",
+    "assetWordOne": "asset",
+    "assetWordOther": "assets",
     "vsTestCoverage": "This maps how risks, assets and controls protect each other. For framework test-plan and test-run coverage, see the",
     "testCoverageLink": "Test dashboard →",
-    "barProcess": "Controls in a process"
+    "barProcess": "Controls in a process",
+    "nothingToCover": "Nothing to cover yet",
+    "showingOf": "Showing {shown} of {total}.",
+    "viewAllAssets": "View the assets",
+    "viewAllRisks": "View the risks",
+    "riskStatus": {
+      "OPEN": "Open",
+      "MITIGATING": "Mitigating",
+      "MITIGATED": "Mitigated",
+      "ACCEPTED": "Accepted",
+      "CLOSED": "Closed"
+    },
+    "assetType": {
+      "INFORMATION": "Information",
+      "SYSTEM": "System",
+      "SERVICE": "Service",
+      "DATA_STORE": "Data Store",
+      "VENDOR": "Vendor",
+      "PEOPLE_PROCESS": "People / Process",
+      "APPLICATION": "Application",
+      "INFRASTRUCTURE": "Infrastructure",
+      "PROCESS": "Process",
+      "OTHER": "Other"
+    },
+    "criticality": {
+      "LOW": "Low",
+      "MEDIUM": "Medium",
+      "HIGH": "High",
+      "CRITICAL": "Critical"
+    }
   },
   "accessReviews": {
     "crumbDashboard": "Dashboard",
@@ -12556,14 +12626,27 @@
     "dismiss": "Dismiss",
     "createFindings": "Create findings",
     "markReviewed": "Mark reviewed",
-    "actionFailed": "Failed to {action}",
     "impactLabel": "Your impact:",
     "newGaps": "{count} new gap(s)",
     "flaggedTail": ", {count} control(s) flagged for re-review.",
     "added": "Added ({count}): ",
     "changed": "Changed ({count}): ",
     "removed": "Removed ({count}): ",
-    "materialised": "Materialised {count} finding(s) for the new gaps."
+    "materialised": "Materialised {count} finding(s) for the new gaps.",
+    "versionChange": "{name} v{from} → v{to}",
+    "status": {
+      "NEW": "New",
+      "REVIEWED": "Reviewed",
+      "DISMISSED": "Dismissed"
+    },
+    "flaggedControls": "Flagged for re-review:",
+    "restricted": "Only a role that can edit, such as an Owner, Admin or Editor, can review an update or create findings from it.",
+    "notFound": "This update is no longer there. Reload the page.",
+    "failed": {
+      "review": "Could not mark the update reviewed. Please try again.",
+      "dismiss": "Could not dismiss the update. Please try again.",
+      "materialize": "Could not create the findings. Please try again."
+    }
   },
   "vulnerabilities": {
     "crumbDashboard": "Dashboard",

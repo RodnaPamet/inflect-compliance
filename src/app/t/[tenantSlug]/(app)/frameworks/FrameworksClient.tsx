@@ -41,6 +41,7 @@ import { DataTable, createColumns, useColumnsDropdown } from '@/components/ui/ta
 import { ViewToggle } from '@/components/ui/view-toggle';
 import { useViewMode } from '@/components/ui/hooks';
 import { Heading } from '@/components/ui/typography';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -72,6 +73,11 @@ export interface FrameworksClientProps {
      * framework entry point is never offered to someone the server refuses.
      */
     canInstall?: boolean;
+    /**
+     * How many framework updates wait for review (#4736). The review page was
+     * reachable only from its notification; above zero, a notice links it.
+     */
+    newUpdates?: number;
 }
 
 // listFrameworks row (Framework + _count).
@@ -147,6 +153,7 @@ export function FrameworksClient({
     coverageErrors = [],
     tenantSlug,
     canInstall = false,
+    newUpdates = 0,
 }: FrameworksClientProps) {
     const t = useTranslations('frameworks');
     const [view, setView] = useViewMode('frameworks', 'cards');
@@ -313,6 +320,14 @@ export function FrameworksClient({
                     )}
                 </div>
             </div>
+
+            {newUpdates > 0 && (
+                <InlineNotice variant="info" id="framework-updates-notice">
+                    <Link href={href('/framework-updates')} className="font-medium hover:underline" id="framework-updates-link">
+                        {t('list.updatesWaiting', { count: newUpdates })}
+                    </Link>
+                </InlineNotice>
+            )}
 
             {view === 'cards' && (
                 <CardList aria-label={t('list.ariaLabel')} data-testid="frameworks-card-list">

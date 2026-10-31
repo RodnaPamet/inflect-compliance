@@ -12,13 +12,20 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Heading, textLinkVariants } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { KPIStat } from '@/components/ui/metric';
-import { getStatusTone } from '@/lib/design/status-tone';
+import { readinessBand, readinessTone, readinessVariant, READINESS_BAND_COLOR_VAR } from '@/lib/readiness/bands';
 import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { resolveBandTone, type RiskSeverityTone } from '@/lib/risk-matrix/scoring';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { cn } from '@inflect/ui/lib/cn';
 
 // ─── Types ──────────────────────────────────────────────────────────
+
+// The stored vocabularies the gap tables show, worded from
+// `coverage.riskStatus.*`, `coverage.assetType.*` and
+// `coverage.criticality.*` (#4739: they were printed as stored).
+type RiskStatus = 'OPEN' | 'MITIGATING' | 'MITIGATED' | 'ACCEPTED' | 'CLOSED';
+type AssetType = 'INFORMATION' | 'SYSTEM' | 'SERVICE' | 'DATA_STORE' | 'VENDOR' | 'PEOPLE_PROCESS' | 'APPLICATION' | 'INFRASTRUCTURE' | 'PROCESS' | 'OTHER';
+type Criticality = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 interface CoverageData {
     totalRisks: number;
@@ -33,8 +40,13 @@ interface CoverageData {
     // PR-D — controls embedded in an operational process map.
     controlsWithProcessCount: number;
     controlsWithProcessPct: number;
-    unmappedRisks: Array<{ id: string; title: string; score: number; status: string }>;
-    uncoveredCriticalAssets: Array<{ id: string; name: string; type: string; criticality: string }>;
+    unmappedRisks: Array<{ id: string; title: string; score: number; status: RiskStatus }>;
+    /** How many risks have no control; the list holds at most the first ten (#4739). */
+    unmappedRisksTotal: number;
+    uncoveredCriticalAssets: Array<{ id: string; name: string; type: AssetType; criticality: Criticality }>;
+    /** How many high/critical assets have no control, and how many there are (#4739). */
+    uncoveredCriticalAssetsTotal: number;
+    totalCriticalAssets: number;
     hotControls: Array<{ id: string; code?: string; name: string; riskCount: number }>;
 }
 
@@ -50,21 +62,13 @@ type UncoveredAssetRow = CoverageData['uncoveredCriticalAssets'][number];
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-/**
- * Elevation PR-7 — DonutChart segments now consume CSS-var tokens
- * directly. SVG `stroke` and `fill` accept `var(...)` natively so a
- * theme flip re-tones every chart automatically. Returns a string
- * suitable for the DonutChart `color` prop.
- */
-function pctColor(pct: number): string {
-    if (pct >= 80) return 'var(--bg-success-emphasis)';
-    if (pct >= 50) return 'var(--bg-warning-emphasis)';
-    return 'var(--bg-error-emphasis)';
-}
-
-function pctTextClass(pct: number): string {
-    return getStatusTone(pct, 'pct-0-100').content;
-}
+// The coverage percentages are read in the readiness bands, from their ONE
+// definition (`@/lib/readiness/bands`), not the 80/50 written out here again.
+const BAND_TEXT_CLASS = {
+    ready: 'text-content-success',
+    nearly: 'text-content-warning',
+    atRisk: 'text-content-error',
+} as const;
 
 // Risk-score severity → text-content class. The tone itself comes from
 // the tenant's matrix bands (resolveBandTone), so the unmapped-risks
@@ -76,24 +80,22 @@ const RISK_TONE_TEXT_CLASS: Record<RiskSeverityTone, string> = {
     critical: 'text-content-error',
 };
 
-function statusBadge(status: string): StatusBadgeVariant {
-    const colors: Record<string, StatusBadgeVariant> = {
-        OPEN: 'warning',
-        MITIGATING: 'info',
-        CLOSED: 'success',
-        ACCEPTED: 'neutral',
-    };
-    return colors[status] || 'neutral';
-}
+const RISK_STATUS_VARIANT: Record<RiskStatus, StatusBadgeVariant> = {
+    OPEN: 'warning',
+    MITIGATING: 'info',
+    MITIGATED: 'success',
+    CLOSED: 'success',
+    ACCEPTED: 'neutral',
+};
 
-function critBadge(crit: string): StatusBadgeVariant {
-    const colors: Record<string, StatusBadgeVariant> = {
-        HIGH: 'error',
-        MEDIUM: 'warning',
-        LOW: 'success',
-    };
-    return colors[crit] || 'neutral';
-}
+// #4739 — CRITICAL, the most important row in the table, fell to the grey
+// default.
+const CRITICALITY_VARIANT: Record<Criticality, StatusBadgeVariant> = {
+    CRITICAL: 'error',
+    HIGH: 'error',
+    MEDIUM: 'warning',
+    LOW: 'success',
+};
 
 // ─── Component ──────────────────────────────────────────────────────
 
@@ -130,8 +132,8 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
             accessorKey: 'status',
             header: t('colStatus'),
             cell: ({ getValue }) => (
-                <StatusBadge variant={statusBadge(getValue())}>
-                    {String(getValue()).replace(/_/g, ' ')}
+                <StatusBadge variant={RISK_STATUS_VARIANT[getValue() as RiskStatus] ?? 'neutral'}>
+                    {t(`riskStatus.${getValue() as RiskStatus}`)}
                 </StatusBadge>
             ),
         },
@@ -164,14 +166,14 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
             accessorKey: 'type',
             header: t('colType'),
             cell: ({ getValue }) => (
-                <StatusBadge variant="info">{String(getValue()).replace(/_/g, ' ')}</StatusBadge>
+                <StatusBadge variant="info">{t(`assetType.${getValue() as AssetType}`)}</StatusBadge>
             ),
         },
         {
             accessorKey: 'criticality',
             header: t('colCriticality'),
             cell: ({ getValue }) => (
-                <StatusBadge variant={critBadge(getValue())}>{getValue()}</StatusBadge>
+                <StatusBadge variant={CRITICALITY_VARIANT[getValue() as Criticality] ?? 'neutral'}>{t(`criticality.${getValue() as Criticality}`)}</StatusBadge>
             ),
         },
     ]), [t]);
@@ -237,24 +239,28 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
                     <CoverageBar
                         label={t('barAssets')}
                         pct={data.assetsWithControlsPct}
-                        detail={`${data.assetsWithControlsCount}/${data.totalAssets}`}
+                        covered={data.assetsWithControlsCount}
+                        total={data.totalAssets}
                     />
                     <CoverageBar
                         label={t('barRisks')}
                         pct={data.risksWithControlsPct}
-                        detail={`${data.risksWithControlsCount}/${data.totalRisks}`}
+                        covered={data.risksWithControlsCount}
+                        total={data.totalRisks}
                     />
                     <CoverageBar
                         label={t('barControls')}
                         pct={data.controlsWithRisksPct}
-                        detail={`${data.controlsWithRisksCount}/${data.totalControls}`}
+                        covered={data.controlsWithRisksCount}
+                        total={data.totalControls}
                     />
                     {/* PR-D — process coverage: controls wired into an
                         operational process map (edge-mounted or node-linked). */}
                     <CoverageBar
                         label={t('barProcess')}
                         pct={data.controlsWithProcessPct}
-                        detail={`${data.controlsWithProcessCount}/${data.totalControls}`}
+                        covered={data.controlsWithProcessCount}
+                        total={data.totalControls}
                     />
                 </div>
             </Card>
@@ -268,9 +274,9 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
                         <Heading level={3}>
                             {t('uncoveredAssets')}
                         </Heading>
-                        {data.uncoveredCriticalAssets.length > 0 && (
-                            <StatusBadge variant="error" className="ml-auto">
-                                {data.uncoveredCriticalAssets.length}
+                        {data.uncoveredCriticalAssetsTotal > 0 && (
+                            <StatusBadge variant="error" className="ml-auto" id="uncovered-assets-count">
+                                {data.uncoveredCriticalAssetsTotal}
                             </StatusBadge>
                         )}
                     </div>
@@ -279,10 +285,17 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
                         columns={uncoveredAssetCols}
                         getRowId={getUncoveredAssetRowId}
                         onRowClick={handleUncoveredAssetRowClick}
-                        emptyState={t('emptyAssets')}
-                        resourceName={(p) => p ? 'assets' : 'asset'}
+                        // #4739 — "all covered" was said over no critical asset.
+                        emptyState={data.totalCriticalAssets === 0 ? t('emptyAssetsNone') : t('emptyAssets')}
+                        resourceName={(p) => (p ? t('assetWordOther') : t('assetWordOne'))}
                         data-testid="uncovered-assets-table"
                     />
+                    {data.uncoveredCriticalAssetsTotal > data.uncoveredCriticalAssets.length && (
+                        <p className="mt-2 text-xs text-content-muted" id="uncovered-assets-more">
+                            {t('showingOf', { shown: data.uncoveredCriticalAssets.length, total: data.uncoveredCriticalAssetsTotal })}{' '}
+                            <Link href={tenantHref('/assets')} className={textLinkVariants({ tone: 'underline' })}>{t('viewAllAssets')}</Link>
+                        </p>
+                    )}
                 </Card>
 
                 {/* Unmapped Risks */}
@@ -292,9 +305,9 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
                         <Heading level={3}>
                             {t('unmappedRisks')}
                         </Heading>
-                        {data.unmappedRisks.length > 0 && (
-                            <StatusBadge variant="warning" className="ml-auto">
-                                {data.unmappedRisks.length}
+                        {data.unmappedRisksTotal > 0 && (
+                            <StatusBadge variant="warning" className="ml-auto" id="unmapped-risks-count">
+                                {data.unmappedRisksTotal}
                             </StatusBadge>
                         )}
                     </div>
@@ -303,10 +316,17 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
                         columns={unmappedRiskCols}
                         getRowId={getUnmappedRiskRowId}
                         onRowClick={handleUnmappedRiskRowClick}
-                        emptyState={t('emptyRisks')}
-                        resourceName={(p) => p ? 'risks' : 'risk'}
+                        // #4739 — "all mitigated" was said over an empty register.
+                        emptyState={data.totalRisks === 0 ? t('emptyRisksNone') : t('emptyRisks')}
+                        resourceName={(p) => (p ? t('riskWordOther') : t('riskWordOne'))}
                         data-testid="unmapped-risks-table"
                     />
+                    {data.unmappedRisksTotal > data.unmappedRisks.length && (
+                        <p className="mt-2 text-xs text-content-muted" id="unmapped-risks-more">
+                            {t('showingOf', { shown: data.unmappedRisks.length, total: data.unmappedRisksTotal })}{' '}
+                            <Link href={tenantHref('/risks')} className={textLinkVariants({ tone: 'underline' })}>{t('viewAllRisks')}</Link>
+                        </p>
+                    )}
                 </Card>
             </div>
 
@@ -374,7 +394,10 @@ function CoverageKpiCard({
     subtitle: string;
 }) {
     const t = useTranslations('coverage');
-    const color = pctColor(pct);
+    // #4739 — nothing to cover is not 0% covered: no red ring over an empty
+    // population.
+    const empty = total === 0;
+    const color = empty ? 'var(--bg-muted)' : READINESS_BAND_COLOR_VAR[readinessBand(pct)];
 
     return (
         <Card className="hover:border-border-emphasis transition-colors duration-150 ease-out" id={id}>
@@ -393,7 +416,7 @@ function CoverageKpiCard({
                     ]}
                     size={100}
                     strokeWidth={14}
-                    centerLabel={`${pct}%`}
+                    centerLabel={empty ? '—' : `${pct}%`}
                     centerSub=""
                     showLegend={false}
                 />
@@ -401,9 +424,9 @@ function CoverageKpiCard({
                     {/* Polish PR-2 — KPIStat primitive replaces the
                         decorative gradient-text treatment. */}
                     <KPIStat
-                        value={`${pct}%`}
-                        label={subtitle}
-                        tone={pct >= 80 ? 'success' : pct >= 50 ? 'attention' : 'critical'}
+                        value={empty ? '—' : `${pct}%`}
+                        label={empty ? t('nothingToCover') : subtitle}
+                        tone={empty ? 'default' : readinessTone(pct)}
                     />
                 </div>
             </div>
@@ -414,18 +437,20 @@ function CoverageKpiCard({
 function CoverageBar({
     label,
     pct,
-    detail,
+    covered,
+    total,
 }: {
     label: string;
     pct: number;
-    detail: string;
+    covered: number;
+    total: number;
 }) {
     const t = useTranslations('coverage');
-    const textClass = pctTextClass(pct);
-    // Epic 59 — pick ProgressBar variant by the same score bands the
-    // inline Tailwind class list used. Light-mode compatible via
-    // token-backed variant colours.
-    const variant = pct >= 80 ? 'success' : pct >= 50 ? 'warning' : 'error';
+    const empty = total === 0;
+    const detail = `${covered}/${total}`;
+    const textClass = empty ? 'text-content-subtle' : BAND_TEXT_CLASS[readinessBand(pct)];
+    // Epic 59 — the ProgressBar variant comes from the readiness bands.
+    const variant = empty ? 'neutral' : (readinessVariant(pct) as 'success' | 'warning' | 'error');
 
     return (
         <div>
@@ -433,7 +458,7 @@ function CoverageBar({
                 <span className="text-xs text-content-muted">{label}</span>
                 <div className="flex items-center gap-tight">
                     <span className="text-xs text-content-subtle">{detail}</span>
-                    <span className={`text-xs font-semibold ${textClass}`}>{pct}%</span>
+                    <span className={`text-xs font-semibold ${textClass}`}>{empty ? '—' : `${pct}%`}</span>
                 </div>
             </div>
             <ProgressBar

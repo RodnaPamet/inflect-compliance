@@ -11,6 +11,7 @@ import { recordFrameworkInstalled } from '@/lib/observability/business-metrics';
 import { controlDataFromTemplate, resolveRelatedPolicyIds } from '../control/template-projection';
 import { taskFromTemplateTask, installableTemplateTasks } from '../control/task-from-template';
 import { LIVE_TEMPLATE_TASKS } from '../../repositories/ControlTemplateRepository';
+import type { FrameworkTemplateRefusal } from '@/lib/framework-template-refusals';
 
 // в”Ђв”Ђв”Ђ Pack Install (tenant-scoped, idempotent) в”Ђв”Ђв”Ђ
 
@@ -484,7 +485,7 @@ export async function installSingleTemplate(ctx: RequestContext, templateCode: s
         where: { code: templateCode },
         include: { tasks: LIVE_TEMPLATE_TASKS, requirementLinks: true },
     });
-    if (!tmpl) throw notFound('Template not found');
+    if (!tmpl) throw notFound('Template not found', { reason: 'TEMPLATE_NOT_FOUND' satisfies FrameworkTemplateRefusal });
 
     return runInTenantContext(ctx, async (tdb) => {
         // Idempotent: check existing
@@ -619,8 +620,8 @@ export async function bulkInstallTemplates(
     templateCodes: string[]
 ) {
     assertCanInstallFrameworkPack(ctx);
-    if (!templateCodes || templateCodes.length === 0) throw badRequest('At least one template code required');
-    if (templateCodes.length > 100) throw badRequest('Max 100 templates per batch');
+    if (!templateCodes || templateCodes.length === 0) throw badRequest('At least one template code required', { reason: 'NO_TEMPLATE_CHOSEN' satisfies FrameworkTemplateRefusal });
+    if (templateCodes.length > 100) throw badRequest('Max 100 templates per batch', { reason: 'TOO_MANY_TEMPLATES' satisfies FrameworkTemplateRefusal });
 
     const db = prisma;
     const templates = await db.controlTemplate.findMany({
@@ -629,7 +630,7 @@ export async function bulkInstallTemplates(
     });
     const foundCodes = new Set(templates.map((t) => t.code));
     const notFound_codes = templateCodes.filter((c) => !foundCodes.has(c));
-    if (notFound_codes.length > 0) throw badRequest(`Templates not found: ${notFound_codes.join(', ')}`);
+    if (notFound_codes.length > 0) throw badRequest(`Templates not found: ${notFound_codes.join(', ')}`, { reason: 'TEMPLATE_NOT_FOUND' satisfies FrameworkTemplateRefusal });
 
     return runInTenantContext(ctx, async (tdb) => {
         let controlsCreated = 0;

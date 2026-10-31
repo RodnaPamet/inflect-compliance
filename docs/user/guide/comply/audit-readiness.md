@@ -26,7 +26,7 @@ Avoid confusing three numbers that all sound like readiness. Each answers a diff
 
 ## What you see
 
-**{{ui:audits.overview.coverageTitle}}.** {{ui:audits.overview.coverageHelp}} One row per audit cycle, with its name and framework, and **{{ui:audits.overview.viewCoverage}}**.
+**{{ui:audits.overview.coverageTitle}}.** {{ui:audits.overview.coverageHelp}} One row per audit cycle, with its name, its framework and its coverage score, and **{{ui:audits.overview.viewCoverage}}**.
 
 **{{ui:audits.overview.maturityTitle}}.** Shown once a NIS2 gap assessment has been answered. {{ui:audits.overview.maturityHelp}} The score, labelled **{{ui:audits.overview.maturityLabel}}**, and **{{ui:audits.overview.openGapAssessment}}**.
 
@@ -54,9 +54,10 @@ Click **{{ui:audits.overview.openTestDashboard}}** to see each control's test pl
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:audits.overview.coverageEmpty}}** | The workspace has no audit cycle, or the cycles could not load | Create one on the cycles page, or reload |
-| No **{{ui:audits.overview.maturityTitle}}** card | No NIS2 gap assessment has been answered, or it could not load | Open the NIS2 gap assessment from the audits page |
-| **{{ui:audits.overview.testEmpty}}** | No control is mapped to a framework yet, or the figures could not load | Map controls to a framework |
+| **{{ui:audits.overview.coverageEmpty}}** | The workspace has no audit cycle | Create one on the cycles page |
+| No **{{ui:audits.overview.maturityTitle}}** card | No NIS2 gap assessment has been answered | Open the NIS2 gap assessment from the audits page |
+| **{{ui:audits.overview.testEmpty}}** | No control is mapped to a framework yet | Map controls to a framework |
+| **{{ui:audits.overview.loadFailed}}**, in one of the sections | That section's figures could not load; the others are unaffected | Click **{{ui:audits.overview.retry}}** in that section |
 
 ## Related
 
