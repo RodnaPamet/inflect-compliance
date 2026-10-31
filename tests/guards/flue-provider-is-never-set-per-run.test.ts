@@ -34,7 +34,7 @@ import * as path from 'node:path';
 
 import { repoFiles } from '../helpers/repo-files';
 import { codeOf } from '../helpers/source-blocks';
-import { collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
+import { COLLECTOR_AWS_REGION, collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -184,13 +184,6 @@ describe('OpenShell is not a second inference router (#3966)', () => {
                 ':predict / :generateContent — no host-level rule can permit one and deny the ' +
                 'other. Closing it needs an L7 method/path rule (4.1, #3961).',
         },
-        {
-            host: 'bedrock-runtime.us-east-1.amazonaws.com',
-            why:
-                'admitted by `*.amazonaws.com`, which is still a wildcard: AWS endpoints are ' +
-                'regional, so a per-service list is region-parameterised and much larger than ' +
-                "GCP's. Not yet derived (4.1, #3961).",
-        },
     ];
 
     it.each(BENCHMARKS)('%s names no UNEXPLAINED inference endpoint', (benchmark) => {
@@ -215,8 +208,17 @@ describe('OpenShell is not a second inference router (#3966)', () => {
             INFERENCE_HOSTS.filter((h) => admits(b, h)).map((h) => `${b} -> ${h}`),
         );
         expect(admitted.sort()).toEqual([
-            // Still a wildcard, and the reason is in ADMITTED_WITH_REASON.
-            'aws_compliance.benchmark.soc_2 -> bedrock-runtime.us-east-1.amazonaws.com',
+            // ONE member now. The AWS entry is gone, and that is the improvement
+            // #4569 actually delivered rather than a bookkeeping change: the
+            // `*.amazonaws.com` wildcard matched `bedrock-runtime.*` by suffix,
+            // so the collector could reach AWS inference. The explicit list
+            // names Bedrock's CONTROL planes — `bedrock`, `bedrock-agent`,
+            // `bedrock-agentcore-control` — and `api.sagemaker`, and none of
+            // them is an invoke origin. `bedrock-runtime` and
+            // `runtime.sagemaker` are absent, so no AWS inference host is
+            // reachable at all. Same shape as 4.1 dropping
+            // `generativelanguage.googleapis.com` off the GCP wildcard.
+            //
             // Explicit now, not by wildcard, and irreducible at host level.
             'gcp_compliance.benchmark.cis_v300 -> aiplatform.googleapis.com',
         ]);
@@ -227,6 +229,26 @@ describe('OpenShell is not a second inference router (#3966)', () => {
         const reachable = new Set(admitted.map((a) => a.split(' -> ')[1]));
         expect(ADMITTED_WITH_REASON.map((a) => a.host).sort()).toEqual([...reachable].sort());
         for (const a of ADMITTED_WITH_REASON) expect(a.why.length).toBeGreaterThan(60);
+    });
+
+    it('the AWS wildcard is gone, and no AWS inference origin is reachable', () => {
+        // #4569's improvement, asserted rather than left implicit in a diff —
+        // the same shape as the GCP case below.
+        const aws = collectorSandboxPolicy('aws_compliance.benchmark.soc_2');
+        expect(aws.networkPolicies.filter((e) => e.host.startsWith('*.'))).toEqual([]);
+        const hosts = aws.networkPolicies.map((e) => e.host);
+        // The control planes are present — a compliance scan audits Bedrock and
+        // SageMaker configuration, and that is what these serve.
+        expect(hosts).toContain(`bedrock.${COLLECTOR_AWS_REGION}.amazonaws.com`);
+        expect(hosts).toContain(`api.sagemaker.${COLLECTOR_AWS_REGION}.amazonaws.com`);
+        // The INVOKE origins are not, in any region, by prefix or by suffix.
+        const invoke = hosts.filter(
+            (h) => h.startsWith('bedrock-runtime.') || h.startsWith('runtime.sagemaker.'),
+        );
+        expect(invoke).toEqual([]);
+        // And nothing in the list can match an inference host by suffix, which
+        // is how the wildcard reached one.
+        expect(hosts.filter((h) => h.includes('*'))).toEqual([]);
     });
 
     it('the GCP wildcard is gone, and generativelanguage is no longer reachable', () => {

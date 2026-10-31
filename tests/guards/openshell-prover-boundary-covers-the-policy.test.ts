@@ -65,11 +65,11 @@ const BENCHMARKS = [
  * inconvenient.
  */
 const UNPROVABLE_HOSTS: Readonly<Record<string, string>> = {
-    '*.amazonaws.com':
-        'The prover refuses a policy mixing a wildcard with an exact host the wildcard covers — '
-        + '"overlapping exact and wildcard endpoints with different implicit destination IP modes" — '
-        + 'and the AWS allowlist carries both this and sts.amazonaws.com. GCP was narrowed off its '
-        + 'own wildcard in #4440; AWS has not been, and this is the first concrete cost of that.',
+    // EMPTY since #4569. `*.amazonaws.com` was the only entry, and the carve-out
+    // outlived its reason: the AWS policy now names 135 explicit hosts and the
+    // prover decides it — `within_boundary`, not `unsupported`. The assertion
+    // below is what made that visible rather than leaving a note that reads as
+    // still-current.
 };
 
 const boundaryText = (): string => fs.readFileSync(path.join(REPO_ROOT, BOUNDARY_PATH), 'utf8');
