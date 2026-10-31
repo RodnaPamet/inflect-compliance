@@ -120,3 +120,13 @@ Open **{{ui:risks.viewsMenu}}** › **{{ui:risks.importRisks}}** to load risks f
 | **{{ui:risks.bulk.actionFailed}}** | A bulk action did not reach the server, or failed without giving a reason | Try again |
 | **{{ui:risks.loadError}}** | The list did not load for the filters you set. The table, the matrix and the histogram show this message in place of risks, and the {{ui:riskManager.totalRisks}}, {{ui:riskManager.avgScore}} and {{ui:riskManager.openRisks}} cards show a dash | Check your connection, then reload the page |
 | A banner saying the list is truncated | The register holds more than 5,000 risks, more than the page loads at once | Narrow the list with a filter or the search |
+
+## Related
+
+The other views in **{{ui:risks.viewsMenu}}** have their own guides:
+
+- [{{ui:risks.viewLinks.dashboard}}](risk-dashboard.md) and [{{ui:risks.viewLinks.board}}](risk-board.md)
+- [{{ui:risks.viewLinks.scenarios}}](risk-scenarios.md), [{{ui:risks.viewLinks.hierarchy}}](risk-hierarchy.md), [{{ui:risks.viewLinks.kri}}](key-risk-indicators.md) and [{{ui:risks.viewLinks.correlations}}](risk-correlations.md)
+- [{{ui:risks.viewLinks.lossEvents}}](loss-events.md) and [{{ui:risks.viewLinks.reports}}](risk-reports.md)
+- [{{ui:risks.viewLinks.aiSystems}}](ai-systems.md) and [{{ui:risks.viewLinks.informationRegistry}}](information-registry.md)
+- [{{ui:risks.importRisks}}](risk-import.md) and [{{ui:risks.aiAssist}}](ai-risk-assessment.md)
