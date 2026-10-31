@@ -1717,10 +1717,10 @@
       "newNodePlaceholder": "Engineering",
       "addNode": "Add node",
       "rollup": "Exposure roll-up",
-      "totalAleYr": "Total {money} ALE/yr",
-      "empty": "No nodes yet. Add a node, then link risks to it (via the hierarchy API or the risk form).",
+      "totalAleYr": "Total expected loss: {money} a year",
+      "empty": "No nodes yet. Add the top-level nodes, then attach risks to them above.",
       "colNode": "Node",
-      "colAleShare": "ALE share",
+      "colAleShare": "Share of total",
       "colTotalAle": "Total ALE",
       "colRisks": "Risks",
       "aleShareAria": "{name} ALE share",
@@ -1742,7 +1742,11 @@
       "deleteNodeTitle": "Delete node?",
       "deleteNodeConfirm": "Delete \"{name}\"? Child nodes and risk links under it are removed. This cannot be undone.",
       "unlinkRisk": "Unlink",
-      "unlinkOk": "Risk unlinked from the node."
+      "unlinkOk": "Risk unlinked from the node.",
+      "typeLabel": "Tree",
+      "showRisks": "Show risks ({count})",
+      "hideRisks": "Hide risks",
+      "unlinkFailed": "Could not detach the risk."
     },
     "kri": {
       "saveError": "Couldn't save. Nothing was changed — try again.",
