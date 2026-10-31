@@ -13133,7 +13133,8 @@
       "sendResetLink": "Send reset link",
       "sending": "Sending…",
       "backToSignIn": "Back to sign in",
-      "resetSent": "If an account exists for that email, we've sent a password reset link. The link expires in 1 hour."
+      "resetSent": "If an account exists for that email, we've sent a password reset link. The link expires in 1 hour.",
+      "tooManyRequests": "Too many reset requests from this network. Wait an hour, then try again."
     },
     "reset": {
       "chooseNewTitle": "Choose a new password",
@@ -13149,7 +13150,17 @@
       "passwordsNoMatch": "The two passwords do not match.",
       "tooShort": "Your new password must be at least 8 characters long.",
       "couldNotReset": "Could not reset your password.",
-      "backToSignIn": "Back to sign in"
+      "backToSignIn": "Back to sign in",
+      "tooLong": "Your new password can be at most 128 characters long.",
+      "tooManyAttempts": "Too many attempts from this network. Wait 15 minutes, then try again.",
+      "refused": {
+        "PASSWORD_EMPTY": "Enter a new password.",
+        "PASSWORD_TOO_SHORT": "Your new password must be at least 8 characters long.",
+        "PASSWORD_TOO_LONG": "Your new password can be at most 128 characters long.",
+        "PASSWORD_BREACHED": "This password appears in known data breaches. Choose a different one.",
+        "RESET_LINK_EXPIRED": "This reset link has expired. Request a new one.",
+        "RESET_LINK_INVALID": "This reset link is invalid or has already been used. Request a new one."
+      }
     }
   },
   "account": {
