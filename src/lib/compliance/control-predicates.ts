@@ -72,7 +72,12 @@ export function controlsMissingEvidenceWhere(
     now: Date = new Date(),
 ): Prisma.ControlWhereInput {
     return {
+        // Scoped out by EITHER column (#4793). This excluded only the
+        // NOT_APPLICABLE status, so a control marked not applicable but still
+        // at a working status counted as missing evidence, while the
+        // dashboard's applicability card and Due soon key on `applicability`.
         status: { not: 'NOT_APPLICABLE' },
+        applicability: { not: 'NOT_APPLICABLE' },
         NOT: {
             evidenceControlLinks: {
                 some: {
