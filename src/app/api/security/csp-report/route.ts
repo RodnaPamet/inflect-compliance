@@ -182,7 +182,8 @@ async function readBodyWithLimit(request: Request, maxBytes: number): Promise<st
 
             totalBytes += value.byteLength;
             if (totalBytes > maxBytes) {
-                reader.cancel();
+                // The body is discarded either way; a failed cancel changes nothing.
+                reader.cancel().catch(() => {});
                 return null;
             }
             chunks.push(value);

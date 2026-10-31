@@ -479,7 +479,7 @@ function SchedulesCard({
     // restore the cached list on Undo / failure. See docs/destructive-actions.md.
     const removeSchedule = (id: string) => {
         const previous = schedules;
-        mutate({ schedules: schedules.filter((s) => s.id !== id) }, { revalidate: false });
+        void mutate({ schedules: schedules.filter((s) => s.id !== id) }, { revalidate: false });
         triggerUndoToast({
             message: t('reports.scheduleDeletedToast'),
             undoMessage: t('reports.undo'),
@@ -488,10 +488,10 @@ function SchedulesCard({
                 if (!res.ok) throw new Error('Failed to delete schedule');
                 await mutate();
             },
-            undoAction: () => { mutate({ schedules: previous }, { revalidate: false }); },
+            undoAction: () => { void mutate({ schedules: previous }, { revalidate: false }); },
             onError: () => {
                 toast.error(t('reports.scheduleDeleteFailed'));
-                mutate({ schedules: previous }, { revalidate: false });
+                void mutate({ schedules: previous }, { revalidate: false });
             },
         });
     };

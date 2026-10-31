@@ -31,7 +31,9 @@ type Domain = { id: number; code: string; name: Bilingual };
 // the owner's per-role assignment table is keyed on it, and that table shows
 // the status badge this page's submit flips.
 type Assignment = { id: string; assessmentId: string; respondentRole: string; status: string; questionIds: string[] };
-type Payload = { assignment: Assignment; questions: Question[]; domains: Domain[]; answers: Array<{ questionId: string; answer: string }> };
+// `finalized`: the run is COMPLETED (or archived) and its answers can no longer
+// change. The submit refuses that state too (409); the page stops offering it.
+type Payload = { assignment: Assignment; questions: Question[]; domains: Domain[]; answers: Array<{ questionId: string; answer: string }>; finalized: boolean };
 type AnswerInput = { questionId: string; answer: string };
 
 export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string; assignmentId: string }) {
@@ -172,8 +174,11 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
                 ]}
                 title={tx('respond.title')}
                 description={tx('respond.description')}
+                // Offered until the run is finalised, re-submits included: the
+                // already-submitted notice below says the answers can still
+                // change, and the server takes them until then (#4633).
                 actions={
-                    data && data.assignment.status !== 'SUBMITTED' ? (
+                    data && !data.finalized ? (
                         <Button variant="primary" onClick={handleSubmit} disabled={saving || answeredCount === 0} id="nis2-respond-submit-btn">
                             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                             {answeredCount > 0 ? tx('respond.submitN', { count: answeredCount }) : tx('respond.submitZero')}
@@ -191,9 +196,11 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
                 </div>
             ) : !data ? null : (
                 <>
-                    {data.assignment.status === 'SUBMITTED' && (
+                    {data.finalized ? (
+                        <InlineNotice variant="info">{tx('respond.finalized')}</InlineNotice>
+                    ) : data.assignment.status === 'SUBMITTED' ? (
                         <InlineNotice variant="info">{tx('respond.alreadySubmitted')}</InlineNotice>
-                    )}
+                    ) : null}
                     {data.domains
                         .filter((d) => (byDomain.get(d.id) ?? []).length > 0)
                         .map((d) => (
@@ -203,18 +210,19 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
                                     {(byDomain.get(d.id) ?? []).map((q) => (
                                         <li key={q.id} className={cn(cardVariants({ density: 'compact' }), 'space-y-tight')}>
                                             <div className="flex items-start gap-tight flex-wrap">
-                                                <StatusBadge variant="neutral" size="sm">{q.criticality}</StatusBadge>
+                                                <StatusBadge variant="neutral" size="sm">{tx.has(`nis2Gap.crit.${q.criticality}`) ? tx(`nis2Gap.crit.${q.criticality}`) : q.criticality}</StatusBadge>
                                                 <span className="text-sm font-medium text-content-emphasis">{q.plainText?.[lang] ?? q.id}</span>
                                             </div>
                                             <p className="text-xs text-content-muted">{tx('respond.legalBasis', { legalBasis: q.legalBasis })}</p>
                                             <RadioGroup
                                                 value={answers[q.id] ?? ''}
                                                 onValueChange={(v) => setEdits((prev) => ({ ...prev, [q.id]: v }))}
+                                                disabled={data.finalized}
                                                 className="flex gap-default flex-wrap"
                                             >
                                                 {ANSWERS.map((a) => (
                                                     <label key={a} className="flex items-center gap-tight text-sm cursor-pointer">
-                                                        <RadioGroupItem value={a} /> {a}
+                                                        <RadioGroupItem value={a} /> {tx(`nis2Gap.answer.${a}`)}
                                                     </label>
                                                 ))}
                                             </RadioGroup>

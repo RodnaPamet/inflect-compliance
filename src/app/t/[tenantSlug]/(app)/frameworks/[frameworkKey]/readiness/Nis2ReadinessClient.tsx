@@ -82,7 +82,7 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        load();
+        void load();
     }, [load]);
 
     const eligibleCount = useMemo(

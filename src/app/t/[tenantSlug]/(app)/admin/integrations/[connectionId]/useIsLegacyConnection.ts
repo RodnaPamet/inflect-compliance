@@ -36,7 +36,7 @@ export function useIsLegacyConnection(
     useEffect(() => {
         if (!enabled) return;
         let alive = true;
-        (async () => {
+        void (async () => {
             try {
                 const res = await fetch(apiUrl('/admin/integrations'));
                 if (!res.ok) throw new Error('load');

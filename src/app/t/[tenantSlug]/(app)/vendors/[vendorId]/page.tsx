@@ -356,29 +356,38 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     }, [apiUrl, params.vendorId]);
 
     const fetchDocs = useCallback(async () => {
-        const res = await fetch(apiUrl(`/vendors/${params.vendorId}/documents`));
         // An `if (res.ok)` with no else renders a 403 or 500 as the "no
         // documents" empty state — the operator is told there is nothing
-        // here when in fact we could not find out.
-        if (res.ok) setDocs(await res.json());
-        else toast.error(tx('detail.loadDocsFailed'));
+        // here when in fact we could not find out. A network failure is the
+        // same fact, so it says the same thing.
+        try {
+            const res = await fetch(apiUrl(`/vendors/${params.vendorId}/documents`));
+            if (res.ok) setDocs(await res.json());
+            else toast.error(tx('detail.loadDocsFailed'));
+        } catch {
+            toast.error(tx('detail.loadDocsFailed'));
+        }
     }, [apiUrl, params.vendorId]);
 
     const fetchAssessments = useCallback(async () => {
-        // Epic G-3 — the send picker draws from the VendorAssessmentTemplate
-        // model (Admin → Vendor Templates + the globally-seeded questionnaires).
-        // Only PUBLISHED templates can be sent, so filter here.
-        const gRes = await fetch(apiUrl(`/vendor-assessment-templates`));
-        if (gRes.ok) {
-            const rows = (await gRes.json()) as SendTemplateRow[];
-            setSendTemplates(rows.filter((t) => t.isPublished));
-        }
-        // PR-S — the vendor getById payload never carried the assessments
-        // relation (a regression that left this tab always empty); fetch the
-        // dedicated list endpoint instead.
-        const aRes = await fetch(apiUrl(`/vendors/${params.vendorId}/assessments`));
-        if (aRes.ok) {
-            setAssessments((await aRes.json()) as VendorAssessmentRow[]);
+        try {
+            // Epic G-3 — the send picker draws from the VendorAssessmentTemplate
+            // model (Admin → Vendor Templates + the globally-seeded questionnaires).
+            // Only PUBLISHED templates can be sent, so filter here.
+            const gRes = await fetch(apiUrl(`/vendor-assessment-templates`));
+            if (gRes.ok) {
+                const rows = (await gRes.json()) as SendTemplateRow[];
+                setSendTemplates(rows.filter((t) => t.isPublished));
+            }
+            // PR-S — the vendor getById payload never carried the assessments
+            // relation (a regression that left this tab always empty); fetch the
+            // dedicated list endpoint instead.
+            const aRes = await fetch(apiUrl(`/vendors/${params.vendorId}/assessments`));
+            if (aRes.ok) {
+                setAssessments((await aRes.json()) as VendorAssessmentRow[]);
+            }
+        } catch {
+            // A network failure keeps what is shown, as a non-ok response does.
         }
     }, [apiUrl, params.vendorId]);
 
@@ -407,7 +416,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                 setSendLinkEmailed(true);
                 toast.success(tx('detail.resendToast'));
             }
-            fetchAssessments();
+            void fetchAssessments();
         } catch {
             toast.error(tx('detail.resendFailed'));
         }
@@ -415,32 +424,44 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     }, [apiUrl]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchVendor(); }, [fetchVendor]);
+    useEffect(() => { void fetchVendor(); }, [fetchVendor]);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { if (tab === 'documents') fetchDocs(); }, [tab, fetchDocs]);
+    useEffect(() => { if (tab === 'documents') void fetchDocs(); }, [tab, fetchDocs]);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { if (tab === 'assessments') fetchAssessments(); }, [tab, fetchAssessments]);
+    useEffect(() => { if (tab === 'assessments') void fetchAssessments(); }, [tab, fetchAssessments]);
 
     const fetchLinks = useCallback(async () => {
-        const res = await fetch(apiUrl(`/vendors/${params.vendorId}/links`));
-        if (res.ok) setLinks(await res.json());
-        else toast.error(tx('detail.loadLinksFailed'));
+        try {
+            const res = await fetch(apiUrl(`/vendors/${params.vendorId}/links`));
+            if (res.ok) setLinks(await res.json());
+            else toast.error(tx('detail.loadLinksFailed'));
+        } catch {
+            toast.error(tx('detail.loadLinksFailed'));
+        }
     }, [apiUrl, params.vendorId]);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { if (tab === 'links') fetchLinks(); }, [tab, fetchLinks]);
+    useEffect(() => { if (tab === 'links') void fetchLinks(); }, [tab, fetchLinks]);
 
     const fetchBundles = useCallback(async () => {
-        const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles`));
-        if (res.ok) setBundles(await res.json());
-        else toast.error(tx('detail.loadBundlesFailed'));
+        try {
+            const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles`));
+            if (res.ok) setBundles(await res.json());
+            else toast.error(tx('detail.loadBundlesFailed'));
+        } catch {
+            toast.error(tx('detail.loadBundlesFailed'));
+        }
     }, [apiUrl, params.vendorId]);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { if (tab === 'bundles') fetchBundles(); }, [tab, fetchBundles]);
+    useEffect(() => { if (tab === 'bundles') void fetchBundles(); }, [tab, fetchBundles]);
 
     // P3.3 — load a single bundle's items (expand-in-place).
     const fetchBundleDetail = useCallback(async (bundleId: string) => {
-        const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles/${bundleId}`));
-        if (res.ok) setBundleDetail(await res.json());
+        try {
+            const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles/${bundleId}`));
+            if (res.ok) setBundleDetail(await res.json());
+        } catch {
+            // A network failure keeps what is shown, as a non-ok response does.
+        }
     }, [apiUrl, params.vendorId]);
 
     // Plain handlers (React Compiler auto-memoizes) — manual useCallback here
@@ -456,7 +477,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
         }
         setExpandedBundleId(bundleId);
         setBundleDetail(null);
-        fetchBundleDetail(bundleId);
+        void fetchBundleDetail(bundleId);
     };
 
     // The add picker draws VENDOR_DOCUMENT / ASSESSMENT candidates from
@@ -465,8 +486,8 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     const onBundleItemTypeChange = (next: BundleItemType) => {
         setBundleItemType(next);
         setBundleItemId('');
-        if (next === 'VENDOR_DOCUMENT' && docs.length === 0) fetchDocs();
-        if (next === 'ASSESSMENT' && assessments.length === 0) fetchAssessments();
+        if (next === 'VENDOR_DOCUMENT' && docs.length === 0) void fetchDocs();
+        if (next === 'ASSESSMENT' && assessments.length === 0) void fetchAssessments();
     };
 
     const addBundleItem = async (bundleId: string) => {
@@ -477,38 +498,46 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
         });
         if (res.ok) {
             setBundleItemId('');
-            fetchBundleDetail(bundleId);
-            fetchBundles();
+            void fetchBundleDetail(bundleId);
+            void fetchBundles();
         }
     };
 
     const removeBundleItem = useCallback(async (bundleId: string, itemId: string) => {
         const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles/${bundleId}?itemId=${itemId}`), { method: 'DELETE' });
-        if (res.ok) { fetchBundleDetail(bundleId); fetchBundles(); }
+        if (res.ok) { void fetchBundleDetail(bundleId); void fetchBundles(); }
     }, [apiUrl, params.vendorId, fetchBundleDetail, fetchBundles]);
 
     const freezeBundle = useCallback(async (bundleId: string) => {
         if (!confirm(tx('detail.freezeConfirm'))) return;
         const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles/${bundleId}?action=freeze`), { method: 'POST' });
         if (res.ok) {
-            fetchBundles();
-            if (expandedBundleId === bundleId) fetchBundleDetail(bundleId);
+            void fetchBundles();
+            if (expandedBundleId === bundleId) void fetchBundleDetail(bundleId);
         }
     }, [apiUrl, params.vendorId, tx, fetchBundles, fetchBundleDetail, expandedBundleId]);
 
     const fetchSubs = useCallback(async () => {
-        const res = await fetch(apiUrl(`/vendors/${params.vendorId}/subprocessors`));
-        if (res.ok) setSubs(await res.json());
-        else toast.error(tx('detail.loadSubsFailed'));
+        try {
+            const res = await fetch(apiUrl(`/vendors/${params.vendorId}/subprocessors`));
+            if (res.ok) setSubs(await res.json());
+            else toast.error(tx('detail.loadSubsFailed'));
+        } catch {
+            toast.error(tx('detail.loadSubsFailed'));
+        }
     }, [apiUrl, params.vendorId]);
     // P3.7b — recursive nth-party chain, fetched alongside the flat list.
     const fetchChain = useCallback(async () => {
-        const res = await fetch(apiUrl(`/vendors/${params.vendorId}/subprocessors/chain`));
-        if (res.ok) setChain(await res.json());
-        else toast.error(tx('detail.loadSubsFailed'));
+        try {
+            const res = await fetch(apiUrl(`/vendors/${params.vendorId}/subprocessors/chain`));
+            if (res.ok) setChain(await res.json());
+            else toast.error(tx('detail.loadSubsFailed'));
+        } catch {
+            toast.error(tx('detail.loadSubsFailed'));
+        }
     }, [apiUrl, params.vendorId]);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { if (tab === 'subprocessors') { fetchSubs(); fetchChain(); } }, [tab, fetchSubs, fetchChain]);
+    useEffect(() => { if (tab === 'subprocessors') { void fetchSubs(); void fetchChain(); } }, [tab, fetchSubs, fetchChain]);
 
     // A refused save keeps the form open and says why (#4534). It used to
     // handle `res.ok` alone, so a taken name, an activation without a review
@@ -565,7 +594,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             setShowDocForm(false);
             setDocForm({ type: 'CONTRACT', title: '', externalUrl: '', notes: '', folder: '' });
             // Also call fetchDocs just in case we need uploadedBy info, but state already has the doc
-            fetchDocs();
+            void fetchDocs();
         }
     };
 
@@ -591,7 +620,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                     { method: 'DELETE' },
                 );
                 if (!res.ok) throw new Error(tx('detail.removeLinkFailed'));
-                fetchLinks();
+                void fetchLinks();
             },
             undoAction: () => setLinks(previous),
             onError: () => setLinks(previous),
@@ -610,8 +639,8 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                     { method: 'DELETE' },
                 );
                 if (!res.ok) throw new Error(tx('detail.removeSubFailed'));
-                fetchSubs();
-                fetchChain();
+                void fetchSubs();
+                void fetchChain();
             },
             undoAction: () => setSubs(previous),
             onError: () => setSubs(previous),
@@ -686,7 +715,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                 setSendLinkEmailed(true);
                 toast.success(tx('detail.sentToast'));
             }
-            fetchAssessments();
+            void fetchAssessments();
         } catch {
             setSendError(tx('detail.sendFailed'));
         } finally {
@@ -1430,7 +1459,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                 });
                                 if (!res.ok) { toast.error(tx('detail.addLinkFailed')); return; }
                                 toast.success(tx('detail.addLinkToast'));
-                                setShowLinkForm(false); setLinkForm({ entityType: 'ASSET', entityId: '', relation: 'RELATED' }); fetchLinks();
+                                setShowLinkForm(false); setLinkForm({ entityType: 'ASSET', entityId: '', relation: 'RELATED' }); void fetchLinks();
                             }}>{tx('detail.add')}</Button>
                         </div>
                     )}
@@ -1506,7 +1535,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ name: bundleName }),
                                 });
-                                setBundleName(''); fetchBundles();
+                                setBundleName(''); void fetchBundles();
                             }}>{tx('detail.createBundle')}</Button>
                         </div>
                     )}
@@ -1692,7 +1721,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(subForm),
                                 });
-                                setSubForm({ subprocessorVendorId: '', purpose: '', dataTypes: '', country: '' }); fetchSubs();
+                                setSubForm({ subprocessorVendorId: '', purpose: '', dataTypes: '', country: '' }); void fetchSubs();
                             }}>{tx('detail.add')}</Button>
                         </div>
                     )}
