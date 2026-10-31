@@ -27,7 +27,7 @@ Pick the controls you need when a whole pack would be too much, or add a control
 
 The heading names the framework, with how many templates there are, how many you have **{{ui:frameworks.templates.installed}}** and how many are **{{ui:frameworks.templates.available}}**.
 
-**Filters.** **{{ui:frameworks.templates.allCategories}}** and **{{ui:frameworks.templates.allSections}}** narrow the list to one control category or one requirement section. If you can install, **{{ui:frameworks.templates.selectAllUninstalled}}** sits beside them.
+**Filters.** A search box, **{{ui:frameworks.templates.searchPlaceholder}}**, filters by code or title as you type. **{{ui:frameworks.templates.allCategories}}** and **{{ui:frameworks.templates.allSections}}** narrow the list to one control category or one requirement section. If you can install, **{{ui:frameworks.templates.selectAllUninstalled}}** sits beside them, and selects the templates the filters show.
 
 **The templates.** One card per template, with its code and title, **{{ui:frameworks.templates.installed}}** or **{{ui:frameworks.templates.available}}**, its category and how often the control should run, and how many tasks and requirements it brings. Click a template's title to open it:
 
@@ -50,7 +50,7 @@ Tick the templates you want, or click **{{ui:frameworks.templates.selectAllUnins
 
 ### Filter the list
 
-Choose a category or a section. To change from one category to another, choose **{{ui:frameworks.templates.allCategories}}** first: the list offers only the categories of the templates it is showing.
+Type part of a template's code or title, or choose a category or a section. Each list always offers every category and section in the library, so you can move straight from one to another. The counts under the heading follow the filters.
 
 ## What happens next
 
@@ -61,8 +61,10 @@ Choose a category or a section. To change from one category to another, choose *
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:frameworks.templates.emptyFilter}}** | No template matches the filters, or the templates could not load | Choose **{{ui:frameworks.templates.allCategories}}** and **{{ui:frameworks.templates.allSections}}**, or reload |
-| **{{ui:frameworks.templates.installFailed}}**, or a reason the install was refused | Some or none of the templates were installed | Reload the page to see what was added, then try again |
+| **{{ui:frameworks.templates.emptyFilter}}** | No template matches the search and filters | Clear the search, and choose **{{ui:frameworks.templates.allCategories}}** and **{{ui:frameworks.templates.allSections}}** |
+| **{{ui:frameworks.templates.loadFailed}}** | The templates could not load | Click **{{ui:frameworks.templates.retry}}** |
+| **{{ui:frameworks.templates.installRestricted}}** | Your role cannot install templates | Ask an Owner or Admin |
+| **{{ui:frameworks.templates.installFailed}}**, or another reason the install was refused | Some or none of the templates were installed | Reload the page to see what was added, then try again |
 
 ## Related
 

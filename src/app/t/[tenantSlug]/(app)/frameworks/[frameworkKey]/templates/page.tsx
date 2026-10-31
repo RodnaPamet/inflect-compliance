@@ -10,7 +10,8 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading, Eyebrow } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { apiErrorMessage } from '@/lib/api-error';
+import { Input } from '@/components/ui/input';
+import { frameworkTemplateRefusal } from '@/lib/framework-template-refusals';
 import { usePermissions } from '@/lib/tenant-context-provider';
 import { cn } from '@inflect/ui/lib/cn';
 
@@ -21,6 +22,9 @@ interface FrameworkSummary {
     name: string;
     version: string | null;
 }
+
+/** The `ControlFrequency` enum, worded from `templates.frequency.*` (#4735). */
+type ControlFrequency = 'AD_HOC' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY';
 
 // listTemplates catalog row (catalog.ts return shape).
 interface TemplateRequirement {
@@ -42,7 +46,7 @@ interface CatalogTemplate {
     title: string;
     description: string | null;
     category: string | null;
-    defaultFrequency: string | null;
+    defaultFrequency: ControlFrequency | null;
     isGlobal: boolean;
     installed: boolean;
     tasks: TemplateTask[];
@@ -62,15 +66,17 @@ export default function TemplateLibraryPage() {
     // offered: the buttons used to render for every role and fail silently.
     const canInstall = usePermissions().frameworks.install;
 
-    const [templates, setTemplates] = useState<CatalogTemplate[]>([]);
+    // #4735 — the whole library is read once, and the category, section and
+    // name filters apply on the page. The server-filtered list used to be
+    // the source of the filters' own options, so choosing a category left
+    // only that category to choose, and there was no way to search by name.
+    const [allTemplates, setAllTemplates] = useState<CatalogTemplate[]>([]);
     const [framework, setFramework] = useState<FrameworkSummary | null>(null);
-    const [loading, setLoading] = useState(true);
-    // R14-PR7 — standalone search input retired. The server-side
-    // `?search=` query param remains supported by the API; users
-    // who need name-based filtering can deep-link with the param
-    // or use the global ⌘K palette to navigate directly. A future
-    // PR adopting FilterToolbar would re-introduce the UI affordance
-    // properly.
+    const [loadState, setLoadState] = useState<'loading' | 'ready' | 'failed'>('loading');
+    const [loadAttempt, setLoadAttempt] = useState(0);
+    // Live search over code and title, as the controls template library
+    // does; a `?search=` in the address seeds it.
+    const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
     const [category, setCategory] = useState('');
     const [section, setSection] = useState('');
     const [installing, setInstalling] = useState<string | null>(null);
@@ -79,47 +85,45 @@ export default function TemplateLibraryPage() {
     const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
     const [installError, setInstallError] = useState<string | null>(null);
 
+    /** The whole library; throws on a refused or failed read. */
     const fetchTemplates = useCallback(async () => {
-        const params = new URLSearchParams({ action: 'templates' });
-        // Server-side `?search=` is still supported by the API for
-        // deep-linked filtering; the UI input was retired in
-        // R14-PR7. The URL searchParam is honoured if present.
-        const urlSearch = searchParams.get('search');
-        if (urlSearch) params.set('search', urlSearch);
-        if (category) params.set('category', category);
-        if (section) params.set('section', section);
-        try {
-            const res = await fetch(apiUrl(`/frameworks/${frameworkKey}?${params}`));
-            if (res.ok) setTemplates(await res.json());
-        } catch { /* ignore */ }
-    }, [apiUrl, frameworkKey, searchParams, category, section]);
+        const res = await fetch(apiUrl(`/frameworks/${frameworkKey}?action=templates`));
+        if (!res.ok) throw new Error(`templates ${res.status}`);
+        setAllTemplates(await res.json());
+    }, [apiUrl, frameworkKey]);
 
     useEffect(() => {
-        // try/finally, because `setLoading(false)` was the LAST statement of an
-        // IIFE with no guard: any rejection skipped it and the page stayed on
-        // its loading state for ever. The `finally` is the fix; the empty
-        // `catch` is deliberate, since `fetchTemplates` already owns its own
-        // error reporting and this effect has nothing to add to it.
+        let cancelled = false;
         void (async () => {
             try {
-                const [fwRes] = await Promise.all([
-                    fetch(apiUrl(`/frameworks/${frameworkKey}`)),
-                ]);
-                if (fwRes.ok) setFramework(await fwRes.json());
+                // The framework's name only titles the page: a failed read
+                // of it leaves the generic title, never "Template Library — ".
+                const fwRes = await fetch(apiUrl(`/frameworks/${frameworkKey}`)).catch(() => null);
+                if (!cancelled && fwRes?.ok) setFramework(await fwRes.json());
                 await fetchTemplates();
+                if (!cancelled) setLoadState('ready');
             } catch {
-                /* fetchTemplates reports its own failure; nothing to add here */
-            } finally {
-                setLoading(false);
+                // #4735 — a failed read used to show "No templates match
+                // your filters." It says what it is, with a retry.
+                if (!cancelled) setLoadState('failed');
             }
         })();
-    }, [apiUrl, frameworkKey, fetchTemplates]);
+        return () => { cancelled = true; };
+    }, [apiUrl, frameworkKey, fetchTemplates, loadAttempt]);
 
-    // R14-PR7 — debounced search retired with the input. Filter
-    // state changes (category, section) re-fetch immediately.
-    useEffect(() => {
-        void fetchTemplates();
-    }, [category, section, fetchTemplates]);
+    const retryLoad = () => {
+        setLoadState('loading');
+        setLoadAttempt((n) => n + 1);
+    };
+
+    /** A refused install, in the reader's language (#4735). */
+    const installFailure = async (res: Response) => {
+        const body: unknown = await res.json().catch(() => null);
+        const code = frameworkTemplateRefusal(body);
+        if (code) return tx(`templates.refused.${code}`);
+        if (res.status === 403) return tx('templates.installRestricted');
+        return tx('templates.installFailed');
+    };
 
     // Both installs check `res.ok` and show the server's own message. They
     // used to ignore the response and swallow every error, so a refused
@@ -135,8 +139,7 @@ export default function TemplateLibraryPage() {
                 body: JSON.stringify({ templateCode: code }),
             });
             if (!res.ok) {
-                const body: unknown = await res.json().catch(() => null);
-                setInstallError(apiErrorMessage(body, tx('templates.installFailed')));
+                setInstallError(await installFailure(res));
                 return;
             }
             await fetchTemplates();
@@ -158,8 +161,7 @@ export default function TemplateLibraryPage() {
                 body: JSON.stringify({ templateCodes: Array.from(selected) }),
             });
             if (!res.ok) {
-                const body: unknown = await res.json().catch(() => null);
-                setInstallError(apiErrorMessage(body, tx('templates.installFailed')));
+                setInstallError(await installFailure(res));
                 return;
             }
             setSelected(new Set());
@@ -177,15 +179,33 @@ export default function TemplateLibraryPage() {
         setSelected(next);
     };
 
+
+    // The options come from the WHOLE library, so each filter keeps every
+    // choice whatever the other is set to.
+    const categories = useMemo(
+        () => [...new Set(allTemplates.map(t => t.category).filter(Boolean))].sort(),
+        [allTemplates],
+    );
+    const sections = useMemo(
+        () => [...new Set(allTemplates.flatMap(t => t.requirements.map((r) => r.section)).filter(Boolean))].sort(),
+        [allTemplates],
+    );
+    const templates = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        return allTemplates.filter((t) =>
+            (!category || t.category === category) &&
+            (!section || t.requirements.some((r) => r.section === section)) &&
+            (!q || t.code.toLowerCase().includes(q) || t.title.toLowerCase().includes(q)),
+        );
+    }, [allTemplates, category, section, search]);
+    const installed = templates.filter(t => t.installed).length;
+    const available = templates.filter(t => !t.installed).length;
+
+    /** Select the uninstalled templates the filters show. */
     const selectAll = () => {
         const uninstalled = templates.filter(t => !t.installed).map(t => t.code);
         setSelected(new Set(uninstalled));
     };
-
-    const categories = [...new Set(templates.map(t => t.category).filter(Boolean))];
-    const sections = [...new Set(templates.flatMap(t => t.requirements.map((r) => r.section)).filter(Boolean))];
-    const installed = templates.filter(t => t.installed).length;
-    const available = templates.filter(t => !t.installed).length;
 
     const categoryOptions = useMemo<ComboboxOption[]>(
         () => [
@@ -202,7 +222,16 @@ export default function TemplateLibraryPage() {
         [sections],
     );
 
-    if (loading) return <div className="p-8 animate-pulse text-content-muted">{tx('templates.loading')}</div>;
+    if (loadState === 'loading') return <div className="p-8 animate-pulse text-content-muted">{tx('templates.loading')}</div>;
+    if (loadState === 'failed') {
+        return (
+            <div className="space-y-section">
+                <BackAffordance />
+                <InlineNotice variant="error" id="template-load-failed">{tx('templates.loadFailed')}</InlineNotice>
+                <Button variant="secondary" onClick={retryLoad} id="template-load-retry">{tx('templates.retry')}</Button>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-section animate-fadeIn">
@@ -211,7 +240,7 @@ export default function TemplateLibraryPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <Heading level={1} className="mt-2" id="template-library-heading">
-                        {tx('templates.heading', { name: framework?.name ?? '' })}
+                        {framework ? tx('templates.heading', { name: framework.name }) : tx('templates.headingFallback')}
                     </Heading>
                     <div className="flex gap-compact mt-1 text-xs text-content-subtle">
                         <span>{tx('templates.templatesCount', { count: templates.length })}</span>
@@ -231,11 +260,19 @@ export default function TemplateLibraryPage() {
                 )}
             </div>
 
-            {/* Filters — R14-PR7 dropped the name-search input. The
-                server-side `?search=` query param still works via
-                deep links; the UI affordance returns when this page
-                adopts FilterToolbar. */}
+            {/* Filters — live search by code or title (#4735), then category
+                and section. */}
             <div className="flex flex-wrap gap-compact items-center" id="template-filters">
+                <div className="w-56">
+                    <Input
+                        id="template-search"
+                        size="sm"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder={tx('templates.searchPlaceholder')}
+                        aria-label={tx('templates.searchPlaceholder')}
+                    />
+                </div>
                 <Combobox
                     id="filter-category"
                     options={categoryOptions}
@@ -323,7 +360,7 @@ export default function TemplateLibraryPage() {
                                                 disabled={installing === t.code}
                                                 className="flex-shrink-0"
                                             >
-                                                {installing === t.code ? '...' : tx('templates.install')}
+                                                {installing === t.code ? tx('templates.installing') : tx('templates.install')}
                                             </Button>
                                         )}
                                     </div>
@@ -331,7 +368,7 @@ export default function TemplateLibraryPage() {
                                     {/* Badges row */}
                                     <div className="flex flex-wrap gap-1.5 mt-1">
                                         {t.category && <span className="text-xs text-content-subtle bg-bg-default px-2 py-0.5 rounded">{t.category}</span>}
-                                        {t.defaultFrequency && <span className="text-xs text-content-subtle bg-bg-default px-2 py-0.5 rounded">{t.defaultFrequency}</span>}
+                                        {t.defaultFrequency && <span className="text-xs text-content-subtle bg-bg-default px-2 py-0.5 rounded">{tx(`templates.frequency.${t.defaultFrequency}`)}</span>}
                                         <span className="text-xs text-content-subtle">{tx('templates.tasksCount', { count: t.tasks.length })}</span>
                                         <span className="text-xs text-content-subtle">{tx('templates.requirementsCount', { count: t.requirements.length })}</span>
                                     </div>

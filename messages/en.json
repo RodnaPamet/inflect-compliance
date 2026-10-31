@@ -9051,7 +9051,10 @@
     },
     "templates": {
       "loading": "Loading template library...",
+      "loadFailed": "Could not load the template library.",
+      "retry": "Retry",
       "heading": "Template Library — {name}",
+      "headingFallback": "Template Library",
       "templatesCount": "{count} templates",
       "installedCount": "{count} installed",
       "availableCount": "{count} available",
@@ -9071,7 +9074,22 @@
       "defaultTasks": "Default Tasks",
       "suggestedEvidence": "Suggested Evidence",
       "installFailed": "The install did not finish. Reload the page to see what was added.",
-      "emptyFilter": "No templates match your filters."
+      "installRestricted": "Only an Owner or Admin, or a member whose custom role allows installing frameworks, can install templates.",
+      "emptyFilter": "No templates match your filters.",
+      "searchPlaceholder": "Search templates…",
+      "frequency": {
+        "AD_HOC": "Ad hoc",
+        "DAILY": "Daily",
+        "WEEKLY": "Weekly",
+        "MONTHLY": "Monthly",
+        "QUARTERLY": "Quarterly",
+        "ANNUALLY": "Annually"
+      },
+      "refused": {
+        "TEMPLATE_NOT_FOUND": "A chosen template is no longer in the catalogue. Reload the page.",
+        "NO_TEMPLATE_CHOSEN": "Choose at least one template to install.",
+        "TOO_MANY_TEMPLATES": "Install at most 100 templates at a time."
+      }
     },
     "loadingAria": "Loading frameworks",
     "readiness": {
