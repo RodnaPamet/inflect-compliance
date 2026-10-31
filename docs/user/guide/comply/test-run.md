@@ -20,9 +20,9 @@ Open a test plan and click a run in its **{{ui:controls.testPlan.runHistory}}**,
 | Download the control's evidence bundle | Owner, Admin, Editor, Auditor |
 | Snapshot a completed run into an audit pack | Owner, Admin, Editor |
 
-The buttons to start, complete, retest, attach evidence and snapshot appear only for Owners, Admins and Editors. Uploading a new file or adding a link also needs permission to edit controls, because the evidence is filed against the control; without it, only **{{ui:controlTests.evKind.evidence}}** is offered.
+The buttons to start, complete, retest, attach evidence and snapshot appear only for Owners, Admins and Editors. With a custom role, start, complete, retest and evidence need permission to execute tests. Uploading a new file or adding a link also needs permission to edit controls, because the evidence is filed against the control; without it, only **{{ui:controlTests.evKind.evidence}}** is offered.
 
-The **{{ui:controlTests.run.export.csv}}** and **{{ui:controlTests.run.export.json}}** links are shown to every role, but a Reader or AI admin who uses them is refused.
+The **{{ui:controlTests.run.export.csv}}** and **{{ui:controlTests.run.export.json}}** links appear only for roles that can export.
 
 ## What it is for
 
@@ -54,7 +54,7 @@ On a planned run, click **{{ui:controlTests.run.startTest}}**. The run moves to 
 
 1. In **{{ui:controlTests.run.completeHeading}}**, choose the result: **{{ui:controlTests.result.PASS}}**, **{{ui:controlTests.result.FAIL}}** or **{{ui:controlTests.result.INCONCLUSIVE}}**.
 2. Add **{{ui:controlTests.run.notes}}** on what you observed.
-3. For a failure, add a **{{ui:controlTests.run.findingLabel}}**. It becomes the description of the follow-up task.
+3. For a failure, add a **{{ui:controlTests.run.findingLabel}}**. {{ui:controlTests.run.findingHint}}
 4. Click the complete button, then **{{ui:controlTests.run.confirmComplete.confirm}}** in the dialog that asks **{{ui:controlTests.run.confirmComplete.title}}**
 
 Completing cannot be undone. The run's evidence is frozen from then on.
@@ -69,7 +69,7 @@ While the run is open, click **{{ui:controlTests.run.evidence}}** and choose an 
 
 Each kind takes an optional **{{ui:controlTests.run.note}}**. The message **{{ui:controlTests.run.evidenceAddedToast}}** confirms it.
 
-To remove a piece of evidence from an open run, point at its row and click the cross that appears. The evidence stays in the library; only its link to the run is removed. There is no undo.
+To remove a piece of evidence from an open run, point at its row, or move to it with the keyboard, and click the cross that appears. The row leaves the list at once, and a message offers **{{ui:controlTests.run.undo}}** for a few seconds; the removal is made only when that time is up. The evidence stays in the library; only its link to the run is removed.
 
 ### Verify the evidence
 
@@ -101,10 +101,11 @@ A completed run that failed or was inconclusive offers **{{ui:controlTests.run.r
 | **{{ui:controlTests.run.errors.forbidden}}** | Your role cannot see test runs | Ask an admin for access |
 | **{{ui:controlTests.run.errors.notFound}}** | The run was deleted, or the link is wrong | Go back to the plan |
 | **{{ui:controlTests.run.errors.loadFailed}}** | The run could not be read | Reload the page |
-| **{{ui:controlTests.run.errors.startFailed}}**, **{{ui:controlTests.run.errors.completeFailed}}** or **{{ui:controlTests.run.errors.retestFailed}}** | The action was refused or failed | Check that the plan is still active and your role, then try again |
+| A message naming why an action was refused | The server refused it, for example a run on a paused plan | Do what the message says |
+| **{{ui:controlTests.run.errors.startFailed}}**, **{{ui:controlTests.run.errors.completeFailed}}** or **{{ui:controlTests.run.errors.retestFailed}}** | The action failed | Try again |
 | A red message in the evidence form | The upload, the link or the record could not be added. The message gives the reason when there is one | Fix what it names and try again |
 | **{{ui:controlTests.run.integrity.error}}** | The check could not run | Try again |
-| **{{ui:controlTests.run.snapshot.failed}}** | The snapshot was refused or failed | Check that the pack is still a draft, then try again |
+| **{{ui:controlTests.run.snapshot.failed}}**, or a message naming the reason | The snapshot failed or was refused, for example because the pack is no longer a draft | Do what the message says, or try again |
 
 ## Related
 

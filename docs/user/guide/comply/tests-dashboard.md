@@ -20,7 +20,7 @@ Use it to judge whether testing is healthy, rather than to work through it. The 
 
 ## What you see
 
-**The period.** Two buttons in the header choose whether the run figures cover the last 30 or the last 90 days. The framework coverage below always covers 90 days.
+**{{ui:controlTests.dashboard.periodLabel}}.** A switch in the header chooses whether the run figures cover the last 30 or the last 90 days. The framework coverage below always covers 90 days.
 
 **The rate cards.**
 
@@ -31,7 +31,7 @@ Use it to judge whether testing is healthy, rather than to work through it. The 
 | {{ui:controlTests.dashboard.kpi.failRate}} | Failed runs out of completed runs |
 | {{ui:controlTests.dashboard.kpi.evidenceRate}} | Completed runs with at least one piece of evidence attached |
 
-Each card is green, amber or red against fixed thresholds: 80% and 50% for the completion, pass and evidence rates, 10% and 30% for the fail rate. With no runs in the period every rate reads 0%.
+Each card is green, amber or red against fixed thresholds: 80% and 50% for the completion, pass and evidence rates, 10% and 30% for the fail rate. With no runs in the period, the cards show a dash and **{{ui:controlTests.dashboard.kpi.noRunsInPeriod}}** instead of a rate.
 
 **The overdue card.** The number of active plans that are overdue, counting both their frequency date and their schedule. Click it, or **{{ui:controlTests.dashboard.viewQueue}}**, to open the {{ui:controlTests.list.title}} list filtered to exactly those plans.
 
@@ -53,7 +53,7 @@ This is test coverage only. **{{ui:controlTests.dashboard.coverageMapLink}}** op
 
 ## What you can do
 
-- **Change the period** with the 30- and 90-day buttons.
+- **Change the period** with the 30- and 90-day switch.
 - **Open the overdue plans** from the overdue card.
 - **Open a failing control** from **{{ui:controlTests.dashboard.repeatedFailures}}**, or an overdue scheduled plan from **{{ui:panels.testDashG2.overdueScheduled}}**.
 
@@ -68,7 +68,8 @@ The dashboard is read-only. Completing runs, attaching evidence and scheduling p
 | **{{ui:controlTests.dashboard.noCompleted}}** | No run was completed in the period | Switch to 90 days, or complete a run |
 | **{{ui:controlTests.dashboard.noRepeatedFailures}}** | No control failed twice in the period | Nothing to do |
 | **{{ui:panels.testDashG2.scheduledPlansEmpty}}** | No plan has a schedule | Set a schedule on a test plan's page |
-| No **{{ui:controlTests.dashboard.fwCoverage}}** section | No framework has mapped controls, or the coverage could not be read | Install a framework; if you have one, reload the page |
+| No **{{ui:controlTests.dashboard.fwCoverage}}** section | No framework has mapped controls | Install a framework |
+| **{{ui:controlTests.dashboard.fwCoverageLoadFailed}}** | The coverage could not be read | Reload the page |
 | **{{ui:controlTests.dashboard.loadErrorTitle}}** with **{{ui:controlTests.dashboard.retry}}** | The testing figures could not be read | Click **{{ui:controlTests.dashboard.retry}}** |
 
 ## Related

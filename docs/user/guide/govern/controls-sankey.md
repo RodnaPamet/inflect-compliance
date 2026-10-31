@@ -26,15 +26,15 @@ Use the diagram to see traceability at a glance: an asset with no flow onwards h
 
 **The bars and bands.** Each item is a bar; the bands between bars are the links between records: an asset's risk, a risk's mitigating control, a control's requirement. A thicker band means more links. Point at a bar to see its name and weight, or at a band to see the kind of link and its weight.
 
-**Size.** The diagram starts at full size, and the frame scrolls when it is taller than the window. **Fit to view** shrinks the whole diagram to fit the window; **Actual size** returns to full size.
+**Size.** The diagram starts at full size, and the frame scrolls when it is taller than the window. **{{ui:common.ui.sankeyFitToView}}** shrinks the whole diagram to fit the window; **{{ui:common.ui.sankeyActualSize}}** returns to full size.
 
-In a very large workspace, the diagram draws up to 500 items of each kind and does not say when it has left some out.
+In a very large workspace, the diagram draws up to 500 items of each kind, and a notice above it says when it has left some out.
 
 ## What you can do
 
 - **Highlight one item's flows.** Point at a bar to highlight the bands that touch it. Click a requirement bar to keep its flows highlighted; click it again, click an empty part of the diagram or press Escape to let go.
 - **Open a record.** Click an asset, risk or control bar to open that record's page.
-- **Switch the size** with **Fit to view** and **Actual size**.
+- **Switch the size** with **{{ui:common.ui.sankeyFitToView}}** and **{{ui:common.ui.sankeyActualSize}}**.
 
 ## What happens next
 
@@ -44,9 +44,10 @@ The page reads the register when it loads. To see a link you have just added, re
 
 | What you see | Why | What to do |
 | --- | --- | --- |
-| **No mapping flows to display.** | There are no assets, risks, controls or requirements your role can see | Add records, or ask an admin what your role can see |
-| **Nodes are present but no cross-tier mapping flows have been recorded yet.** | Records exist but none are linked to each other | Link risks to assets and controls to risks and requirements |
-| An error page | The diagram could not be built | Reload the page |
+| **{{ui:common.ui.sankeyEmpty}}** | There are no assets, risks, controls or requirements your role can see | Add records, or ask an admin what your role can see |
+| **{{ui:common.ui.sankeyNoLinks}}** | Records exist but none are linked to each other | Link risks to assets and controls to risks and requirements |
+| **{{ui:controls.sankey.loadFailed}}** | The diagram could not be built | Reload the page |
+| A notice that items are left out | The workspace has more than 500 items of one kind | Use the {{ui:controls.list.pageTitle}} list and the risk and asset registers for the complete records |
 
 ## Related
 

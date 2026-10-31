@@ -31,9 +31,9 @@ Use it at the start of a vendor review cycle to see what is overdue or coming up
 | {{ui:vendors.dashboard.kpiUpcomingReviews}} | Vendors whose next review falls within 30 days | The register, filtered to reviews due in 30 days |
 | {{ui:vendors.dashboard.kpiOverdueRenewals}} | Vendors whose contract renewal date has passed | None |
 | {{ui:vendors.dashboard.kpiUpcomingRenewals}} | Vendors whose contract renews within 30 days | None |
-| {{ui:vendors.dashboard.kpiHighRisk}} | High and critical vendors whose latest assessment is not complete, or who have none | None |
+| {{ui:vendors.dashboard.kpiHighRisk}} | High and critical vendors with no completed assessment | None |
 
-These counts include every vendor in the register, offboarded ones too.
+Offboarded vendors are left out of these counts: once a vendor is offboarded, no review, renewal or assessment is due. They still count in the total and the breakdowns. The register's review filter, which the review cards open, leaves them out the same way.
 
 **{{ui:vendors.dashboard.continuousAssurance}}.** Three signals from the vendor monitoring:
 
@@ -45,7 +45,7 @@ These counts include every vendor in the register, offboarded ones too.
 
 - **{{ui:vendors.dashboard.byCriticality}}**: vendors by the business criticality your team assigned: {{ui:vendors.criticalityLabel.LOW}}, {{ui:vendors.criticalityLabel.MEDIUM}}, {{ui:vendors.criticalityLabel.HIGH}} or {{ui:vendors.criticalityLabel.CRITICAL}}.
 - **{{ui:vendors.dashboard.byStatus}}**: {{ui:vendors.statusOption.ONBOARDING}}, {{ui:vendors.statusOption.ACTIVE}}, {{ui:vendors.statusOption.OFFBOARDING}} and {{ui:vendors.statusOption.OFFBOARDED}}.
-- **{{ui:vendors.dashboard.byRiskRating}}**: vendors by the risk rating on their most recent assessment. A vendor whose most recent assessment has no rating yet is not counted.
+- **{{ui:vendors.dashboard.byRiskRating}}**: vendors by the risk rating on their latest completed assessment. A vendor with no completed assessment is not counted.
 
 **Expiring documents.** When any vendor document's validity ends within 30 days, a notice counts them and points you to the vendors' documents tabs.
 
@@ -62,7 +62,8 @@ The dashboard is read-only. It catches up with changes in the register within ab
 
 | What you see | Why | What to do |
 | --- | --- | --- |
-| **{{ui:vendors.dashboard.loadFailed}}** | The figures could not be read | Reload the page |
+| **{{ui:vendors.dashboard.loadFailed}}** with **{{ui:vendors.dashboard.retry}}** | The figures could not be read | Click **{{ui:vendors.dashboard.retry}}** |
+| **{{ui:vendors.dashboard.loadForbidden}}** | Your role cannot see vendors | Ask an admin for access |
 | **{{ui:vendors.dashboard.riskRatingEmpty}}** | No vendor has a rated assessment | Complete an assessment on a vendor's page |
 | Every card at zero and empty breakdowns | The register has no vendors yet | Add vendors on the {{ui:nav.vendors}} page |
 
