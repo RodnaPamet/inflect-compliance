@@ -158,6 +158,11 @@ const ADMIN_ONLY_ROUTES = [
     // agent's own (#3671) — the register's key, `admin.agent_registry`: the
     // condition for an unattended disable of that principal.
     'admin/agents/[agentId]/service-principal-link/route.ts',
+    // Which agent answers on Ask (#4629) — the register's key,
+    // `admin.agent_registry` (owner decision, 2026-10-30): designating the
+    // agent that reads the workspace for every person who asks is register
+    // authority, set on the agent's own page.
+    'admin/agents/[agentId]/interactive/route.ts',
     // Agent profiles (#4143) — the register's key, `admin.agent_registry`
     // (owner decision 3): authoring, review and the read, with the approver
     // never the author (usecase and CHECK). 404 while AGENT_PROFILES is off.

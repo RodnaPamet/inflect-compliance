@@ -5183,6 +5183,14 @@
       }
     },
     "agentDetail": {
+      "interactive": {
+        "use": "Use for Ask",
+        "stop": "Stop using for Ask",
+        "badge": "Answers on Ask",
+        "designated": "This agent now answers questions on Ask.",
+        "cleared": "This agent no longer answers questions on Ask.",
+        "failed": "The change was not saved."
+      },
       "tabOverview": "Overview",
       "tabRisk": "Risk assessment",
       "tabPolicy": "Policy card",
@@ -11530,6 +11538,15 @@
       "cancel": "Cancel"
     },
     "ask": {
+      "checkAgain": "Check again",
+      "refusal": {
+        "NOT_A_PERSON": "Asking is for a signed-in person.",
+        "DEPLOYMENT_NOT_ENABLED": "Asking an agent is not switched on for this installation. Ask your administrator.",
+        "NO_AGENT_DESIGNATED": "No agent answers questions in this workspace yet. Someone who manages the agent register can choose one with “Use for Ask” on the agent’s page.",
+        "AGENT_NOT_FOUND": "The agent chosen to answer questions is no longer in this workspace. Someone who manages the agent register can choose another with “Use for Ask”.",
+        "AGENT_KILL_SWITCHED": "The agent that answers questions has been stopped with its kill switch. It answers again once the kill switch is lifted.",
+        "AGENT_BREAKER_LATCHED": "The agent that answers questions has been paused by its circuit breaker. It answers again once the breaker is reset."
+      },
       "accessMessage": "You need read access to this workspace's controls to ask a question.",
       "accessTitle": "Asking is not available to you",
       "answerHeading": "Answer",
@@ -11552,7 +11569,7 @@
       "runningDescription": "The agent is reading the records it has been granted. The calls it makes will appear below the answer.",
       "runningTitle": "Working on it",
       "status": "Outcome",
-      "timedOut": "The run has not finished and this page stopped waiting. It may still complete — the agent register shows its state.",
+      "timedOut": "The run has not finished, and this page has stopped waiting. It may still complete: check again in a moment.",
       "title": "Ask a question",
       "tokens": "Tokens",
       "tooLong": "Too long — questions are limited to {max} characters. Ask something shorter, or attach the material as evidence and ask about that.",

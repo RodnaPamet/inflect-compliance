@@ -36,8 +36,10 @@ import { safeGoto, waitForHydration } from './e2e-utils';
  *
  * So what is asserted is the PROPERTY M3 actually asks for: a funnel refusal
  * reaches the person WITH ITS NAMED REASON. The alert must appear and must
- * carry a code-shaped token, which is exactly what distinguishes this from the
- * "something went wrong" the server deliberately does not send.
+ * carry the reason for one of those two codes, which is exactly what
+ * distinguishes this from the "something went wrong" the server deliberately
+ * does not send. Since #4629 the reason is said in words rather than as the
+ * operator's `CODE: detail`, so the assertion names the two sentences.
  *
  * That makes this an end-to-end proof of the whole chain — sidebar entry, page,
  * POST route, rate-limit wrapper, usecase, resolver, named refusal, rendered
@@ -94,8 +96,8 @@ test('reached from the sidebar, and a refusal arrives with its named reason', as
 
     const alert = main.getByRole('alert');
     await expect(alert).toBeVisible();
-    // A CODE, not a generic apology. Upper-snake because that is the shape
-    // every refusal in this path carries, and its presence is the difference
-    // between a person who can act and a support ticket.
-    await expect(alert).toContainText(/[A-Z][A-Z_]{6,}/);
+    // The NAMED reason, not a generic apology: the sentence for
+    // DEPLOYMENT_NOT_ENABLED or for NO_AGENT_DESIGNATED, whichever this
+    // deployment produces (`agents.ask.refusal.*`).
+    await expect(alert).toContainText(/not switched on for this installation|No agent answers questions in this workspace yet/);
 });
