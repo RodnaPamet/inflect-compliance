@@ -1,6 +1,6 @@
 {
   "name": "inflect-compliance",
-  "version": "3.345.1",
+  "version": "3.345.2",
   "private": true,
   "license": "BUSL-1.1",
   "workspaces": [
@@ -274,6 +274,10 @@
     "valibot": "$valibot",
     "@sentry/bundler-plugin-core": {
       "brace-expansion": "^5.0.12"
+    },
+    "@sentry/bundler-plugins": {
+      "glob": "^14.0.3",
+      "minimatch": "^11.0.3"
     },
     "@modelcontextprotocol/client": "^2.3.0",
     "sharp": "0.35.5",
