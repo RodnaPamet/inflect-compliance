@@ -18,6 +18,7 @@ import { notFound, badRequest } from '@/lib/errors/types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { computeTEF, computeVulnerability, computePLM, computeFairALE, resolveALE, type FairDistributions } from './fair-calculator';
 import { simulatePortfolio, type SimRisk, type SimulationResult } from './monte-carlo';
+import { isScenarioFairField, scenarioValueRefusal } from '@/lib/risk-scenario-fields';
 
 /** FAIR fields an override may patch. */
 export type FairField =
@@ -97,8 +98,30 @@ const toSim = (r: ScenarioRisk): SimRisk => ({ id: r.id, title: r.title, pointAl
 
 export interface CreateScenarioInput { name: string; description?: string | null; investmentCost?: number | null; overrides?: ScenarioOverride[] }
 
+/**
+ * #4770 — refuse an override the engine would read as nonsense: a field it
+ * does not know, a probability outside 0..1, a negative frequency or amount.
+ * The page refuses the same values first; this holds every other caller.
+ */
+const REFUSAL_SENTENCE = {
+    NOT_A_NUMBER: 'is not a number',
+    NEGATIVE: 'cannot be negative',
+    PROBABILITY_RANGE: 'is a probability and must be between 0 and 1',
+} as const;
+
+export function assertOverridesValid(overrides: ScenarioOverride[]): void {
+    for (const ov of overrides) {
+        if (ov.synthetic || ov.field == null) continue;
+        if (!isScenarioFairField(ov.field)) throw badRequest(`Unknown FAIR field "${String(ov.field)}"`);
+        if (ov.newValue == null) continue;
+        const refusal = scenarioValueRefusal(ov.field, ov.newValue);
+        if (refusal) throw badRequest(`The value for ${ov.field} ${REFUSAL_SENTENCE[refusal]}`);
+    }
+}
+
 export async function createScenario(ctx: RequestContext, input: CreateScenarioInput) {
     assertCanWrite(ctx);
+    assertOverridesValid(input.overrides ?? []);
     return runInTenantContext(ctx, (db) =>
         db.riskScenario.create({
             data: {
@@ -201,16 +224,22 @@ function parseDist(json: unknown): FairDistributions | undefined {
     return json as FairDistributions;
 }
 
-export async function simulateScenario(ctx: RequestContext, scenarioId: string): Promise<ScenarioComparisonResult> {
-    assertCanWrite(ctx);
-    const scenario = await getScenario(ctx, scenarioId);
-    if (scenario.status === 'ARCHIVED') throw badRequest('Cannot simulate an archived scenario');
+/** Same seed for both runs, so the difference reflects the overrides, not RNG noise. */
+const SCENARIO_SEED = 1;
 
+/**
+ * The comparison of a scenario against the portfolio as it is now. Writes
+ * nothing: `simulateScenario` persists it, `getScenarioComparison` returns it.
+ */
+async function compareScenario(
+    ctx: RequestContext,
+    scenario: { overridesJson: unknown; investmentCost: number | null },
+): Promise<ScenarioComparisonResult> {
     const overrides = (scenario.overridesJson ?? []) as unknown as ScenarioOverride[];
     const baselineRisks = await loadScenarioRisks(ctx);
     const scenarioRisks = applyOverrides(baselineRisks, overrides);
 
-    const seed = 1; // same seed → variance reflects the overrides, not RNG noise
+    const seed = SCENARIO_SEED;
     const baseline = simulatePortfolio(baselineRisks.map(toSim), { seed });
     const scenarioResult = simulatePortfolio(scenarioRisks.map(toSim), { seed });
 
@@ -224,6 +253,43 @@ export async function simulateScenario(ctx: RequestContext, scenarioId: string):
             return { riskId: r.id, title: r.title, baselineAle: b, scenarioAle: r.ale, deltaAle: r.ale - b, deltaPercent: b > 0 ? ((r.ale - b) / b) * 100 : 0 };
         })
         .filter((d) => d.deltaAle !== 0);
+
+    return {
+        baseline, scenario: scenarioResult,
+        delta: {
+            meanAleDelta: scenarioResult.portfolioAle.mean - baseline.portfolioAle.mean,
+            varP95Delta: scenarioResult.portfolioAle.p95 - baseline.portfolioAle.p95,
+            varP99Delta: scenarioResult.portfolioAle.p99 - baseline.portfolioAle.p99,
+            roi,
+        },
+        perRiskDeltas,
+    };
+}
+
+/**
+ * #4770 — reopen a scenario's comparison without running it again.
+ *
+ * A read: it computes the comparison with the same seed `simulateScenario`
+ * uses and stores nothing, so a reader can see it and a reload can show it
+ * again. It is computed against the portfolio as it is now, which is the same
+ * result as the last run unless the risks have changed since.
+ */
+export async function getScenarioComparison(ctx: RequestContext, scenarioId: string): Promise<ScenarioComparisonResult> {
+    assertCanRead(ctx);
+    const scenario = await getScenario(ctx, scenarioId);
+    if (scenario.status === 'ARCHIVED') throw badRequest('An archived scenario has no comparison');
+    return compareScenario(ctx, scenario);
+}
+
+export async function simulateScenario(ctx: RequestContext, scenarioId: string): Promise<ScenarioComparisonResult> {
+    assertCanWrite(ctx);
+    const scenario = await getScenario(ctx, scenarioId);
+    if (scenario.status === 'ARCHIVED') throw badRequest('Cannot simulate an archived scenario');
+
+    const comparison = await compareScenario(ctx, scenario);
+    const scenarioResult = comparison.scenario;
+    const roi = comparison.delta.roi;
+    const seed = SCENARIO_SEED;
 
     // Persist the scenario run + link it.
     await runInTenantContext(ctx, async (db) => {
@@ -248,14 +314,5 @@ export async function simulateScenario(ctx: RequestContext, scenarioId: string):
         });
     });
 
-    return {
-        baseline, scenario: scenarioResult,
-        delta: {
-            meanAleDelta: scenarioResult.portfolioAle.mean - baseline.portfolioAle.mean,
-            varP95Delta: scenarioResult.portfolioAle.p95 - baseline.portfolioAle.p95,
-            varP99Delta: scenarioResult.portfolioAle.p99 - baseline.portfolioAle.p99,
-            roi,
-        },
-        perRiskDeltas,
-    };
+    return comparison;
 }

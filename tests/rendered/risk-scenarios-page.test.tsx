@@ -18,18 +18,22 @@
  *     correlation matrix.
  *   - an ARCHIVED scenario keeps Clone but loses Simulate and Archive.
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as React from 'react';
 import { SWRConfig } from 'swr';
 
 const PERMS = { canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true };
+let APP_PERMS: Record<string, unknown> = { risks: { edit: true } };
+let searchParams = new URLSearchParams();
+const routerReplace = jest.fn();
 
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     useTenantHref: () => (p: string) => `/t/acme${p}`,
-    useTenantContext: () => ({ tenantSlug: 'acme', tenantName: 'Acme', permissions: PERMS }),
+    useTenantContext: () => ({ tenantSlug: 'acme', tenantName: 'Acme', permissions: PERMS, appPermissions: APP_PERMS, currencySymbol: '€' }),
     usePermissions: () => ({}),
     useMoneyFormatter: () => (v: number | null | undefined) => (v == null ? '—' : `€${Math.round(v)}`),
+    useCurrencySymbol: () => '€',
     useCurrentUserId: () => 'u1',
 }));
 
@@ -55,9 +59,9 @@ jest.mock('next-intl', () => {
 });
 
 jest.mock('next/navigation', () => ({
-    useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn(), back: jest.fn(), forward: jest.fn(), prefetch: jest.fn() }),
+    useRouter: () => ({ push: jest.fn(), replace: routerReplace, refresh: jest.fn(), back: jest.fn(), forward: jest.fn(), prefetch: jest.fn() }),
     usePathname: () => '/t/acme/risks/scenarios',
-    useSearchParams: () => new URLSearchParams(),
+    useSearchParams: () => searchParams,
 }));
 
 jest.mock('@/components/layout/PageBreadcrumbs', () => ({ PageBreadcrumbs: () => null }));
@@ -75,6 +79,7 @@ jest.mock('@/app/t/[tenantSlug]/(app)/risks/_shared/RiskPicker', () => ({
 }));
 
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { __resetPendingUndoToastsForTest } from '@/components/ui/hooks/use-toast-with-undo';
 import ScenariosPage from '@/app/t/[tenantSlug]/(app)/risks/scenarios/page';
 
 const en = require('../../messages/en.json');
@@ -83,8 +88,11 @@ const S = en.risks.scenarios;
 type Scenario = { id: string; name: string; status: string; investmentCost: number | null; computedRoi: number | null; createdAt: string };
 let scenarios: Scenario[] = [];
 let writeOk = true;
+let writeStatus: number | null = null;
 let writeBody: unknown = {};
+let comparisonBody: unknown = null;
 const writes: { url: string; method: string; body: unknown }[] = [];
+const reads: string[] = [];
 
 function installFetch() {
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -92,8 +100,14 @@ function installFetch() {
         const method = (init?.method ?? 'GET').toUpperCase();
         if (method !== 'GET') {
             writes.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-            const b = writeOk ? writeBody : { error: { code: 'internal', message: 'boom' } };
-            return { ok: writeOk, status: writeOk ? 200 : 500, headers: new Headers({ 'content-type': 'application/json' }), json: async () => b, text: async () => JSON.stringify(b) } as unknown as Response;
+            const status = writeStatus ?? (writeOk ? 200 : 500);
+            const ok = status < 400;
+            const b = ok ? writeBody : { error: { code: status >= 500 ? 'internal' : 'BAD_REQUEST', message: status >= 500 ? 'boom' : 'The value for vulnerabilityProbability is a probability and must be between 0 and 1' } };
+            return { ok, status, headers: new Headers({ 'content-type': 'application/json' }), json: async () => b, text: async () => JSON.stringify(b) } as unknown as Response;
+        }
+        if (url.includes('/comparison')) {
+            reads.push(url);
+            return { ok: true, status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({ comparison: comparisonBody }), text: async () => '' } as unknown as Response;
         }
         const body = url.includes('/risks/scenarios') ? { scenarios } : { risks: [] };
         return { ok: true, status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: async () => body, text: async () => JSON.stringify(body) } as unknown as Response;
@@ -103,8 +117,15 @@ function installFetch() {
 beforeEach(() => {
     scenarios = [];
     writeOk = true;
+    writeStatus = null;
     writeBody = {};
+    comparisonBody = null;
     writes.length = 0;
+    reads.length = 0;
+    APP_PERMS = { risks: { edit: true } };
+    searchParams = new URLSearchParams();
+    routerReplace.mockClear();
+    __resetPendingUndoToastsForTest();
     installFetch();
 });
 
@@ -146,11 +167,20 @@ describe('Scenarios — the override builder', () => {
         expect(rows[0]).toHaveTextContent('75000');
     });
 
-    it('rejects a non-numeric value without adding anything', async () => {
+    it('rejects a non-numeric value with a reason, adding nothing', async () => {
         mount();
         await screen.findByPlaceholderText(S.namePlaceholder);
         addOverride('not a number');
         expect(screen.queryByTestId('scenario-overrides')).not.toBeInTheDocument();
+        expect(screen.getByTestId('scenario-override-error')).toHaveTextContent(S.valueNotNumber);
+    });
+
+    it('says what the value means, and shows a loss as money', async () => {
+        mount();
+        await screen.findByPlaceholderText(S.namePlaceholder);
+        expect(screen.getByTestId('scenario-override-unit')).toHaveTextContent(S.unit_money.replace('{currency}', '€'));
+        addOverride('50000');
+        expect(screen.getByTestId('scenario-overrides')).toHaveTextContent('€50000');
     });
 
     it('an override can be removed again', async () => {
@@ -201,6 +231,13 @@ describe('Scenarios — creating', () => {
     });
 });
 
+const COMPARISON = {
+    baseline: { portfolioAle: { mean: 100000, p95: 400000, p99: 900000 } },
+    scenario: { portfolioAle: { mean: 60000, p95: 250000, p99: 500000 } },
+    delta: { meanAleDelta: -40000, varP95Delta: -150000, varP99Delta: -400000, roi: 3.2 },
+    perRiskDeltas: [{ riskId: 'r1', title: 'Ransomware', baselineAle: 50000, scenarioAle: 20000, deltaPercent: -60 }],
+};
+
 describe('Scenarios — the list and the comparison', () => {
     const draft: Scenario = { id: 's1', name: 'WAF', status: 'DRAFT', investmentCost: 130000, computedRoi: null, createdAt: '2026-01-01' };
 
@@ -215,6 +252,7 @@ describe('Scenarios — the list and the comparison', () => {
     it('an ARCHIVED scenario keeps Clone but loses Simulate and Archive', async () => {
         scenarios = [{ ...draft, status: 'ARCHIVED' }];
         mount();
+        fireEvent.click(await screen.findByTestId('scenario-archived-toggle'));
         expect(await screen.findByTestId('scenario-clone-s1')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: S.simulate })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: S.archive })).not.toBeInTheDocument();
@@ -262,12 +300,96 @@ describe('Scenarios — the list and the comparison', () => {
         expect(screen.getByTestId('scenario-comparison')).not.toHaveTextContent('×');
     });
 
-    it('a failed simulation surfaces the error and paints no comparison', async () => {
+    it('a failed simulation is reported on its row and paints no comparison', async () => {
         scenarios = [draft];
         writeOk = false;
         mount();
         fireEvent.click(await screen.findByRole('button', { name: S.simulate }));
-        await screen.findByTestId('scenario-save-error');
+        expect(await screen.findByTestId('scenario-row-error-s1')).toHaveTextContent(S.simulateError);
+        expect(screen.queryByTestId('scenario-save-error')).not.toBeInTheDocument();
         expect(screen.queryByTestId('scenario-comparison')).not.toBeInTheDocument();
+    });
+
+    it("a refused simulation shows the server's reason", async () => {
+        scenarios = [draft];
+        writeStatus = 400;
+        mount();
+        fireEvent.click(await screen.findByRole('button', { name: S.simulate }));
+        expect(await screen.findByTestId('scenario-row-error-s1')).toHaveTextContent('must be between 0 and 1');
+    });
+
+    it('shows the status in words', async () => {
+        scenarios = [draft];
+        mount();
+        expect(await screen.findByText(S.status_DRAFT)).toBeInTheDocument();
+        expect(screen.queryByText('DRAFT')).not.toBeInTheDocument();
+    });
+
+    it('names the scenario a comparison is for, and puts it in the URL', async () => {
+        scenarios = [draft];
+        writeBody = { comparison: COMPARISON };
+        mount();
+        fireEvent.click(await screen.findByRole('button', { name: S.simulate }));
+        expect(await screen.findByTestId('scenario-comparison-name')).toHaveTextContent('WAF');
+        expect(routerReplace).toHaveBeenCalledWith('/t/acme/risks/scenarios?compare=s1', { scroll: false });
+        expect(screen.getByTestId('scenario-risk-link-r1')).toHaveAttribute('href', '/t/acme/risks/r1');
+    });
+
+    it("reopens a simulated scenario's comparison without running it", async () => {
+        scenarios = [{ ...draft, status: 'SIMULATED' }];
+        comparisonBody = COMPARISON;
+        mount();
+        fireEvent.click(await screen.findByTestId('scenario-show-comparison-s1'));
+        expect(await screen.findByTestId('scenario-comparison-name')).toHaveTextContent('WAF');
+        expect(reads.some((u) => u.endsWith('/risks/scenarios/s1/comparison'))).toBe(true);
+        expect(writes).toHaveLength(0);
+    });
+
+    it('a reload with ?compare= shows that comparison again', async () => {
+        scenarios = [{ ...draft, status: 'SIMULATED' }];
+        comparisonBody = COMPARISON;
+        searchParams = new URLSearchParams('compare=s1');
+        mount();
+        expect(await screen.findByTestId('scenario-comparison-name')).toHaveTextContent('WAF');
+        expect(writes).toHaveLength(0);
+    });
+});
+
+describe('Scenarios — archiving', () => {
+    const draft: Scenario = { id: 's1', name: 'WAF', status: 'DRAFT', investmentCost: null, computedRoi: null, createdAt: '2026-01-01' };
+
+    it('needs risks.edit, as the route does', async () => {
+        APP_PERMS = { risks: { edit: false } };
+        scenarios = [draft];
+        mount();
+        await screen.findByTestId('scenario-clone-s1');
+        expect(screen.queryByTestId('scenario-archive-s1')).not.toBeInTheDocument();
+    });
+
+    it('hides the row at once and sends the DELETE only after the undo window', async () => {
+        scenarios = [draft];
+        mount();
+        await screen.findByTestId('scenario-archive-s1');
+        jest.useFakeTimers();
+        try {
+            fireEvent.click(screen.getByTestId('scenario-archive-s1'));
+            await act(async () => { await jest.advanceTimersByTimeAsync(0); });
+            expect(screen.queryByTestId('scenario-row-s1')).not.toBeInTheDocument();
+            await act(async () => { await jest.advanceTimersByTimeAsync(4999); });
+            expect(writes.filter((w) => w.method === 'DELETE')).toHaveLength(0);
+            await act(async () => { await jest.advanceTimersByTimeAsync(2); });
+            expect(writes.filter((w) => w.method === 'DELETE').map((w) => w.url)).toEqual(['/api/t/acme/risks/scenarios/s1']);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    it('keeps archived scenarios behind a toggle', async () => {
+        scenarios = [draft, { ...draft, id: 's2', name: 'Old', status: 'ARCHIVED' }];
+        mount();
+        await screen.findByText('WAF');
+        expect(screen.queryByText('Old')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByTestId('scenario-archived-toggle'));
+        expect(screen.getByText('Old')).toBeInTheDocument();
     });
 });
