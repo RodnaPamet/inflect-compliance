@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
+import { postSignInPath } from '@/lib/auth/redirect-path';
 import { loginErrorKey, ssoRequiredWorkspace } from './login-error';
 import { SsoSignIn } from './SsoSignIn';
 
@@ -24,9 +25,12 @@ type VerifyStatus = 'verified' | 'invalid' | 'expired';
 
 function LoginForm() {
     const searchParams = useSearchParams();
-    // R-1: default post-sign-in destination is /tenants so the picker logic
-    // takes over (0 → /no-tenant, 1 → direct, >1 → picker list).
-    const callbackUrl = searchParams?.get('callbackUrl') || '/tenants';
+    // Where to go once signed in. A link says `?callbackUrl=`; the middleware,
+    // bouncing a signed-out visitor, says `?next=`. Both are anyone's to
+    // write, so only a path on this site survives, and nothing usable means
+    // /tenants, the picker (0 → /no-tenant, 1 → direct, >1 → the list).
+    const requestedDestination = searchParams?.get('callbackUrl') ?? searchParams?.get('next');
+    const callbackUrl = postSignInPath(requestedDestination);
     const verifyStatusParam = searchParams?.get('verifyStatus');
     const verifyStatus: VerifyStatus | null =
         verifyStatusParam === 'verified' ||
@@ -262,7 +266,7 @@ function LoginForm() {
                             </svg>
                         </Button>
                         <SsoSignIn
-                            returnTo={searchParams?.get('callbackUrl') ?? undefined}
+                            returnTo={requestedDestination ? callbackUrl : undefined}
                             initialWorkspace={searchParams?.get('sso') ?? ssoRequiredWorkspace(errorCode) ?? undefined}
                         />
                     </div>

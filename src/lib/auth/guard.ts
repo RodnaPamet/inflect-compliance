@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server';
 
 import { EDGE_ADMIN_ROLES } from './edge-admin-roles';
+import { sanitizeRedirectPath } from './redirect-path';
 
 // ─── Public path allowlist ───
 
@@ -359,42 +360,9 @@ export function isMfaAllowedPath(pathname: string): boolean {
     return false;
 }
 
-/**
- * Sanitize a redirect path to prevent open-redirect attacks.
- * Only allows relative paths starting with '/'.
- * Strips protocol, host, and any absolute URL to return '/'.
- */
-export function sanitizeRedirectPath(next: string | null | undefined): string {
-    if (!next) return '/';
-
-    // Decode if URL-encoded
-    let decoded: string;
-    try {
-        decoded = decodeURIComponent(next);
-    } catch {
-        return '/';
-    }
-
-    // Strip any protocol + host (prevents https://evil.com)
-    // Reject anything that looks like an absolute URL
-    if (
-        decoded.startsWith('//') ||
-        decoded.includes('://') ||
-        decoded.startsWith('\\')
-    ) {
-        return '/';
-    }
-
-    // Must start with /
-    if (!decoded.startsWith('/')) {
-        return '/';
-    }
-
-    // Drop any authority component (//evil.com/path)
-    const cleaned = decoded.replace(/^\/\/+/, '/');
-
-    return cleaned;
-}
+// The open-redirect rule lives in `./redirect-path` so the client sign-in
+// page can hold it too; re-exported here for the server callers.
+export { sanitizeRedirectPath };
 
 /**
  * Build a login redirect URL with a safe 'next' parameter.
