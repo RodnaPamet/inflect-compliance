@@ -13072,7 +13072,20 @@
     "signInToAccept": "Sign in to accept",
     "acceptInvitation": "Accept invitation",
     "acceptFailed": "Could not accept the invitation. Please try again.",
-    "wrongAccount": "You are signed in as <b>{email}</b>, but this invite was sent to a different email address. Sign in with the correct account to accept it."
+    "wrongAccount": "You are signed in as <b>{email}</b>, but this invite was sent to a different email address. Sign in with the correct account to accept it.",
+    "refused": {
+      "INVITE_NOT_FOUND": "This invitation does not exist. Check the link, or ask your admin to send a new invite.",
+      "INVITE_REVOKED": "This invitation has been withdrawn. Ask your admin to send a new invite.",
+      "INVITE_EXPIRED": "This invitation has expired. Ask your admin to send a new invite.",
+      "INVITE_ALREADY_REDEEMED": "This invitation has already been used. If it was not you, ask your admin to send a new invite.",
+      "INVITE_EMAIL_MISMATCH": "This invitation was sent to a different email address from the account you signed in with, so it can no longer be used. Ask your admin to send a new invite to the address you sign in with.",
+      "INVITE_NOT_COMPLETED": "This invitation was claimed, but joining the workspace did not finish. Ask your admin to send a new invite."
+    },
+    "result": {
+      "title": "Invitation not accepted",
+      "signedInAs": "You are signed in as <b>{email}</b>.",
+      "toWorkspaces": "Go to your workspaces"
+    }
   },
   "roles": {
     "OWNER": "Owner",
