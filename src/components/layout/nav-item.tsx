@@ -33,12 +33,13 @@
  */
 
 import Link from 'next/link';
-import type { ComponentType, CSSProperties, ElementType, SVGProps } from 'react';
+import type { ComponentType, CSSProperties, ElementType, MouseEvent as ReactMouseEvent, SVGProps } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@inflect/ui/lib/cn';
 import { useSidebarCollapsed } from './sidebar-collapse-context';
+import { useDroppedLinkClickGuard } from '@/lib/hooks/use-dropped-link-click-guard';
 
 /**
  * A sidebar glyph: either family.
@@ -715,6 +716,18 @@ export function NavItem({
     // provider is mounted, so the expanded path is the default.
     const collapsed = useSidebarCollapsed();
 
+    // A link row's click can be dropped by the client router in the hydration
+    // window (#3099); the guard notices and clicks once more. An action row
+    // has no navigation to lose.
+    const guardDroppedClick = useDroppedLinkClickGuard(href);
+    const handleClick =
+        href !== undefined
+            ? (e: ReactMouseEvent<HTMLElement>) => {
+                  onClick?.();
+                  guardDroppedClick(e);
+              }
+            : onClick;
+
     const content = (
         <>
             <Icon className={NAV_ITEM_ICON_CLASS} aria-hidden="true" />
@@ -832,7 +845,7 @@ export function NavItem({
             {...(href !== undefined
                 ? { href, prefetch }
                 : { type: 'button' })}
-            onClick={onClick}
+            onClick={handleClick}
             className={cn(
                 NAV_ITEM_BASE,
                 active ? NAV_ITEM_ACTIVE : NAV_ITEM_DEFAULT,
