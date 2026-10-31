@@ -62,16 +62,10 @@ function comparableHash(hash: string): string {
 /** Current default bcrypt work factor. OWASP 2024 floor for bcrypt is 10. */
 export const BCRYPT_COST = 12;
 
-/**
- * Minimum password length enforced at the point of setting (register,
- * change-password, reset-password). Login verification does not re-check —
- * old users whose passwords predate the policy can still authenticate.
- */
-export const MIN_PASSWORD_LENGTH = 8;
-
-/** Max length guards against bcrypt's documented 72-byte input truncation
- *  surprise and against memory-abuse via a giant body on the login route. */
-export const MAX_PASSWORD_LENGTH = 128;
+// The length limits live in a client-safe module so a form can check them
+// before it sends (#4688); they are re-exported here for the server.
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from './password-limits';
+export { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH };
 
 // ── Hashing ────────────────────────────────────────────────────────────
 

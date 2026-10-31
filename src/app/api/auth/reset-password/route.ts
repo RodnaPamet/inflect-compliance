@@ -25,6 +25,18 @@ import {
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { consumePasswordReset } from '@/lib/auth/password-management';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
+import type { ResetPasswordRefusal } from '@/lib/auth/reset-password-refusals';
+
+const POLICY_REFUSAL = {
+    empty: 'PASSWORD_EMPTY',
+    too_short: 'PASSWORD_TOO_SHORT',
+    too_long: 'PASSWORD_TOO_LONG',
+} as const satisfies Record<string, ResetPasswordRefusal>;
+
+/** Every refusal carries its code beside the English sentence (#4688). */
+function refuse(code: ResetPasswordRefusal, error: string) {
+    return jsonResponse({ error, code }, { status: 400 });
+}
 
 const ResetPasswordSchema = z
     .object({
@@ -38,10 +50,7 @@ export const POST = withApiErrorHandling(
         // ── New-password policy (length floor/ceiling) ──
         const policy = validatePasswordPolicy(body.newPassword);
         if (!policy.ok) {
-            return jsonResponse(
-                { error: describePasswordPolicyFailure(policy.reason) },
-                { status: 400 },
-            );
+            return refuse(POLICY_REFUSAL[policy.reason], describePasswordPolicyFailure(policy.reason));
         }
 
         // ── Breached-password screening. Fails open on a HIBP outage
@@ -49,27 +58,18 @@ export const POST = withApiErrorHandling(
         //    brick the reset flow. Never logs the password or its hash.
         const hibp = await checkPasswordAgainstHIBP(body.newPassword);
         if (hibp.breached) {
-            return jsonResponse(
-                {
-                    error:
-                        'This password appears in known data breaches. Please choose a different password.',
-                },
-                { status: 400 },
+            return refuse(
+                'PASSWORD_BREACHED',
+                'This password appears in known data breaches. Please choose a different password.',
             );
         }
 
         // ── Consume the token + swap the hash ──
         const result = await consumePasswordReset(body.token, body.newPassword);
         if (!result.ok) {
-            return jsonResponse(
-                {
-                    error:
-                        result.reason === 'expired'
-                            ? 'This password reset link has expired. Please request a new one.'
-                            : 'This password reset link is invalid or has already been used.',
-                },
-                { status: 400 },
-            );
+            return result.reason === 'expired'
+                ? refuse('RESET_LINK_EXPIRED', 'This password reset link has expired. Please request a new one.')
+                : refuse('RESET_LINK_INVALID', 'This password reset link is invalid or has already been used.');
         }
 
         return jsonResponse({ ok: true });
