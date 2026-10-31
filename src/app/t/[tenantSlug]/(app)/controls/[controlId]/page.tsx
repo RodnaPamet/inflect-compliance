@@ -115,6 +115,10 @@ const buildCategoryLabels = (t: (k: string) => string): Record<string, string> =
     ORGANIZATIONAL: t('categoryLabels.ORGANIZATIONAL'), PEOPLE: t('categoryLabels.PEOPLE'), PHYSICAL: t('categoryLabels.PHYSICAL'), TECHNOLOGICAL: t('categoryLabels.TECHNOLOGICAL'),
 });
 const buildCategoryCbOptions = (categoryLabels: Record<string, string>): ComboboxOption[] => CATEGORY_OPTIONS.filter(Boolean).map(c => ({ value: c, label: categoryLabels[c] || c }));
+// A linked policy's status in words (#4691), from the policies page's own labels.
+const POLICY_STATUS_KEY: Record<string, string> = {
+    DRAFT: 'draft', IN_REVIEW: 'inReview', APPROVED: 'approved', PUBLISHED: 'published', ARCHIVED: 'archived',
+};
 const buildStatusCbOptions = (statusLabels: Record<string, string>): ComboboxOption[] => Object.entries(statusLabels).map(([val, lbl]) => ({ value: val, label: lbl }));
 
 // R2-P2 — an Overview field label that teaches its own term. Reuses the
@@ -151,6 +155,7 @@ const POLICY_STATUS_BADGE_VARIANT: Record<string, 'neutral' | 'info' | 'success'
 
 export default function ControlDetailPage() {
     const tx = useTranslations('controls');
+    const tPolicies = useTranslations('policies');
     const STATUS_LABELS = buildStatusLabels(tx);
     const FREQ_LABELS = buildFreqLabels(tx);
     const AUTOMATION_TYPE_LABELS = buildAutomationTypeLabels(tx);
@@ -549,10 +554,10 @@ export default function ControlDetailPage() {
         setChangingStatus(true);
         try {
             await statusMutation.trigger({ status });
-        } catch {
-            // Rollback already applied by the hook; the error is
-            // available on `statusMutation.error` for any future
-            // toast surface. Status badge has reverted on its own.
+        } catch (e) {
+            // Rollback already applied by the hook, so the badge has
+            // reverted; say why (#4691) instead of reverting silently.
+            toast.error(e instanceof Error && e.message ? e.message : tx('detailPage.errors.statusUpdateFailed'));
         } finally {
             setChangingStatus(false);
         }
@@ -570,7 +575,8 @@ export default function ControlDetailPage() {
             // decision — never report success (nor close the panel) unless
             // the write actually landed.
             if (!res.ok) {
-                toast.error(tx('detailPage.errors.applicabilityFailed'));
+                const err = await res.json().catch(() => ({}));
+                toast.error(extractMutationError(err, tx('detailPage.errors.applicabilityFailed')));
                 return;
             }
             await refetch();
@@ -591,7 +597,8 @@ export default function ControlDetailPage() {
                 body: JSON.stringify({ userId: addContributorId }),
             });
             if (!res.ok) {
-                toast.error(tx('detailPage.errors.addContributorFailed'));
+                const err = await res.json().catch(() => ({}));
+                toast.error(extractMutationError(err, tx('detailPage.errors.addContributorFailed')));
                 return;
             }
             setAddContributorId(null);
@@ -1109,7 +1116,7 @@ export default function ControlDetailPage() {
                         )}
                         <div>
                             <ConceptEyebrow label={tx('editModal.categoryLabel')} help={tx('conceptHelp.category')} helpLabel={tx('conceptHelp.categoryHelp')} />
-                            <p className="text-sm text-content-default mt-1">{control.category || '—'}</p>
+                            <p className="text-sm text-content-default mt-1">{control.category ? CATEGORY_LABELS[control.category] ?? control.category : '—'}</p>
                         </div>
                         <div>
                             <ConceptEyebrow label={tx('detailPage.eyebrowFrequency')} help={tx('conceptHelp.frequency')} helpLabel={tx('conceptHelp.frequencyHelp')} />
@@ -1125,7 +1132,7 @@ export default function ControlDetailPage() {
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{tx('detailPage.eyebrowOwner')}</span>
-                            <p className="text-sm text-content-default mt-1">{control.owner?.name || '—'}</p>
+                            <p className="text-sm text-content-default mt-1">{control.owner?.name || control.owner?.email || '—'}</p>
                         </div>
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{tx('detailPage.eyebrowTasksProgress')}</span>
@@ -1142,7 +1149,7 @@ export default function ControlDetailPage() {
                             <div className="text-sm text-content-default mt-1 flex flex-wrap items-center gap-tight">
                                 {(control.contributors?.length ?? 0) > 0 ? control.contributors?.map((c: ContributorDTO) => (
                                     <StatusBadge variant="neutral" key={c.user.id} className="inline-flex items-center gap-1">
-                                        {c.user.name ?? '—'}
+                                        {c.user.name || c.user.email || '—'}
                                         {canEditControl && (
                                             <button
                                                 type="button"
@@ -1380,7 +1387,9 @@ export default function ControlDetailPage() {
                                         {link.policy.title}
                                     </a>
                                     <StatusBadge variant={POLICY_STATUS_BADGE_VARIANT[link.policy.status] ?? 'neutral'}>
-                                        {link.policy.status}
+                                        {POLICY_STATUS_KEY[link.policy.status]
+                                            ? tPolicies(`filterEnums.status.${POLICY_STATUS_KEY[link.policy.status]}`)
+                                            : link.policy.status}
                                     </StatusBadge>
                                 </div>
                             ))}

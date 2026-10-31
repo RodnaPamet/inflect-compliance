@@ -12733,7 +12733,7 @@
       "compensating": "compensating: {name}",
       "renew": "Renew",
       "requested": "Requested {date}",
-      "renewedFrom": " • renewed from {id}…",
+      "renewedFrom": " • renews the exception requested {date}",
       "requestHeader": "Request control exception",
       "justification": "Justification",
       "justificationPlaceholder": "Explain why this control cannot be implemented as designed.",
@@ -12759,7 +12759,14 @@
       "expiryRequired": "Expiry date is required for approval.",
       "exceptionLabel": "Exception",
       "exceptedUntil": "Excepted until {date}",
-      "pickRiskAcceptor": "Select who accepts this risk"
+      "pickRiskAcceptor": "Select who accepts this risk",
+      "renewedFromEarlier": " • renews an earlier exception",
+      "status": {
+        "REQUESTED": "Requested",
+        "APPROVED": "Approved",
+        "REJECTED": "Rejected",
+        "EXPIRED": "Expired"
+      }
     },
     "testPlans": {
       "title": "Test Plans",

@@ -12733,7 +12733,7 @@
       "compensating": "компенсиращ: {name}",
       "renew": "Поднови",
       "requested": "Заявено {date}",
-      "renewedFrom": " • подновено от {id}…",
+      "renewedFrom": " • подновява изключението, поискано на {date}",
       "requestHeader": "Заявка за изключение за контрола",
       "justification": "Обосновка",
       "justificationPlaceholder": "Обяснете защо този контрол не може да бъде внедрен както е проектиран.",
@@ -12759,7 +12759,14 @@
       "expiryRequired": "Датата на изтичане е задължителна за одобрение.",
       "exceptionLabel": "Изключение",
       "exceptedUntil": "Изключен до {date}",
-      "pickRiskAcceptor": "Изберете кой приема този риск"
+      "pickRiskAcceptor": "Изберете кой приема този риск",
+      "renewedFromEarlier": " • подновява по-ранно изключение",
+      "status": {
+        "REQUESTED": "Поискано",
+        "APPROVED": "Одобрено",
+        "REJECTED": "Отхвърлено",
+        "EXPIRED": "Изтекло"
+      }
     },
     "testPlans": {
       "title": "Планове за тестване",
