@@ -11,6 +11,9 @@ import { Card } from '@/components/ui/card';
 import { KPIStat } from '@/components/ui/metric';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { SkeletonDashboard } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/ui/error-state';
+import { Button } from '@/components/ui/button';
+import { riskStatusLabel } from '../_shared/risk-options';
 import { resolveBandForScore, resolveBandTone, type RiskSeverityTone } from '@/lib/risk-matrix/scoring';
 import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
 import { riskCanCreate } from '../_shared/bulk-permissions';
@@ -19,7 +22,7 @@ import { InfoTooltip, Tooltip } from '@/components/ui/tooltip';
 import { formatTailAwareAle } from '@/lib/tail-language';
 import { MonteCarloPanel, type SimulationRun } from './MonteCarloPanel';
 import { VelocityCard } from './VelocityCard';
-import type { DashboardPayload } from '@/app-layer/usecases/risk-dashboard';
+import type { DashboardPayload, DashboardSlot } from '@/app-layer/usecases/risk-dashboard';
 import { buildTailByRisk } from '@/lib/risk/per-risk-results';
 import { StatTile } from '../_shared/StatTile';
 
@@ -111,6 +114,7 @@ export default function RiskDashboardPage() {
     const href = useTenantHref();
     const tenant = useTenantContext();
     const t = useTranslations('riskManager');
+    const tRisks = useTranslations('risks');
     // RQ3-OB-A — every monetary figure speaks the tenant's currency.
     const money = useMoneyFormatter();
 
@@ -119,9 +123,12 @@ export default function RiskDashboardPage() {
     // is preserved end-to-end (the orchestrator returns null per
     // slot on a thrown branch, the page treats null as "not ready
     // yet" exactly as it did before).
-    const { data, isLoading, mutate } = useTenantSWR<DashboardPayload>(
+    const { data, isLoading, error, mutate } = useTenantSWR<DashboardPayload>(
         '/risks/dashboard',
     );
+    // #4768 — the slots whose branch threw. Absent on a response from a
+    // server that predates the field, which reads as "none failed".
+    const failed: DashboardSlot[] = data?.failed ?? [];
 
     const risks = (data?.risks ?? []) as Risk[];
     const analytics = (data?.analytics ?? null) as QuantitativeAnalytics | null;
@@ -175,16 +182,47 @@ export default function RiskDashboardPage() {
     const impactAxis = Array.from({ length: impactLevels }, (_, n) => n + 1);
     const likelihoodAxis = Array.from({ length: likelihoodLevels }, (_, n) => likelihoodLevels - n);
 
+    // #4768 — a failed read used to leave the skeleton up for ever: `error`
+    // was never read, and `!data` stayed true.
+    if (error) {
+        return (
+            <div data-testid="risk-dashboard-error">
+                <ErrorState
+                    title={t('dash.loadErrorTitle')}
+                    description={t('dash.loadError')}
+                    onRetry={() => void mutate()}
+                    retryLabel={t('dash.retry')}
+                />
+            </div>
+        );
+    }
     if (loading) {
         return <SkeletonDashboard />;
     }
+
+    // #4768 — tones read from the figures, not fixed per tile.
+    const avgScoreTone = total > 0 && matrix?.bands?.length
+        ? resolveBandTone(Number(avgScore), matrix.bands).tone
+        : 'default';
+    const ceiling = appetite?.config?.totalAleThreshold ?? null;
+    const perRiskCap = appetite?.config?.singleRiskAleMax ?? null;
+    const toneAgainstCeiling = (v: number | null, overTone: 'critical' | 'attention') =>
+        ceiling != null && v != null && v > ceiling ? overTone : 'default';
+    const p50Tone = toneAgainstCeiling(simRun?.portfolioP50 ?? null, 'critical');
+    const p80Tone = toneAgainstCeiling(simRun?.portfolioP80 ?? null, 'critical');
+    const p95Tone = toneAgainstCeiling(simRun?.portfolioP95 ?? null, 'attention');
+    const maxAleTone = perRiskCap != null && analytics?.totals.maxAle != null && analytics.totals.maxAle > perRiskCap
+        ? 'critical'
+        : 'default';
+    const slotLabel = (slot: DashboardSlot) => t(`dash.slot_${slot}` as Parameters<typeof t>[0]);
+    const OVERDUE_CAP = 10;
 
     return (
         <DashboardLayout
             header={{
                 back: { smart: true },
                 title: t('dashboardTitle'),
-                description: `${tenant.tenantName} — ${t('riskCount', { count: total })}`,
+                description: t('dash.headerDescription', { tenant: tenant.tenantName, count: total }),
                 actions: (
                     <Link href={href('/risks')} className={buttonVariants({ variant: 'secondary' })} id="back-to-register">
                         {t('riskRegister')}
@@ -193,16 +231,29 @@ export default function RiskDashboardPage() {
             }}
         >
 
+            {/* #4768 — a section the server could not compute says so; on its
+                own it looked exactly like a section with nothing to show. */}
+            {failed.length > 0 && (
+                <Card className="space-y-tight border-border-warning" data-testid="risk-dashboard-partial">
+                    <p className="text-sm text-content-warning" role="alert">
+                        {t('dash.partialFailure', { sections: failed.map(slotLabel).join(', ') })}
+                    </p>
+                    <Button size="sm" variant="secondary" onClick={() => void mutate()} id="risk-dashboard-partial-retry">
+                        {t('dash.retry')}
+                    </Button>
+                </Card>
+            )}
+
             {/* KPI Cards — Polish PR-2: KPIStat primitive. */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
                 <Card>
                     <KPIStat value={total} label={t('totalRisks')} />
                 </Card>
                 <Card>
-                    <KPIStat value={avgScore} label={t('avgScore')} tone="attention" />
+                    <KPIStat value={avgScore} label={t('avgScore')} tone={avgScoreTone} />
                 </Card>
                 <Card>
-                    <KPIStat value={openCount} label={t('openRisks')} tone="success" />
+                    <KPIStat value={openCount} label={t('openRisks')} />
                 </Card>
                 <Card>
                     <KPIStat
@@ -217,20 +268,27 @@ export default function RiskDashboardPage() {
                 {/* Status Breakdown — Epic 59: StatusBreakdown primitive. */}
                 <Card>
                     <Heading level={3} className="mb-4">{t('statusBreakdown')}</Heading>
-                    <StatusBreakdown
-                        ariaLabel={t('dash.statusAria')}
-                        total={total}
-                        showPercent
-                        emptyState={<RiskFirstRunEmpty size="sm" canCreate={riskCanCreate(tenant)} />}
-                        items={Object.entries(statusCounts)
-                            .sort(([, a], [, b]) => b - a)
-                            .map(([status, count]) => ({
-                                id: status,
-                                label: status,
-                                value: count,
-                                variant: 'brand' as const,
-                            }))}
-                    />
+                    {/* #4768 — when the risk list could not be read, an empty
+                        register's "create your first risk" would be wrong. */}
+                    {failed.includes('risks') ? (
+                        <p className="text-sm text-content-muted" data-testid="risk-dashboard-risks-unavailable">{t('dash.risksUnavailable')}</p>
+                    ) : (
+                        <StatusBreakdown
+                            ariaLabel={t('dash.statusAria')}
+                            total={total}
+                            showPercent
+                            emptyState={<RiskFirstRunEmpty size="sm" canCreate={riskCanCreate(tenant)} />}
+                            items={Object.entries(statusCounts)
+                                .sort(([, a], [, b]) => b - a)
+                                .map(([status, count]) => ({
+                                    id: status,
+                                    // #4768 — the register's labels, not the stored value.
+                                    label: riskStatusLabel(tRisks, status),
+                                    value: count,
+                                    variant: 'brand' as const,
+                                }))}
+                        />
+                    )}
                 </Card>
 
                 {/* Heatmap */}
@@ -284,7 +342,7 @@ export default function RiskDashboardPage() {
                                 })}
                             </Fragment>
                         ))}
-                        <div className="text-content-subtle text-[10px] mt-1">L↑</div>
+                        <div className="text-content-subtle text-[10px] mt-1">{t('dash.likelihoodArrow')}</div>
                         <div
                             className="text-center text-content-subtle text-[10px] mt-1"
                             style={{ gridColumn: `span ${impactLevels}` }}
@@ -328,17 +386,20 @@ export default function RiskDashboardPage() {
                     {simRun ? (
                         <>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-default mb-default">
+                                {/* #4768 — a percentile is toned only against the
+                                    portfolio ceiling, a single risk only against
+                                    the per-risk cap. */}
                                 <StatTile testId="risk-quant-tile-p50">
-                                    <KPIStat value={money(simRun.portfolioP50)} label={t('dash.p50')} />
+                                    <KPIStat value={money(simRun.portfolioP50)} label={t('dash.p50')} tone={p50Tone} />
                                 </StatTile>
                                 <StatTile testId="risk-quant-tile-p80">
-                                    <KPIStat value={money(simRun.portfolioP80)} label={t('dash.p80')} tone="attention" />
+                                    <KPIStat value={money(simRun.portfolioP80)} label={t('dash.p80')} tone={p80Tone} />
                                 </StatTile>
                                 <StatTile testId="risk-quant-tile-p95">
-                                    <KPIStat value={money(simRun.portfolioP95)} label={t('dash.p95')} tone="critical" />
+                                    <KPIStat value={money(simRun.portfolioP95)} label={t('dash.p95')} tone={p95Tone} />
                                 </StatTile>
                                 <StatTile testId="risk-quant-tile-max">
-                                    <KPIStat value={money(analytics.totals.maxAle)} label={t('dash.maxAle')} />
+                                    <KPIStat value={money(analytics.totals.maxAle)} label={t('dash.maxAle')} tone={maxAleTone} />
                                 </StatTile>
                             </div>
                             <p className="mb-default flex items-center gap-tight text-xs text-content-subtle tabular-nums" data-testid="risk-quant-sum-line">
@@ -359,14 +420,13 @@ export default function RiskDashboardPage() {
                                     <KPIStat
                                         value={money(analytics.totals.avgAle)}
                                         label={t('dash.avgAle')}
-                                        tone="attention"
                                     />
                                 </StatTile>
                                 <StatTile testId="risk-quant-tile-max">
                                     <KPIStat
                                         value={money(analytics.totals.maxAle)}
                                         label={t('dash.maxAle')}
-                                        tone="critical"
+                                        tone={maxAleTone}
                                     />
                                 </StatTile>
                                 <StatTile testId="risk-quant-tile-cats">
@@ -420,7 +480,7 @@ export default function RiskDashboardPage() {
                                             {c.category}
                                         </span>
                                         <span className="tabular-nums text-content-muted">
-                                            {money(c.totalAle)} · {c.count}
+                                            {t('dash.categoryExposure', { money: money(c.totalAle), count: c.count })}
                                         </span>
                                     </div>
                                 ))}
@@ -432,7 +492,7 @@ export default function RiskDashboardPage() {
 
             {/* RQ-3 / RQ3-1 — the portfolio loss exceedance stage:
                 simulated curve, VaR tiles, appetite thresholds. */}
-            <MonteCarloPanel appetite={appetite} run={simRun} onReload={loadSimRun} />
+            <MonteCarloPanel appetite={appetite} run={simRun} onReload={loadSimRun} runUnavailable={failed.includes('simulation')} />
 
             {/* RQ2-5 — qual ↔ quant coherence. Renders only when the
                 detector has enough quantified risks to rank; an
@@ -549,7 +609,7 @@ export default function RiskDashboardPage() {
                 <Card className="border-border-error">
                     <Heading level={2} className="mb-3 text-content-error">{t('overdueReviewsTitle')}</Heading>
                     <div className="space-y-tight">
-                        {overdueRisks.map(r => {
+                        {overdueRisks.slice(0, OVERDUE_CAP).map(r => {
                             const daysOverdue = Math.floor((now.getTime() - new Date(r.nextReviewAt!).getTime()) / 86400000);
                             return (
                                 <Link key={r.id} href={href(`/risks/${r.id}?tab=assessment`)} className="flex justify-between items-center p-2 rounded hover:bg-bg-error transition">
@@ -558,6 +618,12 @@ export default function RiskDashboardPage() {
                                 </Link>
                             );
                         })}
+                        {/* #4768 — capped like the stale list beside it. */}
+                        {overdueRisks.length > OVERDUE_CAP && (
+                            <p className="text-xs text-content-subtle" data-testid="risk-overdue-more">
+                                {t('dash.moreCount', { count: overdueRisks.length - OVERDUE_CAP })}
+                            </p>
+                        )}
                     </div>
                 </Card>
             )}

@@ -6,7 +6,8 @@ import { PercentageArrowDown } from '@inflect/ui/components/ui/icons/nucleo/perc
 import { Card } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { useMoneyFormatter } from '@/lib/tenant-context-provider';
+import Link from 'next/link';
+import { useMoneyFormatter, useTenantHref } from '@/lib/tenant-context-provider';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -21,6 +22,7 @@ interface VelocityResult {
 export function VelocityCard() {
     const t = useTranslations('risks');
     const money = useMoneyFormatter();
+    const href = useTenantHref();
     // B2-2 — this used to be a bare fetch whose `.catch(() => {})` left `v`
     // null forever, and `if (!v) return null` rendered NOTHING. That made a
     // failed load pixel-identical to the two states below that legitimately
@@ -63,22 +65,23 @@ export function VelocityCard() {
             <div className="grid grid-cols-1 gap-section md:grid-cols-2">
                 <div>
                     <Heading level={3} className="mb-2 text-xs uppercase text-content-subtle">{t('velocity.fastestRising')}</Heading>
+                    {/* #4768 — rising and falling risks open their risk. */}
                     {v.topRising.length === 0 ? <p className="text-xs text-content-subtle">{t('velocity.none')}</p> : v.topRising.map((r) => (
-                        <div key={r.riskId} className="flex items-center gap-tight py-tight text-sm">
+                        <Link key={r.riskId} href={href(`/risks/${r.riskId}?tab=quantification`)} className="flex items-center gap-tight rounded py-tight text-sm hover:bg-bg-muted/50" data-testid={`velocity-rising-${r.riskId}`}>
                             <ArrowTrendUp className="size-3.5 shrink-0 text-content-error" />
                             <span className="truncate text-content-emphasis">{r.title}</span>
                             <span className="ml-auto tabular-nums text-content-error">+{r.deltaPercent.toFixed(0)}%</span>
-                        </div>
+                        </Link>
                     ))}
                 </div>
                 <div>
                     <Heading level={3} className="mb-2 text-xs uppercase text-content-subtle">{t('velocity.fastestFalling')}</Heading>
                     {v.topFalling.length === 0 ? <p className="text-xs text-content-subtle">{t('velocity.none')}</p> : v.topFalling.map((r) => (
-                        <div key={r.riskId} className="flex items-center gap-tight py-tight text-sm">
+                        <Link key={r.riskId} href={href(`/risks/${r.riskId}?tab=quantification`)} className="flex items-center gap-tight rounded py-tight text-sm hover:bg-bg-muted/50" data-testid={`velocity-falling-${r.riskId}`}>
                             <PercentageArrowDown className="size-3.5 shrink-0 text-content-success" />
                             <span className="truncate text-content-emphasis">{r.title}</span>
                             <span className="ml-auto tabular-nums text-content-success">{r.deltaPercent.toFixed(0)}%</span>
-                        </div>
+                        </Link>
                     ))}
                 </div>
             </div>

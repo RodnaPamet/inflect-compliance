@@ -38,6 +38,7 @@ jest.mock('next-intl', () => {
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     useMoneyFormatter: () => (n: number | null | undefined) => `€${n ?? 0}`,
+    useTenantHref: () => (p: string) => `/t/acme${p}`,
 }));
 
 // Each render gets its own cache — SWR's is module-global, so a cached
