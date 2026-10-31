@@ -38,7 +38,7 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 const stripComments = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 /**
  * The shapes that mean "reach the global, unbounded fetch".

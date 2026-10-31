@@ -1245,7 +1245,13 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 158;
 // `control-exception-api`'s five-route `getTenantCtx` loop into one assertion
 // naming the call, so one whole-file read over an un-analysable slice is gone.
 // Measured.
-const UNANALYSABLE_READ_BASELINE = 1387;
+// 1387 -> 1370 on 2026-10-31 (#4659). The positional comment strips moved onto
+// `codeOf`, and `assertion-reach.ts` now follows a local helper whose body is an
+// imported `source-blocks` masker (`(s) => codeOf(s)`), so 17 reads it could not
+// follow are analysed. Without that second half the same migration measured
+// 1418: the old `.replace().replace()` chains had sat in the uncapped
+// `not-a-file-read` bucket. Measured.
+const UNANALYSABLE_READ_BASELINE = 1370;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

@@ -133,9 +133,7 @@ describe('Controls detail page — Epic 69 SWR migration', () => {
      * expressions in executable code.
      */
     function stripComments(src: string): string {
-        return src
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/^\s*\/\/.*$/gm, '');
+        return codeOf(src);
     }
 
     it('reads via useTenantSWR keyed at CACHE_KEYS.controls.pageData()', () => {

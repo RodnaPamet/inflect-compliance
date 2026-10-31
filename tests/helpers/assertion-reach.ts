@@ -1165,14 +1165,24 @@ function isSourceBlocksSpecifier(spec: string): boolean {
  * The regexes and the replacement strings are handed to `String.replace`
  * verbatim, so `$1` / `$&` behave identically.
  *
+ * Since #4659 a step may also be a call to a `source-blocks` masker this file
+ * IMPORTS, on the chain so far: `(s) => codeOf(s)` is the shape the migration
+ * off the positional regex strip left behind in ~30 local helpers, and it
+ * must stay analysed. Without this, each of those reads resolved as
+ * `content-transformed` and left the analysed population, which the
+ * un-analysable ceiling caught (+31). The masker is the imported FUNCTION,
+ * so the text measured is the text the assertion matched.
+ *
  * Anything else returns null and the caller leaves the site classified
  * exactly as before: `content-transformed`, a CAPPED skip. A masker built
- * with `.split().filter().map()`, or one that calls out to another helper,
- * is not followed and is not pretended to be.
+ * with `.split().filter().map()`, or one that calls out to a helper that is
+ * not an imported `source-blocks` masker, is not followed and is not
+ * pretended to be.
  */
 function reconstructReplaceChain(
     fn: ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExpression,
     sf: ts.SourceFile,
+    imported: ReadonlyMap<string, MaskFn> = new Map(),
 ): MaskFn | null {
     if (fn.parameters.length !== 1) return null;
     const param = fn.parameters[0];
@@ -1191,7 +1201,7 @@ function reconstructReplaceChain(
         expr = ret.expression;
     }
 
-    const steps: Array<[RegExp, string]> = [];
+    const steps: MaskFn[] = [];
     for (let guard = 0; guard < 8; guard++) {
         if (ts.isParenthesizedExpression(expr)) {
             expr = expr.expression;
@@ -1201,8 +1211,19 @@ function reconstructReplaceChain(
             if (expr.text !== paramName) return null;
             if (steps.length === 0) return null;
             steps.reverse();
-            return (text: string) =>
-                steps.reduce((acc: string, [re, to]) => acc.replace(re, to), text);
+            return (text: string) => steps.reduce((acc: string, step) => step(acc), text);
+        }
+        // An imported source-blocks masker applied to the chain so far.
+        if (
+            ts.isCallExpression(expr) &&
+            ts.isIdentifier(expr.expression) &&
+            expr.arguments.length === 1
+        ) {
+            const mask = imported.get(expr.expression.text);
+            if (mask === undefined) return null;
+            steps.push(mask);
+            expr = expr.arguments[0];
+            continue;
         }
         if (
             !ts.isCallExpression(expr) ||
@@ -1227,7 +1248,8 @@ function reconstructReplaceChain(
         } catch {
             return null;
         }
-        steps.push([re, replacementArg.text]);
+        const to = replacementArg.text;
+        steps.push((text: string) => text.replace(re, to));
         expr = expr.expression.expression;
     }
     return null;
@@ -1257,11 +1279,14 @@ function indexMaskers(sf: ts.SourceFile): Map<string, MaskFn | null> {
         }
     }
 
+    const imported = new Map<string, MaskFn>();
+    for (const [name, mask] of out) if (mask !== null) imported.set(name, mask);
+
     const consider = (
         name: string,
         fn: ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExpression,
     ): void => {
-        const rebuilt = reconstructReplaceChain(fn, sf);
+        const rebuilt = reconstructReplaceChain(fn, sf, imported);
         out.set(name, out.has(name) ? null : rebuilt);
     };
     const visit = (node: ts.Node): void => {

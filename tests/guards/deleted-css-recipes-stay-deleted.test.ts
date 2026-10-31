@@ -73,6 +73,7 @@ import * as path from 'path';
 import { parse } from 'postcss';
 
 import { REPO_ROOT, repoFiles, repoRelative } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 interface DeletedRecipe {
     /** The bare class token, exactly as it was written in `className`. */
@@ -133,10 +134,9 @@ function sourceTokenMatcher(className: string): RegExp {
  * inside a string does not truncate the line.
  */
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    return codeOf(src)
         .split('\n')
-        .map((line) => line.replace(/(^|[^:\w])\/\/.*$/, '$1'))
+        .map((line) => codeOf(line))
         .join('\n');
 }
 

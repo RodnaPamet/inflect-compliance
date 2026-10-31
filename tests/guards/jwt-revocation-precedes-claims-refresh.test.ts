@@ -24,11 +24,12 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const AUTH_PATH = path.resolve(__dirname, '../../src/auth.ts');
 
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    return codeOf(src);
 }
 
 describe('jwt callback — revocation precedes the claims refresh', () => {

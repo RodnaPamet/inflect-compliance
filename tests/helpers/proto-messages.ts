@@ -1,3 +1,4 @@
+import { codeOf } from './source-blocks';
 /**
  * READ MESSAGE FIELDS AND ENUM VALUES OUT OF A `.proto` FILE (#3866).
  *
@@ -68,7 +69,7 @@ export function protoMessages(src: string): Map<string, readonly ProtoField[]> {
     let depth = 0;
 
     for (const raw of lines) {
-        const line = raw.replace(/\/\/.*$/, '').trim();
+        const line = codeOf(raw).trim();
         if (!line) continue;
 
         const opened = /^message\s+([A-Za-z_]\w*)\s*\{/.exec(line);
@@ -115,7 +116,7 @@ export function protoEnumValues(src: string, enumName: string): readonly string[
     const body = rest.slice(0, rest.indexOf('\n}'));
     return body
         .split('\n')
-        .map((l) => l.replace(/\/\/.*$/, '').trim())
+        .map((l) => codeOf(l).trim())
         .flatMap((l) => {
             const m = /^([A-Z][A-Z0-9_]*)\s*=\s*\d+\s*;/.exec(l);
             return m ? [m[1]] : [];

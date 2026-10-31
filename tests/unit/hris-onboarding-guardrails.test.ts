@@ -27,11 +27,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { HRIS_PROVIDERS, isHrisProviderId } from '@/app-layer/integrations/providers/hris';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const codeOnly = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 const JOB = 'src/app-layer/jobs/hris-sync.ts';
 const USECASE = 'src/app-layer/usecases/hris-sync.ts';

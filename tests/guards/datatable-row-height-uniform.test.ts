@@ -180,9 +180,7 @@ describe('DataTable uniform row height (R12-PR2)', () => {
         // following the title `<Link>` in the same cell). Stripped of
         // comments first so doc-block examples don't false-positive.
         const stripComments = (s: string) =>
-            s
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            codeOf(s);
         const ANTI_PATTERN = /<\/Link>[\s\S]{0,200}<p\b/;
         for (const rel of titleCellPages) {
             const abs = path.join(ROOT, rel);

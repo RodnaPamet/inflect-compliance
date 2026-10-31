@@ -31,6 +31,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isRealObservation } from '@/app-layer/jobs/automation-runner';
+import { codeOf } from '../helpers/source-blocks';
 
 describe('isRealObservation', () => {
     it.each(['PASSED', 'FAILED'])('%s is a real observation', (s) => {
@@ -73,9 +74,7 @@ describe('every non-verdict gate in the runner uses the one rule', () => {
     );
     // Comments restate the rule in prose; matching them would pass on a file
     // that only TALKS about the rule.
-    const code = src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/.*$/gm, '');
+    const code = codeOf(src);
 
     it('has exactly one definition of the rule', () => {
         expect(code.match(/export function isRealObservation/g)?.length).toBe(1);

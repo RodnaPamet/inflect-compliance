@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 import { repoFiles, repoRelative } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 /**
  * `resetDatabase` truncates a HAND-MAINTAINED list, and the list goes stale
@@ -89,7 +90,7 @@ function resetTables(): string[] {
     const body = /export const RESET_TABLES[^=]*=\s*\[([\s\S]*?)\];/.exec(src);
     expect(body).not.toBeNull();
     // Comments first: the block carries prose naming tables it does not list.
-    return [...body![1].replace(/\/\/[^\n]*/g, '').matchAll(/'(\w+)'/g)].map((m) => m[1]);
+    return [...codeOf(body![1]).matchAll(/'(\w+)'/g)].map((m) => m[1]);
 }
 
 /**

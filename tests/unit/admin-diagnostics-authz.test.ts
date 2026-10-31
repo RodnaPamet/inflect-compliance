@@ -56,6 +56,7 @@ import { NextRequest } from 'next/server';
 
 import { GET } from '@/app/api/admin/diagnostics/route';
 import { PlatformAdminError } from '@/lib/auth/platform-admin';
+import { codeOf } from '../helpers/source-blocks';
 
 // A real NextRequest, not a hand-rolled stand-in: `withApiErrorHandling` reads
 // `req.nextUrl.pathname` for its correlation fields, so a bare `Request` makes
@@ -84,7 +85,7 @@ describe('the tenant-role path is gone', () => {
             require('node:path').resolve(__dirname, '../../src/app/api/admin/diagnostics/route.ts'),
             'utf8',
         );
-        const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        const code = codeOf(raw);
 
         expect(code).not.toMatch(/getLegacyCtx/);
         expect(code).not.toMatch(/permissions\.canAdmin/);

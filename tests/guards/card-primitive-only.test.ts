@@ -92,9 +92,7 @@ describe('Card-primitive eradication of glass-card (Roadmap-5 PR-1)', () => {
                 const raw = codeOf(fs.readFileSync(full, 'utf-8'));
                 // Strip block + line comments first so JSDoc / inline
                 // // comments referencing glass-card don't trip.
-                const stripped = raw
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = codeOf(raw);
                 const lines = stripped.split('\n');
                 lines.forEach((line, i) => {
                     if (/\bglass-card\b/.test(line)) {

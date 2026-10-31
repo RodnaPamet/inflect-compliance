@@ -42,6 +42,7 @@ jest.mock('@/app-layer/automation/webhook-safety', () => ({
 }));
 
 import { callTool, listTools } from '@/app-layer/integrations/mcp/client';
+import { codeOf } from '../helpers/source-blocks';
 
 const OPTS = { url: 'https://sap-stub.example.test/mcp', token: 'stub-token' };
 const TODAY = anchorDate(0);
@@ -210,7 +211,7 @@ describe('sales_orders_by_creator', () => {
             require.resolve('../../packages/sap-mcp-stub/src/handler.ts'),
             'utf8',
         );
-        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+        const code = codeOf(src);
 
         for (const getter of [
             'getFullYear',

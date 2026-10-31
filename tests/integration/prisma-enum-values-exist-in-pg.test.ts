@@ -58,6 +58,7 @@ import path from 'node:path';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
+import { codeOf } from '../helpers/source-blocks';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -76,7 +77,7 @@ const SCHEMA_DIR = path.join(process.cwd(), 'prisma/schema');
  * the file whose job is reporting real ones.
  */
 export function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/\/?.*$/gm, '');
+    return codeOf(src);
 }
 
 function schemaSource(): string {

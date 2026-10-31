@@ -60,6 +60,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -131,9 +132,7 @@ describe('Radius scale discipline (Roadmap-5 PR-3)', () => {
                 const rel = path.relative(ROOT, full);
                 if (ALLOWED.has(rel)) continue;
                 const raw = fs.readFileSync(full, 'utf-8');
-                const stripped = raw
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = codeOf(raw);
                 const lines = stripped.split('\n');
                 lines.forEach((line, i) => {
                     if (OFF_SCALE_RE.test(line)) {

@@ -19,13 +19,14 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PROVIDERS = path.join(ROOT, 'src/app-layer/integrations/providers');
 const OWNER = 'src/app-layer/integrations/providers/hris/employment-status.ts';
 
 /** Strip comments so prose quoting a token is not mistaken for code. */
-const codeOnly = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const codeOnly = (s: string) => codeOf(s);
 
 /** The employment-status token matching, in any quoting style. */
 const STATUS_TOKEN = /includes\(\s*['"`](?:terminat|leave|pre-hire|prehire|onboard)/;

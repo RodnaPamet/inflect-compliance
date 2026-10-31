@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 
 import { repoFiles, repoRelative } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 /**
  * #3336 tranche 1 — NO TWO INTEGRATION SUITES CREATE A `User` OR `Tenant` WITH
@@ -62,7 +63,7 @@ function callArgs(source: string, start: number): string {
 }
 
 const stripComments = (s: string): string =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    codeOf(s);
 
 const CREATE = /\b(?:prisma|db|tx|client)\s*\.\s*(user|tenant)\s*\.\s*(?:create|createMany|upsert)\s*\(/g;
 const LITERAL_ID = /\bid:\s*'([A-Za-z0-9][A-Za-z0-9._-]{1,60})'/g;

@@ -90,9 +90,7 @@ describe('1 — the public path runs under RLS', () => {
         // Comments are stripped before matching — the module header
         // legitimately DISCUSSES runInTenantContext when explaining that
         // callers must use it.
-        const code = read(ACCESS)
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/.*$/gm, '');
+        const code = codeOf(read(ACCESS));
         expect(code).not.toMatch(/withTenantDb\(|runInTenantContext\(/);
     });
 });

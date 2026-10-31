@@ -34,6 +34,7 @@ jest.mock('@/lib/prisma', () => ({
 
 import { generateGapAnalysisPdf } from '@/app-layer/reports/pdf/gapAnalysis';
 import { makeRequestContext } from '../../../helpers/make-context';
+import { codeOf } from '../../../helpers/source-blocks';
 
 const ctx = makeRequestContext('ADMIN');
 
@@ -303,7 +304,7 @@ describe('no ISO SoA literal leaks into a non-ISO gap analysis', () => {
             path.join(process.cwd(), 'src/app-layer/reports/pdf/gapAnalysis.ts'),
             'utf-8',
         );
-        const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+        const code = codeOf(raw);
         const literals = [
             ...[...code.matchAll(/`([^`]*)`/g)].map((m) => m[1]),
             ...[...code.matchAll(/'((?:[^'\\\n]|\\.){4,})'/g)].map((m) => m[1]),

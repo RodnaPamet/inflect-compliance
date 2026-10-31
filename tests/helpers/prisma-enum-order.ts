@@ -62,6 +62,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { readPrismaSchema } from './prisma-schema';
+import { codeOf } from './source-blocks';
 
 const MIGRATIONS_DIR = path.resolve(__dirname, '../../prisma/migrations');
 
@@ -393,7 +394,7 @@ export function reconstructEnumOrder(): {
 
 /** Every `enum X { … }` block in `prisma/schema`, in declaration order. */
 export function parseDeclaredEnums(): DeclaredEnum[] {
-    const schema = readPrismaSchema().replace(/\/\/[^\n]*/g, '');
+    const schema = codeOf(readPrismaSchema());
     const out: DeclaredEnum[] = [];
     for (const block of schema.matchAll(/^enum\s+(\w+)\s*\{([^}]*)\}/gm)) {
         const members: string[] = [];

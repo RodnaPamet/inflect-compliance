@@ -50,9 +50,7 @@ describe('C1 — control status filter accepts a comma-joined list', () => {
     it('no longer casts the raw query string straight into Prisma', () => {
         // Comments stripped — the fix's own doc comment quotes the old line
         // to explain what went wrong, and that is worth keeping.
-        const code = src
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/.*$/gm, '');
+        const code = codeOf(src);
         expect(code).not.toMatch(
             /filters\.status as Prisma\.EnumControlStatusFilter/,
         );

@@ -19,6 +19,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { cssCodeOf } from '../helpers/source-blocks';
 
 /**
  * Comments STRIPPED before anything is matched.
@@ -30,9 +31,8 @@ import * as path from 'node:path';
  * and reported a pass or a failure about nothing. The population control below
  * is what caught it.
  */
-const CSS = fs
-    .readFileSync(path.join(process.cwd(), 'src/styles/tokens.css'), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '');
+const CSS = cssCodeOf(fs
+    .readFileSync(path.join(process.cwd(), 'src/styles/tokens.css'), 'utf8'));
 
 /** WCAG 2.x relative luminance. */
 function luminance(hex: string): number {

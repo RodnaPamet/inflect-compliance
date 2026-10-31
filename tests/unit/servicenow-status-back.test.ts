@@ -20,13 +20,13 @@
  * persistence) is the shared processor, already hardened.
  */
 import { MACHINE_CALLER_PREFIXES, isPublicPath } from '@/lib/auth/guard';
-import { declarationOf } from '../helpers/source-blocks';
+import { declarationOf, codeOf } from '../helpers/source-blocks';
 import { extractSignature, PROVIDER_SIGNATURE_HEADERS, verifyHmacSha256 } from '@/app-layer/integrations/webhook-crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const codeOnly = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const codeOnly = (s: string) => codeOf(s);
 
 describe('the callback can arrive at all', () => {
     it('the webhook prefix is on the machine-caller allowlist', () => {

@@ -25,7 +25,7 @@ jest.mock('node:dns', () => ({
 }));
 
 import { assertPublicAddress, isPrivateAddress, SsrfBlockedError } from '@/app-layer/automation/webhook-safety';
-import { functionBodyOf } from '../helpers/source-blocks';
+import { functionBodyOf, codeOf as blankComments } from '../helpers/source-blocks';
 import { repoRelativeFiles } from '../helpers/repo-files';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -173,9 +173,7 @@ function codeOf(rel: string): string {
     // Comments stripped: prose naming a forbidden pattern is not a call, and a
     // check that cannot tell the difference reports the explanation of a rule
     // as a breach of it.
-    return read(rel)
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+    return blankComments(read(rel));
 }
 
 /**

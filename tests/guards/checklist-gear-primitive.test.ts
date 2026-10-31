@@ -45,10 +45,7 @@ describe('ChecklistGearButton — structural locks', () => {
     it('does NOT import or render a Tooltip (Popover.Trigger prop-swallow trap)', () => {
         // Strip comments first — the doc-comment legitimately MENTIONS
         // <Tooltip> to explain why the trigger avoids it.
-        const code = PRIMITIVE.replace(/\/\*[\s\S]*?\*\//g, '').replace(
-            /\/\/[^\n]*/g,
-            '',
-        );
+        const code = codeOf(PRIMITIVE);
         expect(code).not.toMatch(/import[^;]*\bTooltip\b[^;]*from/);
         expect(code).not.toMatch(/<Tooltip\b/);
     });
