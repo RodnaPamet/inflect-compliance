@@ -9751,7 +9751,17 @@
       "selectEvidence": "Select evidence…",
       "forensicCategory": "Forensic category",
       "forensicCategoryHint": "Which checklist category this evidence satisfies.",
-      "selectCategory": "Select category…"
+      "selectCategory": "Select category…",
+      "refused": {
+        "INCIDENT_NOT_FOUND": "This incident no longer exists. It may have been deleted.",
+        "INCIDENT_MANAGE_DENIED": "Your role cannot change incidents.",
+        "INCIDENT_PHASE_FINAL": "This incident is already closed, its final phase.",
+        "INCIDENT_PHASE_UNCHANGED": "The incident is already in that phase.",
+        "INCIDENT_NOT_REPORTABLE": "There is no deadline for this report. Mark the incident reportable first.",
+        "INCIDENT_STEP_UNKNOWN": "That step is not part of this incident type’s runbook.",
+        "INCIDENT_EVIDENCE_NOT_FOUND": "That evidence record no longer exists in this workspace."
+      },
+      "forensicChecklistAria": "Forensic evidence checklist"
     },
     "filters": {
       "severity": "Severity",
@@ -9790,6 +9800,86 @@
       "reportable": {
         "yes": "Reportable",
         "no": "Not reportable"
+      }
+    },
+    "containment": {
+      "steps": {
+        "RANSOMWARE-1": "Isolate affected hosts from the network (disable NICs / segment off) — do not power down, to preserve memory.",
+        "RANSOMWARE-2": "Capture volatile evidence (memory, running processes) before remediation.",
+        "RANSOMWARE-3": "Identify the ransomware family, encrypted file extensions, and the initial access vector.",
+        "RANSOMWARE-4": "Verify integrity and isolation of backups (confirm they are offline / immutable and unaffected).",
+        "RANSOMWARE-5": "Revoke and rotate credentials that may have been exposed; disable compromised accounts.",
+        "RANSOMWARE-6": "Engage your incident-response retainer / national CSIRT; do not pay or negotiate without legal + executive sign-off.",
+        "DATA_BREACH-1": "Determine the data categories, volume, and subjects affected (scope the exposure).",
+        "DATA_BREACH-2": "Stop the exfiltration path — revoke tokens/keys, close the exposed endpoint, block the egress.",
+        "DATA_BREACH-3": "Reset credentials and invalidate sessions for affected accounts.",
+        "DATA_BREACH-4": "Preserve access logs and the exposure timeline as evidence.",
+        "DATA_BREACH-5": "Assess GDPR Art. 33/34 obligations with the DPO (personal-data breach notification may apply in parallel to NIS2 Art. 23).",
+        "DATA_BREACH-6": "Monitor affected accounts/systems for follow-on fraudulent activity.",
+        "DDOS-1": "Characterise the attack (volumetric / protocol / application-layer) and identify targeted services.",
+        "DDOS-2": "Engage upstream DDoS mitigation / scrubbing (provider, CDN, or WAF rate-limiting).",
+        "DDOS-3": "Apply rate limits, geo/IP filtering, and drop known-bad traffic at the edge.",
+        "DDOS-4": "Scale or fail over critical services; protect the origin behind the mitigation layer.",
+        "DDOS-5": "Preserve flow logs / traffic captures for attribution and the post-incident report.",
+        "DDOS-6": "Confirm the DDoS is not a smokescreen for a concurrent intrusion (watch other signals).",
+        "UNAUTHORIZED_ACCESS-1": "Disable the compromised account(s) and revoke active sessions and API tokens.",
+        "UNAUTHORIZED_ACCESS-2": "Identify the access vector (phished credential, exposed key, vulnerable service) and close it.",
+        "UNAUTHORIZED_ACCESS-3": "Determine lateral movement and what data/systems the actor reached.",
+        "UNAUTHORIZED_ACCESS-4": "Rotate secrets the actor could have accessed; enforce MFA re-enrolment.",
+        "UNAUTHORIZED_ACCESS-5": "Preserve authentication, audit, and host logs as evidence before cleanup.",
+        "UNAUTHORIZED_ACCESS-6": "Review and tighten access controls / privileged-access paths exploited."
+      },
+      "roles": {
+        "INCIDENT_COMMANDER": {
+          "role": "Incident Commander",
+          "responsibility": "Owns the response end-to-end; declares severity; coordinates the team and decisions."
+        },
+        "TECHNICAL_LEAD": {
+          "role": "Security / Technical Lead",
+          "responsibility": "Drives containment, eradication, and recovery; directs the technical investigation."
+        },
+        "FORENSICS": {
+          "role": "Forensics / Investigation",
+          "responsibility": "Collects and preserves evidence; establishes the timeline and root cause."
+        },
+        "DPO_LEGAL": {
+          "role": "DPO / Legal",
+          "responsibility": "Owns the regulatory/legal determination (NIS2 Art. 23, GDPR Art. 33/34) and notifications."
+        },
+        "COMMUNICATIONS": {
+          "role": "Communications",
+          "responsibility": "Manages internal and external messaging, including authority and customer comms."
+        },
+        "IT_OPERATIONS": {
+          "role": "IT / Operations",
+          "responsibility": "Executes isolation, failover, restoration, and infrastructure changes."
+        }
+      },
+      "forensic": {
+        "SYSTEM_LOGS": {
+          "label": "System & application logs",
+          "hint": "Auth, audit, server, and application logs covering the incident window."
+        },
+        "MEMORY_CAPTURE": {
+          "label": "Memory capture",
+          "hint": "Volatile RAM image of affected hosts (capture before power-down)."
+        },
+        "NETWORK_CAPTURE": {
+          "label": "Network captures / flow data",
+          "hint": "PCAPs, NetFlow, firewall/IDS logs showing the malicious traffic."
+        },
+        "DISK_IMAGE": {
+          "label": "Disk images",
+          "hint": "Forensic images of compromised endpoints/servers."
+        },
+        "INDICATORS": {
+          "label": "Indicators of compromise",
+          "hint": "Hashes, domains, IPs, file paths, and TTPs observed."
+        },
+        "TIMELINE": {
+          "label": "Incident timeline / notes",
+          "hint": "Investigator notes and the reconstructed sequence of events."
+        }
       }
     }
   },

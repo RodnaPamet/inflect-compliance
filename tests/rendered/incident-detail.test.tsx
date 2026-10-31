@@ -25,6 +25,7 @@ jest.mock('next-intl', () => {
             const v = resolve(ns, key);
             return typeof v === 'string' ? v.replace(/<(\w+)>(.*?)<\/\1>/g, (_m: string, _tag: string, inner: string) => inner) : key;
         };
+        t.has = (key: string) => resolve(ns, key) !== undefined;
         return t;
     };
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };

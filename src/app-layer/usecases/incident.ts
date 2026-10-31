@@ -22,6 +22,7 @@ import {
 } from '../policies/incident.policies';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
+import type { IncidentRefusal } from '@/lib/incident-refusals';
 import { runInTenantContext, PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { computeDeadlines, nextPhase } from '@/lib/incidents/deadlines';
@@ -78,7 +79,7 @@ export async function getIncident(ctx: RequestContext, id: string) {
     assertCanViewIncidents(ctx);
     return runInTenantContext(ctx, async (db) => {
         const incident = await IncidentRepository.getById(db, ctx, id);
-        if (!incident) throw notFound('Incident not found');
+        if (!incident) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
         return incident;
     });
 }
@@ -179,7 +180,7 @@ export async function updateIncident(
                       ? null
                       : new Date(data.resolvedAt),
         });
-        if (!updated) throw notFound('Incident not found');
+        if (!updated) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
 
         await logEvent(db, ctx, {
             action: 'UPDATE',
@@ -209,14 +210,14 @@ export async function advancePhase(
 
     return runInTenantContext(ctx, async (db) => {
         const incident = await IncidentRepository.getById(db, ctx, id);
-        if (!incident) throw notFound('Incident not found');
+        if (!incident) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
 
         const target: IncidentPhase | null = input.toPhase ?? nextPhase(incident.phase);
         if (!target) {
-            throw badRequest('Incident is already in its final phase (CLOSED).');
+            throw badRequest('Incident is already in its final phase (CLOSED).', { reason: 'INCIDENT_PHASE_FINAL' satisfies IncidentRefusal });
         }
         if (target === incident.phase) {
-            throw badRequest('Incident is already in that phase.');
+            throw badRequest('Incident is already in that phase.', { reason: 'INCIDENT_PHASE_UNCHANGED' satisfies IncidentRefusal });
         }
 
         const updated = await IncidentRepository.update(db, ctx, id, { phase: target });
@@ -267,7 +268,7 @@ export async function markReportable(
 
     return runInTenantContext(ctx, async (db) => {
         const incident = await IncidentRepository.getById(db, ctx, id);
-        if (!incident) throw notFound('Incident not found');
+        if (!incident) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
 
         const updated = await IncidentRepository.update(db, ctx, id, {
             reportable: input.reportable,
@@ -334,12 +335,13 @@ export async function submitNotification(
 
     return runInTenantContext(ctx, async (db) => {
         const incident = await IncidentRepository.getById(db, ctx, id);
-        if (!incident) throw notFound('Incident not found');
+        if (!incident) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
 
         const notification = await IncidentRepository.getNotification(db, ctx, id, input.kind);
         if (!notification) {
             throw badRequest(
                 'No such notification deadline. Mark the incident reportable first.',
+                { reason: 'INCIDENT_NOT_REPORTABLE' satisfies IncidentRefusal },
             );
         }
 
@@ -392,7 +394,7 @@ export async function addTimelineEntry(
 
     return runInTenantContext(ctx, async (db) => {
         const incident = await IncidentRepository.getById(db, ctx, id);
-        if (!incident) throw notFound('Incident not found');
+        if (!incident) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
 
         const entry = await IncidentRepository.addTimelineEntry(db, ctx, {
             incidentId: id,
@@ -427,7 +429,7 @@ export async function linkControls(
 
     return runInTenantContext(ctx, async (db) => {
         const incident = await IncidentRepository.getById(db, ctx, id);
-        if (!incident) throw notFound('Incident not found');
+        if (!incident) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
 
         // Validate the controls belong to this tenant — never store a
         // foreign control id.
@@ -483,12 +485,12 @@ export async function toggleContainmentStep(
 
     return runInTenantContext(ctx, async (db) => {
         const incident = await IncidentRepository.getById(db, ctx, id);
-        if (!incident) throw notFound('Incident not found');
+        if (!incident) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
 
         const runbook = containmentRunbookFor(incident.incidentType);
         const validKeys = new Set((runbook?.steps ?? []).map((s) => s.key));
         if (!validKeys.has(input.stepKey)) {
-            throw badRequest('Unknown containment step for this incident type.');
+            throw badRequest('Unknown containment step for this incident type.', { reason: 'INCIDENT_STEP_UNKNOWN' satisfies IncidentRefusal });
         }
 
         const current = new Set(incident.completedContainmentSteps);
@@ -545,10 +547,10 @@ export async function linkEvidence(
 
     return runInTenantContext(ctx, async (db) => {
         const incident = await IncidentRepository.getById(db, ctx, id);
-        if (!incident) throw notFound('Incident not found');
+        if (!incident) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
 
         const exists = await IncidentRepository.evidenceExists(db, ctx, input.evidenceId);
-        if (!exists) throw badRequest('Evidence record not found in this tenant.');
+        if (!exists) throw badRequest('Evidence record not found in this tenant.', { reason: 'INCIDENT_EVIDENCE_NOT_FOUND' satisfies IncidentRefusal });
 
         const link = await IncidentRepository.linkEvidence(db, ctx, {
             incidentId: id,
@@ -592,7 +594,7 @@ export async function unlinkEvidence(
 
     return runInTenantContext(ctx, async (db) => {
         const incident = await IncidentRepository.getById(db, ctx, id);
-        if (!incident) throw notFound('Incident not found');
+        if (!incident) throw notFound('Incident not found', { reason: 'INCIDENT_NOT_FOUND' satisfies IncidentRefusal });
 
         await IncidentRepository.unlinkEvidence(db, ctx, id, evidenceId);
 
