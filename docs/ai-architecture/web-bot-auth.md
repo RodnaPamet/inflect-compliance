@@ -8,7 +8,7 @@ inflect · ai architecture · web bot auth · roadmap v1 · 2026-10-30
 > such box. The **Current state** section is true today (main 3.340.0,
 > `c08922f3c`). The **Roadmap** section is the plan. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
-> first for the target map, the global rules **G1–G12**, and the sequencing.
+> first for the target map, the global rules **G1–G13**, and the sequencing.
 > If the code contradicts a fact here, the code wins and the pull request that
 > finds it corrects this document.
 
@@ -21,6 +21,7 @@ inflect · ai architecture · web bot auth · roadmap v1 · 2026-10-30
 | Depends on | nothing for Phases 0–2; Phase 3 waits on Phase 1's verifier pieces |
 | Unblocks | vendor monitoring that can tell "refused" from "unreachable"; registration as a verified bot; a signed-agent label on the public trust center; [`mastercard-agent-pay.md`](./mastercard-agent-pay.md) Phase 2, whose Know Your Agent check validates a customer agent's key directory with Phase 3's verifier |
 | Owner decisions | **D-L1-5** (the signing identity is the deployment, never a tenant), **D-L1-6** (outbound conduct: honest User-Agent, bot page, robots.txt, Cloudflare registration), **D-L1-7** (inbound verification: label only, never authorization) |
+| Complete at | Phase 3 |
 
 ## At a glance
 

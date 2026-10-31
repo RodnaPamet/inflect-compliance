@@ -12,7 +12,7 @@ inflect · ai architecture · agent-flow canvas · roadmap v2 · 2026-10-29
 > same day). The **Current state** section is true today (main 3.338.0,
 > `a1c2f05c`). The **Roadmap** section is the plan. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
-> first for the target map, the global rules **G1–G12**, and the sequencing.
+> first for the target map, the global rules **G1–G13**, and the sequencing.
 > The filename keeps the box's name so links into it stay stable. If the code
 > contradicts a fact here, the code wins and the pull request that finds it
 > corrects this document.
@@ -23,9 +23,10 @@ inflect · ai architecture · agent-flow canvas · roadmap v2 · 2026-10-29
 | --- | --- |
 | Layer · box | 2 — Orchestration & workflow · "Langflow (visual workflow canvas)" + "TS Client" |
 | Wave | 2 for viewing, authoring and preview (Phases 1–4); 3 for running (Phase 5) |
-| Depends on | agent profiles (on `main`); the process canvas module and its tldraw renderer pieces (on `main`); for Phase 5, an engine that runs profiles — Claude engines Step 2c (`docs/claude-tool-runner-design.md`) |
+| Depends on | agent profiles (on `main`); the process canvas module and its tldraw renderer pieces (on `main`); for Phase 5, an engine that runs profiles — the Tool Runner, on since Claude engines Step 2c (#4512, `docs/claude-tool-runner-design.md`) |
 | Unblocks | every agent on the register visible on the canvas, however it was created; customers composing their own agent flows with no code and no CLI |
 | Owner decisions | **D-L2-1** decided 2026-10-29 (in-product canvas; Langflow not adopted); **D-L2-3** decided 2026-10-29 (tldraw, never xyflow); **D-L2-2** open (reasoning engines enforce checkpoints, or the palette offers none) |
+| Complete at | Phase 5 |
 
 ## At a glance
 
@@ -46,7 +47,7 @@ flowchart LR
   PROF["Agent profiles<br/>approval, freeze, narrowing"]:::done
   CANV["Process canvas module<br/>tldraw renderer pieces"]:::done
   XY["xyflow renderer<br/>being retired (#2962)<br/>never used here"]:::declined
-  ENG["Claude engines Step 2c<br/>an engine runs profiles"]:::ext
+  ENG["Tool Runner<br/>runs profiles since Step 2c"]:::done
   INS["Inspect tasks<br/>a flow cannot widen authority"]:::eval
   LF["Langflow at run time<br/>refused: outside the funnel"]:::declined
 
@@ -151,9 +152,10 @@ user draw what an agent does.**
 
   Profiles are edited on the agent's **Behaviour** tab, one of nine
   (`overview, risk, policy, tools, skills, behaviour, coverage, runs, breaker`).
-  `runsProfiles` is false for every engine (owner decision 2026-10-26) until
-  Step 2c. `AGENT_PROFILES` plus `AGENT_PROFILES_TENANTS` gate the whole
-  surface.
+  `runsProfiles` is true for the Tool Runner alone since Step 2c (#4512); Flue
+  stays false by owner decision of 2026-10-26. `AGENT_PROFILES` plus
+  `AGENT_PROFILES_TENANTS`, or with the variable unset the workspace
+  organization's own switch (#4557), gate the whole surface.
 - **Agents come from two forms today, and neither has a visual form.**
   - The **registration form** (`NewAgentModal.tsx`) puts an agent on the
     register: name, description, autonomy level and the Annex I flag. Its
@@ -597,11 +599,12 @@ same canvas. A checkpoint can be drawn only once an engine will honour it.
         the invocation after a human checkpoint.
       - The `checkpoint` kind enters the schema and the palette in the same
         pull request as the enforcement, never before.
-- [ ] 5.2 An engine that runs profiles: Claude engines Step 2c sets
-      `runsProfiles`, renders the pinned instructions as the operator's fenced
-      block and records the data category on the Anthropic sub-processor row.
-      The compiled flow rides in the same block. Flue can run flows when it
-      learns to run profiles, under the same rule.
+- [ ] 5.2 The engine that runs profiles: the Tool Runner, since Claude
+      engines Step 2c (#4512), renders the pinned instructions as the
+      operator's fenced block, and the Anthropic sub-processor row names
+      "tenant-authored agent instructions". The compiled flow rides in the
+      same block. Flue can run flows when it learns to run profiles, under the
+      same rule.
 - [ ] 5.3 Invocation from the canvas: the existing `agent` node's
       `INVOKE_AGENT` rule takes `workflowKey = agent-profile:<id>@v<n>`, and
       its picker lists approved versions. No new action type.
@@ -621,7 +624,7 @@ same canvas. A checkpoint can be drawn only once an engine will honour it.
 
 **Prompt.**
 ```text
-Context (main + Phases 1–4 + Claude engines Step 2c): an engine runs profiles; flows compile
+Context (main + Phases 1–4; the Tool Runner runs profiles since Claude engines Step 2c): flows compile
 to a step specification and readOnly; only the static driver parks at HUMAN_CHECKPOINT
 (drivers/static-driver.ts); resumeWorkflowRun re-resolves the invocation after a checkpoint;
 the canvas has an `agent` node owning an INVOKE_AGENT rule (agentId + workflowKey) and a run
@@ -650,7 +653,7 @@ view; the Inspect tasks are green.
   The checkpoint kind arrives with its enforcement or not at all.
 - G3 and G4: unchanged, because the flow is a profile and runs on the same
   engines.
-- G2: the Anthropic row already gains the profile data category in Step 2c, so
+- G2: the Anthropic row has named the profile data category since Step 2c, so
   check whether a flow changes what is sent. Labels do, so name them on the
   row.
 - G11: Inspect records gate this phase.

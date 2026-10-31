@@ -7,7 +7,7 @@ inflect · ai architecture · cuopt · roadmap v1 · 2026-10-29
 > scheduling & logistics routing". The **Current state** section is true today
 > (main 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan. This is a
 > child of [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md):
-> read that first for the target map, the global rules **G1–G12**, and the
+> read that first for the target map, the global rules **G1–G13**, and the
 > sequencing. If the code contradicts a fact here, the code wins and the pull
 > request that finds it corrects this document.
 
@@ -16,22 +16,23 @@ inflect · ai architecture · cuopt · roadmap v1 · 2026-10-29
 | | |
 | --- | --- |
 | Layer · box | 3 — Cognitive & reasoning · "NVIDIA cuOpt" |
-| Wave | 4 (last; conditional on a measured need) |
-| Depends on | [`modal-inference.md`](./modal-inference.md) Phase 1 for the GPU arm |
+| Wave | 4 (last; conditional on a measured need). The GPU arm (Phase 2) is optional Layer 5 work, after every other roadmap is complete |
+| Depends on | nothing for Phases 0–1; Layer 5 ([`modal-inference.md`](./modal-inference.md)), optional and last, for Phase 2 |
 | Unblocks | nothing |
 | Owner decisions | **D-L3-3** (is there an optimisation problem at a size that needs a GPU) |
+| Complete at | Phase 1, or Phase 0's recorded decline when no feature wants it. Phase 2 is optional Layer 5 work |
 
 ## At a glance
 
-Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Slate dashed: optional Layer 5 work, which starts only after every other roadmap is complete. Dashed white: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
 
 ```mermaid
 flowchart LR
   P0{{"Phase 0 · measure<br/>formulate one problem<br/>solve it on CPU at 1x to 100x<br/>D-L3-3"}}:::gate
   DEC["No feature wants it<br/>declined"]:::declined
   P1["Phase 1 · optimisation seam, CPU<br/>plan_ read tool via the funnel<br/>plans become proposals<br/>bounded solve"]:::todo
-  P2["Phase 2 · cuOpt on Modal<br/>same seam, parity record"]:::todo
-  MOD["modal-inference P1"]:::ext
+  P2["Phase 2 · cuOpt on the Layer 5 VM<br/>same seam, parity record"]:::optional
+  MOD["Layer 5<br/>optional, after completion"]:::optional
   FIX["Fixture instances<br/>known optima"]:::eval
   P0 -->|feature wanted| P1
   P0 -.->|no| DEC
@@ -45,6 +46,7 @@ flowchart LR
   classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
   classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
   classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+  classDef optional fill:#f1f5f9,stroke:#475569,color:#334155,stroke-dasharray:6 3
 ```
 
 ## Current state (true today)
@@ -86,7 +88,7 @@ Python API. It pays at scale — hundreds of thousands of variables, large VRPs
 
 - *cuOpt as the first solver.* Every problem above is a few hundred variables.
   A CPU solver (HiGHS or OR-Tools behind the same seam) solves them in
-  milliseconds with no GPU, no Modal function, no sub-processor. Adopting
+  milliseconds with no GPU, no Layer 5, no sub-processor. Adopting
   cuOpt first would be adopting a runtime for a problem size that does not
   exist.
 - *The blueprint's ERP/SAP logistics routing.* Not a capability of this
@@ -96,7 +98,8 @@ Python API. It pays at scale — hundreds of thousands of variables, large VRPs
 
 **The honest recommendation (D-L3-3).** Build the *optimisation seam* with a
 CPU backend when one of the three problems is wanted as a feature; put cuOpt
-behind the same seam on Modal only if a measured instance exceeds what the
+behind the same seam on the Layer 5 GPU VM only if Layer 5 is taken up and a
+measured instance exceeds what the
 CPU backend solves inside the engine's step budget.
 
 ## Roadmap (future direction)
@@ -163,7 +166,7 @@ another tenant's entity"), infeasible ("returns INFEASIBLE with the binding cons
 never an empty plan"), time-limit ("returns the best incumbent with a TIMEOUT label").
 
 Constraints: the tool proposes nothing itself — the agent proposes, the human approves.
-No GPU, no Modal, no cuOpt in this phase.
+No GPU, no Layer 5, no cuOpt in this phase.
 
 Done when: an agent granted plan_<problem> produces proposals from a plan on the seed
 tenant, and the three tests are green.
@@ -173,21 +176,21 @@ tenant, and the three tests are green.
 suggestion), bounded everything (the engine's caps are per run; a solver can
 burn a step's budget alone).
 
-### Phase 2 — cuOpt on Modal, behind the same seam (only if Phase 0 found the scale)
+### Phase 2 — cuOpt on the Layer 5 VM, behind the same seam (optional, Layer 5; only if Phase 0 found the scale)
 
 **Sub-phases.**
-- [ ] 2.1 `deploy/modal/cuopt.py`: the open-source cuOpt server on a Modal GPU
-      function, scale-to-zero, proxy-auth token, region per
-      [`modal-inference.md`](./modal-inference.md) Phase 0.
-- [ ] 2.2 `cuopt-provider.ts` behind `Optimiser`, routed like every hosted
-      capability (`AI_HOSTED_*`; absent = CPU backend; `LOCAL_ONLY` tenants
-      solve on CPU only — a problem instance is tenant business content).
+- [ ] 2.1 The open-source cuOpt server on the Layer 5 GPU VM
+      ([`modal-inference.md`](./modal-inference.md) Phase 2), deployed from the
+      Layer 5 scripts, behind an operator-held token.
+- [ ] 2.2 `cuopt-provider.ts` behind `Optimiser`, configured by operator
+      settings like the local model route (absent = CPU backend). The VM is in
+      the operator's own project, so `LOCAL_ONLY` tenants may use it too.
 - [ ] 2.3 Parity test: CPU and cuOpt agree on the objective value for the
       fixture instances within tolerance.
-- [ ] 2.4 Modal's sub-processor row gains the data category "optimisation
-      instances (entity ids, dates, capacities — no free text)".
+- [ ] 2.4 No sub-processor change while the VM is in the operator's own
+      Google Cloud project (the Laya precedent in `docs/sub-processors.md`).
 
-**Hardening.** G1, G2, G12 (optional Layer 5), G11-style parity record.
+**Hardening.** G1, G12 (optional Layer 5), G11-style parity record.
 
 ## Evals for this framework
 

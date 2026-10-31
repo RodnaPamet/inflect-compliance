@@ -7,7 +7,7 @@ inflect · ai architecture · ragflow · roadmap v1 · 2026-10-29
 > enterprise SAP/ERP data". The **Current state** section is true today
 > (main 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan. This is a
 > child of [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md):
-> read that first for the target map, the global rules **G1–G12**, and the
+> read that first for the target map, the global rules **G1–G13**, and the
 > sequencing. If the code contradicts a fact here, the code wins and the pull
 > request that finds it corrects this document.
 
@@ -20,6 +20,7 @@ inflect · ai architecture · ragflow · roadmap v1 · 2026-10-29
 | Depends on | [`weaviate.md`](./weaviate.md) Phase 2, [`nemotron-retriever.md`](./nemotron-retriever.md) Phase 1 |
 | Unblocks | evidence-file and policy-document grounding; the table-aware part of [`ragas.md`](./ragas.md) |
 | Owner decisions | **D-L4-4** (RAGFlow as a parsing service only — or a lighter parser) |
+| Complete at | Phase 3 |
 
 ## At a glance
 

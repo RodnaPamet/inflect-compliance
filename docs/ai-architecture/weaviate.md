@@ -7,7 +7,7 @@ inflect · ai architecture · weaviate · roadmap v1 · 2026-10-29
 > multi-tenant isolation"). The **Current state** section is true today
 > (main 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan. This is a
 > child of [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md):
-> read that first for the target map, the global rules **G1–G12** every phase
+> read that first for the target map, the global rules **G1–G13** every phase
 > here inherits, and the sequencing that says when this framework's turn comes.
 > If the code contradicts a fact here, the code wins and the pull request that
 > finds it corrects this document.
@@ -21,6 +21,7 @@ inflect · ai architecture · weaviate · roadmap v1 · 2026-10-29
 | Depends on | nothing to deploy; **an embedding provider to be useful** → [`nemotron-retriever.md`](./nemotron-retriever.md) |
 | Unblocks | [`ragflow.md`](./ragflow.md) (somewhere for parsed chunks to go), [`ragas.md`](./ragas.md) / [`ares.md`](./ares.md) (something to evaluate), the assistant's `search_knowledge` tool |
 | Owner decisions | master § Decisions for the owner, **D-L4-1** (pgvector first or Weaviate first) and **D-L4-2** (vectors-only rule) |
+| Complete at | Phase 3 |
 
 ## At a glance
 
