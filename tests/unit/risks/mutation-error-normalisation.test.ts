@@ -47,8 +47,10 @@ describe('extractMutationError — what the hand-rolled ternary got wrong', () =
         expect(extractMutationError(undefined, 'Failed to save')).toBe('Failed to save');
     });
 
-    it('stringifies a non-string error value rather than rendering [object Object]', () => {
-        expect(extractMutationError({ error: { code: 409 } }, 'fb')).toBe('{"code":409}');
+    it('reads the API envelope\'s message, and falls back rather than printing JSON or [object Object] (#4691)', () => {
+        expect(extractMutationError({ error: { code: 'CONFLICT', message: 'Risk key already exists' } }, 'fb'))
+            .toBe('Risk key already exists');
+        expect(extractMutationError({ error: { code: 409 } }, 'fb')).toBe('fb');
     });
 
     it('falls back for an object carrying neither key', () => {
