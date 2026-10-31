@@ -47,7 +47,13 @@ let mockControlsEdit = true;
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({
         permissions: { canWrite: true, canAdmin: false, canRead: true },
-        appPermissions: { controls: { view: true, create: true, edit: mockControlsEdit } },
+        appPermissions: {
+            controls: { view: true, create: true, edit: mockControlsEdit },
+            // The run page reads these since #4797: the run's actions follow
+            // tests.execute and the evidence bundle reports.export.
+            tests: { view: true, create: true, execute: true },
+            reports: { view: true, export: true },
+        },
         role: 'EDITOR',
         tenantSlug: 'acme',
         userId: 'user_1',
