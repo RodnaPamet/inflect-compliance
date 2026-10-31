@@ -7466,8 +7466,8 @@
       "singleRiskMax": "Single-risk ALE max",
       "qualScoreMax": "Qualitative score max",
       "fieldWithHint": "{label} ({hint})",
-      "hintPerYear": "$/yr",
-      "hintDollar": "$",
+      "hintPerYear": "{currency} a year",
+      "hintDollar": "{currency}",
       "hintOf25": "of 25",
       "ceilingTestedAt": "Ceiling tested at:",
       "percentileHint": "simulated portfolio percentile (falls back to Σ of means until a simulation runs)",
@@ -7483,7 +7483,20 @@
       "acknowledge": "Acknowledge",
       "viewTask": "View task",
       "creating": "Creating…",
-      "createTask": "Create task"
+      "createTask": "Create task",
+      "invalidNumber": "Type a number, without separators.",
+      "loadFailed": "The risk appetite settings could not be loaded.",
+      "breachesLoadFailed": "The breach history could not be loaded. Reload the page to try again.",
+      "actionFailed": "That didn't work. Nothing was changed; try again.",
+      "acknowledged": "Acknowledged",
+      "perYear": "{amount} a year",
+      "testedAmount": "P{percentile}: {amount} a year",
+      "breachType": {
+        "PORTFOLIO_ALE": "Portfolio expected loss",
+        "SINGLE_RISK_ALE": "One risk's expected loss",
+        "QUAL_SCORE": "Risk score",
+        "CATEGORY_ALE": "Category expected loss"
+      }
     },
     "riskMatrix": {
       "crumb": "Risk Matrix",
