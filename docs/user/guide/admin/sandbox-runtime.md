@@ -8,7 +8,7 @@ The {{ui:admin.sandboxRuntime.heading}} page reports how this deployment has set
 
 ## Where to find it
 
-Open the page's address directly, `/t/<workspace>/admin/sandbox-runtime`; the {{ui:admin.title}} page has no button for it.
+Click **{{ui:nav.admin}}** at the bottom of the sidebar. Under {{ui:admin.section.security}}, click **{{ui:admin.nav.sandboxRuntime}}**. The breadcrumb reads **{{ui:admin.crumb.dashboard}}** › **{{ui:admin.crumb.admin}}** › **{{ui:admin.sandboxRuntime.breadcrumb}}**.
 
 ## Who can use it
 

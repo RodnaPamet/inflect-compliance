@@ -32,7 +32,7 @@ Opening the page does not mean you can use every page it lists. Some pages are f
 | {{ui:admin.section.integrations}} | {{ui:admin.nav.integrations}} |
 | {{ui:admin.section.people}} | {{ui:admin.nav.members}}, {{ui:admin.nav.rbac}}, {{ui:admin.nav.roles}}, {{ui:admin.nav.personnel}}, {{ui:admin.nav.devices}}, {{ui:admin.nav.training}} |
 | {{ui:admin.section.organization}} | {{ui:admin.nav.apiKeys}}, {{ui:admin.nav.billing}}, {{ui:admin.nav.notifications}}, {{ui:admin.nav.modules}} (Owners only), {{ui:admin.nav.aiFeatures}} |
-| {{ui:admin.section.security}} | {{ui:admin.nav.security}}, {{ui:admin.nav.trustCenter}}, {{ui:admin.auditLog}}, {{ui:admin.nav.agentCredentials}} |
+| {{ui:admin.section.security}} | {{ui:admin.nav.security}}, {{ui:admin.nav.trustCenter}}, {{ui:admin.auditLog}}, {{ui:admin.nav.sandboxRuntime}}, {{ui:admin.nav.agentCredentials}} |
 | {{ui:admin.section.privacyData}} | {{ui:admin.nav.privacy}}, {{ui:admin.nav.dsarRequests}} |
 | {{ui:admin.section.risk}} | {{ui:admin.nav.riskMatrix}}, {{ui:admin.nav.riskAppetite}} |
 | {{ui:admin.section.vendors}} | {{ui:admin.nav.vendorTemplates}}, {{ui:admin.nav.vendorReviews}} |
