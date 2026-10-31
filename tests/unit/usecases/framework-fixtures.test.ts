@@ -86,7 +86,7 @@ describe('computeRequirementsDiff — guard rails', () => {
             .mockResolvedValueOnce({ id: 'fw-to' });
         await expect(
             computeRequirementsDiff(ctx, 'gone', 'iso'),
-        ).rejects.toThrow(/Framework "gone" not found/);
+        ).rejects.toMatchObject({ message: expect.stringMatching(/Framework "gone" not found/), details: { reason: 'DIFF_FROM_NOT_FOUND' } });
     });
 
     it('throws notFound when the TO framework is missing', async () => {
@@ -95,7 +95,7 @@ describe('computeRequirementsDiff — guard rails', () => {
             .mockResolvedValueOnce(null);
         await expect(
             computeRequirementsDiff(ctx, 'iso', 'gone'),
-        ).rejects.toThrow(/Framework "gone" not found/);
+        ).rejects.toMatchObject({ message: expect.stringMatching(/Framework "gone" not found/), details: { reason: 'DIFF_TO_NOT_FOUND' } });
     });
 });
 
@@ -135,8 +135,8 @@ describe('computeRequirementsDiff — diff computation', () => {
             {
                 code: 'A.1',
                 changes: ['title'],
-                from: { title: 'Old', section: 'Cat-A' }, // section falls back to category
-                to: { title: 'New', section: 'Cat-A' },
+                from: { title: 'Old', section: 'Cat-A', description: 'd1' }, // section falls back to category
+                to: { title: 'New', section: 'Cat-A', description: 'd1' },
             },
         ]);
         expect(diff.summary).toEqual({
@@ -163,6 +163,9 @@ describe('computeRequirementsDiff — diff computation', () => {
         // Both section AND description differ — both appear in the
         // changes list (title does not).
         expect(diff.changed[0].changes.sort()).toEqual(['description', 'section']);
+        // The page shows a description change, so the diff carries both texts.
+        expect(diff.changed[0].from.description).toBe('d1');
+        expect(diff.changed[0].to.description).toBe('d2');
     });
 
     it('skips the mapping check when nothing was added', async () => {

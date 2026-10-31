@@ -8832,6 +8832,7 @@
       "version": "Version",
       "kind": "Kind",
       "browseTemplates": "Browse Templates",
+      "compareRequirements": "Compare requirements",
       "installPack": "Install Pack",
       "loadingTree": "Loading tree…",
       "templatesCount": "{count} templates",
@@ -8888,10 +8889,8 @@
       "loading": "Loading diff…",
       "heading": "Requirements Diff",
       "comparing": "Comparing",
-      "specifyFrom": "Specify a <code>?from=FRAMEWORK_KEY</code> query parameter to compare.",
-      "specifyHint": "This page compares the \"from\" framework to this framework to show added/removed/changed requirements.",
-      "loadDataFailed": "Failed to load data",
-      "computeFailed": "Failed to compute diff. Ensure both frameworks exist.",
+      "loadDataFailed": "Could not reach the server.",
+      "computeFailed": "Could not compare the two frameworks.",
       "added": "Added",
       "removed": "Removed",
       "changed": "Changed",
@@ -8901,7 +8900,25 @@
       "none": "(none)",
       "emptyAdded": "No added requirements.",
       "emptyRemoved": "No removed requirements.",
-      "emptyChanged": "No changed requirements."
+      "emptyChanged": "No changed requirements.",
+      "nameVersion": "{name} v{version}",
+      "compareFrom": "Compare from",
+      "chooseFramework": "Choose a framework…",
+      "loadingFrameworks": "Loading frameworks…",
+      "frameworksFailed": "Could not load the frameworks to compare with.",
+      "chooseHint": "Choose the framework to compare this one against. The page then lists the requirements added, removed and changed between them.",
+      "retry": "Retry",
+      "before": "Before:",
+      "after": "After:",
+      "field": {
+        "title": "title",
+        "section": "section",
+        "description": "description"
+      },
+      "refused": {
+        "DIFF_FROM_NOT_FOUND": "The framework you chose to compare from is no longer in the catalogue. Choose another.",
+        "DIFF_TO_NOT_FOUND": "This framework is no longer in the catalogue."
+      }
     },
     "install": {
       "loading": "Loading install wizard...",
