@@ -159,6 +159,22 @@ describe('createAuditCycle', () => {
 });
 
 describe('getAuditCycle', () => {
+    it("names the cycle's framework from the catalogue, or null when it has no entry (#4727)", async () => {
+        const cycle = { id: 'cyc-1', frameworkKey: 'SOC2', packs: [], audits: [] };
+        const frameworkFindFirst = jest.fn().mockResolvedValueOnce({ name: 'SOC 2' }).mockResolvedValueOnce(null);
+        mockRunInTx.mockImplementation(async (_ctx, fn) =>
+            fn({
+                auditCycle: { findFirst: jest.fn().mockResolvedValue(cycle) },
+                framework: { findFirst: frameworkFindFirst },
+            } as never),
+        );
+
+        await expect(getAuditCycle(makeRequestContext('READER'), 'cyc-1')).resolves.toMatchObject({ frameworkName: 'SOC 2' });
+        await expect(getAuditCycle(makeRequestContext('READER'), 'cyc-1')).resolves.toMatchObject({ frameworkName: null });
+        expect(frameworkFindFirst.mock.calls[0][0].where).toEqual({ key: 'SOC2' });
+        mockRunInTx.mockReset();
+    });
+
     it('throws notFound when cycle is not in the caller tenant', async () => {
         mockRunInTx.mockImplementationOnce(async () => null as never);
 

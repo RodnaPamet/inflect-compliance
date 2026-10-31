@@ -771,6 +771,27 @@ describe('previewDefaultPack', () => {
         // security-flavoured subset ISO would take.
         expect(result.selection.policies.ids).toEqual(['pol-sec', 'pol-hr']);
         expect(result.selection.issues.ids).toEqual(['t-1']);
+        // #4727 — the open tasks ON the selected controls, by their own
+        // controlId or a CONTROL link, not every open task in the workspace.
+        const taskWhere = mockTdb.task.findMany.mock.calls[0][0].where;
+        expect(taskWhere.OR).toEqual([
+            { controlId: { in: ['ctrl-1'] } },
+            { links: { some: { entityType: 'CONTROL', entityId: { in: ['ctrl-1'] } } } },
+        ]);
+        expect(taskWhere.deletedAt).toBeNull();
+    });
+
+    it('puts no task in a default pack that has no control (#4727)', async () => {
+        mockTdb.auditCycle.findFirst.mockResolvedValueOnce({ id: 'c-1', frameworkKey: 'SOC2' });
+        mockTdb.framework.findFirst.mockResolvedValueOnce({ id: 'fw-soc2' });
+        mockTdb.controlRequirementLink.findMany.mockResolvedValueOnce([]);
+        mockTdb.control.findMany.mockResolvedValueOnce([]);
+        mockTdb.policy.findMany.mockResolvedValueOnce([]);
+
+        const result = await previewDefaultPack(ctx, 'c-1');
+
+        expect(result.selection.issues.count).toBe(0);
+        expect(mockTdb.task.findMany).not.toHaveBeenCalled();
     });
 
     it('ISO27001: uses framework-mapped OPERATING controls + evidence + relevant policies (curated)', async () => {

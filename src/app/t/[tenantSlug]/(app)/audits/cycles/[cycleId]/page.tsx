@@ -30,11 +30,20 @@ import {
 } from '../../_lib/status-variants';
 import { isNotFoundError, useAuditReadinessAccess } from '../../_lib/use-audit-access';
 import { apiErrorMessage } from '@/lib/api-error';
+import { auditPackRefusal } from '@/lib/audit-pack-refusals';
+import { relianceRefusal } from '@/lib/agentic/audit-reliance-refusals';
+import { Modal } from '@/components/ui/modal';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { DateRangePicker } from '@/components/ui/date-picker/date-range-picker';
+import type { DateRangeValue } from '@/components/ui/date-picker/types';
+import { formatDate } from '@inflect/ui/lib/format-date';
+import { AUDIT_PERIOD_PRESETS } from '../../_lib/audit-period-presets';
 
-const FW_META: Record<string, { icon: AppIconName; label: string }> = {
-    ISO27001: { icon: 'shield', label: 'ISO/IEC 27001:2022' },
-    NIS2: { icon: 'globe', label: 'NIS2 Directive' },
-};
+// The icon only. The framework's name comes from the catalogue
+// (`frameworkName`): this table used to carry English labels for two
+// frameworks and show every other one by its key (#4727).
+const FW_ICON: Record<string, AppIconName> = { ISO27001: 'shield', NIS2: 'globe' };
 
 // cycle   → getAuditCycle (audit-readiness/cycles.ts)
 // preview → previewDefaultPack (audit-readiness/packs.ts)
@@ -53,7 +62,11 @@ interface AuditCycleDetail {
     id: string;
     name: string;
     frameworkKey: string;
+    /** The catalogue's name, or null when the catalogue has no such framework. */
+    frameworkName: string | null;
     frameworkVersion: string;
+    periodStartAt: string | null;
+    periodEndAt: string | null;
     status: string;
     packs: AuditCyclePack[];
     audits: AuditCycleAudit[];
@@ -90,7 +103,14 @@ export default function CycleDetailPage() {
     // call; a refusal (`NO_WORKPAPERS_IN_PERIOD`, …) is shown inline, by
     // name, rather than as a toast that disappears.
     const [assemblingReliance, setAssemblingReliance] = useState(false);
-    const [relianceRefusal, setRelianceRefusal] = useState<string | null>(null);
+    const [relianceRefusalText, setRelianceRefusalText] = useState<string | null>(null);
+    // #4727 — the name and the audit period were set once, at creation, and
+    // never shown or changeable after it; the reliance pack refuses a cycle
+    // without a period, and its refusal said to "narrow the cycle".
+    const [editOpen, setEditOpen] = useState(false);
+    const [editName, setEditName] = useState('');
+    const [editPeriod, setEditPeriod] = useState<DateRangeValue>({ from: null, to: null });
+    const [savingEdit, setSavingEdit] = useState(false);
 
     // fix/audits-surface — a network blip on the initial load must surface a
     // real error+retry state, not the "cycle not found" empty state. Without a
@@ -146,6 +166,53 @@ export default function CycleDetailPage() {
         void previewQuery.mutate();
     }, [cycleQuery, previewQuery]);
 
+    /** A refusal the pack API names, in the reader's language (#4727). */
+    const packRefusalText = (body: unknown, fallback: string): string => {
+        const code = auditPackRefusal(body);
+        return code ? tx(`packs.refused.${code}` as Parameters<typeof tx>[0]) : apiErrorMessage(body, fallback);
+    };
+
+    const openEdit = () => {
+        if (!cycle) return;
+        setEditName(cycle.name);
+        setEditPeriod({
+            from: cycle.periodStartAt ? new Date(cycle.periodStartAt) : null,
+            to: cycle.periodEndAt ? new Date(cycle.periodEndAt) : null,
+        });
+        setEditOpen(true);
+    };
+
+    const saveEdit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!cycle || !editName.trim()) return;
+        setSavingEdit(true);
+        try {
+            const res = await fetch(apiUrl(`/audits/cycles/${cycleId}`), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                // '' clears a side of the period; the route stores it as null.
+                body: JSON.stringify({
+                    name: editName.trim(),
+                    periodStartAt: editPeriod.from ? editPeriod.from.toISOString() : '',
+                    periodEndAt: editPeriod.to ? editPeriod.to.toISOString() : '',
+                }),
+            });
+            if (!res.ok) {
+                if (res.status === 404) throw new Error(tx('cycleDetail.notFound'));
+                const body = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, tx('cycleDetail.saveError')));
+            }
+            await cycleQuery.mutate();
+            void previewQuery.mutate();
+            setEditOpen(false);
+            toast.success(tx('cycleDetail.saved'));
+        } catch (err) {
+            toast.error(err instanceof Error && err.message ? err.message : tx('cycleDetail.saveError'));
+        } finally {
+            setSavingEdit(false);
+        }
+    };
+
     const createDefaultPack = async () => {
         if (!cycle) return;
         setCreating(true);
@@ -154,13 +221,13 @@ export default function CycleDetailPage() {
             const packRes = await fetch(apiUrl('/audits/packs'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ auditCycleId: cycleId, name: tx('cycleDetail.defaultPackName', { framework: cycle.frameworkKey }) }),
+                body: JSON.stringify({ auditCycleId: cycleId, name: tx('cycleDetail.defaultPackName', { framework: cycle.frameworkName ?? cycle.frameworkKey }) }),
             });
             if (!packRes.ok) {
                 // `apiErrorMessage`, not `err.message`: the API puts the reason
                 // under `error.message`, so the old read always fell back.
                 const err = await packRes.json().catch(() => null);
-                toast.error(apiErrorMessage(err, tx('cycleDetail.createPackError')));
+                toast.error(packRefusalText(err, tx('cycleDetail.createPackError')));
                 setCreating(false);
                 return;
             }
@@ -183,7 +250,7 @@ export default function CycleDetailPage() {
                     });
                     if (!itemsRes.ok) {
                         const err = await itemsRes.json().catch(() => null);
-                        toast.error(apiErrorMessage(err, tx('cycleDetail.addItemsError')));
+                        toast.error(packRefusalText(err, tx('cycleDetail.addItemsError')));
                     }
                 }
             }
@@ -195,7 +262,7 @@ export default function CycleDetailPage() {
 
     const assembleReliancePack = async () => {
         setAssemblingReliance(true);
-        setRelianceRefusal(null);
+        setRelianceRefusalText(null);
         try {
             const res = await fetch(apiUrl(`/audits/cycles/${cycleId}/reliance-pack`), {
                 method: 'POST',
@@ -204,14 +271,18 @@ export default function CycleDetailPage() {
             });
             const body = await res.json().catch(() => null);
             if (!res.ok) {
-                // The named refusal (`NO_WORKPAPERS_IN_PERIOD`, …) is the
-                // ConflictError's message, under `error.message` (#4129).
-                setRelianceRefusal(apiErrorMessage(body, tx('cycleDetail.relianceError')));
+                // A named refusal (`NO_WORKPAPERS_IN_PERIOD`, …) travels in
+                // `error.details.reason`; the page words it (#4727). Anything
+                // else keeps the server's message.
+                const code = relianceRefusal(body);
+                setRelianceRefusalText(code
+                    ? tx(`cycleDetail.relianceRefused.${code}` as Parameters<typeof tx>[0])
+                    : apiErrorMessage(body, tx('cycleDetail.relianceError')));
                 return;
             }
             router.push(`/t/${tenantSlug}/audits/packs/${body.packId}`);
         } catch {
-            setRelianceRefusal(tx('cycleDetail.relianceError'));
+            setRelianceRefusalText(tx('cycleDetail.relianceError'));
         } finally {
             setAssemblingReliance(false);
         }
@@ -234,6 +305,10 @@ export default function CycleDetailPage() {
                 body: JSON.stringify({ status }),
             });
             if (!res.ok) {
+                // The route's refusals are a missing cycle and the role gate,
+                // and the picker is offered only to roles it admits, so a 404
+                // is the one a person can meet: say it in their language.
+                if (res.status === 404) throw new Error(tx('cycleDetail.notFound'));
                 const body = await res.json().catch(() => null);
                 throw new Error(apiErrorMessage(body, tx('cycleDetail.statusError')));
             }
@@ -295,7 +370,10 @@ export default function CycleDetailPage() {
         );
     }
 
-    const fw = FW_META[cycle.frameworkKey] || { icon: 'shield' as AppIconName, label: cycle.frameworkKey };
+    const fw = { icon: FW_ICON[cycle.frameworkKey] ?? ('shield' as AppIconName), label: cycle.frameworkName ?? cycle.frameworkKey };
+    const periodText = cycle.periodStartAt || cycle.periodEndAt
+        ? `${cycle.periodStartAt ? formatDate(cycle.periodStartAt) : '…'} – ${cycle.periodEndAt ? formatDate(cycle.periodEndAt) : '…'}`
+        : tx('cycleDetail.periodNotSet');
 
     // Localize the fieldwork-audit status enum (PLANNED/IN_PROGRESS/COMPLETED/
     // CANCELLED) via the flat audit-status keys, so the badge isn't a raw enum.
@@ -328,6 +406,7 @@ export default function CycleDetailPage() {
                     items={[
                         { label: tx('cycleDetail.framework'), value: fw.label },
                         { label: tx('cycleDetail.version'), value: `v${cycle.frameworkVersion}` },
+                        { label: tx('cycleDetail.period'), value: periodText },
                         { kind: 'status' as const, label: tx('cycleDetail.status'), value: tx(`cycleStatus.${cycle.status}` as Parameters<typeof tx>[0]), variant: AUDIT_CYCLE_STATUS_VARIANT[cycle.status] ?? DEFAULT_STATUS_VARIANT },
                     ]}
                 />
@@ -337,6 +416,11 @@ export default function CycleDetailPage() {
                     {/* feat/audit-cycle-unify — advance/close the cycle. Only
                         for the roles the server lets change it (#4129); the
                         status itself is in the meta strip for everyone. */}
+                    {access.manageCycles && (
+                        <Button variant="secondary" size="sm" onClick={openEdit} id="cycle-edit-btn">
+                            {tx('cycleDetail.edit')}
+                        </Button>
+                    )}
                     {access.manageCycles && (
                         <Combobox
                             id="cycle-status-select"
@@ -413,9 +497,9 @@ export default function CycleDetailPage() {
                     </Button>
                 </div>
                 <p className="text-sm text-content-muted">{tx('cycleDetail.relianceHelp')}</p>
-                {relianceRefusal && (
+                {relianceRefusalText && (
                     <p className="text-sm text-content-error" role="alert" id="reliance-refusal">
-                        {relianceRefusal}
+                        {relianceRefusalText}
                     </p>
                 )}
             </div>
@@ -435,7 +519,9 @@ export default function CycleDetailPage() {
                 </div>
                 {cycle.audits?.length > 0 ? (
                     cycle.audits.map((a) => (
-                        <Link key={a.id} href={`/t/${tenantSlug}/audits?cycleId=${cycleId}`}
+                        // Opens this audit in the hub's detail pane: every row
+                        // used to open the same filtered list (#4727).
+                        <Link key={a.id} href={`/t/${tenantSlug}/audits?cycleId=${cycleId}&selected=${a.id}`}
                             className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between hover:bg-bg-muted/50 transition block')} id={`cycle-audit-link-${a.id}`}>
                             <span className="font-medium text-sm">{a.title}</span>
                             <StatusBadge variant={AUDIT_STATUS_VARIANT[a.status] ?? DEFAULT_STATUS_VARIANT} className="ml-2">{auditStatusLabel(a.status)}</StatusBadge>
@@ -462,6 +548,39 @@ export default function CycleDetailPage() {
                     ))}
                 </div>
             )}
+
+            <Modal showModal={editOpen} setShowModal={setEditOpen} size="md" title={tx('cycleDetail.editTitle')} preventDefaultClose={savingEdit}>
+                <Modal.Header title={tx('cycleDetail.editTitle')} />
+                <Modal.Form id="cycle-edit-form" onSubmit={saveEdit}>
+                    <Modal.Body>
+                        <fieldset disabled={savingEdit} className="m-0 p-0 border-0 space-y-default">
+                            <FormField label={tx('cycleDetail.nameLabel')} required>
+                                <Input id="cycle-edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={200} required />
+                            </FormField>
+                            <FormField label={tx('cycleDetail.period')} hint={tx('cycleDetail.periodHint')}>
+                                <DateRangePicker
+                                    id="cycle-edit-period"
+                                    className="w-full"
+                                    align="start"
+                                    placeholder={tx('cycles.selectAuditPeriod')}
+                                    value={editPeriod}
+                                    onChange={setEditPeriod}
+                                    presets={AUDIT_PERIOD_PRESETS}
+                                    showYearNavigation
+                                />
+                            </FormField>
+                        </fieldset>
+                    </Modal.Body>
+                    <Modal.Actions>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => setEditOpen(false)} disabled={savingEdit}>
+                            {tx('cycleDetail.cancel')}
+                        </Button>
+                        <Button type="submit" variant="primary" size="sm" disabled={savingEdit || !editName.trim()} id="cycle-edit-save">
+                            {savingEdit ? tx('cycleDetail.saving') : tx('cycleDetail.save')}
+                        </Button>
+                    </Modal.Actions>
+                </Modal.Form>
+            </Modal>
         </EntityDetailLayout>
     );
 }

@@ -1145,8 +1145,11 @@ export default function PolicyDetailPage() {
                                                             const isSelfApproval =
                                                                 (a.requestedBy?.id != null && a.requestedBy.id === currentUserId) ||
                                                                 (v.createdBy?.id != null && v.createdBy.id === currentUserId);
+                                                            // Secondary: a row action in the approval list, and a
+                                                            // four-eyes approve, as the parameter-sets page's is
+                                                            // (primary-secondary-ratio, 2026-10-31).
                                                             const approveBtn = (
-                                                                <Button variant="primary" size="xs" onClick={isSelfApproval ? undefined : () => decideApproval(a.id, 'APPROVED')} disabled={isSelfApproval || !!actionLoading} loading={actionLoading === 'decide-' + a.id} id={`approve-${a.id}`}>
+                                                                <Button variant="secondary" size="xs" onClick={isSelfApproval ? undefined : () => decideApproval(a.id, 'APPROVED')} disabled={isSelfApproval || !!actionLoading} loading={actionLoading === 'decide-' + a.id} id={`approve-${a.id}`}>
                                                                     {t('detail.approve')}
                                                                 </Button>
                                                             );
