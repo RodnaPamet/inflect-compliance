@@ -50,6 +50,8 @@ import {
     computeReadiness,
     getReadinessHistory,
     addReadinessToPack,
+    exportUnmappedCsv,
+    exportControlGapsCsv,
 } from '@/app-layer/usecases/audit-readiness/scoring';
 import { assertCanViewPack } from '@/app-layer/policies/audit-readiness.policies';
 import { makeRequestContext } from '../helpers/make-context';
@@ -423,7 +425,15 @@ describe('computeGenericReadiness — custom framework path', () => {
         expect(r.breakdown.issues.open).toBe(3);
         // round(50*.5 + 50*.35 + 85*.15) = round(25+17.5+12.75)=55
         expect(r.score).toBe(55);
-        expect(r.recommendations[0]).toMatch(/generic 3-dimension scoring/);
+        // #4728 — real advice, not a note telling the reader to configure a
+        // scoring profile, and the gaps a reader can act on.
+        expect(r.recommendations.join(' ')).not.toMatch(/readinessWeightsJson|scoring profile|3-dimension/);
+        expect(r.recommendationCodes.map((c) => c.code)).toEqual(['COVERAGE_NEARLY', 'EVIDENCE_NEARLY']);
+        expect(r.gaps).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'UNMAPPED_REQUIREMENT', entityId: 'r2', detail: { code: 'NOT_MAPPED' } }),
+            expect.objectContaining({ type: 'MISSING_EVIDENCE', entityId: 'k2', detail: { code: 'NO_EVIDENCE' } }),
+        ]));
+        expect(r.gaps.some((g) => g.entityId === 'r1' || g.entityId === 'k1')).toBe(false);
     });
 
     it('no framework + no controls → all division guards take else; issues clamp at 0', async () => {
@@ -649,5 +659,43 @@ describe('addReadinessToPack', () => {
                 expect.objectContaining({ entityType: 'READINESS_REPORT', entityId: 'c1', sortOrder: 999 }),
             ]),
         );
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// #4728 — the page shows the top of each gap list; the exports carry
+// every gap. They used to filter the page's capped list, so an export
+// of "the unmapped requirements" stopped at ten without saying so.
+// ─────────────────────────────────────────────────────────────────
+describe('readiness exports are not capped at the page\'s top ten', () => {
+    const fifteen = Array.from({ length: 15 }, (_, i) => ({ id: `r${i}`, code: `A.${i}`, title: `req ${i}` }));
+
+    it('lists every unmapped requirement, while the page lists ten', async () => {
+        mockDbHolder.db = buildDb({
+            cycle: { id: 'c1', frameworkKey: 'ISO27001' },
+            framework: { id: 'fw', name: 'ISO/IEC 27001:2022' },
+            requirements: fifteen,
+            mappedLinks: [],
+        });
+        const page = await computeReadiness(ctx, 'c1');
+        expect(page.gaps.filter((g) => g.type === 'UNMAPPED_REQUIREMENT')).toHaveLength(10);
+        expect(page.frameworkName).toBe('ISO/IEC 27001:2022');
+
+        const { csv } = await exportUnmappedCsv(ctx, 'c1');
+        expect(csv.trim().split('\n')).toHaveLength(1 + 15);
+    });
+
+    it('includes NIS2\'s missing policies in the control-gaps export', async () => {
+        mockDbHolder.db = buildDb({
+            cycle: { id: 'c1', frameworkKey: 'NIS2' },
+            framework: { id: 'fw' },
+            requirements: [{ id: 'r1', code: 'Art.21', title: 't' }],
+            mappedLinks: [{ requirementId: 'r1', controlId: 'k1' }],
+            controlsWithEvidence: [
+                { id: 'k1', code: 'C1', name: 'n', evidenceControlLinks: [{ id: 'l1' }], _count: { policyLinks: 0 } },
+            ],
+        });
+        const { csv } = await exportControlGapsCsv(ctx, 'c1');
+        expect(csv).toMatch(/MISSING_POLICY/);
     });
 });

@@ -752,7 +752,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1138;
 //   `control-task-create-modal`'s window on the ELEMENT's own end instead of a
 //   fixed 400 characters, which also narrowed its needle from one satisfied in
 //   several places to one satisfied in the panel's props alone. Measured.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 158;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 157;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

@@ -3806,7 +3806,7 @@
       "taskCompletion": "Task Completion",
       "openIssues": "Open Issues",
       "reqMappedDetail": "{mapped}/{total} requirements mapped",
-      "controlsImplDetail": "{implemented}/{total} controls IMPLEMENTED",
+      "controlsImplDetail": "{implemented}/{total} controls implemented",
       "evidenceDetail": "{withEvidence}/{total} controls with evidence",
       "policiesDetail": "{withPolicy}/{total} controls with a linked policy",
       "tasksDetail": "{overdue} overdue task(s)",
@@ -3822,7 +3822,46 @@
       "trendAria": "Readiness score over time",
       "trendHint": "Based on {count} scored snapshots.",
       "nis2ControlCoverage": "NIS2 control coverage",
-      "nis2CoverageVsMaturity": "Control coverage measures how well your controls map, are implemented, and carry evidence for NIS2 — distinct from the NIS2 self-assessment maturity score (your answers to the gap questionnaire)."
+      "nis2CoverageVsMaturity": "Control coverage measures how well your controls map, are implemented, and carry evidence for NIS2 — distinct from the NIS2 self-assessment maturity score (your answers to the gap questionnaire).",
+      "rec": {
+        "COVERAGE_LOW": "Map more Annex A requirements to controls: coverage is below 50%.",
+        "COVERAGE_NEARLY": "Keep mapping requirements: aim for at least 80% coverage before the audit.",
+        "IMPLEMENTATION_LOW": "Focus on implementing controls: many applicable controls are not implemented yet.",
+        "EVIDENCE_LOW": "Attach evidence to controls: auditors expect documentation for each control.",
+        "EVIDENCE_NEARLY": "Strengthen evidence collection: aim for evidence on at least 80% of controls.",
+        "OVERDUE_MANY": "Deal with the {count} overdue tasks to improve audit readiness.",
+        "OVERDUE_FEW": "{count, plural, one {# overdue task is left: close it.} other {# overdue tasks are left: close them.}}",
+        "ISSUES_MANY": "Resolve the {count} open audit findings and control gaps before the audit.",
+        "STRONG": "Readiness is strong: review the final pack before you schedule the audit.",
+        "NIS2_COVERAGE_LOW": "Map NIS2 requirements (the Article 21 measures) to controls: coverage is below 50%.",
+        "NIS2_COVERAGE_NEARLY": "Keep mapping NIS2 requirements: aim to cover every Article 21 measure.",
+        "NIS2_EVIDENCE_LOW": "Attach evidence to the mapped controls: NIS2 requires measures you can demonstrate.",
+        "NIS2_POLICIES_LOW": "Link governing policies to your NIS2 controls: most in-scope controls have no policy.",
+        "NIS2_POLICIES_PARTIAL": "Link policies to the remaining NIS2 controls that have none, to show governance.",
+        "NIS2_ISSUES_MANY": "Deal with the {count} open issues to reduce compliance risk.",
+        "NIS2_STRONG": "NIS2 readiness is strong.",
+        "GENERIC_COVERAGE_LOW": "Map more of the framework's requirements to controls: coverage is below 50%."
+      },
+      "gap": {
+        "notMapped": "No control is mapped to this requirement.",
+        "evidenceMissing": "No current evidence: archived and expired evidence does not count.",
+        "policyMissing": "No governing policy is linked to this control.",
+        "due": "Due {date}",
+        "dueUnknown": "No due date",
+        "issue": "Severity: {severity}",
+        "issueTyped": "{type} · Severity: {severity}",
+        "openAuditFindingsTitle": "{count, plural, one {# open audit finding} other {# open audit findings}}",
+        "openAuditFindings": "Findings raised on this cycle's audits are still open.",
+        "taskType": {
+          "AUDIT_FINDING": "Audit finding",
+          "CONTROL_GAP": "Control gap",
+          "INCIDENT": "Incident",
+          "IMPROVEMENT": "Improvement",
+          "TASK": "Task"
+        }
+      },
+      "notFound": "This audit cycle no longer exists, or is not in this workspace.",
+      "retry": "Retry"
     },
     "loadingAria": "Loading audits",
     "packs": {
