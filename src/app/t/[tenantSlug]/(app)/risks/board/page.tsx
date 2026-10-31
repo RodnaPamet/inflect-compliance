@@ -1,7 +1,7 @@
 /**
  * RQ3-10 — Risk Board page.
  *
- * The board-altitude view of the risk program. Where the dashboard
+ * The board's view of the risk program. Where the dashboard
  * (RQ3-9) is the daily analyst surface — every signal, every chart —
  * the board page strips down to the five questions an exec actually
  * asks:
@@ -31,7 +31,10 @@ import { Heading } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { SkeletonDashboard } from '@/components/ui/skeleton';
+import { SkeletonDashboard, SkeletonLine } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/ui/error-state';
+import { Button } from '@/components/ui/button';
+import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
 import { riskCanCreate } from '../_shared/bulk-permissions';
 import { buttonVariants } from '@/components/ui/button-variants';
@@ -75,19 +78,33 @@ export default function RiskBoardPage() {
 
     // RQ3-9 — one orchestrated fetch for risks/analytics/coherence/
     // staleness/appetite/simulation/matrix.
-    const { data, isLoading } = useTenantSWR<DashboardPayload>('/risks/dashboard');
+    const { data, isLoading, error, mutate } = useTenantSWR<DashboardPayload>('/risks/dashboard');
     // RQ3-8 — best-value controls leaderboard. Capped at 3 for the
     // board view (the dashboard list takes 5).
-    const { data: bestValue } = useTenantSWR<BestValueRow[]>('/controls/best-value?limit=3');
+    const { data: bestValue, error: bestValueError, mutate: retryBestValue } = useTenantSWR<BestValueRow[]>('/controls/best-value?limit=3');
 
+    // #4767 — a failed read used to leave the skeleton up for ever: the
+    // `error` was never read, and `!data` stayed true.
+    if (error) {
+        return (
+            <div data-testid="board-load-error">
+                <ErrorState
+                    title={t('board.loadErrorTitle')}
+                    description={t('board.loadError')}
+                    onRetry={() => void mutate()}
+                    retryLabel={t('board.retry')}
+                />
+            </div>
+        );
+    }
     if (isLoading || !data) return <SkeletonDashboard />;
 
     const { risks, analytics, staleness, appetite, simulation } = data;
     const simRun = simulation;
 
     // ── Position ────────────────────────────────────────────────────
+    // The headline exists only with a simulation, so its label is always P80.
     const headlineAle = simRun?.portfolioP80 ?? null;
-    const headlineLabel = simRun ? t('board.aleP80') : t('board.ale');
 
     // ── Top 5 by tail-aware ALE ─────────────────────────────────────
     // B2-6 — shared with the dashboard, which derives the same lookup from
@@ -112,6 +129,16 @@ export default function RiskBoardPage() {
     const appetiteStatus = appetite?.status?.status ?? 'NONE';
     const appetiteVariant = APPETITE_VARIANT[appetiteStatus];
     const appetiteCopy = t(APPETITE_KEY[appetiteStatus] ?? 'board.noAppetite');
+    // #4767 — with no ceiling there is nothing to be within, so the headline
+    // is neutral rather than green.
+    const headlineTone =
+        appetiteVariant === 'error' ? 'critical'
+            : appetiteVariant === 'warning' ? 'attention'
+                : appetiteVariant === 'success' ? 'success'
+                    : 'default';
+    // The ceiling is set on the admin risk-appetite page, which only an Owner
+    // or Admin can open and save (`upsertAppetiteConfig` asserts admin).
+    const canSetAppetite = tenant.permissions.canAdmin && membershipOpensAdminConsole(tenant.membershipRole);
 
     return (
         <DashboardLayout
@@ -137,8 +164,8 @@ export default function RiskBoardPage() {
                     <>
                         <KPIStat
                             value={money(headlineAle)}
-                            label={headlineLabel}
-                            tone={appetiteVariant === 'error' ? 'critical' : appetiteVariant === 'warning' ? 'attention' : 'success'}
+                            label={t('board.aleP80')}
+                            tone={headlineTone}
                         />
                         <p className="mt-default text-sm text-content-muted">
                             {t('board.positionBody')}
@@ -168,12 +195,27 @@ export default function RiskBoardPage() {
                     )}
                 </div>
                 {appetiteStatus === 'NONE' && (
-                    <p
-                        className="mt-default text-sm text-content-subtle"
-                        data-testid="board-appetite-empty"
-                    >
-                        {t('board.appetiteEmpty')}
-                    </p>
+                    <div className="mt-default space-y-tight">
+                        <p
+                            className="text-sm text-content-subtle"
+                            data-testid="board-appetite-empty"
+                        >
+                            {t('board.appetiteEmpty')}
+                        </p>
+                        {canSetAppetite ? (
+                            <Link
+                                href={href('/admin/risk-appetite')}
+                                className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                                id="board-set-appetite"
+                            >
+                                {t('board.setAppetite')}
+                            </Link>
+                        ) : (
+                            <p className="text-xs text-content-subtle" data-testid="board-appetite-who">
+                                {t('board.appetiteWho')}
+                            </p>
+                        )}
+                    </div>
                 )}
             </Card>
 
@@ -196,8 +238,9 @@ export default function RiskBoardPage() {
                                 data-testid={`board-top-risk-${row.id}`}
                             >
                                 <span className="w-6 text-content-subtle text-xs tabular-nums">{idx + 1}.</span>
+                                {/* #4767 — the figure shown lives on the Quantification tab. */}
                                 <Link
-                                    href={href(`/risks/${row.id}?tab=assessment`)}
+                                    href={href(`/risks/${row.id}?tab=quantification`)}
                                     className="flex-1 truncate text-content-emphasis hover:text-content-default"
                                 >
                                     {row.title}
@@ -214,7 +257,21 @@ export default function RiskBoardPage() {
             {/* ── 4. Investment efficiency (RQ3-8) ─────────────────── */}
             <Card data-testid="board-best-value-card">
                 <Heading level={2} className="mb-2">{t('board.bestValue')}</Heading>
-                {!bestValue || bestValue.length === 0 ? (
+                {/* #4767 — a failed read is not "nothing qualifies": it used to
+                    tell the reader to price their controls during an outage. */}
+                {bestValueError ? (
+                    <div className="space-y-tight" data-testid="board-best-value-error">
+                        <p className="text-sm text-content-error" role="alert">{t('board.bestValueError')}</p>
+                        <Button size="sm" variant="secondary" onClick={() => void retryBestValue()} id="board-best-value-retry">
+                            {t('board.retry')}
+                        </Button>
+                    </div>
+                ) : bestValue === undefined ? (
+                    <div className="space-y-tight" data-testid="board-best-value-loading">
+                        <SkeletonLine />
+                        <SkeletonLine />
+                    </div>
+                ) : bestValue.length === 0 ? (
                     <p
                         className="text-sm text-content-subtle"
                         data-testid="board-best-value-empty"
@@ -270,8 +327,6 @@ export default function RiskBoardPage() {
                 )}
             </Card>
 
-            {/* Pretend-suppressed link for translation key resolution. */}
-            <span className="hidden">{t('dashboardTitle')}</span>
         </DashboardLayout>
     );
 }
