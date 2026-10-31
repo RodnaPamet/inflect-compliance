@@ -11658,6 +11658,25 @@
     }
   },
   "securityTesting": {
+    "scanType": {
+      "SAST": "SAST",
+      "SCA": "SCA",
+      "DAST": "DAST",
+      "SECRETS": "Тайни",
+      "IAC": "IaC"
+    },
+    "runOutcome": {
+      "PASS": "Успешно",
+      "FAIL": "Неуспешно",
+      "ERROR": "Грешка"
+    },
+    "ingestedVia": {
+      "API": "API",
+      "UPLOAD": "Качване"
+    },
+    "truncatedHint": "Най-сериозните са показани първи и филтрите се прилагат само към тях.",
+    "uploadInvalidSarif": "Файлът не е валиден SARIF отчет.",
+    "uploadInvalidSarifReason": "Файлът не е валиден SARIF отчет: {reason}",
     "title": "Тестване на сигурността",
     "colSeverity": "Сериозност",
     "colFinding": "Констатация",
