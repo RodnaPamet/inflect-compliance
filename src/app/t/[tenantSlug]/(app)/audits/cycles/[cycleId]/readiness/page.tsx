@@ -2,7 +2,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { AppIcon, type AppIconName } from '@/components/icons/AppIcon';
+import { Button } from '@/components/ui/button';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
@@ -15,7 +18,8 @@ import { chartReady, type TimeSeriesPoint } from '@inflect/ui/components/ui/char
 import { cn } from '@inflect/ui/lib/cn';
 import { readinessVariant } from '@/lib/readiness/bands';
 import { ReadinessScoreRing, ReadinessLegend } from '../../ReadinessScoreRing';
-import type { ReadinessResult } from '@/app-layer/usecases/audit-readiness';
+import type { ReadinessGap, ReadinessResult } from '@/app-layer/usecases/audit-readiness';
+import type { ReadinessRecommendation } from '@/lib/readiness/recommendations';
 
 interface ReadinessSnapshot { id: string; score: number; gapCount: number; computedAt: string }
 
@@ -26,6 +30,25 @@ const GAP_ICON: Record<string, AppIconName> = {
 const SEV_BADGE: Record<string, StatusBadgeVariant> = {
     HIGH: 'error', MEDIUM: 'warning', LOW: 'neutral',
 };
+
+/**
+ * Where a gap's row leads: the thing it names, so the reader can fix it
+ * there (#4728). A requirement has no page of its own, so it opens its
+ * framework, where requirements are mapped.
+ */
+function gapHref(tenantSlug: string, frameworkKey: string, g: ReadinessGap): string | null {
+    const base = `/t/${tenantSlug}`;
+    if (g.detail?.code === 'OPEN_AUDIT_FINDINGS') return `${base}/findings`;
+    if (!g.entityId) return null;
+    switch (g.type) {
+        case 'UNMAPPED_REQUIREMENT': return `${base}/frameworks/${encodeURIComponent(frameworkKey)}`;
+        case 'MISSING_EVIDENCE':
+        case 'MISSING_POLICY': return `${base}/controls/${g.entityId}`;
+        case 'OVERDUE_TASK':
+        case 'OPEN_ISSUE': return `${base}/tasks/${g.entityId}`;
+        default: return null;
+    }
+}
 
 export default function CycleReadinessPage() {
     const tx = useTranslations('audits');
@@ -38,22 +61,76 @@ export default function CycleReadinessPage() {
     const [cycle, setCycle] = useState<{ name: string } | null>(null);
     const [history, setHistory] = useState<ReadinessSnapshot[]>([]);
     const [loading, setLoading] = useState(true);
+    // Why there is no result: the cycle is gone (404), or the score could not
+    // be worked out. They used to read alike, with no way to try again (#4728).
+    const [failure, setFailure] = useState<'notFound' | 'error' | null>(null);
+    const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
+        let live = true;
         Promise.all([
-            fetch(apiUrl(`/audits/cycles/${cycleId}/readiness`)).then(r => r.ok ? r.json() : null),
+            fetch(apiUrl(`/audits/cycles/${cycleId}/readiness`)).then(async (r) => {
+                if (r.status === 404) throw new Error('notFound');
+                return r.ok ? r.json() : null;
+            }),
             fetch(apiUrl(`/audits/cycles/${cycleId}`)).then(r => r.ok ? r.json() : null),
             // feat/readiness-trend — the ReadinessSnapshot time-series.
             fetch(apiUrl(`/audits/cycles/${cycleId}/readiness?action=history`)).then(r => r.ok ? r.json() : null),
         ])
-            .then(([r, c, h]) => { setResult(r); setCycle(c); setHistory(h?.snapshots ?? []); })
-            // `.finally` already cleared the spinner, so this page degraded
-            // rather than hung — but the rejection itself still went nowhere.
-            // Catching it leaves the same empty-result state the non-ok branch
-            // of each fetch produces, now reached deliberately.
-            .catch(() => { setResult(null); setCycle(null); setHistory([]); })
-            .finally(() => setLoading(false));
-    }, [apiUrl, cycleId]);
+            .then(([r, c, h]) => {
+                if (!live) return;
+                setResult(r);
+                setCycle(c);
+                setHistory(h?.snapshots ?? []);
+                setFailure(r ? null : 'error');
+            })
+            .catch((e: unknown) => {
+                if (!live) return;
+                setResult(null);
+                setCycle(null);
+                setHistory([]);
+                setFailure(e instanceof Error && e.message === 'notFound' ? 'notFound' : 'error');
+            })
+            .finally(() => { if (live) setLoading(false); });
+        return () => { live = false; };
+    }, [apiUrl, cycleId, attempt]);
+
+    const retry = () => {
+        setLoading(true);
+        setAttempt((n) => n + 1);
+    };
+
+    const recommendationText = (r: ReadinessRecommendation, fallback: string | undefined): string =>
+        tx.has(`readiness.rec.${r.code}` as Parameters<typeof tx>[0])
+            ? tx(`readiness.rec.${r.code}` as Parameters<typeof tx>[0], { count: r.count ?? 0 })
+            : fallback ?? r.code;
+    const severityLabel = (value: string | null | undefined): string =>
+        value && tx.has(`findingModal.severityOptions.${value}` as Parameters<typeof tx>[0])
+            ? tx(`findingModal.severityOptions.${value}` as Parameters<typeof tx>[0])
+            : value ?? '—';
+    const taskTypeLabel = (value: string | null | undefined): string =>
+        value && tx.has(`readiness.gap.taskType.${value}` as Parameters<typeof tx>[0])
+            ? tx(`readiness.gap.taskType.${value}` as Parameters<typeof tx>[0])
+            : value ?? '—';
+    const gapTitle = (g: ReadinessGap): string =>
+        g.detail?.code === 'OPEN_AUDIT_FINDINGS'
+            ? tx('readiness.gap.openAuditFindingsTitle', { count: g.detail.count })
+            : g.title;
+    const gapDetail = (g: ReadinessGap): string => {
+        const d = g.detail;
+        switch (d?.code) {
+            case 'NOT_MAPPED': return tx('readiness.gap.notMapped');
+            case 'NO_EVIDENCE': return tx('readiness.gap.evidenceMissing');
+            case 'NO_POLICY': return tx('readiness.gap.policyMissing');
+            case 'DUE': return d.dueAt ? tx('readiness.gap.due', { date: formatDate(d.dueAt) }) : tx('readiness.gap.dueUnknown');
+            case 'ISSUE':
+                return d.issueType
+                    ? tx('readiness.gap.issueTyped', { type: taskTypeLabel(d.issueType), severity: severityLabel(d.severity) })
+                    : tx('readiness.gap.issue', { severity: severityLabel(d.severity) });
+            case 'OPEN_AUDIT_FINDINGS': return tx('readiness.gap.openAuditFindings');
+            default: return g.details;
+        }
+    };
 
     const breadcrumbs = [
         { label: tx('crumb.dashboard'), href: `/t/${tenantSlug}/dashboard` },
@@ -77,13 +154,17 @@ export default function CycleReadinessPage() {
     }
     if (!result) {
         return (
-            <EntityDetailLayout
-                title=""
-                back={{ smart: true }}
-                breadcrumbs={breadcrumbs}
-                error={tx('readiness.couldNotCompute')}
-            >
-                {null}
+            <EntityDetailLayout title="" back={{ smart: true }} breadcrumbs={breadcrumbs}>
+                <div className="p-12 text-center space-y-default" role="alert" id="readiness-load-failure">
+                    <p className="text-content-error">
+                        {failure === 'notFound' ? tx('readiness.notFound') : tx('readiness.couldNotCompute')}
+                    </p>
+                    {failure !== 'notFound' && (
+                        <Button variant="secondary" onClick={retry} id="readiness-retry-btn">
+                            {tx('readiness.retry')}
+                        </Button>
+                    )}
+                </div>
             </EntityDetailLayout>
         );
     }
@@ -125,7 +206,7 @@ export default function CycleReadinessPage() {
                                 two "NIS2 readiness" numbers can't be confused. */}
                             {result.frameworkKey === 'NIS2'
                                 ? tx('readiness.nis2ControlCoverage')
-                                : tx('readiness.frameworkReadiness', { framework: result.frameworkKey })}
+                                : tx('readiness.frameworkReadiness', { framework: result.frameworkName ?? result.frameworkKey })}
                             <InfoTooltip
                                 aria-label={tx('readinessLegend.aria')}
                                 content={result.frameworkKey === 'NIS2' ? tx('readiness.nis2CoverageVsMaturity') : (
@@ -185,14 +266,14 @@ export default function CycleReadinessPage() {
             )}
 
             {/* Recommendations */}
-            {result.recommendations?.length > 0 && (
+            {(result.recommendationCodes?.length ?? 0) > 0 && (
                 <div className={cardVariants()} id="recommendations">
                     <Heading level={3} className="mb-3 inline-flex items-center gap-tight"><AppIcon name="info" size={16} /> {tx('readiness.recommendedActions')}</Heading>
                     <div className="space-y-tight">
-                        {result.recommendations.map((r: string, i: number) => (
-                            <div key={i} className="flex items-start gap-tight text-sm">
-                                <span className="text-content-warning flex-shrink-0">→</span>
-                                <span className="text-content-default">{r}</span>
+                        {result.recommendationCodes.map((r, i: number) => (
+                            <div key={`${r.code}-${i}`} className="flex items-start gap-tight text-sm">
+                                <span className="text-content-warning flex-shrink-0" aria-hidden>→</span>
+                                <span className="text-content-default">{recommendationText(r, result.recommendations?.[i])}</span>
                             </div>
                         ))}
                     </div>
@@ -204,18 +285,30 @@ export default function CycleReadinessPage() {
                 <div className="space-y-compact" id="gaps-section">
                     <Heading level={3}>{tx('readiness.topGaps', { count: result.gaps.length })}</Heading>
                     <div className={cn(cardVariants({ density: 'none' }), 'divide-y divide-border-default/50')}>
-                        {result.gaps.map((g, i: number) => (
-                            <div key={i} className="p-3 flex items-center justify-between text-sm">
-                                <div className="flex items-center gap-compact min-w-0">
-                                    <AppIcon name={GAP_ICON[g.type] || 'overview'} size={16} />
-                                    <div className="min-w-0">
-                                        <span className="font-medium truncate block">{g.title}</span>
-                                        <span className="text-xs text-content-subtle">{g.details}</span>
+                        {result.gaps.map((g, i: number) => {
+                            const href = gapHref(tenantSlug, result.frameworkKey, g);
+                            const body = (
+                                <>
+                                    <div className="flex items-center gap-compact min-w-0">
+                                        <AppIcon name={GAP_ICON[g.type] || 'overview'} size={16} />
+                                        <div className="min-w-0">
+                                            <span className="font-medium truncate block">{gapTitle(g)}</span>
+                                            <span className="text-xs text-content-subtle">{gapDetail(g)}</span>
+                                        </div>
                                     </div>
+                                    <StatusBadge variant={SEV_BADGE[g.severity] || 'neutral'} className="ml-2">{tx(`findingModal.severityOptions.${g.severity}` as Parameters<typeof tx>[0])}</StatusBadge>
+                                </>
+                            );
+                            return href ? (
+                                <Link key={i} href={href} className="p-3 flex items-center justify-between text-sm hover:bg-bg-muted/50 transition-colors" data-testid="readiness-gap-link">
+                                    {body}
+                                </Link>
+                            ) : (
+                                <div key={i} className="p-3 flex items-center justify-between text-sm">
+                                    {body}
                                 </div>
-                                <StatusBadge variant={SEV_BADGE[g.severity] || 'neutral'} className="ml-2">{tx(`findingModal.severityOptions.${g.severity}` as Parameters<typeof tx>[0])}</StatusBadge>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}
