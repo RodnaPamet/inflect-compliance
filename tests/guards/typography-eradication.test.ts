@@ -55,6 +55,10 @@ const EXEMPT_FILES = new Set<string>([
   // headings directly rather than pulling in the <Heading> primitive. Same
   // separate-visual-ledger rationale as the vendor-assessment surface above.
   "src/app/trust/[slug]/page.tsx",
+  // The same public page's documents-on-request section, a client component
+  // because of its request form (#4649). Its <h2> copies the page's sibling
+  // section headings, class for class, so the page keeps one heading style.
+  "src/app/trust/[slug]/GatedDocumentRequests.tsx",
 ]);
 
 const EXEMPT_DIR_NAMES = new Set<string>([
