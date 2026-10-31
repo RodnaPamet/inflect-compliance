@@ -32,7 +32,7 @@ Use the page to measure your NIS2 position, find the gaps that carry fines or pe
 
 ## What you see
 
-**The header.** **{{ui:audits.nis2Gap.viewCoverage}}** opens the NIS2 framework's control coverage, which is a different measure: how many NIS2 requirements your controls cover. Owners and Admins also see **{{ui:audits.nis2Gap.rerun}}**.
+**The header.** **{{ui:audits.nis2Gap.viewCoverage}}** opens [{{ui:frameworks.readiness.heading}}](../govern/nis2-readiness.md), which scores the latest run's answers by domain and lists its gaps in priority order. The NIS2 control coverage, how many NIS2 requirements your controls cover, is on an audit cycle's readiness page instead. Owners and Admins also see **{{ui:audits.nis2Gap.rerun}}**.
 
 **The scores.** Three cards for the latest run:
 
