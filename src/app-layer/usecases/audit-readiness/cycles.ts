@@ -90,7 +90,13 @@ export async function getAuditCycle(ctx: RequestContext, cycleId: string) {
         })
     );
     if (!cycle) throw notFound('Audit cycle not found');
-    return cycle;
+    // The catalogue's name for the framework, for the page's header and the
+    // default pack's name: they used to show the key (`SOC2`) for every
+    // framework but ISO 27001 and NIS2 (#4727). `Framework.key` is unique.
+    const framework = await runInTenantContext(ctx, (tdb) =>
+        tdb.framework.findFirst({ where: { key: cycle.frameworkKey }, select: { name: true } }),
+    );
+    return { ...cycle, frameworkName: framework?.name ?? null };
 }
 
 export async function updateAuditCycle(

@@ -3781,7 +3781,7 @@
       "controls": "Controls",
       "policies": "Policies",
       "evidence": "Evidence",
-      "issues": "Issues",
+      "issues": "Open tasks",
       "previewError": "Could not load default pack preview.",
       "totalItems": "Total: {count} items will be included in the default pack.",
       "packs": "Packs",
@@ -3799,7 +3799,26 @@
       "reliancePack": "Reliance pack",
       "relianceAssembling": "Assembling…",
       "relianceHelp": "Assembles and freezes a pack for the external auditor: for each control a library v1 audit procedure covers, the auditor agent's workpapers of this cycle's period, internal audit's sampling record of each and the agreement rate with its definition. Share it like any frozen pack.",
-      "relianceError": "The reliance pack could not be assembled."
+      "relianceError": "The reliance pack could not be assembled.",
+      "relianceRefused": {
+        "CYCLE_PERIOD_REQUIRED": "The cycle has no audit period, so no workpaper can fall inside it. Set the period, then try again.",
+        "NO_PERIOD_IN_CYCLE": "The cycle's audit period contains no whole month or quarter. Widen the period, then try again.",
+        "NO_CONTROLS_IN_SCOPE": "No control has an audit procedure from the library set up, and none ran in the period.",
+        "NO_WORKPAPERS_IN_PERIOD": "The auditor agent has no workpaper inside the cycle's audit period, so the pack would show nothing.",
+        "TOO_MANY_WORKPAPERS": "More workpapers fall inside the audit period than one pack holds. Shorten the period, then try again.",
+        "WORKPAPER_CONTROL_UNRESOLVED": "A workpaper in the period cannot be traced to a control: its test run is gone and its procedure is not on exactly one plan."
+      },
+      "period": "Audit period",
+      "periodNotSet": "Not set",
+      "edit": "Edit",
+      "editTitle": "Edit audit cycle",
+      "nameLabel": "Name",
+      "periodHint": "The reporting window the audit covers. The reliance pack needs one.",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Cycle updated.",
+      "saveError": "The cycle was not updated. Try again.",
+      "cancel": "Cancel"
     },
     "readiness": {
       "cycleFallback": "Cycle",

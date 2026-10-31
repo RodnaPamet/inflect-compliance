@@ -17,7 +17,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { FieldGroup } from '@/components/ui/field-group';
 import { DateRangePicker } from '@/components/ui/date-picker/date-range-picker';
-import { selectDateRangePresets } from '@/components/ui/date-picker/presets-catalogue';
+import { AUDIT_PERIOD_PRESETS } from '../_lib/audit-period-presets';
 import type { DateRangeValue } from '@/components/ui/date-picker/types';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
@@ -35,18 +35,6 @@ import { useAuditReadinessAccess } from '../_lib/use-audit-access';
 import { apiErrorMessage } from '@/lib/api-error';
 import { ReadinessScoreRing, ReadinessLegend } from './ReadinessScoreRing';
 
-// Epic 58 — audit periods are reporting windows. The curated preset
-// subset favours periods auditors actually request ("the most recent
-// completed quarter", "this fiscal year so far") over day-level
-// presets like "Today" that don't map to an audit scope.
-const AUDIT_PERIOD_PRESETS = selectDateRangePresets([
-    'quarter-to-date',
-    'year-to-date',
-    'last-quarter',
-    'last-year',
-    'last-90-days',
-    'last-30-days',
-]);
 
 const FW_META: Record<string, { icon: AppIconName; label: string; color: string }> = {
     ISO27001: { icon: 'shield', label: 'ISO/IEC 27001:2022', color: 'from-indigo-500 to-purple-600' },
