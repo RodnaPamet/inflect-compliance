@@ -35,7 +35,7 @@ export const POST = withApiErrorHandling(
 
         const url = await createPortalSession(
             stripeCustomerId,
-            `${appUrl}/t/${ctx.tenantSlug}/admin`,
+            `${appUrl}/t/${ctx.tenantSlug}/admin/billing`,
         );
 
         return jsonResponse({ url });

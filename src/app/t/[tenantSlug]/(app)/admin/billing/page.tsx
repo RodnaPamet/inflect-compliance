@@ -26,8 +26,10 @@ export const dynamic = 'force-dynamic';
  */
 export default async function BillingPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ tenantSlug: string }>;
+    searchParams?: Promise<{ billing?: string | string[] }>;
 }) {
     const gate = await gateAdminPage('/admin/billing', params);
     if (!gate.allowed) return gate.forbidden;
@@ -45,7 +47,12 @@ export default async function BillingPage({
     });
 
     const billingMode = getBillingMode();
-    const plan = billingAccount?.plan ?? 'FREE';
+    // Self-hosted: every workspace resolves to ENTERPRISE (no limits), whatever
+    // the billing row says — show the plan the entitlements actually apply.
+    const plan = billingMode === 'SELFHOSTED' ? 'ENTERPRISE' : (billingAccount?.plan ?? 'FREE');
+    // Stripe returns here after checkout with ?billing=success|canceled.
+    const returnParam = (await searchParams)?.billing;
+    const checkoutReturn = Array.isArray(returnParam) ? returnParam[0] : returnParam;
     const status = billingAccount?.status ?? 'ACTIVE';
     const periodEnd = billingAccount?.currentPeriodEnd;
     const trialEnd = billingAccount?.trialEndsAt;
@@ -97,6 +104,17 @@ export default async function BillingPage({
                 </p>
             </div>
 
+            {checkoutReturn === 'success' && (
+                <InlineNotice variant="success" title={t('billing.checkoutSuccessTitle')} id="billing-checkout-success">
+                    {t('billing.checkoutSuccessBody')}
+                </InlineNotice>
+            )}
+            {checkoutReturn === 'canceled' && (
+                <InlineNotice variant="info" title={t('billing.checkoutCanceledTitle')} id="billing-checkout-canceled">
+                    {t('billing.checkoutCanceledBody')}
+                </InlineNotice>
+            )}
+
             {/* Trial banner */}
             {isTrialing && trialDaysRemaining !== null && (
                 <div className={cn(cardVariants({ density: 'compact' }), 'border', trialDaysRemaining <= 3 ? 'border-border-error bg-bg-error' : 'border-border-warning bg-bg-warning')} id="trial-banner">
@@ -127,8 +145,8 @@ export default async function BillingPage({
                         <StatusBadge variant={plan === 'ENTERPRISE' ? 'warning' :
                             plan === 'PRO' ? 'info' :
                             plan === 'TRIAL' ? 'neutral' :
-                            'neutral'} className="text-sm">
-                            {plan}
+                            'neutral'} className="text-sm" id="billing-plan-badge">
+                            {t(`billing.planName.${plan}`)}
                         </StatusBadge>
                     </div>
                     <div>
@@ -137,8 +155,8 @@ export default async function BillingPage({
                             status === 'TRIALING' ? 'warning' :
                             status === 'PAST_DUE' ? 'error' :
                             status === 'CANCELED' ? 'error' :
-                            'neutral'} className="text-sm">
-                            {status.replace('_', ' ')}
+                            'neutral'} className="text-sm" id="billing-status-badge">
+                            {t(`billing.statusName.${status}`)}
                         </StatusBadge>
                     </div>
                     <div>
@@ -201,7 +219,7 @@ export default async function BillingPage({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
                         <div className={cn(cardVariants(), 'border border-[var(--brand-default)]/30 hover:border-[var(--brand-default)]/60 transition')}>
                             <div className="flex items-center justify-between mb-3">
-                                <Heading level={3}>Pro</Heading>
+                                <Heading level={3}>{t('billing.planName.PRO')}</Heading>
                                 <StatusBadge variant="info">{t('billing.recommended')}</StatusBadge>
                             </div>
                             <ul className="text-sm text-content-muted space-y-1 mb-4">
@@ -214,7 +232,7 @@ export default async function BillingPage({
                         </div>
                         <div className={cn(cardVariants(), 'border border-purple-500/30 hover:border-purple-500/60 transition')}>
                             <div className="flex items-center justify-between mb-3">
-                                <Heading level={3}>Enterprise</Heading>
+                                <Heading level={3}>{t('billing.planName.ENTERPRISE')}</Heading>
                                 <StatusBadge variant="warning">{t('billing.premium')}</StatusBadge>
                             </div>
                             <ul className="text-sm text-content-muted space-y-1 mb-4">

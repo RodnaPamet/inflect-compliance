@@ -43,8 +43,8 @@ export const POST = withApiErrorHandling(
         const url = await createCheckoutSession(
             stripeCustomerId,
             body.plan,
-            `${appUrl}/t/${ctx.tenantSlug}/admin?billing=success`,
-            `${appUrl}/t/${ctx.tenantSlug}/admin?billing=canceled`,
+            `${appUrl}/t/${ctx.tenantSlug}/admin/billing?billing=success`,
+            `${appUrl}/t/${ctx.tenantSlug}/admin/billing?billing=canceled`,
         );
 
         return jsonResponse({ url });

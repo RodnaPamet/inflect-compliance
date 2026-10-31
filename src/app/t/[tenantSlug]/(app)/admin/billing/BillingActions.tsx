@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { CreditCard, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { apiErrorMessage } from '@/lib/api-error';
 
 /**
  * Client component for billing actions.
@@ -17,7 +19,16 @@ export function BillingActions({
     portal?: boolean;
     tenantSlug: string;
 }) {
+    const t = useTranslations('admin.billing');
     const [loading, setLoading] = useState(false);
+
+    // The server's reason when it gave one (a 403 such as billing_unavailable),
+    // else a sentence. Never the raw envelope: `error` is `{ code, message }`.
+    async function refusal(res: Response): Promise<string> {
+        if (res.status >= 500) return t('actionFailed');
+        const body: unknown = await res.json().catch(() => null);
+        return apiErrorMessage(body, t('actionFailed'));
+    }
     const [error, setError] = useState<string | null>(null);
 
     async function handleCheckout() {
@@ -31,13 +42,14 @@ export function BillingActions({
                 body: JSON.stringify({ plan }),
             });
             if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.error || `Failed (${res.status})`);
+                setError(await refusal(res));
+                setLoading(false);
+                return;
             }
             const { url } = await res.json();
             window.location.href = url;
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Something went wrong');
+        } catch {
+            setError(t('actionFailed'));
             setLoading(false);
         }
     }
@@ -51,13 +63,14 @@ export function BillingActions({
                 headers: { 'Content-Type': 'application/json' },
             });
             if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.error || `Failed (${res.status})`);
+                setError(await refusal(res));
+                setLoading(false);
+                return;
             }
             const { url } = await res.json();
             window.location.href = url;
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Something went wrong');
+        } catch {
+            setError(t('actionFailed'));
             setLoading(false);
         }
     }
@@ -73,7 +86,7 @@ export function BillingActions({
                     id="billing-portal-btn"
                 >
                     {!loading && <ExternalLink className="w-4 h-4" />}
-                    Manage Billing
+                    {t('manageBilling')}
                 </Button>
                 {error && <p className="text-xs text-content-error mt-2">{error}</p>}
             </div>
@@ -90,7 +103,7 @@ export function BillingActions({
                 id={`billing-upgrade-${plan?.toLowerCase()}-btn`}
             >
                 {!loading && <CreditCard className="w-4 h-4" />}
-                Upgrade to {plan}
+                {plan ? t('upgradeTo', { plan: t(`planName.${plan}`) }) : null}
             </Button>
             {error && <p className="text-xs text-content-error mt-2">{error}</p>}
         </div>

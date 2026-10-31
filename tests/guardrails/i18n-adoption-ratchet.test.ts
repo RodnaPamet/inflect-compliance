@@ -323,8 +323,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     // Keep the sequence: 23 was a file that already called `t()` and scored as
     // ADOPTED under the old file-level check. It is the clearest record in this
     // file of why the unit had to become the string.
-    'src/app/t/[tenantSlug]/(app)/admin/billing/BillingEventLog.tsx': 6, // partial, 6 prop
-    'src/app/t/[tenantSlug]/(app)/admin/billing/page.tsx': 1, // partial, 1 jsx
     'src/app/t/[tenantSlug]/(app)/admin/entra/page.tsx': 8, // partial, 7 jsx + 1 prop
     'src/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page.tsx': 2, // partial, 2 prop
     'src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx': 9, // partial, 9 prop
