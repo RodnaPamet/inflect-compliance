@@ -23,6 +23,12 @@
  * note names them. A register that silently omitted them would read as
  * complete, which is the failure mode that matters when the reader is
  * preparing a supervisory submission.
+ *
+ * **What it shows when the register is large.** The server reads one row
+ * past `INFORMATION_REGISTER_CAP`, most critical first, and counts the whole
+ * register for the header. Past the cap the page says so and the header
+ * figures still cover every arrangement (#4639): a supervisory register
+ * that undercounts in silence is the failure this page exists to avoid.
  */
 import { useCallback, useMemo } from 'react';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
@@ -37,6 +43,9 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { formatDate } from '@inflect/ui/lib/format-date';
+import { TruncationBanner } from '@/components/ui/TruncationBanner';
+import { supportsCriticalFunction } from '@/lib/dora/critical-function';
+import { vendorCriticalityLabels, vendorStatusLabels } from '@/lib/vendors/labels';
 
 export interface RegisterRow {
     id: string;
@@ -54,22 +63,22 @@ export interface RegisterRow {
 
 interface Props {
     rows: RegisterRow[];
+    /** More live arrangements exist than `rows` holds. */
+    truncated: boolean;
+    /** Every live arrangement, counted on the server. */
+    total: number;
+    /** Of those, how many support a critical or important function. */
+    criticalOrImportant: number;
     canWrite: boolean;
 }
 
-/**
- * The one derivation on this page, kept in a named function so the rule
- * is greppable and testable rather than inlined in a cell renderer.
- *
- * DORA distinguishes arrangements that support a **critical or important
- * function** — those carry the heavier contractual, exit-plan and
- * register obligations. Inflect records vendor criticality, not CIF
- * status, so CRITICAL and HIGH are read as "yes". The scope note tells
- * the reader this is derived.
- */
-export function supportsCriticalFunction(criticality: string): boolean {
-    return criticality === 'CRITICAL' || criticality === 'HIGH';
-}
+/** `VendorDataAccess` → its label key under `vendors.form`, as on the vendor page. */
+const DATA_ACCESS_LABEL_KEY: Record<string, string> = {
+    NONE: 'dataNone',
+    LOW: 'dataLow',
+    MEDIUM: 'dataMedium',
+    HIGH: 'dataHigh',
+};
 
 const CRITICALITY_VARIANT: Record<string, StatusBadgeVariant> = {
     CRITICAL: 'error',
@@ -78,11 +87,13 @@ const CRITICALITY_VARIANT: Record<string, StatusBadgeVariant> = {
     LOW: 'neutral',
 };
 
+// Keyed on `VendorStatus`. It has no SUSPENDED, and the filter used to offer
+// one while leaving out OFFBOARDING (#4639).
 const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     ACTIVE: 'success',
     ONBOARDING: 'warning',
+    OFFBOARDING: 'warning',
     OFFBOARDED: 'neutral',
-    SUSPENDED: 'error',
 };
 
 /** Filter facets — both are enums the register is read by. */
@@ -97,8 +108,22 @@ export function InformationRegistryClient(props: Props) {
     );
 }
 
-function RegistryInner({ rows }: Props) {
+function RegistryInner({ rows, truncated, total, criticalOrImportant }: Props) {
     const t = useTranslations('risks.informationRegistry');
+    const tv = useTranslations('vendors');
+    // The vendor list's own labels, so a status reads the same on both pages.
+    const statusLabels = useMemo(() => vendorStatusLabels((k) => tv(k as Parameters<typeof tv>[0])), [tv]);
+    const criticalityLabels = useMemo(
+        () => vendorCriticalityLabels((k) => tv(k as Parameters<typeof tv>[0])),
+        [tv],
+    );
+    const dataAccessLabel = useCallback(
+        (value: string) => {
+            const key = DATA_ACCESS_LABEL_KEY[value];
+            return key ? tv(`form.${key}` as Parameters<typeof tv>[0]) : value;
+        },
+        [tv],
+    );
     const guardedPush = useGuardedPush();
     const tenantHref = useTenantHref();
     const { state, hasActive, search } = useFilters();
@@ -110,23 +135,17 @@ function RegistryInner({ rows }: Props) {
                 label: t('colCriticality'),
                 icon: <AppIcon name="warning" size={16} />,
                 multiple: true,
-                options: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map((v) => ({
-                    value: v,
-                    label: v,
-                })),
+                options: Object.entries(criticalityLabels).map(([value, label]) => ({ value, label })),
             },
             {
                 key: 'status',
                 label: t('colStatus'),
                 icon: <AppIcon name="activity" size={16} />,
                 multiple: true,
-                options: ['ACTIVE', 'ONBOARDING', 'OFFBOARDED', 'SUSPENDED'].map((v) => ({
-                    value: v,
-                    label: v,
-                })),
+                options: Object.entries(statusLabels).map(([value, label]) => ({ value, label })),
             },
         ],
-        [t],
+        [t, criticalityLabels, statusLabels],
     );
 
     const visible = useMemo(() => {
@@ -143,11 +162,6 @@ function RegistryInner({ rows }: Props) {
             return true;
         });
     }, [rows, state.criticality, state.status, search]);
-
-    const criticalCount = useMemo(
-        () => rows.filter((r) => supportsCriticalFunction(r.criticality)).length,
-        [rows],
-    );
 
     const columns = useMemo(
         () =>
@@ -188,7 +202,7 @@ function RegistryInner({ rows }: Props) {
                     accessorFn: (r) => r.criticality,
                     cell: ({ row }) => (
                         <StatusBadge variant={CRITICALITY_VARIANT[row.original.criticality] ?? 'neutral'}>
-                            {row.original.criticality}
+                            {criticalityLabels[row.original.criticality] ?? row.original.criticality}
                         </StatusBadge>
                     ),
                 },
@@ -208,7 +222,7 @@ function RegistryInner({ rows }: Props) {
                     accessorFn: (r) => r.dataAccess ?? '',
                     cell: ({ row }) => (
                         <span className="text-content-muted">
-                            {row.original.dataAccess || t('notRecorded')}
+                            {row.original.dataAccess ? dataAccessLabel(row.original.dataAccess) : t('notRecorded')}
                         </span>
                     ),
                 },
@@ -230,7 +244,7 @@ function RegistryInner({ rows }: Props) {
                     accessorFn: (r) => r.status,
                     cell: ({ row }) => (
                         <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'}>
-                            {row.original.status}
+                            {statusLabels[row.original.status] ?? row.original.status}
                         </StatusBadge>
                     ),
                 },
@@ -245,7 +259,7 @@ function RegistryInner({ rows }: Props) {
                     ),
                 },
             ]),
-        [t],
+        [t, criticalityLabels, statusLabels, dataAccessLabel],
     );
 
     // Stable identities — a fresh one rebuilds the table model mid-click
@@ -273,8 +287,8 @@ function RegistryInner({ rows }: Props) {
                     <>
                         <span className="block">{t('subtitle')}</span>
                         <span className="mt-tight block" data-testid="register-count">
-                            {t('count', { count: rows.length })} ·{' '}
-                            {t('criticalCount', { count: criticalCount })}
+                            {t('count', { count: total })} ·{' '}
+                            {t('criticalCount', { count: criticalOrImportant })}
                         </span>
                         {/* The honesty line: what is derived, and which of
                             DORA's fields this projection cannot hold. */}
@@ -287,6 +301,9 @@ function RegistryInner({ rows }: Props) {
                     </>
                 ),
             }}
+            banner={
+                <TruncationBanner truncated={truncated} cap={rows.length} hint={t('truncatedHint')} />
+            }
             filters={{
                 defs: filterDefs,
                 searchId: 'information-registry-search',
