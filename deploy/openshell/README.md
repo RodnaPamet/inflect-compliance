@@ -248,6 +248,10 @@ absent from both VMs and is presented out of band by a person.
 [ ] SANDBOX_RUNTIME_HEALTH_URL points at the gateway's health port, or is
     absent — absent means "not probed", which the admin page reports
     differently from "did not answer".
+[ ] SANDBOX_RUNTIME_GATEWAY_{PROJECT,ZONE,INSTANCE} all set, or all absent.
+    All three present means a scan may start the VM (#4562); any one missing
+    and the start is skipped, which is the right behaviour for a gateway
+    somebody else runs.
 ```
 
 ### What to put in `/opt/inflect/.env.prod` — #4564
@@ -263,11 +267,42 @@ SANDBOX_RUNTIME_CONFIG_DIGEST=sha256:…      # copy from config-digest.txt
 SANDBOX_RUNTIME_APPLIED_AT=2026-10-30T06:39:54Z
 SANDBOX_RUNTIME_CHANNELS=ocsf-file
 SANDBOX_RUNTIME_HEALTH_URL=http://10.132.0.28:8081
+SANDBOX_RUNTIME_GATEWAY_PROJECT=hazel-design-419410
+SANDBOX_RUNTIME_GATEWAY_ZONE=europe-west1-b
+SANDBOX_RUNTIME_GATEWAY_INSTANCE=openshell-gateway
 ```
 
-**All four are optional and absence is a working state**, not a broken one. With
+**All seven are optional and absence is a working state**, not a broken one. With
 no digest the page reports `not-configured` for every row, which is true of a
 deploy that declared nothing.
+
+#### The last three are what lets a scan START the machine — 4.3 (#4562)
+
+Owner decision 2026-10-30: **the caller starts the VM and waits for `readyz`.**
+There is no start schedule and no Cloud Scheduler, because the 5 USD/month cap
+is a runtime budget of about 45 hours and a day with no scan must cost nothing.
+
+All three must be present for a start to be attempted; any one missing and the
+step is skipped entirely. That is not a degraded mode — it is what a deploy
+pointing at a gateway somebody else started looks like, including a local one,
+and attempting `instances start` against it would be wrong.
+
+The accepted costs, stated so they are not a surprise:
+
+- **~45 seconds of cold boot inside a scan's latency budget**, measured on this
+  VM from `instances start` to `readyz` 200;
+- a scan that starts the machine and then fails still burns the boot. The idle
+  timer bounds that at 20 minutes of no activity.
+
+A start that is attempted and does NOT reach `readyz` raises
+`SANDBOX_UNREACHABLE` rather than proceeding to create a sandbox, because the
+only thing that could do is fail more slowly having already spent the boot.
+
+**None of these three is a secret** — a project, a zone and an instance name are
+all visible to anybody with console access. The AUTHORITY to start the machine
+is the service account's, which is why #4562 narrowed it to exactly
+`compute.instances.get`, `compute.instances.start` and
+`compute.zoneOperations.get` on that one instance.
 
 #### `SANDBOX_RUNTIME_CHANNELS` is derived, not chosen
 
