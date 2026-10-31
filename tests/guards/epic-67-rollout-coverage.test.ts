@@ -47,6 +47,14 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         handlers: ['removePack'],
     },
     {
+        // #4797 — removing a piece of evidence from an open test run. Only
+        // the link to the run is deleted; the DELETE is sent when the window
+        // closes.
+        file: 'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx',
+        name: 'Test run evidence removal (test run detail)',
+        handlers: ['unlinkEvidence'],
+    },
+    {
         file: 'src/components/TraceabilityPanel.tsx',
         name: 'Cross-entity unlink (TraceabilityPanel)',
         handlers: ['handleUnlink'],

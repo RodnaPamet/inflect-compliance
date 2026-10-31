@@ -14,12 +14,13 @@ import { Paperclip } from 'lucide-react';
 import { textLinkVariants } from '@/components/ui/typography';
 import { normaliseHref } from '@/lib/security/safe-url';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
-import { apiErrorMessage } from '@/lib/api-error';
+import { apiErrorMessage, apiRefusalMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
+import { useToastWithUndo } from '@/components/ui/hooks';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -102,6 +103,11 @@ export default function TestRunPage() {
     // `controls.edit` as well as the write tier (#4326). Without it, the run
     // can still take evidence already in the library.
     const canLinkToControl = permissions.canWrite && appPermissions.controls.edit;
+    // #4797 — each affordance follows the key its route asks: starting,
+    // completing, retesting and the run's evidence take `tests.execute`
+    // (test.policies.ts), the evidence bundle `reports.export`.
+    const canExecute = appPermissions.tests.execute;
+    const canExport = appPermissions.reports.export;
     const evKindOptions = useMemo(
         () =>
             canLinkToControl
@@ -111,6 +117,7 @@ export default function TestRunPage() {
         [EV_KIND_OPTIONS, canLinkToControl],
     );
     const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
     const runId = params?.runId as string;
 
     // Epic 69 — canonical tenant-aware read. Guided-runner mutations
@@ -156,7 +163,6 @@ export default function TestRunPage() {
     const [evFileTitle, setEvFileTitle] = useState('');
     const [evError, setEvError] = useState('');
     const [linkingEv, setLinkingEv] = useState(false);
-    const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
 
     const [retesting, setRetesting] = useState(false);
 
@@ -180,7 +186,10 @@ export default function TestRunPage() {
         setVerifying(true);
         try {
             const res = await fetch(apiUrl(`/tests/runs/${runId}/verify-evidence`));
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+                toast.error(await refusalOf(res, t('run.integrity.error')));
+                return;
+            }
             setIntegrity(await res.json());
         } catch {
             toast.error(t('run.integrity.error'));
@@ -198,15 +207,17 @@ export default function TestRunPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ auditPackId: snapshotPackId }),
             });
-            if (!res.ok) throw new Error((await res.text()) || '');
+            if (!res.ok) {
+                // Surface the server's actual reason (pack CLOSED, run not
+                // completed, …) — read out of the error envelope, not the
+                // raw body, which a toast showed as JSON (#4797).
+                toast.error(await refusalOf(res, t('run.snapshot.failed')));
+                return;
+            }
             toast.success(t('run.snapshot.success'));
             setSnapshotPackId('');
-        } catch (err) {
-            // Surface the server's actual reason (pack CLOSED, run not
-            // completed, …) instead of a blanket "failed" that reassures
-            // the user nothing went wrong.
-            const msg = err instanceof Error && err.message ? err.message : t('run.snapshot.failed');
-            toast.error(msg);
+        } catch {
+            toast.error(t('run.snapshot.failed'));
         } finally {
             setSnapshotting(false);
         }
@@ -216,7 +227,10 @@ export default function TestRunPage() {
         setRetesting(true);
         try {
             const res = await fetch(apiUrl(`/tests/runs/${runId}/retest`), { method: 'POST' });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+                toast.error(await refusalOf(res, t('run.errors.retestFailed')));
+                return;
+            }
             const newRun = await res.json();
             router.push(tenantHref(`/tests/runs/${newRun.id}`));
         } catch {
@@ -241,7 +255,10 @@ export default function TestRunPage() {
         setStarting(true);
         try {
             const res = await fetch(apiUrl(`/tests/runs/${runId}/start`), { method: 'POST' });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+                toast.error(await refusalOf(res, t('run.errors.startFailed')));
+                return;
+            }
             await mutate();
         } catch {
             toast.error(t('run.errors.startFailed'));
@@ -260,7 +277,10 @@ export default function TestRunPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+                toast.error(await refusalOf(res, t('run.errors.completeFailed')));
+                return;
+            }
             toast.success(t('run.completedToast'));
             setConfirmingComplete(false);
             await mutate();
@@ -337,7 +357,7 @@ export default function TestRunPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(linkBody),
             });
-            if (!linkRes.ok) throw new Error(t('run.errors.linkFailed'));
+            if (!linkRes.ok) throw new Error(await refusalOf(linkRes, t('run.errors.linkFailed')));
 
             setShowEvForm(false);
             setEvUrl('');
@@ -358,20 +378,29 @@ export default function TestRunPage() {
         }
     };
 
-    const unlinkEvidence = async (linkId: string) => {
-        setUnlinkingId(linkId);
-        try {
-            const res = await fetch(apiUrl(`/tests/runs/${runId}/evidence/${linkId}`), { method: 'DELETE' });
-            if (!res.ok) throw new Error(await res.text());
-            // Removing a link also invalidates any prior integrity verdict.
-            setIntegrity(null);
-            toast.success(t('run.evidenceRemovedToast'));
-            await mutate();
-        } catch {
-            toast.error(t('run.errors.unlinkFailed'));
-        } finally {
-            setUnlinkingId(null);
-        }
+    // Epic 67 (#4797) — removing a piece of evidence from an open run is a
+    // routine, reversible removal: the row leaves the list at once and the
+    // DELETE is sent only when the five-second undo window closes.
+    const unlinkEvidence = (linkId: string) => {
+        if (!run) return;
+        const snapshot = run;
+        void mutate({ ...snapshot, evidence: snapshot.evidence.filter((e) => e.id !== linkId) }, { revalidate: false });
+        // Removing a link also invalidates any prior integrity verdict.
+        setIntegrity(null);
+        triggerUndoToast({
+            message: t('run.evidenceRemovedToast'),
+            undoMessage: t('run.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(`/tests/runs/${runId}/evidence/${linkId}`), { method: 'DELETE' });
+                if (!res.ok) throw new Error(await refusalOf(res, t('run.errors.unlinkFailed')));
+                await mutate();
+            },
+            undoAction: () => { void mutate(snapshot, { revalidate: false }); },
+            onError: (e) => {
+                void mutate(snapshot, { revalidate: false });
+                toast.error(e instanceof Error && e.message ? e.message : t('run.errors.unlinkFailed'));
+            },
+        });
     };
 
     // Task 2 — ONE coherent chain in every state. Always route the
@@ -501,7 +530,7 @@ export default function TestRunPage() {
                             const checked = checkedSteps.has(step.id);
                             return (
                                 <li key={step.id} className="flex gap-compact text-sm items-start">
-                                    {isRunning && permissions.canWrite ? (
+                                    {isRunning && canExecute ? (
                                         <input
                                             type="checkbox"
                                             className="mt-1 flex-shrink-0"
@@ -536,7 +565,7 @@ export default function TestRunPage() {
             )}
 
             {/* PLANNED — begin the run before recording a result. */}
-            {isPlanned && permissions.canWrite && (
+            {isPlanned && canExecute && (
                 <Card className="flex items-center justify-between border-l-4 border-[var(--brand-default)]">
                     <div>
                         <Heading level={3}>{t('run.startHeading')}</Heading>
@@ -549,19 +578,20 @@ export default function TestRunPage() {
             )}
 
             {/* Complete Form — only while the run is in progress */}
-            {isRunning && permissions.canWrite && (
+            {isRunning && canExecute && (
                 <Card className="space-y-default border-l-4 border-[var(--brand-default)]">
                     <Heading level={3}>{t('run.completeHeading')}</Heading>
 
                     <div>
-                        <label className="text-xs text-content-muted block mb-1">{t('run.resultLabel')}</label>
-                        <div className="flex gap-compact">
+                        <span className="text-xs text-content-muted block mb-1" id="test-run-result-label">{t('run.resultLabel')}</span>
+                        <div className="flex gap-compact" role="group" aria-labelledby="test-run-result-label">
                             {(['PASS', 'FAIL', 'INCONCLUSIVE'] as const).map(r => (
                                 <button
                                     key={r}
                                     className={buttonVariants({ variant: result === r ? (r === 'FAIL' ? 'destructive' : 'primary') : 'ghost', size: 'sm', className: result === r ? (r === 'PASS' ? 'bg-bg-success-emphasis text-content-emphasis' : r === 'FAIL' ? 'bg-bg-error-emphasis text-content-emphasis' : 'bg-bg-warning-emphasis text-content-emphasis') : '' })}
                                     onClick={() => setResult(r)}
                                     id={`result-btn-${r}`}
+                                    aria-pressed={result === r}
                                 >
                                     {RESULT_LABELS[r] ?? r}
                                 </button>
@@ -570,7 +600,7 @@ export default function TestRunPage() {
                     </div>
 
                     <div>
-                        <label className="text-xs text-content-muted block mb-1">{t('run.notes')}</label>
+                        <label className="text-xs text-content-muted block mb-1" htmlFor="test-run-notes">{t('run.notes')}</label>
                         <Textarea
                             className="w-full h-20"
                             value={notes}
@@ -582,14 +612,16 @@ export default function TestRunPage() {
 
                     {result === 'FAIL' && (
                         <div className="animate-fadeIn">
-                            <label className="text-xs text-content-muted block mb-1">{t('run.findingLabel')}</label>
+                            <label className="text-xs text-content-muted block mb-1" htmlFor="test-run-finding-summary">{t('run.findingLabel')}</label>
                             <Textarea
                                 className="w-full h-16"
                                 value={findingSummary}
                                 onChange={e => setFindingSummary(e.target.value)}
                                 placeholder={t('run.findingPlaceholder')}
                                 id="test-run-finding-summary"
+                                aria-describedby="test-run-finding-hint"
                             />
+                            <p className="text-xs text-content-subtle mt-1" id="test-run-finding-hint">{t('run.findingHint')}</p>
                         </div>
                     )}
 
@@ -627,7 +659,7 @@ export default function TestRunPage() {
                     )}
 
                     {/* Retest button for FAIL/INCONCLUSIVE */}
-                    {permissions.canWrite && (run.result === 'FAIL' || run.result === 'INCONCLUSIVE') && (
+                    {canExecute && (run.result === 'FAIL' || run.result === 'INCONCLUSIVE') && (
                         <div className="mt-3 pt-3 border-t border-border-default/50">
                             <Button
                                 variant="secondary"
@@ -650,7 +682,7 @@ export default function TestRunPage() {
                     <Heading level={3}>{t('run.evidenceHeading', { count: run.evidence?.length ?? 0 })}</Heading>
                     {/* A completed run is frozen audit evidence — its evidence
                         set is immutable server-side, so hide the add affordance. */}
-                    {permissions.canWrite && !isCompleted && (
+                    {canExecute && !isCompleted && (
                         // A disclosure toggle that reads "Cancel" while open, so
                         // secondary: the open form holds this region's primary.
                         <Button
@@ -672,7 +704,7 @@ export default function TestRunPage() {
                             </div>
                         )}
                         <div>
-                            <label className="text-xs text-content-muted block mb-1">{t('run.evidenceType')}</label>
+                            <label className="text-xs text-content-muted block mb-1" htmlFor="evidence-kind-select">{t('run.evidenceType')}</label>
                             <Combobox
                                 hideSearch
                                 id="evidence-kind-select"
@@ -715,13 +747,13 @@ export default function TestRunPage() {
                         )}
                         {evKind === 'LINK' && (
                             <div>
-                                <label className="text-xs text-content-muted block mb-1">{t('run.url')}</label>
+                                <label className="text-xs text-content-muted block mb-1" htmlFor="evidence-url-input">{t('run.url')}</label>
                                 <Input className="w-full" value={evUrl} onChange={e => setEvUrl(e.target.value)} placeholder="https://..." id="evidence-url-input" />
                             </div>
                         )}
                         {evKind === 'EVIDENCE' && (
                             <div>
-                                <label className="text-xs text-content-muted block mb-1">{t('run.evidenceRecord')}</label>
+                                <label className="text-xs text-content-muted block mb-1" htmlFor="evidence-id-input">{t('run.evidenceRecord')}</label>
                                 <Combobox
                                     id="evidence-id-input"
                                     options={evidenceOptions}
@@ -734,12 +766,12 @@ export default function TestRunPage() {
                         )}
                         {(evKind === 'FILE_UPLOAD' || evKind === 'LINK') && (
                             <div>
-                                <label className="text-xs text-content-muted block mb-1">{t('run.title2')}</label>
+                                <label className="text-xs text-content-muted block mb-1" htmlFor="evidence-file-title-input">{t('run.title2')}</label>
                                 <Input className="w-full" value={evFileTitle} onChange={e => setEvFileTitle(e.target.value)} placeholder={t('run.titlePlaceholder')} id="evidence-file-title-input" />
                             </div>
                         )}
                         <div>
-                            <label className="text-xs text-content-muted block mb-1">{t('run.note')}</label>
+                            <label className="text-xs text-content-muted block mb-1" htmlFor="evidence-note-input">{t('run.note')}</label>
                             <Input className="w-full" value={evNote} onChange={e => setEvNote(e.target.value)} placeholder={t('run.notePlaceholder')} id="evidence-note-input" />
                         </div>
                         <Button
@@ -779,17 +811,16 @@ export default function TestRunPage() {
                                         {ev.createdBy?.name || ev.createdBy?.email} • {formatDate(ev.createdAt)}
                                     </p>
                                 </div>
-                                {permissions.canWrite && !isCompleted && (
+                                {canExecute && !isCompleted && (
                                     <Tooltip content={t('run.unlinkTooltip')}>
                                         <Button
                                             variant="ghost"
                                             size="xs"
-                                            className="text-content-error opacity-0 group-hover:opacity-100 transition"
+                                            className="text-content-error opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition"
                                             onClick={() => unlinkEvidence(ev.id)}
-                                            disabled={unlinkingId === ev.id}
                                             aria-label={t('run.unlinkAria')}
                                         >
-                                            {unlinkingId === ev.id ? '...' : <span aria-hidden="true">×</span>}
+                                            <span aria-hidden="true">×</span>
                                         </Button>
                                     </Tooltip>
                                 )}
@@ -833,7 +864,9 @@ export default function TestRunPage() {
                     )}
                 </div>
 
-                {/* Export bundle */}
+                {/* Export bundle — `reports.export` (#4797); a Reader was
+                    offered both links and refused with a raw 403. */}
+                {canExport && (
                 <div className="flex flex-wrap items-center gap-compact">
                     <span className="text-xs text-content-muted">{t('run.export.label')}</span>
                     <a
@@ -853,12 +886,13 @@ export default function TestRunPage() {
                         {t('run.export.json')}
                     </a>
                 </div>
+                )}
 
                 {/* Snapshot to audit pack — completed runs only */}
                 {isCompleted && permissions.canWrite && (
                     <div className="flex flex-wrap items-end gap-compact">
                         <div className="w-full sm:w-64">
-                            <label className="text-xs text-content-muted block mb-1">{t('run.snapshot.label')}</label>
+                            <label className="text-xs text-content-muted block mb-1" htmlFor="snapshot-pack-select">{t('run.snapshot.label')}</label>
                             <Combobox
                                 id="snapshot-pack-select"
                                 options={draftPackOptions}
@@ -903,11 +937,22 @@ export default function TestRunPage() {
                 setShowModal={setConfirmingComplete}
                 tone="warning"
                 title={t('run.confirmComplete.title')}
-                description={t('run.confirmComplete.description', { result })}
+                description={t('run.confirmComplete.description', { result: RESULT_LABELS[result] ?? result })}
                 confirmLabel={t('run.confirmComplete.confirm')}
                 cancelLabel={t('run.confirmComplete.cancel')}
                 onConfirm={completeRun}
             />
         </EntityDetailLayout>
     );
+}
+
+/**
+ * The sentence to show for a refused run action (#4797). A 4xx carries the
+ * server's own reason (a paused plan, a frozen run, a closed pack); a 5xx
+ * says nothing a person can act on, so it keeps the caller's fallback.
+ */
+async function refusalOf(res: Response, fallback: string): Promise<string> {
+    if (res.status >= 500) return fallback;
+    const body = await res.json().catch(() => null);
+    return apiRefusalMessage(body, fallback);
 }
