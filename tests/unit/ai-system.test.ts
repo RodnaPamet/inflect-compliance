@@ -2,9 +2,16 @@
  * AI-System Registry usecase unit tests — classification-driven registration
  * and propose-not-commit conformity drafting (with mocked persistence).
  */
+const mockFindPendingDraft = jest.fn().mockResolvedValue(null);
+const mockFindDrafts = jest.fn().mockResolvedValue([]);
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) =>
         fn({
+            // #4777 — conformity drafts are read back by their origin ref.
+            agentProposal: {
+                findFirst: (...a: unknown[]) => mockFindPendingDraft(...a),
+                findMany: (...a: unknown[]) => mockFindDrafts(...a),
+            },
             // The global Framework/FrameworkRequirement catalog is read via the
             // tenant-bound `db` (the tables have no RLS).
             framework: {
@@ -41,10 +48,14 @@ jest.mock('@/app-layer/usecases/agent-proposals', () => ({
 }));
 
 import { createAiSystem } from '@/app-layer/usecases/ai-system';
-import { generateConformityDraft } from '@/app-layer/usecases/ai-system-conformity';
+import { generateConformityDraft, listConformityDrafts } from '@/app-layer/usecases/ai-system-conformity';
 import { makeRequestContext } from '../helpers/make-context';
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+    jest.clearAllMocks();
+    mockFindPendingDraft.mockResolvedValue(null);
+    mockFindDrafts.mockResolvedValue([]);
+});
 
 describe('createAiSystem', () => {
     it('classifies an Annex III use-case as HIGH and links obligations', async () => {
@@ -120,5 +131,41 @@ describe('generateConformityDraft (propose-not-commit)', () => {
         expect((err as Error).message).toMatch(/has not been classified against the EU AI Act/);
         expect((err as Error).message).not.toMatch(/HIGH-risk/);
         expect(mockProposal).not.toHaveBeenCalled();
+    });
+});
+
+describe('conformity drafts are remembered (#4777)', () => {
+    const HIGH = {
+        id: 'ai-1', name: 'Screening', provider: null, deploymentRole: 'DEPLOYER',
+        riskTier: 'HIGH', status: 'ACTIVE', purpose: null, useContext: null,
+        classificationClauseId: 'Annex III(4)', classificationRationale: 'high',
+        requirementLinks: [],
+    };
+
+    it('records where the draft came from', async () => {
+        mockGetById.mockResolvedValueOnce(HIGH);
+        await generateConformityDraft(makeRequestContext('EDITOR'), 'ai-1', { docType: 'ART_9_RISK_MANAGEMENT' });
+        expect(mockProposal).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ proposedBySessionRef: 'ai-system-conformity:ai-1:ART_9_RISK_MANAGEMENT' }),
+        );
+    });
+
+    it('refuses a second draft of a document that is still waiting for review', async () => {
+        mockGetById.mockResolvedValueOnce(HIGH);
+        mockFindPendingDraft.mockResolvedValueOnce({ id: 'prop-0' });
+        await expect(
+            generateConformityDraft(makeRequestContext('EDITOR'), 'ai-1', { docType: 'ART_9_RISK_MANAGEMENT' }),
+        ).rejects.toMatchObject({ status: 409 });
+        expect(mockProposal).not.toHaveBeenCalled();
+    });
+
+    it('lists the drafts of one system, naming each document', async () => {
+        mockFindDrafts.mockResolvedValueOnce([
+            { id: 'p1', status: 'PENDING', createdAt: new Date('2026-10-01'), proposedBySessionRef: 'ai-system-conformity:ai-1:ANNEX_IV_TECHNICAL_DOCUMENTATION' },
+        ]);
+        const drafts = await listConformityDrafts(makeRequestContext('READER'), 'ai-1');
+        expect(drafts).toEqual([{ proposalId: 'p1', docType: 'ANNEX_IV_TECHNICAL_DOCUMENTATION', status: 'PENDING', createdAt: new Date('2026-10-01') }]);
+        expect(mockFindDrafts.mock.calls[0][0].where.proposedBySessionRef).toEqual({ startsWith: 'ai-system-conformity:ai-1:' });
     });
 });

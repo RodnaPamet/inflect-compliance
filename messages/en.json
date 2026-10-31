@@ -1606,13 +1606,11 @@
         "linkedObligations": "Linked obligations ({count})",
         "obligationsEmpty": "No obligations linked.",
         "conformityHeading": "Conformity artifacts",
-        "conformityHelp": "Generate a DRAFT for human review. A draft is queued in the approval queue — nothing is published, and a Declaration of Conformity is never auto-issued.",
+        "conformityHelp": "Generate a draft for a person to review. It goes to the approval queue: nothing is published, and a Declaration of Conformity is never issued automatically.",
         "generating": "Generating…",
-        "queued": "Queued",
+        "queued": "Waiting for review",
         "approvalQueue": "approval queue",
         "errorFallback": "Failed to generate draft",
-        "draftsQueuedSingular": "Draft queued for review in the ",
-        "draftsQueuedPlural": "Drafts queued for review in the ",
         "docTypes": {
           "ANNEX_IV_TECHNICAL_DOCUMENTATION": "Technical Documentation (Annex IV)",
           "ART_9_RISK_MANAGEMENT": "Risk Management record (Art. 9)",
@@ -1633,7 +1631,18 @@
           "submitting": "Classifying…",
           "saved": "Classified {tier}",
           "failed": "The entry could not be classified."
-        }
+        },
+        "draftsQueued": "{count, plural, one {# draft is} other {# drafts are}} waiting for review in the <link>approval queue</link>.",
+        "rowStatus": "Status",
+        "status_ACTIVE": "In use",
+        "status_RETIRED": "Retired",
+        "draftsHeading": "Drafts for this system",
+        "draftStatus_PENDING": "Waiting for review",
+        "draftStatus_ACCEPTED": "Approved",
+        "draftStatus_EDITED": "Approved with edits",
+        "draftStatus_REJECTED": "Rejected",
+        "draftStatus_EXPIRED": "Expired",
+        "draftStatus_QUARANTINED": "Held by the AI guard"
       },
       "filters": {
         "riskTier": "Risk tier",

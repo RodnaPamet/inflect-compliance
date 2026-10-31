@@ -1606,13 +1606,11 @@
         "linkedObligations": "Свързани задължения ({count})",
         "obligationsEmpty": "Няма свързани задължения.",
         "conformityHeading": "Артефакти за съответствие",
-        "conformityHelp": "Генерирайте ЧЕРНОВА за преглед от човек. Черновата се поставя на опашката за одобрение — нищо не се публикува и Декларация за съответствие никога не се издава автоматично.",
+        "conformityHelp": "Създайте чернова, която човек да прегледа. Тя отива в опашката за одобрение: нищо не се публикува, а декларация за съответствие никога не се издава автоматично.",
         "generating": "Генериране…",
-        "queued": "На опашка",
+        "queued": "Чака преглед",
         "approvalQueue": "опашката за одобрение",
         "errorFallback": "Генерирането на черновата е неуспешно",
-        "draftsQueuedSingular": "Черновата е на опашка за преглед в ",
-        "draftsQueuedPlural": "Черновите са на опашка за преглед в ",
         "docTypes": {
           "ANNEX_IV_TECHNICAL_DOCUMENTATION": "Техническа документация (Приложение IV)",
           "ART_9_RISK_MANAGEMENT": "Запис за управление на риска (чл. 9)",
@@ -1633,7 +1631,18 @@
           "submitting": "Класифициране…",
           "saved": "Класифицирано: {tier}",
           "failed": "Записът не можа да бъде класифициран."
-        }
+        },
+        "draftsQueued": "{count, plural, one {# чернова чака} other {# чернови чакат}} преглед в <link>опашката за одобрение</link>.",
+        "rowStatus": "Статус",
+        "status_ACTIVE": "В употреба",
+        "status_RETIRED": "Изведена от употреба",
+        "draftsHeading": "Чернови за тази система",
+        "draftStatus_PENDING": "Чака преглед",
+        "draftStatus_ACCEPTED": "Одобрена",
+        "draftStatus_EDITED": "Одобрена с промени",
+        "draftStatus_REJECTED": "Отхвърлена",
+        "draftStatus_EXPIRED": "Изтекла",
+        "draftStatus_QUARANTINED": "Задържана от AI защитата"
       },
       "filters": {
         "riskTier": "Ниво на риск",

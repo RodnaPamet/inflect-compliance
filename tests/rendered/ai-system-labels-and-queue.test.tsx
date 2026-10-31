@@ -32,16 +32,46 @@ jest.mock('next-intl', () => {
             (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
             en,
         );
+    const ReactActual = jest.requireActual('react');
+    // Flat `plural` blocks (`=N` / `one` / `other`), as the catalogue writes them.
+    const PLURAL = /\{(\w+),\s*plural,((?:\s*(?:=\d+|one|other)\s*\{[^{}]*\})+)\s*\}/g;
+    const OPTION = /(=\d+|one|other)\s*\{([^{}]*)\}/g;
     const cache = new Map<string, unknown>();
     const makeT = (ns: string) => {
         const t = (key: string, params?: Record<string, unknown>) => {
             const val = lookup(ns, key);
             if (typeof val !== 'string') return key;
-            return val.replace(/\{(\w+)\}/g, (m: string, name: string) =>
-                params && Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : m,
-            );
+            const has = (name: string) => !!params && Object.prototype.hasOwnProperty.call(params, name);
+            return val
+                .replace(PLURAL, (block: string, name: string, options: string) => {
+                    if (!has(name)) return block;
+                    const n = Number(params![name]);
+                    const forms = new Map<string, string>();
+                    for (const m of options.matchAll(OPTION)) forms.set(m[1], m[2]);
+                    const body = forms.get(`=${n}`) ?? (n === 1 ? forms.get('one') : undefined) ?? forms.get('other');
+                    return body === undefined ? block : body.split('#').join(String(n));
+                })
+                .replace(/\{(\w+)\}/g, (m: string, name: string) => (has(name) ? String(params![name]) : m));
         };
-        t.rich = t; t.markup = t; t.raw = (k: string) => lookup(ns, k);
+        // `.rich` renders `<tag>…</tag>` through the matching function, so a
+        // link inside a sentence is a real link.
+        const rich = (key: string, params?: Record<string, unknown>) => {
+            const str = t(key, params);
+            const out: unknown[] = [];
+            const re = /<(\w+)>([\s\S]*?)<\/\1>/g;
+            let last = 0;
+            let m: RegExpExecArray | null;
+            let i = 0;
+            while ((m = re.exec(str))) {
+                if (m.index > last) out.push(str.slice(last, m.index));
+                const fn = params?.[m[1]] as ((c: unknown) => unknown) | undefined;
+                out.push(fn ? ReactActual.cloneElement(fn(m[2]), { key: i++ }) : m[2]);
+                last = re.lastIndex;
+            }
+            if (last < str.length) out.push(str.slice(last));
+            return out;
+        };
+        t.rich = rich; t.markup = t; t.raw = (k: string) => lookup(ns, k);
         t.has = (k: string) => typeof lookup(ns, k) === 'string';
         return t;
     };
@@ -223,5 +253,47 @@ describe('a queued draft links only to a page its author can open (#4638)', () =
         const link = within(note).getByRole('link', { name: AI.detail.openPolicies });
         expect(link.getAttribute('href')).toBe('/t/acme/policies');
         expect(document.querySelector('a[href="/t/acme/agent-proposals"]')).toBeNull();
+    });
+});
+
+describe('the detail page remembers its drafts and names its obligations (#4777)', () => {
+    it('lists the drafts already queued and keeps their button off', async () => {
+        render(
+            <Wrapper>
+                <AiSystemDetailClient
+                    system={HIGH_SYSTEM}
+                    drafts={[{ proposalId: 'p-0', docType: 'ART_9_RISK_MANAGEMENT', status: 'PENDING', createdAt: '2026-10-01T00:00:00.000Z' }]}
+                    tenantSlug="acme"
+                    canWrite
+                    canOpenApprovalQueue
+                />
+            </Wrapper>,
+        );
+        expect(await screen.findByTestId('ai-system-draft-ART_9_RISK_MANAGEMENT')).toHaveTextContent(AI.detail.draftStatus_PENDING);
+        const buttons = screen.getAllByRole('button', { name: AI.detail.queued });
+        expect(buttons).toHaveLength(1);
+        expect(buttons[0]).toBeDisabled();
+        expect(screen.getByRole('button', { name: AI.detail.docTypes.ANNEX_IV_TECHNICAL_DOCUMENTATION })).toBeEnabled();
+    });
+
+    it('shows the status and names each obligation by its framework, with a link', async () => {
+        render(
+            <Wrapper>
+                <AiSystemDetailClient
+                    system={{
+                        ...HIGH_SYSTEM,
+                        requirementLinks: [{ id: 'l1', requirement: { id: 'r1', code: 'Art.9', title: 'Risk management system', framework: { key: 'EU-AI-ACT', name: 'EU AI Act' } } }],
+                    }}
+                    tenantSlug="acme"
+                    canWrite
+                    canOpenApprovalQueue
+                />
+            </Wrapper>,
+        );
+        expect(await screen.findByTestId('ai-system-status')).toHaveTextContent(AI.detail.status_ACTIVE);
+        const row = screen.getByTestId('ai-system-obligation-l1');
+        expect(row).toHaveTextContent('EU AI Act Art.9');
+        expect(row).not.toHaveTextContent('EU-AI-ACT');
+        expect(screen.getByRole('link', { name: 'Risk management system' })).toHaveAttribute('href', '/t/acme/frameworks/EU-AI-ACT');
     });
 });
