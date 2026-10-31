@@ -393,6 +393,20 @@ export async function updateSchedule(
     const resolved = patch.recipients
         ? (await resolveScheduleRecipients(ctx, patch.recipients)).recipients
         : undefined;
+    // #4774 — emptying the recipients is allowed only for a schedule that
+    // delivers to SharePoint, the rule `createSchedule` already holds; without
+    // this an edit could leave a schedule with nowhere to send.
+    if (resolved && resolved.length === 0) {
+        const current = await runInTenantContext(ctx, (db) =>
+            db.reportSchedule.findFirst({
+                where: { id: scheduleId, tenantId: ctx.tenantId },
+                select: { sharePointDriveId: true },
+            }),
+        );
+        if (current && !current.sharePointDriveId) {
+            throw badRequest('A schedule needs at least one recipient or a SharePoint destination');
+        }
+    }
     await runInTenantContext(ctx, (db) =>
         db.reportSchedule.updateMany({
             where: { id: scheduleId, tenantId: ctx.tenantId },

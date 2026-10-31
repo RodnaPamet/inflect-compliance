@@ -56,7 +56,6 @@ const SECTION_LABELS: Record<string, string> = {
     '/findings': 'findings',
     '/frameworks': 'frameworks',
     '/issues': 'issues',
-    '/mapping': 'mapping',
     '/notifications': 'notifications',
     '/policies': 'policies',
     '/processes': 'processes',

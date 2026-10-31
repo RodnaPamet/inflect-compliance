@@ -284,6 +284,13 @@ describe('an empty deploy value means absent, not invalid', () => {
             'SANDBOX_RUNTIME_GATEWAY_PROJECT',
             'SANDBOX_RUNTIME_GATEWAY_ZONE',
             'SANDBOX_RUNTIME_GATEWAY_INSTANCE',
+            // #4561 — all four, or no transport is constructed. The three PEM
+            // entries are PATHS: the key is delivered out of band as a 0400
+            // file, so this env file never carries a secret.
+            'SANDBOX_RUNTIME_GATEWAY_ENDPOINT',
+            'SANDBOX_RUNTIME_CA_CERT_PATH',
+            'SANDBOX_RUNTIME_CLIENT_CERT_PATH',
+            'SANDBOX_RUNTIME_CLIENT_KEY_PATH',
         ]) {
             expect(readme.split('\n').filter((l) => l.includes(v)).length).toBeGreaterThanOrEqual(1);
         }

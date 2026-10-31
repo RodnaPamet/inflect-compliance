@@ -54,3 +54,19 @@ describe('aggregateTree', () => {
         expect(out[1].totalAle).toBe(50_000);
     });
 });
+
+describe('aggregateTree — the risks attached to each node (#4772)', () => {
+    it("lists a node's own risks with their titles, not its children's", () => {
+        const roots = [{ id: 'eng', name: 'Engineering' }];
+        const childrenByParent = new Map([['eng', [{ id: 'plat', name: 'Platform' }]]]);
+        const riskIdsByNode = new Map([['eng', ['r1']], ['plat', ['r2']]]);
+        const aleByRisk = new Map([['r1', 100], ['r2', 50]]);
+        const titles = new Map([['r1', 'Ransomware'], ['r2', 'Outage']]);
+
+        const [eng] = aggregateTree(roots, childrenByParent, riskIdsByNode, aleByRisk, titles);
+
+        expect(eng.risks).toEqual([{ id: 'r1', title: 'Ransomware' }]);
+        expect(eng.children[0].risks).toEqual([{ id: 'r2', title: 'Outage' }]);
+        expect(eng.riskCount).toBe(2);
+    });
+});

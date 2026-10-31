@@ -133,8 +133,16 @@ export function useTenantApiUrl() {
 
 import { formatCompactCurrency } from '@/lib/risk-coherence';
 
+/**
+ * The tenant's currency symbol, for a label that names the currency rather
+ * than formatting an amount ("Investment (€)"). The one place the default
+ * lives: `useMoneyFormatter` reads it too.
+ */
+export function useCurrencySymbol(): string {
+    return useTenantContext().currencySymbol ?? '€';
+}
+
 export function useMoneyFormatter(): (v: number | null | undefined) => string {
-    const ctx = useTenantContext();
-    const symbol = ctx.currencySymbol ?? '€';
+    const symbol = useCurrencySymbol();
     return useCallback((v: number | null | undefined) => formatCompactCurrency(v, symbol), [symbol]);
 }

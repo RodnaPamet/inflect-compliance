@@ -81,6 +81,12 @@ export async function listKris(ctx: RequestContext, opts: { riskId?: string; isA
         const kris = await db.keyRiskIndicator.findMany({
             where: { tenantId: ctx.tenantId, ...(opts.riskId ? { riskId: opts.riskId } : {}), ...(opts.isActive !== undefined ? { isActive: opts.isActive } : {}) },
             orderBy: { createdAt: 'desc' }, take: 500,
+            // #4769 — the card names the indicator's risk and owner; it used
+            // to show neither (only a red "re-assess" link for the risk).
+            include: {
+                risk: { select: { id: true, title: true } },
+                owner: { select: { id: true, name: true, email: true } },
+            },
         });
         // Attach the latest reading + a small sparkline window per KRI.
         const ids = kris.map((k) => k.id);
