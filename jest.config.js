@@ -173,6 +173,13 @@ const nodeProject = {
     globalTeardown: '<rootDir>/tests/setup/teardown.ts',
     moduleNameMapper: {
         '^@/env$': '<rootDir>/tests/mocks/env.ts',
+        // Both env modules take the same mock (#4764). `@t3-oss/env-nextjs`
+        // is ESM-only and these projects require CommonJS, so a suite that
+        // reaches EITHER real module fails to load at all — which is how
+        // the client split first broke `notifications-bell-behaviour`. The
+        // mock's Proxy answers any key from `process.env`, so one serves
+        // both; a new mapper must be added in all THREE projects below.
+        '^@/env-client$': '<rootDir>/tests/mocks/env.ts',
         // `@inflect/ui` resolves through the workspace symlink for tsc, but
         // jest-resolve does NOT honour an `exports` ARRAY fallback: measured at
         // #3046 step 2b, `@inflect/ui/lib/cn` (arm 1, `./src/*.ts`) resolves and
@@ -371,6 +378,13 @@ const jsdomProject = {
     setupFilesAfterEnv: ['<rootDir>/tests/rendered/setup.ts'],
     moduleNameMapper: {
         '^@/env$': '<rootDir>/tests/mocks/env.ts',
+        // Both env modules take the same mock (#4764). `@t3-oss/env-nextjs`
+        // is ESM-only and these projects require CommonJS, so a suite that
+        // reaches EITHER real module fails to load at all — which is how
+        // the client split first broke `notifications-bell-behaviour`. The
+        // mock's Proxy answers any key from `process.env`, so one serves
+        // both; a new mapper must be added in all THREE projects below.
+        '^@/env-client$': '<rootDir>/tests/mocks/env.ts',
         // `@inflect/ui` resolves through the workspace symlink for tsc, but
         // jest-resolve does NOT honour an `exports` ARRAY fallback: measured at
         // #3046 step 2b, `@inflect/ui/lib/cn` (arm 1, `./src/*.ts`) resolves and
@@ -595,6 +609,13 @@ const flueProject = {
     extensionsToTreatAsEsm: ['.ts'],
     moduleNameMapper: {
         '^@/env$': '<rootDir>/tests/mocks/env.ts',
+        // Both env modules take the same mock (#4764). `@t3-oss/env-nextjs`
+        // is ESM-only and these projects require CommonJS, so a suite that
+        // reaches EITHER real module fails to load at all — which is how
+        // the client split first broke `notifications-bell-behaviour`. The
+        // mock's Proxy answers any key from `process.env`, so one serves
+        // both; a new mapper must be added in all THREE projects below.
+        '^@/env-client$': '<rootDir>/tests/mocks/env.ts',
         // `@inflect/ui` resolves through the workspace symlink for tsc, but
         // jest-resolve does NOT honour an `exports` ARRAY fallback: measured at
         // #3046 step 2b, `@inflect/ui/lib/cn` (arm 1, `./src/*.ts`) resolves and

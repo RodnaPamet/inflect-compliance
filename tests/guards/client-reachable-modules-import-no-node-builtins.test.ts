@@ -42,14 +42,26 @@
  * specifier is a package and is not walked (its built-ins are its bundler
  * configuration's business, not this repo's source).
  */
-import * as fs from 'node:fs';
 import { builtinModules } from 'node:module';
 import * as path from 'node:path';
 
-import * as ts from 'typescript';
+import {
+    bundledSpecifiers,
+    clientRoots,
+    reachFrom,
+} from '../helpers/client-import-graph';
+import { REPO_ROOT, repoRelative } from '../helpers/repo-files';
 
-import { REPO_ROOT, repoFiles, repoRelative } from '../helpers/repo-files';
-import { codeOf } from '../helpers/source-blocks';
+/*
+    THE GRAPH WALK LIVES IN `tests/helpers/client-import-graph.ts` (#4764).
+
+    It was inline here until a second guard needed the same answer about a
+    different specifier (`@/env` instead of `node:*`). The edge rules and the
+    root set are what the two must not disagree about — a walker that misses an
+    edge reports "not reachable" about a module webpack bundles anyway — so
+    they are shared, and each guard keeps only its own verdict. This one's
+    verdict is `isNodeBuiltin` over the specifiers that resolved to no source.
+*/
 
 const REGISTRY = path.join(REPO_ROOT, 'src/lib/agentic/workflow-registry.ts');
 
@@ -60,74 +72,6 @@ function isNodeBuiltin(spec: string): boolean {
     return spec.startsWith('node:') || BUILTINS.has(spec) || BUILTINS.has(spec.split('/')[0]);
 }
 
-const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
-
-/** The source file a specifier names, or null for a package (not walked). */
-function resolveSpecifier(spec: string, fromFile: string): string | null {
-    let base: string;
-    if (spec.startsWith('@/')) base = path.join(REPO_ROOT, 'src', spec.slice(2));
-    else if (spec.startsWith('@inflect/ui/')) base = path.join(REPO_ROOT, 'packages/ui/src', spec.slice('@inflect/ui/'.length));
-    else if (spec.startsWith('./') || spec.startsWith('../')) base = path.resolve(path.dirname(fromFile), spec);
-    else return null;
-    const candidates = [
-        base,
-        ...EXTENSIONS.map((e) => base + e),
-        ...EXTENSIONS.map((e) => path.join(base, `index${e}`)),
-    ];
-    return candidates.find((c) => fs.existsSync(c) && fs.statSync(c).isFile()) ?? null;
-}
-
-/** Every specifier a module bundles: value imports, re-exports, import(), require(). */
-function bundledSpecifiers(source: string, fileName = 'x.ts'): string[] {
-    const sf = ts.createSourceFile(
-        fileName, source, ts.ScriptTarget.Latest, true,
-        fileName.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-    );
-    const out: string[] = [];
-    const visit = (n: ts.Node): void => {
-        if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier)) {
-            const clause = n.importClause;
-            const typeOnly = !!clause && (clause.isTypeOnly || (
-                !clause.name
-                && !!clause.namedBindings
-                && ts.isNamedImports(clause.namedBindings)
-                && clause.namedBindings.elements.length > 0
-                && clause.namedBindings.elements.every((e) => e.isTypeOnly)
-            ));
-            if (!typeOnly) out.push(n.moduleSpecifier.text);
-        } else if (ts.isExportDeclaration(n) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) {
-            const typeOnly = n.isTypeOnly || (
-                !!n.exportClause
-                && ts.isNamedExports(n.exportClause)
-                && n.exportClause.elements.length > 0
-                && n.exportClause.elements.every((e) => e.isTypeOnly)
-            );
-            if (!typeOnly) out.push(n.moduleSpecifier.text);
-        } else if (
-            ts.isCallExpression(n)
-            && n.arguments.length === 1
-            && ts.isStringLiteralLike(n.arguments[0])
-            && (n.expression.kind === ts.SyntaxKind.ImportKeyword
-                || (ts.isIdentifier(n.expression) && n.expression.text === 'require'))
-        ) {
-            out.push(n.arguments[0].text);
-        }
-        ts.forEachChild(n, visit);
-    };
-    visit(sf);
-    return out;
-}
-
-const specifierCache = new Map<string, string[]>();
-function specifiersOf(file: string): string[] {
-    let s = specifierCache.get(file);
-    if (!s) {
-        s = bundledSpecifiers(fs.readFileSync(file, 'utf8'), file);
-        specifierCache.set(file, s);
-    }
-    return s;
-}
-
 interface Reach {
     /** Every source module reached, mapped to the module that first reached it. */
     readonly reached: ReadonlyMap<string, string | null>;
@@ -135,51 +79,25 @@ interface Reach {
     readonly builtins: ReadonlyArray<{ readonly module: string; readonly spec: string; readonly via: string }>;
 }
 
-/** Breadth-first over the bundled-import graph from `roots`. */
+/**
+ * Breadth-first over the bundled-import graph, keeping the built-ins.
+ *
+ * A built-in never resolves to a source file (it is neither `@/` nor
+ * relative), so filtering the shared walk's `unresolved` list is the same
+ * population the old inline walk collected before resolving — packages land
+ * there too and are simply not built-ins.
+ */
 function walk(roots: readonly string[]): Reach {
-    const reached = new Map<string, string | null>();
-    const queue: string[] = [];
-    for (const r of roots) {
-        if (!reached.has(r)) {
-            reached.set(r, null);
-            queue.push(r);
-        }
-    }
-    const found: Array<{ module: string; spec: string }> = [];
-    for (let i = 0; i < queue.length; i++) {
-        const file = queue[i];
-        for (const spec of specifiersOf(file)) {
-            if (isNodeBuiltin(spec)) {
-                found.push({ module: file, spec });
-                continue;
-            }
-            const target = resolveSpecifier(spec, file);
-            if (target && !reached.has(target)) {
-                reached.set(target, file);
-                queue.push(target);
-            }
-        }
-    }
-    const via = (file: string): string => {
-        const chain: string[] = [];
-        for (let f: string | null | undefined = file; f; f = reached.get(f)) chain.unshift(repoRelative(f));
-        return chain.join(' → ');
-    };
+    const { reached, unresolved, via } = reachFrom(roots);
     return {
         reached,
-        builtins: found.map((b) => ({ module: repoRelative(b.module), spec: b.spec, via: via(b.module) })),
+        builtins: unresolved
+            .filter((u) => isNodeBuiltin(u.spec))
+            .map((b) => ({ module: repoRelative(b.module), spec: b.spec, via: via(b.module) })),
     };
 }
 
-/** The directive must be the first statement; comments may precede it. */
-function isClientModule(source: string): boolean {
-    // Comments blanked by codeOf (#4659), so trimStart skips them.
-    const head = codeOf(source.replace(/^﻿/, ''));
-    return /^['"]use client['"]/.test(head.trimStart());
-}
-
-const clientFiles = repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] })
-    .filter((f) => isClientModule(fs.readFileSync(f, 'utf8')));
+const clientFiles = clientRoots();
 
 describe('a module a client component can reach imports no Node built-in', () => {
     it('no Node built-in, bare or `node:`, is reachable from any `use client` file', () => {

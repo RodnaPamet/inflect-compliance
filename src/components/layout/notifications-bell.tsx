@@ -54,7 +54,7 @@ import { formatDateCompact } from '@inflect/ui/lib/format-date';
 import { noteUnauthorized } from '@/lib/auth/session-expiry';
 import { resolveNotificationHref } from '@/lib/notifications/notification-href';
 import { MARK_NOTIFICATION_READ_REQUEST } from '@/lib/notifications/mark-read';
-import { env } from '@/env';
+import { env } from '@/env-client';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
 import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
 

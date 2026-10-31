@@ -37,19 +37,20 @@ import { NotificationsBell } from '@/components/layout/notifications-bell';
 //
 // The SSE block in the bell is gated on
 // `env.NEXT_PUBLIC_NOTIFICATIONS_SSE === '1'`, read through the validated
-// `@/env` module — raw `process.env` access is banned by the no-fallbacks
+// `@/env-client` module (#4764 — a `'use client'` file must not import the
+// server env module) — raw `process.env` access is banned by the no-fallbacks
 // ratchet, so the flag cannot be flipped by assigning to `process.env` from a
 // test either: `env` is built once, at module load, from the process
 // environment as it stood then.
 //
 // Only the one key is overridden. Returning an object literal of chosen keys
 // would answer `undefined` for every other variable anything in the render
-// tree happens to read, and the next variable added to `src/env.ts` would
-// silently become undefined here.
+// tree happens to read, and the next variable added to `src/env-client.ts`
+// would silently become undefined here.
 const mockEnvOverrides: Record<string, unknown> = {};
 
-jest.mock('@/env', () => {
-    const actual = jest.requireActual('@/env') as {
+jest.mock('@/env-client', () => {
+    const actual = jest.requireActual('@/env-client') as {
         env: Record<string, unknown>;
     };
     return {

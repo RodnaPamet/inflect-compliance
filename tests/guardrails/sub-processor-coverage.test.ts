@@ -265,7 +265,17 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
 };
 
 /**
- * Parse every `KEY: process.env.KEY` from the runtimeEnv block of src/env.ts.
+ * Parse every `KEY: process.env.KEY` from the runtimeEnv blocks of BOTH env
+ * modules — `src/env.ts` and `src/env-client.ts` (#4764).
+ *
+ * BOTH, because the population is "variables this deployment reads", and
+ * splitting the server and client schemas into two files split that population
+ * too. Reading only `src/env.ts` would let any future `NEXT_PUBLIC_` variable
+ * reach a browser without a sub-processor triage decision, which is the one
+ * thing this guard exists to prevent — and it would read the existing
+ * `NEXT_PUBLIC_NOTIFICATIONS_SSE` allowlist entry as stale and demand its
+ * deletion, losing the written reason with it.
+ *
  *
  * `codeOf` masks COMMENTS at this one read, and only this one — the three
  * document reads below are markdown, where prose IS the content and masking
@@ -278,12 +288,16 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
  * env.ts carries six block comments today, so the hazard is not hypothetical.
  * (A `//` line is already excluded — it fails `^\s*[A-Z]` on the slash.)
  */
+const ENV_MODULES = ['src/env.ts', 'src/env-client.ts'] as const;
+
 function envKeys(): string[] {
-    const src = codeOf(read('src/env.ts'));
     const keys = new Set<string>();
-    const re = /^\s*([A-Z][A-Z0-9_]+):\s*process\.env\./gm;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(src)) !== null) keys.add(m[1]);
+    for (const rel of ENV_MODULES) {
+        const src = codeOf(read(rel));
+        const re = /^\s*([A-Z][A-Z0-9_]+):\s*process\.env\./gm;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(src)) !== null) keys.add(m[1]);
+    }
     return [...keys].sort();
 }
 

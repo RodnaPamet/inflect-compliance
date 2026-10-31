@@ -1047,7 +1047,11 @@ signed its subject in from any browser.
 
 ### Environment Validation
 
-`src/env.ts` uses `@t3-oss/env-nextjs` for type-safe env vars. Tests set `SKIP_ENV_VALIDATION=1` to bypass this. Never add raw `process.env` access — add the var to `env.ts` first.
+`src/env.ts` uses `@t3-oss/env-nextjs` for type-safe env vars. Tests set `SKIP_ENV_VALIDATION=1` to bypass this. Never add raw `process.env` access — add the var to an env module first.
+
+**There are TWO env modules, and which one you add to is a bundle-size decision** (#4764). `src/env.ts` holds the ~90 server variables; `src/env-client.ts` holds the `NEXT_PUBLIC_` ones. A server variable's VALUE never reaches a browser, but its SCHEMA is ordinary module code, so anything `next build` bundles for the client carries every key name and `z.string()` call in the module it imports. Measured: one `'use client'` component importing `@/env` for a single feature flag put the whole server schema into 124 of 183 routes' First Load JS, and four optional strings added in #4759 then failed the per-route budget on a page unrelated to them.
+
+So: a client-reachable module imports `@/env-client` and nothing else — which costs it nothing, because `NEXT_PUBLIC_` is the only kind of variable readable in a browser anyway. `tests/guards/client-reachable-modules-import-no-server-env.test.ts` walks the import graph from every `'use client'` file and fails, naming the path, if `@/env` is reachable; it has no allowlist. Both modules' `runtimeEnv` blocks are parsed by `tests/guardrails/sub-processor-coverage.test.ts`, so a client variable cannot escape sub-processor triage by living in the smaller file. Both specifiers map to `tests/mocks/env.ts` in all three Jest projects — `@t3-oss/env-nextjs` is ESM-only, so a suite reaching either real module fails to load at all.
 
 ### Background Jobs (BullMQ)
 
