@@ -10,7 +10,7 @@ jest.mock('@/lib/prisma', () => ({
     },
 }));
 
-import { requestTrustCenterAccess, consumeDownloadToken, listPublicTrustCenterDocuments } from '@/lib/trust-center/gated';
+import { requestTrustCenterAccess, consumeDownloadToken, listPublicTrustCenterDocuments, getPublicGatedDocuments } from '@/lib/trust-center/gated';
 import { prisma } from '@/lib/prisma';
 import * as tcAdmin from '@/app-layer/usecases/trust-center-documents';
 
@@ -102,6 +102,24 @@ describe('listPublicTrustCenterDocuments', () => {
         expect(docs).toEqual([{ id: 'd1', label: 'SOC 2', gated: true }]);
         // the select must not request fileRecordId
         expect(m.trustCenterDocument.findMany.mock.calls[0][0].select.fileRecordId).toBeUndefined();
+    });
+});
+
+describe('getPublicGatedDocuments (#4649)', () => {
+    it('lists only gated documents of an ENABLED trust center, by id and label, with its NDA requirement', async () => {
+        m.trustCenter.findFirst.mockResolvedValue({ id: 'tc-1', ndaRequired: true });
+        m.trustCenterDocument.findMany.mockResolvedValue([{ id: 'd1', label: 'SOC 2' }]);
+        await expect(getPublicGatedDocuments('acme')).resolves.toEqual({ ndaRequired: true, documents: [{ id: 'd1', label: 'SOC 2' }] });
+        expect(m.trustCenter.findFirst.mock.calls[0][0].where).toEqual({ slug: 'acme', enabled: true });
+        const query = m.trustCenterDocument.findMany.mock.calls[0][0];
+        expect(query.where).toEqual({ trustCenterId: 'tc-1', gated: true });
+        expect(query.select).toEqual({ id: true, label: true });
+    });
+
+    it('returns null for a missing or disabled slug, and reads no documents', async () => {
+        m.trustCenter.findFirst.mockResolvedValue(null);
+        await expect(getPublicGatedDocuments('nope')).resolves.toBeNull();
+        expect(m.trustCenterDocument.findMany).not.toHaveBeenCalled();
     });
 });
 

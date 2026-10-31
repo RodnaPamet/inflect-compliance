@@ -20,11 +20,14 @@ export default async function InformationRegistryPage({
 }) {
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
-    const rows = await listInformationRegister(ctx);
+    const register = await listInformationRegister(ctx);
 
     return (
         <InformationRegistryClient
-            rows={JSON.parse(JSON.stringify(rows)) as RegisterRow[]}
+            rows={JSON.parse(JSON.stringify(register.rows)) as RegisterRow[]}
+            truncated={register.truncated}
+            total={register.total}
+            criticalOrImportant={register.criticalOrImportant}
             canWrite={ctx.permissions.canWrite}
         />
     );

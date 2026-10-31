@@ -58,7 +58,8 @@ The message joins **{{ui:external.auditShare.returnChannel.submittedTitle}}** on
 | --- | --- | --- |
 | **{{ui:external.auditShare.accessDenied}}**, with **{{ui:external.auditShare.invalidOrExpired}}** or a reason | The link is wrong, has expired or was revoked | Ask the team for a new link |
 | **{{ui:external.auditShare.returnChannel.submittedEmpty}}** | No message has been sent from this browser in this visit | Nothing; it fills as you send messages |
-| **{{ui:external.auditShare.returnChannel.submitError}}** | The message was not sent | Try again; if the link has since expired, ask for a new one |
+| The reason the message was refused, such as an expired link or too many messages in a short time | The message was not sent | Follow the reason given; for an expired link, ask for a new one |
+| **{{ui:external.auditShare.returnChannel.submitError}}** | The message was not sent, and the server gave no reason | Try again |
 
 ## Related
 

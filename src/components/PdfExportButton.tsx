@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl';
 import { Download, Loader2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/hooks';
+import { apiErrorMessage } from '@/lib/api-error';
 
 export type PdfReportType = 'AUDIT_READINESS' | 'RISK_REGISTER' | 'GAP_ANALYSIS';
 
@@ -29,6 +31,11 @@ interface PdfExportButtonProps {
  * Pill-styled PDF export button.
  * - Click → calls server-side PDF generation → triggers browser download.
  * - Shift+click (or "Save" variant) → saves to FileRecord too.
+ *
+ * Outcomes are toasts, like every other confirmation in the product, and a
+ * refusal shows the server's reason (#4641). The route refuses for named
+ * reasons — no `reports.export`, a plan without PDF exports — and a browser
+ * `alert()` saying only "failed" both blocked the page and hid them.
  */
 export function PdfExportButton({
     tenantSlug,
@@ -39,6 +46,7 @@ export function PdfExportButton({
     framework,
 }: PdfExportButtonProps) {
     const t = useTranslations('panels.pdf');
+    const toast = useToast();
     const labelText = label ?? t('export');
     const [generating, setGenerating] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -59,14 +67,15 @@ export function PdfExportButton({
             });
 
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || 'PDF generation failed');
+                const body: unknown = await res.json().catch(() => null);
+                toast.error(apiErrorMessage(body, t('failed')));
+                return;
             }
 
             if (saveToFile) {
                 // FileRecord saved — show confirmation
                 const data = await res.json();
-                alert(t('saved', { fileName: data.fileName, size: (data.sizeBytes / 1024).toFixed(1) }));
+                toast.success(t('saved', { fileName: data.fileName, size: (data.sizeBytes / 1024).toFixed(1) }));
             } else {
                 // Stream → download
                 const blob = await res.blob();
@@ -83,9 +92,9 @@ export function PdfExportButton({
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             }
-        } catch (err) {
-            console.error('PDF export error:', err);
-            alert(t('failed'));
+        } catch {
+            // A network failure, or a response that was not the PDF it claimed.
+            toast.error(t('failed'));
         } finally {
             setLoading(false);
         }

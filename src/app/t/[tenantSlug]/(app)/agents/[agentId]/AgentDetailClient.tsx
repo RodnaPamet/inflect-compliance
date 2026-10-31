@@ -19,6 +19,7 @@ import { CircuitBreakerTab } from './tabs/CircuitBreakerTab';
 import { AgentKillSwitchAction, AgentKillSwitchBanner } from './AgentKillSwitchAction';
 import { AgentAmendModal } from './AgentAmendModal';
 import { ConnectAgentSheet } from './ConnectAgentSheet';
+import { InteractiveAgentAction } from './InteractiveAgentAction';
 import { Button } from '@/components/ui/button';
 
 export interface AgentSummary {
@@ -42,6 +43,8 @@ export interface AgentSummary {
     vendorId: string | null;
     /** Whether the tenant enforces registration — the stop comparison needs it. */
     registrationEnforced: boolean;
+    /** Is this the agent that answers questions on Ask (#4629)? */
+    isInteractiveAgent?: boolean;
 }
 
 /** A member who may own an agent — ACTIVE-only, as the usecase requires. */
@@ -231,6 +234,13 @@ export function AgentDetailClient({
                 <span className="flex items-center gap-default">
                     {agent.name}
                     <StatusBadge variant={statusVariant(agent.status)}>{agent.status}</StatusBadge>
+                    {/* Shown to every reader of the page: which agent answers
+                        the workspace's questions is not a register secret. */}
+                    {agent.isInteractiveAgent && (
+                        <StatusBadge variant="info" data-testid="agent-interactive-badge">
+                            {t('agentDetail.interactive.badge')}
+                        </StatusBadge>
+                    )}
                 </span>
             }
             meta={<MetaStrip items={meta} />}
@@ -250,6 +260,17 @@ export function AgentDetailClient({
                             text={t('agentDetail.amend.action')}
                         />
                     )}
+                    {/* USE FOR ASK (#4629). Register authority, so behind the
+                        same flag as Amend. A retired agent cannot answer, so it
+                        is offered only the way out, never the way in. */}
+                    {perms.canManageRegistry &&
+                        (agent.status !== 'RETIRED' || agent.isInteractiveAgent) && (
+                            <InteractiveAgentAction
+                                tenantSlug={tenantSlug}
+                                agentId={agent.id}
+                                designated={agent.isInteractiveAgent === true}
+                            />
+                        )}
                     {/* CONNECT (#4155). Shown to every reader of the page: the
                         sheet explains why a person without the api-keys
                         permission cannot connect, rather than the product

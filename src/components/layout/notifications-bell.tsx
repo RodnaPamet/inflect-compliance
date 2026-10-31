@@ -8,7 +8,11 @@
  * bell icon with a count badge for unread notifications; click
  * opens a popover listing recent notifications.
  *
- * Data: REST-polled from `/api/notifications`. A fetch on mount
+ * Data: the OPEN workspace's notifications, from `/api/t/<slug>/notifications`
+ * (#4643, owner decision 2026-10-30) — or, in the org chrome, which has no
+ * open workspace, the session's own from `/api/notifications`. That flat route
+ * resolves the session's FIRST workspace, so a person in several workspaces
+ * used to see the first one's notifications in every bell. A fetch on mount
  * seeds the badge; a fixed-cadence poll (NOTIFICATIONS_POLL_INTERVAL_MS)
  * keeps the unread count live without the user opening the popover;
  * and every popover-open pulls a fresh list. The poll pauses while
@@ -49,6 +53,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { formatDateCompact } from '@inflect/ui/lib/format-date';
 import { noteUnauthorized } from '@/lib/auth/session-expiry';
 import { resolveNotificationHref } from '@/lib/notifications/notification-href';
+import { MARK_NOTIFICATION_READ_REQUEST } from '@/lib/notifications/mark-read';
 import { env } from '@/env';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
 import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
@@ -125,6 +130,28 @@ function formatRelativeTime(iso: string): string {
     return formatDateCompact(iso);
 }
 
+/**
+ * Where the bell reads from: the open workspace's notifications, or the
+ * session's when no workspace is open. The list, the stream and mark-read all
+ * hang off this one base, so they cannot disagree about whose notifications
+ * they are.
+ */
+function notificationsUrlFor(tenantSlug: string | null): string {
+    return tenantSlug
+        ? `/api/t/${encodeURIComponent(tenantSlug)}/notifications`
+        : '/api/notifications';
+}
+
+/**
+ * Mark-read for each base: the workspace route takes `PUT` with an empty body
+ * (the shape the inbox page sends), the flat route `PATCH`.
+ */
+function markReadRequest(tenantSlug: string | null): RequestInit {
+    return tenantSlug
+        ? { ...MARK_NOTIFICATION_READ_REQUEST, credentials: 'same-origin' }
+        : { method: 'PATCH', credentials: 'same-origin' };
+}
+
 // ─── Component ─────────────────────────────────────────────────────
 
 export function NotificationsBell() {
@@ -135,6 +162,7 @@ export function NotificationsBell() {
     const params = useParams();
     const currentTenantSlug =
         typeof params?.tenantSlug === 'string' ? params.tenantSlug : null;
+    const notificationsUrl = notificationsUrlFor(currentTenantSlug);
     const [open, setOpen] = useState(false);
     const [items, setItems] = useState<NotificationRow[] | null>(null);
     const [loading, setLoading] = useState(false);
@@ -163,7 +191,7 @@ export function NotificationsBell() {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch('/api/notifications', {
+            const res = await fetch(notificationsUrl, {
                 credentials: 'same-origin',
             });
 
@@ -198,7 +226,7 @@ export function NotificationsBell() {
                 // transfer to the tenant-scoped pollers the store also drives,
                 // where a 403 is routinely a permission denial from a
                 // correctly signed-in user.
-                noteUnauthorized(res.status, '/api/notifications');
+                noteUnauthorized(res.status, notificationsUrl);
                 return;
             }
 
@@ -214,7 +242,7 @@ export function NotificationsBell() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [notificationsUrl]);
 
     // 2026-05-27 (PR-C) — SSE-first with REST poll as a fallback.
     // Primary signal: an EventSource subscription to
@@ -250,7 +278,7 @@ export function NotificationsBell() {
         const sseEnabled = env.NEXT_PUBLIC_NOTIFICATIONS_SSE === '1';
         if (sseEnabled && typeof EventSource !== 'undefined') {
             try {
-                es = new EventSource('/api/notifications/stream', {
+                es = new EventSource(`${notificationsUrl}/stream`, {
                     withCredentials: true,
                 });
                 es.onopen = () => onSseHealthChange?.(true);
@@ -374,7 +402,7 @@ export function NotificationsBell() {
             onSseHealthChange = null;
             if (es) es.close();
         };
-    }, [fetchList]);
+    }, [fetchList, notificationsUrl]);
 
     // Opening the popover always pulls a fresh list — the user is
     // looking now, so show current data, not the last poll's.
@@ -397,17 +425,14 @@ export function NotificationsBell() {
                     : prev,
             );
             try {
-                await fetch(`/api/notifications/${n.id}`, {
-                    method: 'PATCH',
-                    credentials: 'same-origin',
-                });
+                await fetch(`${notificationsUrl}/${n.id}`, markReadRequest(currentTenantSlug));
             } catch {
                 // Server-side mark failed; the local optimistic
                 // update remains so the user perceives the row as
                 // handled. Next fetch will reconcile if needed.
             }
         },
-        [],
+        [notificationsUrl, currentTenantSlug],
     );
 
     const handleMarkAllRead = useCallback(async () => {
@@ -418,13 +443,10 @@ export function NotificationsBell() {
         );
         await Promise.all(
             unread.map((n) =>
-                fetch(`/api/notifications/${n.id}`, {
-                    method: 'PATCH',
-                    credentials: 'same-origin',
-                }).catch(() => {}),
+                fetch(`${notificationsUrl}/${n.id}`, markReadRequest(currentTenantSlug)).catch(() => {}),
             ),
         );
-    }, [items]);
+    }, [items, notificationsUrl, currentTenantSlug]);
 
     return (
         <Popover
@@ -540,6 +562,23 @@ export function NotificationsBell() {
                             })
                         )}
                     </div>
+
+                    {/* The workspace's full inbox (#4643, owner decision): the
+                        one place it is linked from. Only inside a workspace —
+                        the inbox is a workspace page. */}
+                    {currentTenantSlug && !sessionExpired && (
+                        <>
+                            <Popover.Separator />
+                            <Link
+                                href={`/t/${currentTenantSlug}/notifications`}
+                                onClick={close}
+                                className="block rounded px-2.5 py-1.5 text-center text-xs font-medium text-content-muted transition-colors hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                                data-testid="notifications-view-all"
+                            >
+                                {t('viewAll')}
+                            </Link>
+                        </>
+                    )}
                 </Popover.Menu>
             }
         >

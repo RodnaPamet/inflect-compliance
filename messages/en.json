@@ -1536,6 +1536,14 @@
         "errorFallback": "Failed to generate draft",
         "draftsQueuedSingular": "Draft queued for review in the ",
         "draftsQueuedPlural": "Drafts queued for review in the ",
+        "docTypes": {
+          "ANNEX_IV_TECHNICAL_DOCUMENTATION": "Technical Documentation (Annex IV)",
+          "ART_9_RISK_MANAGEMENT": "Risk Management record (Art. 9)",
+          "ANNEX_V_DECLARATION_OF_CONFORMITY": "Declaration of Conformity (Annex V)"
+        },
+        "draftsQueuedNoQueueSingular": "Draft queued for review by whoever reviews agent proposals. Once approved, it appears in Policy Management as a draft.",
+        "draftsQueuedNoQueuePlural": "Drafts queued for review by whoever reviews agent proposals. Once approved, each appears in Policy Management as a draft.",
+        "openPolicies": "Open Policy Management",
         "classify": "Classify",
         "classifyModal": {
           "title": "Classify against the EU AI Act",
@@ -1914,6 +1922,7 @@
       "conceptHelp": "DORA Art. 28(3) requires financial entities to maintain, at entity and (sub)consolidated level, a register of all contractual arrangements for ICT services, flagging those that support critical or important functions. Competent authorities can request it at any time.",
       "count": "{count, plural, =1 {# arrangement} other {# arrangements}}",
       "criticalCount": "{count} supporting a critical or important function",
+      "truncatedHint": "The most critical arrangements are listed first, and the counts above cover the whole register. Filters and search apply only to the arrangements listed.",
       "colProvider": "ICT provider",
       "colFunction": "Critical / important",
       "colCriticality": "Criticality",
@@ -4624,6 +4633,7 @@
     "loading": "Loading notifications...",
     "loadError": "Couldn't load the notifications. Reload the page to try again.",
     "markRead": "Mark read",
+    "open": "Open",
     "noNotifications": "No notifications",
     "crumbDashboard": "Dashboard",
     "description": "Recent activity across your compliance program"
@@ -5183,6 +5193,14 @@
       }
     },
     "agentDetail": {
+      "interactive": {
+        "use": "Use for Ask",
+        "stop": "Stop using for Ask",
+        "badge": "Answers on Ask",
+        "designated": "This agent now answers questions on Ask.",
+        "cleared": "This agent no longer answers questions on Ask.",
+        "failed": "The change was not saved."
+      },
       "tabOverview": "Overview",
       "tabRisk": "Risk assessment",
       "tabPolicy": "Policy card",
@@ -7172,7 +7190,45 @@
       "toastPublishFailed": "Could not change publish state",
       "confirmTitle": "Publish this page to the public internet?",
       "confirmDesc": "This page will be publicly accessible at {path} with no login required. Confirm the content above contains only information safe to publish.",
-      "confirmLabel": "Publish Trust Center"
+      "confirmLabel": "Publish Trust Center",
+      "gated": {
+        "title": "Documents on request",
+        "intro": "Documents a visitor has to ask for, such as a SOC 2 report or a penetration test summary. The public page lists them by name, and nobody can open one until you approve their request.",
+        "emptyDocuments": "No documents on request yet",
+        "labelField": "Name shown to visitors",
+        "fileField": "File",
+        "upload": "Upload",
+        "uploading": "Uploading…",
+        "added": "Document added",
+        "addFailed": "The document could not be added.",
+        "needLabelAndFile": "Give the document a name and choose a file.",
+        "loadFailed": "Couldn't load the documents on request. Reload the page to try again.",
+        "addedOn": "Added {date}",
+        "requestsTitle": "Access requests",
+        "requestsIntro": "Each request names who asked, for which document, and whether they accepted the non-disclosure terms. Approving one creates a download link that works once and expires in 7 days. Send it to the requester yourself.",
+        "emptyRequests": "No access requests yet",
+        "requestsLoadFailed": "Couldn't load the access requests. Reload the page to try again.",
+        "status": {
+          "REQUESTED": "Requested",
+          "APPROVED": "Approved",
+          "DENIED": "Denied"
+        },
+        "ndaAccepted": "NDA accepted",
+        "requestedOn": "Requested {date}",
+        "downloadedOn": "Downloaded {date}",
+        "expiresOn": "Link expires {date}",
+        "approve": "Approve",
+        "approving": "Approving…",
+        "approveFailed": "The request could not be approved.",
+        "linkTitle": "Download link for {name}",
+        "linkHint": "This link is shown only now. It works once and expires in 7 days. Send it to {email}.",
+        "copyLink": "Copy link",
+        "copyLinkOk": "Link copied",
+        "emailLink": "Email it",
+        "mailSubject": "Your access to {document}",
+        "mailBody": "Here is your link to {document}. It works once and expires in 7 days:\n\n{link}",
+        "dismissLink": "Done"
+      }
     },
     "vendorTemplates": {
       "title": "Vendor questionnaire templates",
@@ -11492,6 +11548,15 @@
       "cancel": "Cancel"
     },
     "ask": {
+      "checkAgain": "Check again",
+      "refusal": {
+        "NOT_A_PERSON": "Asking is for a signed-in person.",
+        "DEPLOYMENT_NOT_ENABLED": "Asking an agent is not switched on for this installation. Ask your administrator.",
+        "NO_AGENT_DESIGNATED": "No agent answers questions in this workspace yet. Someone who manages the agent register can choose one with “Use for Ask” on the agent’s page.",
+        "AGENT_NOT_FOUND": "The agent chosen to answer questions is no longer in this workspace. Someone who manages the agent register can choose another with “Use for Ask”.",
+        "AGENT_KILL_SWITCHED": "The agent that answers questions has been stopped with its kill switch. It answers again once the kill switch is lifted.",
+        "AGENT_BREAKER_LATCHED": "The agent that answers questions has been paused by its circuit breaker. It answers again once the breaker is reset."
+      },
       "accessMessage": "You need read access to this workspace's controls to ask a question.",
       "accessTitle": "Asking is not available to you",
       "answerHeading": "Answer",
@@ -11514,7 +11579,7 @@
       "runningDescription": "The agent is reading the records it has been granted. The calls it makes will appear below the answer.",
       "runningTitle": "Working on it",
       "status": "Outcome",
-      "timedOut": "The run has not finished and this page stopped waiting. It may still complete — the agent register shows its state.",
+      "timedOut": "The run has not finished, and this page has stopped waiting. It may still complete: check again in a moment.",
       "title": "Ask a question",
       "tokens": "Tokens",
       "tooLong": "Too long — questions are limited to {max} characters. Ask something shorter, or attach the material as evidence and ask about that.",
@@ -12256,7 +12321,7 @@
     "loadingTitle": "Loading Multi-Factor Authentication…",
     "pageTitle": "Multi-Factor Authentication",
     "statusTitle": "MFA Status",
-    "tenantPolicy": "Tenant policy:",
+    "tenantPolicy": "Workspace policy:",
     "enrolled": "Enrolled",
     "notEnrolled": "Not Enrolled",
     "enrolledSince": "Enrolled since {date}",
@@ -12594,7 +12659,7 @@
       "generating": "Generating...",
       "saveTooltip": "Export PDF and save as an evidence file",
       "saveAria": "Export PDF and save as evidence file",
-      "saved": "PDF saved as evidence file.\nFile: {fileName}\nSize: {size} KB",
+      "saved": "PDF saved as an evidence file: {fileName} ({size} KB)",
       "failed": "Failed to generate PDF. Please try again."
     },
     "treatment": {
@@ -12881,6 +12946,7 @@
     "bell": {
       "notifications": "Notifications",
       "markAllRead": "Mark all read",
+      "viewAll": "View all notifications",
       "loading": "Loading…",
       "allClear": "All clear",
       "caughtUp": "You're caught up. New notifications will land here.",
@@ -12950,6 +13016,7 @@
     }
   },
   "account": {
+    "backToWorkspaces": "Back to your workspaces",
     "profile": {
       "profileTitle": "Your profile",
       "avatarNote": "Upload a square image — it is resized to 256×256 and stored as WebP. Photo metadata, including location, is stripped in your browser before upload.",
@@ -12987,7 +13054,12 @@
       "newPasswordsNoMatch": "The two new passwords do not match.",
       "tooShort": "Your new password must be at least 8 characters long.",
       "mustDiffer": "Your new password must be different from your current password.",
-      "couldNotChange": "Could not change your password."
+      "couldNotChange": "Could not change your password.",
+      "tooLong": "Your new password must be at most 128 characters long.",
+      "breached": "This password appears in known data breaches. Choose a different one.",
+      "withoutPassword": "This account signs in with Google, Microsoft or single sign-on, so it has no password to change.",
+      "currentIncorrect": "Your current password is incorrect.",
+      "passwordlessNotice": "You sign in with Google, Microsoft or single sign-on, so this account has no password to change here. Your sign-in is managed by that provider."
     }
   },
   "invite": {
@@ -14213,7 +14285,22 @@
       "securityPosture": "Security posture",
       "documents": "Documents",
       "securityContact": "Security contact",
-      "footer": "Published {date} · Trust Center"
+      "footer": "Published {date} · Trust Center",
+      "gated": {
+        "title": "Documents on request",
+        "intro": "Ask for any of these and the team will review your request.",
+        "request": "Request access",
+        "name": "Your name",
+        "email": "Work email",
+        "company": "Company",
+        "nda": "I accept the non-disclosure terms for this document",
+        "submit": "Send request",
+        "sending": "Sending…",
+        "received": "Request received. If it is approved, you will be sent a download link.",
+        "failed": "The request could not be sent. Please try again.",
+        "unavailable": "This document is no longer offered.",
+        "cancel": "Cancel"
+      }
     },
     "vendorAssessment": {
       "loading": "Loading questionnaire…",

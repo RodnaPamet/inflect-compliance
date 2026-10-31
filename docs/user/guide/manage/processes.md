@@ -99,4 +99,4 @@ Click **{{ui:automation.documentBar.delete}}**. You are asked to type the map's 
 
 - [{{ui:controls.title}}](../govern/controls.md), [{{ui:risks.title}}](../govern/risks.md) and [{{ui:assets.title}}](../govern/assets.md), the records a process step links to.
 - [{{ui:agents.proposals.title}}](agent-proposals.md), the queue a human checkpoint uses.
-- {{ui:audits.crumb.businessContinuity}}, where a business impact analysis can be attached to a process step.
+- [{{ui:audits.crumb.businessContinuity}}](../comply/business-continuity.md), where a business impact analysis can be attached to a process step.

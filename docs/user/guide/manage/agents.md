@@ -18,6 +18,7 @@ Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar. The entry
 | Open an agent's own page | Owner, Admin, AI admin, Auditor |
 | Register an agent | Owner, Admin, AI admin |
 | Set the concurrent-run cap and the monthly token budget | Owner, Admin, AI admin |
+| Choose the agent that answers questions on {{ui:nav.agentsAsk}} | Owner, Admin, AI admin, on the agent's own page |
 
 Editors and Readers do not see the sidebar entry, and opening the page shows **{{ui:agents.register.accessTitle}}**. Auditors get the same page with every change withheld: no **{{ui:agents.register.addAgent}}** button, and the cap and the budget shown as sentences without a form.
 
@@ -87,6 +88,10 @@ Click **{{ui:agents.register.new.submit}}**. The agent joins the register as {{u
 
 Under **{{ui:agents.register.concurrency.heading}}**, type a whole number up to 1,000 and click **{{ui:agents.register.concurrency.save}}**. Leave the box empty for no cap. A cap of 0 stops new agent runs from starting without stopping the ones already running.
 
+### Choose the agent that answers on {{ui:nav.agentsAsk}}
+
+Open the agent and click **{{ui:admin.agentDetail.interactive.use}}**. From then on it answers every question asked on the [{{ui:agents.ask.title}}](../comply/ask.md) page, in place of any agent chosen before, and its page shows **{{ui:admin.agentDetail.interactive.badge}}** beside its name. Click **{{ui:admin.agentDetail.interactive.stop}}** to stop it; questions are then refused until another agent is chosen. A retired agent cannot be chosen. Until an agent is chosen, every question on that page is refused.
+
 ### Set the monthly token budget
 
 Under **{{ui:agents.register.budget.heading}}**, choose **{{ui:agents.register.budget.useNone}}** or **{{ui:agents.register.budget.useSet}}**, then click **{{ui:agents.register.budget.save}}**. Each run is charged its full token ceiling when it starts, so a budget is either 0, which refuses every new run, or at least one run's ceiling. The panel says what that ceiling is.
@@ -95,7 +100,7 @@ Under **{{ui:agents.register.budget.heading}}**, choose **{{ui:agents.register.b
 
 - A new agent cannot act until somebody scores its risk and activates it on its own page. While registration is not enforced, its status decides nothing.
 - Opening an agent leads to its own page, with the tabs {{ui:admin.agentDetail.tabOverview}}, {{ui:admin.agentDetail.tabRisk}}, {{ui:admin.agentDetail.tabPolicy}}, {{ui:admin.agentDetail.tabTools}}, {{ui:admin.agentDetail.tabSkills}}, {{ui:admin.agentDetail.tabCoverage}}, {{ui:admin.agentDetail.tabRuns}} and {{ui:admin.agentDetail.tabBreaker}}. That is where an agent is assessed, amended, activated, suspended, retired or stopped. Owners, Admins and AI admins are offered **{{ui:admin.agentDetail.amend.action}}**, **{{ui:admin.agentDetail.overview.activateAction}}**, **{{ui:admin.agentDetail.overview.suspendAction}}** and **{{ui:admin.agentDetail.overview.retireAction}}** there, and can score an agent's risk. An Auditor finds several of those tabs greyed out and is offered none of those changes.
-- Every registration, cap change and budget change is recorded in the workspace's audit log, naming who made it.
+- Every registration, cap change, budget change and choice of the agent that answers questions is recorded in the workspace's audit log, naming who made it.
 - A cap or a budget applies to the next run that starts. A run refused by either says which one refused it.
 
 ## Empty and error states

@@ -130,6 +130,7 @@ const AI = (
         risks: {
             aiSystems: {
                 provider: string;
+                filterEnums: { riskTier: Record<string, string> };
                 detail: {
                     notClassifiedLine: string;
                     notClassifiedNotice: string;
@@ -215,11 +216,11 @@ function headerDescription(): string {
     return screen.getByTestId('page-header-description').textContent ?? '';
 }
 
-/** The tier badge in one system's row — the element holding the tier as its own text. */
+/** The tier badge in one system's row — the element holding the tier's label as its own text. */
 function tierBadge(systemId: string, tier: string): HTMLElement {
     const tr = screen.getByTestId(`ai-system-row-${systemId}`).closest('tr');
     if (!tr) throw new Error(`no table row around ai-system-row-${systemId}`);
-    return within(tr as HTMLElement).getByText(tier);
+    return within(tr as HTMLElement).getByText(AI.filterEnums.riskTier[tier]);
 }
 
 describe('the register counts unclassified systems on their own', () => {
@@ -298,7 +299,7 @@ async function renderDetail(detail: AiSystemDetail) {
     pathname.current = `/t/acme/risks/ai-systems/${detail.id}`;
     const view = render(
         <Wrapper>
-            <AiSystemDetailClient system={detail} tenantSlug="acme" canWrite />
+            <AiSystemDetailClient system={detail} tenantSlug="acme" canWrite canOpenApprovalQueue />
         </Wrapper>,
     );
     await waitFor(() => {
@@ -339,7 +340,7 @@ describe('the detail page says an UNCLASSIFIED system is not classified', () => 
 
         expect(headerDescription()).toBe(
             AI.detail.metaLine
-                .replace('{tier}', 'HIGH')
+                .replace('{tier}', AI.filterEnums.riskTier.HIGH)
                 .replace('{clause}', 'annex-iii-5b')
                 .replace('{role}', AI.provider),
         );

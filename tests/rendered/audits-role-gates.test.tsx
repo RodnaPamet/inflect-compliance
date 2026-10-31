@@ -491,4 +491,31 @@ describe('Shared pack page', () => {
         expect(byId('shared-pack-name')?.parentElement?.textContent).toContain('FY26 · ISO27001 · Frozen');
         expect(screen.getAllByText('Statement of Applicability — ISO 27001:2022').length).toBeGreaterThan(0);
     });
+
+    const ISSUE_PACK = get(/\/api\/audit\/shared\/tok-1$/, {
+        body: {
+            pack: { id: 'pack-1', name: 'SOC 2 pack', status: 'FROZEN', frozenAt: null },
+            cycle: { name: 'FY26', frameworkKey: 'ISO27001', frameworkVersion: '2022' },
+            items: [{ id: 'it-i', entityType: 'ISSUE', entityId: 'i-1', snapshotJson: '{"title":"Weak TLS","severity":"HIGH"}' }],
+        },
+    });
+
+    it("shows a frozen item's severity by its label (#4651)", async () => {
+        routes = [ISSUE_PACK];
+        await mount(<SharedPackPage />, 'READER');
+        // The name is also on the attach buttons; the item row is the span's.
+        const name = (await screen.findAllByText('Weak TLS')).find((el) => el.tagName === 'SPAN') as HTMLElement;
+        const row = name.closest('div.p-3') as HTMLElement;
+        expect(row.textContent).toContain('High');
+        expect(row.textContent).not.toContain('HIGH');
+    });
+
+    it("shows the server's reason a message was refused (#4651)", async () => {
+        routes = [ISSUE_PACK, post(/\/api\/audit\/shared\/tok-1$/, envelope(410, 'Share link has expired'))];
+        await mount(<SharedPackPage />, 'READER');
+        await screen.findAllByText('Weak TLS');
+        fireEvent.change(screen.getByLabelText(jest.requireActual('../../messages/en.json').external.auditShare.returnChannel.messageLabel), { target: { value: 'Please add the TLS scan.' } });
+        await act(async () => { fireEvent.click(byId('return-channel-submit') as HTMLElement); });
+        expect((await screen.findByText('Share link has expired')).id).toBe('return-channel-error');
+    });
 });

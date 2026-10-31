@@ -20,13 +20,13 @@ A password alone can be guessed, reused or stolen. With MFA, someone who has you
 
 ## What you see
 
-**{{ui:mfa.statusTitle}}.** The card shows the workspace's policy after **{{ui:mfa.tenantPolicy}}**, as a code:
+**{{ui:mfa.statusTitle}}.** The card shows the workspace's policy after **{{ui:mfa.tenantPolicy}}**:
 
 | Policy | Meaning |
 | --- | --- |
-| DISABLED | Nobody is asked for a code at sign-in, even with MFA set up |
-| OPTIONAL | You are asked for a code if you have set MFA up |
-| REQUIRED | Everyone must set MFA up, and is asked for a code at every sign-in |
+| {{ui:admin.security.policy.DISABLED.label}} | Nobody is asked for a code at sign-in, even with MFA set up |
+| {{ui:admin.security.policy.OPTIONAL.label}} | You are asked for a code if you have set MFA up |
+| {{ui:admin.security.policy.REQUIRED.label}} | Everyone must set MFA up, and is asked for a code at every sign-in |
 
 Beside it, whether you are **{{ui:mfa.enrolled}}** or **{{ui:mfa.notEnrolled}}**, and when enrolled, since when. When the workspace requires MFA and you have not set it up, the card also says **{{ui:mfa.orgRequires}}**
 
@@ -46,7 +46,8 @@ Click **{{ui:mfa.removeMfa}}** and confirm **{{ui:mfa.removeConfirmTitle}}** The
 
 ## What happens next
 
-- From your next sign-in to this workspace, you are asked for a code after your password, unless the policy is DISABLED.
+- From your next sign-in to this workspace, you are asked for a code after your password, unless the policy is {{ui:admin.security.policy.DISABLED.label}}.
+- Starting the set-up, finishing it and removing MFA are each recorded in the workspace's audit log, naming whose authenticator it was. A removal by an Owner or Admin for somebody else is recorded as such.
 - If you lose your phone, ask an Owner or Admin of the workspace for help; you cannot sign in to it without a code while the policy asks for one.
 
 ## Empty and error states
