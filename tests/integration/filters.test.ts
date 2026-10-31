@@ -488,6 +488,19 @@ describe('VendorRepository._buildWhere', () => {
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.nextReviewAt).toBeDefined();
         expect(where.nextReviewAt.lt).toBeInstanceOf(Date);
+        // #4799 — an offboarded vendor's review is not due.
+        expect(where.status).toEqual({ not: 'OFFBOARDED' });
+    });
+
+    it('a chosen status wins over the review-due exclusion (#4799)', async () => {
+        const { VendorRepository } = await import('@/app-layer/repositories/VendorRepository');
+        const mockFindMany = jest.fn().mockResolvedValue([]);
+        const mockDb = { vendor: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await VendorRepository.list(mockDb, ctx, { reviewDue: 'overdue', status: 'OFFBOARDED' });
+
+        expect(mockFindMany.mock.calls[0][0].where.status).toBe('OFFBOARDED');
     });
 });
 

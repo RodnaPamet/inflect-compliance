@@ -9,6 +9,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { buttonVariants } from '@/components/ui/button-variants';
+import { Button } from '@/components/ui/button';
 import { StatusBreakdown, type StatusBreakdownItem } from '@/components/ui/status-breakdown';
 import { type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
@@ -63,7 +64,7 @@ function BreakdownBar({
 }
 
 const CRIT_COLORS: Record<string, string> = {
-    LOW: 'bg-bg-success', MEDIUM: 'bg-bg-warning', HIGH: 'bg-orange-500/60', CRITICAL: 'bg-bg-error',
+    LOW: 'bg-bg-success', MEDIUM: 'bg-bg-warning', HIGH: 'bg-bg-warning-emphasis', CRITICAL: 'bg-bg-error',
 };
 const STATUS_COLORS: Record<string, string> = {
     ACTIVE: 'bg-bg-success', ONBOARDING: 'bg-bg-info', OFFBOARDING: 'bg-bg-warning', OFFBOARDED: 'bg-border-emphasis',
@@ -95,25 +96,41 @@ export default function VendorDashboardPage() {
 
     const [metrics, setMetrics] = useState<VendorMetrics | null>(null);
     const [loading, setLoading] = useState(true);
+    // #4799 — a failed read had no retry and no reason: a 403 and a 500 both
+    // read "Failed to load metrics", outside the dashboard's own frame.
+    const [loadError, setLoadError] = useState<'forbidden' | 'failed' | null>(null);
 
     const fetchMetrics = useCallback(async () => {
+        setLoading(true);
+        setLoadError(null);
         try {
             const res = await fetch(apiUrl('/vendors/metrics'));
             if (res.ok) setMetrics(await res.json());
+            else setLoadError(res.status === 403 ? 'forbidden' : 'failed');
         } catch {
-            // A network failure shows what a non-ok response does. Before
-            // this, a rejection skipped setLoading(false) and the page stayed
-            // loading for ever.
+            setLoadError('failed');
         } finally {
             setLoading(false);
         }
     }, [apiUrl]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { void fetchMetrics(); }, [fetchMetrics]);
 
-    if (loading) return <SkeletonDashboard />;
-    if (!metrics) return <div className="text-content-error py-8 text-center">{tx('dashboard.loadFailed')}</div>;
+    if (loading && !metrics) return <SkeletonDashboard />;
+    if (!metrics) return (
+        <DashboardLayout header={{ back: { smart: true }, title: tx('dashboard.title') }}>
+            <div className="p-12 text-center space-y-default" id="vendor-dashboard-error">
+                <p className="text-content-error">
+                    {loadError === 'forbidden' ? tx('dashboard.loadForbidden') : tx('dashboard.loadFailed')}
+                </p>
+                {loadError !== 'forbidden' && (
+                    <Button variant="secondary" onClick={() => void fetchMetrics()} id="vendor-dashboard-retry">
+                        {tx('dashboard.retry')}
+                    </Button>
+                )}
+            </div>
+        </DashboardLayout>
+    );
 
     return (
         <DashboardLayout
@@ -202,9 +219,9 @@ export default function VendorDashboardPage() {
 
             {/* Expiring Documents */}
             {metrics.expiringDocuments > 0 && (
-                <div className={cn(cardVariants(), 'border border-orange-500/30')}>
+                <div className={cn(cardVariants(), 'border border-border-warning')} id="vendor-expiring-docs">
                     <div className="flex items-center gap-tight">
-                        <span className="text-orange-400 text-lg font-semibold">!</span>
+                        <AppIcon name="warning" size={16} className="text-content-warning" />
                         <span className="font-semibold">{tx('dashboard.expiringDocs', { count: metrics.expiringDocuments })}</span>
                     </div>
                     <p className="text-sm text-content-muted mt-1">{tx('dashboard.expiringDocsHint')}</p>
