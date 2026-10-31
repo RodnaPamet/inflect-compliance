@@ -12311,7 +12311,7 @@
     "loadingTitle": "Loading Multi-Factor Authentication…",
     "pageTitle": "Multi-Factor Authentication",
     "statusTitle": "MFA Status",
-    "tenantPolicy": "Tenant policy:",
+    "tenantPolicy": "Workspace policy:",
     "enrolled": "Enrolled",
     "notEnrolled": "Not Enrolled",
     "enrolledSince": "Enrolled since {date}",

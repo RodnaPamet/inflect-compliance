@@ -91,6 +91,9 @@ const mockVerify = verifyTotpCode as jest.MockedFunction<typeof verifyTotpCode>;
 
 beforeEach(() => {
     jest.clearAllMocks();
+    // A case below makes the audit write reject; `clearAllMocks` keeps that
+    // implementation, and a successful enrolment change now writes a row.
+    mockAppendAuditEntry.mockReset();
     mockGenSecret.mockReturnValue('JBSWY3DPEHPK3PXP');
     mockGenUri.mockReturnValue('otpauth://totp/Inflect:user@example.com?secret=...');
     mockEncrypt.mockReturnValue('encrypted-blob');
@@ -310,9 +313,12 @@ describe('removeMfaEnrollment', () => {
         // Without this, a helper that recorded unconditionally would satisfy
         // every assertion above while filling the trail with denials that never
         // happened — the failure direction that misleads an auditor rather than
-        // leaving them short.
+        // leaving them short. The removal itself is recorded (#4646), as its own
+        // action.
         await removeMfaEnrollment(adminCtx, 'victim-id');
-        expect(mockAppendAuditEntry).not.toHaveBeenCalled();
+        const actions = mockAppendAuditEntry.mock.calls.map(([e]) => (e as { action: string }).action);
+        expect(actions).not.toContain('AUTHZ_DENIED');
+        expect(actions).toEqual(['MFA_REMOVED']);
     });
 
     it('lets ADMIN force-remove another user in the same tenant', async () => {
@@ -338,5 +344,63 @@ describe('removeMfaEnrollment', () => {
         mockEnrollDelete.mockResolvedValue({ count: 0 } as never);
         const r = await removeMfaEnrollment(userCtx);
         expect(r.removed).toBe(false);
+    });
+});
+
+// ─── #4646: the enrolment changes are recorded ─────────────────────────
+
+describe('MFA enrolment changes are in the audit trail (#4646)', () => {
+    const rows = () => mockAppendAuditEntry.mock.calls.map(([e]) => e as Record<string, unknown>);
+
+    it('records a started enrolment', async () => {
+        await startMfaEnrollment(userCtx);
+        expect(rows()).toEqual([
+            expect.objectContaining({
+                action: 'MFA_ENROLLMENT_STARTED',
+                tenantId: 't1',
+                detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: 'u1', detail: 'mfa_enrollment_started' },
+            }),
+        ]);
+    });
+
+    it('records a verified enrolment, and nothing for a wrong code', async () => {
+        mockEnrollFind.mockResolvedValue({ id: 'enr-1', isVerified: false, secretEncrypted: 'blob' } as never);
+        mockDecrypt.mockReturnValue('JBSWY3DPEHPK3PXP');
+
+        mockVerify.mockReturnValueOnce(false);
+        await verifyMfaEnrollment(userCtx, { code: '000000' });
+        expect(rows()).toEqual([]);
+
+        mockVerify.mockReturnValueOnce(true);
+        await verifyMfaEnrollment(userCtx, { code: '123456' });
+        expect(rows()).toEqual([
+            expect.objectContaining({
+                action: 'MFA_ENROLLED',
+                detailsJson: expect.objectContaining({ targetUserId: 'u1', detail: 'mfa_enrolled' }),
+            }),
+        ]);
+    });
+
+    it('records a removal, naming whose factor it was and whether an admin did it', async () => {
+        await removeMfaEnrollment(userCtx);
+        await removeMfaEnrollment(adminCtx, 'victim-id');
+        expect(rows()).toEqual([
+            expect.objectContaining({
+                action: 'MFA_REMOVED',
+                userId: 'u1',
+                detailsJson: expect.objectContaining({ targetUserId: 'u1', detail: 'mfa_removed' }),
+            }),
+            expect.objectContaining({
+                action: 'MFA_REMOVED',
+                userId: 'admin-u',
+                detailsJson: expect.objectContaining({ targetUserId: 'victim-id', detail: 'mfa_removed_by_admin' }),
+            }),
+        ]);
+    });
+
+    it('records nothing when there was nothing to remove', async () => {
+        mockEnrollDelete.mockResolvedValue({ count: 0 } as never);
+        await removeMfaEnrollment(userCtx);
+        expect(rows()).toEqual([]);
     });
 });

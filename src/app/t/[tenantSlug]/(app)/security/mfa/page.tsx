@@ -22,6 +22,9 @@ import { Heading } from '@/components/ui/typography';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { TotpQrCode } from './TotpQrCode';
 
+/** `MfaPolicy`, each labelled under `admin.security.policy.<value>.label`. */
+const POLICY_VALUES = ['DISABLED', 'OPTIONAL', 'REQUIRED'] as const;
+
 interface MfaStatus {
     isEnrolled: boolean;
     isVerified: boolean;
@@ -41,6 +44,12 @@ type Step = 'status' | 'enrolling' | 'verifying';
 
 export default function UserMfaPage() {
     const t = useTranslations('mfa');
+    // The policy's own labels, as the workspace security page shows them (#4646).
+    const tPolicy = useTranslations('admin.security.policy');
+    const policyLabel = (policy: string) =>
+        POLICY_VALUES.includes(policy as (typeof POLICY_VALUES)[number])
+            ? tPolicy(`${policy as (typeof POLICY_VALUES)[number]}.label`)
+            : policy;
     const apiUrl = useTenantApiUrl();
     const [status, setStatus] = useState<MfaStatus | null>(null);
     const [step, setStep] = useState<Step>('status');
@@ -204,7 +213,7 @@ export default function UserMfaPage() {
                         <div>
                             <Heading level={2}>{t('statusTitle')}</Heading>
                             <p className="text-sm text-content-muted mt-1">
-                                {t('tenantPolicy')} <span className="font-medium text-content-default">{status.tenantMfaPolicy}</span>
+                                {t('tenantPolicy')} <span className="font-medium text-content-default">{policyLabel(status.tenantMfaPolicy)}</span>
                             </p>
                         </div>
                         <div>
