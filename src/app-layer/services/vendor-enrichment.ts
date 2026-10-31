@@ -45,55 +45,16 @@ export class TestModeEnrichmentProvider implements EnrichmentProvider {
 }
 
 /**
- * Simple HTML metadata fetch provider — extracts basic info from homepage.
- * No heavy scraping — just meta tags & known paths.
+ * Get the enrichment provider. Only the test provider exists.
+ *
+ * A homepage-scraping provider (`SimpleMetadataProvider`) used to live here.
+ * Nothing selected it, and it requested the tenant-entered vendor domain with
+ * a bare `fetch` that followed redirects, under a User-Agent posing as a
+ * browser. It was deleted rather than kept as an SSRF sink waiting for a
+ * caller (docs/ai-architecture/web-bot-auth.md, Phase 0.6). A real provider
+ * that fetches vendor sites goes through `safeFetch`, as the TLS grade does.
  */
-export class SimpleMetadataProvider implements EnrichmentProvider {
-    name = 'SIMPLE_METADATA';
-
-    async enrich(domain: string): Promise<EnrichmentResult> {
-        const result: EnrichmentResult = {};
-        try {
-            const res = await fetch(`https://${domain}`, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VendorEnrichment/1.0)' },
-                signal: AbortSignal.timeout(5000),
-            });
-            if (!res.ok) return result;
-
-            const html = await res.text();
-            const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-            if (titleMatch) result.companyName = titleMatch[1].trim().split(/[|\-–]/)[0].trim();
-
-            const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
-            if (descMatch) result.description = descMatch[1].trim().substring(0, 500);
-
-            // Check known privacy/security paths
-            for (const path of ['/privacy', '/privacy-policy', '/legal/privacy']) {
-                try {
-                    const pr = await fetch(`https://${domain}${path}`, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
-                    if (pr.ok) { result.privacyPolicyUrl = `https://${domain}${path}`; break; }
-                } catch { /* skip */ }
-            }
-            for (const path of ['/security', '/trust', '/trust-center']) {
-                try {
-                    const sr = await fetch(`https://${domain}${path}`, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
-                    if (sr.ok) { result.securityPageUrl = `https://${domain}${path}`; break; }
-                } catch { /* skip */ }
-            }
-        } catch { /* network error, return empty */ }
-        return result;
-    }
-}
-
-/**
- * Get the appropriate enrichment provider.
- * Default to test mode. Pass providerName explicitly for real providers.
- */
-export function getEnrichmentProvider(providerName?: string): EnrichmentProvider {
-    if (providerName === 'SIMPLE_METADATA') {
-        return new SimpleMetadataProvider();
-    }
-    // Default to test mode for safety (no process.env reference)
+export function getEnrichmentProvider(): EnrichmentProvider {
     return new TestModeEnrichmentProvider();
 }
 

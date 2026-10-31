@@ -29,7 +29,7 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · read and decide<br/>D-L1-5, D-L1-6, D-L1-7<br/>monitor onto safeFetch<br/>refused vs unreachable"}}:::gate
+  P0{{"Phase 0 · read and decide<br/>D-L1-5, D-L1-6, D-L1-7<br/>monitor on safeFetch: landed<br/>refused vs unreachable"}}:::gate
   P1["Phase 1 · key and directory<br/>one deployment Ed25519 key<br/>signed JWKS at .well-known<br/>absent key builds nothing"]:::todo
   P2["Phase 2 · sign the monitor<br/>one bot seam, honest UA<br/>bot page, robots.txt"]:::todo
   REG["Operator registers<br/>Cloudflare Verified Bots<br/>method: Request Signature"]:::gate
@@ -104,21 +104,29 @@ network allowlist, so **Phase 0.1 re-reads both before any code is written**.
   Both default to `stub` (`VENDOR_MONITOR_TLS_PROVIDER`,
   `VENDOR_MONITOR_BREACH_PROVIDER`); whether production sets the real
   providers is not visible from the repository.
-- **Both fetch through `fetchWithRetry`, not `safeFetch`.** The vendor domain
-  is entered by a tenant, and `tls-provider.ts` is not in the `SINKS` of
-  `tests/guards/ssrf-egress-coverage.test.ts`. That is a G6 gap independent
-  of this roadmap, and Phase 0 closes it first.
-- **A refusal is invisible.** `fetchWithRetry` retries a 403 ("Unauthorized"),
-  a 429 and any 5xx, then throws; the TLS provider turns every throw into
-  `grade: null`; and the sweep treats `null` as "nothing observed", leaving
+- **The TLS grade fetches through `safeFetch`; the breach check does not
+  need to** (2026-10-31, closing sub-phase 0.5). The vendor domain is entered
+  by a tenant, so `HeaderGradeTlsProvider` requests it only through
+  `safeFetch`: the domain must be a bare host name, its address must be
+  public and is pinned, and a redirect is followed only by calling
+  `safeFetch` again on its target (https, public, at most five hops, 20
+  seconds for the whole grade). `tls-provider.ts` is in the `SINKS` of
+  `tests/guards/ssrf-egress-coverage.test.ts`. The breach check queries a
+  fixed HIBP host named in code, with the domain URL-encoded into the query,
+  so it stays on `fetchWithRetry` (G6 admits code-constant hosts).
+- **A refusal is invisible.** The TLS provider retries a 429, a 5xx or a
+  network failure once, and maps every outcome but a 2xx (a 403, a challenge,
+  an address the SSRF guard refused, a timeout) to `grade: null`; and the
+  sweep treats `null` as "nothing observed", leaving
   `tlsGrade` and `tlsCheckedAt` as they were and recording no event. A vendor
   that puts the monitor behind a bot wall keeps its last grade indefinitely,
   dated to when the site was last readable, and nothing says it refused us.
-- **A second crawler exists but is unreachable.** `SimpleMetadataProvider`
-  (`services/vendor-enrichment.ts`) would fetch homepages with a browser-like
-  User-Agent (`Mozilla/5.0 (compatible; VendorEnrichment/1.0)`) and a bare
-  `fetch`, but `vendor.ts` calls `getEnrichmentProvider()` with no name, which
-  returns the test provider. Nothing selects it.
+- **There is no second crawler.** `SimpleMetadataProvider`
+  (`services/vendor-enrichment.ts`) fetched homepages with a browser-like
+  User-Agent and a bare `fetch`, and nothing selected it. It was deleted on
+  2026-10-31 (sub-phase 0.6, at its default) rather than kept as an SSRF sink
+  waiting for a caller; `getEnrichmentProvider()` returns the test provider
+  and takes no name.
 - **Everything else outbound is credentialed or already signed**, and out of
   scope: automation webhooks and the audit stream (HMAC
   `X-Inflect-Signature`), MCP connections (`wire-transport.ts`, per-connection
@@ -222,33 +230,37 @@ makes a refusal visible either way.
       review.
 - [ ] 0.4 Make the monitor's refusals visible **before** signing anything.
       The TLS provider returns an outcome: `GRADED`, `REFUSED` (403, a 429
-      that outlasted the retries, or a recognised challenge response) or
-      `UNREACHABLE` (network failure, timeout, 5xx). The sweep records the
+      that outlasted the retries, or a recognised challenge response),
+      `UNREACHABLE` (network failure, timeout, 5xx) or `BLOCKED` (the domain
+      is not a bare host name, or it or a redirect target is an address the
+      SSRF guard refuses: the vendor record needs correcting, not the
+      vendor's site). The sweep records the
       last outcome and its time on the monitor, emits
       `vendor_monitor.tls_fetch{outcome}`, and the vendor page shows a stale
       grade as stale. `REFUSED` before signing is the baseline Phase 2 is
       measured against.
-- [ ] 0.5 Close the G6 gap: both vendor-monitor fetchers move onto
-      `safeFetch` (byte cap, deadline, private-address and rebinding checks),
-      and `tls-provider.ts` joins the SSRF guard's `SINKS`. The vendor domain
-      is tenant-entered; until now nothing stopped it from naming a host
-      inside the deployment's network.
-- [ ] 0.6 The unreachable `SimpleMetadataProvider`: delete it, or keep it and
-      move it onto the same `safeFetch` path in Phase 2. Default: delete
-      (nothing selects it, and its User-Agent impersonates a browser).
+- [x] 0.5 Close the G6 gap (2026-10-31): the TLS grade moved onto
+      `safeFetch` (bare host names only, private-address and rebinding
+      checks, a deadline, redirects followed one re-checked hop at a time,
+      the body never read), and `tls-provider.ts` joined the SSRF guard's
+      `SINKS`. The breach check stays on `fetchWithRetry`: its host is the
+      fixed HIBP endpoint, not tenant-entered. The vendor domain is
+      tenant-entered; until then nothing stopped it from naming a host inside
+      the deployment's network.
+- [x] 0.6 The unreachable `SimpleMetadataProvider` was deleted (2026-10-31,
+      the default): nothing selected it, its User-Agent impersonated a
+      browser, and it fetched the tenant-entered domain with a bare `fetch`.
 
 **Prompt.**
 ```text
-Context (main 3.340.0): the vendor-monitoring sweep (daily 02:00 UTC) is the product's
-only unattended crawler of third-party websites: HeaderGradeTlsProvider GETs
-https://<tenant-entered vendor domain> and HibpDomainBreachProvider queries a fixed HIBP
-endpoint, both through fetchWithRetry (not safeFetch), User-Agent
-InflectCompliance-VendorMonitor/1.0. fetchWithRetry retries 403/429/5xx then throws; the
-TLS provider maps every throw to grade null; vendor-monitoring.ts treats null as "nothing
-observed", so a refused fetch leaves the old grade and tlsCheckedAt with no event.
-tls-provider.ts is not in tests/guards/ssrf-egress-coverage.test.ts SINKS.
-SimpleMetadataProvider in services/vendor-enrichment.ts is unreachable (getEnrichment
-Provider() is called with no name).
+Context (main, sub-phases 0.5 and 0.6 landed 2026-10-31): the vendor-monitoring sweep
+(daily 02:00 UTC) is the product's only unattended crawler of third-party websites.
+HeaderGradeTlsProvider GETs https://<tenant-entered vendor domain> through safeFetch, one
+re-checked hop per redirect, retrying a 429/5xx/network failure once; every non-2xx
+outcome becomes grade null. HibpDomainBreachProvider queries a fixed HIBP endpoint through
+fetchWithRetry. Both send User-Agent InflectCompliance-VendorMonitor/1.0.
+vendor-monitoring.ts treats null as "nothing observed", so a refused fetch leaves the old
+grade and tlsCheckedAt with no event.
 
 Task: Phase 0 of docs/ai-architecture/web-bot-auth.md. (1) Read the current
 draft-ietf-webbotauth-httpsig-protocol and Cloudflare's Web Bot Auth verifier docs;
@@ -256,13 +268,11 @@ write docs/implementation-notes/2026-MM-DD-web-bot-auth-decisions.md recording t
 format (Signature-Agent form, covered components, window, nonce, directory media type
 and response signing, keyid derivation), D-L1-5/6/7 as initialled, and the library
 decision from a G5 risk review. (2) TLS provider outcome taxonomy GRADED | REFUSED |
-UNREACHABLE; persist the last outcome and its time on the monitor (migration);
-metric vendor_monitor.tls_fetch{outcome}; the vendor page marks a stale grade stale.
-(3) Both vendor-monitor fetchers on safeFetch with byte caps and deadlines; add
-tls-provider.ts to SINKS. (4) Delete SimpleMetadataProvider unless D-L1-6 keeps it.
-(5) Tests: a 403 and a challenge response record REFUSED, not null; a network error
-records UNREACHABLE; a refused fetch leaves the grade and marks it stale; a vendor
-domain resolving to a private address is refused before any request.
+UNREACHABLE | BLOCKED; persist the last outcome and its time on the monitor (migration);
+metric vendor_monitor.tls_fetch{outcome}; the vendor page marks a stale grade stale; an
+address the SSRF guard refused is BLOCKED, never UNREACHABLE. (3) Tests: a 403
+and a challenge response record REFUSED, not null; a network error records UNREACHABLE;
+a refused fetch leaves the grade and marks it stale.
 
 Constraints: nothing is signed in this phase; no new outbound host; the outcome
 column carries no response body.

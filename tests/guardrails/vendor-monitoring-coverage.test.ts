@@ -7,8 +7,9 @@
  *     now) + triggers reassessment;
  *   - a breach / posture-change materialises a vendor Finding (explicit +
  *     idempotent) + notifies the owner;
- *   - external-signal ingestion rides the shared provider + fetchWithRetry
- *     seam, NOT a parallel fetch path;
+ *   - external-signal ingestion rides the shared provider seam, NOT a
+ *     parallel fetch path: the fixed breach-feed host through fetchWithRetry,
+ *     the tenant-entered vendor domain through safeFetch (the SSRF guard);
  *   - RLS + index coverage on the monitoring models;
  *   - the reassessment-reminder is reused (not reimplemented).
  */
@@ -104,12 +105,19 @@ describe('vendor-monitoring — breach → finding (explicit + idempotent) + not
 });
 
 describe('vendor-monitoring — external signals ride the shared seam', () => {
-    it('providers fetch through the shared fetchWithRetry helper, not raw fetch', () => {
+    it('the breach feed, a fixed host, fetches through the shared fetchWithRetry helper', () => {
         expect(BREACH).toMatch(/from '@\/lib\/http\/fetch-with-retry'/);
-        expect(TLS).toMatch(/from '@\/lib\/http\/fetch-with-retry'/);
-        // The real providers call fetchWithRetry (the shared HTTP seam).
         expect(BREACH).toMatch(/fetchWithRetry\(/);
-        expect(TLS).toMatch(/fetchWithRetry\(/);
+    });
+
+    it('the TLS grade, a tenant-entered host, fetches only through safeFetch', () => {
+        // The vendor domain is typed by a tenant, so its request is an SSRF
+        // sink (tests/guards/ssrf-egress-coverage.test.ts lists it). This
+        // file used to require fetchWithRetry here, which pinned the hole.
+        expect(TLS).toMatch(/from '@\/app-layer\/automation\/webhook-safety'/);
+        expect(TLS).toMatch(/safeFetch\(/);
+        expect(TLS).not.toMatch(/fetchWithRetry/);
+        expect(TLS).not.toMatch(/(^|[^\w.])fetch\(/m);
     });
 
     it('every provider ships a deterministic, network-free stub (CI-safe default)', () => {

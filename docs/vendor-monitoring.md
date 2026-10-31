@@ -27,6 +27,11 @@ the `VendorMonitor` row:
    vendor's homepage security headers (HSTS, CSP, X-Frame-Options, …),
    SSL-Labs-style but keyless. Records a `TLS_GRADE` timeline event on change +
    updates rolling state. Informational — does not raise a finding.
+   The vendor domain is tenant-entered, so the homepage is requested only
+   through `safeFetch`: the domain must be a bare host name, the address
+   must be public and is pinned, and a redirect is followed only by checking
+   its target the same way (https, public, at most five hops). A refused,
+   unreachable or invalid domain is left ungraded and logged.
 
 Every posture change lands one **`VendorPostureEvent`** — the append-only
 continuous-assurance timeline, idempotent via `@@unique([tenantId,
@@ -87,8 +92,11 @@ the public feeds.
 Mirror the existing provider shape (do NOT fork a second ingestion path):
 
 1. Add a provider interface + a deterministic `TestMode…` stub + a real
-   provider calling `fetchWithRetry` under
-   `src/app-layer/services/vendor-monitoring/`.
+   provider under `src/app-layer/services/vendor-monitoring/`. A provider
+   that calls a fixed host named in code uses `fetchWithRetry`; one that
+   requests any host a tenant enters (the vendor domain is one) uses
+   `safeFetch` from `@/app-layer/automation/webhook-safety` and joins the
+   `SINKS` of `tests/guards/ssrf-egress-coverage.test.ts`.
 2. Add a pure evaluator (freshness / threshold) in `evaluate.ts`.
 3. Plan a `PlannedEvent` in `runVendorMonitor` (fingerprint for idempotency;
    optional `finding` spec gated on `materializeFindings`).
