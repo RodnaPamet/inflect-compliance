@@ -127,8 +127,12 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // +1 for the Prompt-2.5 emergency publish-bypass modal — its own dialog
     // region with a legitimate primary confirm (the header-cluster Publish mirror
     // is demoted to secondary since the canonical primary lives on the version card).
-    "src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx": 5,
+    "src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx": 4,
     "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx": 4,
+    // #4727 — the default pack's Pack button, and the edit dialog's Save:
+    // the cycle's name and audit period are now editable, in a dialog region
+    // of their own.
+    "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx": 2,
 
     // R3-P2 — 3 primaries, but two are runtime-mutually-exclusive: the
     // "Start test" CTA (PLANNED-state guided-run region) and the

@@ -25,10 +25,16 @@ import { InfoTooltip } from '@/components/ui/tooltip';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { cardVariants } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button-variants';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@inflect/ui/lib/cn';
 import { readinessTone, readinessVariant } from '@/lib/readiness/bands';
 
-interface Cycle { id: string; name: string; frameworkKey: string; status: string }
+interface Cycle { id: string; name: string; frameworkKey: string; frameworkName?: string | null; status: string }
+/** `/audits/readiness/overview` — the cycles joined with each one's score (#4729). */
+interface CoverageOverview { cycles: Cycle[]; scoresByCycleId: Record<string, { score: number }> }
+/** What a section shows: still loading, read, or failed to read. */
+type Section<T> = { state: 'loading' } | { state: 'ready'; data: T } | { state: 'failed' };
 interface TestReadiness { frameworkKey: string; frameworkName: string; testPlanCoverage: number; testRunCoverage: number; passRate: number }
 
 // This page's return is what reintroduced four copies of the 80/50
@@ -39,22 +45,54 @@ interface TestReadiness { frameworkKey: string; frameworkName: string; testPlanC
 export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) {
     const tx = useTranslations('audits');
     const apiUrl = useCallback((p: string) => `/api/t/${tenantSlug}${p}`, [tenantSlug]);
-    const [cycles, setCycles] = useState<Cycle[]>([]);
-    const [tests, setTests] = useState<TestReadiness[]>([]);
-    const [maturity, setMaturity] = useState<number | null>(null);
+    // Each section reads on its own and says when its read failed. A failed or
+    // refused read used to fall through to the empty state ("No audit cycles
+    // yet."), and with no loading state that sentence showed on every visit
+    // until the data arrived (#4729).
+    const [coverage, setCoverage] = useState<Section<CoverageOverview>>({ state: 'loading' });
+    const [tests, setTests] = useState<Section<TestReadiness[]>>({ state: 'loading' });
+    const [maturity, setMaturity] = useState<Section<number | null>>({ state: 'loading' });
+    const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
-        void Promise.all([
-            fetch(apiUrl('/audits/cycles')).then((r) => (r.ok ? r.json() : [])),
-            fetch(apiUrl('/tests/readiness')).then((r) => (r.ok ? r.json() : [])),
-            // Fail-soft — no NIS2 assessment yet → no maturity card.
-            fetch(apiUrl('/audits/nis2-gap')).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        ]).then(([c, t, n]) => {
-            setCycles(Array.isArray(c) ? c : []);
-            setTests(Array.isArray(t) ? t : []);
-            setMaturity(typeof n?.latest?.score?.overall === 'number' ? n.latest.score.overall : null);
-        });
-    }, [apiUrl]);
+        let live = true;
+        const read = async <T,>(path: string, shape: (body: unknown) => T): Promise<Section<T>> => {
+            try {
+                const res = await fetch(apiUrl(path));
+                if (!res.ok) return { state: 'failed' };
+                return { state: 'ready', data: shape(await res.json()) };
+            } catch {
+                return { state: 'failed' };
+            }
+        };
+        void read('/audits/readiness/overview', (b) => {
+            const body = b as Partial<CoverageOverview> | null;
+            return { cycles: Array.isArray(body?.cycles) ? body.cycles : [], scoresByCycleId: body?.scoresByCycleId ?? {} };
+        }).then((s) => { if (live) setCoverage(s); });
+        void read('/tests/readiness', (b) => (Array.isArray(b) ? (b as TestReadiness[]) : [])).then((s) => { if (live) setTests(s); });
+        // No NIS2 assessment yet is a 200 with no latest run: no card. A
+        // failed read is a failure, not an absence.
+        void read('/audits/nis2-gap', (b) => {
+            const overall = (b as { latest?: { score?: { overall?: unknown } } } | null)?.latest?.score?.overall;
+            return typeof overall === 'number' ? overall : null;
+        }).then((s) => { if (live) setMaturity(s); });
+        return () => { live = false; };
+    }, [apiUrl, attempt]);
+
+    const retry = () => {
+        setCoverage({ state: 'loading' });
+        setTests({ state: 'loading' });
+        setMaturity({ state: 'loading' });
+        setAttempt((n) => n + 1);
+    };
+
+    const failedNotice = (id: string) => (
+        <div className="flex items-center justify-between gap-compact" role="alert" id={id}>
+            <p className="text-sm text-content-error">{tx('overview.loadFailed')}</p>
+            <Button variant="secondary" size="sm" onClick={retry}>{tx('overview.retry')}</Button>
+        </div>
+    );
+    const loadingNotice = <p className="text-sm text-content-muted">{tx('overview.loading')}</p>;
 
     return (
         <div className="space-y-section">
@@ -74,23 +112,42 @@ export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) 
                     <Heading level={2}>{tx('overview.coverageTitle')}</Heading>
                     <InfoTooltip content={tx('overview.coverageHelp')} />
                 </div>
-                {cycles.length === 0 ? (
-                    <p className="text-sm text-content-muted">{tx('overview.coverageEmpty')}</p>
+                {coverage.state === 'loading' ? loadingNotice
+                    : coverage.state === 'failed' ? failedNotice('overview-coverage-failed')
+                    : coverage.data.cycles.length === 0 ? (
+                    <EmptyState size="sm" variant="no-records" title={tx('overview.coverageEmpty')} />
                 ) : (
                     <div className="space-y-tight">
-                        {cycles.map((c) => (
-                            <Link key={c.id} href={`/t/${tenantSlug}/audits/cycles/${c.id}/readiness`}
-                                className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between hover:bg-bg-muted/50 transition block')}>
-                                <span className="text-sm font-medium">{c.name} <span className="text-content-subtle">· {c.frameworkKey}</span></span>
-                                <span className="text-xs text-content-muted">{tx('overview.viewCoverage')} →</span>
-                            </Link>
-                        ))}
+                        {coverage.data.cycles.map((c) => {
+                            const score = coverage.data.scoresByCycleId[c.id]?.score;
+                            return (
+                                <Link key={c.id} href={`/t/${tenantSlug}/audits/cycles/${c.id}/readiness`}
+                                    className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between gap-compact hover:bg-bg-muted/50 transition block')}
+                                    data-testid="overview-coverage-row">
+                                    <span className="text-sm font-medium">{c.name} <span className="text-content-subtle">· {c.frameworkName ?? c.frameworkKey}</span></span>
+                                    <span className="flex items-center gap-tight">
+                                        {typeof score === 'number' ? (
+                                            <StatusBadge variant={readinessVariant(score)}>{tx('overview.coverageScore', { pct: Math.round(score) })}</StatusBadge>
+                                        ) : (
+                                            <span className="text-xs text-content-subtle">{tx('cycles.noScore')}</span>
+                                        )}
+                                        <span className="text-xs text-content-muted">{tx('overview.viewCoverage')} →</span>
+                                    </span>
+                                </Link>
+                            );
+                        })}
                     </div>
                 )}
             </section>
 
             {/* Axis 2 — NIS2 self-assessment maturity. */}
-            {maturity !== null && (
+            {maturity.state === 'failed' && (
+                <section className={cn(cardVariants(), 'space-y-default')}>
+                    <Heading level={2}>{tx('overview.maturityTitle')}</Heading>
+                    {failedNotice('overview-maturity-failed')}
+                </section>
+            )}
+            {maturity.state === 'ready' && maturity.data !== null && (
                 <section className={cn(cardVariants(), 'space-y-default')}>
                     <div className="flex items-center gap-tight">
                         <Heading level={2}>{tx('overview.maturityTitle')}</Heading>
@@ -98,7 +155,7 @@ export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) 
                     </div>
                     <div className="flex items-center justify-between">
                         <div className="rounded-lg bg-bg-default/50 px-4 py-3">
-                            <KPIStat value={`${Math.round(maturity)}%`} label={tx('overview.maturityLabel')} tone={readinessTone(maturity)} />
+                            <KPIStat value={`${Math.round(maturity.data)}%`} label={tx('overview.maturityLabel')} tone={readinessTone(maturity.data)} />
                         </div>
                         <Link href={`/t/${tenantSlug}/audits/nis2-gap`} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
                             {tx('overview.openGapAssessment')}
@@ -118,11 +175,13 @@ export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) 
                         {tx('overview.openTestDashboard')}
                     </Link>
                 </div>
-                {tests.length === 0 ? (
-                    <p className="text-sm text-content-muted">{tx('overview.testEmpty')}</p>
+                {tests.state === 'loading' ? loadingNotice
+                    : tests.state === 'failed' ? failedNotice('overview-tests-failed')
+                    : tests.data.length === 0 ? (
+                    <EmptyState size="sm" variant="no-records" title={tx('overview.testEmpty')} />
                 ) : (
                     <div className="grid grid-cols-1 gap-default sm:grid-cols-2 lg:grid-cols-3">
-                        {tests.map((t) => (
+                        {tests.data.map((t) => (
                             <div key={t.frameworkKey} className="rounded-lg border border-border-subtle p-3 space-y-tight">
                                 <p className="text-sm font-medium text-content-emphasis">{t.frameworkName}</p>
                                 <div className="flex flex-wrap gap-tight">

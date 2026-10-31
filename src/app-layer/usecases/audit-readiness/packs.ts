@@ -615,8 +615,9 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string, opts:
 //                 the framework-relevant ones by category/title.
 //   • Evidence  — APPROVED evidence linked to the selected controls
 //                 (the reviewed, attestation-grade artefacts).
-//   • Issues    — OPEN (non-terminal) findings/tasks, so the auditor
-//                 sees the live remediation backlog.
+//   • Issues    — OPEN (non-terminal) tasks on the selected controls, so
+//                 the auditor sees the remediation backlog for what they
+//                 are auditing, and nothing from elsewhere in the workspace.
 
 /** Control statuses that represent a control actually in operation. */
 const OPERATING_CONTROL_STATUSES: readonly ControlStatus[] = [
@@ -718,10 +719,22 @@ async function buildCuratedDefaultPack(ctx: RequestContext, frameworkKey: string
     // one evidence can now be linked to several controls via the join).
     const evidenceIds = [...new Set(operatingControls.flatMap((c) => c.evidenceControlLinks.map((l) => l.evidenceId)))];
 
-    // Open (non-terminal) findings / tasks — the live remediation backlog.
-    const issues = await runInTenantContext(ctx, (tdb) =>
+    // Open (non-terminal) tasks on the selected controls — the remediation
+    // backlog the auditor is looking at. This used to take every open task in
+    // the workspace, so a vendor follow-up or an HR task went into the pack an
+    // external auditor reads (#4727). A task belongs to a control through its
+    // own `controlId` or a CONTROL link.
+    const issues = controlIds.length === 0 ? [] : await runInTenantContext(ctx, (tdb) =>
         tdb.task.findMany({
-            where: { tenantId: ctx.tenantId, status: { notIn: [...TERMINAL_TASK_STATUSES] } },
+            where: {
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                status: { notIn: [...TERMINAL_TASK_STATUSES] },
+                OR: [
+                    { controlId: { in: controlIds } },
+                    { links: { some: { entityType: 'CONTROL', entityId: { in: controlIds } } } },
+                ],
+            },
             select: { id: true },
             take: 2000,
         })

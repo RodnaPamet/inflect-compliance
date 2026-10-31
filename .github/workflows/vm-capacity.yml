@@ -1,0 +1,68 @@
+#
+# A read-only capacity snapshot of the production VM — the AI roadmap's
+# capacity budget, step C0 (docs/ai-architecture-roadmap.md § Capacity budget).
+#
+# WHY A WORKFLOW AND NOT A SESSION. The owner chose (2026-10-20, `Scanner VM`)
+# to keep the way into the VM out of chats, terminals and sessions: a runner
+# reaches GCP through Workload Identity Federation, with no key anywhere, and
+# the `production` environment's required reviewer approves every run. This
+# workflow reuses that identity and that gate. It reads no secret.
+#
+# READ-ONLY. `deploy/capacity/remote.sh` reads /proc, the cgroup files and
+# `docker inspect` / `docker stats` fields it names, and changes nothing.
+#
+# THE LOGS ARE PUBLIC, because the repository is. The report holds container
+# names and numbers only: never an environment file, a compose file, a
+# container's environment or command line, or a process list.
+#
+name: VM capacity
+
+on:
+    workflow_dispatch:
+        inputs:
+            samples:
+                description: How many `docker stats` samples to take (1-72)
+                required: true
+                default: '1'
+                type: string
+            interval_seconds:
+                description: Seconds between samples (10-600)
+                required: true
+                default: '60'
+                type: string
+
+# One at a time: two runs staging the script on the VM at once would race.
+concurrency:
+    group: vm-capacity
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+    id-token: write
+
+jobs:
+    vm-capacity:
+        name: VM capacity snapshot
+        runs-on: ubuntu-latest
+        environment: production
+        # 72 samples at 600 s is 12 hours, past any job's limit; the script
+        # bounds both inputs, and this bounds the run.
+        timeout-minutes: 360
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Authenticate to GCP (Workload Identity Federation)
+              uses: google-github-actions/auth@v3
+              with:
+                  workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+                  service_account: ${{ vars.GCP_VM_OPERATOR_SA }}
+
+            - name: Set up gcloud
+              uses: google-github-actions/setup-gcloud@v3
+
+            - name: Take the snapshot on the VM
+              env:
+                  SAMPLES: ${{ inputs.samples }}
+                  INTERVAL_SECONDS: ${{ inputs.interval_seconds }}
+              run: deploy/capacity/vm.sh "$SAMPLES" "$INTERVAL_SECONDS"

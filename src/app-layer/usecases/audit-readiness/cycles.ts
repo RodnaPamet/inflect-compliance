@@ -59,14 +59,25 @@ export async function createAuditCycle(
 
 export async function listAuditCycles(ctx: RequestContext) {
     assertCanViewPack(ctx);
-    return runInTenantContext(ctx, (tdb) =>
-        tdb.auditCycle.findMany({
+    return runInTenantContext(ctx, async (tdb) => {
+        const cycles = await tdb.auditCycle.findMany({
             where: { tenantId: ctx.tenantId },
             include: { packs: { select: { id: true, name: true, status: true }, take: 500 } },
             orderBy: { createdAt: 'desc' },
             take: 500,
-        })
-    );
+        });
+        // The catalogue's name for each cycle's framework, read once for
+        // the distinct keys: the readiness overview listed cycles by key
+        // ("· SOC2") beside cards that already showed names (#4729).
+        const keys = [...new Set(cycles.map((c) => c.frameworkKey))];
+        const frameworks = keys.length === 0 ? [] : await tdb.framework.findMany({
+            where: { key: { in: keys } },
+            select: { key: true, name: true },
+            take: keys.length,
+        });
+        const nameByKey = new Map(frameworks.map((f) => [f.key, f.name]));
+        return cycles.map((c) => ({ ...c, frameworkName: nameByKey.get(c.frameworkKey) ?? null }));
+    });
 }
 
 export async function getAuditCycle(ctx: RequestContext, cycleId: string) {
@@ -90,7 +101,13 @@ export async function getAuditCycle(ctx: RequestContext, cycleId: string) {
         })
     );
     if (!cycle) throw notFound('Audit cycle not found');
-    return cycle;
+    // The catalogue's name for the framework, for the page's header and the
+    // default pack's name: they used to show the key (`SOC2`) for every
+    // framework but ISO 27001 and NIS2 (#4727). `Framework.key` is unique.
+    const framework = await runInTenantContext(ctx, (tdb) =>
+        tdb.framework.findFirst({ where: { key: cycle.frameworkKey }, select: { name: true } }),
+    );
+    return { ...cycle, frameworkName: framework?.name ?? null };
 }
 
 export async function updateAuditCycle(

@@ -42,7 +42,12 @@ export class ClauseRepository {
         });
     }
 
-    static async updateProgress(db: PrismaTx, ctx: RequestContext, clauseId: string, data: { status: string; notes?: string | null }) {
+    /**
+     * `notes` undefined leaves the stored notes alone. A status-only save used
+     * to write `''` over them, so changing a clause's status erased its notes
+     * (#4738).
+     */
+    static async updateProgress(db: PrismaTx, ctx: RequestContext, clauseId: string, data: { status: ClauseStatus; notes?: string | null }) {
         return db.clauseProgress.upsert({
             where: {
                 tenantId_clauseId: { tenantId: ctx.tenantId, clauseId },
@@ -50,12 +55,12 @@ export class ClauseRepository {
             create: {
                 tenantId: ctx.tenantId,
                 clauseId,
-                status: data.status as ClauseStatus,
-                notes: data.notes || '',
+                status: data.status,
+                notes: data.notes ?? '',
             },
             update: {
-                status: data.status as ClauseStatus,
-                notes: data.notes || '',
+                status: data.status,
+                ...(data.notes !== undefined && { notes: data.notes ?? '' }),
             },
         });
     }

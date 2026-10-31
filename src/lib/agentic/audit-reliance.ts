@@ -64,21 +64,10 @@ export const RELIANCE_METRIC_IDS = [
 
 // ─── Refusals ───────────────────────────────────────────────────────────────
 
-export const RELIANCE_REFUSALS = [
-    /** The cycle names no period, so no workpaper can be said to fall inside it. */
-    'CYCLE_PERIOD_REQUIRED',
-    /** The cycle's period contains no whole month or quarter. */
-    'NO_PERIOD_IN_CYCLE',
-    /** No library v1 procedure is configured on a control, and none ran. */
-    'NO_CONTROLS_IN_SCOPE',
-    /** No workpaper of a library v1 procedure falls inside the period. */
-    'NO_WORKPAPERS_IN_PERIOD',
-    /** More workpapers than one pack holds. */
-    'TOO_MANY_WORKPAPERS',
-    /** A workpaper in scope whose control cannot be resolved. */
-    'WORKPAPER_CONTROL_UNRESOLVED',
-] as const;
-export type RelianceRefusal = (typeof RELIANCE_REFUSALS)[number];
+// The codes live in a client-safe module so the cycle page can name them
+// (#4727); this module's other imports must not reach the browser.
+export { RELIANCE_REFUSALS, type RelianceRefusal } from './audit-reliance-refusals';
+import type { RelianceRefusal } from './audit-reliance-refusals';
 
 // ─── Limits ─────────────────────────────────────────────────────────────────
 

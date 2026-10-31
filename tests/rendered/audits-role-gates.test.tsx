@@ -278,6 +278,63 @@ describe('Audit cycle detail', () => {
         );
     });
 
+    // ─── #4727 ───
+    const namedCycle = {
+        ...cycle,
+        frameworkName: 'SOC 2',
+        periodStartAt: null,
+        periodEndAt: null,
+        audits: [{ id: 'aud-1', title: 'Internal SOC 2 audit', status: 'PLANNED', frameworkKey: 'SOC2' }],
+    };
+
+    it('names the framework from the catalogue, shows the period, and opens each audit itself', async () => {
+        routes = [get(/\/audits\/cycles\/cyc-1\?action=default-pack-preview$/, { body: preview }), get(/\/audits\/cycles\/cyc-1$/, { body: namedCycle })];
+        await mount(<CycleDetailPage />, 'READER');
+        await screen.findByText('Internal SOC 2 audit');
+        expect(screen.getByText('SOC 2')).toBeTruthy();
+        expect(screen.getByText('Not set')).toBeTruthy();
+        expect(byId('cycle-audit-link-aud-1')?.getAttribute('href')).toBe('/t/acme/audits?cycleId=cyc-1&selected=aud-1');
+        expect(byId('cycle-edit-btn')).toBeNull();
+    });
+
+    it('edits the name and the audit period', async () => {
+        const saved: unknown[] = [];
+        routes = [
+            get(/\/audits\/cycles\/cyc-1\?action=default-pack-preview$/, { body: preview }),
+            get(/\/audits\/cycles\/cyc-1$/, { body: namedCycle }),
+            (u, i) => {
+                if (i?.method === 'PATCH' && /\/audits\/cycles\/cyc-1$/.test(u)) {
+                    saved.push(JSON.parse(String(i.body)));
+                    return { body: { ...namedCycle, name: 'SOC 2 FY27' } };
+                }
+                return undefined;
+            },
+        ];
+        await mount(<CycleDetailPage />, 'EDITOR');
+        await waitFor(() => expect(byId('cycle-edit-btn')).toBeTruthy());
+        await act(async () => { fireEvent.click(byId('cycle-edit-btn')!); });
+        fireEvent.change(byId('cycle-edit-name')!, { target: { value: 'SOC 2 FY27' } });
+        await act(async () => { fireEvent.submit(byId('cycle-edit-form')!); });
+        await waitFor(() => expect(saved).toHaveLength(1));
+        expect(saved[0]).toEqual({ name: 'SOC 2 FY27', periodStartAt: '', periodEndAt: '' });
+        await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Cycle updated.', expect.anything()));
+    });
+
+    it('words a named reliance refusal in the reader’s language', async () => {
+        routes = [
+            ...cycleRoutes(),
+            post(/\/reliance-pack$/, { status: 409, body: { error: { code: 'CONFLICT', message: 'The audit cycle has no period…', details: { reason: 'CYCLE_PERIOD_REQUIRED' } } } }),
+        ];
+        await mount(<CycleDetailPage />, 'OWNER');
+        await waitFor(() => expect(byId('assemble-reliance-pack-btn')).toBeTruthy());
+        await act(async () => { fireEvent.click(byId('assemble-reliance-pack-btn')!); });
+        await waitFor(() =>
+            expect(byId('reliance-refusal')?.textContent).toBe(
+                'The cycle has no audit period, so no workpaper can fall inside it. Set the period, then try again.',
+            ),
+        );
+    });
+
     it('a refused default pack shows the server’s reason', async () => {
         routes = [...cycleRoutes(), post(/\/audits\/packs$/, envelope(403, 'Only OWNER, ADMIN, or EDITOR can manage audit packs'))];
         await mount(<CycleDetailPage />, 'EDITOR');

@@ -42,6 +42,7 @@ jest.mock('@/app-layer/usecases/framework/coverage', () => ({
 import {
     createAuditCycle,
     getAuditCycle,
+    listAuditCycles,
     updateAuditCycle,
 } from '@/app-layer/usecases/audit-readiness/cycles';
 import { runInTenantContext } from '@/lib/db-context';
@@ -158,7 +159,47 @@ describe('createAuditCycle', () => {
     });
 });
 
+describe('listAuditCycles', () => {
+    it('names each framework from the catalogue, one read for the distinct keys (#4729)', async () => {
+        const frameworkFindMany = jest.fn().mockResolvedValue([{ key: 'SOC2', name: 'SOC 2' }]);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                auditCycle: {
+                    findMany: jest.fn().mockResolvedValue([
+                        { id: 'c1', frameworkKey: 'SOC2', packs: [] },
+                        { id: 'c2', frameworkKey: 'SOC2', packs: [] },
+                        { id: 'c3', frameworkKey: 'CUSTOM', packs: [] },
+                    ]),
+                },
+                framework: { findMany: frameworkFindMany },
+            } as never),
+        );
+
+        const rows = await listAuditCycles(makeRequestContext('READER'));
+
+        expect(rows.map((r) => r.frameworkName)).toEqual(['SOC 2', 'SOC 2', null]);
+        expect(frameworkFindMany).toHaveBeenCalledTimes(1);
+        expect(frameworkFindMany.mock.calls[0][0].where).toEqual({ key: { in: ['SOC2', 'CUSTOM'] } });
+    });
+});
+
 describe('getAuditCycle', () => {
+    it("names the cycle's framework from the catalogue, or null when it has no entry (#4727)", async () => {
+        const cycle = { id: 'cyc-1', frameworkKey: 'SOC2', packs: [], audits: [] };
+        const frameworkFindFirst = jest.fn().mockResolvedValueOnce({ name: 'SOC 2' }).mockResolvedValueOnce(null);
+        mockRunInTx.mockImplementation(async (_ctx, fn) =>
+            fn({
+                auditCycle: { findFirst: jest.fn().mockResolvedValue(cycle) },
+                framework: { findFirst: frameworkFindFirst },
+            } as never),
+        );
+
+        await expect(getAuditCycle(makeRequestContext('READER'), 'cyc-1')).resolves.toMatchObject({ frameworkName: 'SOC 2' });
+        await expect(getAuditCycle(makeRequestContext('READER'), 'cyc-1')).resolves.toMatchObject({ frameworkName: null });
+        expect(frameworkFindFirst.mock.calls[0][0].where).toEqual({ key: 'SOC2' });
+        mockRunInTx.mockReset();
+    });
+
     it('throws notFound when cycle is not in the caller tenant', async () => {
         mockRunInTx.mockImplementationOnce(async () => null as never);
 

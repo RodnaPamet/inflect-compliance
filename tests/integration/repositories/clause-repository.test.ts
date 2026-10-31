@@ -13,6 +13,7 @@
  *   updateProgress:
  *     - create branch (first write) + notes fallback ('' when omitted).
  *     - update branch (second write changes status).
+ *     - a status-only update leaves the stored notes alone.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -88,6 +89,16 @@ describeFn('ClauseRepository (real DB)', () => {
         expect(row.status).toBe('READY');
         expect(row.notes).toBe('done');
         expect(row.progressId).toBeTruthy();
+
+        // A status-only save keeps the notes: it used to write '' over them,
+        // so every status change on the clause page erased them (#4738).
+        const statusOnly = await withTenantDb(
+            TENANT,
+            (db) => ClauseRepository.updateProgress(db, ctx, clauseId, { status: 'NEEDS_REVIEW' }),
+            rawPrisma as unknown as PrismaClient,
+        );
+        expect(statusOnly.status).toBe('NEEDS_REVIEW');
+        expect(statusOnly.notes).toBe('done');
     });
 
     it('list() writes nothing once the catalogue exists — a read leaves the audit trail alone', async () => {

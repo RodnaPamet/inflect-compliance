@@ -462,6 +462,12 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // R7-PR1 rule), whose accepted state its success fill already carries. The
 // sign-in link beside it renders through `buttonVariants` and the new
 // /invite/result page's one link is secondary. Net change: zero.
+// 2026-10-31 — #4727 audit cycle page: 173 stays, PAID FOR. The new edit
+// dialog saves the cycle's name and period from its LAST action, which
+// `modal-action-order` requires to be primary. It is bought by the policy
+// page's per-approval Approve, a row action in the approval list and a
+// four-eyes approve (the parameter-sets precedent above). The cycle page's
+// Edit trigger is secondary. Net change: zero.
 const MAX_PRIMARY_COUNT = 173;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));

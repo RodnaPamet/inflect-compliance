@@ -34,6 +34,7 @@ export default async function ClausesPage({
             <ClausesBrowser
                 clauses={JSON.parse(JSON.stringify(clauses))}
                 tenantSlug={tenantSlug}
+                canEdit={ctx.permissions.canWrite}
             />
         </div>
     );

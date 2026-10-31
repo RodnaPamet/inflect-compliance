@@ -132,7 +132,9 @@ describe('clauses/ClausesBrowser — status', () => {
 
     it('passes the status through to updateStatus() as before', () => {
         expect(CLAUSES_SRC).toMatch(
-            /setSelected=\{\(o\)\s*=>\s*\{\s*if\s*\(o\)\s*(?:void\s+)?updateStatus\(selected\.id,\s*o\.value\)/,
+            // #4738 — updateStatus takes the clause row, so it can send the
+            // clause's notes alongside and update the list from the reply.
+            /setSelected=\{\(o\)\s*=>\s*\{\s*if\s*\(o\)\s*(?:void\s+)?updateStatus\(selected,\s*o\.value\b/,
         );
     });
 });

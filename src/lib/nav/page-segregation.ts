@@ -46,12 +46,12 @@ export type RouteClass = 'main' | 'subpage' | 'unknown';
  * arrived from somewhere in the app.
  *
  * Use this for top-level destinations that are routinely deep-linked
- * from other sections (e.g. `/clauses` and `/findings` reached from
- * `/audits`). The cohort sweep ratchet checks for `noFallback` on
+ * from other sections (e.g. `/clauses` reached from a framework's page and
+ * `/findings` from `/audits`). The cohort sweep ratchet checks for `noFallback` on
  * every entry here.
  */
 export const REFERRER_ONLY_BACK_MAIN_PAGES: readonly string[] = [
-    '/clauses',   // deep-linked from /audits (Internal Audit)
+    '/clauses',   // linked from the ISO 27001 framework page (#4738)
     '/findings',  // deep-linked from /audits (Internal Audit)
 ] as const;
 

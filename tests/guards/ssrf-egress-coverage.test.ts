@@ -108,6 +108,17 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
         noBareFetchOf: 'fetch(cardUrl',
     },
     {
+        file: 'src/app-layer/services/vendor-monitoring/tls-provider.ts',
+        reason:
+            "The vendor monitor's TLS grade requests a vendor domain anybody who " +
+            'can edit a vendor types, from inside the deployment, every night. It ' +
+            'fetched it through fetchWithRetry, the plain global fetch, until the ' +
+            'Web Bot Auth roadmap found it (Phase 0.5).',
+        // The pre-fix call. Its replacement follows redirects one hop at a
+        // time, and each hop is a fresh safeFetch.
+        noBareFetchOf: 'fetchWithRetry(',
+    },
+    {
         file: 'src/lib/security/oidc-client.ts',
         reason:
             'SSO sign-in: a workspace administrator types the OIDC issuer, and the ' +
