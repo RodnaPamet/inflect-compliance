@@ -49,6 +49,16 @@ describe('sanitizeRedirectPath refuses every off-domain shape', () => {
         ['\\\\evil.com'],
         ['javascript:alert(1)'],
         ['https:/\\evil.com'],
+        // A browser reads `\` as `/` and drops tab, CR and LF, so each of
+        // these is `//evil.com` by the time it is followed. They all used to
+        // pass: the check refused a LEADING backslash only.
+        ['/\\evil.com'],
+        ['/%5Cevil.com'],
+        ['/\\\\evil.com'],
+        ['/\t/evil.com'],
+        ['/%09/evil.com'],
+        ['/\n/evil.com'],
+        ['/\r/evil.com'],
     ])('%s resolves to /', (input) => {
         const out = sanitizeRedirectPath(input);
         // The real assertion: whatever it returns, resolving it against our
@@ -59,6 +69,7 @@ describe('sanitizeRedirectPath refuses every off-domain shape', () => {
 
     it('preserves a genuine in-app destination', () => {
         expect(sanitizeRedirectPath('/t/acme/risks?status=OPEN')).toBe('/t/acme/risks?status=OPEN');
+        expect(sanitizeRedirectPath('/t/acme/risks/r-1#history')).toBe('/t/acme/risks/r-1#history');
     });
 
     it('returns / rather than empty for absent input', () => {
