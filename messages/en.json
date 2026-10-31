@@ -7501,7 +7501,7 @@
     "riskMatrix": {
       "crumb": "Risk Matrix",
       "title": "Risk matrix configuration",
-      "description": "Tenant-scoped likelihood × impact dimensions, axis labels, and severity bands. Changes apply to every risk page in this tenant on save.",
+      "description": "The grid this workspace scores risks on: how many likelihood and impact levels there are, what they are called, and the severity bands a score falls into. Saving changes it on every risk page in the workspace.",
       "restoreDefaults": "Restore defaults",
       "saving": "Saving…",
       "saveChanges": "Save changes",
@@ -7517,7 +7517,7 @@
       "impact": "Impact",
       "severityBands": "Severity bands",
       "band": "Band",
-      "bandsCoverHint": "Bands must cover scores 1..{count} without gaps or overlaps.",
+      "bandsCoverHint": "Between them, the bands must cover every score from 1 to {count}, with no gaps and no overlaps.",
       "bandNameDefault": "Band {n}",
       "bandNameAria": "Band {n} name",
       "bandMinAria": "Band {n} min score",
@@ -7526,12 +7526,22 @@
       "removeBandAria": "Remove band {n}",
       "remove": "Remove",
       "preview": "Preview",
-      "previewHint": "Synthetic 1-risk-per-cell payload — colour bands + axis labels reflect the current draft.",
+      "previewHint": "One example risk in every cell, so you can see your draft's bands and labels before saving.",
       "toastNoRange": "No score range left for another band.",
       "toastFixValidation": "Fix validation issues before saving.",
       "toastSaved": "Risk matrix configuration saved.",
-      "saveFailedStatus": "Save failed ({status})",
-      "saveFailedGeneric": "Save failed"
+      "saveFailedGeneric": "Save failed",
+      "risksOutsideGrid": "{count, plural, one {# risk uses} other {# risks use}} a likelihood or impact above this grid. A risk keeps the levels it was assessed with, so these would have no cell on the heat map until they are reassessed on the new scale.",
+      "issue": {
+        "missingBands": "Add at least one severity band.",
+        "firstBandStart": "The first band must start at score 1; it starts at {got}.",
+        "bandReversed": "Band “{band}” starts at {min}, above where it ends ({max}).",
+        "bandGap": "No band covers scores {start} to {end}, between “{from}” and “{to}”.",
+        "bandOverlap": "Bands “{from}” and “{to}” overlap; each score can belong to only one band.",
+        "lastBandEnd": "The last band must end at score {expected}, the highest score; it ends at {got}.",
+        "likelihoodLabelCount": "Give each of the {expected} likelihood levels a name; there are {got}.",
+        "impactLabelCount": "Give each of the {expected} impact levels a name; there are {got}."
+      }
     },
     "trustCenter": {
       "title": "Trust Center",

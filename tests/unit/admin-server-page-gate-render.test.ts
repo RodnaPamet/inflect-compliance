@@ -87,6 +87,7 @@ const reads = {
         throw new Error('not rendered in this file');
     }),
     getRiskMatrixConfig: jest.fn(async () => ({})),
+    listRiskLevelsInUse: jest.fn(async () => []),
     readSandboxRuntimeDeclaration: jest.fn(() => ({
         configured: false,
         configDigest: null,
@@ -127,6 +128,7 @@ jest.mock('@/app-layer/usecases/privacy-posture', () => ({
 jest.mock('@/app-layer/usecases/risk-matrix-config', () => ({
     __esModule: true,
     getRiskMatrixConfig: () => reads.getRiskMatrixConfig(),
+    listRiskLevelsInUse: () => reads.listRiskLevelsInUse(),
 }));
 jest.mock('@/app-layer/usecases/sandbox-runtime-config', () => ({
     __esModule: true,

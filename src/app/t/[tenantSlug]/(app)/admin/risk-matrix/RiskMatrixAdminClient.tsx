@@ -15,14 +15,15 @@
  *   - severity bands (name + min..max + colour)
  *
  * Live preview on the right uses the new `<RiskMatrix>` engine with
- * a synthetic 1-risk-per-cell payload so colour bands + axis labels
- * are immediately visible. Save POSTs the FULL effective config
+ * one example risk per cell so colour bands + axis labels are
+ * immediately visible. Save POSTs the FULL effective config
  * (not a patch) so the merge result the user sees in preview is
  * exactly what lands in the DB.
  *
  * Validation runs in two passes:
- *   - client-side `validateBandsCoverage` + `validateLevelLabelsLength`
- *     (fast inline feedback)
+ *   - client-side `bandCoverageIssues` + `levelLabelIssues` (fast inline
+ *     feedback, each issue a code the page words in the reader's language,
+ *     #4823)
  *   - server-side same Zod + cross-field via `updateRiskMatrixConfig`
  *     (defence-in-depth — same rules either way)
  */
@@ -37,9 +38,11 @@ import { NumberStepper } from '@/components/ui/number-stepper';
 import { RiskMatrix } from '@/components/risks/RiskMatrix';
 import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
 import {
-    validateBandsCoverage,
-    validateLevelLabelsLength,
+    bandCoverageIssues,
+    levelLabelIssues,
+    type RiskMatrixIssue,
 } from '@/lib/risk-matrix/schema';
+import { risksOutsideGrid, type RiskLevelsInUse } from '@/lib/risk-matrix/levels-in-use';
 import type {
     RiskMatrixBand,
     RiskMatrixConfigShape,
@@ -49,11 +52,16 @@ import { Card } from '@/components/ui/card';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { apiErrorMessage } from '@/lib/api-error';
+import { InlineNotice } from '@/components/ui/inline-notice';
 
 interface RiskMatrixAdminClientProps {
     tenantSlug: string;
     initialConfig: RiskMatrixConfigShape;
+    /** The highest levels the workspace's risks use, to warn before a smaller grid is saved. */
+    levelsInUse?: readonly RiskLevelsInUse[];
 }
+
+const NO_LEVELS: readonly RiskLevelsInUse[] = [];
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -91,6 +99,7 @@ function resizeLabels(prev: string[], next: number): string[] {
 export function RiskMatrixAdminClient({
     tenantSlug,
     initialConfig,
+    levelsInUse = NO_LEVELS,
 }: RiskMatrixAdminClientProps) {
     const [config, setConfig] = useState<RiskMatrixConfigShape>(() =>
         cloneConfig(initialConfig),
@@ -114,23 +123,43 @@ export function RiskMatrixAdminClient({
     }, [config.likelihoodLevels, config.impactLevels]);
 
     // ── Live validation ────────────────────────────────────────────
-    const validationIssues = useMemo(() => {
-        const issues: string[] = [];
-        issues.push(
-            ...validateLevelLabelsLength({
+    const validationIssues = useMemo<RiskMatrixIssue[]>(
+        () => [
+            ...levelLabelIssues({
                 levelLabels: config.levelLabels,
                 likelihoodLevels: config.likelihoodLevels,
                 impactLevels: config.impactLevels,
             }),
-        );
-        issues.push(
-            ...validateBandsCoverage(
-                config.bands,
-                config.likelihoodLevels * config.impactLevels,
-            ),
-        );
-        return issues;
-    }, [config]);
+            ...bandCoverageIssues(config.bands, config.likelihoodLevels * config.impactLevels),
+        ],
+        [config],
+    );
+    // Each issue is a code with its numbers; the page words it (#4823). The
+    // server's English sentence for the same issue is only the API's message.
+    const issueText = (issue: RiskMatrixIssue): string => {
+        switch (issue.code) {
+            case 'noBands':
+                return t('riskMatrix.issue.missingBands');
+            case 'firstBandStart':
+                return t('riskMatrix.issue.firstBandStart', { got: issue.got });
+            case 'bandReversed':
+                return t('riskMatrix.issue.bandReversed', { band: issue.band, min: issue.min, max: issue.max });
+            case 'bandGapOverlap':
+                return issue.toMin > issue.fromMax + 1
+                    ? t('riskMatrix.issue.bandGap', { from: issue.from, to: issue.to, start: issue.fromMax + 1, end: issue.toMin - 1 })
+                    : t('riskMatrix.issue.bandOverlap', { from: issue.from, to: issue.to });
+            case 'lastBandEnd':
+                return t('riskMatrix.issue.lastBandEnd', { got: issue.got, expected: issue.expected });
+            case 'likelihoodLabelCount':
+                return t('riskMatrix.issue.likelihoodLabelCount', { got: issue.got, expected: issue.expected });
+            case 'impactLabelCount':
+                return t('riskMatrix.issue.impactLabelCount', { got: issue.got, expected: issue.expected });
+        }
+    };
+
+    // Risks keep the levels they were assessed with, so a smaller grid leaves
+    // any risk above its edge with no cell on the heat map (#4823).
+    const outsideCount = risksOutsideGrid(levelsInUse, config.likelihoodLevels, config.impactLevels);
 
     // ── Handlers ───────────────────────────────────────────────────
     const setLikelihoodLevels = (n: number) => {
@@ -238,10 +267,10 @@ export function RiskMatrixAdminClient({
                 },
             );
             if (!res.ok) {
-                const body: unknown = await res.json().catch(() => ({}));
-                throw new Error(
-                    apiErrorMessage(body, t('riskMatrix.saveFailedStatus', { status: res.status })),
-                );
+                // A refusal says why; a server fault says only that the save
+                // failed, never its HTTP status (#4823).
+                const body: unknown = res.status >= 500 ? null : await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, t('riskMatrix.saveFailedGeneric')));
             }
             const next = (await res.json()) as RiskMatrixConfigShape;
             setConfig(cloneConfig(next));
@@ -324,10 +353,18 @@ export function RiskMatrixAdminClient({
                     {validationIssues.length > 0 && (
                         <ul className="list-inside list-disc">
                             {validationIssues.map((issue, i) => (
-                                <li key={i}>{issue}</li>
+                                <li key={i}>{issueText(issue)}</li>
                             ))}
                         </ul>
                     )}
+                </div>
+            )}
+
+            {outsideCount > 0 && (
+                <div id="risk-matrix-outside-warning">
+                    <InlineNotice variant="warning">
+                        {t('riskMatrix.risksOutsideGrid', { count: outsideCount })}
+                    </InlineNotice>
                 </div>
             )}
 
