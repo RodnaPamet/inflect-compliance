@@ -85,7 +85,7 @@ export interface SendAssessmentResult {
  * Generate a 32-byte cryptographically random token, returned as a
  * URL-safe base64 string. SHA-256 hash is what gets stored.
  */
-function mintExternalAccessToken(): { raw: string; hash: string } {
+export function mintExternalAccessToken(): { raw: string; hash: string } {
     const raw = randomBytes(32).toString('base64url');
     const hash = createHash('sha256').update(raw).digest('hex');
     return { raw, hash };
