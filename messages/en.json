@@ -8708,7 +8708,7 @@
       "packsTab": "Packs",
       "coverageTab": "Coverage",
       "builderTab": "Builder",
-      "reorderFailed": "Reorder failed ({status})",
+      "reorderFailed": "The new order could not be saved. Try again.",
       "version": "Version",
       "kind": "Kind",
       "browseTemplates": "Browse Templates",
@@ -8730,7 +8730,7 @@
       "packRemoved": "Removed \"{name}\" from your chosen packs. Its controls stay.",
       "undo": "Undo",
       "packRemoveFailed": "The pack could not be removed. Reload the page and try again.",
-      "reorderRestricted": "Reordering is restricted to OWNER / ADMIN roles.",
+      "reorderRestricted": "Only Owners and Admins can reorder requirements.",
       "packsEmpty": "No packs available for this framework.",
       "inherited": {
         "heading": "Coverage from your other frameworks",
@@ -8756,7 +8756,13 @@
         "errorTitle": "Couldn't load inherited coverage",
         "errorLoad": "Try again in a moment.",
         "retry": "Retry"
-      }
+      },
+      "treeLoadFailed": "The requirements could not load.",
+      "packsLoadFailed": "The packs could not load.",
+      "coverageLoadFailed": "The coverage could not load.",
+      "retry": "Try again",
+      "coverageAria": "Framework coverage",
+      "sectionCoverageAria": "{section} coverage"
     },
     "diff": {
       "loading": "Loading diff…",

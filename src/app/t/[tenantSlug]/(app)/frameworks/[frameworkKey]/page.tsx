@@ -24,6 +24,8 @@ import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { frameworkOrderKey } from '../framework-order';
 import { apiErrorMessage } from '@/lib/api-error';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { frameworkKindLabel } from '../framework-kind-label';
 
 type Tab = 'requirements' | 'packs' | 'coverage' | 'builder';
 
@@ -97,6 +99,10 @@ export default function FrameworkDetailPage() {
     const [coverage, setCoverage] = useState<FrameworkCoverage | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // #4694 — which of the tab reads failed. A failed read used to look like
+    // an empty answer: a blank Coverage tab, "No packs", or "Loading tree…"
+    // for good.
+    const [failed, setFailed] = useState({ tree: false, packs: false, coverage: false });
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
 
@@ -151,6 +157,11 @@ export default function FrameworkDetailPage() {
                 else if (treeRes.status === 404) setError(t('detail.notFound'));
                 if (packRes.ok) setPacks(await packRes.json());
                 if (covRes.ok) setCoverage(await covRes.json());
+                setFailed({
+                    tree: !treeRes.ok && treeRes.status !== 404,
+                    packs: !packRes.ok,
+                    coverage: !covRes.ok,
+                });
             } catch {
                 setError(t('detail.loadFailed'));
             }
@@ -169,7 +180,18 @@ export default function FrameworkDetailPage() {
         if (treeRes.ok) setTree((await treeRes.json()) as FrameworkTreePayload);
         if (packRes.ok) setPacks(await packRes.json());
         if (covRes.ok) setCoverage(await covRes.json());
+        setFailed({ tree: !treeRes.ok, packs: !packRes.ok, coverage: !covRes.ok });
     }, [apiUrl, frameworkKey]);
+
+    // A failed tab read, with a way to read it again.
+    const loadFailedNotice = (message: string, id: string) => (
+        <InlineNotice variant="error" id={id}>
+            <span>{message}</span>{' '}
+            <Button variant="ghost" size="sm" onClick={() => void refreshScope()} id={`${id}-retry`}>
+                {t('detail.retry')}
+            </Button>
+        </InlineNotice>
+    );
 
     // #4372 — take a chosen pack out of scope. Its controls stay; only its
     // requirements stop counting. The POST goes out when the undo window
@@ -240,7 +262,7 @@ export default function FrameworkDetailPage() {
         });
         if (!res.ok) {
             const j: unknown = await res.json().catch(() => ({}));
-            throw new Error(apiErrorMessage(j, t('detail.reorderFailed', { status: res.status })));
+            throw new Error(apiErrorMessage(j, t('detail.reorderFailed')));
         }
         // Refetch the tree so the explorer reflects the new order.
         const fresh = await fetch(apiUrl(`/frameworks/${frameworkKey}/tree`));
@@ -277,7 +299,7 @@ export default function FrameworkDetailPage() {
                             ? [
                                   {
                                       label: t('detail.kind'),
-                                      value: framework.kind.replace('_', ' '),
+                                      value: frameworkKindLabel(t, framework.kind) ?? framework.kind,
                                   } as const,
                               ]
                             : []),
@@ -307,6 +329,8 @@ export default function FrameworkDetailPage() {
                 <div id="requirements-panel">
                     {tree ? (
                         <FrameworkExplorer tree={tree} coverage={coverage ?? null} />
+                    ) : failed.tree ? (
+                        loadFailedNotice(t('detail.treeLoadFailed'), 'framework-tree-load-failed')
                     ) : (
                         <div className={cn(cardVariants({ density: 'none' }), 'text-center py-10 text-content-subtle')}>
                             {t('detail.loadingTree')}
@@ -360,13 +384,17 @@ export default function FrameworkDetailPage() {
                             </div>
                         </div>
                     ))}
-                    {packs.length === 0 && (
-                        <div className={cn(cardVariants({ density: 'none' }), 'text-center py-8 text-content-subtle')}>{t('detail.packsEmpty')}</div>
-                    )}
+                    {failed.packs
+                        ? loadFailedNotice(t('detail.packsLoadFailed'), 'framework-packs-load-failed')
+                        : packs.length === 0 && (
+                              <div className={cn(cardVariants({ density: 'none' }), 'text-center py-8 text-content-subtle')}>{t('detail.packsEmpty')}</div>
+                          )}
                 </div>
             )}
 
             {/* Coverage Tab */}
+            {activeTab === 'coverage' && !coverage && failed.coverage &&
+                loadFailedNotice(t('detail.coverageLoadFailed'), 'framework-coverage-load-failed')}
             {activeTab === 'coverage' && coverage && (
                 <div className="space-y-default" id="coverage-panel">
                     {/* Summary cards — Polish PR-2: KPIStat primitive. */}
@@ -403,7 +431,7 @@ export default function FrameworkDetailPage() {
                             value={coverage.coveragePercent}
                             size="sm"
                             variant={coverage.coveragePercent === 100 ? 'success' : 'brand'}
-                            aria-label="Framework coverage"
+                            aria-label={t('detail.coverageAria')}
                         />
                     </div>
 
@@ -428,7 +456,7 @@ export default function FrameworkDetailPage() {
                                                         ? 'brand'
                                                         : 'neutral'
                                             }
-                                            aria-label={`${s.section} coverage`}
+                                            aria-label={t('detail.sectionCoverageAria', { section: s.section })}
                                         />
                                     </div>
                                 ))}
