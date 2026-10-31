@@ -67,8 +67,29 @@ export type ValidatedRiskSuggestionOutput = z.infer<typeof RiskSuggestionOutputS
 
 // ─── Session Apply Schema ───
 
+/**
+ * A reviewer's correction to one suggestion, applied with it (#4776).
+ *
+ * The review screen lets a person edit a suggestion's title, description,
+ * likelihood and impact before accepting it. The edit used to stay in the
+ * browser: this schema carried only the accepted ids, so the risk was
+ * created with the model's original text. The scale bounds here are the
+ * widest any matrix allows; `applySession` checks them against the
+ * workspace's own scale.
+ */
+export const SuggestionEditSchema = z.object({
+    itemId: z.string().min(1),
+    title: z.string().trim().min(1).max(500).optional(),
+    description: z.string().max(5000).nullable().optional(),
+    likelihood: z.number().int().min(1).max(10).optional(),
+    impact: z.number().int().min(1).max(10).optional(),
+}).strip();
+
+export type SuggestionEdit = z.infer<typeof SuggestionEditSchema>;
+
 export const ApplySessionSchema = z.object({
     acceptedItemIds: z.array(z.string()).min(1),
+    edits: z.array(SuggestionEditSchema).max(25).optional(),
 }).strip();
 
 export type ApplySessionInput = z.infer<typeof ApplySessionSchema>;
