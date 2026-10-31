@@ -29,7 +29,7 @@ export function Nis2SelfAssessmentResume({
                     {t('selfAssessment.resumeHint')}
                 </p>
             </div>
-            <Nis2SelfAssessmentStep tenantSlug={tenantSlug} onCompleted={back} />
+            <Nis2SelfAssessmentStep tenantSlug={tenantSlug} onCompleted={back} showIntro={false} />
         </div>
     );
 }

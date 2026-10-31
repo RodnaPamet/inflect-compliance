@@ -35,6 +35,7 @@ import { createTask } from './task';
 import { snapshotNis2Readiness } from './nis2-readiness';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
+import { isFinalizedNis2Run } from '@/lib/nis2-run-status';
 
 export const NIS2_RESPONDENT_ROLES = ['CEO', 'IT', 'HR', 'PROCUREMENT', 'ANYONE'] as const;
 export type Nis2RespondentRole = (typeof NIS2_RESPONDENT_ROLES)[number];
@@ -233,13 +234,8 @@ export async function getAssignmentForRespondent(ctx: RequestContext, assignment
 
 // ─── Submit (assignee-scoped, data-layer authz) ─────────────────────
 
-/** A run in one of these states no longer takes answers. */
-const FINALIZED_RUN_STATUSES: ReadonlySet<string> = new Set(['COMPLETED', 'ARCHIVED']);
-
-/** Unknown or missing counts as finalised: refuse rather than rewrite. */
-function isFinalizedRun(status: string | null): boolean {
-    return status === null || FINALIZED_RUN_STATUSES.has(status);
-}
+/** A COMPLETED or ARCHIVED run, or a missing one, no longer takes answers. */
+const isFinalizedRun = isFinalizedNis2Run;
 
 /**
  * Write ONLY answers whose ids are in this assignment's bucket into the parent

@@ -4249,7 +4249,8 @@
       "baselineDelegateBody": "This is an onboarding baseline run, which can't be delegated. Start a standalone re-assessment to route each part to the person who can answer it.",
       "baselineDelegateAction": "Start re-assessment",
       "viewCoverage": "View NIS2 coverage",
-      "kpiReadinessHint": "Your NIS2 gap-questionnaire score — distinct from the cycle control-coverage readiness."
+      "kpiReadinessHint": "Your NIS2 gap-questionnaire score — distinct from the cycle control-coverage readiness.",
+      "continueAnswering": "Continue answering"
     },
     "respond": {
       "loadFailed": "Failed to load your assignment.",
@@ -9001,7 +9002,8 @@
     "selfAssessment": {
       "heading": "NIS2 self-assessment",
       "resumeHint": "Pick up where you left off. Answers save automatically.",
-      "onlyNis2": "The gap self-assessment is only available for the NIS2 framework."
+      "onlyNis2": "The gap self-assessment is only available for the NIS2 framework.",
+      "adminOnly": "Only Owners and Admins can answer the NIS2 self-assessment. Its results are on the NIS2 gap assessment page."
     }
   },
   "tasks": {
@@ -14476,7 +14478,8 @@
         "ONBOARDING_NOT_IN_PROGRESS": "The setup is not in progress. Reload the page.",
         "ONBOARDING_NO_FRAMEWORK": "Choose at least one framework to continue.",
         "ONBOARDING_NO_PACK": "Choose at least one pack of {framework} to continue.",
-        "ONBOARDING_UNKNOWN_PACK": "A pack chosen for {framework} is not part of it. Reload the page and choose again."
+        "ONBOARDING_UNKNOWN_PACK": "A pack chosen for {framework} is not part of it. Reload the page and choose again.",
+        "NIS2_RUN_FINALISED": "This NIS2 assessment is complete, so its answers can no longer change. Start a new run from the NIS2 gap page."
       }
     },
     "aiGov": {
@@ -14601,7 +14604,11 @@
         "HIGH": "High",
         "MEDIUM": "Medium",
         "LOW": "Low"
-      }
+      },
+      "finalisedTitle": "This assessment is complete",
+      "finalisedBody": "Its answers are kept as they were when it was completed. To change them, start a new run of the assessment.",
+      "openGapPage": "Open the NIS2 gap assessment",
+      "continue": "Continue"
     }
   },
   "external": {

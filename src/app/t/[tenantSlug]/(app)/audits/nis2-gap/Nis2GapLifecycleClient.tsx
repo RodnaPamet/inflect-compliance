@@ -29,6 +29,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { apiErrorMessage } from '@/lib/api-error';
+import { isFinalizedNis2Run } from '@/lib/nis2-run-status';
 
 // CC BY 4.0 attribution — carries everywhere derived NIS2 content renders.
 const NIS2_ATTRIBUTION =
@@ -307,6 +308,18 @@ export function Nis2GapLifecycleClient({
                         >
                             {tx('nis2Gap.viewCoverage')}
                         </Link>
+                        {/* The self-assessment page answers the latest run. Offered
+                            while that run takes answers, to the roles it admits,
+                            so it is reachable at all (#4734). */}
+                        {canStartRun && data && data.history.length > 0 && !isFinalizedNis2Run(data.history[0]?.status) ? (
+                            <Link
+                                href={`/t/${tenantSlug}/frameworks/NIS2/self-assessment`}
+                                className={cn(buttonVariants({ variant: 'secondary' }))}
+                                id="nis2-gap-continue-answering"
+                            >
+                                {tx('nis2Gap.continueAnswering')}
+                            </Link>
+                        ) : null}
                         {canStartRun ? (
                             <Button variant="secondary" onClick={handleRerun} disabled={rerunning} id="nis2-gap-rerun-btn">
                                 {rerunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}

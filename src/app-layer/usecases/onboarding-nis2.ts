@@ -14,7 +14,9 @@
  */
 import { RequestContext } from '../types';
 import { runInTenantContext, PrismaTx } from '@/lib/db-context';
-import { badRequest } from '@/lib/errors/types';
+import { badRequest, ConflictError } from '@/lib/errors/types';
+import { isFinalizedNis2Run } from '@/lib/nis2-run-status';
+import type { OnboardingRefusal } from '@/lib/onboarding-refusals';
 import { assertCanManageOnboarding } from '../policies/onboarding.policies';
 import { Nis2GapAssessmentRepository } from '../repositories/Nis2GapAssessmentRepository';
 import { NIS2_ANSWER } from '@/lib/schemas/nis2-gap-assessment';
@@ -112,6 +114,17 @@ export async function saveNis2Answer(
             throw badRequest(`Unknown NIS2 question "${input.questionId}".`);
         }
         const assessment = await resolveAssessment(db, ctx);
+        // A finalised run's answers are its record (#4734). This used to write
+        // into whatever run was latest, so answering after completion rewrote
+        // a completed run and the gap page's history stopped matching what was
+        // answered at the time. The lock is the one the delegated answers take,
+        // so finalising and answering cannot interleave.
+        const run = await Nis2GapAssessmentRepository.lockAssessmentStatusForShare(db, ctx, assessment.id);
+        if (isFinalizedNis2Run(run?.status)) {
+            throw new ConflictError('This assessment has been completed, so its answers can no longer change. Start a new run from the NIS2 gap page.', {
+                reason: 'NIS2_RUN_FINALISED' satisfies OnboardingRefusal,
+            });
+        }
         const note =
             input.note != null && input.note.trim() !== ''
                 ? sanitizePlainText(input.note)
@@ -151,6 +164,10 @@ export async function completeNis2Assessment(ctx: RequestContext) {
     assertCanManageOnboarding(ctx);
     const assessment = await runInTenantContext(ctx, async (db) => {
         const a = await resolveAssessment(db, ctx);
+        // Completing a finalised run again keeps it as it was: re-marking it
+        // moved its completedAt (#4734). The onboarding step still advances
+        // below, so a wizard whose run was completed elsewhere can go on.
+        if (isFinalizedNis2Run(a.status)) return a;
         return Nis2GapAssessmentRepository.markAssessmentCompleted(db, ctx, a.id);
     });
 
