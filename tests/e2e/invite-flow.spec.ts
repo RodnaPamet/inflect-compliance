@@ -199,9 +199,8 @@ test.describe('Invitation journey (Epic 1)', () => {
                 expect(page.url()).not.toContain('/no-tenant');
 
                 if (page.url().includes('/tenants')) {
-                    const link = page.getByRole('link', {
-                        name: new RegExp(tenantSlug, 'i'),
-                    });
+                    // The picker names the workspace, not its slug (#4690).
+                    const link = page.locator(`a[href="/t/${tenantSlug}/dashboard"]`);
                     await link.waitFor({ timeout: 10_000 });
                     await link.click();
                     await page.waitForURL(/\/t\/[^/]+\/dashboard/, {
@@ -234,9 +233,8 @@ test.describe('Invitation journey (Epic 1)', () => {
                 await signInWithCredentials(page, inviteeEmail, inviteePassword);
 
                 if (page.url().includes('/tenants')) {
-                    const link = page.getByRole('link', {
-                        name: new RegExp(tenantSlug, 'i'),
-                    });
+                    // The picker names the workspace, not its slug (#4690).
+                    const link = page.locator(`a[href="/t/${tenantSlug}/dashboard"]`);
                     await link.waitFor({ timeout: 10_000 });
                     await link.click();
                     await page.waitForURL(/\/t\/[^/]+\/dashboard/, {

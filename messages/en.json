@@ -13126,12 +13126,22 @@
     "signedInAs": "You are signed in as <b>{email}</b>.",
     "helpText": "You do not have access to any workspace yet. Ask your admin to invite you, then follow the link in the invitation email.",
     "signOut": "Sign out",
-    "yourAccount": "your account"
+    "yourAccount": "your account",
+    "otherWorkspaceText": "You do not have access to that workspace. Choose one of yours instead.",
+    "organizationsOnly": "You are not a member of any workspace, but you can open your organization.",
+    "deactivated": "Your access to {workspaces} was deactivated. Ask an admin of that workspace to reactivate you.",
+    "whereToGo": "Where you can go",
+    "goToWorkspaces": "Go to your workspaces",
+    "goToOrganization": "Open {name}"
   },
   "tenants": {
     "chooseWorkspace": "Choose a workspace",
     "multipleWorkspaces": "You are a member of multiple workspaces. Select one to continue.",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "chooseOrganization": "Choose an organization",
+    "multipleOrganizations": "You are a member of more than one organization. Select one to continue.",
+    "workspacesHeading": "Workspaces",
+    "organizationsHeading": "Organizations"
   },
   "org": {
     "common": {
