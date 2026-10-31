@@ -20,6 +20,11 @@ export interface HierarchyAggregation {
     nodeName: string;
     riskCount: number;
     totalAle: number;
+    /**
+     * #4772 — the risks attached to THIS node (not its children), so the page
+     * can show what a node holds and detach one; it used to show only a count.
+     */
+    risks: Array<{ id: string; title: string }>;
     children: HierarchyAggregation[];
 }
 
@@ -35,6 +40,7 @@ export function aggregateTree(
     childrenByParent: Map<string, NodeLite[]>,
     riskIdsByNode: Map<string, string[]>,
     aleByRisk: Map<string, number>,
+    titleByRisk: Map<string, string> = new Map(),
 ): HierarchyAggregation[] {
     function visit(node: NodeLite): { agg: HierarchyAggregation; riskIds: Set<string> } {
         const childResults = (childrenByParent.get(node.id) ?? []).map(visit);
@@ -43,7 +49,14 @@ export function aggregateTree(
         let totalAle = 0;
         riskIds.forEach((id) => { totalAle += aleByRisk.get(id) ?? 0; });
         return {
-            agg: { nodeId: node.id, nodeName: node.name, riskCount: riskIds.size, totalAle, children: childResults.map((c) => c.agg) },
+            agg: {
+                nodeId: node.id,
+                nodeName: node.name,
+                riskCount: riskIds.size,
+                totalAle,
+                risks: (riskIdsByNode.get(node.id) ?? []).map((id) => ({ id, title: titleByRisk.get(id) ?? '' })),
+                children: childResults.map((c) => c.agg),
+            },
             riskIds,
         };
     }
@@ -109,6 +122,7 @@ interface LoadedTree {
     childrenByParent: Map<string, NodeLite[]>;
     riskIdsByNode: Map<string, string[]>;
     aleByRisk: Map<string, number>;
+    titleByRisk: Map<string, string>;
 }
 
 async function loadTree(ctx: RequestContext, type: string): Promise<LoadedTree> {
@@ -120,7 +134,7 @@ async function loadTree(ctx: RequestContext, type: string): Promise<LoadedTree> 
             : [];
         const riskIds = Array.from(new Set(links.map((l) => l.riskId)));
         const risks = riskIds.length
-            ? await db.risk.findMany({ where: { tenantId: ctx.tenantId, id: { in: riskIds } }, select: { id: true, fairAle: true, sleAmount: true, aroAmount: true } })
+            ? await db.risk.findMany({ where: { tenantId: ctx.tenantId, id: { in: riskIds } }, select: { id: true, title: true, fairAle: true, sleAmount: true, aroAmount: true } })
             : [];
 
         const childrenByParent = new Map<string, NodeLite[]>();
@@ -142,8 +156,12 @@ async function loadTree(ctx: RequestContext, type: string): Promise<LoadedTree> 
             riskIdsByNode.set(l.nodeId, arr);
         }
         const aleByRisk = new Map<string, number>();
-        for (const r of risks) aleByRisk.set(r.id, resolveALE({ fairAle: r.fairAle, sleAmount: r.sleAmount, aroAmount: r.aroAmount }) ?? 0);
-        return { roots, childrenByParent, riskIdsByNode, aleByRisk };
+        const titleByRisk = new Map<string, string>();
+        for (const r of risks) {
+            aleByRisk.set(r.id, resolveALE({ fairAle: r.fairAle, sleAmount: r.sleAmount, aroAmount: r.aroAmount }) ?? 0);
+            titleByRisk.set(r.id, r.title);
+        }
+        return { roots, childrenByParent, riskIdsByNode, aleByRisk, titleByRisk };
     });
 }
 
@@ -151,7 +169,7 @@ async function loadTree(ctx: RequestContext, type: string): Promise<LoadedTree> 
 export async function getTreemapData(ctx: RequestContext, type: string): Promise<HierarchyAggregation[]> {
     assertCanRead(ctx);
     const t = await loadTree(ctx, type);
-    return aggregateTree(t.roots, t.childrenByParent, t.riskIdsByNode, t.aleByRisk);
+    return aggregateTree(t.roots, t.childrenByParent, t.riskIdsByNode, t.aleByRisk, t.titleByRisk);
 }
 
 /** Aggregation rooted at a single node. */
@@ -160,7 +178,7 @@ export async function aggregateByHierarchy(ctx: RequestContext, nodeId: string):
     const node = await runInTenantContext(ctx, (db) => db.riskHierarchyNode.findFirst({ where: { id: nodeId, tenantId: ctx.tenantId }, select: { id: true, name: true, type: true } }));
     if (!node) throw notFound('Hierarchy node not found');
     const t = await loadTree(ctx, node.type);
-    const all = aggregateTree([{ id: node.id, name: node.name }], t.childrenByParent, t.riskIdsByNode, t.aleByRisk);
+    const all = aggregateTree([{ id: node.id, name: node.name }], t.childrenByParent, t.riskIdsByNode, t.aleByRisk, t.titleByRisk);
     return all[0];
 }
 

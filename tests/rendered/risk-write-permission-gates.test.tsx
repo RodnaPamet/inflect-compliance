@@ -39,6 +39,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     }),
     usePermissions: () => ({}),
     useMoneyFormatter: () => (v: number | null | undefined) => String(v ?? ''),
+    useCurrencySymbol: () => '€',
     useCurrentUserId: () => 'u1',
 }));
 
