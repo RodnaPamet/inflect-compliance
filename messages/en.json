@@ -4342,7 +4342,11 @@
       "testEmpty": "No mapped controls to test yet.",
       "planCoverage": "{pct}% plan coverage",
       "runCoverage": "{pct}% run coverage",
-      "passRate": "{pct}% pass rate"
+      "passRate": "{pct}% pass rate",
+      "loading": "Loading…",
+      "loadFailed": "This could not be loaded.",
+      "retry": "Retry",
+      "coverageScore": "{pct}% coverage"
     },
     "detail": {
       "readOnlyCompleted": "This audit is completed, so it can't be changed. Move it back to In Progress to change it.",
