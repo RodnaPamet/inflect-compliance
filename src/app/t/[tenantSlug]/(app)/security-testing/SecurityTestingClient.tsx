@@ -29,7 +29,9 @@ import { Heading } from '@/components/ui/typography';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast, useThresholdLoadMore } from '@/components/ui/hooks';
+import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
+import { apiErrorMessage } from '@/lib/api-error';
 import {
     buildScannerFilters,
     SCANNER_FILTER_KEYS,
@@ -63,7 +65,12 @@ export interface ScannerRunRow {
 }
 
 interface Props {
+    /** The first findings, most severe first (`listScannerFindingsPage`). */
     initialFindings: ScannerFindingRow[];
+    /** More findings exist than `initialFindings` holds. */
+    findingsTruncated: boolean;
+    /** Open critical findings across ALL findings, not just those fetched. */
+    openCriticalCount: number;
     runs: ScannerRunRow[];
     tenantSlug: string;
     canWrite: boolean;
@@ -75,6 +82,9 @@ const SEVERITY_VARIANT: Record<string, StatusBadgeVariant> = {
     MEDIUM: 'warning',
     LOW: 'info',
 };
+
+/** Sort key for the severity column: higher is more severe, unknown sorts last. */
+const SEVERITY_SORT: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 
 const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     OPEN: 'error',
@@ -113,7 +123,7 @@ export function SecurityTestingClient(props: Props) {
     );
 }
 
-function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: Props) {
+function SecurityTestingInner({ initialFindings, findingsTruncated, openCriticalCount, runs, tenantSlug, canWrite }: Props) {
     const t = useTranslations('securityTesting');
     const tGroup = useTranslations('common.filterGroups');
     const router = useRouter();
@@ -149,19 +159,39 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status }),
                 });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            } catch {
-                // Revert the optimistic edit and surface the failure.
+                if (!res.ok) {
+                    throw new Error(apiErrorMessage(await res.json().catch(() => null), t('updateFailed')));
+                }
+            } catch (err) {
+                // Revert the optimistic edit and surface the failure, with the
+                // server's reason when it gave one (#4631).
                 setFindingRows((current) =>
                     current.map((r) =>
                         r.id === id && prevStatus !== undefined ? { ...r, status: prevStatus } : r,
                     ),
                 );
-                toast.error(t('updateFailed'));
+                toast.error(err instanceof Error && err.message ? err.message : t('updateFailed'));
             }
         },
         [tenantSlug, toast, t],
     );
+
+    /**
+     * Why the ingest route refused an upload. A malformed report comes back as
+     * `INVALID_SARIF` with the parser's own sentence in `details`, which names
+     * the part of the file that was wrong; anything else carries its own
+     * message. The page used to show "Could not ingest the scan" for both.
+     */
+    const uploadRefusal = async (res: Response): Promise<string> => {
+        const body: unknown = await res.json().catch(() => null);
+        const error = (body as { error?: { message?: unknown; details?: unknown } } | null)?.error;
+        if (error?.message === 'INVALID_SARIF') {
+            return typeof error.details === 'string' && error.details.trim() !== ''
+                ? t('uploadInvalidSarifReason', { reason: error.details })
+                : t('uploadInvalidSarif');
+        }
+        return apiErrorMessage(body, t('uploadError'));
+    };
 
     // ─── SARIF scan upload — read + parse client-side, POST to the ingest
     //     route, then refresh the SSR list with the newly-materialised rows. ──
@@ -186,12 +216,12 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sarif, ingestedVia: 'UPLOAD' }),
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) throw new Error(await uploadRefusal(res));
             const result = (await res.json()) as { findingsIngested?: number };
             toast.success(t('uploadSuccess', { count: result.findingsIngested ?? 0 }));
             router.refresh();
-        } catch {
-            toast.error(t('uploadError'));
+        } catch (err) {
+            toast.error(err instanceof Error && err.message ? err.message : t('uploadError'));
         } finally {
             setUploading(false);
         }
@@ -265,9 +295,13 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
     } = useThresholdLoadMore(rows);
 
 
-    const openCritical = useMemo(
-        () => findingRows.filter((r) => r.severity === 'CRITICAL' && r.status === 'OPEN').length,
-        [findingRows],
+    /** The label for a stored code under `securityTesting.<group>`, or the code itself. */
+    const codeLabel = useCallback(
+        (group: string, code: string): string => {
+            const key = `${group}.${code}`;
+            return t.has(key as Parameters<typeof t.has>[0]) ? t(key as Parameters<typeof t>[0]) : code;
+        },
+        [t],
     );
 
     const statusOptions = useMemo<ComboboxOption[]>(
@@ -281,10 +315,11 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
                 {
                     id: 'severity',
                     header: t('colSeverity'),
-                    accessorFn: (r) => r.severity,
+                    // Sorts by rank, not by the spelling, which put CRITICAL last.
+                    accessorFn: (r) => SEVERITY_SORT[r.severity] ?? 0,
                     cell: ({ row }) => (
                         <StatusBadge variant={SEVERITY_VARIANT[row.original.severity] ?? 'neutral'}>
-                            {row.original.severity}
+                            {codeLabel('filterEnums.severity', row.original.severity)}
                         </StatusBadge>
                     ),
                 },
@@ -309,7 +344,7 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
                         return (
                             <span className="text-content-muted">
                                 {sourceLabels[src] ?? src}
-                                <span className="text-content-subtle"> · {row.original.scannerRun?.scanType}</span>
+                                <span className="text-content-subtle"> · {codeLabel('scanType', row.original.scannerRun?.scanType ?? '')}</span>
                             </span>
                         );
                     },
@@ -375,7 +410,7 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
                     },
                 },
             ]),
-        [t, canWrite, statusOptions, statusLabels, patchStatus, sourceLabels],
+        [t, canWrite, statusOptions, statusLabels, patchStatus, sourceLabels, codeLabel],
     );
 
     // ─── Scanner-run history table (own card, below the findings table) ───
@@ -388,7 +423,7 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
                     accessorFn: (r) => r.outcome,
                     cell: ({ row }) => (
                         <StatusBadge variant={RUN_OUTCOME_VARIANT[row.original.outcome] ?? 'neutral'}>
-                            {row.original.outcome}
+                            {codeLabel('runOutcome', row.original.outcome)}
                         </StatusBadge>
                     ),
                 },
@@ -399,7 +434,7 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
                     cell: ({ row }) => (
                         <span className="text-content-default">
                             {sourceLabels[row.original.source] ?? row.original.source}
-                            <span className="text-content-subtle"> · {row.original.scanType}</span>
+                            <span className="text-content-subtle"> · {codeLabel('scanType', row.original.scanType)}</span>
                         </span>
                     ),
                 },
@@ -426,7 +461,7 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
                     id: 'ingestedVia',
                     header: t('colVia'),
                     accessorFn: (r) => r.ingestedVia,
-                    cell: ({ row }) => <span className="text-content-muted">{row.original.ingestedVia}</span>,
+                    cell: ({ row }) => <span className="text-content-muted">{codeLabel('ingestedVia', row.original.ingestedVia)}</span>,
                 },
                 {
                     id: 'findingCount',
@@ -437,7 +472,7 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
                     ),
                 },
             ]),
-        [t, sourceLabels],
+        [t, sourceLabels, codeLabel],
     );
 
     const runsHistory = (
@@ -463,7 +498,7 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
     const description =
         runs.length === 0
             ? t('descEmpty')
-            : t('descActive', { runs: runs.length, critical: openCritical });
+            : t('descActive', { runs: runs.length, critical: openCriticalCount });
 
     return (
         <EntityListPage<ScannerFindingRow>
@@ -481,6 +516,13 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
                 actions: headerActions,
             }}
             filters={{ defs: filterDefs }}
+            banner={
+                <TruncationBanner
+                    truncated={findingsTruncated}
+                    cap={initialFindings.length}
+                    hint={t('truncatedHint')}
+                />
+            }
             tableFooter={runsHistory}
             table={{
                 fillBody: false,

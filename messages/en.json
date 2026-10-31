@@ -11658,6 +11658,25 @@
     }
   },
   "securityTesting": {
+    "scanType": {
+      "SAST": "SAST",
+      "SCA": "SCA",
+      "DAST": "DAST",
+      "SECRETS": "Secrets",
+      "IAC": "IaC"
+    },
+    "runOutcome": {
+      "PASS": "Passed",
+      "FAIL": "Failed",
+      "ERROR": "Error"
+    },
+    "ingestedVia": {
+      "API": "API",
+      "UPLOAD": "Upload"
+    },
+    "truncatedHint": "The most severe are shown first, and the filters apply to these only.",
+    "uploadInvalidSarif": "The file is not a valid SARIF report.",
+    "uploadInvalidSarifReason": "The file is not a valid SARIF report: {reason}",
     "title": "Security Testing",
     "colSeverity": "Severity",
     "colFinding": "Finding",
