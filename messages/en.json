@@ -4624,6 +4624,7 @@
     "loading": "Loading notifications...",
     "loadError": "Couldn't load the notifications. Reload the page to try again.",
     "markRead": "Mark read",
+    "open": "Open",
     "noNotifications": "No notifications",
     "crumbDashboard": "Dashboard",
     "description": "Recent activity across your compliance program"
@@ -12936,6 +12937,7 @@
     "bell": {
       "notifications": "Notifications",
       "markAllRead": "Mark all read",
+      "viewAll": "View all notifications",
       "loading": "Loading…",
       "allClear": "All clear",
       "caughtUp": "You're caught up. New notifications will land here.",
