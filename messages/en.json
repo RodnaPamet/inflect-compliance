@@ -14320,6 +14320,44 @@
       "title": "Complete your setup",
       "body": "Finish the onboarding wizard to configure your compliance workspace.",
       "continue": "Continue Setup"
+    },
+    "nis2Step": {
+      "loading": "Loading the NIS2 self-assessment…",
+      "loadFailed": "Could not load the NIS2 self-assessment. Reload the page to try again.",
+      "saveFailed": "Could not save that answer. Choose it again to retry.",
+      "completeFailed": "Could not complete the assessment. Try again.",
+      "intro": "You selected NIS2. Answer these gap-assessment questions to find your compliance gaps. Your answers save automatically, so you can leave and return any time.",
+      "progressAria": "NIS2 self-assessment progress",
+      "answeredCount": "{answered}/{total} answered",
+      "bestAnsweredBy": "Best answered by: {respondent}",
+      "dependsOn": "Depends on {questions}",
+      "skipLater": "You can complete this later from the NIS2 dashboard.",
+      "keepGoing": "Keep going",
+      "skipForNow": "Skip for now",
+      "complete": "Complete assessment",
+      "viewGapAssessment": "View your NIS2 gap assessment →",
+      "source": "source",
+      "addNote": "Add a note",
+      "notePlaceholder": "Optional note (saved automatically)…",
+      "answer": {
+        "NA": "Not applicable",
+        "NO": "No",
+        "PARTIALLY": "Partially",
+        "YES": "Yes"
+      },
+      "respondent": {
+        "CEO": "CEO / management",
+        "IT": "IT",
+        "HR": "HR",
+        "PROCUREMENT": "Procurement",
+        "ANYONE": "Anyone"
+      },
+      "criticality": {
+        "CRITICAL": "Critical",
+        "HIGH": "High",
+        "MEDIUM": "Medium",
+        "LOW": "Low"
+      }
     }
   },
   "external": {
