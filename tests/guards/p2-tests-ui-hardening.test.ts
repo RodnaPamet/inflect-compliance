@@ -32,15 +32,19 @@ describe('R4-P2 (1) run-page mutations are checked + reported', () => {
     const src = read(RUN_PAGE);
     it('retest + unlink surface an error toast on failure', () => {
         expect(src).toMatch(/toast\.error\(t\('run\.errors\.retestFailed'\)\)/);
-        expect(src).toMatch(/toast\.error\(t\('run\.errors\.unlinkFailed'\)\)/);
+        // #4797 — unlink runs in the undo window; its failure is the server's
+        // reason, read through `refusalOf`, with this as the fallback.
+        expect(src).toMatch(/refusalOf\(res, t\('run\.errors\.unlinkFailed'\)\)/);
     });
     it('unlink checks res.ok before mutate', () => {
         // the old fire-and-forget DELETE (mutate regardless) is gone
         expect(src).not.toMatch(/await fetch\(apiUrl\(`\/tests\/runs\/\$\{runId\}\/evidence\/\$\{linkId\}`\), \{ method: 'DELETE' \}\);\s*await mutate/);
-        expect(src).toMatch(/if \(!res\.ok\) throw new Error\(await res\.text\(\)\);\s*\n\s*\/\/ Removing a link/);
+        expect(src).toMatch(/if \(!res\.ok\) throw new Error\(await refusalOf\(res, t\('run\.errors\.unlinkFailed'\)\)\);\s*\n\s*await mutate\(\)/);
     });
     it('snapshot surfaces the server message, not a blanket failure', () => {
-        expect(src).toMatch(/err instanceof Error && err\.message/);
+        // #4797 — the reason is read out of the error envelope, not the raw
+        // body (which a toast showed as JSON).
+        expect(src).toMatch(/toast\.error\(await refusalOf\(res, t\('run\.snapshot\.failed'\)\)\)/);
     });
 });
 
