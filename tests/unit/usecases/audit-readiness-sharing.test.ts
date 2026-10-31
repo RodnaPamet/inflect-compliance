@@ -12,9 +12,9 @@
  *   - generateShareLink:  pack-not-found / pack-DRAFT / happy-path
  *   - revokeShare:        share-not-found / already-revoked / happy-path
  *   - getPackByShareToken: invalid token / expired / happy-path
- *   - inviteAuditor:      upsert success (with logEvent)
- *   - grantAuditorAccess: auditor-not-found / pack-not-found /
- *                         already-has-access (caught) / happy-path
+ *   - inviteAuditor:      new / back on the list / already listed (no write)
+ *   - grantAuditorAccess: auditor-not-found / revoked auditor / pack-not-found /
+ *                         draft pack / already-recorded (caught) / happy-path
  *   - revokeAuditorAccess: deleteMany + audit
  *   - hashToken / generateShareToken: deterministic / non-deterministic
  */
@@ -344,7 +344,7 @@ describe('getPackByShareToken', () => {
 // inviteAuditor / grantAuditorAccess / revokeAuditorAccess
 // ──────────────────────────────────────────────────────────────────────
 describe('inviteAuditor', () => {
-    it('upserts the auditor account (INVITED on first insert, ACTIVE on re-invite)', async () => {
+    it('adds a new auditor to the list as INVITED (listed) and audits it', async () => {
         tenantDb.auditorAccount.findUnique.mockResolvedValueOnce(null);
         tenantDb.auditorAccount.upsert.mockResolvedValueOnce({ id: 'a-1', email: 'auditor@ex.com' });
 
@@ -352,34 +352,40 @@ describe('inviteAuditor', () => {
 
         expect(result.id).toBe('a-1');
         expect(result.reactivated).toBe(false);
+        expect(result.alreadyListed).toBe(false);
         expect(policyCalls).toEqual(['manage']);
         const upsertArg = tenantDb.auditorAccount.upsert.mock.calls[0][0];
         expect(upsertArg.create.status).toBe('INVITED');
-        expect(upsertArg.update.status).toBe('ACTIVE');
+        // A concurrent first add that won the insert is left as it is.
+        expect(upsertArg.update).toEqual({});
         expect(auditCalls[0].action).toBe('AUDITOR_INVITED');
     });
 
-    it('surfaces reactivation when a REVOKED auditor is re-invited', async () => {
-        // PR-O — inviting an existing REVOKED account flips it back to ACTIVE.
-        // The usecase must report reactivated=true + log AUDITOR_REACTIVATED so
-        // the state change is visible, not silent.
-        tenantDb.auditorAccount.findUnique.mockResolvedValueOnce({ status: 'REVOKED' });
-        tenantDb.auditorAccount.upsert.mockResolvedValueOnce({ id: 'a-1', email: 'auditor@ex.com' });
+    it('puts a REVOKED auditor back on the list and says so', async () => {
+        tenantDb.auditorAccount.findUnique.mockResolvedValueOnce({ id: 'a-1', status: 'REVOKED' });
+        tenantDb.auditorAccount.update.mockResolvedValueOnce({ id: 'a-1', email: 'auditor@ex.com', status: 'INVITED' });
 
         const result = await inviteAuditor(ctx, 'auditor@ex.com', 'Audrey');
 
         expect(result.reactivated).toBe(true);
+        expect(tenantDb.auditorAccount.update.mock.calls[0][0].data).toEqual({ name: 'Audrey', status: 'INVITED' });
+        expect(tenantDb.auditorAccount.upsert).not.toHaveBeenCalled();
         expect(auditCalls[0].action).toBe('AUDITOR_REACTIVATED');
     });
 
-    it('does NOT flag reactivation for an already-ACTIVE re-invite', async () => {
-        tenantDb.auditorAccount.findUnique.mockResolvedValueOnce({ status: 'ACTIVE' });
-        tenantDb.auditorAccount.upsert.mockResolvedValueOnce({ id: 'a-1', email: 'auditor@ex.com' });
+    // #4730 — adding the same email again used to set ACTIVE, which the page
+    // showed as "Active" although nobody had heard from the auditor.
+    it.each(['INVITED', 'ACTIVE'])('changes nothing for an auditor already listed (%s)', async (status) => {
+        tenantDb.auditorAccount.findUnique.mockResolvedValueOnce({ id: 'a-1', email: 'auditor@ex.com', status });
 
-        const result = await inviteAuditor(ctx, 'auditor@ex.com', 'Audrey');
+        const result = await inviteAuditor(ctx, 'auditor@ex.com', 'Someone else');
 
+        expect(result.alreadyListed).toBe(true);
         expect(result.reactivated).toBe(false);
-        expect(auditCalls[0].action).toBe('AUDITOR_INVITED');
+        expect(result.status).toBe(status);
+        expect(tenantDb.auditorAccount.upsert).not.toHaveBeenCalled();
+        expect(tenantDb.auditorAccount.update).not.toHaveBeenCalled();
+        expect(auditCalls).toHaveLength(0);
     });
 });
 
@@ -392,7 +398,10 @@ describe('revokeAuditorAccount', () => {
 
     it('throws badRequest when the auditor is already revoked', async () => {
         tenantDb.auditorAccount.findFirst.mockResolvedValueOnce({ id: 'a-1', email: 'a@ex.com', status: 'REVOKED' });
-        await expect(revokeAuditorAccount(ctx, 'a-1')).rejects.toThrow(/already revoked/i);
+        await expect(revokeAuditorAccount(ctx, 'a-1')).rejects.toMatchObject({
+            message: expect.stringMatching(/already revoked/i),
+            details: { reason: 'AUDITOR_ALREADY_REVOKED' },
+        });
     });
 
     it('flips the account to REVOKED, drops all pack access, and audits', async () => {
@@ -418,7 +427,10 @@ describe('grantAuditorAccess', () => {
     it('throws notFound when the pack is foreign to the tenant', async () => {
         tenantDb.auditorAccount.findFirst.mockResolvedValueOnce({ id: 'a-1', email: 'a@ex.com' });
         tenantDb.auditPack.findFirst.mockResolvedValueOnce(null);
-        await expect(grantAuditorAccess(ctx, 'a-1', 'p-foreign')).rejects.toThrow(/pack not found/i);
+        await expect(grantAuditorAccess(ctx, 'a-1', 'p-foreign')).rejects.toMatchObject({
+            message: expect.stringMatching(/pack not found/i),
+            details: { reason: 'AUDITOR_PACK_NOT_FOUND' },
+        });
     });
 
     it('rethrows duplicate-access (catch-block) as a badRequest (idempotent semantics)', async () => {
@@ -431,7 +443,28 @@ describe('grantAuditorAccess', () => {
         tenantDb.auditorPackAccess.create.mockRejectedValueOnce(
             Object.assign(new Error('unique constraint'), { code: 'P2002' }),
         );
-        await expect(grantAuditorAccess(ctx, 'a-1', 'p-1')).rejects.toThrow(/already has access/i);
+        await expect(grantAuditorAccess(ctx, 'a-1', 'p-1')).rejects.toMatchObject({
+            message: expect.stringMatching(/already recorded/i),
+            details: { reason: 'AUDITOR_PACK_ALREADY_RECORDED' },
+        });
+        expect(auditCalls).toHaveLength(0);
+    });
+
+    // #4730 — the page hid the picker for a revoked auditor, and nothing
+    // behind it refused.
+    it('refuses to record a pack against a revoked auditor', async () => {
+        tenantDb.auditorAccount.findFirst.mockResolvedValueOnce({ id: 'a-1', email: 'a@ex.com', status: 'REVOKED' });
+        await expect(grantAuditorAccess(ctx, 'a-1', 'p-1')).rejects.toMatchObject({ details: { reason: 'AUDITOR_REVOKED' } });
+        expect(tenantDb.auditPack.findFirst).not.toHaveBeenCalled();
+        expect(tenantDb.auditorPackAccess.create).not.toHaveBeenCalled();
+    });
+
+    // A draft cannot be shared, so it is not recorded against anybody.
+    it('refuses to record a draft pack', async () => {
+        tenantDb.auditorAccount.findFirst.mockResolvedValueOnce({ id: 'a-1', email: 'a@ex.com', status: 'INVITED' });
+        tenantDb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
+        await expect(grantAuditorAccess(ctx, 'a-1', 'p-1')).rejects.toMatchObject({ details: { reason: 'AUDITOR_PACK_DRAFT' } });
+        expect(tenantDb.auditorPackAccess.create).not.toHaveBeenCalled();
         expect(auditCalls).toHaveLength(0);
     });
 

@@ -25,6 +25,8 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { AUDIT_PACK_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../_lib/status-variants';
 import { useAuditReadinessAccess } from '../_lib/use-audit-access';
 import { cn } from '@inflect/ui/lib/cn';
+import { apiErrorMessage, validationIssueMessages } from '@/lib/api-error';
+import { auditorRefusal } from '@/lib/auditor-refusals';
 
 interface PackAccessRef { auditPackId: string; grantedAt: string }
 interface AuditorRow {
@@ -37,9 +39,20 @@ interface AuditorRow {
 }
 interface PackRow { id: string; name: string; status: string }
 
-const STATUS_BADGE: Record<AuditorRow['status'], StatusBadgeVariant> = {
-    INVITED: 'neutral', ACTIVE: 'success', REVOKED: 'warning',
+/**
+ * #4730 — the list gives no access and sends nothing, so an auditor is either
+ * on it or revoked. INVITED and ACTIVE both read "Listed": ACTIVE used to be
+ * set by adding the same email twice, and showed an auditor nobody had heard
+ * from as "Active".
+ */
+type ShownStatus = 'LISTED' | 'REVOKED';
+const shownStatus = (s: AuditorRow['status']): ShownStatus => (s === 'REVOKED' ? 'REVOKED' : 'LISTED');
+const STATUS_BADGE: Record<ShownStatus, StatusBadgeVariant> = {
+    LISTED: 'neutral', REVOKED: 'warning',
 };
+
+/** A write the server refused, carrying the sentence the person is shown. */
+class RequestRefused extends Error {}
 
 export default function AuditorsManagementPage() {
     const params = useParams();
@@ -107,14 +120,29 @@ export default function AuditorsManagementPage() {
      * account revoke did not, so a network throw there escaped the `finally`
      * as an unhandled rejection and left the modal open with no message.
      */
+    //
+    // #4730 — a refusal the server names is shown as what it is. It used to be
+    // replaced by "Could not … Please try again." for every non-2xx, which
+    // invited a retry that would fail the same way.
     const send = useCallback(
         async (path: string, init: RequestInit, fallbackMessage: string) => {
             const res = await fetch(apiUrl(path), init);
-            if (!res.ok) throw new Error(fallbackMessage);
-            return res.json().catch(() => null);
+            const body = await res.json().catch(() => null);
+            if (!res.ok) {
+                const code = auditorRefusal(body);
+                if (code) throw new RequestRefused(tx(`auditorsAdmin.refused.${code}`));
+                // The only field a person types that the route checks is the
+                // email; the name is held to its limit by the input itself.
+                if (validationIssueMessages(body).length > 0) throw new RequestRefused(tx('auditorsAdmin.emailInvalid'));
+                if (res.status < 500) throw new RequestRefused(apiErrorMessage(body, fallbackMessage));
+                throw new Error(fallbackMessage);
+            }
+            return body;
         },
-        [apiUrl],
+        [apiUrl, tx],
     );
+    /** What a failed write tells the person: the refusal, or the fallback. */
+    const failureText = (err: unknown, fallback: string) => (err instanceof RequestRefused ? err.message : fallback);
 
     const packName = useCallback(
         (id: string) => packs.find((p) => p.id === id)?.name ?? tx('auditorsAdmin.packFallback'),
@@ -124,12 +152,12 @@ export default function AuditorsManagementPage() {
     const inviteMutation = useTenantMutation<
         AuditorRow[],
         { email: string; name?: string },
-        { reactivated?: boolean } | null
+        { reactivated?: boolean; alreadyListed?: boolean } | null
     >({
         key: CACHE_KEYS.audits.auditors(),
-        // No optimistic prediction: the server mints the auditor id, and
-        // inviting an existing REVOKED auditor REACTIVATES them rather than
-        // appending — two different list shapes we cannot tell apart here.
+        // No optimistic prediction: the server mints the auditor id, adding a
+        // REVOKED auditor puts them back rather than appending, and adding a
+        // listed one changes nothing — shapes we cannot tell apart here.
         mutationFn: (input) =>
             send(
                 '/audits/auditors',
@@ -154,12 +182,12 @@ export default function AuditorsManagementPage() {
             setInviteOpen(false);
             setInviteEmail('');
             setInviteName('');
-            // PR-O — surface reactivation: inviting an existing/REVOKED
-            // auditor flips them back to ACTIVE. Say so, rather than a
-            // generic "invited" that hides the state change.
-            toast.success(data?.reactivated ? tx('auditorsAdmin.reactivateSuccess') : tx('auditorsAdmin.inviteSuccess'));
-        } catch {
-            toast.error(tx('auditorsAdmin.inviteError'));
+            // Say which of the three happened: added, back on the list after
+            // a revoke, or already there (#4730 — nothing is changed then).
+            if (data?.alreadyListed) toast.info(tx('auditorsAdmin.alreadyListed'));
+            else toast.success(data?.reactivated ? tx('auditorsAdmin.reactivateSuccess') : tx('auditorsAdmin.inviteSuccess'));
+        } catch (err) {
+            toast.error(failureText(err, tx('auditorsAdmin.inviteError')));
         }
     };
 
@@ -183,10 +211,9 @@ export default function AuditorsManagementPage() {
     const grantAccess = async (auditorId: string) => {
         const packId = selectedPack[auditorId];
         if (!packId) return;
-        // A revoked auditor has no active grants; refuse to re-open access
-        // without an explicit re-invite (which flips them back to ACTIVE).
-        // The UI hides the grant affordance for REVOKED rows; this is the
-        // defensive backstop.
+        // A revoked auditor has no packs recorded; adding them again puts them
+        // back on the list first. The UI hides the picker for REVOKED rows and
+        // the server refuses (`AUDITOR_REVOKED`); this is the backstop between.
         if (auditors.find((a) => a.id === auditorId)?.status === 'REVOKED') {
             toast.error(tx('auditorsAdmin.grantRevokedError'));
             return;
@@ -196,8 +223,8 @@ export default function AuditorsManagementPage() {
             await grantMutation.trigger({ auditorId, packId });
             setSelectedPack((s) => ({ ...s, [auditorId]: '' }));
             toast.success(tx('auditorsAdmin.grantSuccess'));
-        } catch {
-            toast.error(tx('auditorsAdmin.grantError'));
+        } catch (err) {
+            toast.error(failureText(err, tx('auditorsAdmin.grantError')));
         } finally {
             setBusyAuditor(null);
         }
@@ -242,9 +269,9 @@ export default function AuditorsManagementPage() {
             },
             // Undo and failure both restore what the user could see.
             undoAction: () => setAuditors(snapshot),
-            onError: () => {
+            onError: (err) => {
                 setAuditors(snapshot);
-                toast.error(tx('auditorsAdmin.revokeError'));
+                toast.error(failureText(err, tx('auditorsAdmin.revokeError')));
             },
         });
     };
@@ -273,10 +300,10 @@ export default function AuditorsManagementPage() {
         try {
             await revokeAccountMutation.trigger(auditorId);
             toast.success(tx('auditorsAdmin.revokeAccountSuccess'));
-        } catch {
+        } catch (err) {
             // This had NO catch — a network throw escaped the `finally` as an
             // unhandled rejection, leaving the modal open with no message.
-            toast.error(tx('auditorsAdmin.revokeAccountError'));
+            toast.error(failureText(err, tx('auditorsAdmin.revokeAccountError')));
         } finally {
             setRevokingAccount(false);
         }
@@ -356,11 +383,13 @@ export default function AuditorsManagementPage() {
                 <div className="space-y-default">
                     {auditors.map((a) => {
                         const grantedIds = new Set(a.packAccess.map((p) => p.auditPackId));
-                        // Carry the pack status as option `meta` so the picker can
-                        // badge DRAFT vs FROZEN vs EXPORTED packs distinctly (they
-                        // used to render identically). `label` stays a plain string
-                        // so search + trigger display keep working.
-                        const options: ComboboxOption<string>[] = packs
+                        // #4730 — a draft cannot be shared, so it is not offered:
+                        // recording one recorded something the auditor could not
+                        // be given (the server refuses it too). The status rides
+                        // as option `meta` so FROZEN and EXPORTED are badged;
+                        // `label` stays a plain string for search and the trigger.
+                        const recordable = packs.filter((p) => p.status !== 'DRAFT');
+                        const options: ComboboxOption<string>[] = recordable
                             .filter((p) => !grantedIds.has(p.id))
                             .map((p) => ({ value: p.id, label: p.name, meta: p.status }));
                         const chosen = selectedPack[a.id] ?? '';
@@ -373,7 +402,7 @@ export default function AuditorsManagementPage() {
                                         <p className="text-xs text-content-subtle truncate">{a.email}</p>
                                     </div>
                                     <div className="flex items-center gap-tight">
-                                        <StatusBadge variant={STATUS_BADGE[a.status]}>{tx(`auditorsAdmin.status${a.status}`)}</StatusBadge>
+                                        <StatusBadge variant={STATUS_BADGE[shownStatus(a.status)]}>{tx(`auditorsAdmin.status${shownStatus(a.status)}`)}</StatusBadge>
                                         <span className="text-xs text-content-subtle">{tx('auditorsAdmin.invitedOn', { date: formatDate(a.createdAt) })}</span>
                                         {a.status !== 'REVOKED' && access.changeAuditorAccess && (
                                             <Button
@@ -426,7 +455,13 @@ export default function AuditorsManagementPage() {
                                                 options={options}
                                                 selected={options.find((o) => o.value === chosen) ?? null}
                                                 setSelected={(opt) => setSelectedPack((s) => ({ ...s, [a.id]: opt?.value ?? '' }))}
-                                                placeholder={options.length === 0 ? tx('auditorsAdmin.allGranted') : tx('auditorsAdmin.grantPlaceholder')}
+                                                placeholder={
+                                                    recordable.length === 0
+                                                        ? tx('auditorsAdmin.freezeToRecord')
+                                                        : options.length === 0
+                                                            ? tx('auditorsAdmin.allGranted')
+                                                            : tx('auditorsAdmin.grantPlaceholder')
+                                                }
                                                 disabled={options.length === 0}
                                                 matchTriggerWidth
                                                 aria-label={tx('auditorsAdmin.grantPlaceholder')}
@@ -478,6 +513,7 @@ export default function AuditorsManagementPage() {
                                     value={inviteName}
                                     onChange={(e) => setInviteName(e.target.value)}
                                     placeholder={tx('auditorsAdmin.namePlaceholder')}
+                                    maxLength={200}
                                     id="invite-auditor-name"
                                 />
                             </FormField>
