@@ -96,49 +96,22 @@ import {
     beaconClientMetric,
     NAV_PUSH_RETRY_METRIC,
 } from '@/lib/observability/client-telemetry';
+import {
+    DROPPED_PUSH_GRACE_MS,
+    pathnameOf,
+    shouldRetryDroppedPush,
+} from '@/lib/hooks/use-dropped-link-click-guard';
 
-/** See "THE DELAY" above — derived from three captures, not picked. */
-export const DROPPED_PUSH_GRACE_MS = 1000;
-
-/**
- * The pathname an href will land on, with query and hash removed.
- *
- * `new URL` rather than a regex: it resolves a relative href against the
- * current document the way the router does, and it cannot be defeated by a
- * `#`-in-query or a protocol-relative href the way a hand-rolled split can.
- * Falls back to the raw href if there is no base to resolve against (server
- * render), which only ever makes the predicate below answer "different", i.e.
- * arm a watch that then declines to fire.
- */
-export function pathnameOf(href: string): string {
-    try {
-        return new URL(href, window.location.href).pathname;
-    } catch {
-        return href;
-    }
-}
-
-export interface DroppedPushCheck {
-    /** `location.pathname` sampled at click time. */
-    startPath: string;
-    /** `location.pathname` sampled when the grace window expired. */
-    currentPath: string;
-    /** Where the click asked to go. */
-    targetPath: string;
-}
-
-/**
- * Exported so the discriminating cases can be driven directly as well as
- * through the hook. Both are tested: a predicate nobody calls through the real
- * wiring is a collector with an untested seam.
- */
-export function shouldRetryDroppedPush({
-    startPath,
-    currentPath,
-    targetPath,
-}: DroppedPushCheck): boolean {
-    return currentPath === startPath && targetPath !== startPath;
-}
+// The predicate, the delay and `pathnameOf` live in the dependency-free
+// `@/lib/hooks/use-dropped-link-click-guard`, so the sidebar's `<NavItem>` (a
+// shared-UI primitive) can use them too; re-exported here, where the evidence
+// for each is written above.
+export {
+    DROPPED_PUSH_GRACE_MS,
+    pathnameOf,
+    shouldRetryDroppedPush,
+    type DroppedPushCheck,
+} from '@/lib/hooks/use-dropped-link-click-guard';
 
 /**
  * `router.push` for a row navigation. Same call shape as the raw router's, so

@@ -21,6 +21,7 @@ inflect · ai architecture · swe-bench · roadmap v1 · 2026-10-29
 | Depends on | — |
 | Unblocks | — |
 | Owner decisions | **D-EV-5** (keep the box or retire it) |
+| Complete at | Phase 0's recorded decision (expected: declined) |
 
 ## At a glance
 

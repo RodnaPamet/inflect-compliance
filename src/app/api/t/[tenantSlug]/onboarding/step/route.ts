@@ -5,6 +5,8 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { z } from 'zod';
 import { OnboardingStepEnum } from '@/lib/schemas/onboarding';
 import { jsonResponse } from '@/lib/api-response';
+import { cookies } from 'next/headers';
+import { LOCALE_COOKIE, resolveLocale } from '@/lib/locale-constants';
 
 const StepBodySchema = z.object({
     step: OnboardingStepEnum,
@@ -25,8 +27,10 @@ export const POST = withApiErrorHandling(withValidatedBody(StepBodySchema, async
         return jsonResponse(state);
     }
 
-    // action === 'complete'
-    const state = await completeOnboardingStep(ctx, body.step);
+    // action === 'complete'. The starter risks and tasks it creates are
+    // written in the user's language, the one the UI reads (#4701).
+    const locale = resolveLocale((await cookies()).get(LOCALE_COOKIE)?.value);
+    const state = await completeOnboardingStep(ctx, body.step, { locale });
     return jsonResponse(state);
 }));
 

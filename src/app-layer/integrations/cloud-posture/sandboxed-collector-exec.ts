@@ -56,6 +56,7 @@ import {
     TOOL_EXEC_MAX_OUTPUT_BYTES,
     TOOL_EXEC_TIMEOUT_MS,
 } from '@/lib/agentic/bounded-exec';
+import { env } from '@/env';
 import { openShellToolExecutor } from '@/lib/agentic/openshell/executor';
 import {
     SandboxExecIncompleteError,
@@ -65,6 +66,11 @@ import {
 } from '@/lib/agentic/openshell/transport';
 import { readSandboxExecutionPlatformEnabled } from '@/app-layer/usecases/sandbox-runtime-config';
 import { scrubSecrets } from './powerpipe-core';
+import {
+    gatewayIsReady,
+    startGatewayAndWait,
+    type StartResult,
+} from '@/lib/sandbox-runtime/gateway-start';
 import type { PowerpipeCliResult } from './powerpipe-exit';
 import type { SandboxDecision } from '@/lib/agentic/openshell/sandbox-decisions';
 
@@ -95,6 +101,16 @@ export interface SandboxedCollectorDeps {
      * `sandboxDecisionRecorder(db, ctx)` builds one where a context exists.
      */
     readonly onDecision?: (decision: SandboxDecision) => Promise<void>;
+    /**
+     * Start the gateway VM and wait for it, before any sandbox is created — 4.3
+     * (#4562). Injected so a test can drive every outcome without a VM.
+     *
+     * Owner decision 2026-10-30: the caller starts the machine. There is no
+     * start schedule, because the 5 USD/month cap is a runtime budget of ~45
+     * hours and a day with no scan must cost nothing. The accepted cost is ~45
+     * seconds of cold boot inside a scan's latency budget, measured.
+     */
+    readonly startGateway?: () => Promise<StartResult>;
 }
 
 /** A failed result in the one shape the collectors' classifier reads. */
@@ -112,8 +128,36 @@ function didNotComplete(failure: string, stderr: string): PowerpipeCliResult {
  * has declared a capability it cannot provide — and it is why the switch is off
  * by default.
  */
+/**
+ * The default starter: read the deploy's three variables and start that VM.
+ *
+ * Returns `unavailable` without calling anything when the deploy names no
+ * instance, and that is the common case rather than an error — a deploy with no
+ * `SANDBOX_RUNTIME_GATEWAY_INSTANCE` is not describing a machine this product
+ * may start. It is also what a local gateway looks like: already running,
+ * started by a person, nothing for us to do.
+ */
+function startFromEnv(): Promise<StartResult> {
+    return startGatewayAndWait({
+        healthUrl: env.SANDBOX_RUNTIME_HEALTH_URL,
+        project: env.SANDBOX_RUNTIME_GATEWAY_PROJECT,
+        zone: env.SANDBOX_RUNTIME_GATEWAY_ZONE,
+        instance: env.SANDBOX_RUNTIME_GATEWAY_INSTANCE,
+    });
+}
+
+/** Whether this deploy names a VM to start at all. */
+export function gatewayStartIsConfigured(): boolean {
+    return Boolean(
+        env.SANDBOX_RUNTIME_GATEWAY_PROJECT &&
+            env.SANDBOX_RUNTIME_GATEWAY_ZONE &&
+            env.SANDBOX_RUNTIME_GATEWAY_INSTANCE,
+    );
+}
+
 export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorExec {
     const transport = deps.transport ?? unconfiguredTransport;
+    const startGateway = deps.startGateway ?? startFromEnv;
     const timeoutMs = deps.timeoutMs ?? TOOL_EXEC_TIMEOUT_MS;
     const maxOutputBytes = deps.maxOutputBytes ?? TOOL_EXEC_MAX_OUTPUT_BYTES;
 
@@ -132,6 +176,34 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
         const setupTimer = setTimeout(() => setup.abort(), timeoutMs);
 
         try {
+            /*
+                START THE MACHINE FIRST — 4.3 (#4562), and INSIDE this try for a
+                reason a test found: the catch below is what turns a
+                `SandboxUnreachableError` into a classified
+                `SANDBOX_UNREACHABLE` result. Thrown from outside it, the error
+                escapes as an exception and the collector stops returning a
+                `PowerpipeCliResult` at all — which changes the ladder's
+                semantics rather than feeding it.
+
+                Per CALL and not per build, because the idle timer takes the VM
+                down after 20 minutes of no sandbox activity: a runner built
+                once and used twice an hour would find it gone the second time.
+
+                Skipped entirely when the deploy names no instance, which is
+                every deploy today and also what a local gateway looks like. A
+                start that was ATTEMPTED and did not reach `readyz` refuses
+                rather than proceeding, because the only thing a sandbox create
+                could do then is fail more slowly having already spent the boot.
+            */
+            if (gatewayStartIsConfigured()) {
+                const start = await startGateway();
+                if (!gatewayIsReady(start.outcome)) {
+                    throw new SandboxUnreachableError(
+                        `the gateway VM did not become ready: ${start.outcome} after ${start.waitedMs}ms`,
+                    );
+                }
+            }
+
             // The provider is attached through the executor's own hook, which
             // runs after the sandbox exists and before the tool does. Attaching
             // from out here is not possible and should not be: the executor owns

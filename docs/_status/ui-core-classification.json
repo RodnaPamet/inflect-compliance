@@ -3074,6 +3074,11 @@
   "derivation": "audited",
   "reason": "Generic typed GET + mutation hooks over apiGet; the signature is fully parameterised (`useApi<T>(url, schema?)`). Only the usage example carries a domain DTO. I judged `@/lib/api-client` infrastructure, not a `src/lib/<domain>` module, so I did not report it as a domain-import."
  },
+ "src/lib/hooks/use-dropped-link-click-guard.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The dropped-navigation predicate (#3099) and its `<Link>` click guard, moved out of `@/lib/nav/use-guarded-push` so the sidebar's `NavItem` can use them. Imports only `react`: no `@/` import, no storage key, no brand token, no copy. Telemetry is the host's, through the `onRetry` slot, because the product's client-telemetry module is a domain import a shared primitive may not take."
+ },
  "src/lib/hooks/use-entity-list-ids.ts": {
   "classification": "MIXED",
   "derivation": "audited",

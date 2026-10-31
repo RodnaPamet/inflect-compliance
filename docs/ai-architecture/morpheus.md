@@ -8,7 +8,7 @@ inflect · ai architecture · morpheus · roadmap v1 · 2026-10-29
 > today (main 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan. This
 > is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
-> first for the target map, the global rules **G1–G12**, and the sequencing.
+> first for the target map, the global rules **G1–G13**, and the sequencing.
 > If the code contradicts a fact here, the code wins and the pull request that
 > finds it corrects this document.
 
@@ -17,24 +17,26 @@ inflect · ai architecture · morpheus · roadmap v1 · 2026-10-29
 | | |
 | --- | --- |
 | Layer · box | 1 — Security, guards & alignment · "NVIDIA Morpheus" |
-| Wave | 3 (last of the Layer 1 additions; needs the optional Layer 5 for its GPU arm) |
-| Depends on | a signal with volume (Phase 0 decides); [`modal-inference.md`](./modal-inference.md) Phase 2 for the GPU arm |
+| Wave | 3 (last of the Layer 1 additions). The GPU arm (Phase 2) is optional Layer 5 work, after every other roadmap is complete |
+| Depends on | a signal with volume (Phase 0 decides); Layer 5 ([`modal-inference.md`](./modal-inference.md)), optional and last, for Phase 2 |
 | Unblocks | an automated latch on `AgentCircuitBreaker` from behaviour, not only from guard blocks |
 | Owner decisions | **D-L1-3** (the signal, and CPU-first) |
+| Complete at | Phase 1, the CPU detector. Phase 2 is optional Layer 5 work |
 
 ## At a glance
 
-Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Slate dashed: optional Layer 5 work, which starts only after every other roadmap is complete. Dashed white: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
 
 ```mermaid
 flowchart LR
   P0{{"Phase 0 · the signal<br/>ledger features, no content<br/>seeded anomaly on CPU<br/>D-L1-3"}}:::gate
   P1["Phase 1 · CPU detector<br/>rolling baseline per agent<br/>Finding at A<br/>latch at B"]:::todo
-  P2["Phase 2 · Morpheus DFP on Modal<br/>only above the measured threshold<br/>four-week parity window"]:::todo
+  P2["Phase 2 · Morpheus DFP<br/>on the Layer 5 VM<br/>only above the measured threshold"]:::optional
   BRK["AgentCircuitBreaker<br/>existing, not a second one"]:::done
-  MOD["modal-inference P1"]:::ext
+  MOD["Layer 5<br/>optional, after completion"]:::optional
   SEED["Seeded anomaly set<br/>precision on baseline days"]:::eval
-  P0 --> P1 --> P2
+  P0 --> P1
+  P1 -.-> P2
   P1 -.->|latches| BRK
   MOD -.-> P2
   SEED -.-> P1
@@ -45,6 +47,7 @@ flowchart LR
   classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
   classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
   classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+  classDef optional fill:#f1f5f9,stroke:#475569,color:#334155,stroke-dasharray:6 3
 ```
 
 ## Current state (true today)
@@ -89,8 +92,8 @@ raises a Finding and may latch the agent's circuit breaker through the
   z-score job in the worker (CPU) answers the same question for the volumes
   this product has. Morpheus pays when the feature set and volume outgrow a
   nightly SQL+TypeScript job — Phase 0 measures that rather than assuming it.
-- *A streaming deployment.* Scale-to-zero batch scoring on Modal (optional
-  Layer 5) over an export of the signed audit stream; nothing always-on.
+- *A streaming deployment.* If Layer 5 is ever taken up, batch scoring on its
+  GPU VM over an export of the signed audit stream; nothing always-on.
 - *Free text as a feature.* The audit stream already strips `details`; the
   fingerprint reads counts, scopes, ids and timestamps only (G4 is not in
   play because no content moves).
@@ -175,22 +178,22 @@ guard refuses a content column, and the two-tenant test is green.
 this a behaviour detector and not a content reader), "no second mechanism"
 (the breaker is the breaker).
 
-### Phase 2 — Morpheus DFP on Modal (only above the Phase 0 threshold)
+### Phase 2 — Morpheus DFP on the Layer 5 VM (optional, Layer 5; only above the Phase 0 threshold)
 
 **Sub-phases.**
-- [ ] 2.1 `deploy/modal/morpheus.py`: a batch function running the DFP
-      pipeline over an exported day of fingerprint features (not raw events),
-      model on a Volume; scale-to-zero.
-- [ ] 2.2 The worker job ships features (ids and counts) to the function and
+- [ ] 2.1 A batch job on the Layer 5 GPU VM, deployed from the Layer 5
+      scripts, running the DFP pipeline over an exported day of fingerprint
+      features (not raw events), the model on the VM's disk.
+- [ ] 2.2 The worker job ships features (ids and counts) to the VM and
       stores the score beside the CPU score; the latch rule reads the higher.
-- [ ] 2.3 Sub-processor: Modal's row gains the category "agent behaviour
-      features: agent ids, counts, scopes, timestamps — no content".
+- [ ] 2.3 No sub-processor change while the VM is in the operator's own
+      Google Cloud project (the Laya precedent in `docs/sub-processors.md`).
 - [ ] 2.4 Parity window: four weeks of both scores recorded; Morpheus becomes
       primary only if it finds anomalies the CPU detector missed and the
       review-quality surface confirms them.
 
-**Hardening.** G2 (even ids and counts are a category on the row), G12
-(optional), G11 (the parity window is the record that promotes it).
+**Hardening.** G1 (the VM is in the operator's own project; nothing
+external), G12 (optional), G11 (the parity window is the record that promotes it).
 
 ## Evals for this framework
 

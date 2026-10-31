@@ -1,14 +1,18 @@
-inflect · ai architecture · master roadmap v1 · 2026-10-29
+inflect · ai architecture · master roadmap v2 · 2026-10-31
 
 # The AI architecture roadmap: the v6 target, mapped onto the codebase
 
 > **Status: living design** — the master roadmap for bringing inflect-compliance
 > to the owner's target state, the "Enterprise AI SaaS Architecture Blueprint
 > (v6)" ([`docs/ai-architecture/blueprint-v6.md`](./ai-architecture/blueprint-v6.md),
-> received 2026-10-29). The **Current state** section is true today
-> (main 3.338.0, `a1c2f05c`) and names what each layer already has. The
-> **Roadmap** section is the plan: a status board, the sequencing, the evals
-> per layer, and the decisions the owner must take. Every framework the target
+> received 2026-10-29). The plan is **complete without Layer 5**: complete
+> means every roadmap outside Layer 5 has reached its "Complete at" phase, and
+> Layer 5 is optional work taken up after that, or never (owner, 2026-10-31).
+> The **Current state** section is true today (verified at main 3.338.0,
+> `a1c2f05c`; re-checked where it changed at 3.347.0, `e0e682e03`, on
+> 2026-10-31) and names what each layer already has. The
+> **Roadmap** section is the plan: what complete means, a status board, the
+> sequencing, the evals per layer, and the decisions the owner must take. Every framework the target
 > names and the codebase lacks has its own child roadmap under
 > [`docs/ai-architecture/`](./ai-architecture/) with phases, sub-phases,
 > copy-paste prompts and hardening per phase; this document owns what is
@@ -23,22 +27,32 @@ Three documents own three different things, and none repeats another:
 | Owns | Where |
 | --- | --- |
 | The target as received | [`ai-architecture/blueprint-v6.md`](./ai-architecture/blueprint-v6.md) (historical: a record of the input) |
-| What exists, the global rules, Layer 5's optionality, sequencing, the status board, the decisions | **this file** |
+| What exists, the global rules, Layer 5's optionality, what complete means, sequencing, the status board, the decisions | **this file** |
 | Phases, sub-phases, prompts and hardening for one framework | `ai-architecture/<framework>.md` — one per missing framework (twenty roadmaps, listed in the status board, beside the blueprint record): eighteen from the blueprint, and two additions the owner made on 2026-10-30, [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) and [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) |
 
-Two operator instructions bind the whole plan: **Layer 5 is planned on Modal
-(serverless GPU) for Nemotron 3 Super**, and **Layer 5 is optional** — a
-deployment using an online LLM API deploys none of it. Both are designed in
-§ Layer 5 is optional by construction and implemented by
-[`modal-inference.md`](./ai-architecture/modal-inference.md).
+Two owner decisions of 2026-10-31 (D-L5-1) bind the whole plan:
+
+- **Model usage goes through LLM API keys** on the existing external route, to
+  providers on the sub-processor register. There is no self-hosting now: no
+  GPU, no NIM, no vLLM deployment, and Modal is not adopted.
+- **The plan is complete without Layer 5.** Every other roadmap names the
+  phase at which it is complete, and none of those phases needs a GPU or a
+  self-hosted model (§ What complete means). Layer 5's new work is optional
+  and comes after completion, or never.
+
+They replace the instruction of 2026-10-29, which planned Layer 5 on Modal for
+Nemotron 3 Super. Both are designed in § Layer 5 is optional by construction;
+[`modal-inference.md`](./ai-architecture/modal-inference.md) keeps the optional
+Layer 5 plan under its old filename so links stay stable.
 
 ## The target, with status
 
-Green is on `main`, amber partly present, blue missing (each has a child
-roadmap), grey dashed declined. Requests enter at Layer 1 and descend; the
-evaluation row measures every layer. A node turns green in the pull request
-that puts the framework into production use, together with its status-board
-row.
+Green is on `main`, amber partly present, blue missing and part of
+completeness (each has a child roadmap), slate dashed optional Layer 5 work
+that starts only after every other roadmap is complete, grey dashed declined.
+Requests enter at Layer 1 and descend; the evaluation row measures every
+layer. A node turns green in the pull request that puts the framework into
+production use, together with its status-board row.
 
 ```mermaid
 flowchart LR
@@ -52,11 +66,13 @@ flowchart LR
     HR["House eval records (ours)<br/>skills, identity-match"]:::done
   end
 
-  subgraph L5["LAYER 5 · Runtime and infrastructure · OPTIONAL"]
+  subgraph L5["LAYER 5 · Runtime and infrastructure · new work optional, after completion"]
     direction TB
-    MD["vLLM on Modal<br/>Nemotron 3 Super, scale to zero"]:::todo
-    TT["Triton<br/>dormant until a trigger"]:::todo
-    NIM["NVIDIA NIM<br/>declined: de-NIM"]:::declined
+    API["LLM API keys (ours)<br/>inflect-external, registered providers"]:::done
+    MD["Self-hosted model route<br/>vLLM on a GPU VM, if taken up"]:::optional
+    TT["Triton<br/>if taken up"]:::optional
+    NIM["NVIDIA NIM<br/>proof of concept only, if taken up"]:::optional
+    MO5["Modal<br/>not adopted 2026-10-31"]:::declined
     OS["OpenShell gateway<br/>collectors sandboxed"]:::done
     GW["TS API gateway (ours)<br/>Next.js routes + Compose"]:::done
   end
@@ -64,7 +80,7 @@ flowchart LR
   subgraph L4["LAYER 4 · Knowledge and deep RAG"]
     direction TB
     RF["RAGFlow<br/>parsing service only"]:::todo
-    RT["Nemotron Retriever<br/>embed + rerank on TEI"]:::todo
+    RT["Nemotron Retriever<br/>embed + rerank on CPU TEI"]:::todo
     WV["Weaviate<br/>vectors only, per-tenant"]:::todo
     LU["Langfuse<br/>traces, datasets, scores"]:::todo
     TR["Tool-shaped retrieval (ours)<br/>MCP read tools"]:::done
@@ -72,9 +88,10 @@ flowchart LR
 
   subgraph L3["LAYER 3 · Cognition and reasoning"]
     direction TB
-    NR["Nemotron workers<br/>+ role axis"]:::todo
+    NR["Role axis<br/>worker model by API key"]:::todo
+    NW["Nemotron as the worker<br/>if Layer 5 is taken up"]:::optional
     SW["Subagents, fan-out<br/>supervisor/worker shape"]:::partial
-    CL["Claude engines<br/>Tool Runner built, off"]:::partial
+    CL["Claude engines<br/>Tool Runner on; Agent SDK designed"]:::partial
     CO["NVIDIA cuOpt<br/>CPU seam first, if any"]:::todo
   end
 
@@ -88,7 +105,7 @@ flowchart LR
   subgraph L1["LAYER 1 · Security, guards and alignment"]
     direction TB
     AG["AI Guard (ours)<br/>injection + egress"]:::done
-    MO["NVIDIA Morpheus<br/>behaviour anomaly"]:::todo
+    MO["NVIDIA Morpheus<br/>behaviour anomaly, CPU detector"]:::todo
     NG["NeMo Guardrails<br/>second guard slice"]:::todo
     NC["NemoClaw<br/>substrate only"]:::partial
     PR["Microsoft Presidio<br/>PII redaction, EN + BG"]:::todo
@@ -99,6 +116,7 @@ flowchart LR
   classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
   classDef partial fill:#fef3c7,stroke:#b45309,color:#78350f
   classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef optional fill:#f1f5f9,stroke:#475569,color:#334155,stroke-dasharray:6 3
   classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
 ```
 
@@ -169,7 +187,8 @@ request touching Flue re-checks them.
   `recordedModeOf`, `runsProfiles` as `Record<AgentDriver, …>` so a third
   engine cannot be mis-recorded as STATIC (#4270). The dedicated `flue` CI job
   (ESM, `--experimental-vm-modules`) is a coverage contributor; the gate
-  merges **six** artifacts.
+  merges **nine** artifacts (the trailing argument to
+  `check-merged-coverage.ts` in `ci.yml` is the authority).
 - **Residuals from the 2026-10-09 audit, unverified since:** F3 — the
   one-member `PERMITTED_FLUE_PACKAGES` allowlist (exact set equality against
   `package.json`) blocks `@flue/opentelemetry`, so telemetry stays hand-rolled
@@ -178,8 +197,10 @@ request touching Flue re-checks them.
   definition sets `driver`.
 - **The canvas, the rule builder and agent profiles are the authoring
   surfaces.** Profiles (Claude engines Step 1a): approved by a second person,
-  frozen by trigger, tools only narrow, no engine runs one yet (owner
-  decision 2026-10-26), behind `AGENT_PROFILES` + `AGENT_PROFILES_TENANTS`.
+  frozen by trigger, tools only narrow. Only the Tool Runner runs one (Step
+  2c, #4512); Flue does not, by owner decision of 2026-10-26. The surface is
+  behind `AGENT_PROFILES` + `AGENT_PROFILES_TENANTS`, or, with the variable
+  unset, the workspace organization's own switch (#4557).
 - Missing: a canvas on which to draw what an agent does. The process canvas
   can invoke an agent (an `agent` node owns an `INVOKE_AGENT` rule), and agents
   are created through two forms (registration, and the Behaviour tab's profile),
@@ -204,17 +225,27 @@ request touching Flue re-checks them.
   (`assistant/turn-provider.ts`, `tool-runner/client.ts`). Tenant setting
   `aiResidency ∈ { EXTERNAL, LOCAL_ONLY }` (default EXTERNAL); local route
   `AI_LOCAL_BASE_URL` (OpenAI-compatible: Ollama / vLLM); a tenant's stored
-  `aiLocalBaseUrl` is honoured only when it is that address (#4545).
+  `aiLocalBaseUrl` is honoured only when it is that address (#4545). An
+  `EXTERNAL` tenant resolves to the external route and a `LOCAL_ONLY` tenant
+  to the local route or a named refusal. Nothing serves the local route since
+  the Laya estate was retired on 2026-10-14, so model usage in production is
+  the API keys on the external route.
 - **Supervisor/worker exists as subagents** (fan-out capped, tokens charged
   to the parent); there is no *role* in model selection — a subagent uses its
   parent's model.
 - **Claude.** `@anthropic-ai/sdk 1.3.0` powers the **Tool Runner** engine
-  (`src/lib/agentic/tool-runner/`, Step 2b, `DRIVER_IMPLEMENTED['tool-runner']
-  = false` until Step 2c). The Agent SDK and Managed Agents are designed
-  (living docs, #4135), not built. The harness scanner recognises customers'
-  Agent SDK agents (Step 3b, #4476 — today's tip). Every model call is
+  (`src/lib/agentic/tool-runner/`), built in Step 2b and turned on in Step 2c
+  (#4512): `DRIVER_IMPLEMENTED['tool-runner']` is true and `TOOL_RUNNER` is a
+  written mode. It runs agent profiles where the operator's
+  `AGENT_DRIVER_TOOL_RUNNER` switch (or, unset, the workspace organization,
+  #4557) allows it and the workspace owner chooses it, and serves skills
+  through `activate_skill` (Step 2d, #4525). The Agent SDK and Managed Agents
+  are designed (living docs, #4135), not built. The harness scanner
+  recognises customers' Agent SDK agents (Step 3b, #4476). Every model call is
   preceded by the kill switch and the caps (#4196) and writes an Art 12 row.
-- Missing: Nemotron as the worker model, the role axis, cuOpt.
+- Missing: the role axis, with the worker role served by a model through API
+  keys; cuOpt's seam, if a feature wants one. Nemotron as the worker is
+  optional Layer 5 work (D-L3-2, deferred 2026-10-31).
 
 ### Layer 4 — Knowledge & deep RAG
 
@@ -244,8 +275,13 @@ request touching Flue re-checks them.
   two authorization layers), and the "microservices" are the Compose services.
 - **No GPU, no vLLM, no Triton, no NIM, no Modal.** `vLLM` appears in comments
   naming what `AI_LOCAL_BASE_URL` may point at.
-- Missing: the hosted route on Modal; Triton (dormant until a trigger); NIM
-  declined by design.
+- **Model usage is LLM API keys.** `inflect-external` is registered from
+  `ANTHROPIC_API_KEY` or the OpenRouter key, and `docs/sub-processors.md`
+  bounds what each provider receives.
+- Nothing here is missing for completeness. By the owner's decision of
+  2026-10-31, Layer 5's new work (a self-hosted model route, the GPU arms
+  other roadmaps deferred, Triton, a NIM proof of concept) is optional and
+  starts only after every other roadmap is complete. Modal is not adopted.
 
 ### Evals
 
@@ -268,7 +304,7 @@ request touching Flue re-checks them.
 | Roadmap | Tracks | Status |
 | --- | --- | --- |
 | Flue × Inflect integration plan (artifact, v4, 2026-10-09 audit) | Flue Phases 1–3 | shipped; residuals F3/F5/F12 carried here |
-| `docs/claude-agent-sdk-design.md`, `claude-tool-runner-design.md`, `claude-managed-agents-design.md` | Claude engines, #4135 | Steps 0a, 1a, 2b, 3b on `main`; 2c pending |
+| `docs/claude-agent-sdk-design.md`, `claude-tool-runner-design.md`, `claude-managed-agents-design.md` | Claude engines, #4135 | the Tool Runner built and on (Steps 2a–2d, the flag since 2c, #4512), the connect wizard and the scanner recogniser (3a, 3b) on `main`; the Agent SDK engine (Phase 4) and Managed Agents (Phases 5–6) designed |
 | `docs/agentic-iam-roadmap.md` | agentic IAM, #3654 | in progress |
 | `docs/sap-agent-integration-roadmap.md` | SAP routes, #3859 | Phase 0 re-scoped 2026-10-20 |
 | OpenShell notes (`2026-10-21-openshell-spike.md` → `2026-10-29-openshell-gateway-vm-provisioned.md`) | OpenShell, #3924 | gateway live |
@@ -276,18 +312,21 @@ request touching Flue re-checks them.
 ## Global rules
 
 Every child roadmap inherits these; its hardening sections cite them by
-number. They are restatements of rules the repository already enforces,
-collected so a new framework cannot miss one.
+number. G1 to G11 restate rules the repository already enforces, collected so
+a new framework cannot miss one; G12 and G13 are the owner's decisions of
+2026-10-31.
 
 - **G1 — Residency decides routing before anything is built.** Provider ids
-  name residency (`inflect-external`, `inflect-local`, and the planned
-  `inflect-hosted`), never vendors. `model-selection.ts` owns the decision; a
+  name residency (`inflect-external`, `inflect-local`), never vendors; no
+  third id is planned (the `inflect-hosted` id planned for Modal was dropped
+  on 2026-10-31). `model-selection.ts` owns the decision; a
   deployment with no credential registers no provider; the socket re-checks
   the specifier; `LOCAL_ONLY` is refused before anything external is read.
   Embeddings, rerankers, guard rails, judges and detectors all route the same
   way — or they are a cross-tenant egress waiting to happen.
 - **G2 — Sub-processor four-step before wiring.** Any endpoint outside the
-  operator's perimeter (Modal, a cloud eval or trace service, a vendor API) is
+  operator's perimeter (a model API, a cloud eval or trace service, a vendor
+  API) is
   a row in `docs/sub-processors.md`, a 30-day notice, and activation after the
   window (`docs/sub-processor-change-policy.md`). In-deployment services still
   get a register row in the `legacy-mcp` style, because the register is the
@@ -309,7 +348,7 @@ collected so a new framework cannot miss one.
   parsers and credential handlers; runtime images **by digest** in the
   repo-canonical Compose file. **Python lives in images and `deploy/`, never in
   the app** — every Python framework here (Presidio, NeMo, RAGFlow, Langflow,
-  garak, Ragas, ARES, Inspect, Modal apps) is a container or a deploy script.
+  garak, Ragas, ARES, Inspect) is a container or a deploy script.
 - **G6 — Egress is `safeFetch`, hosts are config.** Every new outbound host
   joins `tests/guards/ssrf-egress-coverage.test.ts`'s population; base URLs are
   operator config or code constants, never tenant-writable; reads are
@@ -336,113 +375,151 @@ collected so a new framework cannot miss one.
   case kinds; a new framework emits this shape or it is a dashboard, not a
   gate. Records are committed by PR, never pushed by a job. Seed and fixture
   corpora only — never customer data.
-- **G12 — Layer 5 is optional by construction.** It exists in a deployment
-  iff a provider id that needs it is registered; with an online API only,
-  nothing of it is deployed, configured or health-checked (next section).
+- **G12 — Complete means complete without Layer 5.** Every roadmap names its
+  "Complete at" phase, and no such phase may need a GPU, a self-hosted model
+  or any other Layer 5 work. Layer 5's new work is optional, starts only after
+  every other roadmap is complete, and exists in a deployment iff `AI_LOCAL_*`
+  names a gateway; without it nothing of it is deployed, configured or
+  health-checked (next section).
+- **G13 — Open-source frameworks; models through LLM API keys by default**
+  (owner, 2026-10-31). A framework the plan adopts is open source and run by
+  the operator. Model usage goes through API keys on `inflect-external`, to
+  providers on the register (G2). A vendor's API reached through a connection
+  (Mastercard, Cloudflare's bot directory) is an integration under G2 and G6,
+  not a framework. A proprietary runtime (NIM in production, a hosted GPU
+  platform) or open weights under a licence that is not open source
+  (Nemotron's) is an owner decision recorded in the child, never a default.
+  One exception predates the rule and stands: tldraw (D-L2-3), a
+  source-available licence with its watermark kept, already the process
+  canvas's renderer.
 
 ## Layer 5 is optional by construction
 
-The owner's two instructions become one design decision: a **third provider
-id**, `inflect-hosted`, for inference the operator controls (own Modal
-workspace, own pinned open weights, own endpoint and token) that runs outside
-the perimeter on Modal.
+The owner's decision of 2026-10-31 (D-L5-1) replaces the design this section
+held until then: a third provider id, `inflect-hosted`, for open weights on
+Modal. Four things follow from it.
 
-- **Why not point `inflect-local` at Modal.** `inflect-local` is the id a
-  `LOCAL_ONLY` tenant trusts. Pointing it at a US cloud would route the tenants
-  who asked for the opposite, under the label that promised it.
-  `inflect-hosted` is **EXTERNAL-class** for residency: `LOCAL_ONLY` never
-  resolves to it. The id says what the residency *is*; Modal is the vendor
-  behind it — the same argument `providers.ts` makes for not registering
-  vendors under their own names.
-- **Why Modal is a sub-processor.** Prompts are processed on Modal-managed
-  hosts. Operator-held weights and ephemeral containers change the retention
-  column, not the processing fact. The four-step notice (G2) runs during the
-  Modal roadmap's Phases 0–1.
+- **Model usage is API keys.** Every model call for an `EXTERNAL` tenant goes
+  through `inflect-external` to a provider on the register: Anthropic direct,
+  or OpenRouter where its row allows. The role axis
+  ([`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) Phase 1)
+  chooses a *model* per role, supervisor or worker, and both roles are served
+  through API keys. A new provider, or a new kind of data sent to one, is a
+  register change under G2 before any byte moves.
+- **There is no `inflect-hosted`.** It existed only to keep Modal apart from
+  the route a `LOCAL_ONLY` tenant trusts. A GPU in the operator's own Google
+  Cloud project, if Layer 5 is ever taken up, *is* the local route, and adds
+  no sub-processor (the Laya precedent).
+- **`LOCAL_ONLY` keeps what it has today: no model route.** Its model-backed
+  features are refused with a named reason, never sent elsewhere, until an
+  operator-run gateway is configured. Completeness does not change that.
+- **Nothing degrades to anything.** With one route, a provider outage is the
+  feature's own failure path, as it is today, and `/api/readyz` gates on no
+  model provider.
 
 **The routing, drawn.** Which provider a call reaches is decided by the
-tenant's residency first and the deployment's configuration second; Layer 5
-is one optional branch, and no path leads a `LOCAL_ONLY` tenant to it.
+tenant's residency first and the deployment's configuration second. The
+slate branch exists only if Layer 5 is taken up after completion.
 
 ```mermaid
 flowchart LR
   T{"Tenant<br/>aiResidency"}:::gate
-  T -->|EXTERNAL| R{"Role"}:::gate
+  T -->|EXTERNAL| R{"Role<br/>supervisor or worker"}:::gate
+  R -->|model chosen per role| EXT["inflect-external<br/>LLM API keys<br/>Anthropic or OpenRouter"]:::done
   T -->|LOCAL_ONLY| LL{"AI_LOCAL_*<br/>configured?"}:::gate
-  R -->|supervisor| EXT["inflect-external<br/>Anthropic or OpenRouter"]:::done
-  R -->|worker| H{"AI_HOSTED_*<br/>configured?"}:::gate
-  H -->|yes| HOS["inflect-hosted<br/>vLLM on Modal<br/>Nemotron 3 Super"]:::todo
-  H -->|no| HL{"AI_LOCAL_*<br/>configured?"}:::gate
-  HL -->|yes| LOC["inflect-local<br/>perimeter vLLM or Ollama"]:::done
-  HL -->|no| EXT
-  LL -->|yes| LOC
-  LL -->|no| REF["Refused<br/>with a named reason"]:::declined
-  HOS -.->|outage: degrade, labelled| EXT
+  LL -->|no: today and at completion| REF["Refused<br/>with a named reason"]:::declined
+  LL -->|yes: Layer 5 taken up| LOC["inflect-local<br/>operator GPU VM<br/>vLLM, open weights"]:::optional
 
   classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
-  classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+  classDef optional fill:#f1f5f9,stroke:#475569,color:#334155,stroke-dasharray:6 3
   classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
   classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
 ```
 
 - **The contract.**
 
-  | Deployment | `AI_HOSTED_*` | What exists | Worker role → |
+  | Deployment | What exists | `EXTERNAL` tenant | `LOCAL_ONLY` tenant |
   | --- | --- | --- | --- |
-  | Online API only | unset | nothing — no provider id, no Modal app, no probe | external (EXTERNAL tenants) / local or refused (LOCAL_ONLY) |
-  | Hosted enabled | set | `inflect-hosted` registered at boot; `deploy/modal/` deployed by the operator | hosted (EXTERNAL) / local or refused (LOCAL_ONLY) |
-  | Perimeter GPU | `AI_LOCAL_*` set | unchanged from today | local for everyone who may |
+  | API keys only: production today, and the completeness target | `inflect-external`, registered from its credential; nothing of Layer 5 (no provider id, no VM, no probe) | both roles on models reached through API keys | refused, named reason |
+  | Layer 5 taken up (optional, after completion) | also `inflect-local`, registered from `AI_LOCAL_*` and served by an operator GPU VM | unchanged, unless an owner decision routes a role to the local model | the local route |
 
-- **Degradation, not refusal.** `/api/readyz` never gates on the hosted route
-  (the audit-stream precedent). A hosted outage degrades the worker role to the
-  supervisor's provider with an outcome label. The only tenants a missing
-  Layer 5 can *refuse* are `LOCAL_ONLY` tenants with no local route — who are
-  refused today, by design.
-- **Every GPU arm shares the conventions**: `deploy/modal/<app>.py`, weights on
-  a Modal Volume, scale-to-zero, proxy-auth token, region per D-L5-2, a
-  manually-dispatched `modal-deploy` job with drift checking, metrics with a
-  `cold_start` label. Workers ([`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md)),
-  embeddings + rerank ([`nemotron-retriever.md`](./ai-architecture/nemotron-retriever.md)),
-  ARES judges, cuOpt, Morpheus scoring and — if a trigger ever fires — Triton.
-- **De-NIM.** No NIM container anywhere (blueprint §3): vLLM, TEI and the
-  open-source Triton image serve open weights.
+- **The deferred GPU arms.** Each roadmap that planned a GPU arm states what it
+  completes without one: the retriever on CPU TEI, Morpheus as a CPU
+  detector, cuOpt as a CPU seam or a recorded decline, the worker role on an
+  API-key model. The arms themselves (Nemotron as the worker, the retriever's
+  GPU phase, Morpheus's GPU scoring, cuOpt on a GPU, Triton) are
+  [`modal-inference.md`](./ai-architecture/modal-inference.md) Phase 3.
+- **De-NIM, restated.** No NIM container in production. If Layer 5 is taken
+  up, NIM may serve a proof of concept on a GPU VM under the NVIDIA Developer
+  Program (development and testing only); production is vLLM, TEI and the
+  open-source Triton image serving open weights (G13).
 
 ## Roadmap (future direction)
+
+### What complete means
+
+The AI architecture roadmap is **complete when every row of the status board
+below, outside the optional wave, shows a "Phase on `main`" at or past its
+"Complete at"** (owner, 2026-10-31). Each child roadmap states its own
+"Complete at" in its "Where it sits" table; the column below copies it, and
+the child wins if the two disagree. Four rules make the definition hold:
+
+- **No completeness phase needs Layer 5** (G12). Where a roadmap planned a GPU
+  arm, it is complete without it: the retriever on CPU TEI, Morpheus as a CPU
+  detector, cuOpt as a CPU seam or a recorded decline, the worker role on a
+  model reached through API keys.
+- **A recorded decision can be the completing phase.** SWE-bench, NemoClaw,
+  cuOpt and Langfuse may complete at Phase 0 by a recorded decline or
+  narrowing, and ARES at Phase 2 by a recorded failure to calibrate. A
+  decision is a result, not a gap.
+- **Two rows are outside the definition.** The Claude engines are tracked by
+  their own plan (#4135); this roadmap asks of them only an Inspect record for
+  the Tool Runner ([`inspect.md`](./ai-architecture/inspect.md) Phase 2).
+  Agent Pay's Phase 4 waits on API access Mastercard gates, and completeness
+  does not wait for it.
+- **At completion the plan stops.** Layer 5 starts only if the owner then
+  takes it up ([`modal-inference.md`](./ai-architecture/modal-inference.md)
+  Phase 0), and nothing in the plan waits for that.
 
 ### Status board
 
 The living part. One row per framework; the child roadmap owns the phases.
-"Phase" is the highest phase whose "done when" has been met on `main`.
+"Phase on `main`" is the highest phase whose "done when" has been met on
+`main`. "Optional" in the Wave column is Layer 5 work, which starts only after
+completion.
 
-| Framework | Layer | Child roadmap | Wave | Status | Phase on `main` | Decisions open |
-| --- | --- | --- | --- | --- | --- | --- |
-| Presidio | 1 | [`presidio.md`](./ai-architecture/presidio.md) | 3 | missing | — | D-L1-1 |
-| NeMo Guardrails | 1 | [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md) | 3 | missing (F5 residual closes in its Phase 0) | — | D-L1-2 |
-| Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 | missing; CPU detector first | — | D-L1-3 |
-| NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | substrate present (OpenShell); stack to be declined | — | D-L1-4 |
-| Web Bot Auth (added 2026-10-30, not in v6) | 1 | [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) | 1 (sign the crawler) / 3 (verify at the door) | missing; vendor monitor unsigned, its refusals invisible | — | D-L1-5, D-L1-6, D-L1-7 |
-| Mastercard Agent Pay (added 2026-10-30, not in v6) | 1 | [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) | 2 (register) / 3 (discover, evidence) / 4 (Mastercard API, if access) | missing; no agent's spending authority is recorded | — | D-L1-8, D-L1-9, D-L1-10 |
-| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | missing; in-product canvas on tldraw decided, Langflow not adopted | 0 (decided) | D-L2-2 |
-| Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3) | 3 | F3 decision to record |
-| Nemotron workers + role axis | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (hosted) | missing | — | D-L3-1, D-L3-2 |
-| Claude engines | 3 | `docs/claude-*-design.md` (#4135) | — | Tool Runner built, off; Agent SDK designed | 2b | Step 2c (gated on Inspect record) |
-| cuOpt | 3 | [`cuopt.md`](./ai-architecture/cuopt.md) | 4 | missing; CPU seam first if any | — | D-L3-3 |
-| Weaviate | 4 | [`weaviate.md`](./ai-architecture/weaviate.md) | 1 | missing | — | D-L4-1, D-L4-2 |
-| Nemotron Retriever | 4 | [`nemotron-retriever.md`](./ai-architecture/nemotron-retriever.md) | 1 (CPU) / 2 (GPU) | missing | — | D-L4-3 |
-| RAGFlow | 4 | [`ragflow.md`](./ai-architecture/ragflow.md) | 1 | missing | — | D-L4-4 |
-| Langfuse | 4 | [`langfuse.md`](./ai-architecture/langfuse.md) | 2 | missing | — | D-L4-5, D-L4-6 |
-| Modal (vLLM, Nemotron 3 Super) | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | 2 | missing; optional | — | D-L5-1, D-L5-2 |
-| Triton | 5 | [`triton.md`](./ai-architecture/triton.md) | 4 | dormant until trigger | — | D-L5-3 |
-| NIM | 5 | — | — | **declined** (de-NIM) | — | — |
-| Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | missing | — | D-EV-1 |
-| Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | missing | — | D-EV-2 |
-| ARES | evals | [`ares.md`](./ai-architecture/ares.md) | 2 | missing | — | D-EV-3 |
-| Inspect | evals | [`inspect.md`](./ai-architecture/inspect.md) | 2 | missing | — | D-EV-4 |
-| SWE-bench | evals | [`swe-bench.md`](./ai-architecture/swe-bench.md) | — | no capability to measure | — | D-EV-5 |
+| Framework | Layer | Child roadmap | Wave | Status | Phase on `main` | Complete at | Decisions open |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Presidio | 1 | [`presidio.md`](./ai-architecture/presidio.md) | 3 | missing | — | 3 | D-L1-1 |
+| NeMo Guardrails | 1 | [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md) | 3 | missing (F5 residual closes in its Phase 0) | — | 3, LLM-backed rails by API key | D-L1-2 |
+| Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 / optional (GPU, Phase 2) | missing; CPU detector first | — | 1, the CPU detector | D-L1-3 |
+| NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | substrate present (OpenShell); stack to be declined | — | 1, or 0's recorded decision | D-L1-4 |
+| Web Bot Auth (added 2026-10-30, not in v6) | 1 | [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) | 1 (sign the crawler) / 3 (verify at the door) | missing; vendor monitor unsigned, its refusals invisible | — | 3 | D-L1-5, D-L1-6, D-L1-7 |
+| Mastercard Agent Pay (added 2026-10-30, not in v6) | 1 | [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) | 2 (register) / 3 (discover, evidence) / 4 (Mastercard API, if access) | missing; no agent's spending authority is recorded | — | 3 (4 waits on access) | D-L1-8, D-L1-9, D-L1-10 |
+| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | missing; in-product canvas on tldraw decided, Langflow not adopted | 0 (decided) | 5 | D-L2-2 |
+| Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3) | 3 | 3 (met) | F3 decision to record |
+| Role axis; Nemotron as the worker | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (models chosen by records) / optional (Nemotron, Phases 0 and 2) | missing | — | 1 and 3, worker by API key | D-L3-1 |
+| Claude engines | 3 | `docs/claude-*-design.md` (#4135) | — | Tool Runner on (Step 2c, #4512); Agent SDK and Managed Agents designed | 2d | its own plan | — (its own plan) |
+| cuOpt | 3 | [`cuopt.md`](./ai-architecture/cuopt.md) | 4 / optional (GPU, Phase 2) | missing; CPU seam first if any | — | 1, or 0's recorded decline | D-L3-3 |
+| Weaviate | 4 | [`weaviate.md`](./ai-architecture/weaviate.md) | 1 | missing | — | 3 | D-L4-1, D-L4-2 |
+| Nemotron Retriever | 4 | [`nemotron-retriever.md`](./ai-architecture/nemotron-retriever.md) | 1 (CPU) / optional (GPU, Phase 3) | missing | — | 2, CPU TEI | D-L4-3 |
+| RAGFlow | 4 | [`ragflow.md`](./ai-architecture/ragflow.md) | 1 | missing | — | 3 | D-L4-4 |
+| Langfuse | 4 | [`langfuse.md`](./ai-architecture/langfuse.md) | 2 | missing | — | 3, or 0's OTel-only decision | D-L4-5, D-L4-6 |
+| Self-hosted model route (was "Modal") | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional | **optional, after completion**; Modal not adopted (D-L5-1) | — | not part of completeness | D-L5-2 (deferred) |
+| Triton | 5 | [`triton.md`](./ai-architecture/triton.md) | optional | optional, after completion | — | not part of completeness | D-L5-3 (deferred) |
+| NIM | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional (proof of concept) | **declined** in production (G13); a proof of concept only, if Layer 5 is taken up | — | not part of completeness | — |
+| Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | missing | — | 3 | D-EV-1 |
+| Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | missing | — | 3 | D-EV-2 |
+| ARES | evals | [`ares.md`](./ai-architecture/ares.md) | 2 | missing | — | 3, or 2's recorded failure to calibrate | D-EV-3 |
+| Inspect | evals | [`inspect.md`](./ai-architecture/inspect.md) | 2 | missing | — | 3 | D-EV-4 |
+| SWE-bench | evals | [`swe-bench.md`](./ai-architecture/swe-bench.md) | — | no capability to measure | — | 0's recorded decision | D-EV-5 |
 
 ### Sequencing
 
-Ordered by value delivered per unit of risk, with the zero-GPU pilot first —
-which the blueprint's own §4 also asks for. The timeline is ordering, not
+Ordered by value delivered per unit of risk. Waves 0 to 4 are the completeness
+target, and none of them needs a GPU: each range ends at that roadmap's
+"Complete at" phase. The last section is optional Layer 5 work, which starts
+only after every wave before it has landed (G12). The timeline is ordering, not
 dates: a wave starts when the waves before it have landed what it depends on.
 "Weaviate 0-3" means that roadmap's Phases 0 to 3.
 
@@ -450,110 +527,111 @@ dates: a wave starts when the waves before it have landed what it depends on.
 timeline
   title Delivery waves (ordering, not dates)
   section Decide
-    Wave 0 : Owner initials the D-* table
+    Wave 0 : Owner initials the D-* table, D-L5-1 taken 2026-10-31
            : Close F5, scan run input with the existing scanner
            : Record F3 as a decision, fix F12
-  section Zero GPU
-    Wave 1 · knowledge : Retriever 0-2, TEI on CPU
-                       : Weaviate 0-3, then search_knowledge
-                       : RAGFlow 0-2, parsing seam
-                       : Ragas 0-2, the record opens the gate
-                       : Role axis, nemotron-reasoning 1
-                       : Garak 0-1, nightly and non-blocking
-                       : Web Bot Auth 0-2, sign the vendor monitor
-  section Optional GPU
-    Wave 2 · Layer 5 and observability : Modal 0-2, notice window runs first
-                                       : Nemotron as the worker
-                                       : Retriever 3, the GPU arm
-                                       : Inspect 0-2, governed-run records
-                                       : Langfuse 0-2 and ARES 0-2
-                                       : Agent-flow canvas 1-4, view every agent, author, preview
-                                       : Agent Pay 0-1, spending authority on the register
+  section Knowledge
+    Wave 1 : Retriever 0-2, TEI on CPU
+           : Weaviate 0-3, then search_knowledge
+           : RAGFlow 0-3, parsing seam and fidelity eval
+           : Ragas 0-3, the record opens the gate
+           : Role axis, nemotron-reasoning 1, worker by API key
+           : Garak 0-1, nightly and non-blocking
+           : Web Bot Auth 0-2, sign the vendor monitor
+  section Records and authoring
+    Wave 2 : Inspect 0-3, governed-run records and model comparison
+           : Models chosen by records, nemotron-reasoning 3
+           : Langfuse 0-2 and ARES 0-3
+           : Agent-flow canvas 1-4, view every agent, author, preview
+           : Agent Pay 0-1, spending authority on the register
   section Guards
-    Wave 3 · Layer 1 : Presidio 0-2, PII redaction
-                     : NeMo Guardrails 1-2
-                     : Langfuse 3, capture-on and masked
-                     : Garak 2-3, blocking
-                     : Morpheus 0-1, CPU detector
-                     : NemoClaw 0, decision
-                     : Agent-flow canvas 5, run and replay
-                     : Web Bot Auth 3, verify at the trust center
-                     : Agent Pay 2-3, discover and evidence
+    Wave 3 : Presidio 0-3, PII redaction
+           : NeMo Guardrails 0-3, LLM rails by API key
+           : Langfuse 3, capture-on and masked
+           : Garak 2-3, blocking
+           : Morpheus 0-1, CPU detector
+           : NemoClaw 0-1, decision and tightenings
+           : Agent-flow canvas 5, run and replay
+           : Web Bot Auth 3, verify at the trust center
+           : Agent Pay 2-3, discover and evidence
   section Conditional
-    Wave 4 : cuOpt, Triton and SWE-bench decisions
-           : Morpheus 2, cuOpt 2, Triton 1 only if triggered
-           : Agent Pay 4, read and suspend at Mastercard, if access
+    Wave 4 : cuOpt 0-1, CPU seam or a recorded decline
+           : SWE-bench 0, the recorded decision
+           : Agent Pay 4, only with Mastercard API access, not a completeness condition
+  section Optional · after completion
+    Layer 5 : Owner takes Layer 5 up, or not, D-L5-2
+            : NIM proof of concept on a GCP GPU VM
+            : Production local route, vLLM, open weights
+            : GPU arms, Nemotron worker, Retriever 3, Morpheus 2, cuOpt 2, Triton
 ```
 
 The hard dependencies between roadmaps, as a graph. A box may start only when
-everything pointing at it has landed; the dashed box belongs to another plan.
+everything pointing at it has landed; a roadmap's own earlier phases are
+implied and not drawn, except where another roadmap's box sits between them.
+The slate pair at the bottom is the optional tail: Layer 5 waits for every
+other box, which a single edge from "complete" stands for.
 
 ```mermaid
 flowchart LR
   F5["W0 · close F5<br/>input scan"]:::todo
   RT1["W1 · Retriever 0-2<br/>TEI on CPU"]:::todo
   WV2["W1 · Weaviate 0-2<br/>store + index"]:::todo
-  RF2["W1 · RAGFlow 0-2"]:::todo
+  RF2["W1 · RAGFlow 0-3"]:::todo
   RA2["W1 · Ragas 0-2"]:::todo
   WV3["W1 · Weaviate 3<br/>search_knowledge"]:::todo
-  AR2["W2 · ARES 0-2"]:::todo
+  AR2["W2 · ARES 0-3"]:::todo
   GA1["W1 · Garak 0-1"]:::todo
-  MD1["W2 · Modal 0-1"]:::todo
-  MD2["W2 · Modal 2<br/>activation"]:::todo
-  RX1["W1 · role axis"]:::todo
-  NW2["W2 · Nemotron worker"]:::todo
-  RT3["W2 · Retriever 3<br/>GPU arm"]:::todo
-  IS2["W2 · Inspect 0-2"]:::todo
-  TR2C["Tool Runner 2c<br/>Claude engines plan"]:::ext
+  RX1["W1 · role axis<br/>worker by API key"]:::todo
+  IS2["W2 · Inspect 0-3"]:::todo
+  NR3["W2 · models chosen<br/>by records"]:::todo
   AF1["W2 · Agent-flow canvas 1-4<br/>view, author, preview"]:::todo
   AF4["W3 · Agent-flow canvas 5<br/>run and replay"]:::todo
-  LU2["W2 · Langfuse 0-2"]:::todo
-  PR2["W3 · Presidio 0-2"]:::todo
-  NG2["W3 · NeMo 1-2"]:::todo
-  LU3["W3 · Langfuse 3"]:::todo
+  PR2["W3 · Presidio 0-3"]:::todo
+  NG2["W3 · NeMo 0-3"]:::todo
+  LU3["W3 · Langfuse 3<br/>after its own 0-2 in W2"]:::todo
   GA2["W3 · Garak 2-3"]:::todo
   WB2["W1 · Web Bot Auth 0-2<br/>sign the crawler"]:::todo
   WB3["W3 · Web Bot Auth 3<br/>verify at the door"]:::todo
   AP1["W2 · Agent Pay 0-1<br/>on the register"]:::todo
   AP3["W3 · Agent Pay 2-3<br/>discover, evidence"]:::todo
-  AP4["W4 · Agent Pay 4<br/>if Mastercard API access"]:::todo
+  AP4["W4 · Agent Pay 4<br/>if Mastercard API access<br/>not a completeness condition"]:::todo
+  DONE(["Complete<br/>every roadmap at its Complete at"]):::gate
+  L5["Optional · Layer 5<br/>taken up, or not"]:::optional
 
   RT1 --> WV2
   WV2 --> RF2
   WV2 --> RA2
   RA2 --> WV3
   RA2 --> AR2
-  MD1 --> MD2
-  MD2 --> NW2
-  MD2 --> RT3
-  RX1 --> NW2
+  RX1 --> NR3
+  IS2 --> NR3
   GA1 --> IS2
-  IS2 --> TR2C
-  TR2C --> AF4
   AF1 --> AF4
   F5 --> NG2
+  GA1 --> NG2
   PR2 --> NG2
   PR2 --> LU3
-  LU2 --> LU3
   GA1 --> GA2
   NG2 --> GA2
   WB2 --> WB3
   WB3 --> AP3
   AP1 --> AP3
-  AP1 --> AP4
+  DONE -.-> L5
 
   classDef todo fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
-  classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
+  classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
+  classDef optional fill:#f1f5f9,stroke:#475569,color:#334155,stroke-dasharray:6 3
 ```
 
 The same dependencies as prose, for a reader without a Mermaid renderer:
 Weaviate Phase 2 needs an embedding provider; Ragas needs an index; the
-`search_knowledge` tool needs a Ragas record; every GPU arm needs Modal
-Phase 1; Langfuse capture-on and NeMo PII rails need Presidio; Tool Runner
-Step 2c needs an Inspect record; Web Bot Auth's inbound verifier needs its own
-outbound phases; Agent Pay's discovery reuses that verifier, and its Mastercard
-phase waits on API access Mastercard gates. Each child's "Where it sits" table
-states its own.
+`search_knowledge` tool needs a Ragas record; choosing the worker's model needs
+the role axis and Inspect's comparison records; Langfuse capture-on and NeMo
+PII rails need Presidio; Web Bot Auth's inbound verifier needs its own
+outbound phases; NeMo's rails are measured by Garak Phase 1 before and after;
+Agent Pay's discovery reuses that verifier, and its Mastercard
+phase waits on API access Mastercard gates. Layer 5 waits for all of it. Each
+child's "Where it sits" table states its own.
 
 ### Evals by layer
 
@@ -572,7 +650,7 @@ flowchart LR
   RA["Ragas"]:::eval --> X4["Layer 4<br/>retrieval"]
   AR["ARES<br/>calibrated judges"]:::eval --> X4
   PE["Parse-eval<br/>fixtures"]:::eval --> X4
-  OP["Provider-set test<br/>LOCAL_ONLY task"]:::eval --> X5["Layer 5<br/>optional"]
+  OP["Provider-set test<br/>LOCAL_ONLY task"]:::eval --> X5["Layer 5<br/>optional, after completion"]
 
   X1 --> G1(["Thresholds<br/>blocking after garak 2"]):::gate
   X1 --> G2(["PII record<br/>mounts the detector"]):::gate
@@ -580,7 +658,7 @@ flowchart LR
   X2 --> G3(["Inspect record<br/>gates engine promotion"]):::gate
   X3 --> G4(["Comparison record<br/>decides model defaults"]):::gate
   X4 --> G5(["RAG record<br/>opens search_knowledge"]):::gate
-  X5 --> G6(["Byte-identical<br/>without AI_HOSTED"]):::gate
+  X5 --> G6(["Nothing of Layer 5<br/>without AI_LOCAL_*"]):::gate
   class X1,X2,X3,X4,X5 layer
 
   classDef layer fill:#f8fafc,stroke:#334155,color:#0f172a
@@ -592,10 +670,10 @@ flowchart LR
 | Layer | What is evaluated | Framework | Record / gate |
 | --- | --- | --- | --- |
 | 1 | injection, jailbreak, leakage through the composed guard; PII precision/recall; rail precision; request-signature conformance and the verifier's negative cases | Garak; Presidio fixtures; NeMo rail sets; Web Bot Auth vectors and the directory validator | garak thresholds (blocking after Phase 2); `evals/pii/records/` as a mount condition; `evals/web-bot-auth/records/` gates signed crawling |
-| 2 | governed-run invariants (propose-not-commit, halt on flagged result, kill mid-run, caps) | Inspect (ten tasks) | `evals/inspect/records/`; engine promotion (Step 2c) gated on a record |
-| 3 | worker/supervisor model quality; protocol fidelity; residency per role | skills evaluation sets per model revision; Inspect comparisons | skills records; comparison records decide defaults |
+| 2 | governed-run invariants (propose-not-commit, halt on flagged result, kill mid-run, caps) | Inspect (ten tasks) | `evals/inspect/records/`; every engine that is on needs a record (Flue and the Tool Runner get theirs in Inspect Phase 2) |
+| 3 | worker/supervisor model quality among models reached through API keys; residency per role | skills evaluation sets per model revision; Inspect comparisons | skills records; comparison records decide defaults |
 | 4 | retrieval precision/recall, faithfulness; parse fidelity; isolation | Ragas → ARES; parse-eval; two-tenant tests | `evals/rag/records/` opens `search_knowledge`; floors ratchet |
-| 5 | optionality (byte-identical without), residency at the socket, serving smoke, cost | provider-set test; Inspect LOCAL_ONLY task; nightly smoke; spend alerts | CI; Modal alerts |
+| 5 (optional) | optionality (nothing of Layer 5 without `AI_LOCAL_*`), residency at the socket; if taken up, serving smoke and cost | provider-set test; Inspect LOCAL_ONLY task; if taken up, the Layer 5 Phase 1 checklist | CI; if taken up, budget alerts on the GPU VM |
 | cross | the product's own agents on its own ladder (H3–H5); customers' payment-capable agents found in code | Inspect records cited on the agent's Coverage tab; synthetic repositories for the scanner | committed records are evidence; live runs are not; the scanner fixture record gates Agent Pay discovery |
 
 All of it on seed and fixture data; records by PR; nightly jobs
@@ -623,19 +701,19 @@ the child records the reasoning.
 | D-L2-2 | Reasoning engines enforce flow checkpoints, or the canvas offers no checkpoint node | langflow | build enforcement; no checkpoint node until it lands |
 | D-L2-3 | The agent-flow canvas is drawn by tldraw (3.x, watermark kept), never xyflow, and lives inside the process-canvas module | langflow | **decided 2026-10-29** (owner) |
 | D-L3-1 | Supervisor/worker role axis in model selection | nemotron-reasoning | adopt |
-| D-L3-2 | Nemotron as the default worker when a hosted/local route exists | nemotron-reasoning | adopt after skill records |
+| D-L3-2 | Nemotron as the default worker | nemotron-reasoning | **deferred 2026-10-31** with Layer 5 (owner); the worker is a model reached through API keys |
 | D-L3-3 | An optimisation problem at GPU scale exists | cuopt | no; CPU seam if a feature wants it |
 | D-L4-1 | pgvector-first or Weaviate-first | weaviate | Weaviate (the target), with the note's trade-offs |
 | D-L4-2 | Vectors-only rule (no chunk text outside Postgres) | weaviate | adopt |
-| D-L4-3 | De-NIM retriever: open weights on TEI/vLLM | nemotron-retriever | adopt |
+| D-L4-3 | De-NIM retriever: open weights on CPU TEI in the deployment; the GPU arm is optional Layer 5 | nemotron-retriever | adopt |
 | D-L4-4 | Parser backend: RAGFlow slim or a parsing-only service | ragflow | measured in Phase 0 |
 | D-L4-5 | Langfuse hosting: self-host / Cloud EU / OTel-only | langfuse | self-host if the VM bears it |
 | D-L4-6 | Trace content capture off by default; three conditions to turn on | langfuse | adopt |
-| D-L5-1 | Modal as a sub-processor (four-step notice) | modal-inference | start the notice |
-| D-L5-2 | Model, weights, licence, region, GPU class, cold-start budget | modal-inference | Nemotron 3 Super; Nano fallback; EU region if available |
-| D-L5-3 | Triton consolidation trigger | triton | dormant |
+| D-L5-1 | Model usage through LLM API keys; no self-hosting now; Modal not adopted; Layer 5 optional, after every other roadmap is complete | modal-inference | **decided 2026-10-31** (owner) |
+| D-L5-2 | If Layer 5 is taken up: model, weights and licence, GPU class, zone and quota, cost | modal-inference | **deferred** until Layer 5 is taken up |
+| D-L5-3 | Triton consolidation trigger | triton | **deferred** with Layer 5 |
 | D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | external CI key, budgeted |
-| D-EV-2 | Ragas judge residency and cost | ragas | external CI key; local for LOCAL_ONLY-only deployments |
+| D-EV-2 | Ragas judge residency and cost | ragas | external CI key, budgeted |
 | D-EV-3 | Who labels ARES triples, from the seed corpus | ares | operator, seed only |
 | D-EV-4 | The product scores its own agents on its own ladder | inspect | adopt |
 | D-EV-5 | SWE-bench: declined or placeholder | swe-bench | declined |
@@ -652,6 +730,11 @@ the child records the reasoning.
   Phase 0 note holds the reasoning.
 - A framework is declined → its row reads "declined (D-…)" with the note's
   link; the child document stays as the record of why.
+- A child's "Complete at" changes → the status board's column changes in the
+  same pull request, with the reason in the child. When every row outside the
+  optional wave shows its "Complete at" on `main`, the pull request that lands
+  the last one says so here, and Layer 5 becomes eligible for its Phase 0
+  decision.
 - Nothing here is a CI gate (`docs:lint` is advisory by design); the ratchet
   that applies is `docs-accuracy` — this file and every child are classified
   `living`, which means the banner and the two H2s above are required and

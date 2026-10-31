@@ -7,7 +7,7 @@ inflect · ai architecture · ares · roadmap v1 · 2026-10-29
 > column as "diagnostic testing". The **Current state** section is true today
 > (main 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan. This is a
 > child of [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md):
-> read that first for the target map, the global rules **G1–G12**, and the
+> read that first for the target map, the global rules **G1–G13**, and the
 > sequencing. If the code contradicts a fact here, the code wins and the pull
 > request that finds it corrects this document.
 
@@ -17,9 +17,10 @@ inflect · ai architecture · ares · roadmap v1 · 2026-10-29
 | --- | --- |
 | Column · box | Validation · "ARES (diagnostic testing)" — evaluates Layer 4, calibrates Ragas |
 | Wave | 2 (after Ragas has produced records to calibrate against) |
-| Depends on | [`ragas.md`](./ragas.md) Phase 1; a GPU for judge training → [`modal-inference.md`](./modal-inference.md) Phase 1 (or a long CPU job) |
+| Depends on | [`ragas.md`](./ragas.md) Phase 1. Judges train on CPU in CI; no Layer 5 |
 | Unblocks | cheaper nightly RAG evals; confidence intervals on the floors |
 | Owner decisions | **D-EV-3** (who labels the 150+ triples, and from which corpus) |
+| Complete at | Phase 3, or a recorded decision at Phase 2 that the judges did not calibrate, in which case Ragas stays the judge of record |
 
 ## At a glance
 
@@ -28,15 +29,13 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 ```mermaid
 flowchart LR
   P0{{"Phase 0 · labels<br/>150 or more seed triples<br/>agreement on an overlap<br/>D-EV-3"}}:::gate
-  P1["Phase 1 · train judges<br/>on Modal or CPU<br/>weights outside git<br/>revision inside"]:::todo
+  P1["Phase 1 · train judges<br/>on CPU in CI<br/>weights outside git<br/>revision inside"]:::todo
   P2["Phase 2 · beside Ragas<br/>confidence intervals<br/>disagreement surfaced"]:::todo
   P3["Phase 3 · judge of record<br/>after three months in tolerance"]:::todo
   RA["ragas P1<br/>records to calibrate against"]:::ext
-  MOD["modal-inference P1<br/>optional GPU"]:::ext
   HO["Held-out agreement<br/>with human labels"]:::eval
   P0 --> P1 --> P2 --> P3
   RA -.-> P0
-  MOD -.-> P1
   P1 --- HO
 
   classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
@@ -56,8 +55,9 @@ flowchart LR
   verdicts (`/agents/review-quality`), Art 14 `humanOutcome` stamps. For the
   seed tenant these can seed a labelled set; for customers they cannot be
   used without a consent basis nobody has written.
-- **No GPU** in the deployment; training a judge is either a Modal function
-  (optional Layer 5) or a long CPU job.
+- **No GPU** in the deployment, and none is planned before every other
+  roadmap is complete (Layer 5 is optional and last); training a judge is a
+  long CPU job in CI.
 
 ## Fit, and what is deliberately not adopted
 
@@ -126,9 +126,9 @@ G2 is not in play (no vendor sees the labels).
 
 **Sub-phases.**
 - [ ] 1.1 `evals/ares/` Python project (pinned ARES), containerised; training
-      runs as a Modal job (`deploy/modal/ares-train.py`) if Layer 5 is
-      configured, else a long CI job on CPU with a small base model.
-- [ ] 1.2 Judge artefacts stored in a Modal Volume or CI artifact — **never**
+      runs as a long CI job on CPU with a small base model. A GPU path is
+      optional Layer 5 work and nothing here waits for it.
+- [ ] 1.2 Judge artefacts stored as CI artifacts — **never**
       in the repo; the repo holds the judge *revision* (base model, labels
       hash, hyperparameters, metrics on a held-out slice) in
       `evals/ares/revisions/<id>.json`.
@@ -138,25 +138,24 @@ G2 is not in play (no vendor sees the labels).
 **Prompt.**
 ```text
 Context (main 3.338.0 + Phase 0): the labelled set exists; Python eval projects live
-under evals/ as CI images (never in the app image); deploy/modal/ holds Modal apps when
-the optional Layer 5 is configured (modal-inference.md).
+under evals/ as CI images (never in the app image); there is no GPU, and Layer 5 is
+optional and last (modal-inference.md).
 
 Task: train ARES judges. (1) evals/ares/ with pinned ARES; a train script taking the
-labels + Ragas set, producing three judges and a held-out report. (2) deploy/modal/
-ares-train.py to run it on a Modal GPU when AI_HOSTED_* is configured; a CPU fallback
-path for CI with a small base model. (3) Judge weights go to a Modal Volume / CI
-artifact; the repo gets evals/ares/revisions/<id>.json {baseModel, labelsHash,
+labels + Ragas set, producing three judges and a held-out report. (2) A CI job that runs
+it on CPU with a small base model, within the job's time limit. (3) Judge weights go to
+a CI artifact; the repo gets evals/ares/revisions/<id>.json {baseModel, labelsHash,
 hyperparameters, heldOut{accuracy, kappa per judge}}. (4) Acceptance: a revision whose
 held-out kappa is below the Phase 0 inter-labeller kappa is refused by the script.
 
-Constraints: no weights in git; seed data only; the Modal path sends only seed text.
+Constraints: no weights in git; seed data only.
 
 Done when: a revision file exists whose held-out figures meet acceptance, reproducible
 from the labels hash.
 ```
 
-**Hardening.** G5 (weights are artefacts, revisions are code), G12 (the GPU
-arm is optional — the CPU path must work), G11 (acceptance recomputed from the
+**Hardening.** G5 (weights are artefacts, revisions are code), G12 (no GPU:
+the CPU path is the path), G11 (acceptance recomputed from the
 held-out slice, not declared).
 
 ### Phase 2 — Run beside Ragas, surface disagreement

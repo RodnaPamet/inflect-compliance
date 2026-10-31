@@ -97,6 +97,23 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
         'deliberately carries no credentials, and the only thing read back is ' +
         'the gateway\'s own version. If this ever points outside the VPC it ' +
         'becomes an inventory entry, not an allowlist one.',
+    // #4562 — WHICH gateway VM a scan may start, and where. These name a
+    // project, a zone and an instance INSIDE Google Cloud, which is already in
+    // the inventory as the platform this deployment runs on. They do not
+    // introduce a new external service and they carry no personal data: a
+    // project id, a zone and an instance name are identifiers of our own
+    // infrastructure, visible to anybody with console access.
+    //
+    // The sub-processor question a sandbox DOES raise — that a third-party
+    // runtime processes collector output on a machine we operate — is a
+    // property of running the gateway, recorded in the inventory's note, not of
+    // these three variables.
+    SANDBOX_RUNTIME_GATEWAY_PROJECT:
+        'Names our own Google Cloud project, already an inventoried platform. No new external service.',
+    SANDBOX_RUNTIME_GATEWAY_ZONE:
+        'Names a zone inside our own Google Cloud project. No new external service.',
+    SANDBOX_RUNTIME_GATEWAY_INSTANCE:
+        'Names one Compute Engine instance we operate. No new external service.',
     SANDBOX_EXECUTION_ENABLED:
         'Deployment feature flag for whether agent tool calls run inside the ' +
         'sandbox runtime (#3995/#3996). Chooses a LOCAL execution path; no ' +

@@ -8,7 +8,7 @@ inflect · ai architecture · langfuse · roadmap v1 · 2026-10-29
 > planned). The **Current state** section is true today (main 3.338.0,
 > `a1c2f05c`). The **Roadmap** section is the plan. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
-> first for the target map, the global rules **G1–G12**, and the sequencing.
+> first for the target map, the global rules **G1–G13**, and the sequencing.
 > If the code contradicts a fact here, the code wins and the pull request that
 > finds it corrects this document.
 
@@ -21,6 +21,7 @@ inflect · ai architecture · langfuse · roadmap v1 · 2026-10-29
 | Depends on | nothing to deploy; [`presidio.md`](./presidio.md) Phase 1 before any content capture |
 | Unblocks | the eval UI for [`ragas.md`](./ragas.md), [`inspect.md`](./inspect.md); per-tenant cost views |
 | Owner decisions | **D-L4-5** (self-host vs Langfuse Cloud EU vs OTel-only), **D-L4-6** (content capture off by default) |
+| Complete at | Phase 3, or Phase 0's recorded OTel-only decision (D-L4-5) |
 
 ## At a glance
 

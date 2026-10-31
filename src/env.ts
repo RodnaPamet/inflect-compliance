@@ -8,6 +8,24 @@ import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 import { DEV_FALLBACK_DATA_ENCRYPTION_KEY } from '@/lib/security/encryption-constants';
 
+/**
+ * Treat an EMPTY value as absent — #4564, and it is load-bearing rather than
+ * tidy.
+ *
+ * Compose and shell defaults produce empty strings, not absent variables:
+ * `"${VAR:-}"` is how every optional value in this stack is defaulted, and
+ * there is no way to omit a variable conditionally. So a schema that rejects
+ * `''` makes an operator who left the line in but blank fail env validation,
+ * and the container does not boot — a working state turned into an outage by a
+ * variable nobody set.
+ *
+ * `SANDBOX_RUNTIME_HEALTH_URL` below spells this out inline because it was the
+ * variable that found the problem. This helper is the same coercion for the
+ * ones that followed.
+ */
+const emptyToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+    z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), schema);
+
 export const env = createEnv({
     /**
      * Specify your server-side environment variables schema here. This way you can ensure the app
@@ -332,6 +350,28 @@ export const env = createEnv({
          * differently from "did not answer": a deploy that never named a
          * gateway must not be shown as having an unreachable one.
          */
+        /**
+         * WHICH INSTANCE TO START, and where — 4.3 (#4562).
+         *
+         * Owner decision 2026-10-30: there is no start schedule, by design. The
+         * $5/month cap is a runtime budget of ~45 hours, so a day with no scan
+         * must cost nothing, and starting the machine is the CALLER's act. These
+         * three name the instance that caller starts.
+         *
+         * All optional and empty-coerced for the same reason as the health URL
+         * below: compose cannot omit a variable conditionally, so `"${VAR:-}"`
+         * delivers an empty string, and a required-looking value that is `''`
+         * would fail env validation and stop the container booting. Absent means
+         * "this deploy does not start a gateway", which is every deploy today.
+         *
+         * Nothing here is a secret: a project, a zone and an instance name are
+         * all visible to anybody with the console. The AUTHORITY to start it is
+         * the service account's, which is why #4562 narrowed that to exactly
+         * `instances.get`, `instances.start` and `zoneOperations.get`.
+         */
+        SANDBOX_RUNTIME_GATEWAY_PROJECT: emptyToUndefined(z.string().optional()),
+        SANDBOX_RUNTIME_GATEWAY_ZONE: emptyToUndefined(z.string().optional()),
+        SANDBOX_RUNTIME_GATEWAY_INSTANCE: emptyToUndefined(z.string().optional()),
         SANDBOX_RUNTIME_HEALTH_URL: z.preprocess(
             /*
                 AN EMPTY VALUE MEANS ABSENT — #4564, and this coercion is load
@@ -746,6 +786,9 @@ export const env = createEnv({
         SANDBOX_RUNTIME_CONFIG_DIGEST: process.env.SANDBOX_RUNTIME_CONFIG_DIGEST,
         SANDBOX_RUNTIME_APPLIED_AT: process.env.SANDBOX_RUNTIME_APPLIED_AT,
         SANDBOX_RUNTIME_CHANNELS: process.env.SANDBOX_RUNTIME_CHANNELS,
+        SANDBOX_RUNTIME_GATEWAY_PROJECT: process.env.SANDBOX_RUNTIME_GATEWAY_PROJECT,
+        SANDBOX_RUNTIME_GATEWAY_ZONE: process.env.SANDBOX_RUNTIME_GATEWAY_ZONE,
+        SANDBOX_RUNTIME_GATEWAY_INSTANCE: process.env.SANDBOX_RUNTIME_GATEWAY_INSTANCE,
         SANDBOX_RUNTIME_HEALTH_URL: process.env.SANDBOX_RUNTIME_HEALTH_URL,
         SANDBOX_EXECUTION_ENABLED: process.env.SANDBOX_EXECUTION_ENABLED,
         AI_POSTURE_PROVIDER: process.env.AI_POSTURE_PROVIDER,

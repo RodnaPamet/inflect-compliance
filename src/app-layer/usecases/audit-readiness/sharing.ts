@@ -10,6 +10,7 @@ import { createFinding } from '../finding';
 import { createTask } from '../task';
 import { runInTenantContext, runInGlobalContext, withTenantDb } from '@/lib/db-context';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import type { AuditPackRefusal } from '@/lib/audit-pack-refusals';
 import { hashForLookup } from '@/lib/security/encryption';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { appendAuditEntry } from '@/lib/audit';
@@ -39,7 +40,7 @@ export async function generateShareLink(ctx: RequestContext, packId: string, exp
     await runInTenantContext(ctx, async (tdb) => {
         const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null } });
         if (!pack) throw notFound('Audit pack not found');
-        if (pack.status === 'DRAFT') throw badRequest('Cannot share a draft pack. Freeze it first.');
+        if (pack.status === 'DRAFT') throw badRequest('Cannot share a draft pack. Freeze it first.', { reason: 'PACK_DRAFT_NOT_SHAREABLE' satisfies AuditPackRefusal });
 
         await tdb.auditPackShare.create({
             data: {
@@ -69,8 +70,8 @@ export async function revokeShare(ctx: RequestContext, packId: string, shareId: 
         // URL. Without the pack cross-check the URL pack is decorative: one
         // pack's route could revoke another pack's share (same tenant) and
         // the AUDIT_PACK_REVOKED event would be attributed to the wrong pack.
-        if (!share || share.auditPackId !== packId) throw notFound('Share not found');
-        if (share.revokedAt) throw badRequest('Share already revoked');
+        if (!share || share.auditPackId !== packId) throw notFound('Share not found', { reason: 'SHARE_NOT_FOUND' satisfies AuditPackRefusal });
+        if (share.revokedAt) throw badRequest('Share already revoked', { reason: 'SHARE_ALREADY_REVOKED' satisfies AuditPackRefusal });
         await tdb.auditPackShare.update({ where: { id: shareId }, data: { revokedAt: new Date() } });
         await logEvent(tdb, ctx, { action: 'AUDIT_PACK_REVOKED', entityType: 'AuditPackShare', entityId: shareId, details: 'Share revoked', detailsJson: { category: 'access', operation: 'permission_changed', detail: 'Share link revoked' } });
         return { revoked: true };
@@ -256,9 +257,9 @@ export async function resolveShareComment(ctx: RequestContext, packId: string, c
             where: { id: commentId, tenantId: ctx.tenantId, auditPackId: packId },
             select: { id: true, kind: true, status: true },
         });
-        if (!row) throw notFound('Return-channel entry not found');
-        if (row.kind === 'COMMENT') throw badRequest('A comment cannot be resolved');
-        if (row.status === 'RESOLVED') throw badRequest('Entry already resolved');
+        if (!row) throw notFound('Return-channel entry not found', { reason: 'ENTRY_NOT_FOUND' satisfies AuditPackRefusal });
+        if (row.kind === 'COMMENT') throw badRequest('A comment cannot be resolved', { reason: 'ENTRY_NOT_RESOLVABLE' satisfies AuditPackRefusal });
+        if (row.status === 'RESOLVED') throw badRequest('Entry already resolved', { reason: 'ENTRY_ALREADY_RESOLVED' satisfies AuditPackRefusal });
 
         const updated = await tdb.auditPackShareComment.update({
             where: { id: commentId },
@@ -307,9 +308,9 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
             where: { id: commentId, tenantId: ctx.tenantId, auditPackId: packId },
             select: { id: true, kind: true, body: true, status: true, auditPackItemId: true },
         });
-        if (!comment) throw notFound('Return-channel entry not found');
+        if (!comment) throw notFound('Return-channel entry not found', { reason: 'ENTRY_NOT_FOUND' satisfies AuditPackRefusal });
         if (comment.kind !== 'FINDING' && comment.kind !== 'EVIDENCE_REQUEST') {
-            throw badRequest('Only a FINDING or EVIDENCE_REQUEST can be turned into a finding');
+            throw badRequest('Only a FINDING or EVIDENCE_REQUEST can be turned into a finding', { reason: 'ENTRY_NOT_MATERIALISABLE' satisfies AuditPackRefusal });
         }
         const existing = await tdb.finding.findFirst({
             where: { tenantId: ctx.tenantId, sourceKind: AUDITOR_SHARE_COMMENT_SOURCE, sourceRef: commentId, deletedAt: null },
@@ -329,6 +330,7 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
                 'Entry is already resolved but no finding was materialised from it. This is the residue of a ' +
                     'failed materialisation: the entry was claimed and the finding creation did not complete. ' +
                     'Re-open the entry to retry it.',
+                { reason: 'ENTRY_RESOLVED_WITHOUT_FINDING' satisfies AuditPackRefusal },
             );
         }
         const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null }, select: { auditCycleId: true } });
@@ -429,7 +431,7 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
     if (claim.count === 0) {
         // Lost the race. The winner is creating, or has created; either way
         // nothing has been created HERE, which is the point.
-        throw badRequest('Entry is already being materialised by another reviewer');
+        throw badRequest('Entry is already being materialised by another reviewer', { reason: 'ENTRY_BEING_MATERIALISED' satisfies AuditPackRefusal });
     }
 
     const finding = await createFinding(ctx, {

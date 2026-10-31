@@ -248,9 +248,12 @@ test.describe('Issue Management', () => {
         await authedPage.click('#submit-link-btn');
         await authedPage.waitForLoadState('networkidle').catch(() => {});
 
-        await expect(
-            authedPage.locator('[data-testid="task-links-table"]'),
-        ).toContainText('CONTROL', { timeout: 5000 });
+        // #4698 — the type reads as its label ("Control"), not the stored
+        // code; the relation likewise ("Relates to").
+        const linksTable = authedPage.locator('[data-testid="task-links-table"]');
+        await expect(linksTable).toContainText('Control', { timeout: 5000 });
+        await expect(linksTable).not.toContainText('CONTROL');
+        await expect(linksTable).toContainText('Relates to');
         // TP-4 — TaskLinksTable now renders the RESOLVED entity name
         // as a real link (not the raw cuid), so assert the control's
         // display name.

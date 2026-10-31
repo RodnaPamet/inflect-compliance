@@ -14,6 +14,7 @@ import {
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import type { AuditPackRefusal } from '@/lib/audit-pack-refusals';
 import { getStorageProvider, buildTenantObjectKey, assertTenantKey } from '@/lib/storage';
 import crypto from 'crypto';
 
@@ -194,8 +195,8 @@ export async function clonePackForRetest(
             },
         })
     );
-    if (!sourcePack) throw notFound('Source pack not found');
-    if (sourcePack.status === 'DRAFT') throw badRequest('Cannot clone a DRAFT pack — freeze first');
+    if (!sourcePack) throw notFound('Source pack not found', { reason: 'PACK_NOT_FOUND' satisfies AuditPackRefusal });
+    if (sourcePack.status === 'DRAFT') throw badRequest('Cannot clone a DRAFT pack — freeze first', { reason: 'PACK_DRAFT_NOT_CLONEABLE' satisfies AuditPackRefusal });
 
     // Create new draft pack
     const clonedPack = await runInTenantContext(ctx, (tdb) =>

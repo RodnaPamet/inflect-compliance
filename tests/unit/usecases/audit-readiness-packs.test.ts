@@ -205,6 +205,25 @@ describe('getAuditPack', () => {
         expect(args.include.cycle).toBe(true);
     });
 
+    it('names the cycle\'s framework from the catalogue, not by its key (#4700)', async () => {
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+            id: 'p-1', name: 'X', status: 'DRAFT', items: [], cycle: { frameworkKey: 'ISO27001' }, _count: {},
+        });
+        mockTdb.framework.findFirst.mockResolvedValueOnce({ name: 'ISO/IEC 27001:2022' });
+        const result = await getAuditPack(ctx, 'p-1');
+        expect(result.cycle).toEqual({ frameworkKey: 'ISO27001', frameworkName: 'ISO/IEC 27001:2022' });
+        expect(mockTdb.framework.findFirst).toHaveBeenCalledWith({ where: { key: 'ISO27001' }, select: { name: true } });
+    });
+
+    it('leaves the name null when the catalogue no longer holds the key (#4700)', async () => {
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+            id: 'p-1', name: 'X', status: 'DRAFT', items: [], cycle: { frameworkKey: 'GONE' }, _count: {},
+        });
+        mockTdb.framework.findFirst.mockResolvedValueOnce(null);
+        const result = await getAuditPack(ctx, 'p-1');
+        expect(result.cycle).toEqual({ frameworkKey: 'GONE', frameworkName: null });
+    });
+
     it('names each draft item by its live row when its snapshot names nothing (#4129)', async () => {
         // A draft's row-backed items are stored with `{}` until the freeze,
         // so the page listed them by raw id. The read resolves their names.

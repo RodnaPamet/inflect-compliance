@@ -966,11 +966,15 @@ export const UpdateClauseProgressSchema = z.object({
 
 export const AuthRegisterSchema = z.object({
     email: z.string().email(),
-    password: z.string().min(8),
+    // The length policy (8 to 128) is the route's, so a refusal carries its
+    // code (#4686); a schema floor here answered a bare VALIDATION_ERROR.
+    password: z.string().min(1),
     name: z.string().min(1),
-    orgName: z.string().min(1),
+    // Omitted: an account only, for the invitation in the request's
+    // `inflect_invite_token` cookie (#4689). Present: a new workspace.
+    orgName: z.string().optional(),
 }).strip().openapi('AuthRegisterRequest', {
-    description: 'Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side.',
+    description: 'Self-service signup payload. With `orgName`, creates a workspace and makes the new account its Owner. Without it, creates an account only, and only for the pending invitation in the request\'s invite cookie, sent to the same email. The password must be 8 to 128 characters and is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side.',
 });
 
 // `action: 'login'` was removed 2026-04-22 — the old bespoke /api/auth/

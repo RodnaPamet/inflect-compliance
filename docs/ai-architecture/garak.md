@@ -8,7 +8,7 @@ inflect · ai architecture · garak · roadmap v1 · 2026-10-29
 > true today (main 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan.
 > This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
-> first for the target map, the global rules **G1–G12**, and the sequencing.
+> first for the target map, the global rules **G1–G13**, and the sequencing.
 > If the code contradicts a fact here, the code wins and the pull request that
 > finds it corrects this document.
 
@@ -18,9 +18,10 @@ inflect · ai architecture · garak · roadmap v1 · 2026-10-29
 | --- | --- |
 | Column · box | Security evaluation & testing · "Garak (security testing)" — evaluates Layer 1 and the assistant/agent surfaces |
 | Wave | 3 (with the Layer 1 additions, so it measures them as they land) — but Phase 1 can start now against the existing guard |
-| Depends on | a model to probe (the external provider with a CI key, or a hosted/local model) |
+| Depends on | a model to probe (the external provider with a CI key; a local model only if Layer 5 is taken up) |
 | Unblocks | an evidence line for [`nemo-guardrails.md`](./nemo-guardrails.md) and [`presidio.md`](./presidio.md): a before/after |
 | Owner decisions | **D-EV-1** (which model answers the probes in CI, and what it may cost per night) |
+| Complete at | Phase 3 |
 
 ## At a glance
 

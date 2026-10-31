@@ -8,7 +8,7 @@ inflect · ai architecture · inspect · roadmap v1 · 2026-10-29
 > today (main 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan. This
 > is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
-> first for the target map, the global rules **G1–G12**, and the sequencing.
+> first for the target map, the global rules **G1–G13**, and the sequencing.
 > If the code contradicts a fact here, the code wins and the pull request that
 > finds it corrects this document.
 
@@ -17,28 +17,29 @@ inflect · ai architecture · inspect · roadmap v1 · 2026-10-29
 | | |
 | --- | --- |
 | Column · box | Validation · "Inspect" — evaluates Layers 2 and 3 end to end (engine + model + guards + ledger) |
-| Wave | 2 (its first tasks need only what exists today; the model-selection tasks need [`modal-inference.md`](./modal-inference.md)) |
+| Wave | 2 (its tasks need only what exists today; model selection compares models available by API key) |
 | Depends on | the harness route from [`garak.md`](./garak.md) Phase 1 (or a sibling) |
-| Unblocks | an evidence-backed flip of `DRIVER_IMPLEMENTED['tool-runner']` (Claude engines Step 2c); worker-model selection in [`nemotron-reasoning.md`](./nemotron-reasoning.md) |
+| Unblocks | a record behind every engine that is on — Flue, and the Tool Runner, which Claude engines Step 2c turned on (#4512) before any record existed; worker-model selection in [`nemotron-reasoning.md`](./nemotron-reasoning.md) |
 | Owner decisions | **D-EV-4** (the first ten tasks, and that the product scores its own agents on its own ladder) |
+| Complete at | Phase 3, comparing worker candidates available by API key |
 
 ## At a glance
 
-Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+Purple hexagon: the Phase 0 decision. Green: on `main`. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
 
 ```mermaid
 flowchart LR
   P0{{"Phase 0 · ten tasks<br/>one per governed-run invariant<br/>mapped to H3-H5<br/>D-EV-4"}}:::gate
   P1["Phase 1 · harness<br/>solver starts a run, awaits it<br/>scorers read the ledger<br/>mutation check"]:::todo
-  P2["Phase 2 · evidence and gate<br/>Coverage tab cites records<br/>engine flip needs a record"]:::todo
+  P2["Phase 2 · evidence and gate<br/>Coverage tab cites records<br/>an engine on needs a record"]:::todo
   P3["Phase 3 · choose models<br/>comparison records"]:::todo
   GA["garak P1<br/>harness route"]:::ext
-  TR["Tool Runner Step 2c<br/>Claude engines plan"]:::ext
+  TR["Flue and the Tool Runner<br/>both on, no record yet"]:::done
   NR["nemotron-reasoning P3"]:::ext
   REC["Inspect record<br/>per engine and revision"]:::eval
   P0 --> P1 --> P2 --> P3
   GA -.-> P1
-  P2 -.->|gates| TR
+  TR -.->|records cover| P2
   P3 -.-> NR
   P1 --- REC
 
@@ -89,9 +90,10 @@ synthesis cite only chunks the tenant can read. Results become evaluation
 records in the house shape (G11) and evidence for the product's own H3–H5
 criteria.
 
-Also adopted, later: Inspect's standard model evals through its
-OpenAI-compatible provider against the hosted worker model, to choose models
+Also adopted, later: Inspect's standard model evals against candidate worker
+models available by API key on the registered providers, to choose models
 with numbers ([`nemotron-reasoning.md`](./nemotron-reasoning.md) Phase 3).
+Local candidates join only if Layer 5 is taken up.
 
 **Not adopted, with the reason.**
 
@@ -123,8 +125,8 @@ with numbers ([`nemotron-reasoning.md`](./nemotron-reasoning.md) Phase 3).
 **Prompt.**
 ```text
 Context (main 3.338.0): the harness ladder (src/lib/agentic/harness-ladder.ts) scores
-customer agents H0–H5 with named criteria; Inflect's own engines (Flue; Tool Runner
-behind DRIVER_IMPLEMENTED=false) are covered by invariant-named guards and tests/flue,
+customer agents H0–H5 with named criteria; Inflect's own engines (Flue; the Tool Runner,
+on since Step 2c) are covered by invariant-named guards and tests/flue,
 but no task-shaped eval drives a whole governed run and scores its ledger. The ledger
 is WorkflowStep (runId, seq) + decision-log rows + proposals (runId, stepSeq) + the run
 stream. The target names Inspect in the Validation column.
@@ -202,41 +204,44 @@ scorer scores.
       cites the latest Inspect record for `H3.payloads_guarded`,
       `H3.propose_not_commit`, `H4.kill_switch_drilled`, `H4.token_budget` —
       the same criteria it asks customers to evidence.
-- [ ] 2.2 Flipping `DRIVER_IMPLEMENTED['tool-runner']` (Step 2c) requires a
-      passing Inspect record for the Tool Runner engine on the same ten tasks;
-      the guard that pins the flag reads the record.
+- [ ] 2.2 Every engine whose `DRIVER_IMPLEMENTED` flag is true has a passing
+      Inspect record on the same ten tasks, for the current task-set hash. Flue
+      and the Tool Runner are both on today without one (the Tool Runner since
+      Step 2c, #4512), so the guard lands in the same pull request as a
+      passing record for each. From then on, turning an engine on, or changing
+      the task set while one is on, needs a record.
 - [ ] 2.3 Flip the nightly to blocking on any task regression.
 
 **Prompt.**
 ```text
 Context (main 3.338.0 + Phase 1): Inspect records exist for the Flue engine; the harness
-ladder evidences criteria per agent; DRIVER_IMPLEMENTED['tool-runner'] is false and its
-flip is Claude engines Step 2c; H4.kill_switch_drilled is already evidenced for sandboxes
+ladder evidences criteria per agent; DRIVER_IMPLEMENTED is true for flue and tool-runner
+(Claude engines Step 2c turned the Tool Runner on without a record); H4.kill_switch_drilled is already evidenced for sandboxes
 by openshell/kill-drill.ts.
 
 Task: make the records evidence and a gate. (1) The agent detail page's Coverage tab
 cites the latest Inspect record for the product's own agents on H3.payloads_guarded,
 H3.propose_not_commit, H4.kill_switch_drilled, H4.token_budget (read from the committed
-record, not live). (2) A guard: DRIVER_IMPLEMENTED['tool-runner'] may be true only if
-evals/inspect/records/ holds a passing record whose engine is tool-runner for the current
-task-set hash. (3) Remove the nightly's marker; blocking on regression.
+record, not live). (2) Commit a passing record for flue and for tool-runner, and a guard:
+an engine's DRIVER_IMPLEMENTED may be true only if evals/inspect/records/ holds a passing
+record whose engine is that engine, for the current task-set hash. (3) Remove the nightly's marker; blocking on regression.
 
 Constraints: evidence is a committed record with a hash; a live run is not evidence.
 
-Done when: the Coverage tab shows the citations, the engine-flip guard refuses without a
-record and admits with one, and the nightly is blocking.
+Done when: the Coverage tab shows the citations, the guard refuses an engine on without a
+record and admits it with one, both engines have records, and the nightly is blocking.
 ```
 
 **Hardening.** G11 (committed records are evidence; live runs are not), G10
-(the engine flip becomes a diff that cites a record — the pattern this
+(an engine's flag becomes a diff that cites a record — the pattern this
 repository uses for every clamp and flag).
 
 ### Phase 3 — Model selection with numbers
 
 Inspect's standard evals (tool use, instruction following, refusal) and the
-ten product tasks run against candidate worker models on the hosted route
+ten product tasks run against candidate worker models available by API key
 ([`nemotron-reasoning.md`](./nemotron-reasoning.md) Phase 3), producing a
-comparison record the owner reads before changing `AI_HOSTED_MODEL`.
+comparison record the owner reads before changing the worker model.
 
 ## Evals for this framework
 
