@@ -21,7 +21,7 @@
  *     flagged as a miss;
  *   - record reports both outcomes and clears the draft only on success.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 import { SWRConfig } from 'swr';
 
@@ -68,6 +68,7 @@ jest.mock('@/components/nav/BackAffordance', () => ({ BackAffordance: () => null
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import LossEventsPage from '@/app/t/[tenantSlug]/(app)/risks/loss-events/page';
+import { __resetPendingUndoToastsForTest } from '@/components/ui/hooks/use-toast-with-undo';
 
 const en = require('../../messages/en.json');
 const L = en.risks.lossEvents;
@@ -75,6 +76,8 @@ const L = en.risks.lossEvents;
 type Bodies = { events?: unknown; aggregate?: unknown; run?: unknown };
 let bodies: Bodies = {};
 let writeOk = true;
+let writeStatus: number | null = null;
+let aggFails = false;
 const writes: string[] = [];
 
 function installFetch() {
@@ -83,8 +86,12 @@ function installFetch() {
         const method = (init?.method ?? 'GET').toUpperCase();
         if (method !== 'GET') {
             writes.push(`${method} ${url}`);
-            const b = writeOk ? {} : { error: { code: 'internal', message: 'boom' } };
-            return { ok: writeOk, status: writeOk ? 200 : 500, headers: new Headers({ 'content-type': 'application/json' }), json: async () => b, text: async () => JSON.stringify(b) } as unknown as Response;
+            const status = writeStatus ?? (writeOk ? 200 : 500);
+            const b = status < 400 ? {} : status >= 500 ? { error: { code: 'internal', message: 'boom' } } : { error: { code: 'BAD_REQUEST', message: 'The amount is too large' } };
+            return { ok: status < 400, status, headers: new Headers({ 'content-type': 'application/json' }), json: async () => b, text: async () => JSON.stringify(b) } as unknown as Response;
+        }
+        if (aggFails && url.includes('/loss-events/aggregate')) {
+            return { ok: false, status: 500, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({ error: { code: 'internal', message: 'boom' } }), text: async () => '' } as unknown as Response;
         }
         let body: unknown = {};
         if (url.includes('/loss-events/aggregate')) body = bodies.aggregate ?? { total: 0, count: 0, byYear: [], byRisk: [] };
@@ -98,13 +105,16 @@ function installFetch() {
 beforeEach(() => {
     bodies = {};
     writeOk = true;
+    writeStatus = null;
+    aggFails = false;
     writes.length = 0;
+    __resetPendingUndoToastsForTest();
     installFetch();
 });
 
 const mount = () =>
     render(
-        <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+        <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}>
             <TooltipProvider><LossEventsPage /></TooltipProvider>
         </SWRConfig>,
     );
@@ -252,24 +262,74 @@ describe('Loss events — recording', () => {
         expect(screen.getByPlaceholderText(L.amountPlaceholder)).toHaveValue('2500');
     });
 
-    it('a non-numeric amount never reaches the network', async () => {
+    it('a non-numeric amount never reaches the network, and says why', async () => {
         mount();
         const amount = await screen.findByPlaceholderText(L.amountPlaceholder);
-        fireEvent.change(amount, { target: { value: 'not a number' } });
+        fireEvent.change(amount, { target: { value: '1,000' } });
         fireEvent.click(screen.getByRole('button', { name: L.record }));
-        await waitFor(() => expect(writes.filter((w) => w.startsWith('POST'))).toHaveLength(0));
+        expect(await screen.findByText(L.amountInvalid)).toBeInTheDocument();
+        expect(writes.filter((w) => w.startsWith('POST'))).toHaveLength(0);
     });
 
-    it('a failed remove reports through the same surface as record', async () => {
-        bodies.events = [{
-            id: 'le1', riskId: null, occurredAt: '2026-01-02T00:00:00.000Z', amount: 400,
-            description: 'Outage', source: 'USER', justification: null, createdByUserId: null,
-            createdAt: '2026-01-02T00:00:00.000Z',
-        }];
-        writeOk = false;
+    it("a refused record shows the server's reason", async () => {
+        writeStatus = 400;
         mount();
-        fireEvent.click(await screen.findByRole('button', { name: L.remove }));
-        await screen.findByText(L.saveFailed);
-        expect(writes.some((w) => w.startsWith('DELETE'))).toBe(true);
+        fireEvent.change(await screen.findByPlaceholderText(L.amountPlaceholder), { target: { value: '2500' } });
+        fireEvent.click(screen.getByRole('button', { name: L.record }));
+        expect(await screen.findByText('The amount is too large')).toBeInTheDocument();
+    });
+
+    it('labels the source in words, as a radio group', async () => {
+        mount();
+        expect(await screen.findByRole('radiogroup', { name: L.sourceLabel })).toBeInTheDocument();
+        expect(screen.getByRole('radio', { name: L.source_USER })).toBeInTheDocument();
+    });
+});
+
+const ROW = {
+    id: 'le1', riskId: 'r1', occurredAt: '2026-01-02T00:00:00.000Z', amount: 400,
+    description: 'Outage', source: 'INCIDENT', justification: 'Ticket INC-12', createdByUserId: null,
+    createdAt: '2026-01-02T00:00:00.000Z', risk: { id: 'r1', title: 'Ransomware' },
+};
+
+describe('Loss events — the register', () => {
+    it('names the source, the linked risk and the justification', async () => {
+        bodies.events = [ROW];
+        mount();
+        const row = await screen.findByTestId('loss-event-row-le1');
+        expect(row).toHaveTextContent(L.source_INCIDENT);
+        expect(screen.getByTestId('loss-event-risk-le1')).toHaveAttribute('href', '/t/acme/risks/r1');
+        expect(screen.getByTestId('loss-event-justification-le1')).toHaveTextContent('Ticket INC-12');
+    });
+
+    it('says how many of the total are shown', async () => {
+        bodies.events = [ROW];
+        bodies.aggregate = { total: 400, count: 70, byYear: [{ year: 2026, total: 400, count: 70 }], byRisk: [] };
+        mount();
+        expect(await screen.findByTestId('loss-events-shown')).toHaveTextContent('Showing the latest 1 of 70.');
+    });
+
+    it('removal waits for the undo window, then sends the DELETE', async () => {
+        bodies.events = [ROW];
+        mount();
+        await screen.findByTestId('loss-event-remove-le1');
+        jest.useFakeTimers();
+        try {
+            fireEvent.click(screen.getByTestId('loss-event-remove-le1'));
+            await act(async () => { await jest.advanceTimersByTimeAsync(0); });
+            expect(screen.queryByTestId('loss-event-row-le1')).not.toBeInTheDocument();
+            expect(writes.filter((w) => w.startsWith('DELETE'))).toHaveLength(0);
+            await act(async () => { await jest.advanceTimersByTimeAsync(5001); });
+            expect(writes.filter((w) => w.startsWith('DELETE'))).toEqual(['DELETE /api/t/acme/loss-events/le1']);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    it('a failed totals read is an error, not "nothing recorded"', async () => {
+        aggFails = true;
+        mount();
+        expect(await screen.findByTestId('loss-events-agg-error')).toBeInTheDocument();
+        expect(screen.queryByTestId('loss-events-empty')).not.toBeInTheDocument();
     });
 });
