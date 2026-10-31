@@ -149,11 +149,20 @@ describe('what the constructed transport carries', () => {
             );
         const aws = hostsOf(0);
         const gcp = hostsOf(1);
-        expect(aws.every((h) => h.includes('amazonaws.com'))).toBe(true);
-        expect(gcp.every((h) => h.includes('googleapis.com'))).toBe(true);
+        // DOMAIN CONTAINMENT, not substring. `h.includes('amazonaws.com')` is
+        // also true of `amazonaws.com.evil.test`, so the positive assertions
+        // above would have admitted an attacker-controlled host that merely
+        // carries the string — and the two negative ones would have missed it.
+        // These values are hostnames already, so the check is a label-boundary
+        // suffix. CodeQL's `incomplete-url-substring-sanitization` named all
+        // four of these lines; the fix it implies is also the stronger test.
+        const inDomain = (h: string, domain: string) =>
+            h === domain || h.endsWith(`.${domain}`);
+        expect(aws.every((h) => inDomain(h, 'amazonaws.com'))).toBe(true);
+        expect(gcp.every((h) => inDomain(h, 'googleapis.com'))).toBe(true);
         // And neither leaks into the other.
-        expect(aws.some((h) => h.includes('googleapis.com'))).toBe(false);
-        expect(gcp.some((h) => h.includes('amazonaws.com'))).toBe(false);
+        expect(aws.some((h) => inDomain(h, 'googleapis.com'))).toBe(false);
+        expect(gcp.some((h) => inDomain(h, 'amazonaws.com'))).toBe(false);
     });
 
     it('every endpoint in the policy ENFORCES — no audit-mode entry rides along', () => {

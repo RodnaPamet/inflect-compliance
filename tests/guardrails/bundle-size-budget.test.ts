@@ -280,7 +280,31 @@ const BUDGETS_KB: Record<string, number> = {
     // the top chrome mounts on every workspace page: it now chooses the open
     // workspace's list, stream and mark-read URLs, and links to the inbox.
     // Main had 0.1 KB left here, so no change to the chrome could pass it.
-    'controls': 669,
+    //
+    // Raised 669 -> 670 by the OpenShell gateway transport wiring (#4561), the
+    // measured delta rounded up (the #4643 precedent), not measured + 4.
+    //
+    // CI's own webpack build, main (6f1f993d) against that branch:
+    // `controls/.../tests/[planId]/page` 668.9 -> 669.0 KB. The whole route
+    // table moved the same way -- 124 of 183 routes +0.1 KB, 59 unchanged -- so
+    // this is shared code, not this route. Main had 0.0 KB left in this bucket,
+    // so no shared byte at all could pass it.
+    //
+    // WHAT GREW IS `src/env.ts`, AND IT IS WORTH READING. #4561 adds four
+    // server-only variables there (the gateway endpoint and three PEM paths).
+    // Server vars are not meant to reach a browser, and their VALUES do not --
+    // but `src/env.ts` is itself client-reachable (`notifications-bell.tsx` is
+    // a `'use client'` component importing `@/env`; 95 importers in all), so
+    // the module's whole ~800-line server SCHEMA is bundled on every workspace
+    // page. That is why four optional strings cost 124 routes 0.1 KB each, and
+    // why this bucket has now been raised four times in nine days
+    // (655 -> 662 -> 668 -> 669 -> 670) by changes that added no route code.
+    //
+    // So this raise buys one PR's worth of room and does not fix the cause.
+    // Splitting `env.ts` into server and client halves would, and it is a
+    // 95-importer change that does not belong in a transport PR -- filed as
+    // #4764, with this measurement, rather than done here or left unsaid.
+    'controls': 670,
     // Catch-all for any other tenant page.
     'tenant-default': 682,
     // Auth / public / org pages.
