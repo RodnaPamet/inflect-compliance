@@ -39,6 +39,8 @@ Use the page to choose the standards your organisation works to and to track how
 - In the table view only, **{{ui:common.table.toggleColumns}}** chooses which columns are shown.
 - **{{ui:frameworks.list.importFramework}}**, for roles that can add frameworks.
 
+**Updates to review.** While a framework you use has published a version nobody has reviewed yet, a notice under the header links to [{{ui:frameworkUpdates.title}}](framework-updates.md), saying how many updates wait.
+
 **The cards.** One card per framework, in order of the framework's short code. Click anywhere on a card to open the framework. Each card shows:
 
 - The framework's name and, under it, its kind, such as **{{ui:frameworks.kinds.isoStandard}}** or **{{ui:frameworks.kinds.euDirective}}**.

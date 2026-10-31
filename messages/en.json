@@ -8872,6 +8872,7 @@
     "list": {
       "heading": "Compliance Frameworks",
       "description": "Browse standards, install control packs, and track requirement coverage",
+      "updatesWaiting": "{count, plural, one {# framework update is} other {# framework updates are}} waiting for review",
       "importFramework": "Import framework",
       "installed": "In use",
       "inUseHint": "At least one of this framework's requirements has a mapped control",
@@ -12556,14 +12557,27 @@
     "dismiss": "Dismiss",
     "createFindings": "Create findings",
     "markReviewed": "Mark reviewed",
-    "actionFailed": "Failed to {action}",
     "impactLabel": "Your impact:",
     "newGaps": "{count} new gap(s)",
     "flaggedTail": ", {count} control(s) flagged for re-review.",
     "added": "Added ({count}): ",
     "changed": "Changed ({count}): ",
     "removed": "Removed ({count}): ",
-    "materialised": "Materialised {count} finding(s) for the new gaps."
+    "materialised": "Materialised {count} finding(s) for the new gaps.",
+    "versionChange": "{name} v{from} → v{to}",
+    "status": {
+      "NEW": "New",
+      "REVIEWED": "Reviewed",
+      "DISMISSED": "Dismissed"
+    },
+    "flaggedControls": "Flagged for re-review:",
+    "restricted": "Only a role that can edit, such as an Owner, Admin or Editor, can review an update or create findings from it.",
+    "notFound": "This update is no longer there. Reload the page.",
+    "failed": {
+      "review": "Could not mark the update reviewed. Please try again.",
+      "dismiss": "Could not dismiss the update. Please try again.",
+      "materialize": "Could not create the findings. Please try again."
+    }
   },
   "vulnerabilities": {
     "crumbDashboard": "Dashboard",

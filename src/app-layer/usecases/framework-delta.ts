@@ -298,3 +298,135 @@ export async function materializeDeltaFindings(ctx: RequestContext, deltaId: str
     }
     return { created };
 }
+
+// ─── The review page's read model (#4736) ───────────────────────────
+
+/** A requirement a delta names, with its title when the catalogue has it. */
+export interface FrameworkUpdateRequirement {
+    code: string;
+    title: string | null;
+}
+
+/** A control a delta moved to NEEDS_REVIEW, as this workspace has it now. */
+export interface FrameworkUpdateFlaggedControl {
+    id: string;
+    code: string | null;
+    name: string;
+}
+
+export interface FrameworkUpdateView {
+    id: string;
+    frameworkKey: string;
+    frameworkName: string | null;
+    fromVersion: string;
+    toVersion: string;
+    newGapCount: number;
+    flaggedControlCount: number;
+    status: FrameworkDeltaStatus;
+    createdAt: string;
+    changelog: string | null;
+    added: FrameworkUpdateRequirement[];
+    changed: FrameworkUpdateRequirement[];
+    removed: FrameworkUpdateRequirement[];
+    /** Controls still in the workspace; a deleted one is left out. */
+    flaggedControls: FrameworkUpdateFlaggedControl[];
+}
+
+/** A stored JSON array of strings, or [] when the column holds anything else. */
+function codesOf(json: string | null | undefined): string[] {
+    try {
+        const value: unknown = JSON.parse(json ?? '[]');
+        return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * The tenant's framework updates as the review page shows them (#4736).
+ *
+ * The page used to show the codes alone, a count of flagged controls with no
+ * way to tell which ones, the framework's key and no changelog. This adds,
+ * in three bounded reads (no read per delta): each framework's name, each
+ * named requirement's title (deprecated ones included, so a removed
+ * requirement keeps its title), and the flagged controls this workspace
+ * still has.
+ */
+export async function listTenantFrameworkUpdateViews(ctx: RequestContext): Promise<FrameworkUpdateView[]> {
+    const deltas = await listTenantFrameworkDeltas(ctx, {});
+    if (deltas.length === 0) return [];
+
+    const keys = [...new Set(deltas.map((d) => d.frameworkKey))];
+    const frameworks = await prisma.framework.findMany({
+        where: { key: { in: keys } },
+        select: { id: true, key: true, name: true },
+        take: keys.length,
+    });
+    const frameworkByKey = new Map(frameworks.map((f) => [f.key, f]));
+
+    const coded = deltas.map((d) => ({
+        delta: d,
+        added: codesOf(d.diff?.addedCodesJson),
+        changed: codesOf(d.diff?.changedCodesJson),
+        removed: codesOf(d.diff?.removedCodesJson),
+        flagged: codesOf(d.flaggedControlIdsJson),
+    }));
+    const allCodes = [...new Set(coded.flatMap((c) => [...c.added, ...c.changed, ...c.removed]))];
+    const requirements = allCodes.length === 0 || frameworks.length === 0
+        ? []
+        : await prisma.frameworkRequirement.findMany({
+            where: { frameworkId: { in: frameworks.map((f) => f.id) }, code: { in: allCodes } },
+            select: { frameworkId: true, code: true, title: true },
+            take: allCodes.length * frameworks.length,
+        });
+    const titleOf = new Map(requirements.map((r) => [`${r.frameworkId}:${r.code}`, r.title]));
+
+    const flaggedIds = [...new Set(coded.flatMap((c) => c.flagged))];
+    const controls = flaggedIds.length === 0
+        ? []
+        : await runInTenantContext(ctx, (db) =>
+            db.control.findMany({
+                where: { tenantId: ctx.tenantId, id: { in: flaggedIds }, deletedAt: null },
+                select: { id: true, code: true, name: true },
+                take: flaggedIds.length,
+            }),
+        );
+    const controlById = new Map(controls.map((c) => [c.id, c]));
+
+    return coded.map(({ delta, added, changed, removed, flagged }) => {
+        const framework = frameworkByKey.get(delta.frameworkKey);
+        const ref = (code: string): FrameworkUpdateRequirement => ({
+            code,
+            title: framework ? titleOf.get(`${framework.id}:${code}`) ?? null : null,
+        });
+        return {
+            id: delta.id,
+            frameworkKey: delta.frameworkKey,
+            frameworkName: framework?.name ?? null,
+            fromVersion: delta.fromVersion,
+            toVersion: delta.toVersion,
+            newGapCount: delta.newGapCount,
+            flaggedControlCount: delta.flaggedControlCount,
+            status: delta.status,
+            createdAt: delta.createdAt.toISOString(),
+            changelog: delta.diff?.changelog ?? null,
+            added: added.map(ref),
+            changed: changed.map(ref),
+            removed: removed.map(ref),
+            flaggedControls: flagged
+                .map((id) => controlById.get(id))
+                .filter((c): c is FrameworkUpdateFlaggedControl => c !== undefined),
+        };
+    });
+}
+
+/**
+ * How many framework updates wait for review (#4736), for the frameworks
+ * list's banner: the review page was reachable only from its notification.
+ */
+export async function countNewTenantFrameworkDeltas(ctx: RequestContext): Promise<number> {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, (db) =>
+        db.tenantFrameworkDelta.count({ where: { tenantId: ctx.tenantId, status: FrameworkDeltaStatus.NEW } }),
+    );
+}
