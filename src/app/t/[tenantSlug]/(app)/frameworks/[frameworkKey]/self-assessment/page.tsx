@@ -18,7 +18,7 @@ export default async function FrameworkSelfAssessmentPage({
 }) {
     const { tenantSlug, frameworkKey } = await params;
     // Ensure tenant access (throws/redirects on mismatch).
-    await getTenantCtx({ tenantSlug });
+    const ctx = await getTenantCtx({ tenantSlug });
 
     if (frameworkKey.toUpperCase() !== 'NIS2') {
         const t = await getTranslations('frameworks');
@@ -26,6 +26,20 @@ export default async function FrameworkSelfAssessmentPage({
             <div className="p-6">
                 <p className="text-content-muted text-sm">
                     {t('selfAssessment.onlyNis2')}
+                </p>
+            </div>
+        );
+    }
+
+    // Every read and write of the assessment takes `assertCanManageOnboarding`
+    // (Owner, Admin). Anyone else was shown "Could not load…", which invites a
+    // reload that fails the same way (#4734).
+    if (!ctx.permissions.canAdmin) {
+        const t = await getTranslations('frameworks');
+        return (
+            <div className="p-6">
+                <p className="text-content-muted text-sm" id="nis2-self-assessment-admin-only">
+                    {t('selfAssessment.adminOnly')}
                 </p>
             </div>
         );

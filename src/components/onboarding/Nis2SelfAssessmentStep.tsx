@@ -28,6 +28,8 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Loader2 } from 'lucide-react';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { isFinalizedNis2Run } from '@/lib/nis2-run-status';
 
 // Required CC BY 4.0 attribution — MUST render wherever the questions show.
 export const NIS2_ATTRIBUTION_TEXT =
@@ -78,10 +80,14 @@ export function Nis2SelfAssessmentStep({
     tenantSlug,
     onCompleted,
     onSkip,
+    showIntro = true,
 }: {
     tenantSlug: string;
     onCompleted?: () => void;
+    /** The wizard's skip. Without it the step offers no skip (#4734). */
     onSkip?: () => void;
+    /** The wizard's "You selected NIS2" introduction. The resume page has its own. */
+    showIntro?: boolean;
 }) {
     const t = useTranslations('common.ui');
     const tn = useTranslations('onboarding.nis2Step');
@@ -131,14 +137,23 @@ export function Nis2SelfAssessmentStep({
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ answer, note }),
                 });
-                if (!res.ok) throw new Error('save refused');
+                if (!res.ok) {
+                    // The run was finalised while this page was open: reload it,
+                    // so it shows read-only, rather than keep an answer the
+                    // server did not store (#4734).
+                    if (res.status === 409) {
+                        void load();
+                        return;
+                    }
+                    throw new Error('save refused');
+                }
             } catch {
                 setError(tn('saveFailed'));
             } finally {
                 setSavingId(null);
             }
         },
-        [base, tn],
+        [base, tn, load],
     );
 
     const handleComplete = useCallback(async () => {
@@ -179,11 +194,21 @@ export function Nis2SelfAssessmentStep({
 
     const answeredCount = Object.keys(answers).length;
     const total = state.questions.length;
+    // A completed run's answers are its record: shown, never changed (#4734).
+    const finalised = isFinalizedNis2Run(state.status);
 
     return (
         <div className="space-y-section" data-testid="nis2-self-assessment">
             <div className="space-y-tight">
-                <p className="text-sm text-content-muted">{tn('intro')}</p>
+                {showIntro && <p className="text-sm text-content-muted">{tn('intro')}</p>}
+                {finalised && (
+                    <InlineNotice variant="info" title={tn('finalisedTitle')} id="nis2-self-assessment-finalised">
+                        {tn('finalisedBody')}{' '}
+                        <a href={`/t/${tenantSlug}/audits/nis2-gap`} className="underline">
+                            {tn('openGapPage')}
+                        </a>
+                    </InlineNotice>
+                )}
                 {/* Overall progress */}
                 <div className="flex items-center gap-tight">
                     <ProgressBar
@@ -267,6 +292,7 @@ export function Nis2SelfAssessmentStep({
                                                 </div>
                                                 <RadioGroup
                                                     className="flex flex-wrap gap-compact"
+                                                    disabled={finalised}
                                                     value={current ?? ''}
                                                     onValueChange={(v) =>
                                                         saveAnswer(q.id, v as AnswerVal, answers[q.id]?.note ?? null)
@@ -294,7 +320,7 @@ export function Nis2SelfAssessmentStep({
                                                             note || null,
                                                         )
                                                     }
-                                                    disabled={!current}
+                                                    disabled={!current || finalised}
                                                 />
                                             </div>
                                         );
@@ -308,7 +334,9 @@ export function Nis2SelfAssessmentStep({
 
             {/* Footer actions */}
             <div className="flex items-center justify-between gap-compact border-t border-border-subtle pt-4">
-                {confirmSkip ? (
+                {!onSkip || finalised ? (
+                    <span />
+                ) : confirmSkip ? (
                     <div className="flex items-center gap-tight text-sm">
                         <span className="text-content-muted">{tn('skipLater')}</span>
                         <Button variant="ghost" size="sm" onClick={() => setConfirmSkip(false)}>
@@ -325,7 +353,7 @@ export function Nis2SelfAssessmentStep({
                 )}
                 <Button variant="primary" onClick={handleComplete} disabled={completing}>
                     {completing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                    {tn('complete')}
+                    {finalised ? tn('continue') : tn('complete')}
                 </Button>
             </div>
 

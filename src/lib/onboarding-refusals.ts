@@ -17,6 +17,8 @@ export const ONBOARDING_REFUSALS = [
     'ONBOARDING_NO_FRAMEWORK',
     'ONBOARDING_NO_PACK',
     'ONBOARDING_UNKNOWN_PACK',
+    /** An answer to, or completion of, a NIS2 run that is already finalised (#4734). */
+    'NIS2_RUN_FINALISED',
 ] as const;
 
 export type OnboardingRefusal = (typeof ONBOARDING_REFUSALS)[number];
