@@ -25,9 +25,9 @@ The arrows beside the plan's name step to the previous or next plan in the list 
 
 **{{ui:controls.testPlan.edit}}**, **{{ui:controls.testPlan.runTestNow}}** and **{{ui:controls.testPlan.newRun}}** appear only for Owners, Admins and Editors. For other roles the schedule's picker is disabled, with the note **{{ui:panels.schedule.permissionDenied}}**
 
-Some plans run an audit procedure for the workspace's auditor agent. Only the person who owns that agent can pause, archive or reschedule such a plan; anyone else's change is refused.
+Some plans run an audit procedure for the workspace's auditor agent. Only the person who owns that agent can pause, archive or reschedule such a plan; anyone else's change is refused, and the page shows the reason.
 
-If your workspace uses custom roles, the server checks your custom role's own permissions for test plans. The buttons the page shows still follow the built-in role your custom role is based on.
+If your workspace uses custom roles, the page follows your custom role's permissions for test plans: **{{ui:controls.testPlan.edit}}** and the schedule need permission to create test plans, and the run buttons need permission to execute tests.
 
 ## What it is for
 
@@ -72,7 +72,7 @@ Click **{{ui:controls.testPlan.saveChanges}}**, or **{{ui:controls.testPlan.canc
 
 In **{{ui:panels.schedule.title}}**, choose a cadence: **{{ui:panels.schedule.cadOffLabel}}**, **{{ui:panels.schedule.cadDailyLabel}}**, **{{ui:panels.schedule.cadWeeklyLabel}}**, **{{ui:panels.schedule.cadMonthlyLabel}}** or **{{ui:panels.schedule.cadQuarterlyLabel}}**. Then click **{{ui:panels.schedule.save}}**. If the plan was given a custom schedule elsewhere, a warning says that choosing a cadence will replace it.
 
-Saving a cadence here makes the plan a manual plan, even if it was automated before.
+A cadence keeps the plan's own type: a manual plan stays manual and an automated plan stays automated. Choosing **{{ui:panels.schedule.cadOffLabel}}** for an automated plan makes it manual, and the section warns you before you save: {{ui:panels.schedule.offMakesManualWarning}}
 
 ## What happens next
 
@@ -86,8 +86,9 @@ A scheduled run appears in the run history at its time, planned and waiting for 
 | **{{ui:controls.testPlan.planForbidden}}** | Your role cannot see test plans | Ask an admin for access |
 | **{{ui:controls.testPlan.planNotFound}}** | The plan was deleted, or the link is wrong | Go back to {{ui:nav.tests}} |
 | **{{ui:controls.testPlan.planLoadFailed}}** | The plan could not be read | Reload the page |
-| **{{ui:controls.testPlan.saveFailed}}** | The change was refused or failed | Check your role and the plan's fields, then try again |
-| **{{ui:controls.testPlan.runFailed}}** | The run could not be created | Check that the plan is active, then try again |
+| A message naming why a change or a run was refused | The server refused it, for example a procedure plan that only its auditor's owner may change | Do what the message says, or ask the person it names |
+| **{{ui:controls.testPlan.saveFailed}}** | The change failed | Try again |
+| **{{ui:controls.testPlan.runFailed}}** | The run could not be created | Try again |
 | A red message under the schedule | The schedule could not be saved. The message gives the reason | Fix what it names and save again |
 
 ## Related

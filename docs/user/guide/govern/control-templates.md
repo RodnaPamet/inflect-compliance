@@ -17,9 +17,11 @@ Open **{{ui:nav.controls}}** under **{{ui:nav.govern}}** in the sidebar, open **
 | Open the page and browse the templates | Every role: Owner, Admin, Editor, Reader, Auditor and AI admin |
 | Install templates | Owner, Admin, Editor |
 
-The install bar appears only for Owners, Admins and Editors. Other roles can tick rows, but have nothing to do with the selection.
+The tick boxes and the install bar appear only for Owners, Admins and Editors. Other roles see the list without them.
 
-If your workspace uses custom roles, installing also needs permission to create controls. Without it, the install is refused and the page says so.
+If your workspace uses custom roles, installing also needs permission to create controls; without it, the page offers no tick boxes and no install bar.
+
+In a workspace on a plan with a control limit, an install that would take the register past the limit is refused as a whole, before any control is created.
 
 ## What it is for
 
@@ -35,7 +37,7 @@ Use templates to start a register quickly, or to add a well-known control withou
 
 | Column | What it shows |
 | --- | --- |
-| (tick box) | Whether the template is selected. The box in the heading selects or clears every template the search shows |
+| (tick box) | Whether the template is selected. The box in the heading, **{{ui:controls.templates.selectAll}}**, selects or clears every template the search shows |
 | {{ui:controls.templates.colCode}} | The template's code. An installed control keeps it |
 | {{ui:controls.templates.colName}} | The template's name |
 | {{ui:controls.templates.colCategory}} | Its category, if it has one |
@@ -53,7 +55,7 @@ Clicking anywhere on a row ticks or clears it.
 
 For each template, a new control is created with the template's code, name and description, its tasks, its requirement links, and links to any of your policies whose titles the template names. A template whose code is already used by a control in your register is skipped, and that control is left as it is.
 
-A green notice reports how many controls were installed, and how many were skipped because they already exist. A moment later the page opens the {{ui:controls.list.pageTitle}} list.
+A green notice reports how many controls were installed, and how many were skipped because they already exist. If a selected template no longer exists in the library, a separate notice says so; nothing is installed for it. A moment later the page opens the {{ui:controls.list.pageTitle}} list.
 
 ## What happens next
 
@@ -63,9 +65,11 @@ The new controls start at their template's defaults, with no owner. Their tasks 
 
 | What you see | Why | What to do |
 | --- | --- | --- |
-| **{{ui:controls.templates.emptyTitle}}** | The library holds no templates, or nothing matches your search | Clear the search. If the list is still empty, ask your admin about the template library |
+| **{{ui:controls.templates.emptyTitle}}** | The library holds no templates | Ask your admin about the template library |
+| **{{ui:controls.templates.noMatchTitle}}** | Nothing matches your search | Click **{{ui:controls.templates.clearSearch}}**, or search for another code, name or category |
 | **{{ui:controls.templates.loadFailed}}** with **{{ui:controls.templates.retry}}** | The templates could not be read | Click **{{ui:controls.templates.retry}}** |
 | A red notice after installing | The install was refused or failed. The notice gives the reason when there is one | Check your role, then try again |
+| A notice that the plan allows a number of controls | The install would take the register past the plan's control limit | Install fewer templates, or upgrade the plan |
 | The notice says everything was skipped | Every selected template's code is already in your register | Nothing to do: those controls already exist |
 
 ## Related

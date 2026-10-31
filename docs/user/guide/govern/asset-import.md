@@ -8,7 +8,7 @@ The {{ui:assets.import.title}} page adds many assets at once from a CSV file. A 
 
 ## Where to find it
 
-Open **{{ui:nav.assets}}** under **{{ui:nav.govern}}** in the sidebar, open **{{ui:common.ui.viewsMenu}}** in the toolbar and choose **{{ui:assets.importAssets}}**. The menu item is offered only to roles that can create assets. The back link returns you to the page you came from.
+Open **{{ui:nav.assets}}** under **{{ui:nav.govern}}** in the sidebar, open **{{ui:common.ui.viewsMenu}}** in the toolbar and choose **{{ui:assets.importAssets}}**. The menu item is offered only to roles that can create assets. The breadcrumb reads **{{ui:assets.breadcrumbDashboard}}** › **{{ui:assets.title}}** › **{{ui:assets.import.breadcrumb}}**, and the back link returns you to the page you came from.
 
 ## Who can use it
 
@@ -22,7 +22,7 @@ Use it to load an existing inventory, such as an export from a CMDB or a spreads
 
 ## What you see
 
-**{{ui:assets.import.csvFormat}}.** {{ui:assets.import.csvDesc}} An example row shows the layout, including a quoted value that contains a comma.
+**{{ui:assets.import.csvFormat}}.** {{ui:assets.import.csvDesc}} An example row shows the layout with every column, including a quoted value that contains a comma.
 
 The columns:
 
@@ -36,9 +36,9 @@ The columns:
 | Classification, Location, Retention, RetentionUntil, ExternalRef, Dependencies, BusinessProcesses, DataResidency | Free text, except RetentionUntil, a date in the form YYYY-MM-DD |
 | CPE, Vendor, Product, Version | The product identity used to match the asset to known vulnerabilities |
 
-Column headings are not case-sensitive, and their order does not matter.
+Column headings are not case-sensitive, and their order does not matter. Spaces around a name are ignored, so a name of only spaces counts as missing.
 
-**The preview.** After you choose a file, the first 20 rows appear with their **{{ui:assets.import.colName}}**, **{{ui:assets.import.colType}}**, **{{ui:assets.import.colCriticality}}**, **{{ui:assets.import.colOwner}}** and **{{ui:assets.import.colStatus}}**. The status reads **{{ui:assets.import.rowOk}}** or names the problem: a missing name or type, an unknown type or status, or a confidentiality, integrity or availability value outside 1 to 5. Below the preview, a line says how many more rows the file holds.
+**The preview.** After you choose a file, the first 20 rows appear with their **{{ui:assets.import.colName}}**, **{{ui:assets.import.colType}}** (in words, such as {{ui:assets.assetTypes.DATA_STORE}}), **{{ui:assets.import.colCriticality}}**, **{{ui:assets.import.colOwner}}** and **{{ui:assets.import.colStatus}}**. The status reads **{{ui:assets.import.rowOk}}** or names the problem: a missing name or type, an unknown type or status, or a confidentiality, integrity or availability value outside 1 to 5. Below the preview, a line says how many more rows the file holds.
 
 ## What you can do
 
@@ -52,6 +52,8 @@ The result card shows how many assets were created out of the rows in the file, 
 
 - **Skipped rows.** A row whose name matches an existing asset, or a row earlier in the same file, is skipped. Names are compared without regard to case. Each skipped row is listed with its reason.
 - **{{ui:assets.import.errors}}.** Rows the preview refused, and rows the server refused, each with its row number and reason.
+
+Row numbers count the data rows of your file, the header not included, so a row has the same number in the preview, in the skipped list and in the errors.
 
 A file can hold up to 500 rows. A larger file is refused as a whole and nothing is created; the card says **{{ui:assets.import.importFailed}}**
 
