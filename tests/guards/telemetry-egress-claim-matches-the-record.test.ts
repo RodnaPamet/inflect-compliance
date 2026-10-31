@@ -153,8 +153,20 @@ describe('the telemetry egress claim matches the recorded resource', () => {
             const host = hostOf(c);
             return host !== null && host !== sink;
         });
-        expect(denied.length).toBeGreaterThanOrEqual(1);
+        /*
+            TWO denial probes, not one, and that count is the record's own
+            point: one reaches the sink BY NAME and one `--resolve`s to the
+            literal address, which is what separates a network control from
+            name resolution. `>= 1` was the first assertion and it tolerated
+            one of the two being subverted — a mutation that pointed a probe at
+            `https://evil.example/?x=<sink>` left it green, because the other
+            probe still matched.
+        */
+        expect(denied.length).toBeGreaterThanOrEqual(2);
         expect(control.length).toBeGreaterThanOrEqual(1);
+        // And the control is not secretly the sink, which would make the
+        // "egress works" line prove the opposite of what it claims.
+        expect(control.every((c) => hostOf(c) !== sink)).toBe(true);
     });
 
     it('the verification block reads the firewall log, which is the attributable half', () => {
