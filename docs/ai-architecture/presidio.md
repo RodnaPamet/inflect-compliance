@@ -7,7 +7,7 @@ inflect · ai architecture · presidio · roadmap v1 · 2026-10-29
 > **Current state** section is true today (main 3.338.0, `a1c2f05c`). The
 > **Roadmap** section is the plan. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
-> first for the target map, the global rules **G1–G12**, and the sequencing.
+> first for the target map, the global rules **G1–G13**, and the sequencing.
 > If the code contradicts a fact here, the code wins and the pull request that
 > finds it corrects this document.
 
@@ -20,6 +20,7 @@ inflect · ai architecture · presidio · roadmap v1 · 2026-10-29
 | Depends on | nothing (CPU, in-deployment) |
 | Unblocks | content capture in tracing; PII rails; an enforced "no PII" on sub-processor rows that currently promise it by construction |
 | Owner decisions | **D-L1-1** (redaction scope: which egress paths, which entity types, which locales) |
+| Complete at | Phase 3 |
 
 ## At a glance
 
@@ -205,7 +206,8 @@ use — the one place where "degrade" would mean "leak".
       (default `OFF`), plus the deployment switch `AI_PII_BASE_URL` — two
       keys (G9). `FLAG` records would-be redactions without changing text.
 - [ ] 2.2 In the egress path for **external-class** providers
-      (`inflect-external`, `inflect-hosted`): after `guardEgress` (secrets),
+      (`inflect-external`, the default route for model usage): after
+      `guardEgress` (secrets),
       before the socket, `redact()` the outbound text; the decision-log row
       records `piiRedactions: n` by type; the assistant and both engines go
       through the same function (it lives beside `guardEgress`, not in an

@@ -8,7 +8,7 @@ inflect · ai architecture · mastercard agent pay · roadmap v1 · 2026-10-30
 > box. The **Current state** section is true today (main 3.340.0,
 > `c08922f3c`). The **Roadmap** section is the plan. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
-> first for the target map, the global rules **G1–G12**, and the sequencing.
+> first for the target map, the global rules **G1–G13**, and the sequencing.
 > It extends the agentic IAM subsystem, so every phase also obeys the rules in
 > [`docs/agentic-iam-roadmap.md`](../agentic-iam-roadmap.md). If the code
 > contradicts a fact here, the code wins and the pull request that finds it
@@ -23,6 +23,7 @@ inflect · ai architecture · mastercard agent pay · roadmap v1 · 2026-10-30
 | Depends on | nothing for Phases 0–1; Phase 2's key-directory check reuses [`web-bot-auth.md`](./web-bot-auth.md) Phase 3's verifier; Phase 4 needs Mastercard API access, which is gated |
 | Unblocks | a register that knows which agents can spend money; recertification and kill switch that reach spending authority; evidence for agent payments against the library's controls |
 | Owner decisions | **D-L1-8** (Inflect never holds a payment credential and its own agents never pay), **D-L1-9** (spending authority is a declared, reviewed privilege on the register), **D-L1-10** (reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once access exists) |
+| Complete at | Phase 3. Phase 4 follows when Mastercard grants API access; it is not Layer 5 and completeness does not wait for it |
 
 ## At a glance
 

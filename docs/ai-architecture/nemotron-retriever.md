@@ -8,7 +8,7 @@ inflect · ai architecture · nemotron retriever · roadmap v1 · 2026-10-29
 > is true today (main 3.338.0, `a1c2f05c`). The **Roadmap** section is the
 > plan. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
-> first for the target map, the global rules **G1–G12** every phase here
+> first for the target map, the global rules **G1–G13** every phase here
 > inherits, and the sequencing. If the code contradicts a fact here, the code
 > wins and the pull request that finds it corrects this document.
 
@@ -17,25 +17,27 @@ inflect · ai architecture · nemotron retriever · roadmap v1 · 2026-10-29
 | | |
 | --- | --- |
 | Layer · box | 4 — Knowledge & deep RAG · "NVIDIA Nemotron Retriever (NIM embeddings & reranking)" |
-| Wave | 1 for the CPU embedding arm (zero-GPU); 2 for the GPU arm on Modal |
-| Depends on | nothing for Phase 1; [`modal-inference.md`](./modal-inference.md) for Phase 3 |
+| Wave | 1 for the CPU embedding and rerank arms (Phases 0–2, zero-GPU). The GPU arm (Phase 3) is optional Layer 5 work, after every other roadmap is complete |
+| Depends on | nothing for Phases 0–2; Layer 5 ([`modal-inference.md`](./modal-inference.md)), optional and last, for Phase 3 |
 | Unblocks | [`weaviate.md`](./weaviate.md) Phase 2 (nothing to index without a vector), [`ragas.md`](./ragas.md) |
-| Owner decisions | **D-L4-3** (de-NIM: open weights on TEI/vLLM, never the NIM container), **D-L5-1** (the hosted route exists at all) |
+| Owner decisions | **D-L4-3** (de-NIM: open weights on TEI/vLLM, never the NIM container), **D-L5-1** (decided 2026-10-31: no self-hosting now; Layer 5 optional and last) |
+| Complete at | Phase 2: embeddings and rerank on CPU, in the deployment. Phase 3 is optional Layer 5 work |
 
 ## At a glance
 
-Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Slate dashed: optional Layer 5 work, which starts only after every other roadmap is complete. Dashed white: another roadmap this one waits on or unblocks. Pink: the evaluation record.
 
 ```mermaid
 flowchart LR
   P0{{"Phase 0 · verify<br/>weights, licence, engine<br/>CPU latency, seed recall<br/>D-L4-3 de-NIM"}}:::gate
   P1["Phase 1 · embedding seam, CPU<br/>tei-embed service<br/>EmbeddingProvider by residency<br/>builds nothing external"]:::todo
   P2["Phase 2 · reranker<br/>RerankProvider on TEI<br/>hydrate under RLS, then rerank<br/>new revision key"]:::todo
-  P3["Phase 3 · GPU arm, optional<br/>inflect-hosted on Modal<br/>CPU and GPU parity"]:::todo
+  P3["Phase 3 · GPU arm<br/>on the Layer 5 VM<br/>CPU and GPU parity"]:::optional
   SEED["Seed set, 200 pairs<br/>recall at 10"]:::eval
-  MOD["modal-inference P1<br/>hosted route"]:::ext
+  MOD["Layer 5<br/>optional, after completion"]:::optional
   WV["weaviate P2<br/>index pipeline"]:::ext
-  P0 --> P1 --> P2 --> P3
+  P0 --> P1 --> P2
+  P2 -.-> P3
   SEED -.-> P1
   SEED -.-> P2
   MOD -.-> P3
@@ -46,7 +48,7 @@ flowchart LR
   classDef gate fill:#ede9fe,stroke:#6d28d9,color:#3b0764
   classDef ext fill:#ffffff,stroke:#64748b,color:#334155,stroke-dasharray:3 3
   classDef eval fill:#fce7f3,stroke:#be185d,color:#831843
-  classDef declined fill:#f3f4f6,stroke:#6b7280,color:#374151,stroke-dasharray:4 3
+  classDef optional fill:#f1f5f9,stroke:#475569,color:#334155,stroke-dasharray:6 3
 ```
 
 ## Current state (true today)
@@ -77,8 +79,8 @@ flowchart LR
 **Adopted.** The open-weight Nemotron retriever models — at the time of writing
 the *Llama-Nemotron Embed 1B v2* and *Llama-Nemotron Rerank 1B v2* family, or
 their current successors — served by an open engine: Hugging Face **Text
-Embeddings Inference** (TEI, Apache-2.0) on CPU for the pilot, TEI or vLLM on a
-Modal GPU for production. A single `EmbeddingProvider` seam in
+Embeddings Inference** (TEI, Apache-2.0) on CPU in the deployment, for the
+pilot and for production; a GPU arm is optional Layer 5 work. A single `EmbeddingProvider` seam in
 `src/lib/ai/embeddings/` that is residency-routed exactly like
 `model-selection.ts`.
 
@@ -260,68 +262,65 @@ scanned at the tool boundary, after rerank).
 
 **Done when.** The nightly RAG eval shows the rerank gain and the gate is on.
 
-### Phase 3 — The GPU arm on Modal (optional Layer 5)
+### Phase 3 — The GPU arm (optional, Layer 5)
 
-**Goal.** The same two providers behind a `inflect-hosted/<model>` specifier,
-served by TEI or vLLM on a Modal GPU, for deployments that opted into Layer 5.
+**Goal.** The same two providers served on the Layer 5 GPU VM, for a
+deployment that takes Layer 5 up after every other roadmap is complete.
 
 **Sub-phases.**
-- [ ] 3.1 Depends on [`modal-inference.md`](./modal-inference.md) Phase 1 (the
-      hosted route, the sub-processor row, the `AI_HOSTED_*` env).
-- [ ] 3.2 A Modal function `embed` (TEI GPU image, model volume, scale-to-zero,
-      proxy-auth token) exposing `/v1/embeddings` and `/rerank`; deployed from
-      `deploy/modal/retriever.py` — Python stays in `deploy/`.
-- [ ] 3.3 `select.ts` routes `EXTERNAL` tenants to `inflect-hosted` when
-      configured, `LOCAL_ONLY` tenants to `inflect-local` only — the hosted
-      route is **not** local (master § Layer 5 is optional by construction).
+- [ ] 3.1 Depends on a production local route
+      ([`modal-inference.md`](./modal-inference.md) Phase 2).
+- [ ] 3.2 TEI's GPU image on the Layer 5 VM, exposing `/v1/embeddings` and
+      `/rerank`, deployed from the Layer 5 scripts — Python and drivers stay
+      on the VM, never in the app.
+- [ ] 3.3 `select.ts` routes to the GPU arm through the local route for the
+      tenants who may use it. A VM in the operator's own Google Cloud project
+      is local, so `LOCAL_ONLY` tenants may use it too.
 - [ ] 3.4 Same model, same dimensions, same revision key: a vector produced on
       CPU and on GPU must be interchangeable, proven by a test that embeds the
       seed set on both and compares cosine ≥ 0.999.
 
 **Prompt.**
 ```text
-Context (main 3.338.0 + modal-inference Phase 1): the hosted route `inflect-hosted` exists
-with AI_HOSTED_BASE_URL / AI_HOSTED_API_KEY, Modal is on the sub-processor register, and
-Python deployment code lives under deploy/modal/. The embedding + rerank seam (Phases 1–2)
-routes by residency.
+Context (main + Layer 5 taken up): the embedding + rerank seam (Phases 1–2) runs on CPU
+in the deployment and routes by residency; a production local route exists on the
+Layer 5 GPU VM (modal-inference.md Phase 2), reached through AI_LOCAL_* style operator
+configuration.
 
-Task: add the GPU arm. (1) deploy/modal/retriever.py: a Modal app with one GPU function
-serving TEI (or vLLM embeddings) for the pinned embed + rerank models, model weights on a
-Modal Volume, scaledown to zero, proxy-auth token, region pinned per the modal-inference
-Phase 0 decision. (2) select.ts: EXTERNAL tenants may route to inflect-hosted/<model>
-when configured; LOCAL_ONLY never does. (3) A parity test: the seed set embedded on the
-CPU and the hosted arm agree (cosine ≥ 0.999) — the revision key must NOT change between
-arms. (4) Metric label provider=hosted.
+Task: add the GPU arm. (1) TEI's GPU image for the pinned embed + rerank models on the
+Layer 5 VM, weights on the VM's disk, behind the same operator-held token as the local
+model route. (2) select.ts: route to the GPU arm through the local route when it is
+configured; fall back to the CPU arm when it is not. (3) A parity test: the seed set
+embedded on the CPU and the GPU arm agree (cosine ≥ 0.999) — the revision key must NOT
+change between arms. (4) Metric label provider=local-gpu.
 
-Constraints: the hosted base URL is operator config; the token is a secret in .env.prod
-(never echoed). A LOCAL_ONLY tenant must be unable to reach the hosted arm by any
-specifier — add that to the socket-boundary re-check. No Python outside deploy/.
+Constraints: the GPU arm's address is operator config, never tenant-writable; the token
+is a secret in the environment file (never echoed). Nothing external is reached.
 
-Done when: the parity test is green against a deployed Modal function, the residency
-tests are green, and the embeddings metric shows both providers.
+Done when: the parity test is green against the deployed GPU arm, the residency tests are
+green, and the embeddings metric shows both arms.
 ```
 
-**Hardening.** G1 (hosted ≠ local — the whole point of the third id), G2
-(Modal's row is a precondition, not a follow-up), G12 (absent `AI_HOSTED_*` =
-nothing deployed, nothing registered). Parity is the eval: two arms that
-disagree are two models, and two models are two revisions.
+**Hardening.** G1 (the arm is chosen by residency, re-checked at the socket),
+G9 (an unconfigured GPU arm registers nothing and the CPU arm serves). Parity
+is the eval: two arms that disagree are two models, and two models are two
+revisions.
 
-**Done when.** A deployment with `AI_HOSTED_*` set embeds on Modal; one without
-it is byte-identical to Phase 2.
+**Done when.** A deployment with the GPU arm configured embeds on it; one
+without it is byte-identical to Phase 2.
 
 ## Evals for this framework
 
 | What | How | Record |
 | --- | --- | --- |
 | Retrieval quality | recall@10 on the 200-pair seed set, with and without rerank (Phase 0, re-run per revision) | evaluation record (G11) consumed by the `search_knowledge` mount gate |
-| Cross-arm parity | CPU vs hosted cosine ≥ 0.999 on the seed set (Phase 3) | CI, when the hosted arm is configured |
+| Cross-arm parity | CPU vs GPU cosine ≥ 0.999 on the seed set (Phase 3, optional) | CI, when the GPU arm is configured |
 | Latency | p50/p95 per provider | `embeddings.requests` histogram |
-| Residency | "LOCAL_ONLY never reaches hosted/external" | unit + guard, every phase |
+| Residency | "LOCAL_ONLY never reaches an external provider" | unit + guard, every phase |
 
 ## Updating the master
 
 Flip the row on the master [Status board](../ai-architecture-roadmap.md#status-board)
 per phase; D-L4-3 and the model/revision in force are recorded in the master's
-decision table and in the Phase 0 note. When Phase 3 lands, the master's
-"Layer 5 is optional by construction" section lists the retriever among the
-hosted functions.
+decision table and in the Phase 0 note. If Phase 3 lands, the master's
+"Layer 5 is optional by construction" section lists the retriever's GPU arm.

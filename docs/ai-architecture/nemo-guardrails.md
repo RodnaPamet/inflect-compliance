@@ -7,7 +7,7 @@ inflect · ai architecture · nemo guardrails · roadmap v1 · 2026-10-29
 > response filter". The **Current state** section is true today (main
 > 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan. This is a child
 > of [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read
-> that first for the target map, the global rules **G1–G12**, and the
+> that first for the target map, the global rules **G1–G13**, and the
 > sequencing. If the code contradicts a fact here, the code wins and the pull
 > request that finds it corrects this document.
 
@@ -20,6 +20,7 @@ inflect · ai architecture · nemo guardrails · roadmap v1 · 2026-10-29
 | Depends on | [`garak.md`](./garak.md) Phase 1 (the before/after measurement); [`presidio.md`](./presidio.md) Phase 1 for PII rails |
 | Unblocks | model-based rails on the assistant and run input; closes the Flue audit's F5 residual (run input unscanned) by a second route |
 | Owner decisions | **D-L1-2** (LLM-free rails first; LLM-backed rails only on the tenant's permitted route) |
+| Complete at | Phase 3, with LLM-backed rails on the external route by API key |
 
 ## At a glance
 
@@ -33,7 +34,7 @@ flowchart LR
   P3["Phase 3 · rail precision<br/>records per rail"]:::todo
   GA["garak P1<br/>before and after"]:::ext
   PR["presidio P1<br/>PII rail"]:::ext
-  RT["Hosted or local route<br/>for LLM-backed rails"]:::ext
+  RT["External route by API key<br/>for LLM-backed rails"]:::done
   P0 --> P1 --> P2 --> P3
   GA -.-> P1
   PR -.-> P1
@@ -94,8 +95,9 @@ verdict.
 - *Colang dialog rails.* A second orchestration language for conversation
   flow; the assistant's tool loop and the engines own flow.
 - *NIM-backed rail models.* The de-NIM rule (blueprint §3); LLM-backed rails
-  use the tenant's permitted route — hosted/local Nemotron or the external
-  model — through a per-residency server config (D-L1-2).
+  use the tenant's permitted route — the external model by API key by
+  default, or a local model if Layer 5 is ever taken up — through a
+  per-residency server config (D-L1-2).
 - *Rails that need an LLM, first.* Phase 1 ships LLM-free rails only
   (heuristic jailbreak, regex/keyword, Presidio PII); LLM-backed rails are
   Phase 2 and require the residency plumbing to exist.
@@ -191,7 +193,8 @@ G10 (the fixture-equivalence test is the regression lock for the refactor).
 **Sub-phases.**
 - [ ] 2.1 Two NeMo server configs — `external` and `local` — each with a
       `models:` entry pointing at the route of that residency class
-      (`inflect-hosted`/`inflect-local` vLLM, or the external model), deployed
+      (the external model by API key; `inflect-local` only if a local
+      gateway exists, which Layer 5 adds and nothing earlier does), deployed
       as two services or one with per-config endpoints; the guard provider
       selects the config by `ctx` residency and **refuses** to send a
       `LOCAL_ONLY` tenant's text to the external config (socket-boundary
@@ -200,9 +203,10 @@ G10 (the fixture-equivalence test is the regression lock for the refactor).
       synthesis, a fact-check rail over retrieved chunks once Layer 4 exists.
 - [ ] 2.3 Every rail model call is a decision-log row (Art 12), tagged
       `guard`, with tokens charged to the tenant's budget.
-- [ ] 2.4 Sub-processor rows: if the external config uses Anthropic/
-      OpenRouter, their rows gain "guard rail prompts (user text under
-      evaluation)"; if hosted, Modal's row does.
+- [ ] 2.4 Sub-processor rows: the external config uses a provider already on
+      the register (Anthropic or OpenRouter), and that provider's row gains
+      "guard rail prompts (user text under evaluation)" before the first
+      call (G2).
 
 **Prompt.**
 ```text

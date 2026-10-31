@@ -7,7 +7,7 @@ inflect · ai architecture · ragas · roadmap v1 · 2026-10-29
 > ("Ragas (testing)"). The **Current state** section is true today (main
 > 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan. This is a child
 > of [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read
-> that first for the target map, the global rules **G1–G12**, and the
+> that first for the target map, the global rules **G1–G13**, and the
 > sequencing. If the code contradicts a fact here, the code wins and the pull
 > request that finds it corrects this document.
 
@@ -20,6 +20,7 @@ inflect · ai architecture · ragas · roadmap v1 · 2026-10-29
 | Depends on | [`weaviate.md`](./weaviate.md) Phases 1–2, [`nemotron-retriever.md`](./nemotron-retriever.md) Phase 1 |
 | Unblocks | `search_knowledge` being offered at all; [`ares.md`](./ares.md) (needs Ragas's cases to calibrate against) |
 | Owner decisions | **D-EV-2** (the judge model's residency and cost) |
+| Complete at | Phase 3 |
 
 ## At a glance
 
@@ -85,8 +86,9 @@ shape so the mount gate can consume it.
   embedding model. Both are called from the Python job through the
   OpenAI-compatible endpoint of whichever provider the eval config names —
   the same providers the product registers (G1), and the same sub-processor
-  consequences (G2). A deployment that is `LOCAL_ONLY` end-to-end judges with
-  its local model.
+  consequences (G2). A local judge exists only if Layer 5
+  is taken up; until then records come from CI with the external key, on
+  seed data.
 - *Running over customer tenants.* Never. Seed and fixture corpora only.
 
 ## Roadmap (future direction)
@@ -101,8 +103,8 @@ shape so the mount gate can consume it.
       (answerable), refusal (out of corpus — the right answer is "not in the
       corpus"), injection (a chunk carrying instructions), missing-input
       (question needs a document the corpus lacks).
-- [ ] 0.3 D-EV-2: the judge — external provider with a CI key (budgeted) or
-      the hosted/local model; record on the sub-processor row that eval text
+- [ ] 0.3 D-EV-2: the judge — an external provider with a CI key (budgeted);
+      a local model only if Layer 5 is taken up; record on the sub-processor row that eval text
       (seed only) goes to the vendor.
 - [ ] 0.4 `src/lib/ai/evals/rag-record.ts`: the TS schema for a RAG evaluation
       record (set hash, retriever revision `{embeddingModel, rerankModel,

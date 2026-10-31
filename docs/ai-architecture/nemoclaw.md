@@ -9,7 +9,7 @@ inflect · ai architecture · nemoclaw · roadmap v1 · 2026-10-29
 > `a1c2f05c`). The **Roadmap** section is the plan, and most of it is a
 > decision about which half of NemoClaw is wanted. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
-> first for the target map, the global rules **G1–G12**, and the sequencing.
+> first for the target map, the global rules **G1–G13**, and the sequencing.
 > If the code contradicts a fact here, the code wins and the pull request that
 > finds it corrects this document.
 
@@ -22,6 +22,7 @@ inflect · ai architecture · nemoclaw · roadmap v1 · 2026-10-29
 | Depends on | nothing new |
 | Unblocks | nothing on the critical path |
 | Owner decisions | **D-L1-4** (adopt the policy-template half as reference; decline the agent-runtime and router halves) |
+| Complete at | Phase 1, or Phase 0's recorded decision when no tightening is taken |
 
 ## At a glance
 
@@ -121,8 +122,9 @@ tighten; nothing is imported as a dependency.
   refused, and the refusal is a decision with its own guard, not an oversight
   a stack install should reverse ([`swe-bench.md`](./swe-bench.md) says the
   same from the eval side).
-- *NIM-packaged Nemotron inside the stack.* De-NIM (blueprint §3); the model
-  route is [`modal-inference.md`](./modal-inference.md).
+- *NIM-packaged Nemotron inside the stack.* De-NIM (blueprint §3). Model
+  usage is through LLM API keys by default, and a local model route is
+  optional Layer 5 work ([`modal-inference.md`](./modal-inference.md)).
 
 ## Roadmap (future direction)
 
