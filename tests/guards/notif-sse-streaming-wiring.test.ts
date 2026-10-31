@@ -170,16 +170,26 @@ describe('PR-C SSE notification streaming wiring', () => {
             // Flip the env var when client integration has been
             // manually verified end-to-end.
             //
-            // The flag MUST be read via the validated `@/env` module
-            // (zod schema in `src/env.ts`), NOT raw `process.env.X` —
-            // the `no-fallbacks` ratchet bans raw access.
+            // The flag MUST be read via a validated env module, NOT raw
+            // `process.env.X` — the `no-fallbacks` ratchet bans raw access.
+            //
+            // Since #4764 that module is `@/env-client`, not `@/env`: this is
+            // a `'use client'` file, and importing the server env module put
+            // its ~90-variable schema into every workspace route's First Load
+            // JS. `@/env-client` is pinned here rather than left open so the
+            // cheap fix for a future flag -- reaching for `@/env` because it
+            // is the one you know -- fails this guard instead of the budget.
             const s = read(PATH_BELL);
             expect(s).toMatch(
                 /env\.NEXT_PUBLIC_NOTIFICATIONS_SSE === ['"]1['"]/,
             );
             expect(s).toMatch(
-                /import\s*\{[\s\S]{0,80}env[\s\S]{0,80}\}\s*from\s+['"]@\/env['"]/,
+                /import\s*\{[\s\S]{0,80}env[\s\S]{0,80}\}\s*from\s+['"]@\/env-client['"]/,
             );
+            // And NOT the server env module, which is the regression this
+            // names. The needle is the whole specifier plus its closing
+            // quote, so `@/env-client` does not satisfy it.
+            expect(s).not.toMatch(/from\s+['"]@\/env['"]/);
         });
 
         it('wires onmessage to prepend the parsed event into state', () => {

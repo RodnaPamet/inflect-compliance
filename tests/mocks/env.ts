@@ -1,6 +1,9 @@
 // tests/mocks/env.ts
-// This file mocks src/env.ts to bypass @t3-oss/env-nextjs ESM issues in Jest
+// This file mocks BOTH src/env.ts and src/env-client.ts (#4764 split the
+// client variables out) to bypass @t3-oss/env-nextjs ESM issues in Jest.
 // It uses a Proxy to dynamically reflect process.env overrides in tests.
+// Mapped from both specifiers in jest.config.js — one Proxy serves both,
+// because it answers any key from process.env rather than a fixed list.
 
 export const env = new Proxy({}, {
     get(target, prop: string) {

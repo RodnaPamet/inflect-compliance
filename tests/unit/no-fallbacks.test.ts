@@ -20,14 +20,29 @@ function walkDir(dir: string, fileList: string[] = []) {
 
 describe('Static Analysis: No process.env fallbacks', () => {
     it('should not contain forbidden process.env or secret fallback patterns in src', () => {
-        const srcDir = path.resolve(__dirname, '../../src');
+        const repoRoot = path.resolve(__dirname, '../..');
+        const srcDir = path.resolve(repoRoot, 'src');
         const files = walkDir(srcDir);
+
+        /*
+            THE ENV DEFINITION MODULES — the only files allowed to map
+            `process.env`, because mapping it is what they are for. There are
+            TWO since #4764 split the client variables out of `src/env.ts`.
+
+            Listed by exact repo-relative path, replacing an
+            `endsWith('env.ts')` suffix test. The suffix was the bug waiting to
+            happen: ANY new file whose name ends in those seven characters —
+            `client-env.ts`, `legacy-env.ts` — would have inherited a raw
+            `process.env` exemption from its filename alone, with nothing
+            recording the decision. A path list cannot be joined by accident.
+        */
+        const ENV_DEFINITION_MODULES = ['src/env.ts', 'src/env-client.ts'];
 
         let foundErrors = false;
 
         for (const file of files) {
-            // Ignore the env definition itself since it maps process.env
-            if (file.endsWith('env.ts')) continue;
+            // Ignore the env definitions themselves since they map process.env
+            if (ENV_DEFINITION_MODULES.includes(path.relative(repoRoot, file))) continue;
             // Infrastructure routes intentionally use process.env for env gating / build info
             if (file.includes('health') && file.includes('route.ts')) continue;
             if (file.includes('readyz') && file.includes('route.ts')) continue;

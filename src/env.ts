@@ -1,7 +1,10 @@
-// Side effect — set Zod's `jitless` flag (browser only) before this
-// module's own client env-validation parse, which would otherwise be the
-// first thing to trigger Zod's CSP-violating `new Function` probe. See
-// src/lib/zod-jitless.ts.
+// Side effect — set Zod's `jitless` flag (browser only) before any schema
+// here is parsed, so Zod's CSP-violating `new Function` probe never fires.
+// Since #4764 this module declares no client variables and is kept off the
+// client graph by a guard, so the browser parse that first motivated this
+// import now happens in `src/env-client.ts`, which carries it too. Kept here
+// because `src/middleware.ts` and the edge runtime import this file, and the
+// flag is a cheap global either way. See src/lib/zod-jitless.ts.
 import '@/lib/zod-jitless';
 import { parseCidr } from "@/lib/security/cidr";
 import { createEnv } from '@t3-oss/env-nextjs';
@@ -704,18 +707,17 @@ export const env = createEnv({
     },
 
     /**
-     * Specify your client-side environment variables schema here. This way you can ensure the app
-     * isn't built with invalid env vars. To expose them to the client, prefix them with
-     * `NEXT_PUBLIC_`.
+     * NO `client:` BLOCK — client variables live in `src/env-client.ts` (#4764).
+     *
+     * This module's ~90 server variables are ordinary module code: a browser
+     * bundle that reaches this file carries every key name and zod call in it,
+     * even though no server VALUE is readable there. One `'use client'`
+     * importer put all of it into 124 of 183 routes' First Load JS. Declaring
+     * a client variable here would re-create that importer, so they are
+     * declared in the small client module instead, and
+     * `tests/guards/client-reachable-modules-import-no-server-env.test.ts`
+     * walks the import graph to keep this file off the client.
      */
-    client: {
-        // PR-C 2026-05-27 — opt-in flag for the SSE notification
-        // bell. Off by default (the bell stays on REST polling)
-        // until the client integration is verified end-to-end in
-        // a real browser. Server-side stream is wired regardless;
-        // flipping this to '1' is the only step to engage SSE.
-        NEXT_PUBLIC_NOTIFICATIONS_SSE: z.enum(['0', '1']).optional(),
-    },
 
     /**
      * You can't destruct `process.env` as a regular object in the Next.js edge runtimes (e.g.
@@ -835,8 +837,6 @@ export const env = createEnv({
         PLATFORM_ADMIN_API_KEY: process.env.PLATFORM_ADMIN_API_KEY,
         PLATFORM_ADMIN_API_KEY_PREVIOUS: process.env.PLATFORM_ADMIN_API_KEY_PREVIOUS,
         NOTIFICATIONS_TZ: process.env.NOTIFICATIONS_TZ,
-
-        NEXT_PUBLIC_NOTIFICATIONS_SSE: process.env.NEXT_PUBLIC_NOTIFICATIONS_SSE,
     },
     /**
      * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation.
