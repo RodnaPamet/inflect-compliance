@@ -32,6 +32,11 @@ import { useTenantApiUrl, useTenantHref, useMoneyFormatter, useTenantContext } f
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
+import { ToggleGroup } from '@/components/ui/toggle-group';
+import { ErrorState } from '@/components/ui/error-state';
+import { useToastWithUndo } from '@/components/ui/hooks';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
+import { apiRefusalMessage } from '@/lib/api-error';
 import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
 import { computeLossCalibration } from '@/lib/risk/loss-calibration';
@@ -48,6 +53,8 @@ interface Row {
     justification: string | null;
     createdByUserId: string | null;
     createdAt: string;
+    /** #4773 — the attributed risk, so the register can name and link it. */
+    risk?: { id: string; title: string } | null;
 }
 interface Aggregate {
     total: number;
@@ -68,6 +75,22 @@ const SOURCE_VARIANT: Record<Source, 'info' | 'warning' | 'error'> = {
     FINDING: 'warning',
     INCIDENT: 'error',
 };
+const SOURCES: readonly Source[] = ['USER', 'FINDING', 'INCIDENT'];
+
+/** #4773 — the register reads 50 more at a time, up to the list route's cap. */
+const PAGE = 50;
+const MAX_TAKE = 500;
+
+/**
+ * #4773 — the message for a refused request: the server's reason for a 4xx,
+ * the fallback for a 5xx or a network failure.
+ */
+async function refusalOf(res: Response | null, fallback: string): Promise<string> {
+    if (!res || res.status >= 500) return fallback;
+    const body: unknown = await res.json().catch(() => null);
+    return apiRefusalMessage(body, fallback);
+}
+const messageOf = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
 export default function LossEventsPage() {
     const t = useTranslations('risks');
@@ -85,7 +108,10 @@ export default function LossEventsPage() {
     const { permissions } = useTenantContext();
     const canWrite = permissions.canWrite;
     const canAdmin = permissions.canAdmin;
-    const listQuery = useTenantSWR<{ events: Row[] }>('/loss-events?take=50');
+    const [take, setTake] = useState(PAGE);
+    const listQuery = useTenantSWR<{ events: Row[]; nextCursor?: string | null }>(`/loss-events?take=${take}`);
+    const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
     const aggQuery = useTenantSWR<Aggregate>('/loss-events/aggregate');
     const runQuery = useTenantSWR<{ run: Run | null }>('/risks/simulate');
     const rows = listQuery.data?.events ?? [];
@@ -112,10 +138,22 @@ export default function LossEventsPage() {
     const [riskId, setRiskId] = useState<string | null>(null);
 
     const load = () => Promise.all([listQuery.mutate(), aggQuery.mutate(), runQuery.mutate()]);
+    /** #4773 — read the next page of the register, up to the route's cap. */
+    const showMore = () => setTake((n) => Math.min(MAX_TAKE, n + PAGE));
 
     const record = async () => {
-        const amt = Number(amount);
-        if (!Number.isFinite(amt) || amt < 0 || occurredAt == null) return;
+        const raw = amount.trim();
+        const amt = Number(raw);
+        // #4773 — an amount or date the page cannot send is refused with a
+        // reason; it used to do nothing at all.
+        if (raw === '' || !Number.isFinite(amt) || amt < 0) {
+            setMsg(t('lossEvents.amountInvalid')); setMsgOk(false);
+            return;
+        }
+        if (occurredAt == null) {
+            setMsg(t('lossEvents.dateRequired')); setMsgOk(false);
+            return;
+        }
         setBusy(true); setMsg(null);
         try {
             const res = await fetch(apiUrl('/loss-events'), {
@@ -128,36 +166,45 @@ export default function LossEventsPage() {
                     source,
                     riskId,
                 }),
-            });
-            if (res.ok) {
+            }).catch(() => null);
+            if (res && res.ok) {
                 setMsg(t('lossEvents.lossRecorded')); setMsgOk(true);
                 setAmount(''); setDescription(''); setRiskId(null);
                 await load();
             } else {
-                setMsg(t('lossEvents.saveFailed')); setMsgOk(false);
+                setMsg(await refusalOf(res, t('lossEvents.saveFailed'))); setMsgOk(false);
             }
         } finally {
             setBusy(false);
         }
     };
 
-    const remove = async (id: string) => {
-        // B2-1 — `record` (above) already reports failures through this same
-        // msg surface; `remove` did not, which made it an inconsistency
-        // inside one component rather than a page-wide convention.
-        //
-        // It matters here more than most: `deleteLossEvent` is ADMIN-only
-        // server-side, but this button renders for every role, so an
-        // EDITOR or READER click was a guaranteed 403 with no feedback at
-        // all — the row simply stayed, indistinguishable from a no-op.
-        setMsg(null);
-        const res = await fetch(apiUrl(`/loss-events/${id}`), { method: 'DELETE' });
-        if (!res.ok) {
-            setMsg(t('lossEvents.saveFailed'));
-            setMsgOk(false);
-            return;
+    /**
+     * #4773 — removing takes the undo window (Epic 67): the row leaves the
+     * register at once and the DELETE is sent when the window closes. A
+     * failure is a toast with the server's reason. It used to report inside
+     * the record form, which only write roles see, while Remove is an
+     * Admin's control.
+     */
+    const removeLossEvent = (row: Row) => {
+        const previous = listQuery.data;
+        if (previous) {
+            void listQuery.mutate({ ...previous, events: previous.events.filter((r) => r.id !== row.id) }, { revalidate: false });
         }
-        await load();
+        triggerUndoToast({
+            message: t('lossEvents.removedToast', { money: money(row.amount) }),
+            undoMessage: t('lossEvents.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(`/loss-events/${row.id}`), { method: 'DELETE' }).catch(() => null);
+                if (!res || !res.ok) throw new Error(await refusalOf(res, t('lossEvents.removeFailed')));
+                await load();
+            },
+            undoAction: () => { if (previous) void listQuery.mutate(previous, { revalidate: false }); },
+            onError: (e) => {
+                toast.error(messageOf(e, t('lossEvents.removeFailed')));
+                if (previous) void listQuery.mutate(previous, { revalidate: false });
+            },
+        });
     };
 
     const yearMax = agg?.byYear.length
@@ -215,7 +262,19 @@ export default function LossEventsPage() {
             {/* Predicted-vs-actual overlay */}
             <Card className="space-y-default p-6" data-testid="loss-events-rollup">
                 <Heading level={2}>{t('lossEvents.predictedVsActual')}</Heading>
-                {!agg || agg.count === 0 ? (
+                {/* #4773 — a failed read is not "nothing recorded". */}
+                {aggQuery.error ? (
+                    <div data-testid="loss-events-agg-error">
+                        <ErrorState
+                            title={t('lossEvents.aggErrorTitle')}
+                            description={t('lossEvents.aggError')}
+                            onRetry={() => void aggQuery.mutate()}
+                            retryLabel={t('lossEvents.retry')}
+                        />
+                    </div>
+                ) : !agg ? (
+                    <p className="text-sm text-content-muted" data-testid="loss-events-agg-loading">{t('lossEvents.loading')}</p>
+                ) : agg.count === 0 ? (
                     <p className="text-sm text-content-muted" data-testid="loss-events-empty">
                         {t('lossEvents.emptyActuals')}
                     </p>
@@ -253,9 +312,12 @@ export default function LossEventsPage() {
                         </div>
                         {run && (run.portfolioMean != null || run.portfolioP90 != null) && (
                             <p className="mt-tight text-xs text-content-subtle" data-testid="loss-events-prediction-line">
-                                {t('lossEvents.predictionLine')}
-                                {run.portfolioMean != null && <>{t('lossEvents.predMean', { money: money(run.portfolioMean) })}</>}
-                                {run.portfolioP90 != null && <>{t('lossEvents.predP90', { money: money(run.portfolioP90) })}</>}
+                                {/* #4773 — one sentence per case, so each language orders it. */}
+                                {run.portfolioMean != null && run.portfolioP90 != null
+                                    ? t('lossEvents.predictionBoth', { mean: money(run.portfolioMean), p90: money(run.portfolioP90) })
+                                    : run.portfolioMean != null
+                                        ? t('lossEvents.predictionMean', { mean: money(run.portfolioMean) })
+                                        : t('lossEvents.predictionP90', { p90: money(run.portfolioP90) })}
                             </p>
                         )}
                     </>
@@ -354,17 +416,15 @@ export default function LossEventsPage() {
                         <span className="text-xs text-content-muted">{t('lossEvents.riskLabel')}</span>
                         <RiskPicker id="loss-event-risk-picker" value={riskId} onChange={setRiskId} allowNone noneLabel={t('lossEvents.riskNone')} placeholder={t('lossEvents.riskPlaceholder')} />
                     </label>
-                    <div className="flex gap-tight">
-                        {(['USER', 'FINDING', 'INCIDENT'] as Source[]).map((s) => (
-                            <Button
-                                key={s}
-                                size="sm"
-                                variant={source === s ? 'secondary' : 'ghost'}
-                                onClick={() => setSource(s)}
-                            >
-                                {s}
-                            </Button>
-                        ))}
+                    <div className="block">
+                        <span className="mb-0.5 block text-xs text-content-muted">{t('lossEvents.sourceLabel')}</span>
+                        {/* #4773 — a radio group with words, not three buttons reading the stored value. */}
+                        <ToggleGroup
+                            ariaLabel={t('lossEvents.sourceLabel')}
+                            options={SOURCES.map((s) => ({ value: s, label: t(`lossEvents.source_${s}` as string) }))}
+                            selected={source}
+                            selectAction={(v) => setSource(v as Source)}
+                        />
                     </div>
                     <Button variant="primary" onClick={record} disabled={busy || !amount.trim()}>
                         {busy ? t('lossEvents.recording') : t('lossEvents.record')}
@@ -377,6 +437,12 @@ export default function LossEventsPage() {
             {/* Register */}
             <Card className="space-y-default p-6" data-testid="loss-events-list">
                 <Heading level={2}>{t('lossEvents.register')}</Heading>
+                {/* #4773 — how much of the register is on screen. */}
+                {rows.length > 0 && agg && agg.count > rows.length && (
+                    <p className="text-xs text-content-subtle" data-testid="loss-events-shown">
+                        {t('lossEvents.shownOfTotal', { shown: rows.length, total: agg.count })}
+                    </p>
+                )}
                 <AnalyticsState
                     isLoading={listQuery.isLoading}
                     error={listQuery.error}
@@ -392,21 +458,42 @@ export default function LossEventsPage() {
                                 data-testid={`loss-event-row-${r.id}`}
                             >
                                 <span className="w-24 tabular-nums text-content-muted">{formatDate(r.occurredAt)}</span>
-                                <StatusBadge variant={SOURCE_VARIANT[r.source]}>{r.source}</StatusBadge>
+                                <StatusBadge variant={SOURCE_VARIANT[r.source]}>{t(`lossEvents.source_${r.source}` as string)}</StatusBadge>
                                 <span className="font-medium text-content-emphasis tabular-nums">{money(r.amount)}</span>
                                 {r.description && (
                                     <span className="truncate text-content-muted">{r.description}</span>
                                 )}
+                                {/* #4773 — the risk it is attributed to, and why this figure. */}
+                                {r.risk ? (
+                                    <Link href={tenantHref(`/risks/${r.risk.id}`)} className="text-xs text-content-default underline underline-offset-2" data-testid={`loss-event-risk-${r.id}`}>
+                                        {r.risk.title}
+                                    </Link>
+                                ) : (
+                                    <span className="text-xs text-content-subtle">{t('lossEvents.riskNone')}</span>
+                                )}
                                 {canAdmin && (
                                 <span className="ml-auto flex gap-tight">
-                                    <Button size="sm" variant="ghost" onClick={() => remove(r.id)}>
+                                    <Button size="sm" variant="ghost" onClick={() => removeLossEvent(r)} data-testid={`loss-event-remove-${r.id}`}>
                                         {t('lossEvents.remove')}
                                     </Button>
                                 </span>
                                 )}
+                                {r.justification && (
+                                    <p className="w-full text-xs text-content-muted" data-testid={`loss-event-justification-${r.id}`}>
+                                        {t('lossEvents.justification', { text: r.justification })}
+                                    </p>
+                                )}
                             </li>
                         ))}
                     </ul>
+                    {listQuery.data?.nextCursor && take < MAX_TAKE && (
+                        <Button size="sm" variant="secondary" className="mt-default" onClick={showMore} id="loss-events-more">
+                            {t('lossEvents.showMore')}
+                        </Button>
+                    )}
+                    {listQuery.data?.nextCursor && take >= MAX_TAKE && (
+                        <p className="mt-default text-xs text-content-subtle">{t('lossEvents.latestOnly', { count: MAX_TAKE })}</p>
+                    )}
                 </AnalyticsState>
             </Card>
         </div>

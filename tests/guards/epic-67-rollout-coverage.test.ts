@@ -122,6 +122,14 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         handlers: ['archiveScenario'],
     },
     {
+        // #4773 — removing a recorded loss was immediate, with no
+        // confirmation and no undo, for a record the calibration reads.
+        // It is a soft delete; the DELETE is sent when the window closes.
+        file: 'src/app/t/[tenantSlug]/(app)/risks/loss-events/page.tsx',
+        name: 'Loss event removal (risk loss events)',
+        handlers: ['removeLossEvent'],
+    },
+    {
         // Single-asset soft-delete on the asset detail page — was a
         // blocking ConfirmDialog, now optimistic navigate + undo window.
         file: 'src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx',

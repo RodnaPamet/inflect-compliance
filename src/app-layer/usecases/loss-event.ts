@@ -41,6 +41,8 @@ export interface LossEventRow {
     justification: string | null;
     createdByUserId: string | null;
     createdAt: Date;
+    /** #4773 — the attributed risk's title, for the register. Absent on create. */
+    risk?: { id: string; title: string } | null;
 }
 
 export interface CreateLossEventInput {
@@ -106,6 +108,7 @@ export async function listLossEvents(
                 justification: true,
                 createdByUserId: true,
                 createdAt: true,
+                risk: { select: { id: true, title: true } },
             },
         });
         const hasMore = rows.length > take;

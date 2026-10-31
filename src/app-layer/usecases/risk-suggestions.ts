@@ -20,7 +20,8 @@ import type { RequestContext } from '@/app-layer/types';
 import { getProvider } from '@/app-layer/ai/risk-assessment';
 import type { RiskAssessmentInput, RiskAssessmentAsset } from '@/app-layer/ai/risk-assessment/types';
 import type { ApplySessionInput, RiskAssessmentApiInput } from '@/app-layer/ai/risk-assessment/schemas';
-import { forbidden, notFound } from '@/lib/errors/types';
+import { badRequest, forbidden, notFound } from '@/lib/errors/types';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import { sanitizeProviderInput, describePayload } from '@/app-layer/ai/risk-assessment/privacy-sanitizer';
 import { detectInputAnomalies } from '@/app-layer/ai/risk-assessment/input-anomaly';
 import { guardUntrustedInput, guardEgress, assertGuardAllowed } from '@/app-layer/ai/guard';
@@ -435,7 +436,7 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
         throw forbidden('Only editors and admins can apply AI risk suggestions');
     }
 
-    const { updatedSession, createdRiskCount } = await runInTenantContext(ctx, async (db) => {
+    const { updatedSession, createdRiskCount, summary } = await runInTenantContext(ctx, async (db) => {
         const session = await db.riskSuggestionSession.findFirst({
             where: { id: sessionId, tenantId: ctx.tenantId },
             include: { items: true },
@@ -454,9 +455,51 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
 
         const acceptedIds = new Set(input.acceptedItemIds);
         const createdRisks: string[] = [];
+        // #4776 — how many accepted suggestions became NEW risks, and how
+        // many matched a risk the register already had. The done screen
+        // used to say "N risks added" for both.
+        let createdCount = 0;
+        let linkedExistingCount = 0;
 
-        for (const item of session.items) {
-            if (acceptedIds.has(item.id)) {
+        // #4776 — the reviewer's corrections, keyed by item. An edit for an
+        // item that is not accepted is ignored, as the item is not applied.
+        const editsById = new Map((input.edits ?? []).map((e) => [e.itemId, e]));
+        for (const edit of editsById.values()) {
+            for (const value of [edit.likelihood, edit.impact]) {
+                if (value !== undefined && value > maxScale) {
+                    throw badRequest(`Likelihood and impact must be between 1 and ${maxScale}`);
+                }
+            }
+        }
+
+        for (const original of session.items) {
+            if (acceptedIds.has(original.id)) {
+                const edit = editsById.get(original.id);
+                const item = edit
+                    ? {
+                          ...original,
+                          title: edit.title !== undefined ? sanitizePlainText(edit.title) : original.title,
+                          description:
+                              edit.description !== undefined
+                                  ? edit.description === null || edit.description.trim() === ''
+                                      ? null
+                                      : sanitizePlainText(edit.description)
+                                  : original.description,
+                          likelihoodSuggested: edit.likelihood ?? original.likelihoodSuggested,
+                          impactSuggested: edit.impact ?? original.impactSuggested,
+                      }
+                    : original;
+                // What was applied is what the suggestion now records, so the
+                // session reads back as the reviewer left it.
+                const editedFields = edit
+                    ? {
+                          title: item.title,
+                          description: item.description,
+                          likelihoodSuggested: item.likelihoodSuggested,
+                          impactSuggested: item.impactSuggested,
+                      }
+                    : {};
+
                 // Check idempotency — skip if risk with same title exists
                 const existingRisk = await db.risk.findFirst({
                     where: { tenantId: ctx.tenantId, title: item.title },
@@ -465,9 +508,10 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
                     // Mark as accepted but don't create duplicate
                     await db.riskSuggestionItem.update({
                         where: { id: item.id },
-                        data: { status: 'ACCEPTED', createdRiskId: existingRisk.id },
+                        data: { ...editedFields, status: 'ACCEPTED', createdRiskId: existingRisk.id },
                     });
                     createdRisks.push(existingRisk.id);
+                    linkedExistingCount += 1;
                     continue;
                 }
 
@@ -511,14 +555,15 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
 
                 await db.riskSuggestionItem.update({
                     where: { id: item.id },
-                    data: { status: 'ACCEPTED', createdRiskId: risk.id },
+                    data: { ...editedFields, status: 'ACCEPTED', createdRiskId: risk.id },
                 });
                 createdRisks.push(risk.id);
+                createdCount += 1;
             } else {
                 // Not in accepted list → mark rejected
-                if (item.status === 'PENDING') {
+                if (original.status === 'PENDING') {
                     await db.riskSuggestionItem.update({
-                        where: { id: item.id },
+                        where: { id: original.id },
                         data: { status: 'REJECTED' },
                     });
                 }
@@ -551,7 +596,11 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
             },
         });
 
-        return { updatedSession, createdRiskCount: createdRisks.length };
+        return {
+            updatedSession,
+            createdRiskCount: createdCount,
+            summary: { created: createdCount, linkedExisting: linkedExistingCount },
+        };
     });
 
     // applySession creates/links Risk rows directly (not via the
@@ -563,7 +612,7 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
         await bumpEntityCacheVersion(ctx, 'risk');
     }
 
-    return updatedSession;
+    return { ...updatedSession, summary };
 }
 
 // ─── Dismiss Session ───

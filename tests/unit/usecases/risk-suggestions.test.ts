@@ -1436,3 +1436,83 @@ describe('dismissSession — lookup refusal', () => {
         );
     });
 });
+
+// ─── applySession — the reviewer's corrections (#4776) ──────────────
+
+describe("applySession — a reviewer's edits are what gets created", () => {
+    const arm = (existing: { id: string } | null = null) => {
+        mockRunInTx.mockReset();
+        const itemUpdate = jest.fn();
+        const riskCreate = jest.fn().mockResolvedValue({ id: 'r-new' });
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                riskSuggestionSession: {
+                    findFirst: jest.fn().mockResolvedValue({
+                        id: 's1', status: 'GENERATED', provider: 'm', modelName: 'm',
+                        items: [
+                            {
+                                id: 'i1', title: 'Model title', description: 'Model text',
+                                likelihoodSuggested: 2, impactSuggested: 2, status: 'PENDING',
+                            },
+                        ],
+                    }),
+                    update: jest.fn().mockResolvedValue({ id: 's1', status: 'APPLIED', items: [] }),
+                },
+                riskSuggestionItem: { update: itemUpdate },
+                tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
+                riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
+                riskKeySequence: riskKeySequenceStub(),
+                risk: {
+                    findFirst: jest.fn().mockResolvedValue(existing),
+                    create: riskCreate,
+                },
+            } as never),
+        );
+        return { itemUpdate, riskCreate };
+    };
+
+    it('creates the risk with the edited title, description, likelihood and impact', async () => {
+        const { itemUpdate, riskCreate } = arm();
+
+        const result = await applySession(makeRequestContext('ADMIN'), 's1', {
+            acceptedItemIds: ['i1'],
+            edits: [{ itemId: 'i1', title: 'Reviewed title', description: 'Reviewed text', likelihood: 4, impact: 5 }],
+        });
+
+        expect(riskCreate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    title: 'Reviewed title', description: 'Reviewed text', likelihood: 4, impact: 5,
+                }),
+            }),
+        );
+        // The suggestion records what was applied.
+        expect(itemUpdate).toHaveBeenCalledWith({
+            where: { id: 'i1' },
+            data: expect.objectContaining({
+                title: 'Reviewed title', description: 'Reviewed text',
+                likelihoodSuggested: 4, impactSuggested: 5, status: 'ACCEPTED',
+            }),
+        });
+        expect(result.summary).toEqual({ created: 1, linkedExisting: 0 });
+    });
+
+    it('refuses a likelihood or impact above the workspace scale', async () => {
+        arm();
+        await expect(
+            applySession(makeRequestContext('ADMIN'), 's1', {
+                acceptedItemIds: ['i1'],
+                edits: [{ itemId: 'i1', impact: 7 }],
+            }),
+        ).rejects.toThrow(/between 1 and 5/);
+    });
+
+    it('counts an accepted suggestion that matches an existing risk as linked, not created', async () => {
+        const { riskCreate } = arm({ id: 'existing' });
+
+        const result = await applySession(makeRequestContext('ADMIN'), 's1', { acceptedItemIds: ['i1'] });
+
+        expect(riskCreate).not.toHaveBeenCalled();
+        expect(result.summary).toEqual({ created: 0, linkedExisting: 1 });
+    });
+});

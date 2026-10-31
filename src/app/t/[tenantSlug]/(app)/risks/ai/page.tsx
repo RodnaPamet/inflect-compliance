@@ -14,10 +14,41 @@ import { riskSeverityToBadgeVariant } from '@/app-layer/domain/entity-status-map
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@inflect/ui/lib/cn';
 import { riskCanCreate } from '../_shared/bulk-permissions';
 
-const SCALE_OPTIONS: ComboboxOption[] = [1,2,3,4,5].map(v => ({ value: String(v), label: String(v) }));
+// #4776 — the likelihood and impact pickers follow the workspace's matrix,
+// not a fixed 1–5: `applySession` refuses a value above the tenant's scale.
+const scaleOptions = (levels: number): ComboboxOption[] =>
+    Array.from({ length: Math.max(1, levels) }, (_, n) => ({ value: String(n + 1), label: String(n + 1) }));
+
+/** The frameworks a suggestion set can be steered towards, with their names. */
+const FRAMEWORK_CHOICES: ReadonlyArray<{ key: string; label: string }> = [
+    { key: 'ISO27001', label: 'ISO 27001' },
+    { key: 'NIS2', label: 'NIS2' },
+    { key: 'SOC2', label: 'SOC 2' },
+];
+
+const ASSET_TYPES = new Set([
+    'INFORMATION', 'SYSTEM', 'SERVICE', 'DATA_STORE', 'VENDOR', 'PEOPLE_PROCESS',
+    'APPLICATION', 'INFRASTRUCTURE', 'PROCESS', 'OTHER',
+]);
+const CRITICALITIES = new Set(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
+
+/** A suggestion's controls, or none when the stored value is not a string array. */
+function parseControls(json: string | null): string[] {
+    if (!json) return [];
+    try {
+        const parsed: unknown = JSON.parse(json);
+        return Array.isArray(parsed) ? parsed.filter((c): c is string => typeof c === 'string') : [];
+    } catch {
+        return [];
+    }
+}
 
 // ─── Types ───
 
@@ -85,6 +116,7 @@ export default function AIRiskAssessmentPage() {
     // two gates as the Risk button and the import.
     const canCreate = riskCanCreate(tenant);
     const tx = useTranslations('risks');
+    const ta = useTranslations('assets');
     const { config: matrixConfig } = useRiskMatrixConfig();
 
     // Phase state
@@ -103,19 +135,27 @@ export default function AIRiskAssessmentPage() {
     const [decisions, setDecisions] = useState<Record<string, ItemDecision>>({});
     const [editingItem, setEditingItem] = useState<string | null>(null);
     const [editForm, setEditForm] = useState<SuggestionEditForm>({});
-    const [appliedCount, setAppliedCount] = useState(0);
+    // #4776 — saved corrections, keyed by item; sent with the apply.
+    const [edits, setEdits] = useState<Record<string, SuggestionEditForm>>({});
+    const [appliedSummary, setAppliedSummary] = useState<{ created: number; linkedExisting: number }>({ created: 0, linkedExisting: 0 });
+    const [assetsFailed, setAssetsFailed] = useState(false);
 
     // ─── Load Assets ───
     const loadAssets = async () => {
         if (assetsLoaded) return;
+        setAssetsFailed(false);
         try {
             const res = await fetch(apiUrl('/assets'));
-            if (!res.ok) return;
+            if (!res.ok) throw new Error(String(res.status));
             const data = await res.json();
             const list = Array.isArray(data) ? data : data.data ?? [];
             setAssets(list.map((a: AssetOption) => ({ id: a.id, name: a.name, type: a.type, criticality: a.criticality })));
             setAssetsLoaded(true);
-        } catch { /* ignore */ }
+        } catch {
+            // #4776 — a failed load used to leave the button saying "Load
+            // assets" with nothing to say why nothing appeared.
+            setAssetsFailed(true);
+        }
     };
 
     // ─── Generate ───
@@ -141,6 +181,7 @@ export default function AIRiskAssessmentPage() {
                 ? { ...data.session, items: data.items ?? [] }
                 : data;
             setSession(sess);
+            setEdits({});
 
             // Initialize decisions: all pending
             const decs: Record<string, ItemDecision> = {};
@@ -167,7 +208,20 @@ export default function AIRiskAssessmentPage() {
             const res = await fetch(apiUrl(`/ai/risk-suggestions/${session.id}/apply`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ acceptedItemIds: accepted }),
+                body: JSON.stringify({
+                    acceptedItemIds: accepted,
+                    // #4776 — the reviewer's corrections travel with the apply;
+                    // they used to stay in the browser.
+                    edits: accepted
+                        .filter((id) => edits[id])
+                        .map((id) => ({
+                            itemId: id,
+                            title: edits[id].title,
+                            description: edits[id].description,
+                            likelihood: edits[id].likelihoodSuggested,
+                            impact: edits[id].impactSuggested,
+                        })),
+                }),
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ error: { message: tx('ai.applyFailed') } }));
@@ -175,7 +229,10 @@ export default function AIRiskAssessmentPage() {
             }
             const updated = await res.json();
             setSession(updated);
-            setAppliedCount(accepted.length);
+            setAppliedSummary({
+                created: updated?.summary?.created ?? accepted.length,
+                linkedExisting: updated?.summary?.linkedExisting ?? 0,
+            });
             setPhase('done');
         } catch (e) {
             setError(e instanceof Error ? e.message : tx('ai.applyFailed'));
@@ -229,15 +286,38 @@ export default function AIRiskAssessmentPage() {
 
     // ─── Edit helpers ───
     const startEdit = (item: SuggestionItem) => {
+        const shown = withEdit(item);
         setEditingItem(item.id);
         setEditForm({
-            title: item.title,
-            description: item.description ?? '',
-            likelihoodSuggested: item.likelihoodSuggested ?? 3,
-            impactSuggested: item.impactSuggested ?? 3,
+            title: shown.title,
+            description: shown.description ?? '',
+            likelihoodSuggested: shown.likelihoodSuggested ?? 3,
+            impactSuggested: shown.impactSuggested ?? 3,
         });
     };
     const cancelEdit = () => { setEditingItem(null); setEditForm({}); };
+    // #4776 — "Save & accept" keeps the correction; it used to discard it.
+    const saveEdit = (id: string) => {
+        setEdits((prev) => ({ ...prev, [id]: editForm }));
+        cancelEdit();
+        setDecision(id, 'accept');
+    };
+    /** A suggestion as the reviewer left it: their saved correction over the model's text. */
+    const withEdit = (item: SuggestionItem): SuggestionItem => {
+        const e = edits[item.id];
+        if (!e) return item;
+        return {
+            ...item,
+            title: e.title ?? item.title,
+            description: e.description ?? item.description,
+            likelihoodSuggested: e.likelihoodSuggested ?? item.likelihoodSuggested,
+            impactSuggested: e.impactSuggested ?? item.impactSuggested,
+        };
+    };
+    const likelihoodOptions = scaleOptions(matrixConfig.likelihoodLevels);
+    const impactOptions = scaleOptions(matrixConfig.impactLevels);
+    const assetTypeLabel = (type: string) => (ASSET_TYPES.has(type) ? ta(`filterEnums.type.${type}`) : type);
+    const criticalityLabel = (c: string) => (CRITICALITIES.has(c) ? ta(`filterEnums.criticality.${c}`) : c);
 
     // ─── Risk Level Badge ───
     // Config-driven (PR-J): band name + tone come from the tenant matrix,
@@ -257,9 +337,9 @@ export default function AIRiskAssessmentPage() {
     // singular.
     const confidenceBadge = (c: string | null) => {
         switch (c) {
-            case 'high': return <StatusBadge variant="success">● {tx('ai.confidenceHigh')}</StatusBadge>;
-            case 'medium': return <StatusBadge variant="warning">● {tx('ai.confidenceMedium')}</StatusBadge>;
-            case 'low': return <StatusBadge variant="neutral">● {tx('ai.confidenceLow')}</StatusBadge>;
+            case 'high': return <StatusBadge variant="success">{tx('ai.confidenceHigh')}</StatusBadge>;
+            case 'medium': return <StatusBadge variant="warning">{tx('ai.confidenceMedium')}</StatusBadge>;
+            case 'low': return <StatusBadge variant="neutral">{tx('ai.confidenceLow')}</StatusBadge>;
             default: return null;
         }
     };
@@ -290,16 +370,17 @@ export default function AIRiskAssessmentPage() {
     return (
         <div className="space-y-section animate-fadeIn max-w-5xl">
             <BackAffordance />
+            {/* #4776 — one way back (the affordance above) and a breadcrumb,
+                like the other Risks sub-pages; a bare "←" link sat beside
+                the title as a second back control. */}
+            <PageBreadcrumbs
+                items={[{ label: tx('breadcrumbRoot'), href: tenantHref('/risks') }, { label: tx('aiAssist') }]}
+            />
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <div className="flex items-center gap-compact">
-                        <Link href={tenantHref('/risks')} className="text-content-muted hover:text-content-emphasis transition text-lg">←</Link>
-                        <div>
-                            <Heading level={1} id="ai-risk-title">{tx('ai.title')}</Heading>
-                            <p className="text-content-muted text-sm">{tx('ai.subtitle')}</p>
-                        </div>
-                    </div>
+                    <Heading level={1} id="ai-risk-title">{tx('ai.title')}</Heading>
+                    <p className="text-content-muted text-sm">{tx('ai.subtitle')}</p>
                 </div>
                 <div className="flex items-center gap-tight">
                     <StatusBadge variant="info">{tx('ai.poweredBadge')}</StatusBadge>
@@ -307,10 +388,14 @@ export default function AIRiskAssessmentPage() {
             </div>
 
             {error && (
-                <div className={cn(cardVariants({ density: 'compact' }), 'border-border-error text-content-error text-sm')} id="ai-error">
-                    {error}
-                    <button onClick={() => setError('')} className="ml-4 text-content-error hover:text-content-emphasis">x</button>
-                </div>
+                <InlineNotice variant="error" id="ai-error">
+                    <div className="flex items-start justify-between gap-default">
+                        <span>{error}</span>
+                        <Button variant="ghost" size="xs" onClick={() => setError('')} id="ai-error-dismiss">
+                            {tx('ai.dismissError')}
+                        </Button>
+                    </div>
+                </InlineNotice>
             )}
 
             {/* ═══ PHASE: FORM ═══ */}
@@ -322,10 +407,12 @@ export default function AIRiskAssessmentPage() {
                     <div>
                         <label className="input-label">{tx('ai.frameworksLabel')}</label>
                         <div className="flex flex-wrap gap-tight mt-2" id="ai-framework-pills">
-                            {['ISO27001', 'NIS2', 'SOC2'].map(fw => (
+                            {FRAMEWORK_CHOICES.map(({ key: fw, label }) => (
                                 <button
                                     key={fw}
+                                    type="button"
                                     id={`fw-${fw.toLowerCase()}`}
+                                    aria-pressed={frameworks.includes(fw)}
                                     onClick={() => toggleFramework(fw)}
                                     className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                                         frameworks.includes(fw)
@@ -333,7 +420,7 @@ export default function AIRiskAssessmentPage() {
                                             : 'bg-bg-elevated/50 text-content-default hover:bg-bg-muted/50'
                                     }`}
                                 >
-                                    {fw}
+                                    {label}
                                 </button>
                             ))}
                         </div>
@@ -351,6 +438,11 @@ export default function AIRiskAssessmentPage() {
                         >
                             {assetsLoaded ? tx('ai.assetsLoaded', { count: assets.length }) : tx('ai.loadAssets')}
                         </Button>
+                        {assetsFailed && (
+                            <p className="mt-2 text-sm text-content-error" role="alert" id="ai-assets-failed">
+                                {tx('ai.assetsLoadFailed')}
+                            </p>
+                        )}
                         {assetsLoaded && (
                             <div className="mt-2 max-h-48 overflow-y-auto space-y-1" id="ai-asset-list">
                                 {assets.length === 0 && <p className="text-sm text-content-subtle">{tx('ai.assetsNone')}</p>}
@@ -363,8 +455,8 @@ export default function AIRiskAssessmentPage() {
                                             className="rounded"
                                         />
                                         <span className="text-content-emphasis">{a.name}</span>
-                                        <span className="text-xs text-content-muted">{a.type.replace(/_/g, ' ')}</span>
-                                        {a.criticality && <StatusBadge variant={a.criticality === 'HIGH' || a.criticality === 'CRITICAL' ? 'error' : a.criticality === 'MEDIUM' ? 'warning' : 'success'}>{a.criticality}</StatusBadge>}
+                                        <span className="text-xs text-content-muted">{assetTypeLabel(a.type)}</span>
+                                        {a.criticality && <StatusBadge variant={a.criticality === 'HIGH' || a.criticality === 'CRITICAL' ? 'error' : a.criticality === 'MEDIUM' ? 'warning' : 'success'}>{criticalityLabel(a.criticality)}</StatusBadge>}
                                     </label>
                                 ))}
                             </div>
@@ -374,9 +466,9 @@ export default function AIRiskAssessmentPage() {
                     {/* Context */}
                     <div>
                         <label className="input-label" htmlFor="ai-context-input">{tx('ai.contextLabel')}</label>
-                        <textarea
+                        <Textarea
                             id="ai-context-input"
-                            className="input w-full h-24 resize-none"
+                            className="w-full h-24 resize-none"
                             placeholder={tx('ai.contextPlaceholder')}
                             value={context}
                             onChange={e => setContext(e.target.value)}
@@ -402,7 +494,6 @@ export default function AIRiskAssessmentPage() {
             {/* ═══ PHASE: GENERATING ═══ */}
             {phase === 'generating' && (
                 <div className={cn(cardVariants({ density: 'spacious' }), 'text-center')} id="ai-generating">
-                    <div className="animate-pulse text-4xl mb-4">...</div>
                     <Heading level={2}>{tx('ai.analyzing')}</Heading>
                     <p className="text-content-muted text-sm mt-2">{tx('ai.analyzingDesc')}</p>
                     <p className="text-content-subtle text-xs mt-4">{tx('ai.analyzingHint')}</p>
@@ -415,8 +506,12 @@ export default function AIRiskAssessmentPage() {
                     {/* Summary bar */}
                     <div className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between')}>
                         <div className="flex items-center gap-default">
+                            {/* #4776 — the provider's stored id ("stub", a model
+                                vendor's key) meant nothing here; whether the set
+                                came from the AI or the baseline is what matters,
+                                and the notice beside this says so. */}
                             <span className="text-sm text-content-muted">
-                                {session.items.length} {tx('ai.suggestions')} • {tx('ai.provider')}: <strong className="text-content-default">{session.provider}</strong>
+                                {tx('ai.suggestionCount', { count: session.items.length })}
                             </span>
                             {session.isFallback ? (
                                 <span className="text-xs px-2 py-1 rounded bg-bg-warning text-content-warning ring-1 ring-[var(--border-warning)]" id="fallback-notice">
@@ -436,18 +531,21 @@ export default function AIRiskAssessmentPage() {
 
                     {/* Decision summary */}
                     <div className="flex gap-compact text-sm">
-                        <span className="text-content-success" id="accepted-count">[+] {tx('ai.accepted', { count: acceptedCount })}</span>
-                        <span className="text-content-error" id="rejected-count">[-] {tx('ai.rejected', { count: rejectedCount })}</span>
-                        <span className="text-content-muted" id="pending-count">○ {tx('ai.pending', { count: pendingCount })}</span>
+                        <span className="text-content-success" id="accepted-count">{tx('ai.accepted', { count: acceptedCount })}</span>
+                        <span className="text-content-error" id="rejected-count">{tx('ai.rejected', { count: rejectedCount })}</span>
+                        <span className="text-content-muted" id="pending-count">{tx('ai.pending', { count: pendingCount })}</span>
                     </div>
 
                     {/* Suggestion cards */}
-                    {session.items.map((item, idx) => {
+                    {session.items.map((original, idx) => {
+                        // #4776 — shown as the reviewer left it.
+                        const item = withEdit(original);
+                        const edited = Boolean(edits[original.id]);
                         const dec = decisions[item.id] ?? 'pending';
                         const isEditing = editingItem === item.id;
-                        const controls: string[] = item.suggestedControlsJson
-                            ? (JSON.parse(item.suggestedControlsJson) as string[])
-                            : [];
+                        // #4776 — a malformed stored value used to throw here
+                        // and take the whole page down.
+                        const controls = parseControls(item.suggestedControlsJson);
                         const sr = parseStructuredRationale(item.structuredRationaleJson);
 
                         return (
@@ -463,11 +561,12 @@ export default function AIRiskAssessmentPage() {
                                         <div className="flex items-center gap-tight flex-wrap">
                                             <span className="text-xs text-content-subtle font-mono">#{idx + 1}</span>
                                             {isEditing ? (
-                                                <input
-                                                    className="input flex-1 text-sm font-semibold"
+                                                <Input
+                                                    className="flex-1 text-sm font-semibold"
                                                     value={editForm.title}
                                                     onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))}
                                                     id={`edit-title-${idx}`}
+                                                    aria-label={tx('ai.editTitleLabel')}
                                                 />
                                             ) : (
                                                 <Heading level={3}>{item.title}</Heading>
@@ -475,15 +574,19 @@ export default function AIRiskAssessmentPage() {
                                             {item.category && <StatusBadge variant="info">{item.category}</StatusBadge>}
                                             {confidenceBadge(item.confidence)}
                                             <StatusBadge variant="neutral">{item.isFallback ? tx('ai.baseline') : tx('ai.aiSuggested')}</StatusBadge>
+                                            {edited && !isEditing && (
+                                                <span className="text-xs text-content-muted" data-testid={`suggestion-edited-${idx}`}>{tx('ai.edited')}</span>
+                                            )}
                                         </div>
 
                                         {/* Description */}
                                         {isEditing ? (
-                                            <textarea
-                                                className="input w-full h-20 resize-none text-sm"
+                                            <Textarea
+                                                className="w-full h-20 resize-none text-sm"
                                                 value={editForm.description}
                                                 onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))}
                                                 id={`edit-desc-${idx}`}
+                                                aria-label={tx('ai.editDescriptionLabel')}
                                             />
                                         ) : (
                                             <p className="text-sm text-content-default">{item.description}</p>
@@ -502,23 +605,23 @@ export default function AIRiskAssessmentPage() {
                                             {isEditing ? (
                                                 <div className="flex items-center gap-default">
                                                     <label className="text-xs text-content-muted">
-                                                        L: <Combobox
+                                                        {tx('ai.likelihoodShort')}: <Combobox
                                                             hideSearch
                                                             id={`edit-likelihood-${idx}`}
-                                                            selected={SCALE_OPTIONS.find(o => o.value === String(editForm.likelihoodSuggested)) ?? null}
+                                                            selected={likelihoodOptions.find(o => o.value === String(editForm.likelihoodSuggested)) ?? null}
                                                             setSelected={(opt) => setEditForm(p => ({ ...p, likelihoodSuggested: +(opt?.value ?? p.likelihoodSuggested ?? 0) }))}
-                                                            options={SCALE_OPTIONS}
+                                                            options={likelihoodOptions}
                                                             matchTriggerWidth
                                                             buttonProps={{ className: 'text-xs w-16 inline-block ml-1' }}
                                                         />
                                                     </label>
                                                     <label className="text-xs text-content-muted">
-                                                        I: <Combobox
+                                                        {tx('ai.impactShort')}: <Combobox
                                                             hideSearch
                                                             id={`edit-impact-${idx}`}
-                                                            selected={SCALE_OPTIONS.find(o => o.value === String(editForm.impactSuggested)) ?? null}
+                                                            selected={impactOptions.find(o => o.value === String(editForm.impactSuggested)) ?? null}
                                                             setSelected={(opt) => setEditForm(p => ({ ...p, impactSuggested: +(opt?.value ?? p.impactSuggested ?? 0) }))}
-                                                            options={SCALE_OPTIONS}
+                                                            options={impactOptions}
                                                             matchTriggerWidth
                                                             buttonProps={{ className: 'text-xs w-16 inline-block ml-1' }}
                                                         />
@@ -526,8 +629,8 @@ export default function AIRiskAssessmentPage() {
                                                 </div>
                                             ) : (
                                                 <>
-                                                    <span className="text-content-muted">L: <strong className="text-content-emphasis">{item.likelihoodSuggested ?? '—'}</strong></span>
-                                                    <span className="text-content-muted">I: <strong className="text-content-emphasis">{item.impactSuggested ?? '—'}</strong></span>
+                                                    <span className="text-content-muted">{tx('ai.likelihoodShort')}: <strong className="text-content-emphasis">{item.likelihoodSuggested ?? '—'}</strong></span>
+                                                    <span className="text-content-muted">{tx('ai.impactShort')}: <strong className="text-content-emphasis">{item.impactSuggested ?? '—'}</strong></span>
                                                     {item.likelihoodSuggested && item.impactSuggested && riskBadge(item.likelihoodSuggested, item.impactSuggested)}
                                                 </>
                                             )}
@@ -563,7 +666,7 @@ export default function AIRiskAssessmentPage() {
                                                         <span className="text-content-subtle uppercase font-semibold block mb-1">{tx('ai.controlThemes')}</span>
                                                         <div className="flex flex-wrap gap-1">
                                                             {sr.suggestedControlThemes.map((t, ti) => (
-                                                                <span key={ti} className="px-2 py-0.5 rounded bg-indigo-900/40 text-indigo-300 ring-1 ring-indigo-500/20">{t}</span>
+                                                                <span key={ti} className="px-2 py-0.5 rounded bg-bg-info text-content-info">{t}</span>
                                                             ))}
                                                         </div>
                                                     </div>
@@ -589,7 +692,7 @@ export default function AIRiskAssessmentPage() {
                                                 <Button
                                                     variant="primary"
                                                     size="xs"
-                                                    onClick={() => { cancelEdit(); setDecision(item.id, 'accept'); }}
+                                                    onClick={() => saveEdit(item.id)}
                                                     id={`save-edit-${idx}`}
                                                 >
                                                     {tx('ai.saveAccept')}
@@ -608,7 +711,7 @@ export default function AIRiskAssessmentPage() {
                                                     onClick={() => setDecision(item.id, 'accept')}
                                                     id={`accept-${idx}`}
                                                 >
-                                                    [+] {tx('ai.accept')}
+                                                    {tx('ai.accept')}
                                                 </Button>
                                                 <Button
                                                     variant={dec === 'reject' ? 'destructive' : 'secondary'}
@@ -617,13 +720,13 @@ export default function AIRiskAssessmentPage() {
                                                     onClick={() => setDecision(item.id, 'reject')}
                                                     id={`reject-${idx}`}
                                                 >
-                                                    [-] {tx('ai.reject')}
+                                                    {tx('ai.reject')}
                                                 </Button>
                                                 {permissions.canWrite && (
                                                     <Button
                                                         variant="secondary"
                                                         size="xs"
-                                                        onClick={() => startEdit(item)}
+                                                        onClick={() => startEdit(original)}
                                                         id={`edit-${idx}`}
                                                     >
                                                         {tx('ai.edit')}
@@ -665,7 +768,6 @@ export default function AIRiskAssessmentPage() {
             {/* ═══ PHASE: APPLYING ═══ */}
             {phase === 'applying' && (
                 <div className={cn(cardVariants({ density: 'spacious' }), 'text-center')}>
-                    <div className="animate-pulse text-4xl mb-4">...</div>
                     <Heading level={2}>{tx('ai.creatingRecords')}</Heading>
                     <p className="text-content-muted text-sm mt-2">{tx('ai.creatingDesc')}</p>
                 </div>
@@ -674,10 +776,17 @@ export default function AIRiskAssessmentPage() {
             {/* ═══ PHASE: DONE ═══ */}
             {phase === 'done' && (
                 <Card className="text-center space-y-default" id="ai-done">
-                    <div className="text-4xl">{tx('ai.doneLabel')}</div>
                     <Heading level={2}>
-                        {tx('ai.doneHeading', { count: appliedCount })}
+                        {tx('ai.doneHeading', { count: appliedSummary.created })}
                     </Heading>
+                    {/* #4776 — an accepted suggestion whose title matches a
+                        risk the register already has is linked to it, not
+                        added again; the heading used to count it as added. */}
+                    {appliedSummary.linkedExisting > 0 && (
+                        <p className="text-sm text-content-muted" id="ai-done-linked">
+                            {tx('ai.doneLinkedExisting', { count: appliedSummary.linkedExisting })}
+                        </p>
+                    )}
                     <p className="text-sm text-content-muted">
                         {tx('ai.doneDesc')}
                     </p>

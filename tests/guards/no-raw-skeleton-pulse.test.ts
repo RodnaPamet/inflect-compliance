@@ -62,7 +62,8 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * each migration that drops the count toward zero gets a free
  * win.
  */
-const ANIMATE_PULSE_FILE_BUDGET = 26;
+// #4776 — the AI risk assessment page moved to the skeleton primitives: 21 → 20.
+const ANIMATE_PULSE_FILE_BUDGET = 20;
 
 function isExempt(rel: string): boolean {
     const segments = rel.split(path.sep);
