@@ -45,7 +45,7 @@ Your workspace may use different shares: they can be set per framework for a wor
 
 **{{ui:audits.readiness.recommendedActions}}.** What to do next, worked out from the score's parts.
 
-**Top gaps.** Up to ten unmapped requirements, ten controls without evidence (and for NIS2, ten without a policy), five overdue tasks and five open issues, each with its severity.
+**Top gaps.** Up to ten unmapped requirements, ten controls without evidence (and for NIS2, ten without a policy), five overdue tasks and five open issues, each with its severity. Each gap links to what it names: an unmapped requirement to its framework, a control to its page, a task or issue to its page.
 
 **{{ui:audits.readiness.exports}}.** **{{ui:audits.readiness.exportJson}}**, **{{ui:audits.readiness.exportUnmappedCsv}}** and **{{ui:audits.readiness.exportControlGapsCsv}}**.
 
@@ -53,11 +53,11 @@ Your workspace may use different shares: they can be set per framework for a wor
 
 ### Find what to fix
 
-Read the gaps, starting with the high-severity ones. Each names the requirement, control, task or issue to work on. Map a requirement to a control on the framework's page, attach evidence on the control's page, and close the task or issue on its own page. Come back to see the new score.
+Read the gaps, starting with the high-severity ones. Each names the requirement, control, task or issue to work on; click it to open it. Map a requirement to a control on the framework's page, attach evidence on the control's page, and close the task or issue on its own page. Come back to see the new score.
 
 ### Export the report
 
-Click an export to download it. The JSON report holds the score, its parts, the recommendations and the gaps. **{{ui:audits.readiness.exportUnmappedCsv}}** lists the unmapped requirements among the gaps, and **{{ui:audits.readiness.exportControlGapsCsv}}** the controls without evidence, the overdue tasks and the open issues. Both hold the same gaps as the page, so at most ten unmapped requirements and ten controls.
+Click an export to download it. The JSON report holds the score, its parts, the recommendations and the gaps. **{{ui:audits.readiness.exportUnmappedCsv}}** lists the unmapped requirements among the gaps, and **{{ui:audits.readiness.exportControlGapsCsv}}** the controls without evidence, the overdue tasks and the open issues. Both hold every gap, not only the ones the page lists.
 
 ## What happens next
 
@@ -68,7 +68,8 @@ Click an export to download it. The JSON report holds the score, its parts, the 
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:audits.readiness.couldNotCompute}}** | The score could not be worked out, or the cycle does not exist in this workspace | Reload the page, or go back to the cycles list |
+| **{{ui:audits.readiness.notFound}}** | The cycle does not exist in this workspace | Go back to the cycles list |
+| **{{ui:audits.readiness.couldNotCompute}}** | The score could not be worked out | Click **{{ui:audits.readiness.retry}}** |
 | No **{{ui:audits.readiness.trendTitle}}** card | Only one score has been recorded so far | Come back after your controls or evidence change |
 | No top gaps | Nothing is lowering the score | Nothing to do |
 
