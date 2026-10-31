@@ -4738,15 +4738,26 @@
       "saveJustification": "Запази обосновката",
       "mappedControls": "Свързани контроли",
       "justify": "Обоснови",
+      "editJustification": "Редактиране на обосновката",
       "evidenceItems": "Доказателства: {count} елемента",
       "openTasks": "Отворени задачи: {count}",
       "lastTest": "Последен тест:",
       "mapFailed": "Контролът не можа да бъде свързан. Опитайте отново.",
       "justificationFailed": "Обосновката не можа да бъде запазена. Опитайте отново.",
+      "writeRestricted": "Само роля, която може да редактира контроли, например собственик, администратор или редактор, може да свързва контроли или да записва обосновка.",
       "mapSearchPlaceholder": "Търсене на контроли…",
       "excepted": "Изключен",
       "exceptedUntil": "Изключен до {date}",
-      "print": "Печат"
+      "print": "Печат",
+      "controlStatus": {
+        "NOT_STARTED": "Не е започнат",
+        "PLANNED": "Планиран",
+        "IN_PROGRESS": "В процес",
+        "IMPLEMENTING": "Внедрява се",
+        "IMPLEMENTED": "Внедрен",
+        "NEEDS_REVIEW": "Нужда от преглед",
+        "NOT_APPLICABLE": "Неприложим"
+      }
     },
     "soaPrint": {
       "printPreview": "Преглед за печат на ДзП",
