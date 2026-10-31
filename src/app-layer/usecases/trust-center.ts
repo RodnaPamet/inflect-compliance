@@ -41,28 +41,58 @@ function safeUrl(raw: string): string | null {
     }
 }
 
+/**
+ * A row left wholly blank is not published. A row filled in halfway, or a
+ * document whose address is not http(s), is REFUSED by name (#4824): it used to
+ * be dropped, so the save answered "saved" and the row was missing from the
+ * public page with nothing to say why.
+ */
 function sanitizeFrameworks(
     items: TrustCenterInput['publishedFrameworks'],
 ): Array<{ key: string; statusLabel: string; badge?: string }> {
     if (!Array.isArray(items)) return [];
-    return items
+    const rows = items
         .slice(0, 50)
         .map((f) => ({
-            key: sanitizePlainText(String(f.key ?? '')).slice(0, 64),
-            statusLabel: sanitizePlainText(String(f.statusLabel ?? '')).slice(0, 64),
+            key: sanitizePlainText(String(f.key ?? '')).slice(0, 64).trim(),
+            statusLabel: sanitizePlainText(String(f.statusLabel ?? '')).slice(0, 64).trim(),
             badge: f.badge ? sanitizePlainText(String(f.badge)).slice(0, 64) : undefined,
         }))
-        .filter((f) => f.key && f.statusLabel);
+        .filter((f) => f.key || f.statusLabel);
+    const half = rows.find((f) => !f.key || !f.statusLabel);
+    if (half) {
+        throw badRequest(
+            `A framework needs both a name and a status: "${half.key || half.statusLabel}".`,
+            { code: 'INCOMPLETE_FRAMEWORK_ROW' },
+        );
+    }
+    return rows;
 }
 
 function sanitizeDocuments(
     items: TrustCenterInput['publishedDocuments'],
 ): Array<{ label: string; url: string }> {
     if (!Array.isArray(items)) return [];
-    return items
+    const rows = items
         .slice(0, 50)
-        .map((d) => ({ label: sanitizePlainText(String(d.label ?? '')).slice(0, 200), url: safeUrl(String(d.url ?? '')) }))
-        .filter((d): d is { label: string; url: string } => Boolean(d.label && d.url));
+        .map((d) => ({ label: sanitizePlainText(String(d.label ?? '')).slice(0, 200).trim(), raw: String(d.url ?? '').trim() }))
+        .filter((d) => d.label || d.raw);
+    return rows.map((d) => {
+        if (!d.label || !d.raw) {
+            throw badRequest(
+                `A published document needs both a name and an address: "${d.label || d.raw}".`,
+                { code: 'INCOMPLETE_DOCUMENT_ROW' },
+            );
+        }
+        const url = safeUrl(d.raw);
+        if (!url) {
+            throw badRequest(
+                `The address of "${d.label}" must be a full web address starting with https:// or http://.`,
+                { code: 'INVALID_DOCUMENT_URL' },
+            );
+        }
+        return { label: d.label, url };
+    });
 }
 
 /**
@@ -90,7 +120,7 @@ export async function getTrustCenter(ctx: RequestContext) {
 export async function upsertTrustCenter(ctx: RequestContext, input: TrustCenterInput) {
     assertCanWrite(ctx);
     if (!input.displayName || !input.displayName.trim()) {
-        throw badRequest('INVALID_DISPLAY_NAME', 'Display name is required');
+        throw badRequest('Give the trust center a display name.', { code: 'INVALID_DISPLAY_NAME' });
     }
 
     const data = {

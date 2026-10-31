@@ -88,18 +88,27 @@ describeFn('Trust Center public read — leak-proof (real DB)', () => {
         expect(await getPublicTrustCenter(SLUG)).toBeNull();
     });
 
-    it('sanitises a hostile displayName + drops javascript: document URLs', async () => {
+    it('sanitises a hostile displayName, and refuses a javascript: document URL rather than store it', async () => {
+        // #4824: the bad row is refused by name, not dropped behind a "saved",
+        // and nothing of the refused save is written.
+        await expect(
+            upsertTrustCenter(ctx, {
+                displayName: 'Acme',
+                publishedDocuments: [
+                    { label: 'Bad', url: 'javascript:alert(1)' },
+                    { label: 'Good', url: 'https://acme.test/ok.pdf' },
+                ],
+            }),
+        ).rejects.toThrow(/"Bad" must be a full web address/);
+        expect(JSON.stringify((await getTrustCenter(ctx))!.publishedDocuments)).not.toContain('javascript:');
+
         await upsertTrustCenter(ctx, {
             displayName: 'Acme <script>alert(1)</script>',
-            publishedDocuments: [
-                { label: 'Bad', url: 'javascript:alert(1)' },
-                { label: 'Good', url: 'https://acme.test/ok.pdf' },
-            ],
+            publishedDocuments: [{ label: 'Good', url: 'https://acme.test/ok.pdf' }],
         });
         const row = await getTrustCenter(ctx);
         expect(row!.displayName).not.toContain('<script');
         const docs = row!.publishedDocuments as Array<{ label: string; url: string }>;
-        // The javascript: URL is dropped; only the https one survives.
         expect(docs).toHaveLength(1);
         expect(docs[0].url).toMatch(/^https:\/\//);
     });

@@ -1,4 +1,5 @@
 import { getTrustCenter } from '@/app-layer/usecases/trust-center';
+import { env } from '@/env';
 import { gateAdminPage } from '../_lib/admin-page-gate';
 import { TrustCenterAdminClient } from './TrustCenterAdminClient';
 
@@ -29,6 +30,9 @@ export default async function TrustCenterAdminPage({
             tenantSlug={tenantSlug}
             initial={trustCenter ? JSON.parse(JSON.stringify(trustCenter)) : null}
             canPublish={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
+            // The public address shown and copied is the deployment's own
+            // (APP_URL); without one the page uses the browser's origin.
+            publicOrigin={env.APP_URL?.trim().replace(/\/+$/, '') || null}
         />
     );
 }
