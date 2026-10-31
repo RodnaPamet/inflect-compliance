@@ -23,11 +23,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { sanitizeRedirectPath } from '@/lib/auth/guard';
+import { codeOf } from '../../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const codeOnly = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 const CALLBACKS = [
     ['oidc', 'src/app/api/auth/sso/oidc/callback/route.ts'],

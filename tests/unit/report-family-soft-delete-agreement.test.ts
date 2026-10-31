@@ -48,7 +48,7 @@ const SOA = read('src/app-layer/usecases/soa.ts');
  * pass on its own documentation.
  */
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    return codeOf(src);
 }
 
 /** The `controlRequirementLink.findMany({ … })` belonging to one function. */

@@ -37,7 +37,7 @@ import { codeOf } from '../../helpers/source-blocks';
 const ROOT = path.resolve(__dirname, '../../..');
 const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const codeOnly = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 describe('no second session mechanism', () => {
     it('getSession does not read a legacy cookie', () => {

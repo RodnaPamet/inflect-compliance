@@ -100,9 +100,7 @@ describe('TableTitleCell adoption (R13-PR1)', () => {
         // className triplet inside a 600-char window after the
         // `accessorKey: 'title'|'name'|'code'` declaration.
         const stripComments = (s: string) =>
-            s
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            codeOf(s);
         const offenders: string[] = [];
         for (const rel of ADOPTED_PAGES) {
             const src = stripComments(

@@ -110,7 +110,7 @@ const ASSET = {
     },
 };
 
-function installFetch(patch: { status: number; body: unknown }) {
+function installFetch(patch: { status: number; body: unknown }, asset: Record<string, unknown> = ASSET) {
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input), 'https://test.local');
         let status = 200;
@@ -118,7 +118,7 @@ function installFetch(patch: { status: number; body: unknown }) {
         if (url.pathname === '/api/t/acme/assets/as-bravo' && init?.method === 'PATCH') {
             status = patch.status;
             body = patch.body;
-        } else if (url.pathname === '/api/t/acme/assets/as-bravo') body = ASSET;
+        } else if (url.pathname === '/api/t/acme/assets/as-bravo') body = asset;
         else if (url.pathname.includes('/members')) body = [];
         else body = { rows: [] };
         return {
@@ -169,5 +169,24 @@ describe('Asset page — a refused status change says why', () => {
         await retire();
         const fallback = A.detail.changeStatusFailed.replace(/\{status[^}]*\}/, '502');
         expect(await screen.findByText(fallback)).toBeInTheDocument();
+    });
+});
+
+describe('Asset page — stored codes read as words (#4693)', () => {
+    it('labels criticality, status, classification and residency', async () => {
+        // `INTERNAL` is what onboarding writes; the form writes `Internal`.
+        installFetch(
+            { status: 200, body: {} },
+            { ...ASSET, criticality: 'HIGH', classification: 'INTERNAL', dataResidency: 'EU' },
+        );
+        mount();
+        await waitFor(() => expect(document.getElementById('asset-title-heading')?.textContent).toBe(ASSET.name));
+
+        expect(screen.getAllByText(A.filterEnums.criticality.HIGH).length).toBeGreaterThan(0);
+        expect(screen.queryByText('HIGH')).toBeNull();
+        expect(screen.queryByText('ACTIVE')).toBeNull();
+        expect(await screen.findByText(A.formOptions.classification.Internal)).toBeInTheDocument();
+        expect(screen.queryByText('INTERNAL')).toBeNull();
+        expect(screen.getByText(A.formOptions.residency.EU)).toBeInTheDocument();
     });
 });

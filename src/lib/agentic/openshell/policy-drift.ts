@@ -51,10 +51,17 @@
  *
  * REFINED while investigating #4561, and the refinement matters: the 404s were
  * measured over HTTP, and the gRPC service `openshell.v1.OpenShell` carries
- * `GetGatewayConfig` among its 95 methods. So the obstacle is not "the gateway
- * cannot be asked" but "this product has no gRPC client to ask with" — a
- * smaller and differently-shaped blocker, tracked on #4561. Nothing here should
- * be written as though the capability were missing upstream.
+ * `GetGatewayConfig` among its **86** methods. So the obstacle is not "the
+ * gateway cannot be asked" but "this product has no gRPC client to ask with" —
+ * a smaller and differently-shaped blocker, tracked on #4561. Nothing here
+ * should be written as though the capability were missing upstream.
+ *
+ * That count said 95 until 2026-10-30 and was simply wrong — a figure nobody
+ * could check without counting, which is how it survived. It is 86, counted two
+ * ways that agree: in `vendor/openshell-proto/v0.1.6/openshell.proto`, and
+ * `grpcurl list openshell.v1.OpenShell` against the running 0.1.6 gateway over
+ * mTLS. `openshell-proto-matches-its-provenance` now pins it, so the next wrong
+ * number fails a test instead of sitting in prose.
  *
  * What IS implementable today is narrower and lives in
  * `./pinned-release`: `/readyz` carries the release, so the version a gateway

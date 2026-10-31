@@ -28,6 +28,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -75,9 +76,7 @@ const NON_SCORER_EVIDENCE_FILES: ReadonlyArray<readonly [string, string]> = [
  * no comment-like string literals that would break this.
  */
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+    return codeOf(src);
 }
 
 describe('coverage-evidence predicate unification', () => {

@@ -32,6 +32,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_DIRS = ['src/app/t', 'src/app/org'];
@@ -73,9 +74,8 @@ function walk(dir: string): string[] {
  * leading comments and whitespace first and test what actually comes first.
  */
 function isClientComponent(src: string): boolean {
-    const head = src
-        .replace(/^\uFEFF/, '')
-        .replace(/^(?:\s*(?:\/\*[\s\S]*?\*\/|\/\/[^\n]*)\s*)*/, '');
+    // Comments blanked by codeOf (#4659), so trimStart skips them.
+    const head = codeOf(src.replace(/^\uFEFF/, ''));
     return /^['"]use client['"]/.test(head.trimStart());
 }
 

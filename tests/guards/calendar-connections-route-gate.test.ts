@@ -34,7 +34,7 @@ const src = codeOf(fs.readFileSync(path.join(ROOT, ROUTE), 'utf8'));
 // `commentsOf`, 0 through `codeOf`, and the reach drops from the whole route
 // file to its comment text.
 const srcDoc = commentsOf(fs.readFileSync(path.join(ROOT, ROUTE), 'utf8'));
-const codeOnly = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const codeOnly = codeOf(src);
 
 describe('both verbs are gated', () => {
     it.each(['GET', 'DELETE'])('%s is wrapped in requireAnyPermission', (verb) => {
@@ -48,7 +48,11 @@ describe('both verbs are gated', () => {
         // per-source keys, so it cannot drift from what the calendar shows. An
         // inline array here would be a second list to maintain, and the way it
         // rots is by staying green while a source is added.
-        expect(codeOnly).toMatch(/CALENDAR_BASELINE_PERMISSIONS/);
+        // The import names WHERE the baseline comes from. The bare name also
+        // matched both verbs' uses, which the case above already holds (#4659).
+        expect(codeOnly).toMatch(
+            /import \{ CALENDAR_BASELINE_PERMISSIONS \} from '@\/app-layer\/usecases\/compliance-calendar'/,
+        );
         expect(codeOnly).not.toMatch(/requireAnyPermission\s*(<[^>]*>)?\s*\(\s*\[/);
     });
 
@@ -61,7 +65,10 @@ describe('both verbs are gated', () => {
     });
 
     it('is wrapped in withApiErrorHandling, so a throw becomes a typed response', () => {
-        expect(codeOnly).toMatch(/withApiErrorHandling\(/);
+        // Each verb by name: one bare `withApiErrorHandling(` was satisfied by
+        // either of the two, so either could lose its wrapper (#4659).
+        expect(codeOnly).toMatch(/export const GET = withApiErrorHandling\(/);
+        expect(codeOnly).toMatch(/export const DELETE = withApiErrorHandling\(/);
     });
 });
 

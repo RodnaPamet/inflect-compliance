@@ -78,6 +78,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
+import { codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const APP_DIR = path.join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)');
@@ -109,7 +110,7 @@ const PKG_COMPONENTS_DIR = path.join(REPO_ROOT, 'packages/ui/src/components');
 
 /** Strip block + line comments so prose in comments never matches. */
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    return codeOf(src);
 }
 
 /**
@@ -347,7 +348,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/layout/org-workspace-switcher.tsx': 5, // intl wired #3209; 5 jsx remain
     'src/components/layout/tenant-switcher.tsx': 4, // intl wired #3209; 4 jsx remain
     'src/components/onboarding/Nis2SelfAssessmentStep.tsx': 13, // intl wired #3209; 9 jsx + 4 prop remain
-    'src/components/onboarding/OnboardingWizard.tsx': 3, // partial, 3 jsx
     'src/components/processes/RuleDetailSheet.tsx': 4, // partial, 3 jsx + 1 prop
     'src/components/risks/RiskScoreExplainer.tsx': 1, // partial, 1 prop
     'src/components/ui/ComplianceStatusIndicator.tsx': 4, // no-intl, 4 prop

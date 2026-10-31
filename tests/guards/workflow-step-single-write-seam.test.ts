@@ -26,6 +26,7 @@
  */
 import { repoFiles, repoRelative } from '../helpers/repo-files';
 import { readFileSync } from 'fs';
+import { codeOf } from '../helpers/source-blocks';
 
 /** The one file allowed to write a step, and the audit call it must make. */
 const SEAM = 'src/lib/agentic/drivers/step-recorder.ts';
@@ -41,10 +42,9 @@ const CREATE_CALL = /\bworkflowStep\s*\.\s*(create|createMany|upsert)\s*\(/g;
  * explicit-`any` ratchet matching an English phrase.
  */
 function codeOnly(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
+    return codeOf(src)
         .split('\n')
-        .map((l) => l.replace(/\/\/.*$/, ''))
+        .map((l) => codeOf(l))
         .join('\n');
 }
 

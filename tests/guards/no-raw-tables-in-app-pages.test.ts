@@ -37,6 +37,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const APP_ROOT = path.resolve(
     __dirname,
@@ -116,9 +117,7 @@ const TABLE_TAG_RE = /<table\b/;
  * strings containing `//`) but fine for the presence-check use case.
  */
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '') // /* ... */
-        .replace(/\/\/[^\n]*/g, '');       // // ... eol
+    return codeOf(src);       // // ... eol
 }
 
 describe('raw <table> ban in app pages (R10-PR3)', () => {

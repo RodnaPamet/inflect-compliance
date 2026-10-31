@@ -85,9 +85,7 @@ describe('DataTable selection default-on (R12-PR1)', () => {
                 'Install-from-templates picker — `select` is the "include this template in the install set" toggle, not a row-record selection affordance.',
         };
         const stripComments = (s: string) =>
-            s
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            codeOf(s);
         const offenders: string[] = [];
         const walk = (dir: string) => {
             if (!fs.existsSync(dir)) return;

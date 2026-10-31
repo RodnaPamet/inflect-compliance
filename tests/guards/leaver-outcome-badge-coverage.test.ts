@@ -32,7 +32,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { declarationOf } from '../helpers/source-blocks';
+import { declarationOf, codeOf } from '../helpers/source-blocks';
 
 const ROOT = join(__dirname, '..', '..');
 const USECASE = join(ROOT, 'src/app-layer/usecases/identity-disable-account.ts');
@@ -61,7 +61,7 @@ function declaredOutcomes(): string[] {
     if (endRel < 0) throw new Error('DisableOutcome declaration is unbounded');
     // Comments stripped BEFORE matching: the arms carry docblocks, and prose
     // quoting an outcome name must not become a member.
-    const decl = rest.slice(0, endRel).replace(/\/\*[\s\S]*?\*\//g, '');
+    const decl = codeOf(rest.slice(0, endRel));
     const members = [...decl.matchAll(/\|\s*'([A-Z_]+)'/g)].map((m) => m[1]);
     return [...new Set(members)].sort();
 }

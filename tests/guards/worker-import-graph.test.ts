@@ -26,6 +26,7 @@
  */
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, dirname, resolve as resolvePath } from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = join(__dirname, '..', '..');
 const SRC = join(ROOT, 'src');
@@ -37,7 +38,7 @@ const read = (abs: string) => readFileSync(abs, 'utf8');
 
 /** Strip comments so prose naming a module is not read as an import. */
 const stripComments = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 /** Resolve an import specifier to a file under src/, or null if external. */
 function resolveSpec(fromAbs: string, spec: string): string | null {

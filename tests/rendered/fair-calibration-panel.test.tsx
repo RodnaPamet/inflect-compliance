@@ -7,7 +7,7 @@
  * chip ("shown, not asked"), and the degenerate-triple migration of
  * legacy point values.
  */
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import * as React from 'react';
 
 jest.mock('@/lib/tenant-context-provider', () => ({
@@ -30,15 +30,21 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 // en.json values so text assertions track the original English.
 jest.mock('next-intl', () => {
     const en = require('../../messages/en.json');
+    const lookup = (ns: string, key: string): unknown =>
+        key
+            .split('.')
+            .reduce((o: unknown, k) =>
+                o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined, en[ns]);
     return {
-        useTranslations: (ns: string) => (key: string, params?: Record<string, unknown>) => {
-            let v = key
-                .split('.')
-                .reduce((o: unknown, k) =>
-                    o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined, en[ns]);
-            if (typeof v !== 'string') return key;
-            if (params) for (const [p, val] of Object.entries(params)) v = (v as string).replace(new RegExp(`\\{${p}\\}`, 'g'), String(val));
-            return v;
+        useTranslations: (ns: string) => {
+            const t = (key: string, params?: Record<string, unknown>) => {
+                let v = lookup(ns, key);
+                if (typeof v !== 'string') return key;
+                if (params) for (const [p, val] of Object.entries(params)) v = (v as string).replace(new RegExp(`\\{${p}\\}`, 'g'), String(val));
+                return v;
+            };
+            t.has = (key: string) => typeof lookup(ns, key) === 'string';
+            return t;
         },
         useLocale: () => 'en',
     };
@@ -138,6 +144,25 @@ describe('FairAnalysisPanel — range-first calibration aids', () => {
     it('an unknown category renders no prior (anchors, not noise)', () => {
         render(<FairAnalysisPanel riskId="r-1" initial={BLANK} category="Esoteric" />);
         expect(screen.queryByTestId('fair-prior-hint')).toBeNull();
+    });
+});
+
+describe('FairAnalysisPanel — a refused save says why (#4692)', () => {
+    afterEach(() => {
+        (global as unknown as { fetch?: unknown }).fetch = undefined;
+    });
+
+    it('shows the server\'s reason, not the generic sentence', async () => {
+        (global as unknown as { fetch: unknown }).fetch = jest.fn(async () => ({
+            ok: false,
+            status: 403,
+            json: async () => ({ error: { code: 'FORBIDDEN', message: 'This risk is closed for editing.' } }),
+        }));
+        render(<FairAnalysisPanel riskId="r-1" initial={BLANK} />);
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /save/i }));
+        });
+        expect(await screen.findByText('This risk is closed for editing.')).toBeInTheDocument();
     });
 });
 

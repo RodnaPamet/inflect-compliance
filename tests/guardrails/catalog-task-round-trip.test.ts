@@ -23,6 +23,7 @@ import {
     CatalogTemplateSchema,
 } from '../../prisma/catalog-loader';
 import { REPO_ROOT } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 /** Fixture files that seed control templates. */
 const FIXTURE_DIR = path.join(REPO_ROOT, 'prisma/fixtures');
@@ -130,7 +131,7 @@ describe('the three projecting fields survive the whole chain', () => {
         // stripped first: this file's own prose names all three fields, so a
         // raw match would pass on the explanation rather than the code.
         const src = fs.readFileSync(path.join(REPO_ROOT, 'prisma/catalog-applier.ts'), 'utf-8');
-        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        const code = codeOf(src);
         for (const field of ['objective', 'successCriteria', 'testingMethodology']) {
             // written on create
             expect(code).toContain(`${field}: t.${field} ?? null`);
@@ -147,7 +148,7 @@ describe('the three projecting fields survive the whole chain', () => {
             path.join(REPO_ROOT, 'src/app-layer/usecases/control/template-projection.ts'),
             'utf-8',
         );
-        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        const code = codeOf(src);
         expect(code).toContain('objective: template.objective');
         expect(code).toContain('successCriteria: template.successCriteria');
         expect(code).toContain('testingMethodology: template.testingMethodology');

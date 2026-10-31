@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 import { repoFiles } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 /**
  * A refusal in `ingest.ts` may name the account — it must not interpolate the
@@ -33,9 +34,7 @@ function ingestSource(): string {
 
 /** Template-literal interpolations of the bare identifier, comments stripped. */
 function rawInterpolations(src: string): string[] {
-    const code = src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/[^\n]*$/gm, '');
+    const code = codeOf(src);
     return [...code.matchAll(/\$\{\s*accountKey\s*\}/g)].map((m) => m[0]);
 }
 

@@ -21,6 +21,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_GLOBS = [
@@ -45,9 +46,7 @@ function walk(dir: string): string[] {
  * structure, not commentary about the prior pattern.
  */
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^[ \t]*\/\/.*$/gm, '');
+    return codeOf(src);
 }
 
 describe('admin + reports DataTable shell (R13-PR5)', () => {

@@ -10,7 +10,8 @@ import {
     emitOnboardingFinished,
     emitOnboardingRestarted,
 } from '../events/onboarding.events';
-import { assertFrameworkPackChoices, runStepAction, storeActionResult } from './onboarding-automation';
+import { assertFrameworkPackChoices, runStepAction, storeActionResult, type StepActionResult } from './onboarding-automation';
+import type { OnboardingRefusal } from '@/lib/onboarding-refusals';
 import { logger } from '@/lib/observability/logger';
 import {
     recordOnboardingStepCompleted,
@@ -153,7 +154,7 @@ export async function saveOnboardingStep(ctx: RequestContext, step: OnboardingSt
     return runInTenantContext(ctx, async (db) => {
         const existing = await OnboardingRepository.getByTenantId(db, ctx);
         if (!existing || existing.status !== 'IN_PROGRESS') {
-            throw badRequest('Onboarding must be started before saving step data.');
+            throw badRequest('Onboarding must be started before saving step data.', { reason: 'ONBOARDING_NOT_STARTED' satisfies OnboardingRefusal });
         }
         return OnboardingRepository.saveStepData(db, ctx, step, data);
     });
@@ -179,7 +180,7 @@ export async function completeOnboardingStep(ctx: RequestContext, step: Onboardi
     const record = await runInTenantContext(ctx, async (db) => {
         const existing = await OnboardingRepository.getByTenantId(db, ctx);
         if (!existing || existing.status !== 'IN_PROGRESS') {
-            throw badRequest('Onboarding must be started before completing steps.');
+            throw badRequest('Onboarding must be started before completing steps.', { reason: 'ONBOARDING_NOT_STARTED' satisfies OnboardingRefusal });
         }
 
         // #4125 — the framework step installs what was chosen, so completing
@@ -191,7 +192,7 @@ export async function completeOnboardingStep(ctx: RequestContext, step: Onboardi
             const frameworkStep = (existing.stepData as Record<string, any> | null)?.FRAMEWORK_SELECTION;
             const selected = frameworkStep?.selectedFrameworks;
             if (!Array.isArray(selected) || selected.length === 0) {
-                throw badRequest('Choose at least one framework to continue.');
+                throw badRequest('Choose at least one framework to continue.', { reason: 'ONBOARDING_NO_FRAMEWORK' satisfies OnboardingRefusal });
             }
             // A framework whose packs are its subcategories (EU drone
             // operations) needs at least one of them chosen as well.
@@ -224,30 +225,44 @@ export async function completeOnboardingStep(ctx: RequestContext, step: Onboardi
 
     // Phase 2: Run automation AFTER the transaction commits (heavy, may be slow)
     // This runs outside the transaction so it won't cause timeout issues.
-    // Errors are logged but don't block the wizard response.
+    // A failure does not block the wizard response, but it is no longer
+    // silent (#4701): it is stored as this step's result with `failed: true`,
+    // which the wizard reads and names. The step stays completed, and every
+    // automation is idempotent, so continuing from the step again retries it
+    // and a success overwrites the failure.
     //
     // The row returned is the one storeActionResult wrote, when it wrote one,
     // so the wizard receives this step's result (e.g. which framework packs
     // failed to install) in the same response rather than on its next load.
     let latest = record;
+    let result: StepActionResult | null = null;
     try {
-
         const allData = (record.stepData as Record<string, any>) || {};
         const sd = allData[step] || {};
-        const result = await runStepAction(ctx, step, sd, allData);
+        result = await runStepAction(ctx, step, sd, allData);
         if (result) {
             logger.info('onboarding automation completed', {
                 component: 'onboarding', step, action: result.action,
                 created: result.created, skipped: result.skipped,
             });
-            const stored = await storeActionResult(ctx, step, result);
-            if (stored) latest = stored;
         }
     } catch (e) {
         logger.warn('onboarding automation failed', {
             component: 'onboarding', step,
             error: e instanceof Error ? { name: e.name, message: e.message } : { name: 'UnknownError', message: String(e) },
         });
+        result = { action: 'AUTOMATION_FAILED', created: 0, skipped: 0, details: '', failed: true };
+    }
+    if (result) {
+        try {
+            const stored = await storeActionResult(ctx, step, result);
+            if (stored) latest = stored;
+        } catch (e) {
+            logger.warn('onboarding automation result not stored', {
+                component: 'onboarding', step,
+                error: e instanceof Error ? { name: e.name, message: e.message } : { name: 'UnknownError', message: String(e) },
+            });
+        }
     }
 
     logger.info('onboarding step completed', { component: 'onboarding', step });
@@ -266,7 +281,7 @@ export async function skipOnboardingStep(ctx: RequestContext, step: OnboardingSt
     return runInTenantContext(ctx, async (db) => {
         const existing = await OnboardingRepository.getByTenantId(db, ctx);
         if (!existing || existing.status !== 'IN_PROGRESS') {
-            throw badRequest('Onboarding must be started before skipping steps.');
+            throw badRequest('Onboarding must be started before skipping steps.', { reason: 'ONBOARDING_NOT_STARTED' satisfies OnboardingRefusal });
         }
 
 
@@ -294,7 +309,7 @@ export async function finishOnboarding(ctx: RequestContext) {
     const { record, startedAt } = await runInTenantContext(ctx, async (db) => {
         const existing = await OnboardingRepository.getByTenantId(db, ctx);
         if (!existing || existing.status !== 'IN_PROGRESS') {
-            throw badRequest('Onboarding must be in progress to finish.');
+            throw badRequest('Onboarding must be in progress to finish.', { reason: 'ONBOARDING_NOT_IN_PROGRESS' satisfies OnboardingRefusal });
         }
 
         const record = await OnboardingRepository.finish(db, ctx);

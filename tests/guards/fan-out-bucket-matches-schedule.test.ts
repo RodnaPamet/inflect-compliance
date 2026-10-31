@@ -165,7 +165,7 @@ function bucketsUsedIn(src: string): string[] {
 }
 
 const stripComments = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 describe('the table is the whole population', () => {
     it('every scheduled *-dispatch is covered or excused by name', () => {

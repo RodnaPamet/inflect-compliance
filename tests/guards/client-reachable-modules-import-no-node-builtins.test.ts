@@ -49,6 +49,7 @@ import * as path from 'node:path';
 import * as ts from 'typescript';
 
 import { REPO_ROOT, repoFiles, repoRelative } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 const REGISTRY = path.join(REPO_ROOT, 'src/lib/agentic/workflow-registry.ts');
 
@@ -172,9 +173,8 @@ function walk(roots: readonly string[]): Reach {
 
 /** The directive must be the first statement; comments may precede it. */
 function isClientModule(source: string): boolean {
-    const head = source
-        .replace(/^﻿/, '')
-        .replace(/^(?:\s*(?:\/\*[\s\S]*?\*\/|\/\/[^\n]*)\s*)*/, '');
+    // Comments blanked by codeOf (#4659), so trimStart skips them.
+    const head = codeOf(source.replace(/^﻿/, ''));
     return /^['"]use client['"]/.test(head.trimStart());
 }
 

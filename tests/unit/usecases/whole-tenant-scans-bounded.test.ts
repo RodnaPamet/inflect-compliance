@@ -37,13 +37,11 @@ import { codeOf } from '../../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../../..');
 const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
-const stripComments = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-const RISK = stripComments(read('src/app-layer/usecases/risk.ts'));
-const CONTROL = stripComments(read('src/app-layer/usecases/control/queries.ts'));
-const TENANT_ADMIN = stripComments(read('src/app-layer/usecases/tenant-admin.ts'));
-const CONTROL_REPO = stripComments(read('src/app-layer/repositories/ControlRepository.ts'));
+const RISK = read('src/app-layer/usecases/risk.ts');
+const CONTROL = read('src/app-layer/usecases/control/queries.ts');
+const TENANT_ADMIN = read('src/app-layer/usecases/tenant-admin.ts');
+const CONTROL_REPO = read('src/app-layer/repositories/ControlRepository.ts');
 
 describe('usecase-layer whole-tenant scans are bounded', () => {
     it.each([

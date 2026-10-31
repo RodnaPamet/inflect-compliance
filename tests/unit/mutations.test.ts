@@ -4,7 +4,7 @@
  * `extractMutationError` is the single funnel every mutation surface uses
  * to turn an arbitrary thrown value into a string the user sees — its
  * branch table (Error / string / object-with-error / object-with-message /
- * object-with-non-string / fallback) is the contract. (The former
+ * object-with-envelope / fallback) is the contract. (The former
  * `optimisticListUpdate` React Query patcher was removed with the SWR
  * migration — optimistic updates now go through `useTenantMutation`.)
  */
@@ -37,10 +37,17 @@ describe('extractMutationError', () => {
         ).toBe('E');
     });
 
-    it('JSON-stringifies a non-string `error` value', () => {
+    it('reads the message of the API error envelope (#4691)', () => {
         expect(
-            extractMutationError({ error: { code: 'X', detail: 'y' } }),
-        ).toBe(JSON.stringify({ code: 'X', detail: 'y' }));
+            extractMutationError({ error: { code: 'FORBIDDEN', message: 'Not yours to change' } }, 'fb'),
+        ).toBe('Not yours to change');
+    });
+
+    it('falls back, rather than printing JSON, for an `error` object with no message', () => {
+        // It used to JSON-stringify the object, so `{"code":"X",…}` reached the screen.
+        expect(
+            extractMutationError({ error: { code: 'X', detail: 'y' } }, 'fallback sentence'),
+        ).toBe('fallback sentence');
     });
 
     it('uses the default fallback for an object with neither field', () => {

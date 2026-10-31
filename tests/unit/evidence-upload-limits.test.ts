@@ -21,6 +21,7 @@ import {
     formatBytes,
 } from '@/lib/evidence-upload-limits';
 import { evidenceStatusVariant } from '@/components/evidence/evidence-labels';
+import { codeOf } from '../helpers/source-blocks';
 
 describe('formatBytes', () => {
     it('renders sub-kilobyte sizes in bytes', () => {
@@ -70,9 +71,7 @@ describe('the shared upload limits', () => {
         ];
         const literal = EVIDENCE_ACCEPT.slice(0, 24); // '.pdf,.jpg,.jpeg,.png,…'
         const offenders = files.filter((f) => {
-            const src = fs.readFileSync(path.join(ROOT, f), 'utf8')
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/^\s*\/\/.*$/gm, '');
+            const src = codeOf(fs.readFileSync(path.join(ROOT, f), 'utf8'));
             return src.includes(literal);
         });
         expect(offenders).toEqual([]);

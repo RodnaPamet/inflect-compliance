@@ -34,10 +34,7 @@ const SANKEY = codeOf(fs.readFileSync(
     path.join(ROOT, 'src/components/ui/SankeyChart.tsx'),
     'utf8',
 ));
-const STRIPPED = SANKEY.replace(/\/\*[\s\S]*?\*\//g, '').replace(
-    /\/\/[^\n]*/g,
-    '',
-);
+const STRIPPED = codeOf(SANKEY);
 
 describe('Sankey — flat theme-token design (restored, theme-aware)', () => {
     describe('KIND_SERIES → flat chart-series token colour', () => {

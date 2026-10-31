@@ -66,7 +66,7 @@ import {
 } from '@/components/ui/date-picker/date-utils';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { useTranslations } from 'next-intl';
-import { RISK_CATEGORY_OPTIONS } from './_shared/risk-options';
+import { buildRiskCategoryOptions } from './_shared/risk-options';
 import { extractMutationError } from '@/lib/mutations';
 import { useNewRiskForm } from './_form/useNewRiskForm';
 
@@ -109,6 +109,8 @@ export function NewRiskModal({
     apiUrl,
 }: NewRiskModalProps) {
     const tx = useTranslations('risks');
+    // #4692 — the stored value stays English; the label is the user's language.
+    const categoryOptions = useMemo(() => buildRiskCategoryOptions(tx), [tx]);
     const RISK_TREATMENT_OPTIONS = useMemo(
         () => buildRiskTreatmentOptions((k) => tx(k as Parameters<typeof tx>[0])),
         [tx],
@@ -407,9 +409,9 @@ export function NewRiskModal({
                                 <Combobox
                                     id="risk-category"
                                     name="category"
-                                    options={RISK_CATEGORY_OPTIONS}
+                                    options={categoryOptions}
                                     selected={
-                                        RISK_CATEGORY_OPTIONS.find(
+                                        categoryOptions.find(
                                             (o) => o.value === form.category,
                                         ) ?? null
                                     }

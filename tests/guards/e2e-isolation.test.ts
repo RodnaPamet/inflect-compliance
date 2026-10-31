@@ -74,11 +74,7 @@ function specFiles(): string[] {
  * Crude but sufficient for the structural question being asked.
  */
 function stripNoise(src: string): string {
-    return src
-        // block comments
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        // line comments
-        .replace(/\/\/[^\n]*/g, ' ')
+    return codeOf(src)
         // template literals (keep `${}` interpolations would be ideal,
         // but for this guard treating the whole literal as blank is
         // safe — we only care about top-level `let` identifiers, which

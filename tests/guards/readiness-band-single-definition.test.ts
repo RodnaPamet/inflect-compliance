@@ -83,14 +83,13 @@ function walk(dir: string, out: string[] = []): string[] {
 
 /** Strip comments and JSX text so prose about "80%" never trips the scan. */
 function codeOnly(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
+    return codeOf(src)
         .split('\n')
         .filter((l) => {
             const t = l.trim();
             return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('{/*');
         })
-        .map((l) => l.replace(/\/\/.*$/, ''))
+        .map((l) => codeOf(l))
         .join('\n');
 }
 

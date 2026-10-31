@@ -65,6 +65,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -128,9 +129,7 @@ function scanFile(absPath: string): Offender[] {
     const content = fs.readFileSync(absPath, 'utf8');
     // Strip block + line comments so doc-comments mentioning the
     // banned patterns don't trip the detector.
-    const stripped = content
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+    const stripped = codeOf(content);
     const lines = stripped.split('\n');
     const hits: Offender[] = [];
     lines.forEach((line, i) => {
@@ -161,10 +160,8 @@ describe('Live filter-scoped search on list pages', () => {
             expect(fs.existsSync(abs)).toBe(true);
             // Strip comments so a doc-comment mentioning the prop
             // name doesn't satisfy the requirement on its own.
-            const stripped = fs
-                .readFileSync(abs, 'utf8')
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = codeOf(fs
+                .readFileSync(abs, 'utf8'));
             if (!rx.test(stripped)) missing.push(rel);
         }
         if (missing.length > 0) {

@@ -65,5 +65,6 @@ module.exports = {
         'observable-gauge-rebinds': require('./rules/observable-gauge-rebinds'),
         'require-test-prisma-transaction-budget': require('./rules/require-test-prisma-transaction-budget'),
         'anthropic-client-single-seam': require('./rules/anthropic-client-single-seam'),
+        'no-positional-comment-strip': require('./rules/no-positional-comment-strip'),
     },
 };

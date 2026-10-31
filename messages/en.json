@@ -1160,7 +1160,63 @@
       "regulatoryFine": "Regulatory fine",
       "reputationDamage": "Reputation damage",
       "competitiveLoss": "Competitive-advantage loss",
-      "secondaryLossPlaceholder": "Amount"
+      "secondaryLossPlaceholder": "Amount",
+      "factors": {
+        "tef": "Threat event frequency",
+        "vulnerability": "Vulnerability",
+        "plm": "Primary loss magnitude",
+        "slef": "Secondary loss event frequency",
+        "slm": "Secondary loss magnitude"
+      },
+      "units": {
+        "perYear": "/yr",
+        "probability": "0–1",
+        "perEvent": "per event"
+      },
+      "warnings": {
+        "rangeInverted": "{factor}: range is inverted (expected min ≤ mode ≤ max, got {min}/{mode}/{max})",
+        "rangeTooWide": "{factor}: range spans more than 3 orders of magnitude ({min} → {max}) — consider calibrating with a reference event",
+        "boundsProbability": "{factor} is a probability — every bound lives on 0–1",
+        "boundsNegative": "{factor} cannot be negative — negative values invert the model"
+      },
+      "reflect": {
+        "tefOccurs": "most likely: a threat event occurs {frequency}",
+        "tefExpected": "most likely: a threat event is expected {frequency}",
+        "vulnerability": "most likely: an attempted event succeeds with {probability}",
+        "plm": "most likely: each primary loss event costs {amount}",
+        "slef": "most likely: secondary losses follow {probability} of primary events",
+        "slm": "most likely: each secondary fallout costs {amount}",
+        "spread": "{base} — that's a ~{ratio}× spread; anchor it with a reference event",
+        "freqNever": "never (zero events expected)",
+        "freqPerYear": "about {n}× per year",
+        "freqEveryYears": "about one event every {years} years",
+        "probZero": "0% — impossible by your model; did you mean 0.5?",
+        "probNegative": "negative — probabilities live on 0..1",
+        "probCertain": "certain (100% chance)",
+        "probOneIn": "a 1-in-{oneIn} chance ({percent}%)"
+      },
+      "priors": {
+        "technical": {
+          "tef": "Reference: ransomware/intrusion attempts for a mid-size org typically land at TEF 0.05–0.5/yr",
+          "loss": "Reference: single-incident response + recovery commonly runs €50K–€500K"
+        },
+        "operational": {
+          "tef": "Reference: significant process/outage events typically 0.5–4/yr",
+          "loss": "Reference: per-incident operational losses commonly €10K–€250K"
+        },
+        "compliance": {
+          "tef": "Reference: regulator findings/audit events typically 0.1–1/yr",
+          "loss": "Reference: fines + remediation commonly €25K–€2M depending on regime"
+        },
+        "financial": {
+          "tef": "Reference: material financial-control failures typically 0.1–0.5/yr",
+          "loss": "Reference: single-event financial losses commonly €50K–€1M"
+        },
+        "reputational": {
+          "tef": "Reference: public-trust incidents typically 0.05–0.3/yr",
+          "loss": "Reference: churn + PR response commonly €100K–€5M (hardest to calibrate — use customer-lifetime maths)"
+        }
+      }
     },
     "assessment": {
       "kriBreachedOne": "Key risk indicator \"{name}\" is breached (RED).",
@@ -1945,7 +2001,17 @@
       "resourceSingular": "arrangement",
       "resourcePlural": "arrangements"
     },
-    "loadError": "Couldn't load risks. Check your connection and try again."
+    "loadError": "Couldn't load risks. Check your connection and try again.",
+    "categories": {
+      "technical": "Technical",
+      "operational": "Operational",
+      "compliance": "Compliance",
+      "strategic": "Strategic",
+      "financial": "Financial",
+      "reputational": "Reputational",
+      "physical": "Physical",
+      "humanResources": "Human resources"
+    }
   },
   "controls": {
     "title": "Controls Library",
@@ -9076,7 +9142,7 @@
       "linkRelationHeader": "Relation",
       "linkCreatedHeader": "Created",
       "linkActionsHeader": "Actions",
-      "removeLink": "× Remove",
+      "removeLink": "Remove",
       "linksEmptyTitle": "No links yet",
       "linksEmptyDesc": "Cross-link this task to related tasks, controls, evidence, or risks using the Link button above.",
       "linksResourcePlural": "links",
@@ -9251,7 +9317,12 @@
       "FRAMEWORK_REQUIREMENT": "Framework Requirement",
       "ASSET": "Asset",
       "RISK": "Risk",
-      "EVIDENCE": "Evidence"
+      "EVIDENCE": "Evidence",
+      "POLICY": "Policy",
+      "FILE": "File",
+      "AUDIT_PACK": "Audit pack",
+      "VENDOR": "Vendor",
+      "INCIDENT": "Incident"
     },
     "checklist": {
       "heading": "Steps",
@@ -9268,6 +9339,13 @@
         "OPERATE": "Operate",
         "REVIEW": "Review"
       }
+    },
+    "linkRelation": {
+      "RELATES_TO": "Relates to",
+      "EVIDENCE_FOR": "Evidence for",
+      "BLOCKED_BY": "Blocked by",
+      "CAUSED_BY": "Caused by",
+      "MITIGATED_BY": "Mitigated by"
     }
   },
   "processes": {
@@ -12733,7 +12811,7 @@
       "compensating": "compensating: {name}",
       "renew": "Renew",
       "requested": "Requested {date}",
-      "renewedFrom": " • renewed from {id}…",
+      "renewedFrom": " • renews the exception requested {date}",
       "requestHeader": "Request control exception",
       "justification": "Justification",
       "justificationPlaceholder": "Explain why this control cannot be implemented as designed.",
@@ -12759,7 +12837,14 @@
       "expiryRequired": "Expiry date is required for approval.",
       "exceptionLabel": "Exception",
       "exceptedUntil": "Excepted until {date}",
-      "pickRiskAcceptor": "Select who accepts this risk"
+      "pickRiskAcceptor": "Select who accepts this risk",
+      "renewedFromEarlier": " • renews an earlier exception",
+      "status": {
+        "REQUESTED": "Requested",
+        "APPROVED": "Approved",
+        "REJECTED": "Rejected",
+        "EXPIRED": "Expired"
+      }
     },
     "testPlans": {
       "title": "Test Plans",
@@ -13072,7 +13157,20 @@
     "signInToAccept": "Sign in to accept",
     "acceptInvitation": "Accept invitation",
     "acceptFailed": "Could not accept the invitation. Please try again.",
-    "wrongAccount": "You are signed in as <b>{email}</b>, but this invite was sent to a different email address. Sign in with the correct account to accept it."
+    "wrongAccount": "You are signed in as <b>{email}</b>, but this invite was sent to a different email address. Sign in with the correct account to accept it.",
+    "refused": {
+      "INVITE_NOT_FOUND": "This invitation does not exist. Check the link, or ask your admin to send a new invite.",
+      "INVITE_REVOKED": "This invitation has been withdrawn. Ask your admin to send a new invite.",
+      "INVITE_EXPIRED": "This invitation has expired. Ask your admin to send a new invite.",
+      "INVITE_ALREADY_REDEEMED": "This invitation has already been used. If it was not you, ask your admin to send a new invite.",
+      "INVITE_EMAIL_MISMATCH": "This invitation was sent to a different email address from the account you signed in with, so it can no longer be used. Ask your admin to send a new invite to the address you sign in with.",
+      "INVITE_NOT_COMPLETED": "This invitation was claimed, but joining the workspace did not finish. Ask your admin to send a new invite."
+    },
+    "result": {
+      "title": "Invitation not accepted",
+      "signedInAs": "You are signed in as <b>{email}</b>.",
+      "toWorkspaces": "Go to your workspaces"
+    }
   },
   "roles": {
     "OWNER": "Owner",
@@ -14102,8 +14200,8 @@
         "finish": "Failed to finish"
       },
       "companyProfile": {
-        "intro": "Tell us about your organization. This information helps tailor your compliance experience.",
-        "nameLabel": "Company / Legal Name *",
+        "intro": "Tell us about your organization. Your answers are kept with this setup. Ticking the AI box below adds a short AI-governance step.",
+        "nameLabel": "Company or legal name",
         "namePlaceholder": "Acme Corporation",
         "industryLabel": "Industry",
         "industryPlaceholder": "Select industry...",
@@ -14155,7 +14253,8 @@
         "intro": "Add your key information assets. These are the systems, databases, and services you need to protect.",
         "placeholder": "e.g. Customer Database, Cloud Infrastructure...",
         "add": "Add",
-        "importLater": "You can import assets in bulk later from the Assets page."
+        "importLater": "You can import assets in bulk later from the Assets page.",
+        "remove": "Remove {name}"
       },
       "controls": {
         "intro": "We'll install baseline controls from your selected frameworks. This creates your initial control register.",
@@ -14170,10 +14269,11 @@
         "generate": "Generate starter risks"
       },
       "team": {
-        "intro": "Invite your team members. They'll receive an email invitation to join your workspace.",
+        "intro": "List the colleagues you plan to invite. Nothing is sent from this step.",
         "placeholder": "colleague@company.com",
-        "invite": "Invite",
-        "inviteLater": "You can skip this step and invite team members later from the Admin panel."
+        "add": "Add",
+        "remove": "Remove {email}",
+        "inviteFrom": "Invite each of them from <link>the members page</link>, where you choose the role they will have."
       },
       "review": {
         "intro": "Review your setup before completing onboarding.",
@@ -14185,8 +14285,20 @@
         "pendingConfirmation": "Pending confirmation",
         "starterWillGenerate": "Starter risks will be generated",
         "skipped": "Skipped",
-        "invitationsPending": "{count} invitations pending",
-        "finishNotice": "Click \"Complete Setup\" below to finish onboarding and go to your dashboard."
+        "finishNotice": "Click \"Complete Setup\" below to finish onboarding and go to your dashboard.",
+        "toInvite": "{count} to invite from the members page"
+      },
+      "automationFailed": {
+        "title": "Some of the setup did not finish",
+        "hint": "Open the step and click Continue again to retry. Anything already created is not created twice."
+      },
+      "refused": {
+        "ONBOARDING_ADMIN_ONLY": "Only Owners and Admins can set up the workspace.",
+        "ONBOARDING_NOT_STARTED": "The setup has not been started. Reload the page and start it.",
+        "ONBOARDING_NOT_IN_PROGRESS": "The setup is not in progress. Reload the page.",
+        "ONBOARDING_NO_FRAMEWORK": "Choose at least one framework to continue.",
+        "ONBOARDING_NO_PACK": "Choose at least one pack of {framework} to continue.",
+        "ONBOARDING_UNKNOWN_PACK": "A pack chosen for {framework} is not part of it. Reload the page and choose again."
       }
     },
     "aiGov": {

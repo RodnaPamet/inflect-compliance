@@ -56,9 +56,8 @@ const read = (rel: string) => codeOf(readRaw(rel));
  * match, never wrongly match.
  */
 const maskSqlComments = (sql: string) =>
-    sql
-        .replace(/--[^\n]*/g, (m) => ' '.repeat(m.length))
-        .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+    codeOf(sql
+        .replace(/--[^\n]*/g, (m) => ' '.repeat(m.length)));
 const readSql = (rel: string) => maskSqlComments(readRaw(rel));
 
 /**

@@ -22,6 +22,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -64,9 +65,7 @@ function read(p: string): string {
  *  React Query symbols (in migration docstrings) don't trip the
  *  negative assertions. */
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/.*$/gm, '');
+    return codeOf(src);
 }
 
 describe.each(LIST_PAGES)(

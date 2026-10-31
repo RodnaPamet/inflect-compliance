@@ -25,6 +25,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { AI_TOGGLE_COLUMN } from '@/app-layer/ai/risk-assessment/tenant-toggle-columns';
+import { codeOf } from '../helpers/source-blocks';
 
 const SCHEMA = path.join(process.cwd(), 'prisma/schema/auth.prisma');
 const MODEL = 'TenantSecuritySettings';
@@ -40,7 +41,7 @@ const MODEL = 'TenantSecuritySettings';
 export function stripLineComments(source: string): string {
     return source
         .split('\n')
-        .map((line) => line.replace(/\/\/.*$/, ''))
+        .map((line) => codeOf(line))
         .join('\n');
 }
 

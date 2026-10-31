@@ -21,13 +21,17 @@
  *   3. navigate to /t/<slug>/dashboard.
  *
  * A refusal (expired, revoked, already used, wrong account) keeps the user on
- * this page and shows the server's reason.
+ * this page and says why, from the reason the redemption names
+ * (`src/lib/invite-refusals.ts`), in the user's language (#4689). A refusal
+ * that names no reason falls back to the server's message.
  */
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Button } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { refreshSessionClaims } from '@/lib/auth/refresh-session-claims';
+import { inviteRefusal } from '@/lib/invite-refusals';
 
 interface RedeemResponse {
     slug?: unknown;
@@ -52,8 +56,15 @@ export function InviteAcceptButton({ token }: { token: string }) {
             });
             const body = (await res.json().catch(() => null)) as RedeemResponse | null;
             if (!res.ok || typeof body?.slug !== 'string' || !body.slug) {
-                const reason = body?.error?.message;
-                setError(typeof reason === 'string' && reason ? reason : t('acceptFailed'));
+                const refusal = inviteRefusal(body);
+                const message = body?.error?.message;
+                setError(
+                    refusal
+                        ? t(`refused.${refusal}`)
+                        : typeof message === 'string' && message
+                          ? message
+                          : t('acceptFailed'),
+                );
                 setSubmitting(false);
                 return;
             }
@@ -74,17 +85,16 @@ export function InviteAcceptButton({ token }: { token: string }) {
                     {error}
                 </InlineNotice>
             )}
-            {/* The markup the page's form always had (and the org invite
-                page's still has), so the control looks exactly as it did. */}
-            <button
+            <Button
                 type="submit"
+                variant="primary"
                 id="invite-accept-btn"
                 disabled={submitting}
-                aria-busy={submitting}
-                className="w-full rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                loading={submitting}
+                className="w-full"
             >
                 {t('acceptInvitation')}
-            </button>
+            </Button>
         </form>
     );
 }

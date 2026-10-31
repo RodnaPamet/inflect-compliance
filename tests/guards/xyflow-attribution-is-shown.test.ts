@@ -31,6 +31,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -58,9 +59,7 @@ const FLOW_SURFACES: readonly string[] = [
 /** Source with `//` and block comments stripped, so prose cannot satisfy a check. */
 function codeOnly(rel: string): string {
     const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-    return raw
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    return codeOf(raw);
 }
 
 describe('the React Flow attribution is shown', () => {

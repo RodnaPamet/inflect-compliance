@@ -31,6 +31,7 @@
  */
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = join(__dirname, '..', '..');
 
@@ -66,7 +67,7 @@ const isClientModule = (src: string) => /^\s*['"]use client['"]/.test(src);
 
 /** Strip comments so prose naming a banned module is not a false positive. */
 const stripComments = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 describe('GUARD: worker-reachable code has no static Next-only imports', () => {
     const files = WORKER_REACHABLE.flatMap((d) => walk(d));

@@ -116,6 +116,7 @@ import {
     type HttpMethod,
 } from '../helpers/route-authorization-graph';
 import { REPO_ROOT, repoRelativeFiles } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 const API_ROOT = path.join(REPO_ROOT, 'src/app/api');
 const APP_ROOT = path.join(REPO_ROOT, 'src/app');
@@ -349,9 +350,6 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
     { handler: 'api/invites/[token]/route.ts#POST', klass: 'CAPABILITY_TOKEN',
       mechanism: /redeemInvite/,
       note: 'Redemption. The route requires a session first, then redeemInvite claims the token atomically (acceptedAt/revokedAt/expiresAt predicate on updateMany) and burns it on an email mismatch.' },
-    { handler: 'api/invites/[token]/accept-redirect/route.ts#GET', klass: 'CAPABILITY_TOKEN',
-      mechanism: /redeemInvite/,
-      note: 'Post-OAuth callbackUrl for the same redemption: unauthenticated callers are bounced to /login, and the token itself is checked by the same redeemInvite atomic claim.' },
     { handler: 'api/invites/[token]/start-signin/route.ts#GET', klass: 'CAPABILITY_TOKEN',
       // FINDING, not corroboration. This route verifies NOTHING: it copies the
       // URL segment verbatim into an HttpOnly 10-minute cookie and redirects
@@ -641,9 +639,11 @@ function readSource(file: string): string {
  * whose only mention is `// we no longer verifyWebhookSignature here` — which is
  * the exact state the check exists to catch, reading as a pass.
  *
- * Deliberately crude: block and line comments are stripped, and removing a
- * little too much is safe for a credential-check regex. Erring the other way
- * is not.
+ * Comments are blanked by `codeOf` (#4659). They used to be stripped with a
+ * positional regex, on the grounds that removing a little too much is safe
+ * for a credential-check regex. That held for this check, but a `/*` inside a
+ * string opened a phantom comment that ran to the next `*\/` anywhere in the
+ * file, and the one masker the repo keeps correct is the better default.
  *
  * String literal CONTENTS are NOT stripped, contrary to what this said before.
  * Two CAPABILITY_TOKEN entries silently depend on that — their mechanism names
@@ -653,9 +653,7 @@ function readSource(file: string): string {
  * literals would silently break those two.
  */
 function readCodeOnly(file: string): string {
-    return readSource(file)
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    return codeOf(readSource(file));
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────
@@ -882,7 +880,8 @@ describe('every API route handler has SOME authorization (layer 2)', () => {
         const members = EXEMPT_HANDLERS.filter((e) => e.klass === 'CAPABILITY_TOKEN');
         // Positive companion: the class is populated, so an empty offender
         // list below is evidence rather than an empty scan.
-        expect(members.length).toBeGreaterThanOrEqual(14);
+        // 13 since #4689 deleted the GET invite redeemer (`accept-redirect`).
+        expect(members.length).toBeGreaterThanOrEqual(13);
         expect(EXEMPT_CLASSES.CAPABILITY_TOKEN.mechanism).toBeUndefined();
 
         // Routes drawn from classes that CANNOT hold a capability token: two
@@ -981,7 +980,8 @@ describe('every API route handler has SOME authorization (layer 2)', () => {
         // to sit here claiming to catch a run where "nothing was mutated at
         // all" — it could not: every offender path `continue`s, so zero
         // offenders already implies every checkable member incremented.
-        expect(checkable.length).toBeGreaterThanOrEqual(14);
+        // 13 since #4689 deleted the GET invite redeemer (`accept-redirect`).
+        expect(checkable.length).toBeGreaterThanOrEqual(13);
     });
 
     it('PRE_TENANT_AUTH membership stays confined to /api/auth/', () => {

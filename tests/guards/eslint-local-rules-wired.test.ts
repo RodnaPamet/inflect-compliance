@@ -41,6 +41,7 @@ const LOCAL_RULES = [
     'observable-gauge-rebinds',
     'require-test-prisma-transaction-budget',
     'anthropic-client-single-seam',
+    'no-positional-comment-strip',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

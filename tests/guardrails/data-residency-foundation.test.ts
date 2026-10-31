@@ -61,7 +61,7 @@ describe('every declarable region is provisioned or planned', () => {
         const block = enums.match(/enum\s+TenantRegion\s*\{([\s\S]*?)\}/)?.[1] ?? '';
         const members = block
             .split('\n')
-            .map((l) => l.replace(/\/\/.*$/, '').trim())
+            .map((l) => codeOf(l).trim())
             .filter((l) => /^[A-Z0-9_]+$/.test(l));
         expect(members.length).toBeGreaterThanOrEqual(1);
 

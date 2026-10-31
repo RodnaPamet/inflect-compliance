@@ -116,20 +116,11 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
             'caller-facing contract.',
     },
     {
-        file: 'invites/[token]/accept-redirect/route.ts',
-        category: 'redirect_only',
-        reason:
-            'Tenant invite redeemer. Success → /t/<slug>/dashboard; ' +
-            'failure → /invite/<token>?error=<msg>. Wrapping would ' +
-            'replace the failure redirect with a JSON 4xx, breaking ' +
-            'the invite-page error surface.',
-    },
-    {
         file: 'org/invite/[token]/accept-redirect/route.ts',
         category: 'redirect_only',
         reason:
-            'Org invite redeemer. Mirrors the tenant accept-redirect ' +
-            'contract: success → /org/<slug>; failure → /invite/org/<token>?error=<msg>.',
+            'Org invite redeemer (POST, from the org invite page\'s form): ' +
+            'success → /org/<slug>; failure → /invite/org/<token>?error=<msg>.',
     },
 
     // ─── Anti-enumeration uniform-200 ───

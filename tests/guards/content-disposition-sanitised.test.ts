@@ -39,7 +39,7 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 const stripComments = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 /**
  * `filename="${…}"` in a template literal — the exact shape that shipped

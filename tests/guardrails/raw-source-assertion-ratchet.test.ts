@@ -1166,7 +1166,7 @@ describe('Class A — assertions satisfied by prose', () => {
             const src = fs.readFileSync(target, 'utf8');
             const chip = /data-testid="status-chip"/;
             expect(chip.test(src)).toBe(true);
-            expect(chip.test(src.replace(/\/\/.*$/gm, ''))).toBe(false);
+            expect(chip.test(codeOf(src))).toBe(false);
         });
 
         it('does NOT flag the same assertion masked at the read seam', () => {

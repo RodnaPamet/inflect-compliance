@@ -45,6 +45,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 import { cardVariants } from "@/components/ui/card-variants";
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, "../..");
 const VARIANTS_SRC = path.join(ROOT, "packages/ui/src/components/ui/card-variants.ts");
@@ -64,9 +65,7 @@ function densityRungsFromSource(): string[] {
   // Strip block + line comments first: that file's docstrings discuss
   // `none: ""` and `p-4` by name, and a comment must not be mistaken
   // for executable code.
-  const code = src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+  const code = codeOf(src);
   const block = code.match(/density\s*:\s*\{([^}]*)\}/);
   if (!block) return [];
   return [...block[1].matchAll(/([A-Za-z_$][\w$]*)\s*:/g)].map((m) => m[1]);
