@@ -12324,7 +12324,9 @@
     "colType": "Type",
     "colCriticality": "Criticality",
     "emptyAssets": "All critical assets are covered by controls",
+    "emptyAssetsNone": "There are no high or critical assets yet",
     "emptyRisks": "All risks are mitigated by controls",
+    "emptyRisksNone": "There are no risks in the register yet",
     "uncoveredAssets": "Uncovered Critical Assets",
     "unmappedRisks": "Unmapped Risks",
     "topControls": "Top Controls by Risk Coverage",
@@ -12335,9 +12337,40 @@
     "loadingAria": "Loading coverage dashboard",
     "riskWordOne": "risk",
     "riskWordOther": "risks",
+    "assetWordOne": "asset",
+    "assetWordOther": "assets",
     "vsTestCoverage": "This maps how risks, assets and controls protect each other. For framework test-plan and test-run coverage, see the",
     "testCoverageLink": "Test dashboard →",
-    "barProcess": "Controls in a process"
+    "barProcess": "Controls in a process",
+    "nothingToCover": "Nothing to cover yet",
+    "showingOf": "Showing {shown} of {total}.",
+    "viewAllAssets": "View the assets",
+    "viewAllRisks": "View the risks",
+    "riskStatus": {
+      "OPEN": "Open",
+      "MITIGATING": "Mitigating",
+      "MITIGATED": "Mitigated",
+      "ACCEPTED": "Accepted",
+      "CLOSED": "Closed"
+    },
+    "assetType": {
+      "INFORMATION": "Information",
+      "SYSTEM": "System",
+      "SERVICE": "Service",
+      "DATA_STORE": "Data Store",
+      "VENDOR": "Vendor",
+      "PEOPLE_PROCESS": "People / Process",
+      "APPLICATION": "Application",
+      "INFRASTRUCTURE": "Infrastructure",
+      "PROCESS": "Process",
+      "OTHER": "Other"
+    },
+    "criticality": {
+      "LOW": "Low",
+      "MEDIUM": "Medium",
+      "HIGH": "High",
+      "CRITICAL": "Critical"
+    }
   },
   "accessReviews": {
     "crumbDashboard": "Dashboard",

@@ -305,6 +305,9 @@ export async function getPolicyTraceability(ctx: RequestContext, policyId: strin
 
 // ─── Coverage Summary ───
 
+/** How many rows each coverage gap list shows; the totals are counted apart. */
+export const COVERAGE_GAP_ROWS = 10;
+
 export async function coverageSummary(ctx: RequestContext) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
@@ -334,23 +337,37 @@ export async function coverageSummary(ctx: RequestContext) {
         const assetsWithControlsCount = assetsWithControls.length;
         const policiesWithControlsCount = policiesWithControls.length;
 
-        // Unmapped risks (no controls)
+        // Unmapped risks (no controls). The list shows the first
+        // COVERAGE_GAP_ROWS; the totals beside it are what the page counts
+        // (#4739: the section badge counted the capped rows, so 40 untreated
+        // risks read as "10").
         const mappedRiskIds = new Set(risksWithControls.map(r => r.riskId));
-        const unmappedRisks = await db.risk.findMany({
-            where: { tenantId: t, id: { notIn: Array.from(mappedRiskIds) } },
-            select: { id: true, title: true, score: true, status: true },
-            orderBy: { score: 'desc' },
-            take: 10,
-        });
+        const unmappedWhere = { tenantId: t, id: { notIn: Array.from(mappedRiskIds) } };
 
         // Critical assets with no controls — HIGH + CRITICAL bands (the
         // stored `Asset.criticality` now carries a CRITICAL tier).
         const mappedAssetIds = new Set(assetsWithControls.map(a => a.assetId));
-        const uncoveredCriticalAssets = await db.asset.findMany({
-            where: { tenantId: t, status: 'ACTIVE', criticality: { in: ['HIGH', 'CRITICAL'] }, id: { notIn: Array.from(mappedAssetIds) } },
-            select: { id: true, name: true, type: true, criticality: true },
-            take: 10,
-        });
+        const criticalWhere = { tenantId: t, status: 'ACTIVE' as const, criticality: { in: ['HIGH' as const, 'CRITICAL' as const] } };
+        const uncoveredWhere = { ...criticalWhere, id: { notIn: Array.from(mappedAssetIds) } };
+
+        const [unmappedRisks, unmappedRisksTotal, uncoveredCriticalAssets, uncoveredCriticalAssetsTotal, totalCriticalAssets] = await Promise.all([
+            db.risk.findMany({
+                where: unmappedWhere,
+                select: { id: true, title: true, score: true, status: true },
+                orderBy: { score: 'desc' },
+                take: COVERAGE_GAP_ROWS,
+            }),
+            db.risk.count({ where: unmappedWhere }),
+            db.asset.findMany({
+                where: uncoveredWhere,
+                select: { id: true, name: true, type: true, criticality: true },
+                take: COVERAGE_GAP_ROWS,
+            }),
+            db.asset.count({ where: uncoveredWhere }),
+            // The population the asset gap is drawn from, so "none uncovered"
+            // over no critical asset is said as what it is.
+            db.asset.count({ where: criticalWhere }),
+        ]);
 
         // Hot controls (most risks)
         const hotControls = await db.riskControl.groupBy({
@@ -413,7 +430,10 @@ export async function coverageSummary(ctx: RequestContext) {
             controlsWithProcessCount,
             controlsWithProcessPct: totalControls > 0 ? Math.round((controlsWithProcessCount / totalControls) * 100) : 0,
             unmappedRisks,
+            unmappedRisksTotal,
             uncoveredCriticalAssets,
+            uncoveredCriticalAssetsTotal,
+            totalCriticalAssets,
             hotControls: hotControlsResult,
         };
     });
