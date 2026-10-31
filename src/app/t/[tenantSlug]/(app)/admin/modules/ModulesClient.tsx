@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { ErrorState } from '@/components/ui/error-state';
+import { apiRefusalMessage } from '@/lib/api-error';
 
 interface ModuleState {
     enabled: boolean;
@@ -36,7 +37,8 @@ export function ModulesClient() {
     const tenantHref = useTenantHref();
     const { tenantSlug } = useTenantContext();
     const [saving, setSaving] = useState(false);
-    const [failed, setFailed] = useState(false);
+    // The refusal to show, or null: the server's reason when it gave one.
+    const [failed, setFailed] = useState<string | null>(null);
 
     // TENANT-RELATIVE. `useTenantSWR` prefixes `/api/t/<slug>` itself, so an
     // absolute path here would resolve to `/api/t/<slug>/api/t/<slug>/…`.
@@ -47,26 +49,30 @@ export function ModulesClient() {
 
     async function toggle(next: boolean) {
         setSaving(true);
-        setFailed(false);
+        setFailed(null);
         try {
             const res = await fetch(`/api/t/${tenantSlug}/admin/process-canvas-module`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ enabled: next }),
             });
-            if (!res.ok) throw new Error(String(res.status));
+            if (!res.ok) {
+                const body: unknown = res.status >= 500 ? null : await res.json().catch(() => null);
+                setFailed(apiRefusalMessage(body, t('modules.saveFailedBody')));
+                return;
+            }
             await mutate();
         } catch {
             // VISIBLE, not swallowed. A toggle that silently failed would leave
-            // an operator believing they had turned a licensed surface on — or
-            // off — when they had not.
-            setFailed(true);
+            // an operator believing they had turned a module on — or off — when
+            // they had not.
+            setFailed(t('modules.saveFailedBody'));
         } finally {
             setSaving(false);
         }
     }
 
-    if (error) return <ErrorState title={t('modules.loadFailed')} />;
+    if (error) return <ErrorState title={t('modules.loadFailed')} onRetry={() => { void mutate(); }} />;
 
     const enabled = data?.enabled === true;
 
@@ -75,7 +81,8 @@ export function ModulesClient() {
             <BackAffordance />
             <PageBreadcrumbs
                 items={[
-                    { label: t('nav.modules'), href: tenantHref('/admin/modules') },
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
                     { label: t('modules.breadcrumb') },
                 ]}
             />
@@ -109,17 +116,9 @@ export function ModulesClient() {
                     </Button>
                 </div>
 
-                {/* ALWAYS SHOWN, not only when off. The licence constraint binds
-                    at the moment somebody turns it ON, so hiding the warning
-                    while it is off would hide it from exactly the reader about
-                    to cross the line. */}
-                <InlineNotice variant="warning" title={t('modules.processCanvas.licenceHeading')}>
-                    {t('modules.processCanvas.licenceBody')}
-                </InlineNotice>
-
                 {failed && (
                     <InlineNotice variant="error" title={t('modules.saveFailedHeading')}>
-                        {t('modules.saveFailedBody')}
+                        <span data-testid="module-save-failed">{failed}</span>
                     </InlineNotice>
                 )}
             </section>
