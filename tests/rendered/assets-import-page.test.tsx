@@ -259,3 +259,39 @@ describe('Asset import — who may reach the form', () => {
         expect(screen.getByText(IMPORT.forbidden)).toBeInTheDocument();
     });
 });
+
+describe('Asset import — what the result names (#4800)', () => {
+    it("a skipped row is named by its line in the file, not its place in the request", async () => {
+        mountAs('EDITOR');
+        // Row 1 is invalid (no type), so the server receives only row 2, and
+        // numbers it 1.
+        respond(200, {
+            created: 0,
+            skipped: 1,
+            errors: [],
+            skippedRows: [{ row: 1, name: 'Prod DB', reason: 'existing' }],
+        });
+        const csv = 'Name,Type\nBroken row,\nProd DB,DATA_STORE';
+        expect(await uploadAndReadStatus(csv, 'Broken row')).not.toBe(IMPORT.rowOk);
+
+        await act(async () => {
+            fireEvent.click(document.getElementById('import-btn') as HTMLElement);
+        });
+        const result = await waitFor(() => {
+            const el = document.getElementById('asset-import-result');
+            expect(el).not.toBeNull();
+            return el!.parentElement as HTMLElement;
+        });
+        const skipLine = IMPORT.rowLabel.replace('{num}', '2').replace('{name}', 'Prod DB');
+        expect(result).toHaveTextContent(skipLine);
+        expect(result).not.toHaveTextContent(IMPORT.rowLabel.replace('{num}', '1').replace('{name}', 'Prod DB'));
+    });
+
+    it('the preview names the type in words', async () => {
+        mountAs('EDITOR');
+        await uploadAndReadStatus('Name,Type\nProd DB,DATA_STORE', 'Prod DB');
+        const preview = document.getElementById('asset-import-preview') as HTMLElement;
+        expect(preview).toHaveTextContent(en.assets.assetTypes.DATA_STORE);
+        expect(preview).not.toHaveTextContent('DATA_STORE');
+    });
+});

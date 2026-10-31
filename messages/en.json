@@ -1018,6 +1018,8 @@
     "rowInteractionHint": "Click to preview · double-click the row to open the full page",
     "importAssets": "Import assets",
     "import": {
+      "requestFailed": "The import request was refused or failed.",
+      "breadcrumb": "Import",
       "title": "Import assets from CSV",
       "csvFormat": "CSV format",
       "csvDesc": "Upload a CSV file with at minimum Name and Type columns. Optional columns: Status, Owner, Classification, Location, Confidentiality, Integrity, Availability (1-5), Retention, RetentionUntil (YYYY-MM-DD), ExternalRef, Dependencies, BusinessProcesses, DataResidency, CPE, Vendor, Product, Version.",
@@ -1049,7 +1051,7 @@
       "errStatus": "Invalid status: {value}",
       "errCia": "CIA values must be between 1 and 5",
       "errTypeRequired": "Type is required",
-      "skippedDuplicates": "Skipped {count} duplicate(s) — an asset with that name already exists",
+      "skippedDuplicates": "{count, plural, one {# row skipped for a duplicate name} other {# rows skipped for a duplicate name}}",
       "skipReason": {
         "existing": "Duplicate name — an asset with that name already exists",
         "duplicateInFile": "Duplicate name — repeated earlier in this file"

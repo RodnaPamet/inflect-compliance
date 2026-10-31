@@ -1018,6 +1018,8 @@
     "rowInteractionHint": "Щракнете за преглед · щракнете двукратно върху реда, за да отворите цялата страница",
     "importAssets": "Импортиране на активи",
     "import": {
+      "requestFailed": "Заявката за импортиране беше отказана или не успя.",
+      "breadcrumb": "Импортиране",
       "title": "Импортиране на активи от CSV",
       "csvFormat": "CSV формат",
       "csvDesc": "Качете CSV файл с поне колони Name и Type. Незадължителни колони: Status, Owner, Classification, Location, Confidentiality, Integrity, Availability (1-5), Retention, RetentionUntil (ГГГГ-ММ-ДД), ExternalRef, Dependencies, BusinessProcesses, DataResidency, CPE, Vendor, Product, Version.",
@@ -1049,7 +1051,7 @@
       "errStatus": "Невалидно състояние: {value}",
       "errCia": "Стойностите на CIA трябва да са между 1 и 5",
       "errTypeRequired": "Типът е задължителен",
-      "skippedDuplicates": "Пропуснати {count} дубликат(а) — актив с това име вече съществува",
+      "skippedDuplicates": "{count, plural, one {# ред пропуснат заради повтарящо се име} other {# реда пропуснати заради повтарящо се име}}",
       "skipReason": {
         "existing": "Дублирано име — вече съществува актив с това име",
         "duplicateInFile": "Дублирано име — повторено по-рано в този файл"
