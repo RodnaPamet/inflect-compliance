@@ -218,6 +218,7 @@ model Tenant {
   hostConsumerMessages              HostConsumerMessage[]
   hostConsumerKillSwitches          HostConsumerKillSwitch[]
   tenantA2aSigningKeys              TenantA2aSigningKey[]
+  openShellSandboxLeases            OpenShellSandboxLease[]
   agentHarnessScans                 AgentHarnessScan[]
   agentHarnessScanItems             AgentHarnessScanItem[]
   discoveredAgents                  DiscoveredAgent[]

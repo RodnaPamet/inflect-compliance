@@ -25,6 +25,45 @@
 const mockEnv: Record<string, string | undefined> = {};
 jest.mock('@/env', () => ({ env: mockEnv }));
 
+/**
+ * The LEASE is mocked, and asserted — #4568.
+ *
+ * `sandboxDecisionRecorderForScan` now maintains an `OpenShellSandboxLease`
+ * beside the audit row, inside `runInTenantContext` because the table carries
+ * `FORCE ROW LEVEL SECURITY`. That is a real database write, and this suite
+ * mocks `@/env` with a bare object, so the client has no URL and the first
+ * recorder call failed with "Can't reach database server at 127.0.0.1:5432".
+ *
+ * Mocked rather than given a database, because this suite's subject is whether
+ * a recorder is handed over and whose tenant it carries. What the lease DOES is
+ * `openshell-sandbox-lease.test.ts`, against a real one with RLS in force. The
+ * calls are captured rather than merely silenced, so the wiring is asserted
+ * here instead of going untested on both sides.
+ */
+const leased: Array<{ tenantId: string; ownerJob: string; providerName: string; kind: string }> = [];
+jest.mock('@/app-layer/integrations/openshell-sandbox-leases', () => ({
+    maintainSandboxLease: jest.fn(
+        async (
+            _db: unknown,
+            input: { tenantId: string; ownerJob: string; providerName: string; decision: { kind: string } },
+        ) => {
+            leased.push({
+                tenantId: input.tenantId,
+                ownerJob: input.ownerJob,
+                providerName: input.providerName,
+                kind: input.decision.kind,
+            });
+            return 'opened';
+        },
+    ),
+}));
+jest.mock('@/lib/db-context', () => ({
+    // The recorder wraps the lease write in a tenant context. The context
+    // itself is exercised by the lease suite; here it only has to pass a db
+    // through so the mocked writer is reached.
+    runInTenantContext: async (_ctx: unknown, fn: (db: unknown) => Promise<unknown>) => fn({}),
+}));
+
 /** Captures what `logEvent` was asked to write, and under which context. */
 const logged: Array<{ tenantId: string; actorType: string; requestId: string; action: string }> = [];
 jest.mock('@/app-layer/events/audit', () => ({
@@ -120,6 +159,7 @@ function spyOnDeployExec() {
 beforeEach(() => {
     for (const k of Object.keys(mockEnv)) delete mockEnv[k];
     logged.length = 0;
+    leased.length = 0;
     jest.restoreAllMocks();
 });
 
@@ -135,6 +175,17 @@ describe('the recorder a scan hands over', () => {
         expect(logged).toHaveLength(1);
         expect(logged[0].action).toBe(CREATED_ACTION);
         expect(logged[0].tenantId).toBe('tenant-abc');
+        // And the lease was maintained for the SAME tenant, from the same
+        // decision — the audit row and the operational row cannot disagree
+        // about whose sandbox it is.
+        expect(leased).toEqual([
+            {
+                tenantId: 'tenant-abc',
+                ownerJob: 'gcp-posture-collect',
+                providerName: 'inflect-collector',
+                kind: 'sandbox-created',
+            },
+        ]);
         // Not 'USER'. A scheduled collection has no person behind it, and the
         // default would make every row claim one did.
         expect(logged[0].actorType).toBe('JOB');

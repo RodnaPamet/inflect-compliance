@@ -276,12 +276,21 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
  * runner was supplied, and a no-op runner would suppress the key write while
  * still running on the host.
  */
+/**
+ * The gateway-side provider the collectors attach, named once.
+ *
+ * It was a literal in two places the moment #4568 needed it for a lease row —
+ * and two spellings of one name is the shape that goes wrong silently, because
+ * each looks authoritative alone.
+ */
+export const COLLECTOR_PROVIDER_NAME = 'inflect-collector';
+
 export function collectorExecForDeploy(
     deps: Omit<SandboxedCollectorDeps, 'providerName'> & { providerName?: string } = {},
 ): CollectorExec | null {
     if (!readSandboxExecutionPlatformEnabled()) return null;
     return sandboxedCollectorExec({
         ...deps,
-        providerName: deps.providerName ?? 'inflect-collector',
+        providerName: deps.providerName ?? COLLECTOR_PROVIDER_NAME,
     });
 }

@@ -3616,3 +3616,49 @@ model TenantA2aSigningKey {
   @@unique([tenantId, fingerprint])
   @@index([tenantId, retiredAt])
 }
+
+/// ONE ROW PER LIVE SANDBOX, and only while it lives — #4568.
+///
+/// Owner decision 2026-10-30: **execution-lifetime only.** A kill reaches the
+/// sandboxes of CURRENTLY-RUNNING work and nothing else. That is narrower than
+/// the issue's original wording ("any agent that runs in one"), and the
+/// narrowing is the decision rather than a shortcut:
+///
+///   - it keeps the executor's ownership property intact — one sandbox per
+///     execution, created and deleted there, never handed out — which is what
+///     makes the tool path safe to reason about;
+///   - a durable per-agent id would create rows describing sandboxes that no
+///     longer exist, and a kill switch that enumerates ghosts reports success
+///     against nothing.
+///
+/// So the ROW IS THE LEASE: it exists exactly while the sandbox does. Opened
+/// when the gateway confirms a create, closed when a delete SETTLES. A row that
+/// outlives its execution is the leak the executor already logs at `error`, and
+/// here it is also queryable, which is the half that was missing.
+///
+/// `sandboxId` is unique because the gateway's id is: a second create for one
+/// id is a bug, not a second lease.
+model OpenShellSandboxLease {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The gateway's own sandbox id — what a delete call takes.
+  sandboxId String
+  /// The credential provider the gateway attached, so a leaked sandbox can be
+  /// chased to what it could reach. A NAME, never a secret, which is the
+  /// property `attachProvider` holds at the transport.
+  providerName String
+
+  /// Stable, greppable identity of the work that owns it, e.g.
+  /// `gcp-posture-collect`. Not a foreign key: the owner may be a collection
+  /// rather than a row in this schema, and a FK would force one shape on both.
+  ownerJob String
+
+  openedAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// The kill switch's read: every live sandbox of one tenant.
+  @@index([tenantId, openedAt])
+  @@unique([sandboxId])
+}
