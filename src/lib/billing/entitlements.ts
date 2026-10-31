@@ -172,9 +172,11 @@ async function getCurrentCount(
 // ─── Enforcement ─────────────────────────────────────────────────
 
 /**
- * Throws `forbidden(...)` if the tenant cannot create one more
- * `resource` under its effective plan. Call BEFORE the
- * `db.<resource>.create({...})` line.
+ * Throws `forbidden(...)` if the tenant cannot create `additional` more
+ * `resource` (one, by default) under its effective plan. Call BEFORE the
+ * `db.<resource>.create({...})` line. A bulk create passes the number of
+ * rows it is about to write, so it cannot step past the limit one row at a
+ * time (#4795: installing from templates wrote any number of controls).
  *
  * The thrown error is the same `ForbiddenError` shape used by the
  * rest of the codebase, so `withApiErrorHandling` surfaces it as a
@@ -185,13 +187,15 @@ async function getCurrentCount(
 export async function assertWithinLimit(
     ctx: RequestContext,
     resource: GatedResource,
+    additional: number = 1,
 ): Promise<void> {
+    if (additional <= 0) return;
     const plan = await getEffectivePlan(ctx);
     const limit = getLimit(plan, resource);
     if (limit === null) return; // unlimited
 
     const current = await getCurrentCount(ctx, resource);
-    if (current >= limit) {
+    if (current + additional > limit) {
         // Business KPI — fires only when the cap is actually hit.
         recordPlanLimitHit({ resource: resource as 'control' });
         // Surface as `forbidden` so `withApiErrorHandling` returns

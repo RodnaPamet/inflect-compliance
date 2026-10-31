@@ -171,14 +171,17 @@ export function TestPlanScheduleSection({
             const body = {
                 schedule: target.cron,
                 scheduleTimezone: target.cron === null ? null : browserTz,
-                // A scheduled plan is a MANUAL plan on a cadence: each tick
-                // instantiates a PLANNED "awaiting manual completion" run. We no
-                // longer force SCRIPT here — no real script/integration engine
-                // exists yet, so labeling a cadence "SCRIPT" would imply an
-                // execution that never happens. SCRIPT/INTEGRATION are reserved
-                // for an advanced-mode UI that names a connector + registers a
-                // real handler.
-                automationType: 'MANUAL',
+                // A cadence keeps the plan's own automation type (#4796). A
+                // MANUAL plan on a cadence stays MANUAL: each tick instantiates
+                // a PLANNED "awaiting manual completion" run, and this section
+                // never promotes it to SCRIPT. But it must not demote either:
+                // it used to send MANUAL for every plan, so setting a cadence on
+                // an INTEGRATION plan (an audit-procedure plan among them, run
+                // by a registered handler) silently made it manual and stopped
+                // it executing. Only "Off" changes the type, because a
+                // non-manual plan needs a cron (`scheduleTestPlan` refuses one
+                // without); the warning under the picker says so before saving.
+                automationType: target.cron === null ? 'MANUAL' : initialAutomationType,
                 // Preserve any existing automationConfig — the UI
                 // doesn't edit it from this section.
             };
@@ -278,6 +281,14 @@ export function TestPlanScheduleSection({
                     {cadenceObj && (
                         <p className="text-xs text-content-subtle mt-1">
                             {cadenceObj.description}
+                        </p>
+                    )}
+                    {pendingCadence === 'OFF' && dirty && initialAutomationType !== 'MANUAL' && (
+                        <p
+                            className="text-xs text-content-warning mt-1"
+                            data-testid="test-plan-off-makes-manual-warning"
+                        >
+                            {t('offMakesManualWarning')}
                         </p>
                     )}
                     {pendingCadence === 'CUSTOM' && (

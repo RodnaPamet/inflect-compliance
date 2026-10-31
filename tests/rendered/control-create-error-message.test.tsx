@@ -52,7 +52,7 @@ jest.mock('next/navigation', () => ({
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({
         permissions: { canWrite: true, canAdmin: true, canRead: true },
-        appPermissions: {},
+        appPermissions: { controls: { create: true } },
         role: 'ADMIN',
         tenantSlug: 'acme',
     }),
