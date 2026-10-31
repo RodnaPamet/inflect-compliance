@@ -13,7 +13,10 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
+import { CACHE_KEYS } from '@/lib/swr-keys';
+import { SharePointFilePicker } from '@/components/integrations/sharepoint/SharePointFilePicker';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
@@ -52,7 +55,26 @@ interface Schedule {
     /** Deep-dive scope. Set at creation, previously invisible ever after. */
     parametersJson: { riskId?: string } | null;
     deliveryDay: number | null;
+    sharePointDriveId?: string | null;
+    sharePointFolderId?: string | null;
 }
+
+/** Statuses a report run moves through (`ReportRun.status`). */
+const RUN_STATUSES = new Set(['QUEUED', 'GENERATING', 'COMPLETED', 'FAILED']);
+
+/**
+ * #4774 — the message for a refused write. The server's own reason for a
+ * client error (a recipient it will not send to, by name; the outside-the-
+ * workspace rule; a missing entitlement), and the try-again sentence only for
+ * an outage. Every failure used to be "Please try again", including the ones
+ * retrying cannot fix.
+ */
+async function refusalOf(res: Response | null, fallback: string): Promise<string> {
+    if (!res || res.status >= 500) return fallback;
+    const body: unknown = await res.json().catch(() => null);
+    return apiErrorMessage(body, fallback);
+}
+const messageOf = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
 const CADENCES = ['WEEKLY', 'MONTHLY', 'QUARTERLY'] as const;
 const FORMATS = ['PDF', 'CSV', 'PPTX'] as const;
@@ -83,6 +105,13 @@ export default function RiskReportsPage() {
     const t = useTranslations('risks');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    const { permissions, appPermissions } = useTenantContext();
+    // #4774 — creating a template or a schedule asserts the write tier, and
+    // changing or deleting a schedule takes `risks.edit` too. The page used to
+    // offer all of them on `reports.export` alone, so an Auditor saw controls
+    // the server refused.
+    const canWrite = permissions.canWrite;
+    const canEditSchedules = canWrite && (appPermissions?.risks?.edit ?? false);
     // Generation is fully synchronous inside the POST, so a run killed by a
     // serverless timeout is stranded in GENERATING with nothing to move it.
     // There was no refreshInterval and no manual refresh, so the page showed
@@ -132,12 +161,12 @@ export default function RiskReportsPage() {
             const res = await fetch(apiUrl('/risks/reports'), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ templateId: tpl.id, format, ...(riskId ? { parameters: { riskId } } : {}) }),
-            });
-            if (!res.ok) throw new Error('Failed to generate report');
+            }).catch(() => null);
+            if (!res || !res.ok) throw new Error(await refusalOf(res, t('reports.generateFailed')));
             await reportsQuery.mutate();
             toast.success(t('reports.generateSuccess', { format }));
-        } catch {
-            toast.error(t('reports.generateFailed'));
+        } catch (e) {
+            toast.error(messageOf(e, t('reports.generateFailed')));
         } finally { setGeneratingId(null); }
     };
 
@@ -162,6 +191,8 @@ export default function RiskReportsPage() {
 
     const nameOf = (id: string) => templates.find((tpl) => tpl.id === id)?.name ?? '—';
     const statusVariant = (s: string) => (s === 'COMPLETED' ? 'success' : s === 'FAILED' ? 'error' : 'info');
+    // #4774 — the run's status in words, not as stored.
+    const statusLabel = (s: string) => (RUN_STATUSES.has(s) ? t(`reports.status_${s}`) : s);
 
     return (
         <div className="space-y-section">
@@ -232,13 +263,17 @@ export default function RiskReportsPage() {
                     ))}
                 </ul>
                 </AnalyticsState>
-                <RequirePermission resource="reports" action="export">
-                    <NewTemplateForm apiUrl={apiUrl} onCreated={() => reportsQuery.mutate()} t={t} />
-                </RequirePermission>
+                {canWrite && (
+                    <RequirePermission resource="reports" action="export">
+                        <NewTemplateForm apiUrl={apiUrl} onCreated={() => reportsQuery.mutate()} t={t} />
+                    </RequirePermission>
+                )}
             </Card>
 
             {/* PR-L — scheduled delivery (was fully backend, zero UI). */}
             <SchedulesCard
+                canCreateSchedules={canWrite}
+                canEditSchedules={canEditSchedules}
                 apiUrl={apiUrl}
                 templates={templates}
                 schedules={schedules}
@@ -251,6 +286,10 @@ export default function RiskReportsPage() {
 
             <Card className="space-y-default p-6">
                 <Heading level={2}>{t('reports.recent')}</Heading>
+                {/* #4774 — the list is the latest 50 runs; say so when it is full. */}
+                {reports.length >= 50 && (
+                    <p className="text-xs text-content-subtle" data-testid="reports-latest-only">{t('reports.recentLatest', { count: reports.length })}</p>
+                )}
                 <AnalyticsState
                     isLoading={reportsQuery.isLoading}
                     error={reportsQuery.error}
@@ -263,8 +302,8 @@ export default function RiskReportsPage() {
                             <li key={r.id} className="flex flex-wrap items-center gap-default py-default text-sm">
                                 <span className="text-content-muted">{formatDateTime(r.createdAt)}</span>
                                 <span className="font-medium text-content-emphasis">{nameOf(r.templateId)}</span>
-                                <span className="font-mono text-xs text-content-subtle">{r.format}</span>
-                                <StatusBadge variant={statusVariant(r.status)}>{r.status}</StatusBadge>
+                                <span className="text-xs text-content-subtle">{r.format}</span>
+                                <StatusBadge variant={statusVariant(r.status)}>{statusLabel(r.status)}</StatusBadge>
                                 {/* A red FAILED pill on its own tells the user
                                     that something broke and nothing about what
                                     or what to do. The reason was already stored
@@ -328,13 +367,13 @@ function NewTemplateForm({ apiUrl, onCreated, t }: { apiUrl: (p: string) => stri
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: name.trim(), type }),
             });
-            if (!res.ok) throw new Error('Failed to create template');
+            if (!res.ok) throw new Error(await refusalOf(res, t('reports.templateCreateFailed')));
             setName(''); setType('PORTFOLIO_SUMMARY'); setOpen(false); onCreated();
             // Failure toasted, success silent — so the only unambiguous signal
             // was the form closing, which also happens on cancel.
             toast.success(t('reports.templateCreated'));
-        } catch {
-            toast.error(t('reports.templateCreateFailed'));
+        } catch (e) {
+            toast.error(messageOf(e, t('reports.templateCreateFailed')));
         } finally { setBusy(false); }
     };
     if (!open) {
@@ -355,8 +394,10 @@ function NewTemplateForm({ apiUrl, onCreated, t }: { apiUrl: (p: string) => stri
 }
 
 function SchedulesCard({
-    apiUrl, templates, schedules, loading, error, mutate, nameOf, t,
+    canCreateSchedules, canEditSchedules, apiUrl, templates, schedules, loading, error, mutate, nameOf, t,
 }: {
+    canCreateSchedules: boolean;
+    canEditSchedules: boolean;
     apiUrl: (p: string) => string;
     templates: Template[];
     schedules: Schedule[];
@@ -376,6 +417,14 @@ function SchedulesCard({
     // supports it via createSchedule's sharePointDriveId/sharePointFolderId).
     const [spDriveId, setSpDriveId] = useState('');
     const [spFolderId, setSpFolderId] = useState('');
+    const [spFolderName, setSpFolderName] = useState('');
+    const [spPickerOpen, setSpPickerOpen] = useState(false);
+    // #4774 — a new schedule chooses its format, as an edit already could.
+    const [format, setFormat] = useState<ReportFormat>('PDF');
+    // #4774 — the destination is chosen in the workspace's SharePoint, not
+    // typed as raw Graph drive and folder ids.
+    const spConnections = useTenantSWR<Array<{ id: string }>>(CACHE_KEYS.integrations.sharepointConnections());
+    const spConnectionId = spConnections.data?.[0]?.id ?? '';
     // Split from the edit-save flag: one shared boolean meant saving an edit on
     // one row disabled the Create button (and vice versa), with no indication
     // why. They are independent operations on independent forms.
@@ -412,32 +461,32 @@ function SchedulesCard({
             const res = await fetch(apiUrl('/risks/reports/schedules'), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    templateId, cadence, recipients: emails,
+                    templateId, cadence, format, recipients: emails,
                     ...(riskId ? { parameters: { riskId } } : {}),
                     ...(spDriveId.trim() ? { sharePointDriveId: spDriveId.trim() } : {}),
                     ...(spFolderId.trim() ? { sharePointFolderId: spFolderId.trim() } : {}),
                 }),
-            });
-            if (!res.ok) throw new Error('Failed to create schedule');
+            }).catch(() => null);
+            if (!res || !res.ok) throw new Error(await refusalOf(res, t('reports.scheduleCreateFailed')));
             setTemplateId(''); setRecipients(''); setScheduleRiskId(null);
-            setSpDriveId(''); setSpFolderId('');
+            setSpDriveId(''); setSpFolderId(''); setSpFolderName(''); setFormat('PDF');
             await mutate();
             toast.success(t('reports.scheduleCreated'));
-        } catch {
-            toast.error(t('reports.scheduleCreateFailed'));
+        } catch (e) {
+            toast.error(messageOf(e, t('reports.scheduleCreateFailed')));
         } finally { setBusy(false); }
     };
 
     const patch = async (id: string, body: Record<string, unknown>) => {
-        const res = await fetch(apiUrl(`/risks/reports/schedules/${id}`), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        if (!res.ok) throw new Error('Failed to update schedule');
+        const res = await fetch(apiUrl(`/risks/reports/schedules/${id}`), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+        if (!res || !res.ok) throw new Error(await refusalOf(res, t('reports.scheduleUpdateFailed')));
         await mutate();
     };
     const togglePause = async (s: Schedule) => {
         try {
             await patch(s.id, { isActive: !s.isActive });
-        } catch {
-            toast.error(t('reports.scheduleUpdateFailed'));
+        } catch (e) {
+            toast.error(messageOf(e, t('reports.scheduleUpdateFailed')));
         }
     };
 
@@ -459,19 +508,27 @@ function SchedulesCard({
             toast.error(t('reports.scheduleInvalidRecipients', { list: invalid.join(', ') }));
             return;
         }
-        if (emails.length === 0) return;
+        const schedule = schedules.find((x) => x.id === id);
+        // #4774 — a schedule that delivers to SharePoint needs no email
+        // recipient; one that delivers only by email needs at least one.
+        if (emails.length === 0 && !schedule?.sharePointDriveId) return;
+        const isDeepDiveSchedule = templates.find((tpl) => tpl.id === schedule?.templateId)?.type === 'RISK_DEEP_DIVE';
         setSavingId(id);
         try {
             await patch(id, {
                 cadence: editCadence,
                 recipients: emails,
                 format: editFormat,
-                ...(editRiskId ? { parameters: { riskId: editRiskId } } : {}),
+                // #4774 — "Whole portfolio" clears a stored scope. Sending no
+                // `parameters` for it left the old risk in place.
+                ...(isDeepDiveSchedule
+                    ? { parameters: editRiskId ? { riskId: editRiskId } : {} }
+                    : {}),
             });
             setEditingId(null);
             toast.success(t('reports.scheduleUpdated'));
-        } catch {
-            toast.error(t('reports.scheduleUpdateFailed'));
+        } catch (e) {
+            toast.error(messageOf(e, t('reports.scheduleUpdateFailed')));
         } finally { setSavingId(null); }
     };
     // Item 3 — delayed-commit delete (Epic 67). Optimistically drop the row
@@ -484,13 +541,13 @@ function SchedulesCard({
             message: t('reports.scheduleDeletedToast'),
             undoMessage: t('reports.undo'),
             action: async () => {
-                const res = await fetch(apiUrl(`/risks/reports/schedules/${id}`), { method: 'DELETE' });
-                if (!res.ok) throw new Error('Failed to delete schedule');
+                const res = await fetch(apiUrl(`/risks/reports/schedules/${id}`), { method: 'DELETE' }).catch(() => null);
+                if (!res || !res.ok) throw new Error(await refusalOf(res, t('reports.scheduleDeleteFailed')));
                 await mutate();
             },
             undoAction: () => { void mutate({ schedules: previous }, { revalidate: false }); },
-            onError: () => {
-                toast.error(t('reports.scheduleDeleteFailed'));
+            onError: (e?: unknown) => {
+                toast.error(messageOf(e, t('reports.scheduleDeleteFailed')));
                 void mutate({ schedules: previous }, { revalidate: false });
             },
         });
@@ -528,26 +585,58 @@ function SchedulesCard({
                 <label className="block w-full sm:w-40"><span className="text-xs text-content-muted">{t('reports.scheduleCadence')}</span>
                     <Combobox id="schedule-cadence" options={cadenceOptions} selected={cadenceOptions.find((o) => o.value === cadence) ?? null} setSelected={(o) => { if (o) setCadence(o.value as (typeof CADENCES)[number]); }} />
                 </label>
+                <label className="block w-full sm:w-32"><span className="text-xs text-content-muted">{t('reports.scheduleFormat')}</span>
+                    <Combobox id="schedule-format" options={formatOptions} selected={formatOptions.find((o) => o.value === format) ?? null} setSelected={(o) => { if (o) setFormat(o.value as ReportFormat); }} />
+                </label>
                 <label className="block flex-1 min-w-[12rem]"><span className="text-xs text-content-muted">{t('reports.scheduleRecipients')}</span>
                     <Input value={recipients} onChange={(e) => setRecipients(e.target.value)} placeholder={t('reports.scheduleRecipientsPlaceholder')} />
                 </label>
-                <RequirePermission resource="reports" action="export">
-                    <Button variant="secondary" onClick={create} disabled={busy || !canCreate} id="schedule-create-btn">{t('reports.scheduleCreate')}</Button>
-                </RequirePermission>
+                {canCreateSchedules && (
+                    <RequirePermission resource="reports" action="export">
+                        <Button variant="secondary" onClick={create} disabled={busy || !canCreate} id="schedule-create-btn">{t('reports.scheduleCreate')}</Button>
+                    </RequirePermission>
+                )}
             </div>
 
             {/* Item 4 — optional SharePoint delivery destination. A schedule
                 needs at least one recipient OR a SharePoint drive (the usecase
                 enforces the same). Folder is optional within the drive. */}
-            <div className="flex flex-wrap items-end gap-default">
-                <label className="block w-full sm:w-72"><span className="text-xs text-content-muted">{t('reports.scheduleSharePointDrive')}</span>
-                    <Input id="schedule-sp-drive" value={spDriveId} onChange={(e) => setSpDriveId(e.target.value)} placeholder={t('reports.scheduleSharePointDrivePlaceholder')} />
-                </label>
-                <label className="block w-full sm:w-72"><span className="text-xs text-content-muted">{t('reports.scheduleSharePointFolder')}</span>
-                    <Input id="schedule-sp-folder" value={spFolderId} onChange={(e) => setSpFolderId(e.target.value)} placeholder={t('reports.scheduleSharePointFolderPlaceholder')} />
-                </label>
+            <div className="flex flex-wrap items-center gap-default" data-testid="schedule-sharepoint">
+                <span className="text-xs text-content-muted">{t('reports.scheduleSharePointLabel')}</span>
+                {spDriveId ? (
+                    <>
+                        <span className="text-sm text-content-emphasis" data-testid="schedule-sp-chosen">
+                            {spFolderName || t('reports.scheduleSharePointLibraryRoot')}
+                        </span>
+                        <Button size="sm" variant="ghost" onClick={() => { setSpDriveId(''); setSpFolderId(''); setSpFolderName(''); }} id="schedule-sp-clear">
+                            {t('reports.scheduleSharePointClear')}
+                        </Button>
+                    </>
+                ) : spConnectionId ? (
+                    <Button size="sm" variant="secondary" onClick={() => setSpPickerOpen(true)} id="schedule-sp-choose">
+                        {t('reports.scheduleSharePointChoose')}
+                    </Button>
+                ) : (
+                    <span className="text-xs text-content-subtle" data-testid="schedule-sp-unavailable">{t('reports.scheduleSharePointUnavailable')}</span>
+                )}
                 <p className="w-full text-xs text-content-subtle">{t('reports.scheduleDestinationHint')}</p>
             </div>
+            {spPickerOpen && spConnectionId && (
+                <SharePointFilePicker
+                    showModal={spPickerOpen}
+                    setShowModal={setSpPickerOpen}
+                    connectionId={spConnectionId}
+                    multiple={false}
+                    folderSelect
+                    onConfirm={() => {}}
+                    onConfirmFolder={({ driveId, folderId, folderName }) => {
+                        setSpDriveId(driveId);
+                        setSpFolderId(folderId ?? '');
+                        setSpFolderName(folderName);
+                        setSpPickerOpen(false);
+                    }}
+                />
+            )}
 
             <AnalyticsState isLoading={loading} error={error} isEmpty={schedules.length === 0} emptyText={t('reports.schedulesEmpty')} errorText={t('reports.loadError')}>
                 <ul className="divide-y divide-border-subtle" data-testid="report-schedules">
@@ -592,7 +681,7 @@ function SchedulesCard({
                                         </span>
                                     )}
                                     <span className="ml-auto flex gap-tight">
-                                        <Button size="sm" variant="secondary" onClick={() => saveEdit(s.id)} disabled={savingId === s.id || !editRecipients.trim()} data-testid={`schedule-save-${s.id}`}>{t('reports.scheduleSave')}</Button>
+                                        <Button size="sm" variant="secondary" onClick={() => saveEdit(s.id)} disabled={savingId === s.id || (!editRecipients.trim() && !s.sharePointDriveId)} data-testid={`schedule-save-${s.id}`}>{t('reports.scheduleSave')}</Button>
                                         <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} data-testid={`schedule-cancel-${s.id}`}>{t('edit.cancel')}</Button>
                                     </span>
                                 </div>
@@ -601,8 +690,19 @@ function SchedulesCard({
                                     <StatusBadge variant={s.isActive ? 'success' : 'neutral'}>{s.isActive ? t('reports.scheduleActive') : t('reports.schedulePaused')}</StatusBadge>
                                     <span className="font-medium text-content-emphasis">{nameOf(s.templateId)}</span>
                                     <span className="text-content-muted">{t(`reports.cadence_${s.cadence}` as string)}</span>
+                                    {/* #4774 — what the schedule sends and where, not only who to. */}
+                                    <span className="text-xs text-content-subtle" data-testid={`schedule-format-${s.id}`}>{s.format}</span>
+                                    {templates.find((tpl) => tpl.id === s.templateId)?.type === 'RISK_DEEP_DIVE' && (
+                                        <span className="text-xs text-content-subtle" data-testid={`schedule-scope-${s.id}`}>
+                                            {s.parametersJson?.riskId ? t('reports.scheduleScopeOneRisk') : t('reports.deepDiveAll')}
+                                        </span>
+                                    )}
                                     <span className="text-xs text-content-subtle">{(s.recipientsJson ?? []).join(', ')}</span>
+                                    {s.sharePointDriveId && (
+                                        <span className="text-xs text-content-subtle" data-testid={`schedule-sharepoint-${s.id}`}>{t('reports.scheduleToSharePoint')}</span>
+                                    )}
                                     {s.nextRunAt && <span className="text-xs text-content-subtle">{t('reports.nextRun', { date: formatDateTime(s.nextRunAt) })}</span>}
+                                    {canEditSchedules && (
                                     <RequirePermission resource="reports" action="export">
                                         <span className="ml-auto flex gap-tight">
                                             <Button size="sm" variant="ghost" onClick={() => startEdit(s)} data-testid={`schedule-edit-btn-${s.id}`}>{t('reports.scheduleEdit')}</Button>
@@ -616,6 +716,7 @@ function SchedulesCard({
                                             <Button size="sm" variant="destructive" onClick={() => removeSchedule(s.id)} data-testid={`schedule-delete-${s.id}`}>{t('reports.scheduleDelete')}</Button>
                                         </span>
                                     </RequirePermission>
+                                    )}
                                 </>
                             )}
                         </li>

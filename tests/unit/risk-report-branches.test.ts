@@ -136,6 +136,7 @@ function freshDb() {
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
             deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
             findMany: jest.fn().mockResolvedValue([]),
+            findFirst: jest.fn().mockResolvedValue({ sharePointDriveId: null }),
         },
     };
 }
@@ -651,6 +652,17 @@ describe('updateSchedule', () => {
         const data = mockDbHolder.db.reportSchedule.updateMany.mock.calls[0][0].data;
         expect(data.format).toBe('CSV');
         expect(data.parametersJson).toEqual({ riskId: 'risk-9' });
+    });
+
+    it('refuses to empty the recipients of a schedule that only sends email (#4774)', async () => {
+        await expect(updateSchedule(ctx, 's1', { recipients: [] })).rejects.toThrow(/at least one recipient or a SharePoint destination/);
+        expect(mockDbHolder.db.reportSchedule.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('lets a SharePoint schedule go without email recipients (#4774)', async () => {
+        mockDbHolder.db.reportSchedule.findFirst.mockResolvedValue({ sharePointDriveId: 'drive-1' });
+        await updateSchedule(ctx, 's1', { recipients: [] });
+        expect(mockDbHolder.db.reportSchedule.updateMany.mock.calls[0][0].data.recipientsJson).toEqual([]);
     });
 
     it('rejects a non-member recipient on the edit path', async () => {
