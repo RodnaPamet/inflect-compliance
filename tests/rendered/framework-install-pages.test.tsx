@@ -78,6 +78,8 @@ type Handler = (url: string, init?: RequestInit) => { ok: boolean; status?: numb
 let postHandler: Handler = () => undefined;
 let packsResponse: unknown = PACKS;
 let previewResponse: unknown = null;
+let frameworkStatus = 200;
+let previewStatus = 200;
 const PREVIEW = {
     packKeys: ['iso-base', 'iso-extra'], packs: [], framework: { key: 'ISO27001', name: 'ISO 27001', version: '2022' },
     totalTemplates: 2, newControls: 2, existingControls: 0,
@@ -95,6 +97,8 @@ beforeEach(() => {
     postHandler = () => undefined;
     packsResponse = PACKS;
     previewResponse = null;
+    frameworkStatus = 200;
+    previewStatus = 200;
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (init?.method === 'POST') {
@@ -104,8 +108,8 @@ beforeEach(() => {
         }
         if (url.includes('action=packs')) return json(true, packsResponse);
         if (url.includes('action=templates')) return json(true, TEMPLATES);
-        if (url.includes('action=preview')) return json(true, previewResponse);
-        return json(true, FRAMEWORK);
+        if (url.includes('action=preview')) return json(previewStatus < 400, previewResponse, previewStatus);
+        return json(frameworkStatus < 400, FRAMEWORK, frameworkStatus);
     }) as unknown as typeof fetch;
 });
 
@@ -167,6 +171,113 @@ describe('the install wizard', () => {
         await act(async () => { fireEvent.click(install); });
         const post = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
         expect(JSON.parse(String((post![1] as RequestInit).body))).toEqual({ packKeys: ['iso-extra'] });
+    });
+});
+
+// #4731
+describe('the install wizard says what happened', () => {
+    const I = en.frameworks.install;
+    const SINGLE_PREVIEW = {
+        packKey: 'iso-base', packName: 'ISO base', framework: { key: 'ISO27001', name: 'ISO 27001', version: '2022' },
+        totalTemplates: 2, newControls: 0, existingControls: 2, missingMappings: 3,
+        templates: [
+            { code: 'A-5.1', title: 'Policies', tasks: 3, requirements: [], alreadyInstalled: true, missingMappings: 3 },
+            { code: 'A-5.2', title: 'Roles', tasks: 1, requirements: [], alreadyInstalled: true, missingMappings: 0 },
+        ],
+    };
+    const installButton = () => waitFor(() => {
+        const b = document.getElementById('confirm-install-btn') as HTMLButtonElement | null;
+        if (!b) throw new Error('no install button yet');
+        return b;
+    });
+
+    beforeEach(() => {
+        permissions.frameworks.install = true;
+        packsResponse = [PACKS[0]];
+    });
+
+    it('calls a failed load a failure with a retry, not "not found"', async () => {
+        frameworkStatus = 500;
+        render(<InstallWizardPage />);
+        expect(await screen.findByText(I.loadFailed)).toBeTruthy();
+        expect(screen.queryByText(I.notFound)).toBeNull();
+
+        frameworkStatus = 200;
+        await act(async () => { fireEvent.click(document.getElementById('install-load-retry')!); });
+        expect(await screen.findByText(I.selectAPack)).toBeTruthy();
+    });
+
+    it('says not found only when the framework is not there', async () => {
+        frameworkStatus = 404;
+        render(<InstallWizardPage />);
+        expect(await screen.findByText(I.notFound)).toBeTruthy();
+        expect(screen.queryByText(I.loadFailed)).toBeNull();
+    });
+
+    it('offers the install when every control exists but mappings are missing', async () => {
+        previewResponse = SINGLE_PREVIEW;
+        render(<InstallWizardPage />);
+        const install = await installButton();
+        expect(install.disabled).toBe(false);
+        expect(install.textContent).not.toBe(I.allInstalled);
+        expect(document.getElementById('install-restore-notice')).not.toBeNull();
+    });
+
+    it('offers nothing when every control exists with all its mappings', async () => {
+        previewResponse = {
+            ...SINGLE_PREVIEW,
+            missingMappings: 0,
+            templates: SINGLE_PREVIEW.templates.map((t) => ({ ...t, missingMappings: 0 })),
+        };
+        render(<InstallWizardPage />);
+        const install = await installButton();
+        expect(install.disabled).toBe(true);
+        expect(install.textContent).toBe(I.allInstalled);
+        expect(document.getElementById('install-restore-notice')).toBeNull();
+    });
+
+    it('says a pack preview failed, rather than ignoring the choice', async () => {
+        previewStatus = 500;
+        render(<InstallWizardPage />);
+        await waitFor(() => expect(document.getElementById('install-preview-error')).not.toBeNull());
+        expect(document.getElementById('install-preview-error')!.textContent).toContain(I.previewFailed);
+
+        previewStatus = 200;
+        previewResponse = SINGLE_PREVIEW;
+        await act(async () => { fireEvent.click(document.getElementById('install-preview-retry')!); });
+        await installButton();
+    });
+
+    it("words a named refusal in the person's language, not the server's sentence", async () => {
+        previewResponse = { ...SINGLE_PREVIEW, newControls: 1 };
+        postHandler = () => ({
+            ok: false,
+            status: 404,
+            body: { error: { code: 'NOT_FOUND', message: 'Pack not found', details: { reason: 'PACK_NOT_FOUND' } } },
+        });
+        render(<InstallWizardPage />);
+        const install = await installButton();
+        await act(async () => { fireEvent.click(install); });
+        expect(await screen.findByText(I.refused.PACK_NOT_FOUND)).toBeTruthy();
+        expect(screen.queryByText('Pack not found')).toBeNull();
+    });
+
+    it('says a network failure is one, not "Failed to fetch"', async () => {
+        previewResponse = { ...SINGLE_PREVIEW, newControls: 1 };
+        render(<InstallWizardPage />);
+        const install = await installButton();
+        (global.fetch as jest.Mock).mockImplementationOnce(async () => { throw new TypeError('Failed to fetch'); });
+        await act(async () => { fireEvent.click(install); });
+        expect(await screen.findByText(I.networkError)).toBeTruthy();
+        expect(screen.queryByText('Failed to fetch')).toBeNull();
+    });
+
+    it('shows no version for a pack that has none, instead of "vlatest"', async () => {
+        packsResponse = [{ ...PACKS[0], version: null }];
+        previewStatus = 500;
+        render(<InstallWizardPage />);
+        expect(await screen.findByText(I.packMetaUnversioned.replace('{count}', '2'))).toBeTruthy();
+        expect(screen.queryByText(/vlatest/)).toBeNull();
     });
 });
 
