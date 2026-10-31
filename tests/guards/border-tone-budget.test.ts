@@ -56,9 +56,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import * as ts from 'typescript';
 
 import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slack';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -169,62 +169,37 @@ const DRIFT_ALLOWANCE = 2;
 /**
  * Occurrences of `re` in the CODE of one source file.
  *
- * Counts only string-ish AST nodes — string literals, template parts and JSX
- * text — which is where a CSS class can appear and nowhere else. Comments are
- * excluded BY CONSTRUCTION rather than masked first: a comment is not an AST
- * node, so there is no masking pass to get wrong.
+ * `codeOf` (tests/helpers/source-blocks.ts) is the repo's own comment masker and
+ * is string-aware, so prose mentioning the class cannot inflate the budget.
  *
- * ── WHY NOT `codeOf`, WHICH IS WHAT THIS REACHED FOR FIRST ─────────────────
+ * ── THIS COUNTED A PARSE FOR ABOUT AN HOUR, AND WHY IT NO LONGER DOES ──────
  *
- * `codeOf` (tests/helpers/source-blocks.ts) is the repo's own masker and it IS
- * string-aware, so it fixes the reported bug and agrees with this function at
- * 108 over the live tree. But it is a hand-written scanner with a regex-literal
- * heuristic, and that heuristic has a gap: a regex literal CONTAINING A QUOTE
- * desynchronises it and the comments after it are left unmasked. Minimal case,
- * with a control that differs only in the quote:
+ * #4636 replaced a positional regex strip here. `codeOf` was the obvious
+ * replacement and the first choice, but measuring it then found #4658: its
+ * scanner had no regex-literal branch, so a regex CONTAINING A QUOTE
+ * (`.replace(/"/g, "'")`) desynchronised it and left the following comments
+ * unmasked — live at `src/lib/http/content-disposition.ts:56`. For this guard
+ * that was disqualifying, because the whole claim the budget rests on is that a
+ * doc pass cannot move it. So it shipped counting a TypeScript parse instead.
  *
- *     .replace(/"/g, "'")                 // <- the quote inside the regex
- *     // border-border-default in prose   // <- NOT masked; counted as code
+ * #4665 fixed `codeOf`, and this is back on the shared helper. Measured on the
+ * same 1092 files after that fix: `codeOf` 108, the parse 108, ZERO files
+ * disagreeing. Reverting to the helper rather than keeping a second mechanism is
+ * deliberate — the parse's stated advantage was "no heuristic to get wrong", and
+ * with the specific gap closed that became an argument I could no longer
+ * demonstrate. A guard carrying a private copy of a shared concern needs a live
+ * reason, not a historical one.
  *
- *     .replace(/x/g, "y")                 // control
- *     // border-border-default in prose   // <- masked correctly
+ * The cases at the bottom of this file are KEPT, and are now regression tests
+ * for `codeOf` from this guard's side: they are what found #4658, and they are
+ * what would catch its return here rather than in the helper's own suite.
  *
- * It occurs for real in `src/lib/http/content-disposition.ts:56`, where two
- * following comment lines survive masking. That matters HERE specifically,
- * because the claim this budget rests on is that a doc pass cannot move it —
- * and under `codeOf` a doc pass that mentions the class after such a regex
- * would. A parser has no heuristic to get wrong. Filed separately, because
- * `codeOf` is used at the read seam by guards that are not this one.
- *
- * Exported for the regression block at the bottom of this file, which feeds it
- * fixtures. A counter that can only be run over the live tree cannot be SHOWN to
- * count correctly — only observed not to have changed.
+ * Exported for that block, which feeds it fixtures. A counter that can only be
+ * run over the live tree cannot be SHOWN to count correctly — only observed not
+ * to have changed.
  */
 export function countInSource(src: string, re: RegExp): number {
-    const sf = ts.createSourceFile(
-        'probe.tsx',
-        src,
-        ts.ScriptTarget.Latest,
-        /* setParentNodes */ false,
-        ts.ScriptKind.TSX,
-    );
-    let total = 0;
-    const visit = (node: ts.Node): void => {
-        if (
-            ts.isStringLiteral(node)
-            || ts.isNoSubstitutionTemplateLiteral(node)
-            || ts.isTemplateHead(node)
-            || ts.isTemplateMiddle(node)
-            || ts.isTemplateTail(node)
-            || ts.isJsxText(node)
-        ) {
-            const m = node.text.match(re);
-            if (m) total += m.length;
-        }
-        ts.forEachChild(node, visit);
-    };
-    visit(sf);
-    return total;
+    return (codeOf(src).match(re) ?? []).length;
 }
 
 function countMatches(re: RegExp): number {
@@ -367,12 +342,13 @@ describe('the border counter counts code, not comment positions (#4636)', () => 
     });
 
     it('a quote inside a regex literal does not unmask the comments after it', () => {
-        // The case that decided this uses a PARSE rather than the repo's own
-        // `codeOf` masker. `codeOf` leaves these comment lines unmasked, so it
-        // would count the class mentioned in prose — which would make a doc
-        // pass able to move this budget, the one thing it must not be able to
-        // do. Lives here as an executable record so a future "just use codeOf,
-        // it's the shared helper" change fails rather than looks tidy.
+        // The case that found #4658. `codeOf` USED to leave these comment
+        // lines unmasked, so it counted the class mentioned in prose — which
+        // would make a doc pass able to move this budget, the one thing it must
+        // not be able to do. Fixed in #4665; kept here because this guard is
+        // where the consequence lands, and a regression in the helper should
+        // fail the guard that depends on the property, not only the helper's
+        // own suite.
         const src = [
             'const a = s',
             '    .replace(/"/g, "\'")',
