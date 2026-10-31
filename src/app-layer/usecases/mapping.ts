@@ -82,6 +82,11 @@ export async function getFrameworkMappings(ctx: RequestContext) {
                 );
             });
             const implemented = relatedControls.filter((c) => c.status === 'IMPLEMENTED').length;
+            // Evidence the same way as the SOC 2 fold (#4737: the page
+            // showed neither).
+            const withEvidence = relatedControls.filter((c) =>
+                c.evidence.some((e) => isCoverageQualifyingEvidence(e)),
+            ).length;
             const total = relatedControls.length;
 
             return {
@@ -89,6 +94,7 @@ export async function getFrameworkMappings(ctx: RequestContext) {
                 mappings: relatedMappings,
                 controlCount: total,
                 implementedCount: implemented,
+                evidenceCount: withEvidence,
                 coverage: total > 0 ? Math.round((implemented / total) * 100) : 0,
             };
         });

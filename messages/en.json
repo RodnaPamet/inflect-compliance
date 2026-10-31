@@ -4694,14 +4694,20 @@
     }
   },
   "mapping": {
-    "title": "Framework Mapping",
-    "subtitle": "Cross-framework readiness view. All descriptions are original paraphrases.",
+    "title": "SOC 2 and NIS2 estimate",
+    "subtitle": "How far your ISO 27001 controls go towards SOC 2 and NIS2, by the standard guidance that relates them. All descriptions are original paraphrases.",
     "loading": "Loading framework mappings...",
     "loadError": "Couldn't load the framework mappings. Reload the page to try again.",
     "soc2": "SOC 2",
     "nis2": "NIS2",
     "controls": "{implemented}/{total} controls",
-    "crumbDashboard": "Dashboard"
+    "crumbDashboard": "Dashboard",
+    "estimateNote": "These figures are an estimate from your ISO 27001 controls: each criterion counts the Annex A controls the guidance relates to it. Your own SOC 2 and NIS2 mappings, and their real coverage, are on those frameworks' pages.",
+    "frameworksLink": "Open the frameworks",
+    "frameworkToggle": "Framework",
+    "relatedNone": "No ISO 27001 control of yours relates to this",
+    "coverageAria": "{title} implementation",
+    "withEvidence": "{count}/{total} with evidence"
   },
   "reports": {
     "title": "Reports & Exports",
@@ -8974,7 +8980,8 @@
       "retry": "Try again",
       "coverageAria": "Framework coverage",
       "sectionCoverageAria": "{section} coverage",
-      "clauseTracker": "Clauses 4–10"
+      "clauseTracker": "Clauses 4–10",
+      "mappingEstimate": "SOC 2 and NIS2 estimate"
     },
     "diff": {
       "loading": "Loading diff…",
