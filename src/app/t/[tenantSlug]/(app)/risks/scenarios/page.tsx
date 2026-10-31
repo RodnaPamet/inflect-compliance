@@ -325,7 +325,7 @@ export default function RiskScenariosPage() {
                 <p className="text-sm text-content-muted">{t('scenarios.intro')}</p>
                 <div className="flex flex-wrap items-end gap-default">
                     <label className="block flex-1"><span className="text-xs text-content-muted">{t('scenarios.name')}</span><Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('scenarios.namePlaceholder')} /></label>
-                    <label className="block"><span className="text-xs text-content-muted">{t('scenarios.investment', { currency })}</span><Input type="text" inputMode="decimal" value={investment} onChange={(e) => setInvestment(e.target.value)} placeholder={t('scenarios.investmentPlaceholder')} /></label>
+                    <label className="block"><span className="text-xs text-content-muted">{t('scenarios.investmentLabel', { currency })}</span><Input type="text" inputMode="decimal" value={investment} onChange={(e) => setInvestment(e.target.value)} placeholder={t('scenarios.investmentPlaceholder')} /></label>
                 </div>
 
                 {/* P2 — per-risk override builder. Each override patches one FAIR
