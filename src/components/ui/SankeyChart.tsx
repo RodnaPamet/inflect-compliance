@@ -168,8 +168,8 @@ export function SankeyChart({
                 )}
             >
                 {dataset.emptyAfterFilter
-                    ? `No flows match "${(searchQuery ?? '').trim()}"`
-                    : 'No mapping flows to display.'}
+                    ? t('sankeyNoMatch', { query: (searchQuery ?? '').trim() })
+                    : t('sankeyEmpty')}
             </div>
         );
     }
@@ -185,7 +185,7 @@ export function SankeyChart({
                     className,
                 )}
             >
-                Nodes are present but no cross-tier mapping flows have been recorded yet.
+                {t('sankeyNoLinks')}
             </div>
         );
     }
@@ -223,7 +223,7 @@ export function SankeyChart({
                                 className="inline-block size-2.5 shrink-0 rounded-[2px]"
                                 style={{ backgroundColor: kindColor(c.kind) }}
                             />
-                            <span className="truncate">{c.label}</span>
+                            <span className="truncate">{t(`sankeyColumn.${c.kind}` as Parameters<typeof t>[0])}</span>
                             <span className="text-content-muted tabular-nums">
                                 ({c.count})
                             </span>
@@ -238,7 +238,7 @@ export function SankeyChart({
                     id="sankey-fit-toggle"
                     aria-pressed={fitToView}
                 >
-                    {fitToView ? 'Actual size' : 'Fit to view'}
+                    {fitToView ? t('sankeyActualSize') : t('sankeyFitToView')}
                 </Button>
             </div>
 
@@ -320,6 +320,8 @@ function SankeyLinkPath({
     isHighlighted: boolean;
     isDimmed: boolean;
 }) {
+    const t = useTranslations('common.ui');
+    const relationLabel = t(`sankeyRelation.${link.relation}` as Parameters<typeof t>[0]);
     // Hover-pop: highlighted links thicken slightly + lift to higher
     // opacity; dimmed links drop to 0.05. Flat per-kind stroke colour
     // (the source tier's colour) rather than a gradient.
@@ -340,7 +342,7 @@ function SankeyLinkPath({
             }}
         >
             <title>
-                {link.relation} ({link.value})
+                {t('sankeyLinkTitle', { relation: relationLabel, value: link.value })}
             </title>
         </path>
     );
@@ -361,6 +363,7 @@ function SankeyNodeRect({
     onLeave: () => void;
     onClick: () => void;
 }) {
+    const t = useTranslations('common.ui');
     const labelOnRight = node.x > 0;
     const opacity = highlighted ? 1 : 0.85;
     const rect = (
@@ -382,7 +385,7 @@ function SankeyNodeRect({
             }}
         >
             <title>
-                {node.label} (weight {node.weight})
+                {t('sankeyNodeTitle', { label: node.label, weight: node.weight })}
             </title>
         </rect>
     );
