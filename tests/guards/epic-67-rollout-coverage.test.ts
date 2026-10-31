@@ -113,6 +113,15 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         handlers: ['removeSchedule'],
     },
     {
+        // #4770 — archiving a risk scenario was immediate, with no
+        // confirmation and no undo. Archive is a soft delete with history
+        // kept: the row leaves the list at once and the DELETE is sent when
+        // the window closes.
+        file: 'src/app/t/[tenantSlug]/(app)/risks/scenarios/page.tsx',
+        name: 'Risk scenario archive (risk scenarios)',
+        handlers: ['archiveScenario'],
+    },
+    {
         // Single-asset soft-delete on the asset detail page — was a
         // blocking ConfirmDialog, now optimistic navigate + undo window.
         file: 'src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx',
