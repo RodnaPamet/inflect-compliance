@@ -87,6 +87,11 @@ const D = (
     }
 ).risks.aiSystems.detail;
 const M = D.classifyModal;
+const TIER = (
+    jest.requireActual('../../messages/en.json') as {
+        risks: { aiSystems: { filterEnums: { riskTier: Record<string, string> } } };
+    }
+).risks.aiSystems.filterEnums.riskTier;
 
 const TENANT_CTX = {
     userId: 'user-1',
@@ -121,7 +126,7 @@ function renderDetail(riskTier: string, canWrite: boolean) {
             <TenantProvider value={TENANT_CTX}>
                 <KeyboardShortcutProvider>
                     <TooltipProvider>
-                        <AiSystemDetailClient system={system(riskTier)} tenantSlug="acme" canWrite={canWrite} />
+                        <AiSystemDetailClient system={system(riskTier)} tenantSlug="acme" canWrite={canWrite} canOpenApprovalQueue={false} />
                     </TooltipProvider>
                 </KeyboardShortcutProvider>
             </TenantProvider>
@@ -250,7 +255,7 @@ describe('the classify form cannot submit a partial questionnaire', () => {
             },
         });
         await waitFor(() => expect(mockRefresh).toHaveBeenCalledTimes(1));
-        expect(mockToast.success.mock.calls[0][0]).toBe(M.saved.replace('{tier}', 'HIGH'));
+        expect(mockToast.success.mock.calls[0][0]).toBe(M.saved.replace('{tier}', TIER.HIGH));
         expect(screen.queryByTestId('ai-classify-modal')).not.toBeInTheDocument();
     });
 });

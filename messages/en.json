@@ -1536,6 +1536,14 @@
         "errorFallback": "Failed to generate draft",
         "draftsQueuedSingular": "Draft queued for review in the ",
         "draftsQueuedPlural": "Drafts queued for review in the ",
+        "docTypes": {
+          "ANNEX_IV_TECHNICAL_DOCUMENTATION": "Technical Documentation (Annex IV)",
+          "ART_9_RISK_MANAGEMENT": "Risk Management record (Art. 9)",
+          "ANNEX_V_DECLARATION_OF_CONFORMITY": "Declaration of Conformity (Annex V)"
+        },
+        "draftsQueuedNoQueueSingular": "Draft queued for review by whoever reviews agent proposals. Once approved, it appears in Policy Management as a draft.",
+        "draftsQueuedNoQueuePlural": "Drafts queued for review by whoever reviews agent proposals. Once approved, each appears in Policy Management as a draft.",
+        "openPolicies": "Open Policy Management",
         "classify": "Classify",
         "classifyModal": {
           "title": "Classify against the EU AI Act",
