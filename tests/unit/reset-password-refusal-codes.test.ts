@@ -55,19 +55,19 @@ describe('POST /api/auth/reset-password refusal codes', () => {
         expect(await refusal({ token: 't', newPassword: 'short' })).toBe('PASSWORD_TOO_SHORT');
         expect(await refusal({ token: 't', newPassword: 'x'.repeat(MAX_PASSWORD_LENGTH + 1) })).toBe('PASSWORD_TOO_LONG');
         mockHibp.mockResolvedValue({ breached: true });
-        expect(await refusal({ token: 't', newPassword: 'long-enough-password' })).toBe('PASSWORD_BREACHED');
+        expect(await refusal({ token: 't', newPassword: 'pass-ok-1234' })).toBe('PASSWORD_BREACHED');
         expect(mockConsume).not.toHaveBeenCalled();
     });
 
     it('names an expired link apart from an invalid one', async () => {
         mockConsume.mockResolvedValue({ ok: false, reason: 'expired' });
-        expect(await refusal({ token: 't', newPassword: 'long-enough-password' })).toBe('RESET_LINK_EXPIRED');
+        expect(await refusal({ token: 't', newPassword: 'pass-ok-1234' })).toBe('RESET_LINK_EXPIRED');
         mockConsume.mockResolvedValue({ ok: false, reason: 'invalid' });
-        expect(await refusal({ token: 't', newPassword: 'long-enough-password' })).toBe('RESET_LINK_INVALID');
+        expect(await refusal({ token: 't', newPassword: 'pass-ok-1234' })).toBe('RESET_LINK_INVALID');
     });
 
     it('still answers ok on success', async () => {
-        const res = await post({ token: 't', newPassword: 'long-enough-password' });
+        const res = await post({ token: 't', newPassword: 'pass-ok-1234' });
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ ok: true });
     });

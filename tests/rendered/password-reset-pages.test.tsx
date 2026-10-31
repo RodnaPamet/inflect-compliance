@@ -67,7 +67,7 @@ describe('reset password', () => {
     it('shows a named refusal in the user’s language, with a new-link offer for a dead link', async () => {
         answer(400, { error: 'This password reset link has expired. Please request a new one.', code: 'RESET_LINK_EXPIRED' });
         render(<ResetPasswordPage />);
-        submit('long-enough-password');
+        submit('pass-ok-1234');
 
         expect(await screen.findByText(en.auth.reset.refused.RESET_LINK_EXPIRED)).toBeTruthy();
         expect(screen.getByRole('link', { name: en.auth.reset.requestNewLink })).toHaveAttribute('href', '/forgot-password');
@@ -76,7 +76,7 @@ describe('reset password', () => {
     it('offers no new link for a password refusal', async () => {
         answer(400, { error: 'breached', code: 'PASSWORD_BREACHED' });
         render(<ResetPasswordPage />);
-        submit('long-enough-password');
+        submit('pass-ok-1234');
 
         expect(await screen.findByText(en.auth.reset.refused.PASSWORD_BREACHED)).toBeTruthy();
         expect(screen.queryByRole('link', { name: en.auth.reset.requestNewLink })).toBeNull();
@@ -85,7 +85,7 @@ describe('reset password', () => {
     it('says too many attempts on a 429', async () => {
         answer(429, { error: 'Too many requests' });
         render(<ResetPasswordPage />);
-        submit('long-enough-password');
+        submit('pass-ok-1234');
         expect(await screen.findByText(en.auth.reset.tooManyAttempts)).toBeTruthy();
     });
 
