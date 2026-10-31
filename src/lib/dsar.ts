@@ -44,6 +44,8 @@ export const DSAR_EXPORT_TTL_DAYS = 7;
 export const DSAR_AUDIT_ACTIONS = {
     REQUESTED: 'DSAR_REQUESTED',
     VERIFIED: 'DSAR_VERIFIED',
+    /** Work began on a verified request (#4818: was recorded as VERIFIED). */
+    STARTED: 'DSAR_STARTED',
     CANCELED: 'DSAR_CANCELED',
     COMPLETED: 'DSAR_COMPLETED',
     REJECTED: 'DSAR_REJECTED',
@@ -75,3 +77,9 @@ export function evaluateDsarRejection(
     if (input.hasLegalHold) return DSAR_REJECTION_REASONS.LEGAL_HOLD;
     return null;
 }
+
+/**
+ * The register shows at most this many requests. The usecase reads one more,
+ * so the page can tell a full register from a cut one and say so (#4818).
+ */
+export const DSAR_REGISTER_CAP = 500;

@@ -43,7 +43,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
-import { DSAR_AUDIT_ACTIONS, DSAR_REJECTION_REASONS } from '@/lib/dsar';
+import { DSAR_AUDIT_ACTIONS, DSAR_REGISTER_CAP, DSAR_REJECTION_REASONS } from '@/lib/dsar';
 import {
     checkDsarTransition,
     formatDsarTransitionError,
@@ -137,7 +137,8 @@ export async function listDsarRequests(
             },
             select: ROW_SELECT,
             orderBy: [{ requestedAt: 'desc' }],
-            take: 500,
+            // One past the cap, so a caller can tell a full register from a cut one.
+            take: DSAR_REGISTER_CAP + 1,
         });
         return rows.map(toRow);
     });
@@ -252,7 +253,9 @@ export async function transitionDsarRequest(
                   ? DSAR_AUDIT_ACTIONS.REJECTED
                   : input.to === 'CANCELED'
                     ? DSAR_AUDIT_ACTIONS.CANCELED
-                    : DSAR_AUDIT_ACTIONS.VERIFIED;
+                    : input.to === 'IN_PROGRESS'
+                      ? DSAR_AUDIT_ACTIONS.STARTED
+                      : DSAR_AUDIT_ACTIONS.VERIFIED;
 
         await logEvent(db, ctx, {
             action,

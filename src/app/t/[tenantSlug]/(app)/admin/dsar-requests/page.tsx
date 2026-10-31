@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 
 import { listDsarRequests } from '@/app-layer/usecases/dsar-register';
+import { DSAR_REGISTER_CAP } from '@/lib/dsar';
 import { gateAdminPage } from '../_lib/admin-page-gate';
 import { DsarRegisterClient } from './DsarRegisterClient';
 
@@ -30,7 +31,10 @@ export default async function AdminDsarRequestsPage({
     const gate = await gateAdminPage('/admin/dsar-requests', params);
     if (!gate.allowed) return gate.forbidden;
     const { ctx, tenantSlug } = gate;
-    const requests = await listDsarRequests(ctx);
+    const all = await listDsarRequests(ctx);
+    // The usecase reads one past the cap: more than the cap means there are more.
+    const truncated = all.length > DSAR_REGISTER_CAP;
+    const requests = all.slice(0, DSAR_REGISTER_CAP);
     const t = await getTranslations('admin');
 
     return (
@@ -38,6 +42,7 @@ export default async function AdminDsarRequestsPage({
             tenantSlug={tenantSlug}
             initial={JSON.parse(JSON.stringify(requests))}
             canManage={Boolean(ctx.appPermissions?.admin?.compliance_dsar_manage)}
+            truncated={truncated}
             title={t('dsar.title')}
         />
     );

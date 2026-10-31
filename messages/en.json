@@ -7911,6 +7911,55 @@
         "COMPLETED": "Completed",
         "REJECTED": "Rejected",
         "CANCELED": "Withdrawn"
+      },
+      "searchPlaceholder": "Search requests…",
+      "resourceSingular": "request",
+      "resourcePlural": "requests",
+      "emptyMatchingTitle": "No matching requests",
+      "emptyMatchingDesc": "No requests match the current filters or search.",
+      "filters": {
+        "status": "Status",
+        "statusDesc": "Filter by where the request stands",
+        "type": "Right",
+        "typeDesc": "Filter by the right requested"
+      },
+      "record": {
+        "button": "Request",
+        "title": "Record a request",
+        "description": "Record a rights request that arrived by email, post or a support ticket. The person must be an active member of this workspace.",
+        "subject": "Data subject",
+        "subjectPlaceholder": "Choose a member",
+        "type": "Right requested",
+        "notes": "Notes",
+        "notesHint": "Optional. How the request arrived, and anything the person handling it should know.",
+        "submit": "Record request",
+        "cancel": "Cancel",
+        "failed": "The request was not recorded.",
+        "recorded": "Request recorded"
+      },
+      "detail": {
+        "title": "Request",
+        "verified": "Verified",
+        "completed": "Completed",
+        "rejectionReason": "Reason for rejection",
+        "notes": "Notes",
+        "notesHint": "Saved with the next step. Record what was done, and how.",
+        "reasonLabel": "Reason for rejection",
+        "reasonHint": "Needed to reject the request.",
+        "failed": "The request was not updated.",
+        "updated": "Request updated"
+      },
+      "action": {
+        "VERIFIED": "Mark verified",
+        "IN_PROGRESS": "Start work",
+        "COMPLETED": "Mark completed",
+        "REJECTED": "Reject request",
+        "CANCELED": "Mark withdrawn"
+      },
+      "rejection": {
+        "last_owner": "The person is the last Owner of a workspace",
+        "outstanding_balance": "An outstanding balance is owed",
+        "legal_hold": "The data is under a legal hold"
       }
     },
     "writeLadder": {

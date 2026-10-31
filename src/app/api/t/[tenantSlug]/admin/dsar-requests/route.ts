@@ -8,6 +8,7 @@ import {
     recordDsarRequest,
     transitionDsarRequest,
 } from '@/app-layer/usecases/dsar-register';
+import { DSAR_REGISTER_CAP } from '@/lib/dsar';
 
 /**
  * DSAR register — manual-fulfilment queue.
@@ -39,7 +40,7 @@ export const GET = withApiErrorHandling(
         const statusParam = req.nextUrl.searchParams.get('status');
         const status = DSAR_STATUSES.find((s) => s === statusParam);
         const rows = await listDsarRequests(ctx, status ? { status } : {});
-        return jsonResponse({ requests: rows });
+        return jsonResponse({ requests: rows.slice(0, DSAR_REGISTER_CAP), truncated: rows.length > DSAR_REGISTER_CAP });
     }),
 );
 

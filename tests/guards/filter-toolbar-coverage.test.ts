@@ -100,8 +100,6 @@ const EXEMPTIONS: Record<string, string> = {
     // sub-component.
     "src/app/t/[tenantSlug]/(app)/admin/audit-log/AuditLogClient.tsx":
         "Chronological audit log bound to one tenant — not a faceted-filter surface.",
-    "src/app/t/[tenantSlug]/(app)/admin/dsar-requests/DsarRegisterClient.tsx":
-        "DSAR manual register — admin queue of rights requests (GDPR Art.15/17): small fixed-scope, status-driven list with inline transition controls, not a faceted-filter surface (same shape as the sibling admin sub-pages above).",
     "src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx":
         "API keys admin — small fixed list (typical: <20) with inline create + revoke controls.",
     "src/app/t/[tenantSlug]/(app)/admin/billing/BillingEventLog.tsx":
