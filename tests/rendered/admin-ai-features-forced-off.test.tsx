@@ -166,3 +166,48 @@ describe('the happy path', () => {
         expect(screen.queryByText(/^admin\.aiFeatures\./)).toBeNull();
     });
 });
+
+describe('a refused switch says why (#4814)', () => {
+    afterEach(() => {
+        delete (globalThis as { fetch?: unknown }).fetch;
+    });
+
+    function stubPut(status: number, body: unknown) {
+        (globalThis as { fetch?: unknown }).fetch = jest.fn(async () => ({
+            ok: false,
+            status,
+            json: async () => body,
+        }));
+    }
+
+    it('shows the server\'s reason when it gives one', async () => {
+        const { fireEvent, findByTestId } = await import('@testing-library/react');
+        stubPut(403, { error: { code: 'FORBIDDEN', message: 'Only a workspace owner can change this.' } });
+        renderWith(ALL_ON);
+        fireEvent.click(screen.getByTestId('toggle-risk'));
+        expect(await findByTestId(document.body, 'ai-toggle-save-failed')).toHaveTextContent(
+            'Only a workspace owner can change this.',
+        );
+        expect(swrState.mutate).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the fixed sentence on a server error', async () => {
+        const { fireEvent, findByTestId } = await import('@testing-library/react');
+        stubPut(500, { error: { message: 'stack trace' } });
+        renderWith(ALL_ON);
+        fireEvent.click(screen.getByTestId('toggle-risk'));
+        const notice = await findByTestId(document.body, 'ai-toggle-save-failed');
+        expect(notice).toHaveTextContent('The switch is unchanged.');
+        expect(notice).not.toHaveTextContent('stack trace');
+    });
+
+    it('a failed load offers a retry that re-reads', async () => {
+        const { fireEvent } = await import('@testing-library/react');
+        swrState.data = undefined;
+        swrState.error = new Error('boom');
+        (swrState.mutate as jest.Mock).mockClear();
+        render(<AiFeaturesClient />);
+        fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+        expect(swrState.mutate).toHaveBeenCalledTimes(1);
+    });
+});

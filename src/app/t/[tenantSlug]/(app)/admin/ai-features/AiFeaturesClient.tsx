@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { ErrorState } from '@/components/ui/error-state';
+import { apiRefusalMessage } from '@/lib/api-error';
 import type { AiToggleKey, AiToggleState } from '@/app-layer/usecases/ai-feature-toggles';
 
 import { displayFor, type ToggleDisplay } from './ai-feature-display';
@@ -46,7 +47,9 @@ export function AiFeaturesClient() {
     const t = useTranslations('admin');
     const { tenantSlug } = useTenantContext();
     const [saving, setSaving] = useState<AiToggleKey | null>(null);
-    const [failed, setFailed] = useState(false);
+    // The refusal to show, or null. The server's own reason when it gave one
+    // (a 403 naming the key, a 400 naming the field), else the fixed sentence.
+    const [failed, setFailed] = useState<string | null>(null);
 
     // TENANT-RELATIVE. `useTenantSWR` prefixes `/api/t/<slug>` itself, so an
     // absolute path here would resolve to `/api/t/<slug>/api/t/<slug>/…`.
@@ -55,7 +58,7 @@ export function AiFeaturesClient() {
 
     async function toggle(key: AiToggleKey, next: boolean) {
         setSaving(key);
-        setFailed(false);
+        setFailed(null);
         try {
             const res = await fetch(`/api/t/${tenantSlug}/admin/ai-features`, {
                 method: 'PUT',
@@ -65,19 +68,25 @@ export function AiFeaturesClient() {
                 // switches overwrite each other.
                 body: JSON.stringify({ [key]: next }),
             });
-            if (!res.ok) throw new Error(String(res.status));
+            if (!res.ok) {
+                // A 5xx body is not a reason anybody can act on; the fixed
+                // sentence is.
+                const body: unknown = res.status >= 500 ? null : await res.json().catch(() => null);
+                setFailed(apiRefusalMessage(body, t('aiFeatures.saveFailedBody')));
+                return;
+            }
             await mutate();
         } catch {
             // VISIBLE, not swallowed. A toggle that silently failed would leave
             // an owner believing they had turned AI off for a workspace that had
             // undertaken not to use it.
-            setFailed(true);
+            setFailed(t('aiFeatures.saveFailedBody'));
         } finally {
             setSaving(null);
         }
     }
 
-    if (error) return <ErrorState title={t('aiFeatures.loadFailed')} />;
+    if (error) return <ErrorState title={t('aiFeatures.loadFailed')} onRetry={() => { void mutate(); }} />;
 
     const states = data?.toggles ?? [];
     const byKey = (key: AiToggleKey): AiToggleState | undefined =>
@@ -144,7 +153,7 @@ export function AiFeaturesClient() {
         <div className="space-y-section" data-testid="admin-ai-features">
             {failed && (
                 <InlineNotice variant="error" title={t('aiFeatures.saveFailedHeading')}>
-                    {t('aiFeatures.saveFailedBody')}
+                    <span data-testid="ai-toggle-save-failed">{failed}</span>
                 </InlineNotice>
             )}
 

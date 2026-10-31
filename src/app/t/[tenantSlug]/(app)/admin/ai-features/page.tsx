@@ -40,7 +40,8 @@ export default function AiFeaturesPage() {
             <BackAffordance />
             <PageBreadcrumbs
                 items={[
-                    { label: t('nav.aiFeatures'), href: tenantHref('/admin/ai-features') },
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
                     { label: t('aiFeatures.breadcrumb') },
                 ]}
             />

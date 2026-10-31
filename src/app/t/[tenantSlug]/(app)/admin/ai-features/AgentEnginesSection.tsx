@@ -121,7 +121,7 @@ export function AgentEnginesSection() {
     if (setting.error && !setting.data) {
         return (
             <section id="agent-engines" data-testid="agent-engines">
-                <ErrorState title={t('loadFailed')} />
+                <ErrorState title={t('loadFailed')} onRetry={() => { void setting.mutate(); }} />
             </section>
         );
     }

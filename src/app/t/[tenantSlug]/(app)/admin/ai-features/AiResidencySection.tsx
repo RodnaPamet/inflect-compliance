@@ -42,6 +42,7 @@ const CHOICES: readonly Residency[] = ['EXTERNAL', 'LOCAL_ONLY'];
 
 export function AiResidencySection() {
     const t = useTranslations('admin.aiResidency');
+    const tError = useTranslations('common.error');
     const apiUrl = useTenantApiUrl();
 
     /** What is STORED. `undefined` = not loaded yet. */
@@ -61,6 +62,7 @@ export function AiResidencySection() {
     }, []);
 
     const load = useCallback(async () => {
+        setUnavailable(false);
         try {
             const res = await fetch(apiUrl('/admin/security-settings'));
             if (!res.ok) { setUnavailable(true); return; }
@@ -102,6 +104,14 @@ export function AiResidencySection() {
             <Card data-testid="ai-residency-section">
                 <Heading level={2} className="mb-1">{t('title')}</Heading>
                 <p className="text-sm text-content-muted">{t('loadFailed')}</p>
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => { void load(); }}
+                    data-testid="ai-residency-retry"
+                    text={tError('tryAgain')}
+                />
             </Card>
         );
     }
