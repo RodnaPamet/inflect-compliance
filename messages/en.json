@@ -3291,7 +3291,7 @@
   },
   "devices": {
     "title": "Devices",
-    "description": "{total} managed endpoints — reported by an agent or entered manually.",
+    "description": "{total, plural, one {# device} other {# devices}} reported to this workspace.",
     "resourceSingular": "device",
     "resourcePlural": "devices",
     "colDevice": "Device",
@@ -3299,11 +3299,13 @@
     "colScreenLock": "Screen lock",
     "colAntivirus": "Antivirus",
     "colPwManager": "Password mgr",
+    "colOwner": "Owner",
+    "colLastCheckIn": "Last check-in",
     "yes": "Yes",
     "no": "No",
     "naShort": "N/A",
     "emptyTitle": "No devices yet",
-    "emptyDesc": "Issue a device token and run the reporter agent, or connect an MDM, to build the inventory.",
+    "emptyDesc": "A device appears here once the reporter program on it sends its first report to this workspace.",
     "emptyMatchingTitle": "No matching devices",
     "emptyMatchingDesc": "No devices match the current filters.",
     "filters": {
@@ -3316,6 +3318,11 @@
         "WINDOWS": "Windows",
         "LINUX": "Linux"
       }
+    },
+    "searchPlaceholder": "Search devices…",
+    "source": {
+      "AGENT": "Reported by its reporter program",
+      "MANUAL": "Entered manually"
     }
   },
   "training": {

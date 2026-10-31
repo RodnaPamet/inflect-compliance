@@ -20,6 +20,7 @@ import { recordDeviceReport } from '@/lib/observability/integration-metrics';
 const MAX_DEVICES_PER_TENANT = 10000;
 import { logEvent } from '../events/audit';
 import { generateDeviceToken } from '@/lib/auth/device-token-auth';
+import { DEVICE_LIST_CAP } from '@/lib/device-list';
 
 const PLATFORMS = ['MACOS', 'WINDOWS', 'LINUX'] as const;
 
@@ -45,9 +46,10 @@ export async function listDevices(ctx: RequestContext) {
     return runInTenantContext(ctx, (db) =>
         db.device.findMany({
             where: { tenantId: ctx.tenantId },
-            select: { id: true, serialNumber: true, hostname: true, platform: true, source: true, employeeId: true, diskEncrypted: true, screenLockEnabled: true, antivirusRunning: true, passwordManagerPresent: true, lastCheckIn: true },
+            select: { id: true, serialNumber: true, hostname: true, platform: true, source: true, employeeId: true, employee: { select: { fullName: true } }, diskEncrypted: true, screenLockEnabled: true, antivirusRunning: true, passwordManagerPresent: true, lastCheckIn: true },
             orderBy: [{ platform: 'asc' }, { hostname: 'asc' }],
-            take: 500,
+            // One past the cap, so a caller can tell a full list from a cut one.
+            take: DEVICE_LIST_CAP + 1,
         }),
     );
 }
