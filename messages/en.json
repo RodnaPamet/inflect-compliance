@@ -12270,6 +12270,13 @@
       "READER": "Reader",
       "AUDITOR": "Auditor",
       "AI_ADMIN": "AI admin"
+    },
+    "refused": {
+      "CAMPAIGN_NEVER_PROMOTES_TO_OWNER": "A review never makes anyone an Owner. An Owner assigns that role on the members page.",
+      "CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE": "A review changes a member to a built-in role only. Custom roles are assigned on the members page.",
+      "OWNER_SUBJECT_NEEDS_OWNER_CLOSER": "This review revokes or changes an Owner's access, which only an Owner can do. Ask an Owner to close it.",
+      "AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER": "This review revokes or changes an AI admin's access, which only an Owner can do, as on the members page. Ask an Owner to close it.",
+      "CAMPAIGN_SUBJECT_MAY_NOT_DECIDE_OWN_ACCESS": "You can't decide on your own access. The review's reviewer, or another Owner or Admin, decides that row."
     }
   },
   "frameworkUpdates": {
