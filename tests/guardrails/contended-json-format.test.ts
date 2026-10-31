@@ -135,7 +135,12 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // insert touches only its own lines, where appending rewrites the
         // previous entry's closing brace and two PRs then conflict on a line
         // neither of them meant to edit. +5/-0.
-        keyOrderSha: 'd6f555ec86fd3a08982491d35d1eb80f0fa3a8331595327de9414c379c4257ea',
+        //
+        // Updated 2026-10-31 for `vm-capacity.yml:vm-capacity`, the
+        // dispatch-only, read-only capacity snapshot of the production VM (the
+        // AI roadmap's capacity budget, C0). Its key sorts last, so it is an
+        // append; git aligns the old closing brace with the new entry's, +5/-0.
+        keyOrderSha: '73aa5415a1030866e8eb3b0012d7e1a870d2de2a89f78b24e1718681ee53cc1a',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

@@ -6,8 +6,9 @@ inflect · ai architecture · master roadmap v2 · 2026-10-31
 > to the owner's target state, the "Enterprise AI SaaS Architecture Blueprint
 > (v6)" ([`docs/ai-architecture/blueprint-v6.md`](./ai-architecture/blueprint-v6.md),
 > received 2026-10-29). The plan is **complete without Layer 5**: complete
-> means every roadmap outside Layer 5 has reached its "Complete at" phase, and
-> Layer 5 is optional work taken up after that, or never (owner, 2026-10-31).
+> means every roadmap outside Layer 5, and the capacity budget of the VM they
+> run on, has reached its "Complete at" phase. Layer 5's model serving is
+> optional work taken up after that, or never (owner, 2026-10-31).
 > The **Current state** section is true today (verified at main 3.338.0,
 > `a1c2f05c`; re-checked where it changed at 3.347.0, `e0e682e03`, on
 > 2026-10-31) and names what each layer already has. The
@@ -27,7 +28,7 @@ Three documents own three different things, and none repeats another:
 | Owns | Where |
 | --- | --- |
 | The target as received | [`ai-architecture/blueprint-v6.md`](./ai-architecture/blueprint-v6.md) (historical: a record of the input) |
-| What exists, the global rules, Layer 5's optionality, what complete means, sequencing, the status board, the decisions | **this file** |
+| What exists, the global rules, Layer 5's optionality, what complete means, the capacity budget, sequencing, the status board, the decisions | **this file** |
 | Phases, sub-phases, prompts and hardening for one framework | `ai-architecture/<framework>.md` — one per missing framework (twenty roadmaps, listed in the status board, beside the blueprint record): eighteen from the blueprint, and two additions the owner made on 2026-10-30, [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) and [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) |
 
 Two owner decisions of 2026-10-31 (D-L5-1) bind the whole plan:
@@ -37,8 +38,9 @@ Two owner decisions of 2026-10-31 (D-L5-1) bind the whole plan:
   GPU, no NIM, no vLLM deployment, and Modal is not adopted.
 - **The plan is complete without Layer 5.** Every other roadmap names the
   phase at which it is complete, and none of those phases needs a GPU or a
-  self-hosted model (§ What complete means). Layer 5's new work is optional
-  and comes after completion, or never.
+  self-hosted model (§ What complete means). Layer 5's model serving
+  (self-hosted models, GPUs) is optional and comes after completion, or
+  never.
 
 They replace the instruction of 2026-10-29, which planned Layer 5 on Modal for
 Nemotron 3 Super. Both are designed in § Layer 5 is optional by construction;
@@ -66,7 +68,7 @@ flowchart LR
     HR["House eval records (ours)<br/>skills, identity-match"]:::done
   end
 
-  subgraph L5["LAYER 5 · Runtime and infrastructure · new work optional, after completion"]
+  subgraph L5["LAYER 5 · Runtime and infrastructure · model serving optional, after completion"]
     direction TB
     API["LLM API keys (ours)<br/>inflect-external, registered providers"]:::done
     MD["Self-hosted model route<br/>vLLM on a GPU VM, if taken up"]:::optional
@@ -75,6 +77,7 @@ flowchart LR
     MO5["Modal<br/>not adopted 2026-10-31"]:::declined
     OS["OpenShell gateway<br/>collectors sandboxed"]:::done
     GW["TS API gateway (ours)<br/>Next.js routes + Compose"]:::done
+    CAP["Capacity budget<br/>limits on every container"]:::todo
   end
 
   subgraph L4["LAYER 4 · Knowledge and deep RAG"]
@@ -157,10 +160,11 @@ request touching Flue re-checks them.
 - **Nothing signs or verifies an automated HTTP request** (verified
   2026-10-30, main 3.340.0). The product's only unattended crawler of
   third-party websites, the vendor monitor's TLS grade, identifies itself by
-  a User-Agent string alone. It fetches a tenant-entered domain through
-  `fetchWithRetry` rather than `safeFetch`, and a site that refuses it
-  (403, or a challenge) leaves the vendor's old grade in place with no
-  event. The public trust center knows automated visitors only by IP.
+  a User-Agent string alone. It fetches the tenant-entered domain only
+  through `safeFetch`, following redirects one re-checked hop at a time
+  (since 2026-10-31; it used `fetchWithRetry` until then, an SSRF sink). A
+  site that refuses it (403, or a challenge) still leaves the vendor's old
+  grade in place with no event. The public trust center knows automated visitors only by IP.
   [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) plans both
   directions; it is an addition to the blueprint (owner, 2026-10-30).
 - **Nothing records that an agent can spend money** (verified 2026-10-30).
@@ -275,13 +279,17 @@ request touching Flue re-checks them.
   two authorization layers), and the "microservices" are the Compose services.
 - **No GPU, no vLLM, no Triton, no NIM, no Modal.** `vLLM` appears in comments
   naming what `AI_LOCAL_BASE_URL` may point at.
+- **No container has a memory or CPU limit** (`deploy/docker-compose.prod.yml`,
+  2026-10-31); Redis caps its own data at 256 MB. § Capacity budget plans the
+  limits and the room the completeness services need.
 - **Model usage is LLM API keys.** `inflect-external` is registered from
   `ANTHROPIC_API_KEY` or the OpenRouter key, and `docs/sub-processors.md`
   bounds what each provider receives.
-- Nothing here is missing for completeness. By the owner's decision of
-  2026-10-31, Layer 5's new work (a self-hosted model route, the GPU arms
-  other roadmaps deferred, Triton, a NIM proof of concept) is optional and
-  starts only after every other roadmap is complete. Modal is not adopted.
+- Missing for completeness: the capacity budget's measurements and limits
+  (§ Capacity budget). By the owner's decision of 2026-10-31, Layer 5's model
+  serving (a self-hosted model route, the GPU arms other roadmaps deferred,
+  Triton, a NIM proof of concept) is optional and starts only after every
+  other roadmap is complete. Modal is not adopted.
 
 ### Evals
 
@@ -346,9 +354,11 @@ a new framework cannot miss one; G12 and G13 are the owner's decisions of
 - **G5 — Dependencies by the five pillars.** Runtime role decides the
   `package.json` section; lockfile committed; strict peers; risk review for
   parsers and credential handlers; runtime images **by digest** in the
-  repo-canonical Compose file. **Python lives in images and `deploy/`, never in
-  the app** — every Python framework here (Presidio, NeMo, RAGFlow, Langflow,
-  garak, Ragas, ARES, Inspect) is a container or a deploy script.
+  repo-canonical Compose file, each with a memory limit, a CPU cap and its
+  line in § Capacity budget, in the same pull request. **Python lives in
+  images and `deploy/`, never in the app** — every Python framework here
+  (Presidio, NeMo, RAGFlow, Langflow, garak, Ragas, ARES, Inspect) is a
+  container or a deploy script.
 - **G6 — Egress is `safeFetch`, hosts are config.** Every new outbound host
   joins `tests/guards/ssrf-egress-coverage.test.ts`'s population; base URLs are
   operator config or code constants, never tenant-writable; reads are
@@ -377,10 +387,11 @@ a new framework cannot miss one; G12 and G13 are the owner's decisions of
   corpora only — never customer data.
 - **G12 — Complete means complete without Layer 5.** Every roadmap names its
   "Complete at" phase, and no such phase may need a GPU, a self-hosted model
-  or any other Layer 5 work. Layer 5's new work is optional, starts only after
-  every other roadmap is complete, and exists in a deployment iff `AI_LOCAL_*`
-  names a gateway; without it nothing of it is deployed, configured or
-  health-checked (next section).
+  or any other Layer 5 model serving. That work is optional, starts only
+  after every other roadmap is complete, and exists in a deployment iff
+  `AI_LOCAL_*` names a gateway; without it nothing of it is deployed,
+  configured or health-checked (next section). The VM the other roadmaps run
+  on is Layer 5 too, and its capacity budget is part of completeness.
 - **G13 — Open-source frameworks; models through LLM API keys by default**
   (owner, 2026-10-31). A framework the plan adopts is open source and run by
   the operator. Model usage goes through API keys on `inflect-external`, to
@@ -462,12 +473,17 @@ The AI architecture roadmap is **complete when every row of the status board
 below, outside the optional wave, shows a "Phase on `main`" at or past its
 "Complete at"** (owner, 2026-10-31). Each child roadmap states its own
 "Complete at" in its "Where it sits" table; the column below copies it, and
-the child wins if the two disagree. Four rules make the definition hold:
+the child wins if the two disagree. Five rules make the definition hold:
 
 - **No completeness phase needs Layer 5** (G12). Where a roadmap planned a GPU
   arm, it is complete without it: the retriever on CPU TEI, Morpheus as a CPU
   detector, cuOpt as a CPU seam or a recorded decline, the worker role on a
   model reached through API keys.
+- **Layer 5, here, means its model serving.** The Layer 5 box also holds the
+  VM everything else runs on, and that VM's capacity budget is part of
+  completeness, because every container the other roadmaps add spends from
+  it. Only the self-hosted model route, the GPU arms, Triton and the NIM proof
+  of concept are optional.
 - **A recorded decision can be the completing phase.** SWE-bench, NemoClaw,
   cuOpt and Langfuse may complete at Phase 0 by a recorded decline or
   narrowing, and ARES at Phase 2 by a recorded failure to calibrate. A
@@ -480,6 +496,93 @@ the child wins if the two disagree. Four rules make the definition hold:
 - **At completion the plan stops.** Layer 5 starts only if the owner then
   takes it up ([`modal-inference.md`](./ai-architecture/modal-inference.md)
   Phase 0), and nothing in the plan waits for that.
+
+### Capacity budget
+
+Every phase that adds a container to the production VM spends from one budget
+(G5). Until 2026-10-31 there was no budget, and there are no limits: no service
+in `deploy/docker-compose.prod.yml` sets a memory or CPU limit, and only Redis
+caps its own data, at 256 MB. So the kernel's out-of-memory killer is the
+only memory limit, and it picks which process to kill. The one precedent for a
+limited model service is the retired Laya estate, which ran at 1 vCPU and
+4 GB.
+
+**The host.** One Google Cloud `e2-highmem-2`: 2 vCPU, 16 GB. This was recorded
+on 2026-10-12 in `docs/legacy-access-recertification-design.md`, and not
+re-read on 2026-10-31: the session that wrote this section had no access to the
+project. Disk size is not recorded anywhere in the repository.
+
+**CPU is the scarcer resource.** Two vCPUs serve the request path, the
+worker, Postgres and ClamAV. On one of them, Laya measured a model call at
+p50 7.3 s (2026-10-12).
+
+**The rule.** A container lands with a memory limit and a CPU cap in the
+Compose file, and its line below, in the same pull request. Its limit is set
+from a measured peak, never from a guess. The memory limits together stay at
+or under the host's memory minus 1.5 GB for the OS, Docker and the page cache:
+14.5 GB on this host. CPU may be oversubscribed, but a batch-shaped service
+(embedding, parsing, PII analysis) is capped at 1.0 CPU so the request path
+always keeps a core. That is the Laya precedent. A pull request that would
+cross the memory line carries D-CAP-1's answer in the same pull request.
+
+**The lines.** The ceilings are planning estimates, labelled as such, until a
+phase measures its service. "Measured" replaces an estimate in the pull request
+that measures it.
+
+| Line | Containers | Added by | Memory ceiling | CPU cap | Basis |
+| --- | --- | --- | --- | --- | --- |
+| Today's stack | `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`, `watchtower`, `caddy` | on `main` | **not measured** | none | C0 measures each peak |
+| Embeddings | `tei-embed` | Retriever 1 | 5 GB (estimate) | 1.0 | a 1B-parameter model (`llama-nemotron-embed-1b-v2`) is about 4 GB of weights at fp32, before runtime overhead |
+| Reranking | `tei-rerank` | Retriever 2 | 5 GB (estimate) | 1.0 | the same size class; Retriever 0.1 confirms it |
+| Vectors | `weaviate` | Weaviate 1 | 1.5 GB (estimate) | 0.5 | vectors held in memory; the embedding dimension (384 to 2048, configurable) moves it most |
+| Parsing | a parsing-only service (D-L4-4) | RAGFlow 1 | 3 GB (estimate) | 1.0 | RAGFlow's full reference stack (server, search engine, MySQL, MinIO, Redis) is a second product and is not budgeted here |
+| PII detection | `presidio` | Presidio 1 | 1.5 GB (estimate) | 1.0 | a large spaCy pipeline plus recognisers |
+| Guard rails | `nemo-guardrails` | NeMo 1 | 1 GB (estimate) | 0.5 | LLM-free rails; LLM-backed rails call the external API, not this VM |
+| Traces | Langfuse self-host | Langfuse 1 | **does not fit** | — | Langfuse's own guide sets 8 GiB for ClickHouse alone, plus web, worker, Postgres and blob storage. D-L4-5 picks Cloud EU or OTel-only, or a VM of its own |
+| In-app work | none (Morpheus CPU detector, cuOpt CPU seam, Web Bot Auth, Agent Pay, the agent-flow canvas) | various | inside `app` / `worker` | — | measured with today's stack |
+| Evaluations | none on the VM | Garak, Ragas, ARES, Inspect | 0 | — | they run in CI images (G5, G11) |
+
+**What the arithmetic says.** The completeness additions alone come to about
+17 GB of estimated ceilings, above the 14.5 GB line before today's eight
+services are counted. Two embedding-class models at fp32 make up most of it.
+So the completeness target, as planned, does not fit this VM. Something has to
+give, and that is D-CAP-1:
+
+- **Resize** to `e2-highmem-4` (4 vCPU, 32 GB). This doubles the machine, and
+  its cost, and keeps one Compose file.
+- **A second CPU VM** for the model services (embedding, reranking, parsing,
+  PII). The request path's VM stays as it is, at the price of a second
+  repo-canonical deployment, an internal TLS hop and its own drift check.
+- **Smaller pieces.** Smaller open embedding and reranking models if
+  Retriever 0's recall holds (a change to D-L4-3), quantised weights, a
+  parsing-only service rather than RAGFlow, Langfuse OTel-only.
+
+The default, until the owner decides, is in that order of preference: measure
+first (C0 and Retriever 0), take the smaller pieces the records allow, and
+resize when the measured sum still crosses the line. Self-hosted Langfuse never
+goes on the production VM.
+
+**The budget's own phases** (a status-board row; complete at C1, and C2 if
+needed):
+
+- [ ] **C0 — measure.** On the VM: each container's peak memory and CPU over a
+      working day, including the nightly jobs (vendor monitor 02:00, identity
+      chain 03:00–05:00), with free memory and disk. Record the figures in
+      this table, replacing "not measured". The `VM capacity` workflow
+      (`.github/workflows/vm-capacity.yml`, dispatch-only, read-only, behind
+      the `production` reviewer like `Scanner VM`) prints exactly this: per
+      container the peak since it started (cgroup `memory.peak`), anonymous
+      and page-cache memory, average CPU and OOM kills, and optional samples.
+      A session cannot do it itself: this environment's proxy carries HTTPS
+      only, so no SSH or IAP tunnel reaches the VM from a session.
+- [ ] **C1 — limit today's stack.** A memory limit and CPU cap on each of the
+      eight services, at 1.5× its measured peak, in
+      `deploy/docker-compose.prod.yml`, applied with `deploy/apply.sh`. A
+      structural Compose change, so it carries a rollback plan: revert the
+      file and apply.
+- [ ] **C2 — D-CAP-1's answer, before the first addition that crosses the
+      line.** The resize, the second VM or the smaller pieces, in the pull
+      request that would otherwise cross it.
 
 ### Status board
 
@@ -508,6 +611,7 @@ completion.
 | Self-hosted model route (was "Modal") | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional | **optional, after completion**; Modal not adopted (D-L5-1) | — | not part of completeness | D-L5-2 (deferred) |
 | Triton | 5 | [`triton.md`](./ai-architecture/triton.md) | optional | optional, after completion | — | not part of completeness | D-L5-3 (deferred) |
 | NIM | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional (proof of concept) | **declined** in production (G13); a proof of concept only, if Layer 5 is taken up | — | not part of completeness | — |
+| Capacity budget (added 2026-10-31) | 5 | § Capacity budget, this file | 0 | no container has a limit; nothing measured | — | C1, and C2 before the first addition that crosses the line | D-CAP-1 |
 | Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | missing | — | 3 | D-EV-1 |
 | Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | missing | — | 3 | D-EV-2 |
 | ARES | evals | [`ares.md`](./ai-architecture/ares.md) | 2 | missing | — | 3, or 2's recorded failure to calibrate | D-EV-3 |
@@ -530,6 +634,7 @@ timeline
     Wave 0 : Owner initials the D-* table, D-L5-1 taken 2026-10-31
            : Close F5, scan run input with the existing scanner
            : Record F3 as a decision, fix F12
+           : Capacity C0-C1, measure the VM and limit every container
   section Knowledge
     Wave 1 : Retriever 0-2, TEI on CPU
            : Weaviate 0-3, then search_knowledge
@@ -629,9 +734,11 @@ Weaviate Phase 2 needs an embedding provider; Ragas needs an index; the
 the role axis and Inspect's comparison records; Langfuse capture-on and NeMo
 PII rails need Presidio; Web Bot Auth's inbound verifier needs its own
 outbound phases; NeMo's rails are measured by Garak Phase 1 before and after;
-Agent Pay's discovery reuses that verifier, and its Mastercard
-phase waits on API access Mastercard gates. Layer 5 waits for all of it. Each
-child's "Where it sits" table states its own.
+Agent Pay's discovery reuses that verifier, and its Mastercard phase waits on
+API access Mastercard gates. Every phase that adds a container waits for the
+capacity budget's C1, and lands within the budget or carries D-CAP-1's answer.
+Layer 5 waits for all of it. Each child's "Where it sits" table states its
+own.
 
 ### Evals by layer
 
@@ -712,6 +819,7 @@ the child records the reasoning.
 | D-L5-1 | Model usage through LLM API keys; no self-hosting now; Modal not adopted; Layer 5 optional, after every other roadmap is complete | modal-inference | **decided 2026-10-31** (owner) |
 | D-L5-2 | If Layer 5 is taken up: model, weights and licence, GPU class, zone and quota, cost | modal-inference | **deferred** until Layer 5 is taken up |
 | D-L5-3 | Triton consolidation trigger | triton | **deferred** with Layer 5 |
+| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, a parsing-only service, Langfuse OTel-only) | § Capacity budget | measure first; smaller pieces the records allow; then resize to `e2-highmem-4`; never self-host Langfuse on the production VM |
 | D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | external CI key, budgeted |
 | D-EV-2 | Ragas judge residency and cost | ragas | external CI key, budgeted |
 | D-EV-3 | Who labels ARES triples, from the seed corpus | ares | operator, seed only |
