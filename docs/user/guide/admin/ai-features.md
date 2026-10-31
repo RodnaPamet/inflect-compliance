@@ -8,7 +8,7 @@ The {{ui:admin.aiFeatures.heading}} page decides which AI features this workspac
 
 ## Where to find it
 
-Click **{{ui:nav.admin}}** at the bottom of the sidebar. Under {{ui:admin.section.organization}}, click **{{ui:admin.nav.aiFeatures}}**.
+Click **{{ui:nav.admin}}** at the bottom of the sidebar. Under {{ui:admin.section.organization}}, click **{{ui:admin.nav.aiFeatures}}**. The breadcrumb reads **{{ui:admin.crumb.dashboard}}** › **{{ui:admin.crumb.admin}}** › **{{ui:admin.aiFeatures.breadcrumb}}**.
 
 ## Who can use it
 
@@ -81,7 +81,7 @@ Click **{{ui:admin.aiFeatures.turnOff}}** or **{{ui:admin.aiFeatures.turnOn}}** 
 
 Turning off **{{ui:admin.aiFeatures.ai.name}}** stops every AI feature below it without changing their own switches. Turn it back on and each feature returns to the state its own switch shows.
 
-If the change fails, **{{ui:admin.aiFeatures.saveFailedHeading}}** appears and the switch stays as it was.
+If the change fails, **{{ui:admin.aiFeatures.saveFailedHeading}}** appears with the reason the server gave, and the switch stays as it was.
 
 ### Choose where AI runs
 
@@ -96,11 +96,11 @@ Select an engine. A dialog asks you to confirm, and explains what changes: runs 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
-| **{{ui:admin.aiFeatures.loadFailed}}** | The switches did not load | Reload the page |
-| **{{ui:admin.aiFeatures.saveFailedHeading}}** | A switch did not change | Try again |
-| **{{ui:admin.aiResidency.loadFailed}}** | The setting did not load | Reload the page |
+| **{{ui:admin.aiFeatures.loadFailed}}** | The switches did not load | Click **{{ui:common.error.tryAgain}}** |
+| **{{ui:admin.aiFeatures.saveFailedHeading}}**, with the reason the server gave | A switch did not change | Fix what it names, or try again |
+| **{{ui:admin.aiResidency.loadFailed}}** | The setting did not load | Click **{{ui:common.error.tryAgain}}** |
 | **{{ui:admin.aiResidency.saveFailed}}**, or the reason the server gave | The choice was not saved | Try again |
-| **{{ui:admin.agentEngines.loadFailed}}** | The engine setting did not load | Reload the page |
+| **{{ui:admin.agentEngines.loadFailed}}** | The engine setting did not load | Click **{{ui:common.error.tryAgain}}** |
 | **{{ui:admin.agentEngines.wiringLoadFailed}}** | The checklist did not load | Reload the page |
 
 ## Related

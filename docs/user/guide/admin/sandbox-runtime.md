@@ -46,7 +46,7 @@ Each card names the settings that control the channel and what it does when noth
 | {{ui:admin.sandboxRuntime.enforcement.enforcement.name}} | {{ui:admin.sandboxRuntime.enforcement.enforcement.description}} |
 | {{ui:admin.sandboxRuntime.enforcement.landlock-compatibility.name}} | {{ui:admin.sandboxRuntime.enforcement.landlock-compatibility.description}} |
 
-Both are fixed in Inflect itself, not left to configuration, and are checked whenever Inflect changes.
+Each rule also says where it is set and what holds it: **{{ui:admin.sandboxRuntime.policyModuleLabel}}** {{ui:admin.sandboxRuntime.policyModuleValue}}, and **{{ui:admin.sandboxRuntime.ciCheckLabel}}** {{ui:admin.sandboxRuntime.ciCheckValue}}. So both are fixed in Inflect itself, not left to configuration.
 
 **{{ui:admin.sandboxRuntime.sectionExecution}}.** {{ui:admin.sandboxRuntime.execution.name}}: {{ui:admin.sandboxRuntime.execution.description}} {{ui:admin.sandboxRuntime.executionPlatformBody}}
 

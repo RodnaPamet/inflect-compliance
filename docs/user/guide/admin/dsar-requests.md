@@ -15,8 +15,9 @@ Click **{{ui:nav.admin}}** at the bottom of the sidebar. Under {{ui:admin.sectio
 | Action | Roles |
 | --- | --- |
 | Open the page and read the register | Owner, Admin |
+| Record a request, and move it on | Owner, Admin |
 
-Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}**. An Admin whose membership carries a custom role can open the page only if that role can view data subject requests; a role that can view but not manage them sees **{{ui:admin.dsar.readOnlyNotice}}**.
+Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}**. An Admin whose membership carries a custom role can open the page only if that role can view data subject requests; a role that can view but not manage them sees **{{ui:admin.dsar.readOnlyNotice}}**, and no buttons.
 
 ## What it is for
 
@@ -26,7 +27,7 @@ Requests arrive by email, post or a support ticket. Each one is recorded here an
 
 ## What you see
 
-A table of requests, one row each, newest first, up to 500:
+A table of requests, one row each, newest first:
 
 | Column | What it shows |
 | --- | --- |
@@ -47,17 +48,45 @@ A request moves through these statuses:
 | {{ui:admin.dsar.status.REJECTED}} | The request was refused, with a reason |
 | {{ui:admin.dsar.status.CANCELED}} | The requester withdrew it |
 
+The page shows at most 500 requests at a time. When the register holds more, a notice says so; use the search or the filters to reach the rest.
+
 ## What you can do
 
-Read the register. The page has no buttons to record a request or change its status.
+**Search and filter.** Open the filter and type in the search box to find a request by the person's name or email. Filter by **{{ui:admin.dsar.filters.status}}** or by **{{ui:admin.dsar.filters.type}}**.
+
+**Record a request.**
+
+1. Click **{{ui:admin.dsar.record.button}}** in the header. The **{{ui:admin.dsar.record.title}}** dialog opens.
+2. Under **{{ui:admin.dsar.record.subject}}**, choose the person. They must be an active member of this workspace.
+3. Under **{{ui:admin.dsar.record.type}}**, choose {{ui:admin.dsar.type.EXPORT}} or {{ui:admin.dsar.type.ERASURE}}.
+4. Optionally, add **{{ui:admin.dsar.record.notes}}**: how the request arrived, and anything the person handling it should know.
+5. Click **{{ui:admin.dsar.record.submit}}**. The request is added to the register as {{ui:admin.dsar.status.RECEIVED}}.
+
+**Open a request.** Click a row. A panel shows the request's right, status and dates (when it was recorded, {{ui:admin.dsar.detail.verified}} and {{ui:admin.dsar.detail.completed}}), who handled it, its notes and, for a rejected request, the reason.
+
+**Move a request on.** In the panel, the buttons offer only the moves its status allows:
+
+| From | You can |
+| --- | --- |
+| {{ui:admin.dsar.status.RECEIVED}} | **{{ui:admin.dsar.action.VERIFIED}}**, **{{ui:admin.dsar.action.REJECTED}}** or **{{ui:admin.dsar.action.CANCELED}}** |
+| {{ui:admin.dsar.status.VERIFIED}} | **{{ui:admin.dsar.action.IN_PROGRESS}}**, **{{ui:admin.dsar.action.REJECTED}}** or **{{ui:admin.dsar.action.CANCELED}}** |
+| {{ui:admin.dsar.status.IN_PROGRESS}} | **{{ui:admin.dsar.action.COMPLETED}}** or **{{ui:admin.dsar.action.REJECTED}}** |
+
+{{ui:admin.dsar.status.COMPLETED}}, {{ui:admin.dsar.status.REJECTED}} and {{ui:admin.dsar.status.CANCELED}} are final: the panel offers no move. Notes typed in the panel are saved with the next move, so record there what was done, and how. To reject, first choose a **{{ui:admin.dsar.detail.reasonLabel}}**: {{ui:admin.dsar.rejection.last_owner}}, {{ui:admin.dsar.rejection.outstanding_balance}} or {{ui:admin.dsar.rejection.legal_hold}}.
+
+Marking a request {{ui:admin.dsar.status.COMPLETED}} records that the work was done; Inflect does not export or erase the data itself.
 
 ## Empty and error states
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
-| **{{ui:admin.dsar.emptyTitle}}** | No request has been recorded in this workspace | Nothing, until a request arrives |
+| **{{ui:admin.dsar.emptyTitle}}** | No request has been recorded in this workspace | Record one when a request arrives |
+| **{{ui:admin.dsar.emptyMatchingTitle}}** | No request matches the search or the filters | Clear the search or the filters |
+| **{{ui:admin.dsar.record.failed}}**, or the reason the server gave | The request was not recorded, for example because the person is not an active member | Fix what it names and try again |
+| **{{ui:admin.dsar.detail.failed}}**, or the reason the server gave | The request was not moved on | Reload the page and try again |
 | **{{ui:admin.dsar.readOnlyNotice}}** | Your custom role can read the register but not manage it | Ask an Owner to change your role if you handle requests |
+| A notice that not every request is shown | The register holds more than 500 requests | Search for the request, or filter by status or right |
 
 ## Related
 

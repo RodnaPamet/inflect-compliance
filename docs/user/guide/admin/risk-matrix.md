@@ -35,9 +35,9 @@ A risk's score is its likelihood level multiplied by its impact level. On the st
 
 **{{ui:admin.riskMatrix.severityBands}}.** One row per band: its name, its lowest and highest score, and its colour, with a **{{ui:admin.riskMatrix.remove}}** button. Between them, the bands must cover every score from 1 to the highest score, with no gaps and no overlaps.
 
-**{{ui:admin.riskMatrix.preview}}.** A heat map drawn from your draft, one cell per score, coloured by band, so you can see the result before saving.
+**{{ui:admin.riskMatrix.preview}}.** A heat map drawn from your draft, with one example risk in every cell, coloured by band, so you can see the result before saving.
 
-When the draft breaks a rule, a list of what is wrong appears and **{{ui:admin.riskMatrix.saveChanges}}** is greyed out until it is fixed.
+When the draft breaks a rule, a list of what is wrong appears, in words such as "{{ui:admin.riskMatrix.issue.missingBands}}" or which scores no band covers, and **{{ui:admin.riskMatrix.saveChanges}}** is greyed out until it is fixed.
 
 ## What you can do
 
@@ -50,6 +50,8 @@ When the draft breaks a rule, a list of what is wrong appears and **{{ui:admin.r
 
 Nothing changes until you save. Saving applies the grid to every risk page in the workspace straight away. Existing risks keep the likelihood and impact they were given.
 
+If you make the grid smaller than the levels your risks already use, a warning above the form says how many risks use a likelihood or impact above the new grid, before you save. Those risks keep their levels, so they have no cell on the heat map until they are reassessed on the new scale. You can still save.
+
 ### Go back to the standard grid
 
 Click **{{ui:admin.riskMatrix.restoreDefaults}}**. The draft returns to the 5 × 5 grid with its standard names and four bands. Click **{{ui:admin.riskMatrix.saveChanges}}** to keep it, or reload the page to discard it.
@@ -59,7 +61,8 @@ Click **{{ui:admin.riskMatrix.restoreDefaults}}**. The draft returns to the 5 ×
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
-| A list of problems above the form | The draft breaks a rule: a band leaves a gap, overlaps another, or does not start at 1 | Fix each one; **{{ui:admin.riskMatrix.saveChanges}}** comes back |
+| A list of problems above the form | The draft breaks a rule: a band leaves scores uncovered, overlaps another, does not start at 1 or end at the highest score, or a level has no name | Fix each one; **{{ui:admin.riskMatrix.saveChanges}}** comes back |
+| A warning that risks use a level above the grid | The draft grid is smaller than the levels some risks were assessed with | Keep the larger grid, or save and reassess those risks |
 | **{{ui:admin.riskMatrix.toastNoRange}}** | Every score already has a band | Shorten an existing band first |
 | **{{ui:admin.riskMatrix.saveFailedGeneric}}**, or the reason the server gave | The grid was not saved | Try again |
 
