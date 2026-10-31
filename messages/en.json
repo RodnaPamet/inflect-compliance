@@ -3448,7 +3448,21 @@
         "ackRequested": "Acknowledgement requested",
         "controlLinked": "Control linked",
         "controlUnlinked": "Control unlinked",
-        "rolledBack": "Rolled back"
+        "rolledBack": "Rolled back",
+        "unarchived": "Restored from archive",
+        "approvalSuperseded": "Approval superseded",
+        "publishBypass": "Published without approval",
+        "evidenceLinked": "Evidence linked",
+        "evidenceUnlinked": "Evidence unlinked",
+        "evidenceItemAdded": "Evidence item added",
+        "ackCarriedForward": "Acknowledgements carried forward",
+        "sharepointLinked": "Linked to SharePoint",
+        "sharepointUnlinked": "Unlinked from SharePoint",
+        "sharepointSyncedTo": "Synced to SharePoint",
+        "sharepointSyncedFrom": "Synced from SharePoint",
+        "externalChangeProposed": "External change proposed",
+        "deleted": "Deleted",
+        "other": "Changed"
       },
       "errCreateVersion": "Failed to create version",
       "errUnknown": "Unknown error",
@@ -3883,7 +3897,8 @@
         "added": "Item added to pack",
         "addError": "Could not add the item. Please try again.",
         "cancel": "Cancel",
-        "submit": "Add to pack"
+        "submit": "Add to pack",
+        "noneOfType": "There is nothing of this type to add."
       },
       "revokeShareModal": {
         "title": "Revoke share link?",
@@ -3940,6 +3955,25 @@
         "removed": "Item removed from the pack",
         "undo": "Undo",
         "error": "Could not remove the item. Please try again."
+      },
+      "showAllItems": "Show all {count}",
+      "refused": {
+        "PACK_NOT_FOUND": "This pack no longer exists. It may have been deleted.",
+        "PACK_NOT_DRAFT": "This pack is frozen, so its items can no longer change.",
+        "PACK_ALREADY_FROZEN": "This pack is already frozen.",
+        "PACK_EMPTY": "Add at least one item before you freeze the pack.",
+        "PACK_DRAFT_NOT_SHAREABLE": "Freeze the pack before you share it.",
+        "PACK_DRAFT_NOT_CLONEABLE": "Freeze the pack before you clone it for a retest.",
+        "PACK_ITEM_NOT_FOUND": "That item is no longer in the pack.",
+        "PACK_ITEM_REF_INVALID": "That item no longer exists in this workspace.",
+        "SHARE_NOT_FOUND": "That share link no longer exists.",
+        "SHARE_ALREADY_REVOKED": "That share link is already revoked.",
+        "ENTRY_NOT_FOUND": "That auditor entry is no longer on this pack.",
+        "ENTRY_NOT_RESOLVABLE": "A comment has nothing to resolve.",
+        "ENTRY_ALREADY_RESOLVED": "That entry is already resolved.",
+        "ENTRY_NOT_MATERIALISABLE": "Only a finding or an evidence request can become a finding.",
+        "ENTRY_RESOLVED_WITHOUT_FINDING": "That entry is resolved, but its finding was not created. Reopen the entry to try again.",
+        "ENTRY_BEING_MATERIALISED": "Another reviewer is creating the finding from this entry. Refresh in a moment."
       }
     },
     "auditor": {
@@ -8560,7 +8594,12 @@
       },
       "inviteExpired": "Link expired",
       "inviteRevoked": "Link revoked",
-      "linkGroupNamed": "{type} ({count})"
+      "linkGroupNamed": "{type} ({count})",
+      "sendRefused": {
+        "SEND_RESPONDENT_EMAIL_INVALID": "Give a valid email address for the respondent.",
+        "SEND_TEMPLATE_DRAFT": "That questionnaire template is a draft. Publish it before sending it.",
+        "SEND_ALREADY_IN_FLIGHT": "This respondent already has this questionnaire waiting for an answer. Resend that invite instead of sending another."
+      }
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",
@@ -8774,7 +8813,7 @@
       "packsTab": "Packs",
       "coverageTab": "Coverage",
       "builderTab": "Builder",
-      "reorderFailed": "Reorder failed ({status})",
+      "reorderFailed": "The new order could not be saved. Try again.",
       "version": "Version",
       "kind": "Kind",
       "browseTemplates": "Browse Templates",
@@ -8796,7 +8835,7 @@
       "packRemoved": "Removed \"{name}\" from your chosen packs. Its controls stay.",
       "undo": "Undo",
       "packRemoveFailed": "The pack could not be removed. Reload the page and try again.",
-      "reorderRestricted": "Reordering is restricted to OWNER / ADMIN roles.",
+      "reorderRestricted": "Only Owners and Admins can reorder requirements.",
       "packsEmpty": "No packs available for this framework.",
       "inherited": {
         "heading": "Coverage from your other frameworks",
@@ -8822,7 +8861,13 @@
         "errorTitle": "Couldn't load inherited coverage",
         "errorLoad": "Try again in a moment.",
         "retry": "Retry"
-      }
+      },
+      "treeLoadFailed": "The requirements could not load.",
+      "packsLoadFailed": "The packs could not load.",
+      "coverageLoadFailed": "The coverage could not load.",
+      "retry": "Try again",
+      "coverageAria": "Framework coverage",
+      "sectionCoverageAria": "{section} coverage"
     },
     "diff": {
       "loading": "Loading diff…",
@@ -12250,6 +12295,13 @@
       "READER": "Reader",
       "AUDITOR": "Auditor",
       "AI_ADMIN": "AI admin"
+    },
+    "refused": {
+      "CAMPAIGN_NEVER_PROMOTES_TO_OWNER": "A review never makes anyone an Owner. An Owner assigns that role on the members page.",
+      "CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE": "A review changes a member to a built-in role only. Custom roles are assigned on the members page.",
+      "OWNER_SUBJECT_NEEDS_OWNER_CLOSER": "This review revokes or changes an Owner's access, which only an Owner can do. Ask an Owner to close it.",
+      "AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER": "This review revokes or changes an AI admin's access, which only an Owner can do, as on the members page. Ask an Owner to close it.",
+      "CAMPAIGN_SUBJECT_MAY_NOT_DECIDE_OWN_ACCESS": "You can't decide on your own access. The review's reviewer, or another Owner or Admin, decides that row."
     }
   },
   "frameworkUpdates": {
@@ -13081,7 +13133,8 @@
       "sendResetLink": "Send reset link",
       "sending": "Sending…",
       "backToSignIn": "Back to sign in",
-      "resetSent": "If an account exists for that email, we've sent a password reset link. The link expires in 1 hour."
+      "resetSent": "If an account exists for that email, we've sent a password reset link. The link expires in 1 hour.",
+      "tooManyRequests": "Too many reset requests from this network. Wait an hour, then try again."
     },
     "reset": {
       "chooseNewTitle": "Choose a new password",
@@ -13097,7 +13150,17 @@
       "passwordsNoMatch": "The two passwords do not match.",
       "tooShort": "Your new password must be at least 8 characters long.",
       "couldNotReset": "Could not reset your password.",
-      "backToSignIn": "Back to sign in"
+      "backToSignIn": "Back to sign in",
+      "tooLong": "Your new password can be at most 128 characters long.",
+      "tooManyAttempts": "Too many attempts from this network. Wait 15 minutes, then try again.",
+      "refused": {
+        "PASSWORD_EMPTY": "Enter a new password.",
+        "PASSWORD_TOO_SHORT": "Your new password must be at least 8 characters long.",
+        "PASSWORD_TOO_LONG": "Your new password can be at most 128 characters long.",
+        "PASSWORD_BREACHED": "This password appears in known data breaches. Choose a different one.",
+        "RESET_LINK_EXPIRED": "This reset link has expired. Request a new one.",
+        "RESET_LINK_INVALID": "This reset link is invalid or has already been used. Request a new one."
+      }
     }
   },
   "account": {
@@ -13199,12 +13262,22 @@
     "signedInAs": "You are signed in as <b>{email}</b>.",
     "helpText": "You do not have access to any workspace yet. Ask your admin to invite you, then follow the link in the invitation email.",
     "signOut": "Sign out",
-    "yourAccount": "your account"
+    "yourAccount": "your account",
+    "otherWorkspaceText": "You do not have access to that workspace. Choose one of yours instead.",
+    "organizationsOnly": "You are not a member of any workspace, but you can open your organization.",
+    "deactivated": "Your access to {workspaces} was deactivated. Ask an admin of that workspace to reactivate you.",
+    "whereToGo": "Where you can go",
+    "goToWorkspaces": "Go to your workspaces",
+    "goToOrganization": "Open {name}"
   },
   "tenants": {
     "chooseWorkspace": "Choose a workspace",
     "multipleWorkspaces": "You are a member of multiple workspaces. Select one to continue.",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "chooseOrganization": "Choose an organization",
+    "multipleOrganizations": "You are a member of more than one organization. Select one to continue.",
+    "workspacesHeading": "Workspaces",
+    "organizationsHeading": "Organizations"
   },
   "org": {
     "common": {
@@ -14386,6 +14459,44 @@
       "title": "Complete your setup",
       "body": "Finish the onboarding wizard to configure your compliance workspace.",
       "continue": "Continue Setup"
+    },
+    "nis2Step": {
+      "loading": "Loading the NIS2 self-assessment…",
+      "loadFailed": "Could not load the NIS2 self-assessment. Reload the page to try again.",
+      "saveFailed": "Could not save that answer. Choose it again to retry.",
+      "completeFailed": "Could not complete the assessment. Try again.",
+      "intro": "You selected NIS2. Answer these gap-assessment questions to find your compliance gaps. Your answers save automatically, so you can leave and return any time.",
+      "progressAria": "NIS2 self-assessment progress",
+      "answeredCount": "{answered}/{total} answered",
+      "bestAnsweredBy": "Best answered by: {respondent}",
+      "dependsOn": "Depends on {questions}",
+      "skipLater": "You can complete this later from the NIS2 dashboard.",
+      "keepGoing": "Keep going",
+      "skipForNow": "Skip for now",
+      "complete": "Complete assessment",
+      "viewGapAssessment": "View your NIS2 gap assessment →",
+      "source": "source",
+      "addNote": "Add a note",
+      "notePlaceholder": "Optional note (saved automatically)…",
+      "answer": {
+        "NA": "Not applicable",
+        "NO": "No",
+        "PARTIALLY": "Partially",
+        "YES": "Yes"
+      },
+      "respondent": {
+        "CEO": "CEO / management",
+        "IT": "IT",
+        "HR": "HR",
+        "PROCUREMENT": "Procurement",
+        "ANYONE": "Anyone"
+      },
+      "criticality": {
+        "CRITICAL": "Critical",
+        "HIGH": "High",
+        "MEDIUM": "Medium",
+        "LOW": "Low"
+      }
     }
   },
   "external": {

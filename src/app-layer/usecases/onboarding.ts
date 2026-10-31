@@ -11,6 +11,7 @@ import {
     emitOnboardingRestarted,
 } from '../events/onboarding.events';
 import { assertFrameworkPackChoices, runStepAction, storeActionResult, type StepActionResult } from './onboarding-automation';
+import type { Locale } from '@/lib/locale-constants';
 import type { OnboardingRefusal } from '@/lib/onboarding-refusals';
 import { logger } from '@/lib/observability/logger';
 import {
@@ -173,7 +174,12 @@ export async function saveOnboardingStep(ctx: RequestContext, step: OnboardingSt
  * to avoid exceeding Prisma's interactive transaction timeout (5s default).
  * The automation is fire-and-forget — failures are logged but don't block the wizard.
  */
-export async function completeOnboardingStep(ctx: RequestContext, step: OnboardingStep) {
+export async function completeOnboardingStep(
+    ctx: RequestContext,
+    step: OnboardingStep,
+    // The language the step's starter content is written in (#4701).
+    opts: { locale?: Locale } = {},
+) {
     assertCanManageOnboarding(ctx);
 
     // Phase 1: Complete the step inside a transaction (lightweight, fast)
@@ -239,7 +245,7 @@ export async function completeOnboardingStep(ctx: RequestContext, step: Onboardi
     try {
         const allData = (record.stepData as Record<string, any>) || {};
         const sd = allData[step] || {};
-        result = await runStepAction(ctx, step, sd, allData);
+        result = await runStepAction(ctx, step, sd, allData, opts.locale);
         if (result) {
             logger.info('onboarding automation completed', {
                 component: 'onboarding', step, action: result.action,

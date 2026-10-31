@@ -18,7 +18,7 @@
 import Link from 'next/link';
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import type { FrameworkKind } from '@prisma/client';
+import { frameworkKindLabel } from './framework-kind-label';
 import {
     BadgeCheck,
     Car,
@@ -255,19 +255,7 @@ export function FrameworksClient({
 
     // #4459 — the framework's kind as a label, never the stored enum value
     // with its underscore turned into a space ("ISO STANDARD").
-    const kindLabels: Record<FrameworkKind, string> = {
-        ISO_STANDARD: t('kinds.isoStandard'),
-        NIST_FRAMEWORK: t('kinds.nistFramework'),
-        SOC_CRITERIA: t('kinds.socCriteria'),
-        EU_DIRECTIVE: t('kinds.euDirective'),
-        REGULATION: t('kinds.regulation'),
-        INDUSTRY_STANDARD: t('kinds.industryStandard'),
-        CUSTOM: t('kinds.custom'),
-    };
-    const kindLabel = (kind?: string | null): string | undefined =>
-        kind && Object.prototype.hasOwnProperty.call(kindLabels, kind)
-            ? kindLabels[kind as FrameworkKind]
-            : undefined;
+    const kindLabel = (kind?: string | null): string | undefined => frameworkKindLabel(t, kind);
 
     // "In use" rather than "Installed": the flag is derived from coverage
     // (at least one requirement has a mapped control), not from a pack
