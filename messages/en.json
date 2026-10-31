@@ -4749,15 +4749,26 @@
       "saveJustification": "Save justification",
       "mappedControls": "Mapped Controls",
       "justify": "Justify",
+      "editJustification": "Edit justification",
       "evidenceItems": "Evidence: {count} items",
       "openTasks": "Open tasks: {count}",
       "lastTest": "Last test:",
       "mapFailed": "Could not map the control. Please try again.",
       "justificationFailed": "Could not save the justification. Please try again.",
+      "writeRestricted": "Only a role that can edit controls, such as an Owner, Admin or Editor, can map controls or record a justification.",
       "mapSearchPlaceholder": "Search controls…",
       "excepted": "Excepted",
       "exceptedUntil": "Excepted until {date}",
-      "print": "Print"
+      "print": "Print",
+      "controlStatus": {
+        "NOT_STARTED": "Not started",
+        "PLANNED": "Planned",
+        "IN_PROGRESS": "In progress",
+        "IMPLEMENTING": "Implementing",
+        "IMPLEMENTED": "Implemented",
+        "NEEDS_REVIEW": "Needs review",
+        "NOT_APPLICABLE": "Not applicable"
+      }
     },
     "soaPrint": {
       "printPreview": "SoA Print Preview",
