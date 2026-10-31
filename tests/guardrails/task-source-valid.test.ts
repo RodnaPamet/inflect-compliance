@@ -32,7 +32,7 @@ function validSources(): Set<string> {
     if (!m) throw new Error('TaskSource enum not found in enums.prisma');
     const members = m[1]
         .split('\n')
-        .map((l) => l.replace(/\/\/.*$/, '').trim())
+        .map((l) => codeOf(l).trim())
         .filter((l) => /^[A-Z_]+$/.test(l));
     return new Set(members);
 }

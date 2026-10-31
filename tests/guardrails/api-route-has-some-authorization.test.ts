@@ -116,6 +116,7 @@ import {
     type HttpMethod,
 } from '../helpers/route-authorization-graph';
 import { REPO_ROOT, repoRelativeFiles } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 const API_ROOT = path.join(REPO_ROOT, 'src/app/api');
 const APP_ROOT = path.join(REPO_ROOT, 'src/app');
@@ -641,9 +642,11 @@ function readSource(file: string): string {
  * whose only mention is `// we no longer verifyWebhookSignature here` — which is
  * the exact state the check exists to catch, reading as a pass.
  *
- * Deliberately crude: block and line comments are stripped, and removing a
- * little too much is safe for a credential-check regex. Erring the other way
- * is not.
+ * Comments are blanked by `codeOf` (#4659). They used to be stripped with a
+ * positional regex, on the grounds that removing a little too much is safe
+ * for a credential-check regex. That held for this check, but a `/*` inside a
+ * string opened a phantom comment that ran to the next `*\/` anywhere in the
+ * file, and the one masker the repo keeps correct is the better default.
  *
  * String literal CONTENTS are NOT stripped, contrary to what this said before.
  * Two CAPABILITY_TOKEN entries silently depend on that — their mechanism names
@@ -653,9 +656,7 @@ function readSource(file: string): string {
  * literals would silently break those two.
  */
 function readCodeOnly(file: string): string {
-    return readSource(file)
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    return codeOf(readSource(file));
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────

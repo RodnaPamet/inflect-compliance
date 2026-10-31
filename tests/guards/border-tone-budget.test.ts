@@ -281,7 +281,9 @@ describe('the border counter counts code, not comment positions (#4636)', () => 
     /** The method this file used until #4636, kept only to contrast with. */
     const oldRegexCount = (src: string): number => {
         const stripped = src
+            // eslint-disable-next-line local/no-positional-comment-strip -- kept to show what the old method got wrong (#4636)
             .replace(/\/\*[\s\S]*?\*\//g, '')
+            // eslint-disable-next-line local/no-positional-comment-strip -- kept to show what the old method got wrong (#4636)
             .replace(/\/\/[^\n]*/g, '');
         return (stripped.match(RE()) ?? []).length;
     };

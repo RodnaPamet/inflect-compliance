@@ -112,9 +112,7 @@ describe('Button label centering', () => {
             // re-prove centring in a real build (jsdom cannot catch it;
             // it only shows under the compiled Tailwind cascade).
             const variants = read('packages/ui/src/components/ui/button-variants.ts');
-            const withoutComments = variants
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const withoutComments = codeOf(variants);
             expect(withoutComments).not.toMatch(/\bbefore:/);
             expect(withoutComments).not.toMatch(/\bafter:/);
         });

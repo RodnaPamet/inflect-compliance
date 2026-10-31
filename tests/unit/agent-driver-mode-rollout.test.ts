@@ -83,6 +83,7 @@ import {
     recordedModeOf,
 } from '@/lib/agentic/agent-driver';
 import { makeRequestContext } from '../helpers/make-context';
+import { codeOf } from '../helpers/source-blocks';
 
 const ENUMS = path.resolve(__dirname, '../../prisma/schema/enums.prisma');
 
@@ -93,7 +94,7 @@ function declaredValues(): string[] {
     if (body === undefined) return [];
     return body
         .split('\n')
-        .map((line) => line.replace(/\/\/.*$/, '').trim())
+        .map((line) => codeOf(line).trim())
         .filter((line) => line.length > 0 && !line.startsWith('@@'))
         .map((line) => line.split(/\s+/)[0]);
 }

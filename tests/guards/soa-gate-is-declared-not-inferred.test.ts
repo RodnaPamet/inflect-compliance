@@ -38,10 +38,11 @@ import {
     frameworkHasStatementOfApplicability,
     soaFrameworkKeys,
 } from '@/lib/compliance/statement-of-applicability';
+import { codeOf } from '../helpers/source-blocks';
 
 /** Drop line and block comments so a prose mention is not read as a gate. */
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    return codeOf(src);
 }
 
 const LIB_DIR = path.join(process.cwd(), 'src/data/libraries');
@@ -284,8 +285,14 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
     it('strips comments without eating code (positive control)', () => {
         // Without this, an over-eager stripper would make the test above pass
         // by deleting everything.
-        expect(stripComments("a; // kind === 'ISO_STANDARD'\nb;")).toBe('a; \nb;');
-        expect(stripComments("/* kind === 'ISO_STANDARD' */ keep;")).toBe(' keep;');
+        // Comments are BLANKED by codeOf (#4659), so a comment becomes spaces of
+        // its own length and the code around it keeps its offsets.
+        const line = "// kind === 'ISO_STANDARD'";
+        const block = "/* kind === 'ISO_STANDARD' */";
+        expect(stripComments(`a; ${line}\nb;`)).toBe(`a; ${' '.repeat(line.length)}\nb;`);
+        expect(stripComments(`${block} keep;`)).toBe(`${' '.repeat(block.length)} keep;`);
         expect(stripComments("x = kind === 'ISO_STANDARD';")).toBe("x = kind === 'ISO_STANDARD';");
+        // And a `//` inside a string is code, not a comment opener.
+        expect(stripComments("u = 'https://x'; kind === 'ISO_STANDARD';")).toBe("u = 'https://x'; kind === 'ISO_STANDARD';");
     });
 });

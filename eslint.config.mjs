@@ -669,6 +669,11 @@ const config = [
         files: ['tests/**/*.ts', 'tests/**/*.tsx'],
         rules: {
             'local/require-test-prisma-transaction-budget': 'error',
+            // #4659 — a regex that strips comments by position takes a `/*` or
+            // `//` inside a string for a comment and deletes the code after it
+            // before a guard reads it. Copied into 110 test files before it was
+            // migrated to codeOf; this keeps it from coming back by copy-paste.
+            'local/no-positional-comment-strip': 'error',
         },
     },
     {

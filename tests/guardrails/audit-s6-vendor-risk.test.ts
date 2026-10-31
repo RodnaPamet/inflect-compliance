@@ -25,9 +25,7 @@ describe('Audit S6 — Vendor / Third-Party Risk', () => {
         const rawSrc = read('src/app-layer/usecases/vendor-assessment-review.ts');
         // Strip comments so rationale lines mentioning the legacy
         // `require(...)` shape don't false-positive this check.
-        const src = rawSrc
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/.*$/gm, '');
+        const src = codeOf(rawSrc);
 
         it('does NOT use a dynamic require for the prisma client', () => {
             expect(src).not.toMatch(

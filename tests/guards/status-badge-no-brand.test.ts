@@ -25,6 +25,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -53,9 +54,7 @@ function walk(dir: string, results: string[] = []): string[] {
 }
 
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+    return codeOf(src);
 }
 
 describe('StatusBadge brand-orange ban (R10-PR10)', () => {

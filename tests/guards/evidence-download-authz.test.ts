@@ -13,6 +13,7 @@
  */
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = join(__dirname, '..', '..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
@@ -29,7 +30,7 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
  * silently shrinking the set of files the scan looks at.
  */
 const stripComments = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+    codeOf(s);
 
 /**
  * Does this source actually CALL the download gate?

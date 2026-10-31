@@ -279,9 +279,7 @@ describe('Dashboard does not rely on router.refresh()', () => {
      * executable code.
      */
     function stripComments(src: string): string {
-        return src
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/^\s*\/\/.*$/gm, '');
+        return codeOf(src);
     }
 
     test('neither page.tsx nor DashboardClient.tsx invokes router.refresh()', () => {

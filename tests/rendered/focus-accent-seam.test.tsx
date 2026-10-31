@@ -33,6 +33,7 @@ import path from 'node:path';
 import { render, screen } from '@testing-library/react';
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
+import { cssCodeOf } from '../helpers/source-blocks';
 
 const TOKENS_CSS = fs.readFileSync(path.join(process.cwd(), 'src/styles/tokens.css'), 'utf8');
 
@@ -51,7 +52,7 @@ function themeTokens(selector: string): Record<string, string> {
         if (TOKENS_CSS[i] === '{') depth++;
         else if (TOKENS_CSS[i] === '}' && --depth === 0) break;
     }
-    const body = TOKENS_CSS.slice(bodyStart, i).replace(/\/\*[\s\S]*?\*\//g, '');
+    const body = cssCodeOf(TOKENS_CSS.slice(bodyStart, i));
     const map: Record<string, string> = {};
     for (const m of body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) map[m[1]] = m[2].trim();
     return map;

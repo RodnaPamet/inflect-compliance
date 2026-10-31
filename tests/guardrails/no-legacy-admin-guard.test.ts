@@ -23,6 +23,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const SRC_DIR = path.resolve(__dirname, '../../src');
 const REMOVED_MODULE = path.resolve(SRC_DIR, 'lib/auth/require-admin.ts');
@@ -44,9 +45,7 @@ const BANNED_MODULE = '@/lib/auth/require-admin';
  * character before `//` so `https://` URLs survive intact.
  */
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    return codeOf(src);
 }
 
 function collectSourceFiles(dir: string, acc: string[] = []): string[] {

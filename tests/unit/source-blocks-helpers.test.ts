@@ -385,6 +385,90 @@ describe('source-blocks — codeOf', () => {
  * the real DDL deleted, a `--` comment naming it left behind, guard still
  * green.
  */
+/**
+ * WHAT #4659 REPLACED, CASE BY CASE.
+ *
+ * 110 test files stripped comments with a positional regex: a block strip
+ * pairing a slash-star with the next star-slash, and a line strip from any
+ * double slash to the end of the line. Each case below is a source text a
+ * guard could plausibly read, with code after the tricky part that must
+ * SURVIVE and a comment that must not. `codeOf` is held to both; the old
+ * strip is shown losing the code where it did, so a regression to it in a
+ * guard is visibly a regression rather than a matter of taste.
+ */
+describe('source-blocks — codeOf against the positional strip it replaced (#4659)', () => {
+    // eslint-disable-next-line local/no-positional-comment-strip -- the strip this table exists to contrast with
+    const oldBlock = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '');
+    // eslint-disable-next-line local/no-positional-comment-strip -- the strip this table exists to contrast with
+    const oldStrip = (src: string) => oldBlock(src).replace(/\/\/[^\n]*/g, '');
+
+    const cases: ReadonlyArray<{ name: string; src: string; keep: string; gone: string; oldLosesCode: boolean }> = [
+        {
+            name: 'a string containing /* (a MIME wildcard)',
+            src: "if (t.endsWith('/*')) keepA();\nrender(); /* real comment */",
+            keep: 'keepA();',
+            gone: 'real comment',
+            oldLosesCode: true,
+        },
+        {
+            name: 'a string containing */ after one containing /*',
+            src: "const open = '/*'; keepB(); const close = '*/'; done(); // tail",
+            keep: 'keepB();',
+            gone: 'tail',
+            oldLosesCode: true,
+        },
+        {
+            name: 'a string containing //',
+            src: "const p = 'a//b'; keepC(); // note",
+            keep: 'keepC();',
+            gone: 'note',
+            oldLosesCode: true,
+        },
+        {
+            name: 'a URL',
+            src: "fetch('https://x.test/y'); keepD(); // why",
+            keep: 'keepD();',
+            gone: 'why',
+            oldLosesCode: true,
+        },
+        {
+            name: 'a regex literal containing a quote',
+            src: "s.replace(/\"/g, \"'\"); keepE(); // trailing note",
+            keep: 'keepE();',
+            gone: 'trailing note',
+            oldLosesCode: false,
+        },
+        {
+            name: 'a JSX comment',
+            src: '<div>{/* hidden text */}<span>keepF</span></div>',
+            keep: '<span>keepF</span>',
+            gone: 'hidden text',
+            oldLosesCode: false,
+        },
+    ];
+
+    it.each(cases)('$name: codeOf keeps the code and blanks the comment', ({ src, keep, gone }) => {
+        const masked = codeOf(src);
+        expect(masked).toContain(keep);
+        expect(masked).not.toContain(gone);
+        // Blanked, not removed: offsets and line count still line up.
+        expect(masked).toHaveLength(src.length);
+        expect(masked.split('\n')).toHaveLength(src.split('\n').length);
+    });
+
+    it.each(cases.filter((c) => c.oldLosesCode))('$name: the old strip deleted the code', ({ src, keep }) => {
+        expect(oldStrip(src)).not.toContain(keep);
+    });
+
+    it('the table has a case the old strip got right, so the contrast is not vacuous', () => {
+        // Without one, "the old strip deleted the code" could pass by an old
+        // strip that deleted everything.
+        const right = cases.filter((c) => !c.oldLosesCode);
+        expect(right.length).toBeGreaterThan(0);
+        for (const c of right) expect(oldStrip(c.src)).toContain(c.keep);
+    });
+});
+
 describe('source-blocks — sqlCodeOf', () => {
     it('blanks a WHOLE-LINE -- comment, preserving length and line count', () => {
         const src = [

@@ -31,12 +31,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { MACHINE_CALLER_PREFIXES, isPublicPath } from '@/lib/auth/guard';
-import { declarationOf, functionBodyOf } from '../helpers/source-blocks';
+import { declarationOf, functionBodyOf, codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const APP = path.join(ROOT, 'src/app');
 const codeOnly = (s: string) =>
-    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    codeOf(s);
 
 /**
  * prefix → the gate its handler must contain, and a sample request path.

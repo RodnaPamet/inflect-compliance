@@ -46,6 +46,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
@@ -142,7 +143,7 @@ export function qualifiedKeys(src: string): readonly string[] | null {
 }
 
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    return codeOf(src);
 }
 
 function resolves(dotted: string): boolean {

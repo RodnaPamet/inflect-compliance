@@ -78,6 +78,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
+import { codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const APP_DIR = path.join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)');
@@ -109,7 +110,7 @@ const PKG_COMPONENTS_DIR = path.join(REPO_ROOT, 'packages/ui/src/components');
 
 /** Strip block + line comments so prose in comments never matches. */
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    return codeOf(src);
 }
 
 /**

@@ -85,9 +85,7 @@ const EXEMPT_CASTS: Record<string, string> = {};
 
 /** Strip line + block comments so prose ABOUT the bug isn't flagged. */
 function stripComments(source: string): string {
-    return source
-        .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-        .replace(/(^|[^:])\/\/[^\n]*/g, (_m, p1: string) => p1);
+    return codeOf(source);
 }
 
 /** Recursive walk — `usecases/` and `services/` both have subdirectories. */

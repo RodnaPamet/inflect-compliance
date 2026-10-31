@@ -121,9 +121,7 @@ describe('3 — one urgency threshold set', () => {
             // the default is fine — a docstring saying "Default: [30, 7, 1]"
             // is documentation, not a second source of truth — so only
             // non-comment lines are checked.
-            const code = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')  // block comments
-                .replace(/^\s*\/\/.*$/gm, '');       // line comments
+            const code = codeOf(src);       // line comments
             expect(code).not.toMatch(/\[\s*30\s*,\s*7\s*,\s*1\s*\]/);
         }
     });

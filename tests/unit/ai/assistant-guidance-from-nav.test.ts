@@ -38,6 +38,7 @@ import {
     pathTokensIn,
     unknownRoutesIn,
 } from '@/app-layer/ai/assistant/guidance';
+import { codeOf } from '../../helpers/source-blocks';
 
 const NAV_FILE = path.join(process.cwd(), 'src/components/layout/SidebarNav.tsx');
 
@@ -49,9 +50,7 @@ const NAV_FILE = path.join(process.cwd(), 'src/components/layout/SidebarNav.tsx'
  * vouching for a page that was deliberately removed.
  */
 function navSource(): string {
-    return readFileSync(NAV_FILE, 'utf8')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/.*$/gm, '');
+    return codeOf(readFileSync(NAV_FILE, 'utf8'));
 }
 
 /** Routes the sidebar actually builds, as tenant-relative paths. */

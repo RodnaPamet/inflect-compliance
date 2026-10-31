@@ -45,9 +45,7 @@ const SYNC = 'src/app-layer/services/canvas-rule-sync.ts';
 /** Strip block + line comments so the scan sees CODE only (comments
  * legitimately name the forbidden fields when documenting the invariant). */
 function code(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    return codeOf(src);
 }
 
 describe('VR-3 — sync invariant', () => {

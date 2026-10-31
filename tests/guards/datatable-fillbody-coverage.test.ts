@@ -47,9 +47,7 @@ describe('DataTable fillBody coverage on list pages (R12-PR3)', () => {
         // Strip JS/TS comments so doc-block references to `<DataTable>`
         // don't trip the scanner.
         const stripComments = (s: string) =>
-            s
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            codeOf(s);
         const offenders: string[] = [];
         for (const file of walk(APP_ROOT)) {
             const content = stripComments(codeOf(fs.readFileSync(file, 'utf-8')));
