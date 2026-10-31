@@ -1029,7 +1029,7 @@ function ControlsPageInner({
         if (action === 'delete') {
             const idSet = new Set(ids);
             setRowSelection({});
-            controlsQuery.mutate(
+            void controlsQuery.mutate(
                 (cur) => {
                     if (!cur) return cur;
                     // guardrail-ignore: optimistic-delete cache update (drop the just-deleted rows during the Epic 67 undo window) — NOT display refiltering; mutate() restores on Undo/failure.
@@ -1051,10 +1051,10 @@ function ControlsPageInner({
                     if (!res.ok) throw new Error('Bulk delete failed');
                     await controlsQuery.mutate();
                 },
-                undoAction: () => { controlsQuery.mutate(); },
+                undoAction: () => { void controlsQuery.mutate(); },
                 onError: () => {
                     toast.error(t('bulk.actionFailed'));
-                    controlsQuery.mutate();
+                    void controlsQuery.mutate();
                 },
             });
             return;

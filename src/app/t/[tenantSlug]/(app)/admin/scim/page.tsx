@@ -71,7 +71,7 @@ export default function ScimAdminPage() {
     }, [apiUrl, t]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchTokens(); }, [fetchTokens]);
+    useEffect(() => { void fetchTokens(); }, [fetchTokens]);
 
     const generateToken = async () => {
         setGenerating(true);
@@ -87,7 +87,7 @@ export default function ScimAdminPage() {
             setNewTokenPlaintext(data.plaintext);
             setShowForm(false);
             setNewLabel('');
-            fetchTokens();
+            void fetchTokens();
         } catch (e) {
             setError(e instanceof Error ? e.message : t('scim.errGeneric'));
         } finally {
@@ -104,7 +104,7 @@ export default function ScimAdminPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tokenId }),
             });
-            fetchTokens();
+            void fetchTokens();
         } catch { /* ignore */ }
     };
 

@@ -1,11 +1,14 @@
 /**
- * A floating promise in server code fails lint (#4579).
+ * A floating promise anywhere in `src/` fails lint (#4579, #4585).
  *
  * A promise nobody awaits rejects into nothing: no error reaches the caller,
- * the job or the request, and nothing is logged. Until #4579 the rule that
- * reports one, `@typescript-eslint/no-floating-promises`, ran nowhere. It is
- * now an error in `src/app-layer/**` and `src/lib/**`, where such a rejection
- * is both invisible and consequential.
+ * the job or the request, and nothing is logged. #4579 made
+ * `@typescript-eslint/no-floating-promises` an error in `src/app-layer/**` and
+ * `src/lib/**`. #4585 extended it to the UI, after a measurement found that
+ * the "handlers whose callees handle their own errors" were not all that: two
+ * pages hung on a network failure, a third (the vendors dashboard) did too,
+ * and sixteen loaders let the rejection escape. Each UI call site now either
+ * handles its rejection or marks the promise `void` because its callee does.
  *
  * This asks ESLint itself which config applies to a file there
  * (`calculateConfigForFile`, every block merged, as `npx eslint .` resolves
@@ -30,8 +33,8 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '../..');
 const RULE = '@typescript-eslint/no-floating-promises';
 
-/** Real files and planted paths, one of each kind per directory the rule covers. */
-const SERVER_FILES = [
+/** Real files and planted paths, one of each kind per area the rule covers. */
+const COVERED_FILES = [
     'src/app-layer/usecases/custom-roles.ts',
     'src/app-layer/jobs/retention-notifications.ts',
     'src/app-layer/jobs/planted/deeply/nested-job.ts',
@@ -39,6 +42,13 @@ const SERVER_FILES = [
     'src/lib/hooks/use-api.ts',
     'src/lib/planted/deeply/nested-module.ts',
     'src/lib/planted/component-in-lib.tsx',
+    // The UI (#4585): a page, a client component, a shared component, a route.
+    'src/app/t/[tenantSlug]/(app)/vendors/dashboard/page.tsx',
+    'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx',
+    'src/components/TestPlansPanel.tsx',
+    'src/app/api/security/csp-report/route.ts',
+    'src/components/planted/deeply/NewComponent.tsx',
+    'src/app/planted/new-page/page.tsx',
 ];
 
 type Resolved = { severity: unknown; projectService: unknown };
@@ -68,14 +78,14 @@ function resolveConfigs(files: readonly string[]): Record<string, Resolved> {
     return JSON.parse(out) as Record<string, Resolved>;
 }
 
-describe('no-floating-promises is an error in server code (#4579)', () => {
+describe('no-floating-promises is an error across src/ (#4579, #4585)', () => {
     let resolved: Record<string, Resolved>;
 
     beforeAll(() => {
-        resolved = resolveConfigs(SERVER_FILES);
+        resolved = resolveConfigs(COVERED_FILES);
     }, 60_000);
 
-    it.each(SERVER_FILES)('%s: the rule is an error, with a TypeScript program', (file) => {
+    it.each(COVERED_FILES)('%s: the rule is an error, with a TypeScript program', (file) => {
         // ESLint normalises severities to 0/1/2 in a resolved config.
         expect(resolved[file]).toEqual({ severity: 2, projectService: true });
     });

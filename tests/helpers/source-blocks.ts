@@ -139,6 +139,38 @@ function scanSpans(src: string): Span[] {
             i = end;
             continue;
         }
+        // A REGEX LITERAL IS A SPAN, AND IT HAS TO BE (#4658).
+        //
+        // This branch did not exist, and `regexCanStartAt`'s own docblock said
+        // it was "used only by `commentsOf`" — so the scanner that backs
+        // `codeOf` had no idea regexes existed. It walked `.replace(/"/g, "'")`
+        // by skipping the `/`, then reading the `"` INSIDE the regex as a
+        // string opening, scanning to the `"` in `"'"`, and desynchronising.
+        // Every comment after it on the file was then left unmasked.
+        //
+        // The failure that makes silent: a guard counting occurrences takes
+        // comment prose as code, so a documentation pass can move a ratchet.
+        // Measured in the tree at `src/lib/http/content-disposition.ts:56`,
+        // where two following comment lines survived masking.
+        //
+        // It sits BELOW the two comment branches deliberately. `//` is a
+        // comment and an empty regex is not legal, and a regex cannot begin
+        // `/*` either, so a comment can never be mis-taken for a regex here —
+        // but the reverse is exactly what we are fixing, and order is what
+        // settles it.
+        //
+        // Kind is 'literal', not 'comment': a regex IS code, so `codeOf`
+        // (which masks comments only) must leave its body visible. What this
+        // buys is not masking the regex — it is CONSUMING it, so the quote
+        // inside it never reaches the string branch below.
+        if (ch === '/') {
+            const end = regexCanStartAt(src, i) ? regexEnd(src, i) : -1;
+            if (end > 0) {
+                spans.push({ start: i, end, kind: 'literal' });
+                i = end;
+                continue;
+            }
+        }
         if (ch === "'" || ch === '"' || ch === '`') {
             let j = i + 1;
             while (j < src.length) {
@@ -210,7 +242,10 @@ export function codeOf(src: string): string {
 
 /**
  * Keywords after which a `/` opens a REGEX LITERAL rather than a division.
- * Used only by `commentsOf` — see `regexCanStartAt`.
+ * Used by `regexCanStartAt`, which `scanSpans` (and so `codeOf`) and
+ * `commentsOf` both consult. It was `commentsOf` alone until #4658, and that
+ * asymmetry WAS the bug: the masker every guard reads through did not know
+ * regexes existed.
  */
 const REGEX_AFTER_KEYWORD: ReadonlySet<string> = new Set([
     'return',

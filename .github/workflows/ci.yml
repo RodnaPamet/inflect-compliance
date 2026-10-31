@@ -2896,9 +2896,13 @@ jobs:
     needs: [docker]
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # The image is built ONCE in the `docker` job and handed over as a
-    # tarball artifact — this job `docker load`s it instead of doing a
-    # second ~7.5-min rebuild (locked by
+    # tarball artifact — this job scans THAT TAR in place instead of
+    # doing a second ~7.5-min rebuild (locked by
     # tests/guardrails/trivy-no-rebuild.test.ts).
+    #
+    # It used to `docker load` the tar and scan the daemon tag. #4647
+    # removed that: see the step comments below for why three copies of
+    # one 10.5 GB image on a 34 GB disk is what `image-ref:` cost.
     #
     # 12 → 25 on 2026-08-03, after the job was cancelled at 12m18s on
     # `main` (35f3d3970) and took main red. The "12 min is ample
@@ -2942,19 +2946,80 @@ jobs:
 
       # Reuse the image the `docker` job already built — no rebuild.
       # The tarball was exported there as an artifact; download it and
-      # load it into this runner's daemon under the SAME tag Trivy
-      # scans (`inflect-compliance:ci-<sha>`).
+      # hand the TARBALL ITSELF to Trivy (`input:` below), which is why
+      # there is no `docker load` here any more.
+      #
+      # ── WHY THE TAR AND NOT THE DAEMON (#4647) ─────────────────────────
+      #
+      # `image-ref:` made Trivy read the image out of the local daemon,
+      # and to do that it EXPORTS it back to a tar under /tmp first — so
+      # one 10.5 GB image needed three copies on one disk: the 1.6 GB
+      # artifact, `docker load`'s expansion into /var/lib/docker, and
+      # Trivy's own `/tmp/trivy-*/docker-export-*`. `input:` reads the
+      # downloaded tar in place, so only the first of those exists.
+      #
+      # This is not a theoretical saving. On 2026-10-30 run 41123577044
+      # died `no space left on device` writing that third copy, and the
+      # discriminator was the RUNNER, not anything in this repo — the
+      # `ubuntu-latest` pool is heterogeneous:
+      #
+      #   /dev/root            145G, 106G free  → scan passes
+      #   /dev/mapper/cow-root  72G,  34G free  → scan dies
+      #
+      # Same label on both (`vars.LARGE_RUNNER` is unset, so every run
+      # takes the fallback), same image size to the decimal, same 39G
+      # used. So re-running until a bigger machine answers proves only
+      # that a bigger machine answered. The runner-image notice in that
+      # same log says the label migrates to Ubuntu 26 from 2026-10-19,
+      # which means the small variant gets MORE common, not less.
+      #
+      # Why that mattered more than a red tick: Trivy is not a required
+      # check, so a failure here blocks nothing and tells nobody — the
+      # commit simply ships with no container CVE scan having run. An
+      # absent scan reads exactly like a clean one.
       - name: Download image tarball
         uses: actions/download-artifact@v8
         with:
           name: docker-image-${{ github.sha }}
           path: /tmp
 
-      - name: Load image into runner daemon
+      # Recorded, not merely assumed: the next person to read a failure
+      # here needs the tar size and the free space side by side. The
+      # `df` in the reclaim step above runs BEFORE this download.
+      - name: Record image size and free disk
         run: |
           ls -lh /tmp/image-${{ github.sha }}.tar
-          docker load --input /tmp/image-${{ github.sha }}.tar
-          docker image ls inflect-compliance
+          df -h /
+
+      # ── READING THE LOG BELOW: IT SAYS `trivy image .` AND THAT IS FINE ──
+      #
+      # trivy-action passes `input:` through the ENVIRONMENT (`TRIVY_INPUT`),
+      # not on the command line, and its "Running Trivy with options:" line
+      # prints only the argv. With no `image-ref:` the argv positional falls
+      # back to the action's own `scan-ref` default of `.`, so the line reads
+      #
+      #     Running Trivy with options: trivy image .
+      #
+      # while the scan target is the tar. `TRIVY_INPUT` wins; the positional is
+      # ignored. Do not "fix" that line by restoring `image-ref:` — that is the
+      # daemon read this job removed, and it brings back the third copy of the
+      # image that ran the disk out.
+      #
+      # CONFIRM THE TARGET FROM THE REPORT SUMMARY, NOT THAT LINE. The summary
+      # names the tar and the paths inside it:
+      #
+      #     │ /tmp/image-<sha>.tar (alpine 3.24.3) │ alpine   │ 0 │
+      #     │ app/node_modules/.prisma/client/…    │ node-pkg │ 0 │
+      #
+      # Measured equivalence against the last daemon-read run (41110447287):
+      # same OS (alpine 3.24.3), same `pkg_num=20`, same 1187 node-pkg targets.
+      # So this is the same scan of the same bytes, not a cheaper one.
+      #
+      # This matters because the misreading is cheap and the failure is silent:
+      # a filesystem scan of the checkout finds no OS packages and exits 0, so
+      # "it scanned nothing" and "it found nothing" look identical from the
+      # tick. If that line ever needs checking again, grep the summary for
+      # `Detected OS` — a repo checkout has none.
 
       # ── Trivy scan: BLOCKING on CRITICAL,HIGH ──
       # Container-image scan against OS packages + bundled libraries.
@@ -2971,7 +3036,7 @@ jobs:
       - name: "Gate: Trivy vulnerability scan (critical+high)"
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: "inflect-compliance:ci-${{ github.sha }}"
+          input: "/tmp/image-${{ github.sha }}.tar"
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
@@ -3035,7 +3100,7 @@ jobs:
         if: ${{ always() && vars.CODE_SCANNING_ENABLED == 'true' }}
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: "inflect-compliance:ci-${{ github.sha }}"
+          input: "/tmp/image-${{ github.sha }}.tar"
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"

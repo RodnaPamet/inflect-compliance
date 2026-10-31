@@ -132,7 +132,7 @@ describe('clauses/ClausesBrowser — status', () => {
 
     it('passes the status through to updateStatus() as before', () => {
         expect(CLAUSES_SRC).toMatch(
-            /setSelected=\{\(o\)\s*=>\s*\{\s*if\s*\(o\)\s*updateStatus\(selected\.id,\s*o\.value\)/,
+            /setSelected=\{\(o\)\s*=>\s*\{\s*if\s*\(o\)\s*(?:void\s+)?updateStatus\(selected\.id,\s*o\.value\)/,
         );
     });
 });

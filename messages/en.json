@@ -7197,6 +7197,7 @@
     },
     "templateBuilder": {
       "loadError": "Failed to load template ({status})",
+      "loadErrorNetwork": "Couldn't load this template. Check your connection and try again.",
       "published": "Published",
       "draft": "Draft",
       "saving": "Saving…",
@@ -7227,6 +7228,7 @@
     },
     "assessmentReview": {
       "loadError": "Failed to load ({status})",
+      "loadErrorNetwork": "Couldn't load this assessment. Check your connection and try again.",
       "saveError": "Save failed ({status})",
       "closeError": "Close failed ({status})",
       "notFound": "Assessment not found",
@@ -8219,6 +8221,7 @@
       "colRisk": "Risk rating",
       "colSubmitted": "Submitted",
       "loadError": "Failed to load the review queue (status {status}).",
+      "loadErrorNetwork": "Couldn't load the review queue. Check your connection and try again.",
       "resourceSingular": "assessment",
       "resourcePlural": "assessments",
       "emptyTitle": "No assessments to review",
@@ -11655,6 +11658,25 @@
     }
   },
   "securityTesting": {
+    "scanType": {
+      "SAST": "SAST",
+      "SCA": "SCA",
+      "DAST": "DAST",
+      "SECRETS": "Secrets",
+      "IAC": "IaC"
+    },
+    "runOutcome": {
+      "PASS": "Passed",
+      "FAIL": "Failed",
+      "ERROR": "Error"
+    },
+    "ingestedVia": {
+      "API": "API",
+      "UPLOAD": "Upload"
+    },
+    "truncatedHint": "The most severe are shown first, and the filters apply to these only.",
+    "uploadInvalidSarif": "The file is not a valid SARIF report.",
+    "uploadInvalidSarifReason": "The file is not a valid SARIF report: {reason}",
     "title": "Security Testing",
     "colSeverity": "Severity",
     "colFinding": "Finding",

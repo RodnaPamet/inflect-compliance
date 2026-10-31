@@ -44,7 +44,7 @@ export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) 
     const [maturity, setMaturity] = useState<number | null>(null);
 
     useEffect(() => {
-        Promise.all([
+        void Promise.all([
             fetch(apiUrl('/audits/cycles')).then((r) => (r.ok ? r.json() : [])),
             fetch(apiUrl('/tests/readiness')).then((r) => (r.ok ? r.json() : [])),
             // Fail-soft — no NIS2 assessment yet → no maturity card.

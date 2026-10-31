@@ -243,7 +243,7 @@ export function CreateFindingModal({
                 );
             }
             const finding = await res.json();
-            swrMutate(`/api/t/${tenantSlug}${CACHE_KEYS.findings.list()}`);
+            void swrMutate(`/api/t/${tenantSlug}${CACHE_KEYS.findings.list()}`);
             telemetry.trackSuccess({ findingId: finding.id });
             close();
         } catch (err) {
