@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
+import { AccountBackLink } from '@/app/account/AccountBackLink';
 import { accountHasPassword } from '@/lib/auth/password-management';
 
 import { ChangePasswordForm } from './ChangePasswordForm';
@@ -28,6 +29,9 @@ export default async function AccountSecurityPage() {
             </div>
 
             <div className="relative w-full max-w-md">
+                <div className="mb-4">
+                    <AccountBackLink />
+                </div>
                 {/* Logo */}
                 <div className="text-center mb-8 animate-fadeIn">
                     <div className="inline-flex items-center gap-tight mb-2">

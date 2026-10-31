@@ -8,7 +8,7 @@ The {{ui:account.security.securityTitle}} page is where you change the password 
 
 ## Where to find it
 
-Click your picture or initials at the top right of any page, then **{{ui:account.security.securityTitle}}**. The page has no menu of its own; use your browser's back button to return to where you were.
+Click your picture or initials at the top right of any page, then **{{ui:account.security.securityTitle}}**. The page has no menu of its own. **{{ui:account.backToWorkspaces}}**, at the top, takes you back: straight to your workspace if you have one, or to the list of your workspaces if you have several.
 
 ## Who can use it
 

@@ -26,6 +26,11 @@ jest.mock('@/lib/auth/password-management', () => ({
     accountHasPassword: (id: string) => mockHasPassword(id),
 }));
 jest.mock('next/navigation', () => ({ redirect: jest.fn() }));
+// An async server component, which RTL cannot render inside the page's tree;
+// its own label and href are covered by the profile tests (#4644).
+jest.mock('@/app/account/AccountBackLink', () => ({
+    AccountBackLink: () => <a id="account-back-link" href="/tenants" />,
+}));
 
 import { ChangePasswordForm } from '@/app/account/security/ChangePasswordForm';
 import AccountSecurityPage from '@/app/account/security/page';
@@ -90,5 +95,11 @@ describe('the account security page (#4645)', () => {
         render(await AccountSecurityPage());
         expect(document.querySelectorAll('input[type="password"]')).toHaveLength(3);
         expect(screen.queryByText(S.passwordlessNotice)).toBeNull();
+    });
+
+    it('keeps the way back to the workspaces (#4644)', async () => {
+        mockHasPassword.mockResolvedValue(true);
+        render(await AccountSecurityPage());
+        expect(document.querySelector('#account-back-link')?.getAttribute('href')).toBe('/tenants');
     });
 });
