@@ -42,6 +42,7 @@ import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import prisma from '@/lib/prisma';
 import { env } from '@/env';
 import { authenticateWithPassword } from '@/lib/auth/credentials';
+import { EMAIL_NOT_VERIFIED_SIGN_IN_ERROR } from '@/lib/auth/register-refusals';
 import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { hashForLookup } from '@/lib/security/encryption';
@@ -450,7 +451,17 @@ const providers: NextAuthOptions['providers'] = [
             // and dispatches the `signIn` + `jwt` callbacks. Returning null
             // collapses every failure reason into the same client-facing
             // `CredentialsSignin` error — the account-enumeration-safe shape.
-            if (!result.ok) return null;
+            //
+            // One reason is named (#4686): an unverified email, which
+            // `authenticateWithPassword` reports only AFTER the password
+            // matched, so it tells nothing to somebody without the password.
+            // Folded into the generic error, it told the account's own owner
+            // their password was wrong. Throwing is how NextAuth v4 hands a
+            // message to `signIn()` as `result.error`.
+            if (!result.ok) {
+                if (result.reason === 'email_not_verified') throw new Error(EMAIL_NOT_VERIFIED_SIGN_IN_ERROR);
+                return null;
+            }
             return {
                 id: result.userId,
                 email: result.email,
