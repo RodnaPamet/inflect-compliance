@@ -277,6 +277,12 @@ export class VendorRepository {
             const in30 = new Date(now.getTime() + 30 * 86400000);
             where.nextReviewAt = { gte: now, lte: in30 };
         }
+        // #4799 — an offboarded vendor's review is not due: the relationship
+        // has ended. The vendor dashboard's review cards leave it out, so the
+        // list they open must too, unless a status was chosen explicitly.
+        if (filters.reviewDue && !filters.status) {
+            where.status = { not: 'OFFBOARDED' };
+        }
 
         return where;
     }

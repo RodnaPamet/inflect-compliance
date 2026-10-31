@@ -23,6 +23,8 @@ import { Heading } from '@/components/ui/typography';
 import { textLinkVariants } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { ToggleGroup } from '@/components/ui/toggle-group';
+import { InlineNotice } from '@/components/ui/inline-notice';
 
 interface DashboardMetrics {
     periodDays: number;
@@ -87,7 +89,9 @@ export default function TestDashboardPage() {
 
     const [period, setPeriod] = useState(30);
     const { data: metrics, error: metricsError, mutate: mutateMetrics } = useTenantSWR<DashboardMetrics>(CACHE_KEYS.tests.dashboard(period));
-    const { data: readinessData } = useTenantSWR<FrameworkReadiness[]>(CACHE_KEYS.tests.readiness());
+    // #4798 — a failed coverage read hid the section, which read exactly like
+    // "no framework has mapped controls"; it is now said.
+    const { data: readinessData, error: readinessError } = useTenantSWR<FrameworkReadiness[]>(CACHE_KEYS.tests.readiness());
     const readiness = readinessData ?? [];
 
     // Header is identical across data / loading / error so the sub-nav and
@@ -102,18 +106,18 @@ export default function TestDashboardPage() {
         titleId: 'dashboard-title',
         description: t('dashboard.description'),
         actions: (
-            <div className="flex gap-1 bg-bg-default/50 rounded-lg p-1">
-                {[30, 90].map(d => (
-                    <button
-                        key={d}
-                        onClick={() => setPeriod(d)}
-                        className={`px-3 py-1 rounded text-xs font-medium transition-colors duration-150 ease-out ${period === d ? 'bg-[var(--brand-default)] text-content-emphasis' : 'text-content-muted hover:text-content-emphasis'}`}
-                        id={`period-${d}-btn`}
-                    >
-                        {t('dashboard.periodDays', { days: d })}
-                    </button>
-                ))}
-            </div>
+            // #4798 — the shared segmented control (Epic 60), which carries the
+            // selected state for assistive tech; the hand-rolled pair had none.
+            <ToggleGroup
+                ariaLabel={t('dashboard.periodLabel')}
+                selected={String(period)}
+                selectAction={(v) => setPeriod(Number(v))}
+                options={[30, 90].map((d) => ({
+                    value: String(d),
+                    label: t('dashboard.periodDays', { days: d }),
+                    id: `period-${d}-btn`,
+                }))}
+            />
         ),
     };
 
@@ -148,10 +152,23 @@ export default function TestDashboardPage() {
                 that used to sit here restated /tests and /tests/due; the
                 dashboard's job is rates & trends, the lists own the counts. */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
-                <MetricCard label={t('dashboard.kpi.completionRate')} value={`${metrics.completionRate}%`} sub={t('dashboard.kpi.completionSub', { completed: metrics.completedRuns, total: metrics.totalRuns })} color={metrics.completionRate >= 80 ? 'green' : metrics.completionRate >= 50 ? 'amber' : 'red'} />
-                <MetricCard label={t('dashboard.kpi.passRate')} value={`${metrics.passRate}%`} sub={t('dashboard.kpi.passSub', { count: metrics.passRuns })} color={metrics.passRate >= 80 ? 'green' : metrics.passRate >= 50 ? 'amber' : 'red'} />
-                <MetricCard label={t('dashboard.kpi.failRate')} value={`${metrics.failRate}%`} sub={t('dashboard.kpi.failSub', { count: metrics.failRuns })} color={metrics.failRate <= 10 ? 'green' : metrics.failRate <= 30 ? 'amber' : 'red'} />
-                <MetricCard label={t('dashboard.kpi.evidenceRate')} value={`${metrics.evidenceRate}%`} sub={t('dashboard.kpi.evidenceSub', { count: metrics.runsWithEvidence })} color={metrics.evidenceRate >= 80 ? 'green' : metrics.evidenceRate >= 50 ? 'amber' : 'red'} />
+                {/* #4798 — with no runs in the period there is no rate to colour:
+                    0% read red for completion and pass, green for failure. */}
+                {metrics.totalRuns === 0 ? (
+                    <>
+                        <MetricCard label={t('dashboard.kpi.completionRate')} value="—" sub={t('dashboard.kpi.noRunsInPeriod')} color="brand" />
+                        <MetricCard label={t('dashboard.kpi.passRate')} value="—" sub={t('dashboard.kpi.noRunsInPeriod')} color="brand" />
+                        <MetricCard label={t('dashboard.kpi.failRate')} value="—" sub={t('dashboard.kpi.noRunsInPeriod')} color="brand" />
+                        <MetricCard label={t('dashboard.kpi.evidenceRate')} value="—" sub={t('dashboard.kpi.noRunsInPeriod')} color="brand" />
+                    </>
+                ) : (
+                    <>
+                    <MetricCard label={t('dashboard.kpi.completionRate')} value={`${metrics.completionRate}%`} sub={t('dashboard.kpi.completionSub', { completed: metrics.completedRuns, total: metrics.totalRuns })} color={metrics.completionRate >= 80 ? 'green' : metrics.completionRate >= 50 ? 'amber' : 'red'} />
+                    <MetricCard label={t('dashboard.kpi.passRate')} value={`${metrics.passRate}%`} sub={t('dashboard.kpi.passSub', { count: metrics.passRuns })} color={metrics.passRate >= 80 ? 'green' : metrics.passRate >= 50 ? 'amber' : 'red'} />
+                    <MetricCard label={t('dashboard.kpi.failRate')} value={`${metrics.failRate}%`} sub={t('dashboard.kpi.failSub', { count: metrics.failRuns })} color={metrics.failRate <= 10 ? 'green' : metrics.failRate <= 30 ? 'amber' : 'red'} />
+                    <MetricCard label={t('dashboard.kpi.evidenceRate')} value={`${metrics.evidenceRate}%`} sub={t('dashboard.kpi.evidenceSub', { count: metrics.runsWithEvidence })} color={metrics.evidenceRate >= 80 ? 'green' : metrics.evidenceRate >= 50 ? 'amber' : 'red'} />
+                    </>
+                )}
             </div>
 
             {/* PR-Q — the ONE authoritative overdue count (reconciled across both
@@ -259,6 +276,11 @@ export default function TestDashboardPage() {
             )}
 
             {/* Framework Test Readiness */}
+            {readinessError && !readinessData && (
+                <InlineNotice variant="error" id="framework-readiness-error">
+                    {t('dashboard.fwCoverageLoadFailed')}
+                </InlineNotice>
+            )}
             {readiness.length > 0 && (
                 <div className={cardVariants()}>
                     <Heading level={2} className="mb-4" id="framework-readiness-title">{t('dashboard.fwCoverage')}</Heading>

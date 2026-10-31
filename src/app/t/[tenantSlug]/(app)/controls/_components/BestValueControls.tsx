@@ -38,7 +38,7 @@ export function BestValueControls({ limit = 5 }: { limit?: number }) {
     // B1-4 — one formatter per product; the ?? '€' fallback lives in the
     // provider, not forked here.
     const money = useMoneyFormatter();
-    const { data, isLoading } = useTenantSWR<BestValueRow[]>(
+    const { data, isLoading, error } = useTenantSWR<BestValueRow[]>(
         `/controls/best-value?limit=${limit}`,
     );
 
@@ -46,6 +46,18 @@ export function BestValueControls({ limit = 5 }: { limit?: number }) {
         return (
             <div data-testid="best-value-controls-loading">
                 <SkeletonCard lines={3} />
+            </div>
+        );
+    }
+
+    // #4793 — a failed read is not "no control qualifies yet".
+    if (error && !data) {
+        return (
+            <div
+                className="px-2 py-1 text-xs text-content-error"
+                data-testid="best-value-controls-error"
+            >
+                {t('bestValue.loadFailed')}
             </div>
         );
     }

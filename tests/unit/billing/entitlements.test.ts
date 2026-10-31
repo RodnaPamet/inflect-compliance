@@ -221,6 +221,49 @@ describe('assertWithinLimit — control', () => {
         ).rejects.toThrow(/FREE plan allows 10 control/);
     });
 
+    describe('a bulk create passes the rows it will write (#4795)', () => {
+        async function freeAt(current: number) {
+            const mod = await loadEntitlements('sk_test_dummy');
+            const dbCtx = (await import('@/lib/db-context')) as unknown as {
+                __stub: {
+                    billingAccount: {
+                        findUnique: jest.MockedFunction<(args: unknown) => Promise<unknown>>;
+                    };
+                    control: { count: jest.MockedFunction<(args: unknown) => Promise<number>> };
+                };
+            };
+            dbCtx.__stub.billingAccount.findUnique.mockResolvedValue({ plan: 'FREE' });
+            dbCtx.__stub.control.count.mockResolvedValue(current);
+            return { mod, dbCtx };
+        }
+
+        it('passes when the rows fit exactly', async () => {
+            const { mod } = await freeAt(7);
+            await expect(
+                mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control', 3),
+            ).resolves.toBeUndefined();
+        });
+
+        it('refuses a batch that would step past the limit, though one more would fit', async () => {
+            const { mod } = await freeAt(8);
+            await expect(
+                mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control', 1),
+            ).resolves.toBeUndefined();
+            await expect(
+                mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control', 3),
+            ).rejects.toThrow(/plan_limit_exceeded: FREE plan allows 10 control\(s\); tenant currently has 8\./);
+        });
+
+        it('writing nothing is never refused, and reads nothing', async () => {
+            const { mod, dbCtx } = await freeAt(10);
+            await expect(
+                mod.assertWithinLimit(makeRequestContext('ADMIN'), 'control', 0),
+            ).resolves.toBeUndefined();
+            expect(dbCtx.__stub.billingAccount.findUnique).not.toHaveBeenCalled();
+            expect(dbCtx.__stub.control.count).not.toHaveBeenCalled();
+        });
+    });
+
     it('SAAS PRO: passes at 50 (below 100)', async () => {
         const mod = await loadEntitlements('sk_test_dummy');
         const dbCtx = (await import('@/lib/db-context')) as unknown as {

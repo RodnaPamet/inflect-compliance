@@ -17,6 +17,7 @@ import { cardVariants } from '@/components/ui/card';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cn } from '@inflect/ui/lib/cn';
 import { apiErrorMessage } from '@/lib/api-error';
+import { parsePlanLimitMessage } from '@/lib/billing/plan-limit-message';
 
 // listControlTemplates → ControlTemplateRepository.list (ControlTemplate model).
 interface ControlTemplateRow {
@@ -42,7 +43,11 @@ export default function ControlTemplatesPage() {
         },
         [],
     );
-    const { permissions } = useTenantContext();
+    const { permissions, appPermissions } = useTenantContext();
+    // #4795 — installing creates controls, and the server asks the write
+    // tier AND `controls.create` (assertCanCreateControl). Only a viewer it
+    // would accept is offered the selection and the install bar.
+    const canInstall = permissions.canWrite && appPermissions.controls.create;
     const t = useTranslations('controls');
 
 
@@ -59,6 +64,7 @@ export default function ControlTemplatesPage() {
     const [installing, setInstalling] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [unresolvedCount, setUnresolvedCount] = useState(0);
 
     const toggle = (id: string) => {
         setSelectedIds(prev => {
@@ -80,6 +86,7 @@ export default function ControlTemplatesPage() {
         if (selectedIds.size === 0) return;
         setInstalling(true);
         setError('');
+        setUnresolvedCount(0);
         try {
             const res = await fetch(apiUrl('/controls/templates/install'), {
                 method: 'POST',
@@ -90,16 +97,29 @@ export default function ControlTemplatesPage() {
                 // The error body is the envelope `{ error: { code, message } }`;
                 // reading `data.error` as a string or `data.message` dropped
                 // the server's reason for the generic fallback (#4126).
-                const data = await res.json().catch(() => null);
-                throw new Error(apiErrorMessage(data, t('templates.installFailed')));
+                // A 5xx says nothing a person can act on; keep the fallback.
+                // The plan-limit refusal is machine-shaped, so it is said in
+                // words (#4795), as the new-control modal does.
+                const data = res.status >= 500 ? null : await res.json().catch(() => null);
+                const reason = apiErrorMessage(data, '');
+                const planLimit = parsePlanLimitMessage(reason);
+                throw new Error(
+                    planLimit
+                        ? t('templates.planLimitReached', { limit: planLimit.limit, current: planLimit.current })
+                        : reason || t('templates.installFailed'),
+                );
             }
             const result = await res.json();
             // Each row carries `skipped: true` when a control with that code
             // already existed (no-op). Count only real installs; call out any
             // skipped-existing so the toast never over-reports.
-            const rows: Array<{ skipped?: boolean }> = Array.isArray(result) ? result : [];
+            const rows: Array<{ skipped?: boolean; unresolvedTemplateId?: string }> = Array.isArray(result) ? result : [];
             const installed = rows.filter((r) => !r.skipped).length;
-            const skipped = rows.filter((r) => r.skipped).length;
+            // A template that no longer resolves is not an "existing" control:
+            // it is reported on its own (#4795).
+            const unresolved = rows.filter((r) => r.skipped && r.unresolvedTemplateId).length;
+            const skipped = rows.filter((r) => r.skipped && !r.unresolvedTemplateId).length;
+            setUnresolvedCount(unresolved);
             setSuccess(
                 skipped > 0
                     ? t('templates.installedWithSkipped', { installed, skipped })
@@ -151,9 +171,14 @@ export default function ControlTemplatesPage() {
             {success && (
                 <InlineNotice variant="success" icon={null} id="install-success">{success}</InlineNotice>
             )}
+            {unresolvedCount > 0 && (
+                <InlineNotice variant="warning" icon={null} id="install-unresolved">
+                    {t('templates.unresolvedNotice', { count: unresolvedCount })}
+                </InlineNotice>
+            )}
 
             {/* Install bar — bulk-install the selected templates. */}
-            {permissions.canWrite && (
+            {canInstall && (
                 <div className={cardVariants({ density: 'compact' })}>
                     <div className="flex items-center justify-end">
                         <Button
@@ -192,21 +217,50 @@ export default function ControlTemplatesPage() {
                         </Button>
                     </div>
                 ) : filtered.length === 0 ? (
-                    <InlineEmptyState
-                        title={t('templates.emptyTitle')}
-                        description={t('templates.emptyDesc')}
-                    />
+                    // #4795 — a search that matches nothing is not an empty
+                    // library: say which, and offer the way back.
+                    templates.length > 0 ? (
+                        <div className="space-y-default p-default text-center">
+                            <InlineEmptyState
+                                title={t('templates.noMatchTitle')}
+                                description={t('templates.noMatchDesc')}
+                            />
+                            <Button variant="secondary" size="sm" onClick={() => setSearch('')} id="templates-clear-search">
+                                {t('templates.clearSearch')}
+                            </Button>
+                        </div>
+                    ) : (
+                        <InlineEmptyState
+                            title={t('templates.emptyTitle')}
+                            description={t('templates.emptyDesc')}
+                        />
+                    )
                 ) : (
                     (() => {
+                        // #4795 — the selection exists only to install, so it is
+                        // offered only to a viewer who can; each box is named.
+                        const selectColumn = {
+                            id: 'select', header: () => (
+                                <input
+                                    type="checkbox"
+                                    checked={selectedIds.size === filtered.length && filtered.length > 0}
+                                    onChange={toggleAll}
+                                    className="rounded"
+                                    aria-label={t('templates.selectAll')}
+                                />
+                            ),
+                            cell: ({ row }: { row: { original: ControlTemplateRow } }) => (
+                                <input
+                                    type="checkbox"
+                                    checked={selectedIds.has(row.original.id)}
+                                    onChange={() => toggle(row.original.id)}
+                                    className="rounded"
+                                    aria-label={t('templates.selectRow', { name: row.original.code ? `${row.original.code} ${row.original.title}` : row.original.title })}
+                                />
+                            ),
+                        };
                         const templateCols = createColumns<ControlTemplateRow>([
-                            {
-                                id: 'select', header: () => (
-                                    <input type="checkbox" checked={selectedIds.size === filtered.length && filtered.length > 0} onChange={toggleAll} className="rounded" />
-                                ),
-                                cell: ({ row }) => (
-                                    <input type="checkbox" checked={selectedIds.has(row.original.id)} onChange={() => toggle(row.original.id)} className="rounded" />
-                                ),
-                            },
+                            ...(canInstall ? [selectColumn] : []),
                             { accessorKey: 'code', header: t('templates.colCode'), cell: ({ getValue }) => <span className="text-xs text-content-muted font-mono">{getValue() || '—'}</span> },
                             { accessorKey: 'title', header: t('templates.colName'), cell: ({ getValue }) => <span className="font-medium text-content-emphasis">{getValue()}</span> },
                             {
@@ -232,7 +286,12 @@ export default function ControlTemplatesPage() {
                                 data={filtered}
                                 columns={templateCols}
                                 getRowId={(t) => t.id}
-                                onRowClick={(row) => toggle(row.original.id)}
+                                onRowClick={canInstall ? (row) => toggle(row.original.id) : undefined}
+                                // The page's own column is the install set
+                                // (#4795). DataTable's default selection column
+                                // drew a second, unused set of boxes beside it,
+                                // for every role.
+                                selectionEnabled={false}
                                 emptyState={
                                     <TableEmptyState
                                         title={t('templates.emptyTitle')}

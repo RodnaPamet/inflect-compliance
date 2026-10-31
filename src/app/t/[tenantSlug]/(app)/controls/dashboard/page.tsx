@@ -17,6 +17,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { KPIStat } from '@/components/ui/metric';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { SkeletonDashboard } from '@/components/ui/skeleton';
@@ -68,9 +69,21 @@ export default function ControlsDashboard() {
     const { data, isLoading, mutate } = useTenantSWR<ControlDashboardDTO>('/controls/dashboard');
     // Consistency check is on-demand — a null SWR key keeps it unfetched
     // until the admin clicks the button (which flips `showConsistency`).
-    const { data: consistency } = useTenantSWR<ConsistencyCheckDTO>(
+    // #4793 — the check had no loading and no error state, so a refusal or a
+    // failure rendered nothing; and a second click did nothing, because the
+    // key was already set. A repeat click now re-runs it.
+    const {
+        data: consistency,
+        error: consistencyError,
+        isValidating: consistencyChecking,
+        mutate: rerunConsistency,
+    } = useTenantSWR<ConsistencyCheckDTO>(
         showConsistency ? '/controls/consistency-check' : null,
     );
+    const runConsistencyCheck = () => {
+        if (showConsistency) void rerunConsistency();
+        else setShowConsistency(true);
+    };
 
     if (isLoading && !data) return <SkeletonDashboard />;
     if (!data) return (
@@ -94,7 +107,7 @@ export default function ControlsDashboard() {
                 actions: (
                     <>
                         {permissions.canAdmin && (
-                            <IconAction variant="secondary" onClick={() => setShowConsistency(true)} id="consistency-check-btn" icon={<AppIcon name="search" size={16} />} label={t('dashboard.consistencyCheck')} />
+                            <IconAction variant="secondary" onClick={runConsistencyCheck} id="consistency-check-btn" icon={<AppIcon name="search" size={16} />} label={t('dashboard.consistencyCheck')} />
                         )}
                     </>
                 ),
@@ -131,10 +144,11 @@ export default function ControlsDashboard() {
                     <KPIStat
                         id="overdue-tasks"
                         // Tasks, not controls — this counts open Tasks past due
-                        // that carry a controlId. /controls has no task facet,
-                        // and inventing one would answer a different question
-                        // than the number shown.
-                        href={data.overdueTasks > 0 ? tenantHref('/tasks?due=overdue') : undefined}
+                        // that carry a controlId. It linked to `/tasks?due=overdue`,
+                        // which lists EVERY overdue task, so the card said "3" and
+                        // landed on 12 (#4793). Neither list has a "linked to a
+                        // control" facet, so the card states its number and stops,
+                        // as the vendor dashboard's reassessment card does.
                         value={data.overdueTasks}
                         label={t('dashboard.overdueTasks')}
                         tone={data.overdueTasks > 0 ? 'critical' : 'default'}
@@ -230,6 +244,16 @@ export default function ControlsDashboard() {
             </div>
 
             {/* Consistency Check */}
+            {showConsistency && consistencyError && !consistencyChecking && (
+                <InlineNotice variant="error" id="consistency-error">
+                    {t('dashboard.consistencyFailed')}
+                </InlineNotice>
+            )}
+            {showConsistency && !consistency && !consistencyError && (
+                <Card id="consistency-checking">
+                    <p className="text-sm text-content-muted">{t('dashboard.consistencyChecking')}</p>
+                </Card>
+            )}
             {showConsistency && consistency && (() => {
                 // Each count deep-links to a client-side filtered controls
                 // view (`/controls?ids=…`) listing exactly the offending

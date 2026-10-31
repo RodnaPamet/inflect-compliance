@@ -22,6 +22,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { Button } from '@/components/ui/button';
 import {
     CONTROL_HEALTH_VERDICT_VARIANT,
     CONTROL_HEALTH_VERDICTS,
@@ -39,7 +40,7 @@ interface HealthVerdictSummary {
 export function ControlHealthSummary() {
     const t = useTranslations('controls');
     const tenantHref = useTenantHref();
-    const { data, isLoading } = useTenantSWR<HealthVerdictSummary>(
+    const { data, isLoading, error, mutate } = useTenantSWR<HealthVerdictSummary>(
         '/controls/health-verdicts',
     );
 
@@ -61,6 +62,15 @@ export function ControlHealthSummary() {
             )}
             {isLoading && !data ? (
                 <SkeletonCard lines={2} />
+            ) : error && !data ? (
+                // #4793 — a failed read rendered every tile at 0, which reads
+                // as "no control is healthy". Say it could not be read.
+                <div className="space-y-default" id="control-health-error">
+                    <InlineNotice variant="error">{t('dashboard.controlHealthLoadFailed')}</InlineNotice>
+                    <Button variant="secondary" size="sm" onClick={() => void mutate()}>
+                        {t('dashboard.retry')}
+                    </Button>
+                </div>
             ) : (
                 <div className="grid grid-cols-2 gap-default md:grid-cols-5" id="control-health-summary">
                     {CONTROL_HEALTH_VERDICTS.map((verdict) => {

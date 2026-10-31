@@ -41,6 +41,16 @@ export class ControlTemplateRepository {
         });
     }
 
+    /** The codes of the templates `ids` names that exist (#4795's limit count). */
+    static async listCodesByIds(db: PrismaTx, ids: string[]) {
+        if (ids.length === 0) return [];
+        return db.controlTemplate.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, code: true },
+            take: ids.length,
+        });
+    }
+
     static async getById(db: PrismaTx, id: string) {
         return db.controlTemplate.findUnique({
             where: { id },

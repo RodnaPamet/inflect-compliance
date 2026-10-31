@@ -56,7 +56,7 @@ test.describe('Controls Enhanced', () => {
         await authedPage.waitForLoadState('networkidle').catch(() => {});
         await authedPage.waitForSelector('#dashboard-heading', { timeout: 60000 });
         await expect(authedPage.locator('#dashboard-heading')).toContainText(
-            'Controls Dashboard',
+            'Controls dashboard',
         );
         await expect(authedPage.locator('#implementation-progress')).toBeVisible({
             timeout: 15000,
