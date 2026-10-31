@@ -265,15 +265,25 @@ describe('an empty deploy value means absent, not invalid', () => {
         expect(lines[idx]).toContain('z.preprocess');
     });
 
-    it('the deploy README names all four variables an operator must set', () => {
-        // The variables are useless undocumented: nothing in the repo sets them
-        // and the page is blank until somebody does.
+    it('the deploy README names every variable an operator must set', () => {
+        /*
+            The variables are useless undocumented: nothing in the repo sets
+            them and the page is blank until somebody does.
+
+            Was "all four" until #4562 added the three that let a scan start the
+            machine. The count is in the name on purpose — a list that grows
+            without the name changing is a list somebody stops reading.
+        */
         const readme = read('deploy/openshell/README.md');
         for (const v of [
             'SANDBOX_RUNTIME_CONFIG_DIGEST',
             'SANDBOX_RUNTIME_APPLIED_AT',
             'SANDBOX_RUNTIME_CHANNELS',
             'SANDBOX_RUNTIME_HEALTH_URL',
+            // 4.3 (#4562) — all three, or the start is skipped.
+            'SANDBOX_RUNTIME_GATEWAY_PROJECT',
+            'SANDBOX_RUNTIME_GATEWAY_ZONE',
+            'SANDBOX_RUNTIME_GATEWAY_INSTANCE',
         ]) {
             expect(readme.split('\n').filter((l) => l.includes(v)).length).toBeGreaterThanOrEqual(1);
         }
