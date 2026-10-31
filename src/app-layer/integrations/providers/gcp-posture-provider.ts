@@ -145,10 +145,11 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
      * — see the recorder's own note on why a constructor-bound tenant would be
      * worse than none.
      */
-    private execForScan(input: CheckInput): RunBenchmarkInput['exec'] {
+    private execForScan(input: CheckInput, benchmarkId: string): RunBenchmarkInput['exec'] {
         if (!this.execFromDeploy) return this.exec;
         return (
             collectorExecForDeploy({
+                benchmarkId,
                 onDecision: sandboxDecisionRecorderForScan({
                     tenantId: input.tenantId,
                     job: 'gcp-posture-collect',
@@ -186,7 +187,7 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
         // disagreement that matters is "no runner here, so skip the key" next
         // to "on-host runner there", which would run the collector with no
         // credential at all.
-        const exec = this.execForScan(input);
+        const exec = this.execForScan(input, benchmarkId);
 
         // Write the SA key to a restricted temp file for the GCP plugin.
         let credPath: string | null = null;
