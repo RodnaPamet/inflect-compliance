@@ -275,6 +275,9 @@ const ADMIN_ONLY_ROUTES = [
     'admin/trust-center/documents/route.ts',
     'admin/trust-center/requests/route.ts',
     'admin/trust-center/requests/[requestId]/approve/route.ts',
+    // #4824 — deny a waiting request; remove a document on request.
+    'admin/trust-center/requests/[requestId]/deny/route.ts',
+    'admin/trust-center/documents/[documentId]/route.ts',
     'admin/key-rotation/route.ts',
     'admin/tenant-dek-rotation/route.ts',
     // False-positive quarantine reversal — OWNER-only

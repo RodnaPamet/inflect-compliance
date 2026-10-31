@@ -15,6 +15,10 @@
  *     administrator on purpose: approving a visitor-supplied address must not
  *     send a document to it without a person looking. So the link is shown
  *     here, with copy and email, and never again.
+ *   - DENY, NEW LINK, REMOVE (#4824). A waiting request can be denied. An
+ *     approved one can be given a new link, which replaces the old one (it
+ *     lapsed, was used, or was lost). A document can be removed, with its
+ *     requests and their links; the commit waits out the undo window.
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -26,9 +30,10 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { useToast } from '@/components/ui/hooks';
+import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 
 interface GatedDocument {
     id: string;
@@ -62,11 +67,21 @@ interface IssuedLink {
     email: string;
     document: string;
     url: string;
+    /** A new link for an already approved request: the previous one no longer works. */
+    replaced: boolean;
+}
+
+/** A refusal says why; a server fault, or a body with no message, gets the fallback. */
+async function refusalOf(res: Response, fallback: string): Promise<string> {
+    if (res.status >= 500) return fallback;
+    const body: unknown = await res.json().catch(() => null);
+    return apiErrorMessage(body, fallback);
 }
 
 export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
     const t = useTranslations('admin.trustCenter.gated');
     const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
 
     const docs = useTenantSWR<{ documents: GatedDocument[] }>('/admin/trust-center/documents');
@@ -77,6 +92,10 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
     const [fileInputKey, setFileInputKey] = useState(0);
     const [uploading, setUploading] = useState(false);
     const [approving, setApproving] = useState<string | null>(null);
+    const [denying, setDenying] = useState<string | null>(null);
+    // The clock, once the client has painted: before that a link reads as
+    // live, so the server HTML and the first client render agree (#418).
+    const now = useHydratedNow();
     const [issued, setIssued] = useState<IssuedLink | null>(null);
 
     const addDocument = async () => {
@@ -126,11 +145,11 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
         setApproving(r.id);
         try {
             const res = await fetch(apiUrl(`/admin/trust-center/requests/${r.id}/approve`), { method: 'POST' });
-            const body: unknown = await res.json().catch(() => null);
             if (!res.ok) {
-                toast.error(apiErrorMessage(body, t('approveFailed')));
+                toast.error(await refusalOf(res, t('approveFailed')));
                 return;
             }
+            const body: unknown = await res.json().catch(() => null);
             const token = (body as { downloadToken?: string } | null)?.downloadToken;
             if (token) {
                 setIssued({
@@ -139,6 +158,7 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
                     email: r.requesterEmail,
                     document: r.document.label,
                     url: `${window.location.origin}/api/trust/download/${token}`,
+                    replaced: r.status === 'APPROVED',
                 });
             }
             await reqs.mutate();
@@ -147,6 +167,45 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
         } finally {
             setApproving(null);
         }
+    };
+
+    const deny = async (r: AccessRequest) => {
+        setDenying(r.id);
+        try {
+            const res = await fetch(apiUrl(`/admin/trust-center/requests/${r.id}/deny`), { method: 'POST' });
+            if (!res.ok) {
+                toast.error(await refusalOf(res, t('denyFailed')));
+                return;
+            }
+            toast.success(t('denied'));
+            await reqs.mutate();
+        } catch {
+            toast.error(t('denyFailed'));
+        } finally {
+            setDenying(null);
+        }
+    };
+
+    // Removing a document deletes its requests and their links with it, so the
+    // DELETE waits out the undo window (Epic 67); the row leaves the list now.
+    const removeDocument = (d: GatedDocument) => {
+        const snapshot = docs.data;
+        if (!snapshot) return;
+        void docs.mutate({ documents: snapshot.documents.filter((x) => x.id !== d.id) }, { revalidate: false });
+        triggerUndoToast({
+            message: t('removed', { label: d.label }),
+            undoMessage: t('undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(`/admin/trust-center/documents/${d.id}`), { method: 'DELETE' });
+                if (!res.ok) throw new Error(await refusalOf(res, t('removeFailed')));
+                await Promise.all([docs.mutate(), reqs.mutate()]);
+            },
+            undoAction: () => { void docs.mutate(snapshot, { revalidate: false }); },
+            onError: (e) => {
+                void docs.mutate(snapshot, { revalidate: false });
+                toast.error(e instanceof Error && e.message ? e.message : t('removeFailed'));
+            },
+        });
     };
 
     const documents = docs.data?.documents.filter((d) => d.gated) ?? [];
@@ -165,9 +224,20 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
                 ) : (
                     <ul className="space-y-tight" id="trust-gated-list">
                         {documents.map((d) => (
-                            <li key={d.id} className="flex items-center justify-between gap-default rounded-md border border-border-subtle px-3 py-2">
+                            <li key={d.id} className="flex items-center justify-between gap-default rounded-md border border-border-subtle px-3 py-2" id={`trust-gated-row-${d.id}`}>
                                 <span className="font-medium text-content-default">{d.label}</span>
-                                <span className="text-xs text-content-subtle">{t('addedOn', { date: formatDate(d.createdAt) })}</span>
+                                <span className="flex items-center gap-default">
+                                    <span className="text-xs text-content-subtle">{t('addedOn', { date: formatDate(d.createdAt) })}</span>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => removeDocument(d)}
+                                        aria-label={t('removeAria', { label: d.label })}
+                                        id={`trust-gated-remove-${d.id}`}
+                                    >
+                                        {t('remove')}
+                                    </Button>
+                                </span>
                             </li>
                         ))}
                     </ul>
@@ -201,6 +271,7 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
                         <div className="space-y-tight" id="trust-issued-link">
                             <p className="font-medium">{t('linkTitle', { name: issued.name })}</p>
                             <p className="text-sm">{t('linkHint', { email: issued.email })}</p>
+                            {issued.replaced && <p className="text-sm" id="trust-issued-replaced">{t('linkReplaced')}</p>}
                             <code className="block break-all rounded bg-bg-muted px-2 py-1 text-xs">{issued.url}</code>
                             <div className="flex flex-wrap items-center gap-tight">
                                 <CopyButton value={issued.url} label={t('copyLink')} successMessage={t('copyLinkOk')} size="sm" />
@@ -239,19 +310,49 @@ export function GatedDocumentsAdmin({ tenantSlug }: { tenantSlug: string }) {
                                     {r.ndaSignedAt && <span>{t('ndaAccepted')}</span>}
                                     {r.downloadedAt && <span>{t('downloadedOn', { date: formatDate(r.downloadedAt) })}</span>}
                                     {r.status === 'APPROVED' && !r.downloadedAt && r.expiresAt && (
-                                        <span>{t('expiresOn', { date: formatDate(r.expiresAt) })}</span>
+                                        <span>
+                                            {now && new Date(r.expiresAt) <= now
+                                                ? t('expiredOn', { date: formatDate(r.expiresAt) })
+                                                : t('expiresOn', { date: formatDate(r.expiresAt) })}
+                                        </span>
                                     )}
                                 </p>
-                                {r.status !== 'APPROVED' && (
+                                {/* A waiting request is approved or denied; an approved one
+                                    can be given a new link; a denied one is final (#4824). */}
+                                {r.status === 'REQUESTED' && (
+                                    <div className="flex flex-wrap gap-tight">
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            onClick={() => void approve(r)}
+                                            disabled={approving !== null || denying !== null}
+                                            loading={approving === r.id}
+                                            id={`trust-approve-${r.id}`}
+                                        >
+                                            {approving === r.id ? t('approving') : t('approve')}
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => void deny(r)}
+                                            disabled={approving !== null || denying !== null}
+                                            loading={denying === r.id}
+                                            id={`trust-deny-${r.id}`}
+                                        >
+                                            {t('deny')}
+                                        </Button>
+                                    </div>
+                                )}
+                                {r.status === 'APPROVED' && (
                                     <Button
                                         variant="secondary"
                                         size="sm"
                                         onClick={() => void approve(r)}
-                                        disabled={approving !== null}
+                                        disabled={approving !== null || denying !== null}
                                         loading={approving === r.id}
-                                        id={`trust-approve-${r.id}`}
+                                        id={`trust-reissue-${r.id}`}
                                     >
-                                        {approving === r.id ? t('approving') : t('approve')}
+                                        {approving === r.id ? t('approving') : t('reissue')}
                                     </Button>
                                 )}
                             </li>

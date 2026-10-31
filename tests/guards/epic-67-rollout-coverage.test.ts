@@ -209,6 +209,15 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Bulk agent-proposal reject (proposals queue)',
         handlers: ['bulkReject'],
     },
+    {
+        // #4824 — removing a document on request from the trust center. The
+        // document row is deleted and its access requests cascade with it, so
+        // every link issued for it stops working; nothing in the product puts
+        // them back. The DELETE is sent when the window closes.
+        file: 'src/app/t/[tenantSlug]/(app)/admin/trust-center/GatedDocumentsAdmin.tsx',
+        name: 'Trust-center document removal (documents on request)',
+        handlers: ['removeDocument'],
+    },
 ];
 
 function loadFile(file: string): string {
