@@ -40,10 +40,12 @@ The steps are:
 | **{{ui:onboarding.wizard.steps.assets}}** | Type the names of your key systems and click **{{ui:onboarding.wizard.assets.add}}** for each | Each asset is created, classified as internal, unless one of that name already exists |
 | **{{ui:onboarding.wizard.steps.controls}}** | Tick **{{ui:onboarding.wizard.controls.confirm}}** | Anything missing from the frameworks' baseline controls is installed |
 | **{{ui:onboarding.wizard.steps.risks}}** | Leave **{{ui:onboarding.wizard.risks.generate}}** ticked, or untick it | Starter risks are added, chosen from your frameworks and the kinds of asset you listed |
-| **{{ui:onboarding.wizard.steps.team}}** | Type colleagues' email addresses | Five starter tasks are created, such as assigning control owners. No invitation is sent: invite people from the members page |
+| **{{ui:onboarding.wizard.steps.team}}** | Optionally list the colleagues you plan to invite: type an address and click **{{ui:onboarding.wizard.team.add}}** | Five starter tasks are created, such as assigning control owners. Nothing is sent from this step: invite each person from the members page, which the step links to, where you choose their role |
 | **{{ui:onboarding.wizard.steps.reviewFinish}}** | Check the summary of each step | Click **{{ui:onboarding.wizard.completeSetup}}** to finish |
 
-The three self-assessment steps have their own buttons in place of **{{ui:onboarding.wizard.continue}}**: complete the assessment, or skip it for now and return to it later. The NIS2 step is in English, whatever language you use the app in.
+The three self-assessment steps have their own buttons in place of **{{ui:onboarding.wizard.continue}}**: complete the assessment, or skip it for now and return to it later.
+
+The starter risks and tasks are written in the language you are using the app in when you continue from their step. They are ordinary records after that, so switching language later does not translate them.
 
 ## What you can do
 
@@ -62,7 +64,6 @@ On **{{ui:onboarding.wizard.steps.reviewFinish}}**, click **{{ui:onboarding.wiza
 ## What happens next
 
 - The frameworks, controls, assets, risks and tasks the wizard created are ordinary records. Change or delete them on their own pages.
-- The starter risks and starter tasks are written in English, whatever language you use the app in.
 - Opening the wizard after you have finished shows **{{ui:onboarding.wizard.completeTitle}}** and **{{ui:onboarding.wizard.goToDashboard}}**.
 
 ## Empty and error states
@@ -74,9 +75,8 @@ On **{{ui:onboarding.wizard.steps.reviewFinish}}**, click **{{ui:onboarding.wiza
 | **{{ui:onboarding.wizard.frameworks.none}}** | No framework can be installed | Ask your administrator |
 | **{{ui:onboarding.wizard.frameworks.installFailedTitle}}** | One or more frameworks did not install, each named with the reason | {{ui:onboarding.wizard.frameworks.installFailedHint}} |
 | **{{ui:onboarding.wizard.controls.frameworksRequired}}** | The controls step has no framework to install from | Go back to **{{ui:onboarding.wizard.steps.frameworks}}** |
-| **{{ui:onboarding.wizard.errors.completeStep}}**, **{{ui:onboarding.wizard.errors.save}}**, or a reason in red at the top | The step was not saved. A reason from the server is in English, whatever language you use the app in | Follow the reason given, then try again |
-
-If creating a step's assets, risks or tasks fails, the step still shows as completed and no message appears. After finishing, check the **{{ui:nav.assets}}**, **{{ui:nav.risks}}** and **{{ui:nav.tasks}}** pages.
+| **{{ui:onboarding.wizard.errors.completeStep}}**, **{{ui:onboarding.wizard.errors.save}}**, or a reason in red at the top | The step was not saved | Follow the reason given, then try again |
+| **{{ui:onboarding.wizard.automationFailed.title}}** | The step was saved, but creating its assets, risks or tasks failed. The notice names each such step | {{ui:onboarding.wizard.automationFailed.hint}} |
 
 ## Related
 

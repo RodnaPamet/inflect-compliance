@@ -92,8 +92,6 @@ Click the bin in the header. You go back to the asset list, with a few seconds t
 | **{{ui:assets.detail.vuln.updateFailed}}** | A vulnerability's change was not saved | Try again |
 | **{{ui:assets.detail.deleteFailed}}** | The asset was not deleted, and you are back on its page | Try again |
 
-Some values on the page show as stored rather than translated, whatever language you use the app in: the criticality and status in the header, the classification and data residency, vulnerability and scanner severity, and how a vulnerability was matched.
-
 ## Related
 
 - [{{ui:assets.title}}](assets.md), the list of every asset.

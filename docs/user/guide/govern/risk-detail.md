@@ -91,7 +91,7 @@ On **{{ui:risks.detail.tabTraceability}}**, link the controls that reduce the ri
 | **{{ui:risks.history.loadFailed}}** | The history could not load | Click **{{ui:risks.history.retry}}** |
 | A red message above the tabs | The status or an edit was refused; the message gives the reason | Follow the reason given, then try again |
 | **{{ui:risks.fair.saveFailed}}** | The quantification was not saved | Try again |
-| Warnings under the FAIR inputs | A value looks out of range. The warnings are in English and name the input by its internal name | Check the value; you can still save |
+| Warnings under the FAIR inputs | A value looks out of range. Each warning names the input it is about | Check the value; you can still save |
 
 ## Related
 

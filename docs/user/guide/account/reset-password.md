@@ -45,13 +45,12 @@ If you open the page without a link from an email, it shows **{{ui:auth.reset.in
 | **{{ui:auth.reset.invalidLink}}** | The page was opened without a reset link | Click **{{ui:auth.reset.requestNewLink}}** and ask for one |
 | **{{ui:auth.reset.fillBoth}}** | One of the fields is empty | Fill in both |
 | **{{ui:auth.reset.passwordsNoMatch}}** | The two passwords differ | Type the same password in both |
-| **{{ui:auth.reset.tooShort}}** | The new password is shorter than 8 characters | Choose a longer one |
-| A message that the link has expired, or is invalid or has already been used | The link is more than an hour old, has been used, or a newer one has been sent since | Ask for a new link on [{{ui:auth.forgot.resetTitle}}](forgot-password.md) and use the newest email |
-| A message that the password appears in known data breaches | Attackers already know this password | Choose another |
-| A message that the password is too long | The new password is longer than 128 characters | Choose a shorter one |
-| **{{ui:auth.reset.couldNotReset}}** | The password was not changed, for another reason, for example after too many attempts | Wait a few minutes and try again |
-
-The messages that come from the server, about the link and about the password, are in English, whatever language you use the app in.
+| **{{ui:auth.reset.tooShort}}** or **{{ui:auth.reset.tooLong}}** | The new password is shorter than 8 or longer than 128 characters | Choose another |
+| **{{ui:auth.reset.refused.RESET_LINK_EXPIRED}}** | The link is more than an hour old | Click **{{ui:auth.reset.requestNewLink}}** and use the newest email |
+| **{{ui:auth.reset.refused.RESET_LINK_INVALID}}** | The link has been used, or a newer one has been sent since | Click **{{ui:auth.reset.requestNewLink}}** and use the newest email |
+| **{{ui:auth.reset.refused.PASSWORD_BREACHED}}** | Attackers already know this password | Choose another |
+| **{{ui:auth.reset.tooManyAttempts}}** | Too many attempts were made from your network | Wait 15 minutes, then try again |
+| **{{ui:auth.reset.couldNotReset}}** | The password was not changed, for another reason | Try again |
 
 ## Related
 

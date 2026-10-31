@@ -31,11 +31,11 @@ Give the auditor one fixed set of records to work from. Once frozen, a pack keep
 
 ## What you see
 
-**The header.** The pack's name, its **{{ui:audits.packs.framework}}**, how many **{{ui:audits.packs.items}}** it holds, its **{{ui:audits.packs.status}}**: **{{ui:audits.packStatus.DRAFT}}**, **{{ui:audits.packStatus.FROZEN}}** or **{{ui:audits.packStatus.EXPORTED}}**, and once frozen, when and by whom under **{{ui:audits.packs.frozen}}**. The framework is shown by its short code, not its full name.
+**The header.** The pack's name, its **{{ui:audits.packs.framework}}**, how many **{{ui:audits.packs.items}}** it holds, its **{{ui:audits.packs.status}}**: **{{ui:audits.packStatus.DRAFT}}**, **{{ui:audits.packStatus.FROZEN}}** or **{{ui:audits.packStatus.EXPORTED}}**, and once frozen, when and by whom under **{{ui:audits.packs.frozen}}**. The framework is shown by its name, or by its short code when it is no longer in the framework catalogue.
 
 **{{ui:audits.packs.sharesTitle}}.** On a frozen pack, the links you have given auditors, each **{{ui:audits.packs.shareStateActive}}**, **{{ui:audits.packs.shareStateExpired}}** or **{{ui:audits.packs.shareStateRevoked}}**, with the date it was created and when it expires. {{ui:audits.packs.sharesOnceNote}}
 
-**The items.** The pack's records, grouped into **{{ui:audits.packs.entityType.CONTROL}}**, **{{ui:audits.packs.entityType.POLICY}}**, **{{ui:audits.packs.entityType.EVIDENCE}}** and the other kinds. Each shows its name, its status, and for a control how many of its tasks are done and how much evidence it has.
+**The items.** The pack's records, grouped into **{{ui:audits.packs.entityType.CONTROL}}**, **{{ui:audits.packs.entityType.POLICY}}**, **{{ui:audits.packs.entityType.EVIDENCE}}** and the other kinds. Each shows its name, its status, and for a control how many of its tasks are done and how much evidence it has. A group of more than 50 items shows the first 50, with a button below them to show the rest.
 
 **{{ui:audits.packs.auditorActivity.title}}.** {{ui:audits.packs.auditorActivity.desc}} Each entry is a **{{ui:audits.packs.auditorActivity.kind.COMMENT}}**, **{{ui:audits.packs.auditorActivity.kind.QUESTION}}**, **{{ui:audits.packs.auditorActivity.kind.EVIDENCE_REQUEST}}** or **{{ui:audits.packs.auditorActivity.kind.FINDING}}**, with who sent it, when, and the item it is about. Everything but a comment is **{{ui:audits.packs.auditorActivity.statusOPEN}}** until someone resolves it.
 
@@ -92,7 +92,13 @@ Click **{{ui:audits.packs.cloneForRetest}}**. A new draft pack opens, named "Ret
 | **{{ui:audits.packs.sharesRestricted}}** | Your role cannot see the share links | Ask an Owner or Admin |
 | **{{ui:audits.packs.sharesLoadError}}** | The share links could not load | Click **{{ui:audits.packs.retry}}** |
 | **{{ui:audits.packs.auditorActivity.empty}}** | {{ui:audits.packs.auditorActivity.emptyDesc}} | Nothing to do |
-| **{{ui:audits.packs.failedFreeze}}**, **{{ui:audits.packs.shareError}}**, **{{ui:audits.packs.addPicker.addError}}**, or a reason the server gave | The change was not made. A reason from the server is in English, whatever language you use the app in | Follow the reason given, then try again |
+| **{{ui:audits.packs.addPicker.loadError}}**, in the add dialog | The records of that type could not load | Close the dialog and try again |
+| **{{ui:audits.packs.addPicker.noneOfType}}**, in the add dialog | The workspace has no record of that type | Choose another type, or create the record first |
+| **{{ui:audits.packs.refused.PACK_EMPTY}}** | You tried to freeze an empty pack | Add items, then freeze |
+| **{{ui:audits.packs.refused.PACK_NOT_DRAFT}}** | Someone froze the pack while you were changing it | Reload the page. To change a frozen pack, clone it |
+| **{{ui:audits.packs.refused.ENTRY_BEING_MATERIALISED}}** | Someone else is turning the same auditor entry into a finding | Reload the page in a moment |
+| **{{ui:audits.packs.refused.ENTRY_RESOLVED_WITHOUT_FINDING}}** | The entry was resolved, but its finding was not created | Reopen the entry and try again |
+| **{{ui:audits.packs.failedFreeze}}**, **{{ui:audits.packs.shareError}}** or **{{ui:audits.packs.addPicker.addError}}**, or another sentence saying why | The change was not made | Follow what the sentence says, then try again |
 
 ## Related
 

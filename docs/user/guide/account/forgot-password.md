@@ -44,7 +44,7 @@ The page says this whether or not the address has an account, so it never reveal
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | No email arrives | The address has no account, the account signs in with Google, Microsoft or single sign-on, or the email went to your spam folder | Check your spam folder and the address you typed, or sign in the way you usually do |
-| No email arrives after several requests | Each network can ask for at most five links an hour, and further requests send nothing although the page shows the same message | Wait an hour, then use the newest email |
+| {{ui:auth.forgot.tooManyRequests}} | Each network can ask for at most five links an hour | Wait an hour, then use the newest email |
 
 ## Related
 
