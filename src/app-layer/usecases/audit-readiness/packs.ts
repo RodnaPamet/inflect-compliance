@@ -10,6 +10,7 @@ import {
 import { logEvent } from '../../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
+import type { AuditPackRefusal } from '@/lib/audit-pack-refusals';
 import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
@@ -130,7 +131,16 @@ export async function getAuditPack(ctx: RequestContext, packId: string) {
         // nothing yet (every row-backed item of a draft). A frozen item's
         // snapshot is the record and is read first; this is the fallback.
         const names = await resolveItemNames(tdb, ctx.tenantId, row.items ?? []);
-        return { ...row, items: (row.items ?? []).map((it) => ({ ...it, displayName: names.get(it.id) ?? null })) };
+        // #4700 — the header names the framework, not its short key. The
+        // catalogue key is unique, so this is one row.
+        const framework = row.cycle?.frameworkKey
+            ? await tdb.framework.findFirst({ where: { key: row.cycle.frameworkKey }, select: { name: true } })
+            : null;
+        return {
+            ...row,
+            cycle: row.cycle ? { ...row.cycle, frameworkName: framework?.name ?? null } : row.cycle,
+            items: (row.items ?? []).map((it) => ({ ...it, displayName: names.get(it.id) ?? null })),
+        };
     });
     if (!pack) throw notFound('Audit pack not found');
     return pack;
@@ -140,8 +150,8 @@ export async function updateAuditPack(ctx: RequestContext, packId: string, data:
     assertCanManageAuditPacks(ctx);
     const pack = await runInTenantContext(ctx, async (tdb) => {
         const existing = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null } });
-        if (!existing) throw notFound('Audit pack not found');
-        if (existing.status !== 'DRAFT') throw badRequest('Cannot update a frozen or exported pack');
+        if (!existing) throw notFound('Audit pack not found', { reason: 'PACK_NOT_FOUND' satisfies AuditPackRefusal });
+        if (existing.status !== 'DRAFT') throw badRequest('Cannot update a frozen or exported pack', { reason: 'PACK_NOT_DRAFT' satisfies AuditPackRefusal });
         return tdb.auditPack.update({
             where: { id: packId },
             data: { ...(data.name !== undefined && { name: data.name }), ...(data.notes !== undefined && { notes: data.notes }) },
@@ -161,9 +171,9 @@ export async function addAuditPackItems(
     assertCanManageAuditPacks(ctx);
     const outcome = await runInTenantContext(ctx, async (tdb) => {
         const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null } });
-        if (!pack) throw notFound('Audit pack not found');
+        if (!pack) throw notFound('Audit pack not found', { reason: 'PACK_NOT_FOUND' satisfies AuditPackRefusal });
         // #2 — a frozen/exported pack is immutable; never write items to it.
-        if (pack.status !== 'DRAFT') throw badRequest('Cannot add items to a frozen or exported pack');
+        if (pack.status !== 'DRAFT') throw badRequest('Cannot add items to a frozen or exported pack', { reason: 'PACK_NOT_DRAFT' satisfies AuditPackRefusal });
         if (!items || items.length === 0) throw badRequest('At least one item required');
 
         // #4 — validate every body-supplied entityId belongs to THIS tenant
@@ -196,7 +206,7 @@ export async function addAuditPackItems(
         for (const item of items) {
             const set = known[item.entityType];
             if (set && !set.has(item.entityId)) {
-                throw badRequest('INVALID_PACK_ITEM_REF', `${item.entityType} ${item.entityId} not found in this tenant`);
+                throw badRequest(`${item.entityType} ${item.entityId} not found in this tenant`, { reason: 'PACK_ITEM_REF_INVALID' satisfies AuditPackRefusal });
             }
         }
 
@@ -247,19 +257,19 @@ export async function removeAuditPackItem(ctx: RequestContext, packId: string, i
             where: { id: packId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, status: true },
         });
-        if (!pack) throw notFound('Audit pack not found');
-        if (pack.status !== 'DRAFT') throw badRequest('Cannot remove items from a frozen or exported pack');
+        if (!pack) throw notFound('Audit pack not found', { reason: 'PACK_NOT_FOUND' satisfies AuditPackRefusal });
+        if (pack.status !== 'DRAFT') throw badRequest('Cannot remove items from a frozen or exported pack', { reason: 'PACK_NOT_DRAFT' satisfies AuditPackRefusal });
         const item = await tdb.auditPackItem.findFirst({
             where: { id: itemId, auditPackId: packId, tenantId: ctx.tenantId },
             select: { id: true, entityType: true, entityId: true },
         });
-        if (!item) throw notFound('Pack item not found');
+        if (!item) throw notFound('Pack item not found', { reason: 'PACK_ITEM_NOT_FOUND' satisfies AuditPackRefusal });
 
         const stillDraft = await tdb.auditPack.updateMany({
             where: { id: packId, tenantId: ctx.tenantId, status: 'DRAFT' },
             data: { updatedAt: new Date() },
         });
-        if (stillDraft.count === 0) throw badRequest('Cannot remove items from a frozen or exported pack');
+        if (stillDraft.count === 0) throw badRequest('Cannot remove items from a frozen or exported pack', { reason: 'PACK_NOT_DRAFT' satisfies AuditPackRefusal });
         await tdb.auditPackItem.delete({ where: { id: item.id } });
 
         await logEvent(tdb, ctx, {
@@ -450,9 +460,9 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string, opts:
             where: { id: packId, tenantId: ctx.tenantId, deletedAt: null },
             include: { items: true },
         });
-        if (!pack) throw notFound('Audit pack not found');
-        if (pack.status !== 'DRAFT') throw badRequest('Pack is already frozen or exported');
-        if (pack.items.length === 0) throw badRequest('Cannot freeze an empty pack');
+        if (!pack) throw notFound('Audit pack not found', { reason: 'PACK_NOT_FOUND' satisfies AuditPackRefusal });
+        if (pack.status !== 'DRAFT') throw badRequest('Pack is already frozen or exported', { reason: 'PACK_ALREADY_FROZEN' satisfies AuditPackRefusal });
+        if (pack.items.length === 0) throw badRequest('Cannot freeze an empty pack', { reason: 'PACK_EMPTY' satisfies AuditPackRefusal });
 
         // Items still lacking a server-built snapshot need one (`needsSnapshot`).
         // Batch one findMany per concrete entity type, then serialise from a map.

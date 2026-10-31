@@ -36,6 +36,7 @@ import { RelianceSnapshotBlock } from '@/components/audits/RelianceSnapshotBlock
 import { AUDIT_PACK_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../../_lib/status-variants';
 import { humanizeSnakeCase } from '@/lib/audit/activity-humanize';
 import { apiErrorMessage } from '@/lib/api-error';
+import { auditPackRefusal } from '@/lib/audit-pack-refusals';
 import { isNotFoundError, useAuditReadinessAccess } from '../../_lib/use-audit-access';
 
 const ENTITY_ICON: Record<string, AppIconName> = {
@@ -88,7 +89,8 @@ interface PackDetail {
     name: string;
     status: string;
     frozenAt: string | null;
-    cycle?: { frameworkKey: string } | null;
+    /** `frameworkName` is the catalogue's name for the key, resolved by `getAuditPack` (#4700). */
+    cycle?: { frameworkKey: string; frameworkName?: string | null } | null;
     frozenBy?: { name: string | null; email: string } | null;
     _count?: { items: number };
     items: PackItem[];
@@ -100,6 +102,9 @@ interface PackShare {
     expiresAt: string | null;
     revokedAt: string | null;
 }
+
+/** How many items of one kind are listed before "Show all" (#4700). */
+const ITEMS_SHOWN_PER_GROUP = 50;
 
 // The entity kinds the add-to-pack picker can source from a list API.
 type AddableType = 'CONTROL' | 'POLICY' | 'EVIDENCE';
@@ -159,7 +164,12 @@ export default function PackDetailPage() {
     const [addType, setAddType] = useState<AddableType>('CONTROL');
     const [addOptions, setAddOptions] = useState<Array<{ id: string; label: string }>>([]);
     const [addOptionsLoading, setAddOptionsLoading] = useState(false);
+    // #4700 — a refused or failed list read is said in the picker; it used
+    // to arrive as an empty list, which read as "nothing to add".
+    const [addOptionsFailed, setAddOptionsFailed] = useState(false);
     const [addSelected, setAddSelected] = useState('');
+    // Item groups the user asked to see in full (#4700).
+    const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(() => new Set());
 
     // ─── Reads ───
     //
@@ -230,6 +240,10 @@ export default function PackDetailPage() {
     // `postJson` is the one place the wire format lives. Every one of these
     // endpoints is `POST` + JSON + an `{ message }` error envelope, and seven
     // copies of that is how the error handling drifted apart in the first place.
+    //
+    // #4700 — a refusal the page can name is said in the user's language
+    // (`packs.refused.<reason>`); anything else keeps the server's sentence
+    // under `error.message`, then the caller's fallback.
     const postJson = useCallback(
         async (path: string, body: unknown, fallbackMessage: string) => {
             const res = await fetch(apiUrl(path), {
@@ -238,14 +252,13 @@ export default function PackDetailPage() {
                 body: JSON.stringify(body ?? {}),
             });
             if (!res.ok) {
-                // The API puts the reason under `error.message`; reading
-                // `err.message` always fell back to the generic sentence.
                 const err = await res.json().catch(() => null);
-                throw new Error(apiErrorMessage(err, fallbackMessage));
+                const reason = auditPackRefusal(err);
+                throw new Error(reason ? tx(`packs.refused.${reason}`) : apiErrorMessage(err, fallbackMessage));
             }
             return res.json().catch(() => null);
         },
-        [apiUrl],
+        [apiUrl, tx],
     );
 
     const resolveMutation = useTenantMutation<
@@ -411,10 +424,14 @@ export default function PackDetailPage() {
     };
     const loadAddOptions = useCallback((type: AddableType) => {
         setAddOptionsLoading(true);
+        setAddOptionsFailed(false);
         setAddOptions([]);
         setAddSelected('');
         fetch(apiUrl(ADD_TYPE_ENDPOINT[type]))
-            .then(r => r.ok ? r.json() : null)
+            .then((r) => {
+                if (!r.ok) throw new Error(`list read refused: ${r.status}`);
+                return r.json();
+            })
             .then((d) => {
                 const rows: Array<Record<string, unknown>> = Array.isArray(d) ? d : (d?.rows ?? []);
                 setAddOptions(rows.map((row) => ({
@@ -422,11 +439,11 @@ export default function PackDetailPage() {
                     label: String(row.code || row.title || row.name || row.id),
                 })));
             })
-            .catch(() => toast.error(tx('packs.addPicker.loadError')))
+            .catch(() => setAddOptionsFailed(true))
             .finally(() => setAddOptionsLoading(false));
     // ADD_TYPE_ENDPOINT is a stable inline literal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [apiUrl, toast, tx]);
+    }, [apiUrl]);
 
     const openAddModal = () => {
         setAddModalOpen(true);
@@ -612,7 +629,7 @@ export default function PackDetailPage() {
                             ? [
                                   {
                                       label: tx('packs.framework'),
-                                      value: pack.cycle.frameworkKey,
+                                      value: pack.cycle.frameworkName || pack.cycle.frameworkKey,
                                   } as const,
                               ]
                             : []),
@@ -774,7 +791,9 @@ export default function PackDetailPage() {
                     </EmptyState>
                 </div>
             ) : (
-                Object.entries(grouped).map(([type, items]) => (
+                Object.entries(grouped).map(([type, items]) => {
+                    const showAll = expandedGroups.has(type) || items.length <= ITEMS_SHOWN_PER_GROUP;
+                    return (
                     <div key={type} className="space-y-tight">
                         <Heading level={3} className="flex items-center gap-tight">
                             <AppIcon name={ENTITY_ICON[type] || 'overview'} size={16} />
@@ -782,7 +801,7 @@ export default function PackDetailPage() {
                             <span className="text-content-subtle">({items.length})</span>
                         </Heading>
                         <div className={cn(cardVariants({ density: 'none' }), 'divide-y divide-border-default/50')}>
-                            {items.slice(0, 50).map((item) => {
+                            {(showAll ? items : items.slice(0, ITEMS_SHOWN_PER_GROUP)).map((item) => {
                                 const snap = parseSnapshot(item);
                                 const name = itemName(item, snap);
                                 const status = snap.status || '';
@@ -824,8 +843,19 @@ export default function PackDetailPage() {
                                 );
                             })}
                         </div>
+                        {!showAll && (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setExpandedGroups((prev) => new Set(prev).add(type))}
+                                id={`show-all-pack-items-${type}`}
+                            >
+                                {tx('packs.showAllItems', { count: items.length })}
+                            </Button>
+                        )}
                     </div>
-                ))
+                    );
+                })
             )}
 
             {/* Auditor activity — the return channel from shared packs */}
@@ -995,7 +1025,15 @@ export default function PackDetailPage() {
                                 aria-label={tx('packs.addPicker.typeLabel')}
                             />
                         </FormField>
-                        <FormField label={tx('packs.addPicker.itemLabel')}>
+                        <FormField
+                            label={tx('packs.addPicker.itemLabel')}
+                            error={addOptionsFailed ? tx('packs.addPicker.loadError') : undefined}
+                            description={
+                                !addOptionsLoading && !addOptionsFailed && addOptions.length === 0
+                                    ? tx('packs.addPicker.noneOfType')
+                                    : undefined
+                            }
+                        >
                             <Combobox
                                 options={addOptions.map((o): ComboboxOption => ({ value: o.id, label: o.label }))}
                                 selected={addOptions.filter((o) => o.id === addSelected).map((o) => ({ value: o.id, label: o.label }))[0] ?? null}
