@@ -1,4 +1,5 @@
 import { listDevices } from '@/app-layer/usecases/device';
+import { DEVICE_LIST_CAP } from '@/lib/device-list';
 import { gateAdminPage } from '../_lib/admin-page-gate';
 import { DevicesClient, type DeviceRow } from './DevicesClient';
 
@@ -15,6 +16,9 @@ export const dynamic = 'force-dynamic';
 export default async function DevicesPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
     const gate = await gateAdminPage('/admin/devices', params);
     if (!gate.allowed) return gate.forbidden;
-    const rows = (await listDevices(gate.ctx)) as unknown as DeviceRow[];
-    return <DevicesClient initialRows={JSON.parse(JSON.stringify(rows))} />;
+    const all = (await listDevices(gate.ctx)) as unknown as DeviceRow[];
+    // The usecase reads one past the cap: more than the cap means there are more.
+    const truncated = all.length > DEVICE_LIST_CAP;
+    const rows = all.slice(0, DEVICE_LIST_CAP);
+    return <DevicesClient initialRows={JSON.parse(JSON.stringify(rows))} truncated={truncated} />;
 }
