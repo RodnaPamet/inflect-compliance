@@ -7420,8 +7420,8 @@
       "singleRiskMax": "Макс. ALE за единичен риск",
       "qualScoreMax": "Макс. качествен резултат",
       "fieldWithHint": "{label} ({hint})",
-      "hintPerYear": "$/г.",
-      "hintDollar": "$",
+      "hintPerYear": "{currency} годишно",
+      "hintDollar": "{currency}",
       "hintOf25": "от 25",
       "ceilingTestedAt": "Таванът се тества при:",
       "percentileHint": "симулиран персентил на портфолиото (връща се към Σ на средните, докато не се изпълни симулация)",
@@ -7437,7 +7437,20 @@
       "acknowledge": "Потвърди",
       "viewTask": "Виж задачата",
       "creating": "Създаване…",
-      "createTask": "Създай задача"
+      "createTask": "Създай задача",
+      "invalidNumber": "Въведете число без разделители.",
+      "loadFailed": "Настройките за апетит за риск не можаха да се заредят.",
+      "breachesLoadFailed": "Историята на превишенията не можа да се зареди. Презаредете страницата, за да опитате отново.",
+      "actionFailed": "Не се получи. Нищо не е променено; опитайте отново.",
+      "acknowledged": "Потвърдено",
+      "perYear": "{amount} годишно",
+      "testedAmount": "P{percentile}: {amount} годишно",
+      "breachType": {
+        "PORTFOLIO_ALE": "Очаквана загуба на портфолиото",
+        "SINGLE_RISK_ALE": "Очаквана загуба от един риск",
+        "QUAL_SCORE": "Оценка на риска",
+        "CATEGORY_ALE": "Очаквана загуба на категория"
+      }
     },
     "riskMatrix": {
       "crumb": "Матрица на риска",
