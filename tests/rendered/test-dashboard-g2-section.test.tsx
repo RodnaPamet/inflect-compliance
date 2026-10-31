@@ -164,7 +164,9 @@ describe('TestDashboardG2Section — overdue list', () => {
         );
         // The component renders the first 5; the "+N more" line
         // accounts for the remaining (12 total - 5 visible) = 7.
-        expect(screen.getByText(/\+ 7 more/)).toBeInTheDocument();
+        // One translatable phrase since #4798 (`panels.testDashG2.moreCount`),
+        // no longer a literal "+", a number and the word "more".
+        expect(screen.getByText('and 7 more')).toBeInTheDocument();
     });
 
     test('overdue empty-state copy distinguishes "none scheduled" from "all on track"', () => {

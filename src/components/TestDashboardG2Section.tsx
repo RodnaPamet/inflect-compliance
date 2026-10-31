@@ -182,7 +182,7 @@ export function TestDashboardG2Section({
                             ))}
                             {automation.overdueScheduled > overdueRows.length && (
                                 <div className="text-xs text-content-subtle pt-1">
-                                    + {automation.overdueScheduled - overdueRows.length} {t('more')}
+                                    {t('moreCount', { count: automation.overdueScheduled - overdueRows.length })}
                                 </div>
                             )}
                         </div>

@@ -10278,10 +10278,13 @@
       "retry": "Опитай отново"
     },
     "dashboard": {
+      "periodLabel": "Период",
+      "fwCoverageLoadFailed": "Покритието на рамките с тестове не можа да се зареди.",
       "title": "Табло за тестове",
       "description": "Здраве на тестването и готовност на рамките",
       "periodDays": "{days}д",
       "kpi": {
+        "noRunsInPeriod": "Няма изпълнения за този период",
         "completionRate": "Процент на завършване",
         "completionSub": "{completed}/{total} изпълнения",
         "passRate": "Процент успех",
@@ -13413,6 +13416,7 @@
       "instantiationNote": "Графикът създава тестово изпълнение, което някой да завърши — не изпълнява самия тест."
     },
     "testDashG2": {
+      "moreCount": "и още {count}",
       "automation": "Автоматизация",
       "summary": "{scheduled} насрочени • {manual} ръчни • {automated} автоматизирани",
       "resultDistribution": "Разпределение на резултатите ({period}d)",
@@ -13423,7 +13427,6 @@
       "overdueScheduled": "Просрочени насрочени",
       "onTrack": "Всички насрочени планове са в срок.",
       "daysOverdue": "{days}d просрочени",
-      "more": "още",
       "dailyRuns": "Дневни изпълнения ({period}d)",
       "total": "{count} общо",
       "dailyRunsAria": "Дневни завършени тестови изпълнения",
