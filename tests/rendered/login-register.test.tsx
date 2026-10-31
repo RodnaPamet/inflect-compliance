@@ -81,7 +81,7 @@ describe('registering', () => {
         fill('login-name', 'Ana');
         fill('login-org-name', 'Acme');
         fill('login-email', 'ana@example.com');
-        fill('login-password', 'long-enough-password');
+        fill('login-password', 'pass-ok-1234');
         await submit(form);
 
         expect(await screen.findByText(L.refused.EMAIL_ALREADY_REGISTERED)).toBeTruthy();
@@ -95,7 +95,7 @@ describe('registering', () => {
         fill('login-name', 'Ana');
         fill('login-org-name', 'Acme');
         fill('login-email', 'ana@example.com');
-        fill('login-password', 'long-enough-password');
+        fill('login-password', 'pass-ok-1234');
         await submit(form);
         expect(await screen.findByText(L.tooManyRegistrations)).toBeTruthy();
     });
@@ -121,11 +121,11 @@ describe('registering to accept an invitation', () => {
 
         fill('login-name', 'Ana');
         fill('login-email', 'ana@example.com');
-        fill('login-password', 'long-enough-password');
+        fill('login-password', 'pass-ok-1234');
         await submit(form);
 
         await waitFor(() => expect(mockSignIn).toHaveBeenCalled());
-        expect(registerBody()).toEqual({ action: 'register', email: 'ana@example.com', password: 'long-enough-password', name: 'Ana' });
+        expect(registerBody()).toEqual({ action: 'register', email: 'ana@example.com', password: 'pass-ok-1234', name: 'Ana' });
         expect((mockSignIn.mock.calls[0][1] as { callbackUrl: string }).callbackUrl).toBe('/invite/result');
     });
 

@@ -72,7 +72,7 @@ async function refusal(body: Record<string, unknown>, status = 400) {
     return json.code;
 }
 
-const base = { email: 'Ana@Example.com', password: 'long-enough-password', name: 'Ana' };
+const base = { email: 'Ana@Example.com', password: 'pass-ok-1234', name: 'Ana' };
 
 beforeEach(() => {
     cookie.value = undefined;
