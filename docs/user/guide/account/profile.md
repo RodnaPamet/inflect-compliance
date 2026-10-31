@@ -8,7 +8,7 @@ The {{ui:account.profile.profileTitle}} page is where you set your own name and 
 
 ## Where to find it
 
-Click your picture or initials at the top right of any page, then **{{ui:account.profile.profileTitle}}**. The page has no menu of its own; use your browser's back button to return to where you were.
+Click your picture or initials at the top right of any page, then **{{ui:account.profile.profileTitle}}**. The page has no menu of its own. **{{ui:account.backToWorkspaces}}**, at the top, takes you back: straight to your workspace if you have one, or to the list of your workspaces if you have several.
 
 ## Who can use it
 
@@ -36,7 +36,7 @@ Click **{{ui:account.profile.uploadPhoto}}** or **{{ui:account.profile.changePho
 
 Type your first name, last name or both, and click **{{ui:account.profile.saveName}}**. Each part can be up to 100 characters. The message **{{ui:account.profile.nameSaved}}** confirms it.
 
-Your name and photo in the top bar, and the name this page fills in when you open it, change only the next time you sign in. Owner and assignee columns show the new name straight away.
+Your name and photo change everywhere straight away: in the top bar, on this page, and wherever you are named as an owner or assignee. On another device where you are already signed in, the top bar catches up within five minutes.
 
 ## What happens next
 
@@ -47,11 +47,13 @@ Your name and photo in the top bar, and the name this page fills in when you ope
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:account.profile.enterAName}}** | Both name fields are empty | Type at least one |
-| **{{ui:account.profile.couldNotSaveName}}** | The name was not saved, for example because it is too long | Shorten it and try again |
+| The reason the name was refused, such as a name that is too long | The name was not saved | Follow the reason given, then try again |
+| **{{ui:account.profile.couldNotSaveName}}** | The name was not saved, and the server gave no reason | Try again |
 | **{{ui:account.profile.notReadableImage}}** | The file is not an image your browser can read | Choose a JPEG, PNG or WebP image |
 | **{{ui:account.profile.imageProcessingUnavailable}}** or **{{ui:account.profile.webpEncodeFailed}}** | Your browser cannot prepare the photo | Try a different browser |
-| **{{ui:account.profile.uploadFailed}}**, or a message with no words in it | The photo was not uploaded | Try again with a smaller image |
-| **{{ui:account.profile.couldNotRemovePhoto}}** | The photo was not removed | Try again |
+| The reason the photo was refused, such as an image that is too large | The photo was not uploaded | Follow the reason given, for example by choosing a smaller image |
+| **{{ui:account.profile.uploadFailed}}** | The photo was not uploaded, and the server gave no reason | Try again |
+| **{{ui:account.profile.couldNotRemovePhoto}}**, or the reason it was refused | The photo was not removed | Try again |
 
 ## Related
 

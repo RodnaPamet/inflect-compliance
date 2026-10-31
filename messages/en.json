@@ -12931,6 +12931,7 @@
     }
   },
   "account": {
+    "backToWorkspaces": "Back to your workspaces",
     "profile": {
       "profileTitle": "Your profile",
       "avatarNote": "Upload a square image — it is resized to 256×256 and stored as WebP. Photo metadata, including location, is stripped in your browser before upload.",

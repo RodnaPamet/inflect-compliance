@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { auth } from '@/auth';
 import { Heading } from '@/components/ui/typography';
+import { AccountBackLink } from '@/app/account/AccountBackLink';
 
 import { AvatarUploadField } from './AvatarUploadField';
 import { NameEditField } from './NameEditField';
@@ -27,6 +28,9 @@ export default async function AccountProfilePage() {
             </div>
 
             <div className="relative w-full max-w-md">
+                <div className="mb-4">
+                    <AccountBackLink />
+                </div>
                 <div className="text-center mb-8 animate-fadeIn">
                     <Heading level={1}>{t('profileTitle')}</Heading>
                 </div>
