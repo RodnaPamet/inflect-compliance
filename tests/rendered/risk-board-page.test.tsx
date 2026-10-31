@@ -25,6 +25,7 @@ const mockRoleContext = (role: 'ADMIN' | 'READER') => ({
     tenantName: 'Acme',
     tenantSlug: 'acme',
     currencySymbol: '€',
+    membershipRole: role,
     permissions: {
         canRead: true,
         canWrite: role === 'ADMIN',
@@ -138,9 +139,17 @@ function mockFetch(opts: {
     analytics?: unknown;
     staleness?: unknown;
     bestValue?: unknown;
+    failDashboard?: boolean;
+    failBestValue?: boolean;
 } = {}) {
+    const failed = {
+        ok: false, status: 500, headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ error: { code: 'INTERNAL', message: 'boom' } }), text: async () => '',
+    } as unknown as Response;
     global.fetch = jest.fn(async (url: RequestInfo | URL) => {
         const u = String(url);
+        if (u.endsWith('/risks/dashboard') && opts.failDashboard) return failed;
+        if (u.includes('/controls/best-value') && opts.failBestValue) return failed;
         if (u.endsWith('/risks/dashboard')) {
             return {
                 ok: true,
@@ -265,5 +274,56 @@ describe('RiskBoardPage — the empty register offers Create only to a user who 
         renderPage();
         await waitFor(() => expect(screen.getByTestId('risk-first-run-empty')).toBeInTheDocument());
         expect(screen.queryByTestId('risk-first-run-cta')).toBeNull();
+    });
+});
+
+describe('RiskBoardPage — failures and the appetite it measures against (#4767)', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+        mockTenant = null;
+    });
+
+    it('a failed read shows an error with a retry, not a skeleton for ever', async () => {
+        mockFetch({ failDashboard: true });
+        renderPage();
+        expect(await screen.findByTestId('board-load-error')).toHaveTextContent("Couldn't load the board");
+        expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    });
+
+    it('a failed best-value read is an error, not "nothing qualifies"', async () => {
+        mockFetch({ failBestValue: true });
+        renderPage();
+        expect(await screen.findByTestId('board-best-value-error')).toBeInTheDocument();
+        expect(screen.queryByTestId('board-best-value-empty')).toBeNull();
+    });
+
+    it('with no appetite set, the headline is neutral, not green', async () => {
+        mockFetch();
+        renderPage();
+        await screen.findByTestId('board-appetite-empty');
+        const value = screen.getByTestId('board-position-card').querySelector('[data-metric-value]');
+        expect(value).not.toHaveClass('text-content-success');
+        expect(value).toHaveClass('text-content-emphasis');
+    });
+
+    it('an Admin is linked to the appetite page; a Reader is told who sets it', async () => {
+        mockTenant = mockRoleContext('ADMIN');
+        mockFetch();
+        const { unmount } = renderPage();
+        expect(await screen.findByRole('link', { name: 'Set risk appetite' })).toHaveAttribute('href', '/t/acme/admin/risk-appetite');
+        unmount();
+
+        mockTenant = mockRoleContext('READER');
+        mockFetch();
+        renderPage();
+        expect(await screen.findByTestId('board-appetite-who')).toHaveTextContent('An Owner or Admin sets the ceiling.');
+        expect(screen.queryByRole('link', { name: 'Set risk appetite' })).toBeNull();
+    });
+
+    it('a top contributor opens its Quantification tab', async () => {
+        mockFetch();
+        renderPage();
+        const row = await screen.findByTestId('board-top-risk-r1');
+        expect(row.querySelector('a')).toHaveAttribute('href', '/t/acme/risks/r1?tab=quantification');
     });
 });

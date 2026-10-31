@@ -45,6 +45,7 @@ import {
     archiveScenario,
     cloneScenario,
     simulateScenario,
+    getScenarioComparison,
     type ScenarioRisk,
     type ScenarioOverride,
 } from '@/app-layer/usecases/risk-scenario';
@@ -419,5 +420,58 @@ describe('simulateScenario', () => {
         const partial = baselineArg.find((r: any) => r.id === 'partial');
         expect(keep.distributions).toBeDefined();
         expect(partial.distributions).toBeUndefined();
+    });
+});
+
+// ─── #4770 — override values refused at create; the comparison read ───
+describe('createScenario — override values', () => {
+    it('refuses a probability outside 0..1, naming the field', async () => {
+        await expect(createScenario(adminCtx, {
+            name: 'x', overrides: [{ riskId: 'r', field: 'vulnerabilityProbability', newValue: 1.5 }],
+        })).rejects.toThrow(/vulnerabilityProbability.*between 0 and 1/);
+        expect(mockDbHolder.db.riskScenario.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a negative amount and an unknown field', async () => {
+        await expect(createScenario(adminCtx, {
+            name: 'x', overrides: [{ riskId: 'r', field: 'responseCost', newValue: -1 }],
+        })).rejects.toThrow(/cannot be negative/);
+        await expect(createScenario(adminCtx, {
+            name: 'x', overrides: [{ riskId: 'r', field: 'nonsense' as never, newValue: 1 }],
+        })).rejects.toThrow(/Unknown FAIR field/);
+    });
+
+    it('accepts capability and strength on either scale the risks use', async () => {
+        mockDbHolder.db.riskScenario.create.mockResolvedValue({ id: 's' });
+        await createScenario(adminCtx, {
+            name: 'x',
+            overrides: [
+                { riskId: 'r', field: 'threatCapability', newValue: 0.6 },
+                { riskId: 'r', field: 'controlStrength', newValue: 8 },
+            ],
+        });
+        expect(mockDbHolder.db.riskScenario.create).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('getScenarioComparison', () => {
+    it('computes the comparison for a reader and stores nothing', async () => {
+        mockDbHolder.db.riskScenario.findFirst.mockResolvedValue({ id: 's', status: 'SIMULATED', investmentCost: null, overridesJson: [] });
+        const r = await getScenarioComparison(noWriteCtx, 's');
+        expect(r.delta.meanAleDelta).toBe(0);
+        expect(simulatePortfolioMock).toHaveBeenCalledTimes(2);
+        // Both runs share the seed simulateScenario uses.
+        expect(simulatePortfolioMock.mock.calls.map((c) => c[1])).toEqual([{ seed: 1 }, { seed: 1 }]);
+        expect(mockDbHolder.db.riskSimulationRun.create).not.toHaveBeenCalled();
+        expect(mockDbHolder.db.riskScenario.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses an archived scenario', async () => {
+        mockDbHolder.db.riskScenario.findFirst.mockResolvedValue({ id: 's', status: 'ARCHIVED', overridesJson: [] });
+        await expect(getScenarioComparison(adminCtx, 's')).rejects.toThrow(/archived/i);
+    });
+
+    it('needs read', async () => {
+        await expect(getScenarioComparison(noReadCtx, 's')).rejects.toThrow(/permission/i);
     });
 });

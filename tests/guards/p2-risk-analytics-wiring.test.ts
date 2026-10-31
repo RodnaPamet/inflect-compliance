@@ -70,7 +70,8 @@ describe('P2 — create forms carry the risk link', () => {
     it('hierarchy sends parentId and calls the risk→node links API', () => {
         const src = read(P('hierarchy/page.tsx'));
         expect(src).toMatch(/name:\s*name\.trim\(\),\s*type,\s*parentId/);
-        expect(src).toMatch(/\/risks\/hierarchy\/\$\{linkNodeId\}\/links/);
+        // #4772 — attach and detach share one helper, keyed on the node.
+        expect(src).toMatch(/\/risks\/hierarchy\/\$\{nodeId\}\/links/);
         expect(src).toMatch(/<RiskPicker\b/);
     });
 
