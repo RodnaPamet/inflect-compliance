@@ -34,7 +34,7 @@ What the default pack takes in:
 | {{ui:audits.cycleDetail.controls}} | Controls mapped to the cycle's framework whose status is {{ui:controls.statusLabels.IMPLEMENTED}} or {{ui:controls.statusLabels.NEEDS_REVIEW}}. If no control is mapped to the framework, every control with one of those two statuses |
 | {{ui:audits.cycleDetail.policies}} | {{ui:audits.packs.itemStatus.PUBLISHED}} policies. For ISO 27001, the ones whose title or category mentions security, information security or access control. For NIS2, the ones that mention incident, business continuity, disaster recovery, access control, supplier or supply chain. If no policy matches, every published policy. For any other framework, every published policy |
 | {{ui:audits.cycleDetail.evidence}} | {{ui:evidence.statusLabels.APPROVED}} evidence linked to those controls, leaving out evidence that has expired or been archived |
-| {{ui:audits.cycleDetail.issues}} | Every task in the workspace that is still open, that is, not {{ui:tasks.statusLabels.RESOLVED}}, {{ui:tasks.statusLabels.CLOSED}} or {{ui:tasks.statusLabels.CANCELED}} |
+| {{ui:audits.cycleDetail.issues}} | The open tasks, that is, not {{ui:tasks.statusLabels.RESOLVED}}, {{ui:tasks.statusLabels.CLOSED}} or {{ui:tasks.statusLabels.CANCELED}}, of the controls mapped to the cycle's framework, whatever the control's status. If no control is mapped to the framework, the open tasks of the controls in the first row. Tasks on other controls, or on none, are left out |
 
 Until the pack is frozen, each item is listed by its current name: a control by its code where it has one, a policy, a piece of evidence or a task by its title. Freezing records each item's name and details as they are at that moment.
 
