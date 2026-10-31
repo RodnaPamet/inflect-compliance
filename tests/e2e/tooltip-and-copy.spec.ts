@@ -40,6 +40,25 @@ async function readClipboard(page: Page): Promise<string> {
     });
 }
 
+/**
+ * Opening a frozen pack celebrates it with a toast, in the Toaster's
+ * top-right corner, which is where the pack header's share button sits.
+ * A click on the button lands on the toast instead, and sonner pauses a
+ * hovered toast's timer, so the toast never leaves and every retry of the
+ * click hits it until the test times out. Close it first. The toast is
+ * fired in an effect once the pack has loaded, so wait briefly for it;
+ * none appears when this tab has already celebrated the pack.
+ */
+async function closeCelebrationToast(page: Page): Promise<void> {
+    const toast = page.locator('[data-sonner-toast]').first();
+    const appeared = await toast
+        .waitFor({ state: 'visible', timeout: 3_000 })
+        .then(() => true, () => false);
+    if (!appeared) return;
+    await toast.getByRole('button', { name: 'Close toast' }).click();
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, { timeout: 5_000 });
+}
+
 test.describe('Epic 56 — tooltip + copy primitives', () => {
     test.beforeEach(async ({ context }) => {
         await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -122,13 +141,15 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
             timeout: 30_000,
         });
 
+        const shareBtn = page.locator('#share-pack-btn');
+        await expect(shareBtn).toBeVisible({ timeout: 15_000 });
+        await closeCelebrationToast(page);
+
         // If the share-link banner isn't rendered yet (the seed share
         // token was hashed without exposing the raw token for the UI),
         // click the Share action to surface one.
         const shareBanner = page.locator('#share-link-card');
         if (!(await shareBanner.isVisible().catch(() => false))) {
-            const shareBtn = page.locator('#share-pack-btn');
-            await expect(shareBtn).toBeVisible({ timeout: 15_000 });
             await shareBtn.click();
             // Share now opens an expiry modal — submit with the default
             // (no expiry) to generate the link.
