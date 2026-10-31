@@ -1,4 +1,5 @@
 import { listTrainingAssignments } from '@/app-layer/usecases/training';
+import { TRAINING_LIST_CAP } from '@/lib/training-list';
 import { gateAdminPage } from '../_lib/admin-page-gate';
 import { TrainingClient, type AssignmentRow } from './TrainingClient';
 
@@ -15,6 +16,9 @@ export const dynamic = 'force-dynamic';
 export default async function TrainingPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
     const gate = await gateAdminPage('/admin/training', params);
     if (!gate.allowed) return gate.forbidden;
-    const rows = (await listTrainingAssignments(gate.ctx)) as unknown as AssignmentRow[];
-    return <TrainingClient initialRows={JSON.parse(JSON.stringify(rows))} />;
+    const all = (await listTrainingAssignments(gate.ctx)) as unknown as AssignmentRow[];
+    // The usecase reads one past the cap: more than the cap means there are more.
+    const truncated = all.length > TRAINING_LIST_CAP;
+    const rows = all.slice(0, TRAINING_LIST_CAP);
+    return <TrainingClient initialRows={JSON.parse(JSON.stringify(rows))} truncated={truncated} />;
 }

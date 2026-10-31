@@ -9,6 +9,7 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { forbidden } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { TRAINING_LIST_CAP } from '@/lib/training-list';
 
 const BG_STATUSES = ['PENDING', 'IN_PROGRESS', 'CLEAR', 'CONSIDER', 'FAILED'] as const;
 
@@ -33,7 +34,8 @@ export async function listTrainingAssignments(ctx: RequestContext) {
             where: { tenantId: ctx.tenantId },
             select: { id: true, status: true, assignedAt: true, dueAt: true, completedAt: true, employee: { select: { fullName: true, workEmail: true } }, course: { select: { name: true } } },
             orderBy: [{ status: 'asc' }, { assignedAt: 'desc' }],
-            take: 500,
+            // One past the cap, so a caller can tell a full list from a cut one.
+            take: TRAINING_LIST_CAP + 1,
         }),
     );
 }
