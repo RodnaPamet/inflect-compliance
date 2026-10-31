@@ -132,9 +132,7 @@ describe('the vendored OpenShell contract is upstream, unmodified', () => {
 describe('the vendored contract still carries what the transport calls', () => {
     /** Loaded through the REAL loader, so an unloadable closure fails here. */
     const load = () => {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
         const loader = require('@grpc/proto-loader') as typeof import('@grpc/proto-loader');
-        // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
         const grpc = require('@grpc/grpc-js') as typeof import('@grpc/grpc-js');
         const def = loader.loadSync('openshell.proto', {
             includeDirs: [path.join(REPO_ROOT, DIR)],

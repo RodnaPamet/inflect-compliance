@@ -41,7 +41,7 @@ import {
     SandboxUnreachableError,
 } from '@/lib/agentic/openshell/transport';
 
-/* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const grpc = require('@grpc/grpc-js');
 const loader = require('@grpc/proto-loader');
 
