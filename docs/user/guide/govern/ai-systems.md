@@ -91,5 +91,6 @@ What the page says next depends on whether you can read the workspace's agent pr
 ## Related
 
 - [{{ui:risks.title}}](risks.md), where this register is reached from.
+- [An AI system](ai-system-detail.md), the page each entry opens.
 - [{{ui:agents.register.title}}](../manage/agents.md), where an agent's AI system is chosen.
 - [{{ui:frameworks.list.heading}}](frameworks.md), which holds the EU AI Act and ISO 42001 requirements.
