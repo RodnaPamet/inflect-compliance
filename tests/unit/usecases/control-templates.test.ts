@@ -36,7 +36,17 @@ jest.mock('@/app-layer/repositories/ControlTemplateRepository', () => ({
     ControlTemplateRepository: {
         list: jest.fn(),
         getById: jest.fn(),
+        listCodesByIds: jest.fn(),
     },
+}));
+
+const limitCalls: Array<{ resource: string; additional: number }> = [];
+const limitRefusal: { current: Error | null } = { current: null };
+jest.mock('@/lib/billing/entitlements', () => ({
+    assertWithinLimit: jest.fn(async (_ctx: any, resource: string, additional = 1) => {
+        limitCalls.push({ resource, additional });
+        if (limitRefusal.current) throw limitRefusal.current;
+    }),
 }));
 
 jest.mock('@/app-layer/repositories/ControlRepository', () => ({
@@ -53,7 +63,7 @@ jest.mock('@/app-layer/repositories/FrameworkRepository', () => ({
 }));
 
 const mockDb: any = {
-    control: { findFirst: jest.fn(), create: jest.fn() },
+    control: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn() },
     // Unified Task + canonical controlRequirementLink (R2-P1 link unification).
     // The install path batches into task.createMany + controlRequirementLink.createMany;
     // map/unmap still use the canonical upsert/findFirst/delete.
@@ -113,6 +123,13 @@ beforeEach(() => {
     (assertCanReadControls as jest.Mock).mockImplementation(() => policyCalls.push('read'));
     (assertCanCreateControl as jest.Mock).mockImplementation(() => policyCalls.push('create'));
     (assertCanMapFramework as jest.Mock).mockImplementation(() => policyCalls.push('map'));
+
+    // #4795 — the limit pre-count: by default no template resolves and no
+    // code is taken, so the existing branch tests see a zero-row check.
+    limitCalls.length = 0;
+    limitRefusal.current = null;
+    (ControlTemplateRepository.listCodesByIds as jest.Mock).mockReset().mockResolvedValue([]);
+    (mockDb.control.findMany as jest.Mock).mockReset().mockResolvedValue([]);
 });
 
 const ctx = makeRequestContext('ADMIN');
@@ -349,5 +366,49 @@ describe('listControlMappings', () => {
 
         expect(result).toEqual([{ id: 'm-1' }]);
         expect(policyCalls).toEqual(['read']);
+    });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// #4795 — installing is held to the plan's control limit
+// ──────────────────────────────────────────────────────────────────────
+describe('installControlsFromTemplate — plan limit (#4795)', () => {
+    it('checks the limit for the controls it will actually create', async () => {
+        (ControlTemplateRepository.listCodesByIds as jest.Mock).mockResolvedValue([
+            { id: 't-1', code: 'A.5.1' },
+            { id: 't-2', code: 'A.5.2' },
+            { id: 't-3', code: 'A.5.3' },
+        ]);
+        // A.5.2 is already in the register; t-missing does not resolve.
+        (mockDb.control.findMany as jest.Mock).mockResolvedValue([{ code: 'A.5.2' }]);
+        mockTplGetById.mockResolvedValue(null);
+
+        await installControlsFromTemplate(ctx, ['t-1', 't-2', 't-3', 't-missing']);
+
+        expect(limitCalls).toEqual([{ resource: 'control', additional: 2 }]);
+    });
+
+    it('a refused limit writes nothing', async () => {
+        (ControlTemplateRepository.listCodesByIds as jest.Mock).mockResolvedValue([
+            { id: 't-1', code: 'A.5.1' },
+        ]);
+        limitRefusal.current = new Error('plan_limit_exceeded: FREE plan allows 10 control(s); tenant currently has 10. Upgrade to add more.');
+
+        await expect(installControlsFromTemplate(ctx, ['t-1'])).rejects.toThrow(/plan_limit_exceeded/);
+
+        expect(mockTplGetById).not.toHaveBeenCalled();
+        expect(mockDb.control.create).not.toHaveBeenCalled();
+        expect(auditCalls).toHaveLength(0);
+    });
+
+    it('the permission gate runs before the limit is read', async () => {
+        (assertCanCreateControl as jest.Mock).mockImplementation(() => {
+            throw new Error('forbidden');
+        });
+
+        await expect(installControlsFromTemplate(ctx, ['t-1'])).rejects.toThrow('forbidden');
+
+        expect(ControlTemplateRepository.listCodesByIds).not.toHaveBeenCalled();
+        expect(limitCalls).toHaveLength(0);
     });
 });

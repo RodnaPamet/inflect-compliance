@@ -7,6 +7,7 @@ import {
     assertCanReadControls, assertCanCreateControl, assertCanMapFramework,
 } from '../../policies/control.policies';
 import { logEvent } from '../../events/audit';
+import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
@@ -24,6 +25,25 @@ export async function listControlTemplates(ctx: RequestContext) {
 
 export async function installControlsFromTemplate(ctx: RequestContext, templateIds: string[]) {
     assertCanCreateControl(ctx);
+
+    // #4795 — installing creates controls, so it is held to the plan's
+    // control limit like `createControl`. Count what the loop below will
+    // actually create (a template that resolves, whose code is not already
+    // in the register, once per code) and refuse the whole install before
+    // any row is written, rather than stopping half way.
+    const toCreate = await runInTenantContext(ctx, async (db) => {
+        const templates = await ControlTemplateRepository.listCodesByIds(db, templateIds);
+        const codes = Array.from(new Set(templates.map((t) => t.code)));
+        if (codes.length === 0) return 0;
+        const existing = await db.control.findMany({
+            where: { tenantId: ctx.tenantId, code: { in: codes } },
+            select: { code: true },
+            take: codes.length,
+        });
+        const taken = new Set(existing.map((c) => c.code));
+        return codes.filter((code) => !taken.has(code)).length;
+    });
+    await assertWithinLimit(ctx, 'control', toCreate);
 
     return runInTenantContext(ctx, async (db) => {
         // `skipped` distinguishes a template whose control already existed

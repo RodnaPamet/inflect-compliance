@@ -2581,12 +2581,12 @@
       "controlHealthTruncated": "Showing health for the first {scanned} controls (scan cap {cap}). Controls beyond the cap have no verdict badge."
     },
     "templates": {
-      "title": "Control Templates",
+      "title": "Control templates",
       "subtitle": "Select templates to install as controls in your register",
       "installFailed": "Failed to install templates",
-      "installed": "Installed {count} control(s) successfully!",
-      "installing": "Installing...",
-      "installSelected": "Install Selected ({count})",
+      "installed": "{count, plural, one {# control installed.} other {# controls installed.}}",
+      "installing": "Installing…",
+      "installSelected": "Install selected ({count})",
       "loading": "Loading templates…",
       "emptyTitle": "No templates yet",
       "emptyDesc": "Templates are seeded by your admin.",
@@ -2599,8 +2599,15 @@
       "searchPlaceholder": "Search templates…",
       "colPreview": "Preview",
       "previewSummary": "{tasks} tasks · {requirements} requirement links",
-      "installedWithSkipped": "Installed {installed} · skipped {skipped} existing",
+      "installedWithSkipped": "Installed {installed} · skipped {skipped} already in the register",
       "loadFailed": "Couldn't load templates",
+      "noMatchTitle": "No templates match your search",
+      "noMatchDesc": "Try another code, name or category, or clear the search to see every template.",
+      "clearSearch": "Clear search",
+      "selectAll": "Select every template shown",
+      "selectRow": "Select {name}",
+      "unresolvedNotice": "{count, plural, one {# selected template no longer exists and was not installed.} other {# selected templates no longer exist and were not installed.}}",
+      "planLimitReached": "Your plan allows {limit} controls and this workspace has {current}, so these templates would go over the limit. Install fewer, or upgrade the plan.",
       "retry": "Retry"
     },
     "testPlan": {
