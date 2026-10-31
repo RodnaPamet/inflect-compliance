@@ -321,6 +321,7 @@ function SankeyLinkPath({
     isDimmed: boolean;
 }) {
     const t = useTranslations('common.ui');
+    const relationLabel = t(`sankeyRelation.${link.relation}` as Parameters<typeof t>[0]);
     // Hover-pop: highlighted links thicken slightly + lift to higher
     // opacity; dimmed links drop to 0.05. Flat per-kind stroke colour
     // (the source tier's colour) rather than a gradient.
@@ -341,10 +342,7 @@ function SankeyLinkPath({
             }}
         >
             <title>
-                {t('sankeyLinkTitle', {
-                    relation: t(`sankeyRelation.${link.relation}` as Parameters<typeof t>[0]),
-                    value: link.value,
-                })}
+                {t('sankeyLinkTitle', { relation: relationLabel, value: link.value })}
             </title>
         </path>
     );
