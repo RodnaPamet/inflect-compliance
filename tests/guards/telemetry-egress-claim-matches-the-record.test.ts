@@ -117,8 +117,42 @@ describe('the telemetry egress claim matches the recorded resource', () => {
         const cmds = recordVerifyCommands();
         const curls = cmds.filter((c) => c.startsWith('curl'));
         expect(curls.length).toBeGreaterThanOrEqual(2);
-        const denied = curls.filter((c) => c.includes('telemetry.data.nvidia.com'));
-        const control = curls.filter((c) => !c.includes('telemetry.data.nvidia.com'));
+        /*
+            Classified by the URL's HOST, not by a substring of the command.
+
+            `c.includes('telemetry.data.nvidia.com')` was the first version and
+            CodeQL rejected it as INCOMPLETE URL SUBSTRING SANITIZATION, with
+            two high-severity alerts. It was right, even though these strings
+            are shell commands out of a markdown file rather than URLs being
+            authorised: the host can sit anywhere in a URL, so
+            `https://evil.example/?x=telemetry.data.nvidia.com` would have been
+            classified as the denial probe and a record carrying only that would
+            have passed. Parsing the host cannot be fooled that way, which makes
+            this the stronger assertion as well as the clean one.
+        */
+        const hostOf = (cmd: string): string | null => {
+            const url = /https?:\/\/[^\s'"]+/.exec(cmd)?.[0];
+            if (url === undefined) return null;
+            try {
+                return new URL(url).hostname;
+            } catch {
+                return null;
+            }
+        };
+        /*
+            The denied host is READ FROM THE README's own rule rather than
+            restated here. An earlier draft had a `SINK_HOST` constant beside
+            the policy name, which is a second pin that can disagree with the
+            document it is checking — and it was silently undefined after a
+            rewrite, which jest reported and tsc would have.
+        */
+        const sink = readmeDestFqdns();
+        expect(sink).toBeDefined();
+        const denied = curls.filter((c) => hostOf(c) === sink);
+        const control = curls.filter((c) => {
+            const host = hostOf(c);
+            return host !== null && host !== sink;
+        });
         expect(denied.length).toBeGreaterThanOrEqual(1);
         expect(control.length).toBeGreaterThanOrEqual(1);
     });
