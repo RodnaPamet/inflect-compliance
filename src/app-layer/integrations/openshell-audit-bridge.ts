@@ -46,6 +46,9 @@
 import { logEvent } from '@/app-layer/events/audit';
 import { buildSystemContext } from '@/app-layer/context-system';
 import { prisma } from '@/lib/prisma';
+import { runInTenantContext } from '@/lib/db-context';
+import { COLLECTOR_PROVIDER_NAME } from './cloud-posture/sandboxed-collector-exec';
+import { maintainSandboxLease } from './openshell-sandbox-leases';
 import type { RequestContext } from '@/app-layer/types';
 import type { PrismaTx } from '@/lib/db-context';
 import type { SandboxDecision } from '@/lib/agentic/openshell/sandbox-decisions';
@@ -208,13 +211,48 @@ export function sandboxDecisionRecorderForScan(input: {
     readonly job: string;
     /** A durable run id where the caller has one, so rows group by run. */
     readonly discriminator?: string;
+    /**
+     * The gateway-side credential provider's name, for the lease row — #4568.
+     *
+     * Defaulted rather than required, so #4563's callers are unchanged. The
+     * default is correct for the only caller that exists: every sandbox today
+     * is a collector's.
+     */
+    readonly providerName?: string;
 }): (decision: SandboxDecision) => Promise<void> {
-    return sandboxDecisionRecorder(
-        prisma,
-        buildSystemContext({
-            tenantId: input.tenantId,
-            job: input.job,
-            discriminator: input.discriminator,
-        }),
-    );
+    const ctx = buildSystemContext({
+        tenantId: input.tenantId,
+        job: input.job,
+        discriminator: input.discriminator,
+    });
+    const record = sandboxDecisionRecorder(prisma, ctx);
+    return async (decision) => {
+        /*
+            THE AUDIT ROW FIRST, THE LEASE SECOND — #4568, and the order is the
+            decision rather than arbitrary.
+
+            The audit row is the evidence and the lease is operational state.
+            If the lease write fails, the evidence still exists; the reverse
+            would leave a sandbox recorded as reachable with no row saying it
+            was ever created. Both throw, and the executor isolates a recording
+            failure so a tool result is never lost to either.
+        */
+        await record(decision);
+        /*
+            IN A TENANT CONTEXT, because the lease table is RLS-protected with
+            `FORCE ROW LEVEL SECURITY`: a write on the global client has no
+            `app.tenant_id` and the insert's `WITH CHECK` refuses it. The audit
+            row above does not need one — `appendAuditEntry` deliberately uses
+            the global client for advisory-lock isolation — so the two writes
+            reach the database by different routes on purpose.
+        */
+        await runInTenantContext(ctx, (db) =>
+            maintainSandboxLease(db, {
+                tenantId: input.tenantId,
+                ownerJob: input.job,
+                providerName: input.providerName ?? COLLECTOR_PROVIDER_NAME,
+                decision,
+            }),
+        );
+    };
 }

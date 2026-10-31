@@ -43,6 +43,7 @@
  * `liftedAt: null`, so exactly one of two concurrent lifts claims it.
  */
 import { runInTenantContext } from '@/lib/db-context';
+import { sweepOpenSandboxLeases } from '@/app-layer/integrations/openshell-sandbox-leases';
 import type { PrismaTx } from '@/lib/db-context';
 import { badRequest, conflict, forbidden, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -186,6 +187,12 @@ function toRecord(row: {
 export async function engageKillSwitch(
     ctx: RequestContext,
     input: { agentId?: string | null; reason: string },
+    /**
+     * Injected sandbox deletion — #4568. Absent in production today, because
+     * nothing constructs a transport yet; a test supplies one to drive the
+     * sweep's arms. Optional and third, so every existing caller is unchanged.
+     */
+    deps?: { readonly deleteSandbox?: (sandboxId: string) => Promise<void> },
 ): Promise<KillSwitchRecord> {
     assertAgentGovernanceWrite(ctx, 'agent_kill_switch');
     const reason = requireReason(input.reason, 'reason');
@@ -253,6 +260,62 @@ export async function engageKillSwitch(
                     killScope: scope,
                     agentId,
                     engagedByUserId: ctx.userId,
+                },
+            },
+        });
+
+        /*
+            WHAT THE KILL REACHED IN THE SANDBOX RUNTIME — #4568.
+
+            After the row exists, because the kill is already in force by then
+            and this is cleanup after it. `sweepOpenSandboxLeases` NEVER throws:
+            a kill that failed because a gateway was unreachable would be the
+            safety control failing for a reason outside its own job.
+
+            The coverage is written verbatim rather than as a bare count,
+            because the owner decision owes exactly that: the guarantee is
+            "sandboxes of currently-running work", not "sandboxes", and a row
+            reading the latter is the overclaim this phase keeps catching. With
+            no transport configured — production today — it reports
+            `transport-absent` WITH the number it would have reached, so
+            "0 deleted" cannot be read as "there were none".
+        */
+        const sweep = await sweepOpenSandboxLeases(db, {
+            tenantId: ctx.tenantId,
+            agentId,
+            deleteSandbox: deps?.deleteSandbox,
+        });
+        /*
+            Resolved into locals BEFORE the sink, the same reason the engage
+            row above does it: `no-raw-prompt-logging` classifies an expression
+            at a value position as "a helper this rule cannot open", and a
+            PROPERTY ACCESS at a value position is exactly that. The engage row
+            above interpolates `scope`, a local scalar, and is fine — so the
+            template is not the problem, reading `sweep.deleted` inside it is.
+            An intermediate attempt replaced the template with `String(...)`
+            concatenation and made it WORSE, 218 to 223: every one of those
+            calls is another helper the rule cannot open.
+        */
+        const sweptDeleted = sweep.deleted;
+        const sweptAttempted = sweep.attempted;
+        const sweptFailed = sweep.failed;
+        const sweptCoverage = sweep.coverage;
+        const sweepSummary = `Sandbox sweep: ${sweptDeleted} deleted of ${sweptAttempted} live (${sweptCoverage})`;
+        await logEvent(db, ctx, {
+            action: 'AGENT_KILL_SANDBOX_SWEEP',
+            entityType: 'AgentKillSwitch',
+            entityId: row.id,
+            detailsJson: {
+                category: 'access',
+                entityName: 'AgentKillSwitch',
+                operation: 'update',
+                summary: sweepSummary,
+                after: {
+                    killScope: scope,
+                    sandboxesAttempted: sweptAttempted,
+                    sandboxesDeleted: sweptDeleted,
+                    sandboxesFailed: sweptFailed,
+                    sandboxCoverage: sweptCoverage,
                 },
             },
         });
