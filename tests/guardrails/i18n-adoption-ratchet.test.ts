@@ -354,7 +354,7 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/ui/GraphExplorer.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/OnboardingTour.tsx': 1, // no-intl, 1 prop
     'src/components/ui/RichTextEditor.tsx': 1, // partial, 1 jsx
-    'src/components/ui/SankeyChart.tsx': 2, // intl wired #3209; 1 jsx + 1 prop remain
+    'src/components/ui/SankeyChart.tsx': 1, // intl wired #3209; #4794 translated the rest but 1 remains
     'src/components/ui/TreeView.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/ai-assist-rail.tsx': 5, // no-intl, 2 jsx + 3 prop
     'src/components/ui/date-picker/date-range-picker.tsx': 3, // no-intl, 1 jsx + 2 prop

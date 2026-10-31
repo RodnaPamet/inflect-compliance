@@ -19,6 +19,7 @@ import { useTranslations } from 'next-intl';
 import { SankeyChart } from '@/components/ui/SankeyChart';
 import type { TraceabilityGraph } from '@/lib/traceability-graph/types';
 import { Heading } from '@/components/ui/typography';
+import { InlineNotice } from '@/components/ui/inline-notice';
 
 export interface ControlsSankeyClientProps {
     initialGraph: TraceabilityGraph;
@@ -50,6 +51,14 @@ export function ControlsSankeyClient({
                     </p>
                 </div>
             </div>
+
+            {/* #4794 — the graph is capped per kind; a partial diagram must
+                say it is partial rather than pass for the whole register. */}
+            {initialGraph.meta?.truncated && (
+                <InlineNotice variant="warning" id="controls-sankey-truncated">
+                    {t('sankey.truncated', { cap: initialGraph.meta.nodeCap ?? 0 })}
+                </InlineNotice>
+            )}
 
             <SankeyChart graph={initialGraph} searchQuery="" />
         </div>

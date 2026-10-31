@@ -153,6 +153,27 @@
       "regulatorWording": "Show the regulator wording",
       "frameworkSectionNavigator": "Framework section navigator",
       "sankeyFlow": "Cross-tier traceability flow (Sankey)",
+      "sankeyEmpty": "No mapping flows to display.",
+      "sankeyNoLinks": "There are records, but none are linked to each other yet.",
+      "sankeyNoMatch": "No flows match \"{query}\"",
+      "sankeyFitToView": "Fit to view",
+      "sankeyActualSize": "Actual size",
+      "sankeyNodeTitle": "{label} (weight {weight})",
+      "sankeyLinkTitle": "{relation} ({value})",
+      "sankeyColumn": {
+        "asset": "Assets",
+        "risk": "Risks",
+        "control": "Controls",
+        "requirement": "Requirements",
+        "policy": "Policies"
+      },
+      "sankeyRelation": {
+        "mitigates": "Mitigates",
+        "protects": "Protects",
+        "exposes": "Exposes",
+        "implements": "Implements",
+        "governs": "Governs"
+      },
       "treeExpansionControls": "Tree expansion controls",
       "kpiTrend30Day": "{label} 30-day trend",
       "kpiTrend": "{label} trend",
@@ -2546,7 +2567,9 @@
     },
     "sankey": {
       "title": "Controls flow",
-      "subtitle": "How assets expose risks and how controls mitigate them, at a glance."
+      "subtitle": "How assets expose risks, how controls mitigate them, and which framework requirements each control implements.",
+      "truncated": "The diagram shows up to {cap} items of each kind, and this workspace has more, so some are left out.",
+      "loadFailed": "Couldn't build the flow diagram. Reload the page to try again."
     },
     "dashboard": {
       "title": "Controls Dashboard",
