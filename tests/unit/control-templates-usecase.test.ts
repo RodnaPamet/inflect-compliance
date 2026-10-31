@@ -23,7 +23,7 @@
  */
 
 const mockDb = {
-    control: { findFirst: jest.fn(), create: jest.fn() },
+    control: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
     // Unified Task + canonical controlRequirementLink — the tables the
     // install / map / unmap paths write after the R2-P1 link unification.
     // Install batches into task.createMany + controlRequirementLink.createMany;
@@ -47,6 +47,7 @@ jest.mock('@/app-layer/repositories/ControlTemplateRepository', () => ({
     ControlTemplateRepository: {
         list: jest.fn(),
         getById: jest.fn(),
+        listCodesByIds: jest.fn().mockResolvedValue([]),
     },
 }));
 
