@@ -270,6 +270,66 @@ describe('TestPlanScheduleSection — save interaction', () => {
         });
     });
 
+    test('a cadence keeps an automated plan automated (#4796)', async () => {
+        const user = userEvent.setup();
+        render(
+            <TestPlanScheduleSection
+                {...BASE_PROPS}
+                initialAutomationType="INTEGRATION"
+                initialSchedule="0 9 * * *"
+                initialScheduleTimezone="UTC"
+                initialNextRunAt={new Date(Date.now() + 3600_000).toISOString()}
+            />,
+        );
+
+        await user.click(screen.getByRole('combobox'));
+        await user.click(screen.getByRole('option', { name: /Weekly/i }));
+        expect(screen.queryByTestId('test-plan-off-makes-manual-warning')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /Save schedule/i }));
+
+        await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+        const body = JSON.parse(
+            ((global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit])[1]
+                .body as string,
+        );
+        expect(body).toMatchObject({
+            schedule: '0 9 * * MON',
+            automationType: 'INTEGRATION',
+        });
+        expect(body).not.toHaveProperty('automationConfig');
+    });
+
+    test('Off on an automated plan warns that it becomes manual (#4796)', async () => {
+        const user = userEvent.setup();
+        render(
+            <TestPlanScheduleSection
+                {...BASE_PROPS}
+                initialAutomationType="SCRIPT"
+                initialSchedule="0 9 * * *"
+                initialScheduleTimezone="UTC"
+                initialNextRunAt={new Date(Date.now() + 3600_000).toISOString()}
+            />,
+        );
+        expect(screen.queryByTestId('test-plan-off-makes-manual-warning')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('combobox'));
+        await user.click(screen.getByRole('option', { name: /Off \(manual\)/i }));
+        expect(screen.getByTestId('test-plan-off-makes-manual-warning')).toBeInTheDocument();
+    });
+
+    test('Off on a manual plan needs no warning (#4796)', async () => {
+        const user = userEvent.setup();
+        render(
+            <TestPlanScheduleSection
+                {...BASE_PROPS}
+                initialSchedule="0 9 * * *"
+                initialScheduleTimezone="UTC"
+            />,
+        );
+        await user.click(screen.getByRole('combobox'));
+        await user.click(screen.getByRole('option', { name: /Off \(manual\)/i }));
+        expect(screen.queryByTestId('test-plan-off-makes-manual-warning')).not.toBeInTheDocument();
+    });
+
     test('API error surfaces inline without calling onSaved', async () => {
         global.fetch = jest.fn().mockResolvedValue(
             // THE REAL ENVELOPE (#3984) -- see the note in

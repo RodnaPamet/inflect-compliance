@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiClientError } from '@/lib/api-client';
+import { apiRefusalMessage } from '@/lib/api-error';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { Breadcrumbs, type BreadcrumbItem } from '@/components/ui/breadcrumbs';
 import { TestPlanScheduleSection } from '@/components/TestPlanScheduleSection';
@@ -115,7 +116,12 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
     const router = useRouter();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions } = useTenantContext();
+    const { appPermissions } = useTenantContext();
+    // #4796 — the server gates a plan's edits and schedule on `tests.create`
+    // and a run on `tests.execute` (test.policies.ts), not the coarse write
+    // tier, so the buttons ask the same keys.
+    const canManagePlan = appPermissions.tests.create;
+    const canRun = appPermissions.tests.execute;
     const t = useTranslations('controls');
     // Second binding: the plan/run enum labels live in `controlTests` (where the
     // /tests register already localized them), so reuse those keys rather than
@@ -196,7 +202,10 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
         setCreatingRun(true);
         try {
             const res = await fetch(apiUrl(`/tests/plans/${planId}/runs`), { method: 'POST' });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+                toast.error(await refusalOf(res, t('testPlan.runFailed')));
+                return;
+            }
             const run = await res.json();
             router.push(tenantHref(`/tests/runs/${run.id}`));
         } catch {
@@ -306,14 +315,16 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                         )}
                     </div>
                 </div>
-                {permissions.canWrite && (
+                {(canManagePlan || canRun) && (
                     <div className="flex gap-tight">
-                        <Button variant="secondary" size="sm" onClick={() => setEditing(!editing)} id="edit-test-plan-btn">
-                            {editing ? t('testPlan.cancel') : t('testPlan.edit')}
-                        </Button>
-                        {plan.status === 'ACTIVE' && (
+                        {canManagePlan && (
+                            <Button variant="secondary" size="sm" onClick={() => setEditing(!editing)} id="edit-test-plan-btn">
+                                {editing ? t('testPlan.cancel') : t('testPlan.edit')}
+                            </Button>
+                        )}
+                        {canRun && plan.status === 'ACTIVE' && (
                             <Button variant="primary" size="sm" onClick={createRun} disabled={creatingRun} id="create-test-run-btn">
-                                {creatingRun ? '...' : hasPendingRun ? t('testPlan.continueRun') : t('testPlan.runTestNow')}
+                                {creatingRun ? t('testPlan.creating') : hasPendingRun ? t('testPlan.continueRun') : t('testPlan.runTestNow')}
                             </Button>
                         )}
                     </div>
@@ -324,7 +335,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                 the plan via useState initializers on mount. Rendered only
                 while `editing`, so every open is a fresh mount that
                 re-seeds from the latest SWR data — no set-state-in-effect. */}
-            {editing && permissions.canWrite && (
+            {editing && canManagePlan && (
                 <PlanEditForm
                     plan={plan}
                     onCancel={() => setEditing(false)}
@@ -339,7 +350,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                 initialSchedule={plan.schedule}
                 initialScheduleTimezone={plan.scheduleTimezone}
                 initialNextRunAt={plan.nextRunAt}
-                canEdit={permissions.canWrite}
+                canEdit={canManagePlan}
                 onSaved={() => void mutate()}
             />
 
@@ -410,7 +421,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                             </span>
                         )}
                     </div>
-                    {permissions.canWrite && plan.status === 'ACTIVE' && (
+                    {canRun && plan.status === 'ACTIVE' && (
                         <Button
                             variant={hasPendingRun ? 'secondary' : 'primary'}
                             icon={hasPendingRun ? undefined : <Plus className="-ml-0.5 -mr-2.5" />}
@@ -523,7 +534,10 @@ function PlanEditForm({
                     steps: serializeSteps(editSteps),
                 }),
             });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+                toast.error(await refusalOf(res, t('testPlan.saveFailed')));
+                return;
+            }
             await onSaved();
         } catch {
             toast.error(t('testPlan.saveFailed'));
@@ -535,23 +549,23 @@ function PlanEditForm({
     return (
         <div className={cn(cardVariants({ density: 'compact' }), 'space-y-compact animate-fadeIn')}>
             <div>
-                <label className="text-xs text-content-muted block mb-1">{t('testPlan.name')}</label>
+                <label className="text-xs text-content-muted block mb-1" htmlFor="edit-plan-name">{t('testPlan.name')}</label>
                 <Input className="w-full" value={editName} onChange={e => setEditName(e.target.value)} id="edit-plan-name" />
             </div>
             <div>
-                <label className="text-xs text-content-muted block mb-1">{t('testPlan.description')}</label>
-                <Textarea className="w-full h-20" value={editDesc} onChange={e => setEditDesc(e.target.value)} />
+                <label className="text-xs text-content-muted block mb-1" htmlFor="edit-plan-description">{t('testPlan.description')}</label>
+                <Textarea className="w-full h-20" value={editDesc} onChange={e => setEditDesc(e.target.value)} id="edit-plan-description" />
             </div>
             {/* Method is NOT editable here — it's derived from automationType
                 (set in the Schedule section). See the note on the removed
                 method options above. */}
             <div className="grid grid-cols-2 gap-compact">
                 <div>
-                    <label className="text-xs text-content-muted block mb-1">{t('testPlan.frequency')}</label>
-                    <Combobox hideSearch selected={FREQ_CB_OPTIONS.find(o => o.value === editFreq) ?? null} setSelected={(opt) => setEditFreq(opt?.value ?? editFreq)} options={FREQ_CB_OPTIONS} matchTriggerWidth />
+                    <label className="text-xs text-content-muted block mb-1" htmlFor="edit-plan-frequency">{t('testPlan.frequency')}</label>
+                    <Combobox hideSearch id="edit-plan-frequency" selected={FREQ_CB_OPTIONS.find(o => o.value === editFreq) ?? null} setSelected={(opt) => setEditFreq(opt?.value ?? editFreq)} options={FREQ_CB_OPTIONS} matchTriggerWidth />
                 </div>
                 <div>
-                    <label className="text-xs text-content-muted block mb-1">{t('testPlan.status')}</label>
+                    <label className="text-xs text-content-muted block mb-1" htmlFor="edit-plan-status">{t('testPlan.status')}</label>
                     <Combobox hideSearch id="edit-plan-status" selected={PLAN_STATUS_OPTIONS.find(o => o.value === editStatus) ?? null} setSelected={(opt) => setEditStatus(opt?.value ?? editStatus)} options={PLAN_STATUS_OPTIONS} matchTriggerWidth />
                 </div>
             </div>
@@ -569,4 +583,16 @@ function PlanEditForm({
             </div>
         </div>
     );
+}
+
+/**
+ * The sentence to show for a refused plan write (#4796). A 4xx carries the
+ * server's own reason, such as an audit-procedure plan only its auditor's
+ * owner may change; a 5xx says nothing a person can act on, so it keeps the
+ * caller's fallback.
+ */
+async function refusalOf(res: Response, fallback: string): Promise<string> {
+    if (res.status >= 500) return fallback;
+    const body = await res.json().catch(() => null);
+    return apiRefusalMessage(body, fallback);
 }
