@@ -8287,7 +8287,7 @@
     "aiResidency": {
       "title": "Where AI runs",
       "description": "Decide whether this workspace's data may leave the deployment for an external model provider. Every change is recorded in the audit log with the old and new value.",
-      "loadFailed": "This setting couldn't be loaded. Refresh the page to try again.",
+      "loadFailed": "This setting couldn't be loaded.",
       "saveFailed": "The setting wasn't saved.",
       "externalBadge": "External",
       "localBadge": "Local only",

@@ -155,6 +155,16 @@ describe('Where AI runs', () => {
         expect(screen.queryByText(EN.saved)).not.toBeInTheDocument();
     });
 
+    it('a failed read offers a retry that loads the setting (#4814)', async () => {
+        stubSettings({ stored: 'EXTERNAL', readOk: false });
+        render(<AiResidencySection />);
+        const retry = await screen.findByTestId('ai-residency-retry');
+        stubSettings({ stored: 'LOCAL_ONLY' });
+        await userEvent.setup().click(retry);
+        expect(await screen.findByTestId('ai-residency-state')).toHaveTextContent(EN.stateLocal);
+        expect(screen.queryByText(EN.loadFailed)).not.toBeInTheDocument();
+    });
+
     it('a refused read says it cannot answer, and offers no choice', async () => {
         stubSettings({ stored: 'EXTERNAL', readOk: false });
         render(<AiResidencySection />);
