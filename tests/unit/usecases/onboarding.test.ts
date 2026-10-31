@@ -175,6 +175,31 @@ describe('completeOnboardingStep', () => {
             completeOnboardingStep(makeRequestContext('ADMIN'), 'COMPANY_PROFILE'),
         ).resolves.toBeDefined();
     });
+
+    it('stores a failed automation as the step\'s result, so the wizard can name it (#4701)', async () => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockGetByTenantId.mockResolvedValueOnce({
+            status: 'IN_PROGRESS',
+            completedSteps: ['COMPANY_PROFILE'],
+            stepData: { ASSET_SETUP: { assets: ['CRM'] } },
+        } as never);
+        mockCompleteStep.mockResolvedValueOnce({
+            id: 'ob-1', stepData: { ASSET_SETUP: { assets: ['CRM'] } },
+        } as never);
+        mockRunStepAction.mockRejectedValueOnce(new Error('asset-create-failed'));
+        const stored = { id: 'ob-1', stepData: { _actionResults: { ASSET_SETUP: { failed: true } } } };
+        (storeActionResult as jest.Mock).mockResolvedValueOnce(stored);
+
+        const result = await completeOnboardingStep(makeRequestContext('ADMIN'), 'ASSET_SETUP');
+
+        expect(storeActionResult).toHaveBeenCalledWith(
+            expect.anything(),
+            'ASSET_SETUP',
+            expect.objectContaining({ action: 'AUTOMATION_FAILED', failed: true }),
+        );
+        // The wizard receives the row that names the failure.
+        expect(result).toBe(stored);
+    });
 });
 
 describe('completeOnboardingStep — the framework step (#4125)', () => {

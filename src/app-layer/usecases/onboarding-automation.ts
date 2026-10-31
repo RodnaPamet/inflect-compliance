@@ -18,6 +18,7 @@ import { OnboardingRepository } from '../repositories/OnboardingRepository';
 import { RiskRepository } from '../repositories/RiskRepository';
 import { badRequest, isAppError } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
+import type { OnboardingRefusal } from '@/lib/onboarding-refusals';
 import type { AssetType, TaskType } from '@prisma/client';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -136,6 +137,11 @@ export interface StepActionResult {
     details: string;
     /** FRAMEWORK_INSTALL only: every pack that failed to install. */
     failures?: FrameworkInstallFailure[];
+    /**
+     * True when the step's automation threw (#4701). The step stays
+     * completed; the wizard names it, and continuing from it again retries.
+     */
+    failed?: boolean;
 }
 
 /**
@@ -194,11 +200,17 @@ export async function assertFrameworkPackChoices(ctx: RequestContext, frameworkS
         if (packs.length <= 1) continue;
         const chosen = chosenPacksFor(frameworkStep, fw);
         if (chosen.length === 0) {
-            throw badRequest(`Choose at least one pack of ${fw} to continue.`);
+            throw badRequest(`Choose at least one pack of ${fw} to continue.`, {
+                reason: 'ONBOARDING_NO_PACK' satisfies OnboardingRefusal,
+                framework: fw,
+            });
         }
         const unknown = chosen.filter((k) => !packs.includes(k));
         if (unknown.length > 0) {
-            throw badRequest(`Not a pack of ${fw}: ${unknown.join(', ')}`);
+            throw badRequest(`Not a pack of ${fw}: ${unknown.join(', ')}`, {
+                reason: 'ONBOARDING_UNKNOWN_PACK' satisfies OnboardingRefusal,
+                framework: fw,
+            });
         }
     }
 }

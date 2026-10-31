@@ -14102,8 +14102,8 @@
         "finish": "Failed to finish"
       },
       "companyProfile": {
-        "intro": "Tell us about your organization. This information helps tailor your compliance experience.",
-        "nameLabel": "Company / Legal Name *",
+        "intro": "Tell us about your organization. Your answers are kept with this setup. Ticking the AI box below adds a short AI-governance step.",
+        "nameLabel": "Company or legal name",
         "namePlaceholder": "Acme Corporation",
         "industryLabel": "Industry",
         "industryPlaceholder": "Select industry...",
@@ -14155,7 +14155,8 @@
         "intro": "Add your key information assets. These are the systems, databases, and services you need to protect.",
         "placeholder": "e.g. Customer Database, Cloud Infrastructure...",
         "add": "Add",
-        "importLater": "You can import assets in bulk later from the Assets page."
+        "importLater": "You can import assets in bulk later from the Assets page.",
+        "remove": "Remove {name}"
       },
       "controls": {
         "intro": "We'll install baseline controls from your selected frameworks. This creates your initial control register.",
@@ -14170,10 +14171,11 @@
         "generate": "Generate starter risks"
       },
       "team": {
-        "intro": "Invite your team members. They'll receive an email invitation to join your workspace.",
+        "intro": "List the colleagues you plan to invite. Nothing is sent from this step.",
         "placeholder": "colleague@company.com",
-        "invite": "Invite",
-        "inviteLater": "You can skip this step and invite team members later from the Admin panel."
+        "add": "Add",
+        "remove": "Remove {email}",
+        "inviteFrom": "Invite each of them from <link>the members page</link>, where you choose the role they will have."
       },
       "review": {
         "intro": "Review your setup before completing onboarding.",
@@ -14185,8 +14187,20 @@
         "pendingConfirmation": "Pending confirmation",
         "starterWillGenerate": "Starter risks will be generated",
         "skipped": "Skipped",
-        "invitationsPending": "{count} invitations pending",
-        "finishNotice": "Click \"Complete Setup\" below to finish onboarding and go to your dashboard."
+        "finishNotice": "Click \"Complete Setup\" below to finish onboarding and go to your dashboard.",
+        "toInvite": "{count} to invite from the members page"
+      },
+      "automationFailed": {
+        "title": "Some of the setup did not finish",
+        "hint": "Open the step and click Continue again to retry. Anything already created is not created twice."
+      },
+      "refused": {
+        "ONBOARDING_ADMIN_ONLY": "Only Owners and Admins can set up the workspace.",
+        "ONBOARDING_NOT_STARTED": "The setup has not been started. Reload the page and start it.",
+        "ONBOARDING_NOT_IN_PROGRESS": "The setup is not in progress. Reload the page.",
+        "ONBOARDING_NO_FRAMEWORK": "Choose at least one framework to continue.",
+        "ONBOARDING_NO_PACK": "Choose at least one pack of {framework} to continue.",
+        "ONBOARDING_UNKNOWN_PACK": "A pack chosen for {framework} is not part of it. Reload the page and choose again."
       }
     },
     "aiGov": {
