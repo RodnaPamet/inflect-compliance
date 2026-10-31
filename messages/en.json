@@ -7244,7 +7244,16 @@
       "stripeId": "Stripe ID",
       "empty": "No billing events yet.",
       "resourcePlural": "events",
-      "resourceSingular": "event"
+      "resourceSingular": "event",
+      "events": {
+        "checkoutCompleted": "Checkout completed",
+        "subscriptionCreated": "Subscription created",
+        "subscriptionUpdated": "Subscription updated",
+        "subscriptionCanceled": "Subscription canceled",
+        "paymentFailed": "Payment failed",
+        "paymentSucceeded": "Payment succeeded",
+        "other": "Other Stripe event ({type})"
+      }
     },
     "billing": {
       "title": "Billing",
@@ -7261,7 +7270,7 @@
       "paymentIssue": "Payment issue detected",
       "paymentIssueBody": "Please update your payment method to avoid service interruption.",
       "selfHosted": "Self-hosted deployment",
-      "selfHostedBody": "This instance runs without a Stripe integration — plan limits resolve to ENTERPRISE for every tenant and the in-app upgrade / portal buttons are disabled. Subscription changes are managed by your operator.",
+      "selfHostedBody": "This deployment runs without online billing, so every workspace has the Enterprise plan with no limits. Plans and subscriptions are managed by your operator, not on this page.",
       "upgrade": "Upgrade",
       "recommended": "Recommended",
       "premium": "Premium",
@@ -7275,7 +7284,27 @@
       "entFeature4": "Dedicated account manager",
       "manageSubscription": "Manage Subscription",
       "manageSubscriptionBody": "Update payment method, view invoices, or change your plan via the Stripe Customer Portal.",
-      "recentActivity": "Recent Activity"
+      "recentActivity": "Recent Activity",
+      "planName": {
+        "FREE": "Free",
+        "TRIAL": "Trial",
+        "PRO": "Pro",
+        "ENTERPRISE": "Enterprise"
+      },
+      "statusName": {
+        "ACTIVE": "Active",
+        "TRIALING": "Trialing",
+        "PAST_DUE": "Past due",
+        "CANCELED": "Canceled",
+        "INCOMPLETE": "Incomplete"
+      },
+      "manageBilling": "Manage billing",
+      "upgradeTo": "Upgrade to {plan}",
+      "actionFailed": "That didn't work. Nothing was changed; try again.",
+      "checkoutSuccessTitle": "Checkout complete",
+      "checkoutSuccessBody": "Your plan changes here as soon as Stripe confirms the payment, usually within moments. Reload the page if it still shows the old plan.",
+      "checkoutCanceledTitle": "Checkout canceled",
+      "checkoutCanceledBody": "Nothing was charged, and your plan is unchanged."
     },
     "apiKeys": {
       "fullAccessAria": "About the Full Access scope",
