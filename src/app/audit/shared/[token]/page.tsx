@@ -75,6 +75,9 @@ export default function SharedPackPage() {
     // stored value (`IMPLEMENTED`) is a code, not something to show an auditor.
     const tStatus = useTranslations('audits.packs.itemStatus');
     const statusLabel = (status: string) => (tStatus.has(status) ? tStatus(status) : humanizeSnakeCase(status));
+    // A frozen ISSUE item carries its task severity; say it as the task pages do (#4651).
+    const tSeverity = useTranslations('tasks.severityLabels');
+    const severityLabel = (severity: string) => (tSeverity.has(severity) ? tSeverity(severity) : humanizeSnakeCase(severity));
     const params = useParams();
     const token = params.token as string;
 
@@ -106,7 +109,13 @@ export default function SharedPackPage() {
                     auditPackItemId: attachItemId || undefined,
                 }),
             });
-            if (!res.ok) throw new Error();
+            if (!res.ok) {
+                // An expired link, a rate limit and a validation error each say
+                // why; this used to throw the body away and show one sentence (#4651).
+                const body: unknown = await res.json().catch(() => null);
+                setSubmitError(apiErrorMessage(body, t('returnChannel.submitError')));
+                return;
+            }
             const created = await res.json();
             const itemName = attachItemId
                 ? (data?.items.find((i) => i.id === attachItemId)
@@ -142,17 +151,17 @@ export default function SharedPackPage() {
     }, [token]);
 
     if (loading) return (
-        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="min-h-screen bg-bg-page flex items-center justify-center">
             <div className="w-96"><SkeletonCard lines={2} /></div>
         </div>
     );
 
     if (error) return (
-        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="min-h-screen bg-bg-page flex items-center justify-center">
             <Card className="max-w-md text-center">
-                <div className="mb-4"><AppIcon name="lock" size={48} className="text-slate-400" /></div>
+                <div className="mb-4"><AppIcon name="lock" size={48} className="text-content-muted" /></div>
                 <Heading level={1} className="mb-2">{t('accessDenied')}</Heading>
-                <p className="text-slate-400 text-sm">{error}</p>
+                <p className="text-content-muted text-sm">{error}</p>
             </Card>
         </div>
     );
@@ -168,17 +177,17 @@ export default function SharedPackPage() {
     });
 
     return (
-        <div className="min-h-screen bg-slate-900 text-white">
+        <div className="min-h-screen bg-bg-page text-content-default">
             <div className="max-w-4xl mx-auto p-6 space-y-section">
                 {/* Header */}
                 <div className="text-center py-4">
-                    <div className="text-sm text-slate-500 uppercase tracking-wide mb-2">{t('sharedAuditPack')}</div>
+                    <div className="text-sm text-content-subtle uppercase tracking-wide mb-2">{t('sharedAuditPack')}</div>
                     <Heading level={1} id="shared-pack-name">{pack?.name}</Heading>
-                    <p className="text-slate-400 text-sm mt-1">
+                    <p className="text-content-muted text-sm mt-1">
                         {cycle?.name} · {cycle?.frameworkKey} · {pack?.status ? (t.has(`packStatus.${pack.status}`) ? t(`packStatus.${pack.status}`) : pack.status) : null}
                     </p>
                     {pack?.frozenAt && (
-                        <p className="text-xs text-slate-500 mt-1">
+                        <p className="text-xs text-content-subtle mt-1">
                             {t('frozen', { date: formatDateTime(pack.frozenAt) })}
                         </p>
                     )}
@@ -191,7 +200,7 @@ export default function SharedPackPage() {
                             <div key={type} className="p-3">
                                 <div><AppIcon name={ENTITY_ICON[type] || 'overview'} size={20} /></div>
                                 <div className="text-lg font-bold">{typeItems.length}</div>
-                                <div className="text-xs text-slate-400">{t(`entityType.${type}`)}</div>
+                                <div className="text-xs text-content-muted">{t(`entityType.${type}`)}</div>
                             </div>
                         ))}
                     </div>
@@ -200,12 +209,12 @@ export default function SharedPackPage() {
                 {/* Items */}
                 {Object.entries(grouped).map(([type, typeItems]) => (
                     <div key={type} className="space-y-tight">
-                        <Heading level={3} className="text-slate-300 flex items-center gap-tight">
+                        <Heading level={3} className="text-content-default flex items-center gap-tight">
                             <AppIcon name={ENTITY_ICON[type] || 'overview'} size={16} />
                             <span>{t(`entityType.${type}`)}</span>
-                            <span className="text-slate-500">({typeItems.length})</span>
+                            <span className="text-content-subtle">({typeItems.length})</span>
                         </Heading>
-                        <div className={cn(cardVariants({ density: 'none' }), 'divide-y divide-slate-700/50')}>
+                        <div className={cn(cardVariants({ density: 'none' }), 'divide-y divide-border-subtle')}>
                             {typeItems.map((item) => {
                                 let snap: PackSnapshot = {};
                                 try { snap = JSON.parse(item.snapshotJson || '{}'); } catch { /* */ }
@@ -216,14 +225,14 @@ export default function SharedPackPage() {
                                             <span className="font-medium">{name}</span>
                                             {snap.status && <StatusBadge variant="neutral">{statusLabel(snap.status)}</StatusBadge>}
                                         </div>
-                                        {snap.description && <p className="text-xs text-slate-500 mt-1">{snap.description}</p>}
-                                        <div className="flex gap-default mt-1 text-xs text-slate-500">
+                                        {snap.description && <p className="text-xs text-content-subtle mt-1">{snap.description}</p>}
+                                        <div className="flex gap-default mt-1 text-xs text-content-subtle">
                                             {snap.taskCompletion && <span>{t('tasksLabel', { done: snap.taskCompletion.done, total: snap.taskCompletion.total })}</span>}
                                             {snap.evidenceCount !== undefined && <span>{t('evidenceLabel', { count: snap.evidenceCount })}</span>}
                                             {snap.mappedRequirements && snap.mappedRequirements.length > 0 && (
                                                 <span>{t('requirementsLabel', { codes: snap.mappedRequirements.map((r) => r.code).join(', ') })}</span>
                                             )}
-                                            {snap.severity && <span>{t('severityLabel', { severity: snap.severity })}</span>}
+                                            {snap.severity && <span>{t('severityLabel', { severity: severityLabel(snap.severity) })}</span>}
                                         </div>
                                         {/* #3681 — an agent-audit reliance item; nothing for any other. */}
                                         <RelianceSnapshotBlock snapshot={snap} itemId={item.id} />
@@ -237,11 +246,11 @@ export default function SharedPackPage() {
                 {/* Return channel — auditor → tenant */}
                 <div className={cardVariants({ density: 'compact' })} id="return-channel">
                     <Heading level={3} className="mb-1">{t('returnChannel.title')}</Heading>
-                    <p className="text-xs text-slate-400 mb-4">{t('returnChannel.subtitle')}</p>
+                    <p className="text-xs text-content-muted mb-4">{t('returnChannel.subtitle')}</p>
 
                     {/* Kind selector — segmented buttons (no native select) */}
                     <div className="mb-3">
-                        <span className="block text-xs text-slate-400 mb-1">{t('returnChannel.kindLabel')}</span>
+                        <span className="block text-xs text-content-muted mb-1">{t('returnChannel.kindLabel')}</span>
                         <div className="flex flex-wrap gap-tight" role="group" aria-label={t('returnChannel.kindLabel')}>
                             {KINDS.map((k) => (
                                 <button
@@ -252,8 +261,8 @@ export default function SharedPackPage() {
                                     className={cn(
                                         'px-3 py-1.5 rounded-md text-sm border transition',
                                         kind === k
-                                            ? 'bg-slate-700 border-slate-500 text-white'
-                                            : 'bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-700/50',
+                                            ? 'bg-bg-muted border-border-emphasis text-content-emphasis'
+                                            : 'bg-bg-default border-border-subtle text-content-default hover:bg-bg-muted',
                                     )}
                                 >
                                     {t(`returnChannel.kind.${k}`)}
@@ -263,7 +272,7 @@ export default function SharedPackPage() {
                     </div>
 
                     <div className="mb-3">
-                        <span className="block text-xs text-slate-400 mb-1">{t('returnChannel.nameLabel')}</span>
+                        <span className="block text-xs text-content-muted mb-1">{t('returnChannel.nameLabel')}</span>
                         <input
                             type="text"
                             value={authorLabel}
@@ -271,13 +280,13 @@ export default function SharedPackPage() {
                             placeholder={t('returnChannel.namePlaceholder')}
                             aria-label={t('returnChannel.nameLabel')}
                             maxLength={200}
-                            className="w-full rounded-md bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-slate-500"
+                            className="w-full rounded-md bg-bg-default border border-border-subtle px-3 py-2 text-sm text-content-default placeholder:text-content-subtle focus:outline-none focus:border-border-emphasis"
                         />
                     </div>
 
                     {items.length > 0 && (
                         <div className="mb-3">
-                            <span className="block text-xs text-slate-400 mb-1">{t('returnChannel.attachLabel')}</span>
+                            <span className="block text-xs text-content-muted mb-1">{t('returnChannel.attachLabel')}</span>
                             <div className="flex flex-wrap gap-tight">
                                 <button
                                     type="button"
@@ -285,7 +294,7 @@ export default function SharedPackPage() {
                                     aria-pressed={attachItemId === ''}
                                     className={cn(
                                         'px-2.5 py-1 rounded-md text-xs border transition',
-                                        attachItemId === '' ? 'bg-slate-700 border-slate-500 text-white' : 'bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-700/50',
+                                        attachItemId === '' ? 'bg-bg-muted border-border-emphasis text-content-emphasis' : 'bg-bg-default border-border-subtle text-content-default hover:bg-bg-muted',
                                     )}
                                 >
                                     {t('returnChannel.attachWholePack')}
@@ -298,7 +307,7 @@ export default function SharedPackPage() {
                                         aria-pressed={attachItemId === item.id}
                                         className={cn(
                                             'px-2.5 py-1 rounded-md text-xs border transition max-w-[16rem] truncate',
-                                            attachItemId === item.id ? 'bg-slate-700 border-slate-500 text-white' : 'bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-700/50',
+                                            attachItemId === item.id ? 'bg-bg-muted border-border-emphasis text-content-emphasis' : 'bg-bg-default border-border-subtle text-content-default hover:bg-bg-muted',
                                         )}
                                     >
                                         {itemDisplayName(item, soaName)}
@@ -309,7 +318,7 @@ export default function SharedPackPage() {
                     )}
 
                     <div className="mb-3">
-                        <span className="block text-xs text-slate-400 mb-1">{t('returnChannel.messageLabel')}</span>
+                        <span className="block text-xs text-content-muted mb-1">{t('returnChannel.messageLabel')}</span>
                         <textarea
                             value={message}
                             onChange={(e) => setMessage(e.target.value)}
@@ -317,7 +326,7 @@ export default function SharedPackPage() {
                             aria-label={t('returnChannel.messageLabel')}
                             rows={4}
                             maxLength={10000}
-                            className="w-full rounded-md bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-slate-500"
+                            className="w-full rounded-md bg-bg-default border border-border-subtle px-3 py-2 text-sm text-content-default placeholder:text-content-subtle focus:outline-none focus:border-border-emphasis"
                         />
                     </div>
 
@@ -334,19 +343,19 @@ export default function SharedPackPage() {
                     </Button>
 
                     {/* Session-local echo of what the auditor submitted */}
-                    <div className="mt-5 border-t border-slate-700/50 pt-4">
-                        <span className="block text-xs uppercase tracking-wide text-slate-500 mb-2">{t('returnChannel.submittedTitle')}</span>
+                    <div className="mt-5 border-t border-border-subtle pt-4">
+                        <span className="block text-xs uppercase tracking-wide text-content-subtle mb-2">{t('returnChannel.submittedTitle')}</span>
                         {submissions.length === 0 ? (
-                            <p className="text-xs text-slate-500">{t('returnChannel.submittedEmpty')}</p>
+                            <p className="text-xs text-content-subtle">{t('returnChannel.submittedEmpty')}</p>
                         ) : (
                             <ul className="space-y-tight">
                                 {submissions.map((s) => (
-                                    <li key={s.id} className="text-sm bg-slate-800/40 rounded-md px-3 py-2">
+                                    <li key={s.id} className="text-sm bg-bg-muted rounded-md px-3 py-2">
                                         <div className="flex items-center gap-tight mb-0.5">
                                             <StatusBadge variant="info">{t(`returnChannel.kind.${s.kind}`)}</StatusBadge>
-                                            {s.itemName && <span className="text-xs text-slate-500 truncate">{s.itemName}</span>}
+                                            {s.itemName && <span className="text-xs text-content-subtle truncate">{s.itemName}</span>}
                                         </div>
-                                        <p className="text-slate-300 whitespace-pre-wrap break-words">{s.body}</p>
+                                        <p className="text-content-default whitespace-pre-wrap break-words">{s.body}</p>
                                     </li>
                                 ))}
                             </ul>
@@ -354,7 +363,7 @@ export default function SharedPackPage() {
                     </div>
                 </div>
 
-                <div className="text-center py-8 text-xs text-slate-600">
+                <div className="text-center py-8 text-xs text-content-subtle">
                     {t('footer')}
                 </div>
             </div>
