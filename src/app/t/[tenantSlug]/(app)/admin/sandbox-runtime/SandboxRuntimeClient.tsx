@@ -296,17 +296,19 @@ export function SandboxRuntimeClient({
                             </dt>
                             <dd className="font-mono">{setting.policyPath}</dd>
                         </div>
-                        {/* 5.6c (#3998): "this is set in code, here is where".
-                            The MODULE and the CHECK, not a disabled switch — a
-                            greyed-out control reads as a permission problem,
-                            and an admin who concludes that goes looking for
-                            someone to grant it. */}
+                        {/* 5.6c (#3998): "this is set in code", not a disabled
+                            switch — a greyed-out control reads as a permission
+                            problem, and an admin who concludes that goes looking
+                            for someone to grant it. Said in plain words (#4825):
+                            the module path and the check's name are engineering
+                            references, kept in `displayForEnforcement().setInCode`
+                            and verified by the tier-C guard, not printed. */}
                         <div className="flex gap-tight">
                             <dt className="text-content-muted">
                                 {t('sandboxRuntime.policyModuleLabel')}
                             </dt>
-                            <dd className="font-mono" data-testid={`policy-module-${setting.key}`}>
-                                {displayForEnforcement().setInCode?.policyModule}
+                            <dd data-testid={`policy-module-${setting.key}`}>
+                                {t('sandboxRuntime.policyModuleValue')}
                             </dd>
                         </div>
                         <div className="flex gap-tight">
@@ -314,7 +316,7 @@ export function SandboxRuntimeClient({
                                 {t('sandboxRuntime.ciCheckLabel')}
                             </dt>
                             <dd data-testid={`ci-check-${setting.key}`}>
-                                {displayForEnforcement().setInCode?.ciCheck}
+                                {t('sandboxRuntime.ciCheckValue')}
                             </dd>
                         </div>
                     </dl>,
