@@ -16,12 +16,14 @@
  * the cached per-risk P90s instead of a line that would lie.
  */
 import { useState } from 'react';
+import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { KPIStat } from '@/components/ui/metric';
 import { Heading } from '@/components/ui/typography';
 import { LossExceedanceCurve, type LossReferenceLine } from '@/components/ui/charts';
-import { useTenantApiUrl, useMoneyFormatter } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useMoneyFormatter, useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
 import { StatTile } from '../_shared/StatTile';
@@ -77,22 +79,36 @@ export function MonteCarloPanel({
     appetite,
     run,
     onReload,
+    runUnavailable = false,
 }: {
     appetite?: AppetitePayload | null;
     /** RQ3-3 — lifted to the page; the headline tiles share it. */
     run: SimulationRun | null;
     onReload: () => Promise<void>;
+    /** #4768 — the latest run could not be read, which is not "no run yet". */
+    runUnavailable?: boolean;
 }) {
     const t = useTranslations('risks');
     const apiUrl = useTenantApiUrl();
+    const href = useTenantHref();
     const money = useMoneyFormatter();
+    // #4768 — `runSimulation` asserts write: a run replaces the shared result
+    // the dashboard and the board read.
+    const canRun = useTenantContext().permissions.canWrite;
     const [running, setRunning] = useState(false);
+    const [runError, setRunError] = useState<string | null>(null);
 
     const runSim = async () => {
-        setRunning(true);
+        setRunning(true); setRunError(null);
         try {
-            const res = await fetch(apiUrl('/risks/simulate'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ iterations: 10000 }) });
-            if (res.ok) await onReload();
+            const res = await fetch(apiUrl('/risks/simulate'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ iterations: 10000 }) }).catch(() => null);
+            if (res && res.ok) {
+                await onReload();
+            } else {
+                // #4768 — a failed run used to re-enable the button and say nothing.
+                const body: unknown = res && res.status < 500 ? await res.json().catch(() => null) : null;
+                setRunError(apiErrorMessage(body, t('monteCarlo.runFailed')));
+            }
         } finally { setRunning(false); }
     };
 
@@ -127,12 +143,22 @@ export function MonteCarloPanel({
 
     return (
         <Card data-testid="risk-monte-carlo">
-            <div className="mb-default flex items-center justify-between">
+            <div className="mb-default flex flex-wrap items-start justify-between gap-default">
                 <Heading level={2}>{t('monteCarlo.title')}</Heading>
-                <Button variant="primary" size="sm" onClick={runSim} disabled={running}>{running ? t('monteCarlo.running') : t('monteCarlo.run')}</Button>
+                {canRun && (
+                    <div className="flex flex-col items-end gap-tight">
+                        <Button variant="primary" size="sm" onClick={runSim} disabled={running} aria-describedby="mc-run-hint">{running ? t('monteCarlo.running') : t('monteCarlo.run')}</Button>
+                        <span id="mc-run-hint" className="text-xs text-content-subtle">{t('monteCarlo.runHint')}</span>
+                    </div>
+                )}
             </div>
-            {!run ? (
-                <p className="text-sm text-content-muted">{t('monteCarlo.empty')}</p>
+            {runError && (
+                <p className="mb-default text-sm text-content-error" role="alert" data-testid="mc-run-error">{runError}</p>
+            )}
+            {runUnavailable ? (
+                <p className="text-sm text-content-warning" data-testid="mc-run-unavailable">{t('monteCarlo.loadFailed')}</p>
+            ) : !run ? (
+                <p className="text-sm text-content-muted">{canRun ? t('monteCarlo.empty') : t('monteCarlo.emptyReader')}</p>
             ) : (
                 <>
                     <p className="mb-default text-xs text-content-muted">
@@ -188,11 +214,17 @@ export function MonteCarloPanel({
                         <div>
                             <Heading level={3} className="mb-2">{t('monteCarlo.topContributors')}</Heading>
                             <div className="space-y-tight">
+                                {/* #4768 — each contributor opens its risk, like the Top 10. */}
                                 {top.map((r) => (
-                                    <div key={r.riskId} className="flex justify-between gap-default rounded p-2 text-sm">
+                                    <Link
+                                        key={r.riskId}
+                                        href={href(`/risks/${r.riskId}?tab=quantification`)}
+                                        className="flex justify-between gap-default rounded p-2 text-sm hover:bg-bg-muted/50 transition-colors duration-100 ease-out"
+                                        data-testid={`mc-top-contributor-${r.riskId}`}
+                                    >
                                         <span className="truncate text-content-emphasis">{r.title}</span>
                                         <span className="tabular-nums text-content-muted">{money(r.aleMean)} · {Math.round(r.contribution * 100)}%</span>
-                                    </div>
+                                    </Link>
                                 ))}
                             </div>
                         </div>

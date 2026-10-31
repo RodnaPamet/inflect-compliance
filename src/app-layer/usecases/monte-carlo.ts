@@ -16,7 +16,7 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
 import { badRequest } from '@/lib/errors/types';
-import { assertCanRead } from '../policies/common';
+import { assertCanRead, assertCanWrite } from '../policies/common';
 import {
     seededRng,
     sampleFairALE,
@@ -357,7 +357,11 @@ export async function runSimulation(
     ctx: RequestContext,
     config: SimulationConfig = {},
 ): Promise<SimulationResult & { runId: string }> {
-    assertCanRead(ctx);
+    // #4768 — a run is a write: it stores the result every reader of the
+    // dashboard and the board sees as the portfolio's figure, replacing the
+    // previous one. It asserted read alone, so a Reader or an Auditor could
+    // replace the board's headline.
+    assertCanWrite(ctx);
     const risks = await loadSimRisks(ctx);
     // RQ3-3 — stored correlations apply by default; an explicit
     // matrix (scenario engine) still wins.

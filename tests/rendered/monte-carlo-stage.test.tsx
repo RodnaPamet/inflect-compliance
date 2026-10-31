@@ -6,7 +6,7 @@
  * the breach-probability note reads the curve at the ceiling; the
  * per-risk cap renders as the P90-count note, never as a line.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 
 // next-intl is ESM (jest can't parse its export); mock it to resolve real
@@ -27,10 +27,13 @@ jest.mock('next-intl', () => {
     };
 });
 
+let mockCanWrite = true;
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     useMoneyFormatter: () => (v: number | null | undefined) =>
         jest.requireActual('@/lib/risk-coherence').formatCompactCurrency(v),
+    useTenantHref: () => (p: string) => `/t/acme${p}`,
+    useTenantContext: () => ({ permissions: { canRead: true, canWrite: mockCanWrite, canAdmin: false, canAudit: false, canExport: true } }),
 }));
 
 // ParentSize measures 0×0 in jsdom — pin a real size so the inner
@@ -110,5 +113,35 @@ describe('MonteCarloPanel — the simulated LEC stage (RQ3-1)', () => {
         // Percentile markers still render — they come from the run.
         const labels = screen.getAllByTestId('lec-reference-line').map((m) => m.textContent ?? '');
         expect(labels.some((l) => l.startsWith('P80'))).toBe(true);
+    });
+});
+
+describe('MonteCarloPanel — running a simulation (#4768)', () => {
+    beforeEach(() => { mockCanWrite = true; });
+
+    it('offers Run only to a role that can write, and says what a run replaces', async () => {
+        const { unmount } = render(<MonteCarloPanel run={null} onReload={async () => {}} />);
+        expect(screen.getByRole('button', { name: 'Run simulation' })).toBeInTheDocument();
+        expect(screen.getByText('A run replaces the shared result the dashboard and the board show.')).toBeInTheDocument();
+        unmount();
+        mockCanWrite = false;
+        render(<MonteCarloPanel run={null} onReload={async () => {}} />);
+        expect(screen.queryByRole('button', { name: 'Run simulation' })).toBeNull();
+        expect(screen.getByText('No simulation yet. An Owner, Admin or Editor can run one.')).toBeInTheDocument();
+    });
+
+    it("shows the server's reason when a run is refused", async () => {
+        global.fetch = jest.fn(async () => ({
+            ok: false, status: 403, json: async () => ({ error: { code: 'FORBIDDEN', message: 'You do not have write access' } }),
+        })) as unknown as typeof fetch;
+        render(<MonteCarloPanel run={null} onReload={async () => {}} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Run simulation' }));
+        expect(await screen.findByTestId('mc-run-error')).toHaveTextContent('You do not have write access');
+    });
+
+    it('links each top contributor to its risk', () => {
+        render(<MonteCarloPanel run={RUN} onReload={async () => {}} />);
+        const first = (RUN.perRiskResultsJson ?? [])[0];
+        expect(screen.getByTestId(`mc-top-contributor-${first.riskId}`)).toHaveAttribute('href', `/t/acme/risks/${first.riskId}?tab=quantification`);
     });
 });
