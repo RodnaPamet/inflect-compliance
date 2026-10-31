@@ -61,7 +61,7 @@ function LoginForm() {
         // `AUTH_CREDENTIALS_UI_HIDDEN=1` in the VM's .env and recreate
         // the container — no rebuild. When the flag is on the form
         // stays hidden regardless of provider registration.
-        Promise.all([
+        void Promise.all([
             getProviders().catch(() => null),
             fetch('/api/auth/ui-config')
                 .then((r) => (r.ok ? r.json() : null))

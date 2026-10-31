@@ -1,5 +1,5 @@
 import { getTenantCtx } from '@/app-layer/context';
-import { listScannerFindings, listScannerRuns } from '@/app-layer/usecases/scanner-ingestion';
+import { listScannerFindingsPage, listScannerRuns } from '@/app-layer/usecases/scanner-ingestion';
 import { SecurityTestingClient, type ScannerFindingRow, type ScannerRunRow } from './SecurityTestingClient';
 
 export const dynamic = 'force-dynamic';
@@ -18,13 +18,15 @@ export default async function SecurityTestingPage({
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
     const [findings, runs] = await Promise.all([
-        listScannerFindings(ctx, { take: 500 }) as unknown as Promise<ScannerFindingRow[]>,
+        listScannerFindingsPage(ctx, { take: 500 }),
         listScannerRuns(ctx, { take: 50 }) as unknown as Promise<ScannerRunRow[]>,
     ]);
 
     return (
         <SecurityTestingClient
-            initialFindings={findings}
+            initialFindings={findings.rows as unknown as ScannerFindingRow[]}
+            findingsTruncated={findings.truncated}
+            openCriticalCount={findings.openCriticalCount}
             runs={runs}
             tenantSlug={resolved.tenantSlug}
             canWrite={ctx.permissions.canWrite}

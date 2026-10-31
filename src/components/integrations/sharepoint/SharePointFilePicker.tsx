@@ -95,7 +95,7 @@ export function SharePointFilePicker({
     useEffect(() => {
         if (!showModal || !connectionId) return;
         let cancelled = false;
-        (async () => {
+        void (async () => {
             setError(null);
             try {
                 const res = await fetch(apiUrl(`/integrations/sharepoint/sites?connectionId=${connectionId}`));

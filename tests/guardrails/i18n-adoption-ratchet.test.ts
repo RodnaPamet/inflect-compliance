@@ -330,7 +330,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/admin/trust-center/TrustCenterAdminClient.tsx': 3, // partial, 3 prop
     'src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx': 1, // partial, 1 prop
-    'src/app/t/[tenantSlug]/(app)/audits/nis2-gap/Nis2GapLifecycleClient.tsx': 7, // partial, 2 jsx + 5 prop
     'src/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx': 2, // partial, 1 jsx + 1 prop
     'src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx': 1, // partial, 1 prop
@@ -341,7 +340,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/risks/ai-systems/NewAiSystemModal.tsx': 3, // partial, 3 prop
     'src/app/t/[tenantSlug]/(app)/risks/ai-systems/[systemId]/AiSystemDetailClient.tsx': 3, // partial, 3 prop
     'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx': 1, // partial, 1 prop
-    'src/app/t/[tenantSlug]/(app)/tests/page.tsx': 3, // partial, 3 prop
     'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx': 1, // partial, 1 prop
     'src/components/TraceabilityPanel.tsx': 1, // partial, 1 prop

@@ -1454,7 +1454,7 @@ export function AccessReviewDetailClient({
                     onClose={() => setActiveDecision(null)}
                     onSuccess={() => {
                         setActiveDecision(null);
-                        reviewQuery.mutate();
+                        void reviewQuery.mutate();
                         void swrMutate(CACHE_KEYS.accessReviews.list());
                     }}
                 />
@@ -1469,7 +1469,7 @@ export function AccessReviewDetailClient({
                     onClose={() => setEditingSettings(false)}
                     onSuccess={() => {
                         setEditingSettings(false);
-                        reviewQuery.mutate();
+                        void reviewQuery.mutate();
                         void swrMutate(CACHE_KEYS.accessReviews.list());
                     }}
                 />
@@ -1482,7 +1482,7 @@ export function AccessReviewDetailClient({
                     onClose={() => setUndoTarget(null)}
                     onSuccess={() => {
                         setUndoTarget(null);
-                        reviewQuery.mutate();
+                        void reviewQuery.mutate();
                     }}
                 />
             ) : null}
@@ -1493,9 +1493,9 @@ export function AccessReviewDetailClient({
                     onClose={() => setClosing(false)}
                     onSuccess={() => {
                         setClosing(false);
-                        reviewQuery.mutate();
+                        void reviewQuery.mutate();
                         // List page sees the new CLOSED state too.
-                        swrMutate(
+                        void swrMutate(
                             `/api/t/${tenantSlug}${CACHE_KEYS.accessReviews.list()}`,
                         );
                         router.refresh();

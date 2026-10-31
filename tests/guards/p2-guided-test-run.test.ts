@@ -115,9 +115,10 @@ describe('R3-P2 (6) no silent write failures', () => {
         expect(read(RUN_PAGE)).toMatch(/toast\.error\(t\('run\.errors\.completeFailed'\)\)/);
         // Was DUE_PAGE. Both of its write paths — the per-row run and the
         // due-planning sweep — moved to the list page with U3, and each still
-        // surfaces its failure rather than swallowing it.
-        expect(read(TESTS_PAGE)).toMatch(/toast\.error\(t\('due\.runFailed'\)\)/);
-        expect(read(TESTS_PAGE)).toMatch(/toast\.error\(t\('due\.planningFailed'\)\)/);
+        // surfaces its failure rather than swallowing it: the server's reason
+        // when it gives one (#4630), the localized fallback otherwise.
+        expect(read(TESTS_PAGE)).toMatch(/toast\.error\(err instanceof Error && err\.message \? err\.message : t\('due\.runFailed'\)\)/);
+        expect(read(TESTS_PAGE)).toMatch(/toast\.error\(err instanceof Error && err\.message \? err\.message : t\('due\.planningFailed'\)\)/);
         expect(read('src/components/TestPlansPanel.tsx')).toMatch(/toast\.error/);
     });
 });

@@ -232,7 +232,7 @@ export function NotificationsBell() {
     // text/event-stream), we drop back to the 60s cadence so the
     // user keeps seeing the unread count tick.
     useEffect(() => {
-        fetchList();
+        void fetchList();
 
         let es: EventSource | null = null;
         // Assigned below, once the interval exists. Declared here so the SSE
@@ -381,7 +381,7 @@ export function NotificationsBell() {
     useEffect(() => {
         if (!open) return;
 
-        fetchList();
+        void fetchList();
     }, [open, fetchList]);
 
     const unreadCount = items?.filter((n) => !n.read).length ?? 0;
@@ -519,7 +519,7 @@ export function NotificationsBell() {
                                         onClick={() => {
                                             close();
 
-                                            handleRowClick(n);
+                                            void handleRowClick(n);
                                         }}
                                         className={rowClasses}
                                         data-testid={`notification-row-${n.id}`}

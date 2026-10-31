@@ -35,6 +35,7 @@ import { GanttTimeline } from '@/app/t/[tenantSlug]/(app)/calendar/_components/G
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { apiErrorMessage } from '@/lib/api-error';
 import { formatDate, formatMonthYear } from '@inflect/ui/lib/format-date';
 import { getCategoryTone } from '@/lib/design/status-tone';
 import { usePermissions, useCurrentUserId } from '@/lib/tenant-context-provider';
@@ -283,8 +284,11 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
         }),
         [todayMs],
     );
+    // The probe carries the same category filter as the window it explains,
+    // or the hint names a deadline the filter hides (#4628).
+    const probeFilter = categoryKey.length > 0 ? { categories: categoryKey } : undefined;
     const probeQuery = useTenantSWR<CalendarResponse>(
-        isEmptyView ? CACHE_KEYS.calendar.range(probeRange.from, probeRange.to) : null,
+        isEmptyView ? CACHE_KEYS.calendar.range(probeRange.from, probeRange.to, probeFilter) : null,
     );
 
     const nextOffscreenDeadline = React.useMemo(() => {
@@ -300,12 +304,23 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
         return hit ? { date: new Date(hit.date) } : null;
     }, [isEmptyView, probeQuery.data, probeQuery.error, range]);
 
-    /** Jump the month view to the month containing `d` and select the day. */
-    const jumpToDeadline = React.useCallback((d: Date) => {
-        setView('month');
-        setMonthCursor(startOfUtcMonth(d));
-        setSelectedDate(toYMD(d) ?? null);
-    }, []);
+    /**
+     * Jump the month view to the month containing `d` and select the day.
+     *
+     * ONE address change. This used to call `setView` then `setMonthCursor`,
+     * each a `router.replace` built from the same stale query string — the
+     * callback had an empty dependency list, so it held the FIRST render's
+     * `setParams`. The second replace won, so the view stayed whatever the page
+     * had opened on (a heatmap or timeline, where the selected day is not
+     * shown) and any filter changed since load was reverted (#4628).
+     */
+    const jumpToDeadline = React.useCallback(
+        (d: Date) => {
+            setParams({ view: null, month: startOfUtcMonth(d).toISOString().slice(0, 7) });
+            setSelectedDate(toYMD(d) ?? null);
+        },
+        [setParams],
+    );
 
     // The Timeline shows EVERY deadline, not just ranges (GanttTimeline draws
     // a point-in-time event as a 1-day marker).
@@ -373,10 +388,20 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
         [calQuery],
     );
 
-    /** Turn a failed task mutation response into a specific message. */
+    /**
+     * Turn a failed task mutation response into a message. The server's own
+     * reason wins: a task with a reviewer refuses to close unless it is In
+     * review, and only the reviewer may sign it off — both read as a permission
+     * problem or a retryable failure under a status-only mapping (#4628). The
+     * fixed sentences remain for a response with no reason, and a network
+     * failure.
+     */
     const actionErrorMessage = React.useCallback(
-        (status: number | undefined) =>
-            status === 403 ? t('taskForbidden') : t('taskActionError'),
+        async (res: Response | undefined): Promise<string> => {
+            if (!res) return t('taskActionError');
+            const body: unknown = await res.json().catch(() => null);
+            return apiErrorMessage(body, res.status === 403 ? t('taskForbidden') : t('taskActionError'));
+        },
         [t],
     );
 
@@ -398,12 +423,12 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                     },
                 );
                 if (!res.ok) {
-                    toast.error(actionErrorMessage(res.status));
+                    toast.error(await actionErrorMessage(res));
                 } else {
                     toast.success(t('taskCompleted'));
                 }
             } catch {
-                toast.error(actionErrorMessage(undefined));
+                toast.error(await actionErrorMessage(undefined));
             } finally {
                 setBusyEventId(null);
                 await calQuery.mutate();
@@ -444,12 +469,12 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                     body: JSON.stringify({ dueAt: ymd }),
                 });
                 if (!res.ok) {
-                    toast.error(actionErrorMessage(res.status));
+                    toast.error(await actionErrorMessage(res));
                 } else {
                     toast.success(t('taskRescheduled'));
                 }
             } catch {
-                toast.error(actionErrorMessage(undefined));
+                toast.error(await actionErrorMessage(undefined));
             } finally {
                 setBusyEventId(null);
                 await calQuery.mutate();
@@ -885,7 +910,11 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                             )}
                         </>
                     ) : (
-                        <p className="text-xs text-content-muted">{t('clickDay')}</p>
+                        // The timeline has no day cells to click, so it says how
+                        // to reach a day rather than "Click a day" (#4628).
+                        <p className="text-xs text-content-muted">
+                            {view === 'gantt' ? t('clickDayTimeline') : t('clickDay')}
+                        </p>
                     )}
                     </div>
                 </aside>
@@ -906,7 +935,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                     initialDueAt={taskCreateDate ?? undefined}
                     onCreated={() => {
                         setTaskCreateDate(null);
-                        calQuery.mutate();
+                        void calQuery.mutate();
                     }}
                 />
             )}

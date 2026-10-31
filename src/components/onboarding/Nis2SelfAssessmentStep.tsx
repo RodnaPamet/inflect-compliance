@@ -124,7 +124,7 @@ export function Nis2SelfAssessmentStep({
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        load();
+        void load();
     }, [load]);
 
     const saveAnswer = useCallback(

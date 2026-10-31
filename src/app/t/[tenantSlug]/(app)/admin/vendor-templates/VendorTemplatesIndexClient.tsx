@@ -61,6 +61,8 @@ export function VendorTemplatesIndexClient() {
         try {
             const res = await fetch(apiUrl('/vendor-assessment-templates'));
             if (res.ok) setItems(await res.json());
+        } catch {
+            // A network failure keeps what is shown, as a non-ok response does.
         } finally {
             setLoading(false);
         }
@@ -68,7 +70,7 @@ export function VendorTemplatesIndexClient() {
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        refresh();
+        void refresh();
     }, [refresh]);
 
     async function handleCreate() {

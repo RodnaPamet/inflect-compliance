@@ -213,7 +213,7 @@ export function ControlMappingsTab({
     const unmapRequirement = (reqId: string) => {
         const previous = mappingsSWR.data;
         if (previous) {
-            mappingsSWR.mutate(
+            void mappingsSWR.mutate(
                 previous.filter(
                     (m) =>
                         m.fromRequirement?.id !== reqId &&
@@ -240,12 +240,12 @@ export function ControlMappingsTab({
             },
             undoAction: () => {
                 if (previous) {
-                    mappingsSWR.mutate(previous, { revalidate: false });
+                    void mappingsSWR.mutate(previous, { revalidate: false });
                 }
             },
             onError: () => {
                 if (previous) {
-                    mappingsSWR.mutate(previous, { revalidate: false });
+                    void mappingsSWR.mutate(previous, { revalidate: false });
                 }
             },
         });
