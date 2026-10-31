@@ -8,11 +8,11 @@ The {{ui:frameworks.selfAssessment.heading}} page is where you answer the NIS2 g
 
 ## Where to find it
 
-The page opens from a link that names the NIS2 framework. No menu or button leads to it. To answer a new run of the questions instead, use **{{ui:audits.nis2Gap.rerun}}** on the NIS2 gap assessment page. For any framework but NIS2, the page shows {{ui:frameworks.selfAssessment.onlyNis2}}
+On the NIS2 gap assessment page, click **{{ui:audits.nis2Gap.continueAnswering}}** while the latest run is still open. To answer a new run of the questions instead, use **{{ui:audits.nis2Gap.rerun}}** on the NIS2 gap assessment page. For any framework but NIS2, the page shows {{ui:frameworks.selfAssessment.onlyNis2}}
 
 ## Who can use it
 
-Owners and Admins. Anyone else sees **{{ui:onboarding.nis2Step.loadFailed}}**
+Owners and Admins. Anyone else sees: {{ui:frameworks.selfAssessment.adminOnly}}
 
 ## What it is for
 
@@ -36,7 +36,7 @@ Click **{{ui:onboarding.nis2Step.complete}}**. You can complete with questions u
 
 ## What happens next
 
-- Your answers go into the latest run of the assessment, even when it is already completed.
+- Your answers go into the latest run of the assessment while it is open. Once it is completed, the page shows **{{ui:onboarding.nis2Step.finalisedTitle}}**: {{ui:onboarding.nis2Step.finalisedBody}} The answers are shown but cannot be changed, and **{{ui:onboarding.nis2Step.continue}}** takes you on.
 - The NIS2 readiness score is recorded each time you complete, so its trend shows your progress.
 
 ## Empty and error states
@@ -44,7 +44,8 @@ Click **{{ui:onboarding.nis2Step.complete}}**. You can complete with questions u
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | {{ui:frameworks.selfAssessment.onlyNis2}} | The page was opened for another framework | Open the NIS2 gap assessment from the audits page |
-| **{{ui:onboarding.nis2Step.loadFailed}}** | The questions could not load, or your role cannot answer them | Reload the page, or ask an Owner or Admin |
+| **{{ui:onboarding.nis2Step.loadFailed}}** | The questions could not load | Reload the page |
+| **{{ui:onboarding.nis2Step.finalisedTitle}}** | The latest run is completed, so its answers are kept | Start a new run with **{{ui:audits.nis2Gap.rerun}}** |
 | **{{ui:onboarding.nis2Step.saveFailed}}** | That answer was not saved | Choose it again |
 | **{{ui:onboarding.nis2Step.completeFailed}}** | The assessment was not marked complete | Try again |
 

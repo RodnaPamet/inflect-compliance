@@ -8,14 +8,16 @@ The {{ui:clauses.title}} page tracks your progress through the management-system
 
 ## Where to find it
 
-No menu or button leads to the page: it opens from a link to it.
+On the ISO 27001 framework's page, click **{{ui:frameworks.detail.clauseTracker}}** in the header.
 
 ## Who can use it
 
 | Action | Roles |
 | --- | --- |
 | Read the clauses | Every role |
-| Change a clause's status | Owner, Admin, Editor |
+| Change a clause's status and notes | Owner, Admin, Editor |
+
+Every other role sees each clause's status as a badge, and its notes as text.
 
 ## What it is for
 
@@ -25,7 +27,7 @@ Keep track of the clauses an ISO 27001 auditor checks first: the scope, leadersh
 
 On the left, one row per clause, with its number, its title and its status: **{{ui:clauses.notStarted}}**, **{{ui:clauses.inProgress}}**, **{{ui:clauses.ready}}** or **{{ui:clauses.needsReview}}**.
 
-On the right, the clause you selected: its description, **{{ui:clauses.requiredArtifacts}}**, the documents an auditor expects to see for it, and a **{{ui:clauses.checklist}}** of what the clause asks for. The checklist is for reference: its items cannot be ticked.
+On the right, the clause you selected: its description, **{{ui:clauses.requiredArtifacts}}**, the documents an auditor expects to see for it, a **{{ui:clauses.checklist}}** of what the clause asks for, and **{{ui:clauses.notes}}**. The checklist is for reference: its items cannot be ticked.
 
 ## What you can do
 
@@ -34,7 +36,11 @@ On the right, the clause you selected: its description, **{{ui:clauses.requiredA
 1. Click a clause on the left.
 2. Choose its status from the list at the top right.
 
-The status saves straight away.
+The status saves straight away, and the page says **{{ui:clauses.statusSaved}}**
+
+### Keep notes on a clause
+
+Under **{{ui:clauses.notes}}**, write what has been done for the clause and what is still open, then click **{{ui:clauses.saveNotes}}**. The button appears once you change the text. The page says **{{ui:clauses.notesSaved}}**
 
 ## What happens next
 
@@ -45,7 +51,8 @@ The status saves straight away.
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | {{ui:clauses.selectClause}} | No clause is selected | Click one on the left |
-| A status that comes back after a reload | The change was not saved | Ask an Owner, Admin or Editor to make it |
+| **{{ui:clauses.saveFailed}}** | The status or the notes were not saved, and the page shows what is stored | Try again |
+| **{{ui:clauses.noNotes}}** | Nobody has written notes for the clause | Write some, if your role can |
 
 ## Related
 
