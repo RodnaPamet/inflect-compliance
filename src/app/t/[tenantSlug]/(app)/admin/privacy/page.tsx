@@ -114,7 +114,11 @@ export default async function AdminPrivacyPage({
                 <dl className="space-y-tight text-sm">
                     <div className="flex items-center justify-between gap-default">
                         <dt className="text-content-muted">{t('privacy.residency.region')}</dt>
-                        <dd className="font-medium">{posture.residency.region}</dd>
+                        <dd className="font-medium" id="privacy-region">
+                            {typeof t.has === 'function' && t.has(`privacy.residency.regionName.${posture.residency.region}`)
+                                ? t(`privacy.residency.regionName.${posture.residency.region}` as Parameters<typeof t>[0])
+                                : posture.residency.region}
+                        </dd>
                     </div>
                     <div className="flex items-center justify-between gap-default">
                         <dt className="text-content-muted">{t('privacy.residency.infrastructure')}</dt>
@@ -154,6 +158,9 @@ export default async function AdminPrivacyPage({
                         ? t('privacy.retention.configurableNote')
                         : t('privacy.retention.platformDefaultNote')}
                 </p>
+                <Link href={tenantHref('/evidence')} className="text-sm text-content-accent hover:underline" id="privacy-evidence-link">
+                    {t('privacy.retention.evidenceLink')}
+                </Link>
             </Card>
 
             {/* ── Sub-processors ── */}
@@ -173,6 +180,9 @@ export default async function AdminPrivacyPage({
                     </div>
                 </dl>
                 <p className="text-xs text-content-muted">{t('privacy.subProcessors.note')}</p>
+                <Link href={tenantHref('/vendors')} className="text-sm text-content-accent hover:underline" id="privacy-vendors-link">
+                    {t('privacy.subProcessors.vendorsLink')}
+                </Link>
             </Card>
 
             {/* ── Audit streaming ── */}

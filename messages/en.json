@@ -7869,18 +7869,18 @@
     },
     "privacy": {
       "title": "Privacy & data protection",
-      "subtitle": "How this tenant's data is protected, retained, and located. This page reports posture only — each control is configured on the surface that owns it.",
+      "subtitle": "How this workspace's data is protected, kept and located. This page reports only; each item is set on the page that owns it.",
       "yes": "Configured",
       "no": "Not configured",
       "encryption": {
         "title": "Encryption at rest",
-        "perTenantDek": "Per-tenant data-encryption key",
+        "perTenantDek": "This workspace's own encryption key",
         "active": "Active",
         "globalKeyOnly": "Global key only",
         "rotation": "Key rotation",
         "rotationInFlight": "In progress",
         "rotationIdle": "Idle",
-        "note": "Business-content fields are encrypted at rest under a per-tenant key wrapped by the master key. Rotation is triggered by an administrator through the key-rotation API."
+        "note": "Business content is encrypted at rest under a key that belongs to this workspace alone, itself protected by the platform's master key. There is no button to rotate it here: a rotation is started on request, and shows here while it runs."
       },
       "residency": {
         "title": "Data residency",
@@ -7888,7 +7888,12 @@
         "infrastructure": "Regional infrastructure",
         "provisioned": "Provisioned",
         "notProvisioned": "Not provisioned",
-        "declarativeNotice": "This records the residency commitment for the tenant, not where data physically resides. Production runs in a single region today, and the region is fixed at tenant creation — changing it requires an offline migration."
+        "declarativeNotice": "This records where this workspace's data is committed to be kept, not a reading of where it sits. The region is set when the workspace is created; moving it means migrating the workspace, which is done on request.",
+        "regionName": {
+          "US_EAST_1": "United States (East)",
+          "EU_WEST_1": "European Union (Ireland)",
+          "AP_SOUTHEAST_1": "Asia Pacific (Singapore)"
+        }
       },
       "retention": {
         "title": "Retention & deletion",
@@ -7896,19 +7901,21 @@
         "evidencePurge": "Expired evidence purged after",
         "evidenceWithRule": "Evidence records with an explicit retention rule",
         "days": "{count} days",
-        "platformDefaultNote": "These are platform-wide defaults, not tenant settings. Per-record retention can be set on individual evidence items.",
-        "configurableNote": "Retention windows are configured for this tenant."
+        "platformDefaultNote": "These are platform-wide defaults, not settings of this workspace. A retention date can be set on each evidence item.",
+        "configurableNote": "Retention windows are set for this workspace.",
+        "evidenceLink": "Open evidence →"
       },
       "subProcessors": {
         "title": "Sub-processors",
         "flaggedVendors": "Vendors flagged as sub-processors",
         "relationships": "Declared sub-processor relationships",
-        "note": "Sub-processor relationships, including purpose, data types, and country, are maintained on each vendor's detail page."
+        "note": "Sub-processor relationships, including purpose, data types, and country, are maintained on each vendor's detail page.",
+        "vendorsLink": "Open vendors →"
       },
       "auditStream": {
         "title": "Audit streaming",
         "destination": "External destination",
-        "note": "When configured, every committed audit event is signed and delivered to the tenant's SIEM endpoint. Streaming failures never block the audit write."
+        "note": "When set up, every audit event this workspace records is signed and sent to its security monitoring system (SIEM). A failed delivery never undoes the audit record. No page sets up streaming; it is set up on request."
       },
       "dsar": {
         "title": "Data subject requests",
