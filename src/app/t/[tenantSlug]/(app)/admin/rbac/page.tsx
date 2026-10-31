@@ -35,6 +35,17 @@ export default async function RbacPage({
     if (!gate.allowed) return gate.forbidden;
     const { ctx, tenantSlug } = gate;
     const t = await getTranslations('admin');
+    const tRoles = await getTranslations('roles');
+    // Labels for the matrix, from the catalogues the Custom Roles page uses
+    // (#4821: this page printed the PermissionSet keys and role enum values).
+    // A key with no catalogue string falls back legibly, never to a dotted path.
+    const has = (tr: { has?: (k: string) => boolean }, key: string) =>
+        typeof tr.has === 'function' && tr.has(key);
+    const roleLabel = (role: string) => (has(tRoles, role) ? tRoles(role as Parameters<typeof tRoles>[0]) : role);
+    const resourceLabel = (domain: string) =>
+        has(t, `resourceLabels.${domain}`) ? t(`resourceLabels.${domain}` as Parameters<typeof t>[0]) : domain;
+    const actionLabel = (action: string) =>
+        has(t, `roles.actions.${action}`) ? t(`roles.actions.${action}` as Parameters<typeof t>[0]) : action.replace(/_/g, ' ');
 
     // ─── Data fetching ───
     const tenant = await prisma.tenant.findUnique({
@@ -43,15 +54,25 @@ export default async function RbacPage({
     });
     const memberRecords = await prisma.tenantMembership.findMany({
         where: { tenantId: ctx.tenantId },
-        include: { user: { select: { id: true, name: true, email: true } } },
+        include: {
+            user: { select: { id: true, name: true, email: true } },
+            customRole: { select: { name: true } },
+        },
         orderBy: { createdAt: 'asc' },
     });
 
+    // Every membership, with its status, so a deactivated or invited person
+    // is told apart from an active one (#4821), and its custom role, which is
+    // what such a member can actually do.
     const members: MembersTableRow[] = memberRecords.map((m) => ({
         id: m.id,
         name: m.user.name,
         email: m.user.email,
         role: m.role,
+        roleLabel: roleLabel(m.role),
+        customRoleName: m.customRole?.name ?? null,
+        status: m.status,
+        statusLabel: has(t, `rbac.status.${m.status}`) ? t(`rbac.status.${m.status}` as Parameters<typeof t>[0]) : m.status,
         createdAtIso: m.createdAt.toISOString(),
     }));
 
@@ -95,7 +116,7 @@ export default async function RbacPage({
                         name: tenant?.name ?? tenantSlug,
                         em: (c) => <span className="text-content-emphasis font-medium">{c}</span>,
                     })}{' '}
-                    <StatusBadge variant="info">{ctx.role}</StatusBadge>
+                    <StatusBadge variant="info" id="rbac-your-role">{roleLabel(ctx.role)}</StatusBadge>
                 </p>
             </div>
 
@@ -107,7 +128,8 @@ export default async function RbacPage({
 
             {/* Permission Matrix */}
             <section>
-                <Heading level={2} className="mb-3">{t('rbac.permissionMatrix')}</Heading>
+                <Heading level={2} className="mb-1">{t('rbac.permissionMatrix')}</Heading>
+                <p className="mb-3 text-sm text-content-muted">{t('rbac.matrixNote')}</p>
                 <div className={cn(cardVariants({ density: 'none' }), 'overflow-x-auto')}>
                     <table className="data-table">
                         <thead>
@@ -115,15 +137,15 @@ export default async function RbacPage({
                                 <th className="sticky left-0 bg-bg-default/90 z-10">{t('rbac.resource')}</th>
                                 <th className="sticky left-[120px] bg-bg-default/90 z-10">{t('rbac.action')}</th>
                                 {roles.map((r) => (
-                                    <th key={r} className="text-center">{r}</th>
+                                    <th key={r} className="text-center">{roleLabel(r)}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {permissionRows.map(({ resource, action }) => (
                                 <tr key={`${resource}.${action}`} className="group/row">
-                                    <td className="text-xs font-medium text-content-default sticky left-0 bg-bg-default/50 group-hover/row:bg-bg-muted">{resource}</td>
-                                    <td className="text-xs text-content-muted sticky left-[120px] bg-bg-default/50 group-hover/row:bg-bg-muted">{action}</td>
+                                    <td className="text-xs font-medium text-content-default sticky left-0 bg-bg-default/50 group-hover/row:bg-bg-muted">{resourceLabel(resource)}</td>
+                                    <td className="text-xs text-content-muted sticky left-[120px] bg-bg-default/50 group-hover/row:bg-bg-muted">{actionLabel(action)}</td>
                                     {roles.map((role) => {
                                         const resourcePerms = permissionMatrix[role][resource as keyof PermissionSet];
                                         const granted = (resourcePerms as Record<string, boolean>)[action];

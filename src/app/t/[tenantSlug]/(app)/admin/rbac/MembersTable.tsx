@@ -12,12 +12,25 @@ export interface MembersTableRow {
     name: string | null;
     email: string;
     role: string;
+    /** The built-in role in words. */
+    roleLabel: string;
+    /** The custom role the membership carries, which replaces the built-in role's permissions. */
+    customRoleName: string | null;
+    status: string;
+    statusLabel: string;
     createdAtIso: string;
 }
 
 interface MembersTableProps {
     members: MembersTableRow[];
 }
+
+const STATUS_TONE: Record<string, StatusBadgeVariant> = {
+    ACTIVE: 'success',
+    INVITED: 'info',
+    DEACTIVATED: 'warning',
+    REMOVED: 'neutral',
+};
 
 const ROLE_TONE: Record<string, StatusBadgeVariant> = {
     OWNER: 'error',
@@ -55,14 +68,28 @@ export function MembersTable({ members }: MembersTableProps) {
                 id: 'role',
                 header: t('rbac.colRole'),
                 accessorKey: 'role',
-                cell: ({ getValue }) => {
-                    const role = getValue() as string;
-                    return (
-                        <StatusBadge variant={ROLE_TONE[role] ?? 'neutral'}>
-                            {role}
+                cell: ({ row }) => (
+                    <div className="space-y-tight">
+                        <StatusBadge variant={ROLE_TONE[row.original.role] ?? 'neutral'}>
+                            {row.original.roleLabel}
                         </StatusBadge>
-                    );
-                },
+                        {row.original.customRoleName && (
+                            <div className="text-xs text-content-muted" data-testid={`rbac-custom-role-${row.original.id}`}>
+                                {t('rbac.customRole', { name: row.original.customRoleName })}
+                            </div>
+                        )}
+                    </div>
+                ),
+            },
+            {
+                id: 'status',
+                header: t('rbac.colStatus'),
+                accessorKey: 'status',
+                cell: ({ row }) => (
+                    <StatusBadge variant={STATUS_TONE[row.original.status] ?? 'neutral'} data-testid={`rbac-status-${row.original.id}`}>
+                        {row.original.statusLabel}
+                    </StatusBadge>
+                ),
             },
             {
                 id: 'joined',

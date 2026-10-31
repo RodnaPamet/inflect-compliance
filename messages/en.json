@@ -5209,7 +5209,16 @@
       "colJoined": "Joined",
       "emptyMembers": "No members yet.",
       "memberSingular": "member",
-      "membersPlural": "members"
+      "membersPlural": "members",
+      "colStatus": "Status",
+      "customRole": "Custom role: {name}",
+      "status": {
+        "ACTIVE": "Active",
+        "INVITED": "Invited",
+        "DEACTIVATED": "Deactivated",
+        "REMOVED": "Removed"
+      },
+      "matrixNote": "Built-in roles only. A member with a custom role can do what that role grants instead."
     },
     "roles": {
       "crumbSelf": "Custom Roles",
