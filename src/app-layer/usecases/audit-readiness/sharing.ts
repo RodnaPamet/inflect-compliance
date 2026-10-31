@@ -11,6 +11,7 @@ import { createTask } from '../task';
 import { runInTenantContext, runInGlobalContext, withTenantDb } from '@/lib/db-context';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import type { AuditPackRefusal } from '@/lib/audit-pack-refusals';
+import type { AuditorRefusal } from '@/lib/auditor-refusals';
 import { hashForLookup } from '@/lib/security/encryption';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { appendAuditEntry } from '@/lib/audit';
@@ -467,31 +468,44 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
 
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Auditor Accounts РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
+/**
+ * Add an auditor to the workspace's list (#4730).
+ *
+ * The list is a record: adding sends nothing and gives no access, so there is
+ * no "invited" step for anybody to complete. An auditor is either on the list
+ * or revoked. Adding an email already on the list therefore changes NOTHING
+ * and says so (`alreadyListed`): it used to flip the row to ACTIVE, which the
+ * page showed as "Active" although nobody had heard from the auditor. Adding a
+ * revoked auditor puts them back on the list (`reactivated`).
+ *
+ * The stored status of a listed auditor stays INVITED for a new row; ACTIVE is
+ * kept by rows written before this change and reads the same ("Listed").
+ */
 export async function inviteAuditor(ctx: RequestContext, email: string, name?: string) {
     assertCanManageAuditors(ctx);
     return runInTenantContext(ctx, async (tdb) => {
         const emailHash = hashForLookup(email);
-        // PR-O — the upsert `update` silently flips an existing (even REVOKED)
-        // account back to ACTIVE. Surface that state change: detect whether the
-        // account already existed (and whether it was revoked) BEFORE the upsert
-        // so the caller can tell the user "reactivated" vs "invited" rather than
-        // it being an invisible reactivation.
-        const prior = await tdb.auditorAccount.findUnique({
-            where: { tenantId_emailHash: { tenantId: ctx.tenantId, emailHash } },
-            select: { status: true },
-        });
-        const reactivated = prior != null && prior.status === 'REVOKED';
-        const auditor = await tdb.auditorAccount.upsert({
-            where: { tenantId_emailHash: { tenantId: ctx.tenantId, emailHash } },
-            create: { tenantId: ctx.tenantId, email, emailHash, name, status: 'INVITED' },
-            update: { name, status: 'ACTIVE' },
-        });
+        const where = { tenantId_emailHash: { tenantId: ctx.tenantId, emailHash } };
+        const prior = await tdb.auditorAccount.findUnique({ where });
+        if (prior && prior.status !== 'REVOKED') {
+            return { ...prior, reactivated: false, alreadyListed: true };
+        }
+        const reactivated = prior != null;
+        // `update: {}` — a concurrent first add that won the insert is left
+        // as it is, never re-stated.
+        const auditor = reactivated
+            ? await tdb.auditorAccount.update({ where, data: { name, status: 'INVITED' } })
+            : await tdb.auditorAccount.upsert({
+                where,
+                create: { tenantId: ctx.tenantId, email, emailHash, name, status: 'INVITED' },
+                update: {},
+            });
         await logEvent(tdb, ctx, {
             action: reactivated ? 'AUDITOR_REACTIVATED' : 'AUDITOR_INVITED',
             entityType: 'AuditorAccount', entityId: auditor.id, details: JSON.stringify({ email, reactivated }),
-            detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditor.id, detail: reactivated ? `Auditor reactivated: ${email}` : `Auditor invited: ${email}` },
+            detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditor.id, detail: reactivated ? `Auditor added back to the list: ${email}` : `Auditor added to the list: ${email}` },
         });
-        return { ...auditor, reactivated };
+        return { ...auditor, reactivated, alreadyListed: false };
     });
 }
 
@@ -499,15 +513,15 @@ export async function inviteAuditor(ctx: RequestContext, email: string, name?: s
  * PR-O — account-level revoke. Moves an AuditorAccount to REVOKED (the badge
  * the management UI could render but nothing could set) AND drops all of the
  * auditor's pack access in one action. Distinct from `revokeAuditorAccess`
- * (per-pack). A revoked auditor is re-activated only by an explicit re-invite
- * (which now surfaces the reactivation).
+ * (per-pack). A revoked auditor goes back on the list only when added again
+ * (which surfaces the reactivation).
  */
 export async function revokeAuditorAccount(ctx: RequestContext, auditorId: string) {
     assertCanManageAuditors(ctx);
     return runInTenantContext(ctx, async (tdb) => {
         const auditor = await tdb.auditorAccount.findFirst({ where: { id: auditorId, tenantId: ctx.tenantId }, select: { id: true, email: true, status: true } });
-        if (!auditor) throw notFound('Auditor not found');
-        if (auditor.status === 'REVOKED') throw badRequest('Auditor is already revoked');
+        if (!auditor) throw notFound('Auditor not found', { reason: 'AUDITOR_NOT_FOUND' satisfies AuditorRefusal });
+        if (auditor.status === 'REVOKED') throw badRequest('Auditor is already revoked', { reason: 'AUDITOR_ALREADY_REVOKED' satisfies AuditorRefusal });
         await tdb.auditorAccount.update({ where: { id: auditorId }, data: { status: 'REVOKED' } });
         await tdb.auditorPackAccess.deleteMany({ where: { auditorId, tenantId: ctx.tenantId } });
         await logEvent(tdb, ctx, { action: 'AUDITOR_ACCOUNT_REVOKED', entityType: 'AuditorAccount', entityId: auditorId, details: 'Auditor account revoked', detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditorId, detail: `Auditor account revoked: ${auditor.email}` } });
@@ -519,9 +533,19 @@ export async function grantAuditorAccess(ctx: RequestContext, auditorId: string,
     assertCanManageAuditors(ctx);
     return runInTenantContext(ctx, async (tdb) => {
         const auditor = await tdb.auditorAccount.findFirst({ where: { id: auditorId, tenantId: ctx.tenantId } });
-        if (!auditor) throw notFound('Auditor not found');
+        if (!auditor) throw notFound('Auditor not found', { reason: 'AUDITOR_NOT_FOUND' satisfies AuditorRefusal });
+        // #4730 — the page hid the picker for a revoked auditor, and nothing
+        // behind it refused: a revoked auditor got packs recorded.
+        if (auditor.status === 'REVOKED') {
+            throw badRequest('Auditor is revoked. Add them again to record packs against them.', { reason: 'AUDITOR_REVOKED' satisfies AuditorRefusal });
+        }
         const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null } });
-        if (!pack) throw notFound('Pack not found');
+        if (!pack) throw notFound('Pack not found', { reason: 'AUDITOR_PACK_NOT_FOUND' satisfies AuditorRefusal });
+        // A draft cannot be shared (`generateShareLink`), so recording one
+        // records something the auditor cannot be given.
+        if (pack.status === 'DRAFT') {
+            throw badRequest('A draft pack cannot be shared, so it is not recorded. Freeze it first.', { reason: 'AUDITOR_PACK_DRAFT' satisfies AuditorRefusal });
+        }
 
         try {
             await tdb.auditorPackAccess.create({ data: { tenantId: ctx.tenantId, auditorId, auditPackId: packId } });
@@ -532,7 +556,7 @@ export async function grantAuditorAccess(ctx: RequestContext, auditorId: string,
             // connection) must propagate: masking them all as an idempotent
             // success is a silent fail-open that hides real infra faults.
             if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') {
-                throw badRequest('Auditor already has access to this pack');
+                throw badRequest('This pack is already recorded against this auditor', { reason: 'AUDITOR_PACK_ALREADY_RECORDED' satisfies AuditorRefusal });
             }
             throw err;
         }
