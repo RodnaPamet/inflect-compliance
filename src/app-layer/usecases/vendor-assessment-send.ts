@@ -41,6 +41,7 @@ import { createHash, randomBytes } from 'crypto';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
+import type { VendorSendRefusal } from '@/lib/vendor-assessment-refusals';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { assertCanRunAssessment } from '../policies/vendor.policies';
@@ -126,7 +127,7 @@ export async function sendAssessment(
 ): Promise<SendAssessmentResult> {
     assertCanRunAssessment(ctx);
     if (!input.respondentEmail || !input.respondentEmail.includes('@')) {
-        throw badRequest('A valid respondent email is required.');
+        throw badRequest('A valid respondent email is required.', { reason: 'SEND_RESPONDENT_EMAIL_INVALID' satisfies VendorSendRefusal });
     }
 
     const expiresInDays = clamp(input.expiresInDays ?? 14, 1, 90);
@@ -159,6 +160,7 @@ export async function sendAssessment(
         if (!template.isPublished) {
             throw badRequest(
                 `Template "${template.name}" is in draft. Publish it before sending.`,
+                { reason: 'SEND_TEMPLATE_DRAFT' satisfies VendorSendRefusal },
             );
         }
 
@@ -178,6 +180,7 @@ export async function sendAssessment(
                 throw badRequest(
                     `An assessment is already in flight for this vendor + template + recipient. ` +
                         `Pass force=true to send a parallel one.`,
+                    { reason: 'SEND_ALREADY_IN_FLIGHT' satisfies VendorSendRefusal },
                 );
             }
         }

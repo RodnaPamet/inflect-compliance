@@ -8574,7 +8574,12 @@
       },
       "inviteExpired": "Връзката е изтекла",
       "inviteRevoked": "Връзката е отменена",
-      "linkGroupNamed": "{type} ({count})"
+      "linkGroupNamed": "{type} ({count})",
+      "sendRefused": {
+        "SEND_RESPONDENT_EMAIL_INVALID": "Въведете валиден имейл адрес на респондента.",
+        "SEND_TEMPLATE_DRAFT": "Този шаблон на въпросник е чернова. Публикувайте го, преди да го изпратите.",
+        "SEND_ALREADY_IN_FLIGHT": "Този респондент вече има този въпросник, чакащ отговор. Изпратете отново поканата вместо нова."
+      }
     },
     "monitoring": {
       "loadFailed": "Зареждането на наблюдението е неуспешно",

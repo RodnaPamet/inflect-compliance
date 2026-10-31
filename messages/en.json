@@ -8574,7 +8574,12 @@
       },
       "inviteExpired": "Link expired",
       "inviteRevoked": "Link revoked",
-      "linkGroupNamed": "{type} ({count})"
+      "linkGroupNamed": "{type} ({count})",
+      "sendRefused": {
+        "SEND_RESPONDENT_EMAIL_INVALID": "Give a valid email address for the respondent.",
+        "SEND_TEMPLATE_DRAFT": "That questionnaire template is a draft. Publish it before sending it.",
+        "SEND_ALREADY_IN_FLIGHT": "This respondent already has this questionnaire waiting for an answer. Resend that invite instead of sending another."
+      }
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",
