@@ -9076,7 +9076,7 @@
       "linkRelationHeader": "Връзка",
       "linkCreatedHeader": "Създадена",
       "linkActionsHeader": "Действия",
-      "removeLink": "× Премахни",
+      "removeLink": "Премахни",
       "linksEmptyTitle": "Все още няма връзки",
       "linksEmptyDesc": "Свържете тази задача със свързани задачи, контроли, доказателства или рискове чрез бутона „Връзка“ по-горе.",
       "linksResourcePlural": "връзки",
@@ -9251,7 +9251,12 @@
       "FRAMEWORK_REQUIREMENT": "Изискване на рамка",
       "ASSET": "Актив",
       "RISK": "Риск",
-      "EVIDENCE": "Доказателство"
+      "EVIDENCE": "Доказателство",
+      "POLICY": "Политика",
+      "FILE": "Файл",
+      "AUDIT_PACK": "Одитен пакет",
+      "VENDOR": "Доставчик",
+      "INCIDENT": "Инцидент"
     },
     "checklist": {
       "heading": "Стъпки",
@@ -9268,6 +9273,13 @@
         "OPERATE": "Изпълнение",
         "REVIEW": "Преглед"
       }
+    },
+    "linkRelation": {
+      "RELATES_TO": "Свързано с",
+      "EVIDENCE_FOR": "Доказателство за",
+      "BLOCKED_BY": "Блокирано от",
+      "CAUSED_BY": "Причинено от",
+      "MITIGATED_BY": "Смекчено от"
     }
   },
   "processes": {
