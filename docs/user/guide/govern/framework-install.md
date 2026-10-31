@@ -27,9 +27,9 @@ Start on a framework without writing its controls yourself. {{ui:frameworks.inst
 
 The heading names the framework. Below it, three steps: **{{ui:frameworks.install.stepSelect}}**, **{{ui:frameworks.install.stepPreview}}** and **{{ui:frameworks.install.stepInstall}}**.
 
-**Choosing the pack.** A framework with one pack chooses it for you and goes straight to the preview. A framework with one pack per kind of use, such as an operating category, lists them under **{{ui:frameworks.install.choosePacks}}**: {{ui:frameworks.install.choosePacksHint}} Each pack shows how many control templates it holds and its version.
+**Choosing the pack.** A framework with one pack chooses it for you and goes straight to the preview. A framework with one pack per kind of use, such as an operating category, lists them under **{{ui:frameworks.install.choosePacks}}**: {{ui:frameworks.install.choosePacksHint}} Each pack shows how many control templates it holds and, when it has one, its version.
 
-**{{ui:frameworks.install.installPreview}}.** How many **{{ui:frameworks.install.newControls}}** would be created, how many **{{ui:frameworks.install.alreadyExist}}** in your workspace, and the **{{ui:frameworks.install.totalTemplates}}**. Below, every control in the pack by code and title: one you already have is marked **{{ui:frameworks.install.exists}}**, and a new one shows how many tasks it brings.
+**{{ui:frameworks.install.installPreview}}.** How many **{{ui:frameworks.install.newControls}}** would be created, how many **{{ui:frameworks.install.alreadyExist}}** in your workspace, and the **{{ui:frameworks.install.totalTemplates}}**. Below, every control in the pack by code and title: one you already have is marked **{{ui:frameworks.install.exists}}**, or with how many of its requirement mappings are missing, and a new one shows how many tasks it brings. When controls you have are missing mappings, a note above the button says how many, and that installing again restores them.
 
 ## What you can do
 
@@ -37,7 +37,7 @@ The heading names the framework. Below it, three steps: **{{ui:frameworks.instal
 
 1. If the framework has several packs, tick each one that applies to you and click the preview button, which names how many you ticked.
 2. Check the preview.
-3. Click the install button, which names how many controls it will create.
+3. Click the install button, which names how many controls it will create. When every control already exists but some mappings are missing, the button names how many mappings it will restore instead.
 
 When it is done, **{{ui:frameworks.install.successHeading}}** shows how many **{{ui:frameworks.install.controlsCreated}}**, **{{ui:frameworks.install.tasksCreated}}** and **{{ui:frameworks.install.mappingsCreated}}**, with **{{ui:frameworks.install.viewControls}}** and **{{ui:frameworks.install.backToFramework}}**.
 
@@ -51,16 +51,19 @@ Click **{{ui:frameworks.install.back}}** on the preview.
 
 - Each new control starts with the status **{{ui:controls.statusLabels.NOT_STARTED}}**, with its starter tasks, and is mapped to the requirements it covers. Work on them on the [{{ui:controls.list.pageTitle}}](controls.md) page.
 - A control you already have, by its code, is not created twice. Installing a pack that shares controls with one you installed earlier adds only the controls you do not have yet.
+- Installing again restores any requirement mapping a control of the pack has lost, and the policy links its template names. When that is all an install did, the page reads **{{ui:frameworks.install.restoredHeading}}**.
 - The framework counts as in use once a control is mapped to it, so you can then create audit cycles for it.
 
 ## Empty and error states
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:frameworks.install.notFound}}** | The framework does not exist, or could not load | Go back to the frameworks list |
+| **{{ui:frameworks.install.notFound}}** | The framework does not exist | Go back to the frameworks list |
+| **{{ui:frameworks.install.loadFailed}}** | The framework or its packs could not load | Click **{{ui:frameworks.install.retry}}** |
+| **{{ui:frameworks.install.previewFailed}}** | The pack's preview could not load | Click **{{ui:frameworks.install.retry}}** |
 | **{{ui:frameworks.install.packsEmpty}}** | The framework has no pack to install | Map your own controls to its requirements instead |
 | **{{ui:frameworks.install.choosePacksRequired}}** | No pack is ticked | Tick at least one |
-| **{{ui:frameworks.install.allInstalled}}** | You already have every control in the pack | Nothing to install |
+| **{{ui:frameworks.install.allInstalled}}** | You already have every control in the pack, with all its mappings | Nothing to install |
 | **{{ui:frameworks.install.installFailed}}**, or a reason the install was refused | Nothing was installed | Follow the reason given, then try again |
 
 ## Related
