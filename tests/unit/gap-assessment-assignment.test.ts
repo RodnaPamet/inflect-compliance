@@ -21,6 +21,7 @@ jest.mock('../../src/app-layer/repositories/Nis2GapAssessmentRepository', () => 
         listAnswers: jest.fn(),
         upsertAnswer: jest.fn(),
         markAssessmentCompleted: jest.fn(),
+        lockAssessmentStatusForShare: jest.fn(),
     },
 }));
 
@@ -34,6 +35,7 @@ import {
     listAssignments,
 } from '@/app-layer/usecases/gap-assessment-assignment';
 import { runInTenantContext } from '@/lib/db-context';
+import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { Nis2GapAssessmentRepository } from '@/app-layer/repositories/Nis2GapAssessmentRepository';
 import { createTask } from '@/app-layer/usecases/task';
 
@@ -60,6 +62,7 @@ const QUESTIONS = [
 beforeEach(() => {
     jest.clearAllMocks();
     repo.listQuestions.mockResolvedValue(QUESTIONS as never);
+    repo.lockAssessmentStatusForShare.mockResolvedValue({ status: 'IN_PROGRESS' });
 });
 
 describe('gap-assessment-assignment — surface', () => {
@@ -163,8 +166,11 @@ describe('listAssignments', () => {
 });
 
 describe('getAssignmentForRespondent', () => {
-    function d(assignment: unknown) {
-        return { nis2GapAssignment: { findFirst: jest.fn().mockResolvedValue(assignment) } };
+    function d(assignment: unknown, runStatus: string = 'IN_PROGRESS') {
+        return {
+            nis2GapAssignment: { findFirst: jest.fn().mockResolvedValue(assignment) },
+            nis2SelfAssessment: { findFirst: jest.fn().mockResolvedValue({ status: runStatus }) },
+        };
     }
     beforeEach(() => {
         repo.listDomains.mockResolvedValue([{ id: 'd1' }] as never);
@@ -188,6 +194,13 @@ describe('getAssignmentForRespondent', () => {
         const out = await getAssignmentForRespondent(ctx({ role: 'EDITOR', userId: 'u1' }), 'asg-1');
         expect(out.questions).toEqual([{ id: 'q1', respondent: 'CEO' }]);
         expect(out.answers).toEqual([{ questionId: 'q1', answer: 'YES', note: null }]);
+        expect(out.finalized).toBe(false);
+    });
+
+    it('says when the run is finalised, so the page stops offering Submit (#4633)', async () => {
+        withDb(d({ id: 'asg-1', assigneeUserId: 'u1', assessmentId: 'a1', questionIds: ['q1'] }, 'COMPLETED'));
+        const out = await getAssignmentForRespondent(ctx({ role: 'READER', userId: 'u1' }), 'asg-1');
+        expect(out.finalized).toBe(true);
     });
 
     it('allows an OWNER admin who is not the assignee', async () => {
@@ -245,6 +258,44 @@ describe('submitAssignmentAnswers', () => {
         expect(res.written).toBe(2);
         expect(repo.upsertAnswer).toHaveBeenCalledTimes(2);
         expect(db.nis2GapAssignment.updateMany).toHaveBeenCalled();
+    });
+
+    it('lets an assignee submit whatever their role — the assignment is the grant (#4633)', async () => {
+        withDb(d(validAssignment));
+        const res = await submitAssignmentAnswers(ctx({ role: 'READER', userId: 'u1' }), 'asg-1', [
+            { questionId: 'q1', answer: 'YES' },
+        ]);
+        expect(res.written).toBe(1);
+        expect(assertCanRead).toHaveBeenCalled();
+        expect(assertCanWrite).not.toHaveBeenCalled();
+    });
+
+    it('accepts a re-submit while the run is open', async () => {
+        withDb(d({ ...validAssignment, status: 'SUBMITTED' }));
+        await expect(
+            submitAssignmentAnswers(ctx(), 'asg-1', [{ questionId: 'q1', answer: 'NO' }]),
+        ).resolves.toEqual({ written: 1 });
+    });
+
+    it.each(['COMPLETED', 'ARCHIVED'])('refuses a submit to a %s run and writes nothing (#4633)', async (status) => {
+        repo.lockAssessmentStatusForShare.mockResolvedValue({ status });
+        const db = d(validAssignment);
+        withDb(db);
+        await expect(
+            submitAssignmentAnswers(ctx(), 'asg-1', [{ questionId: 'q1', answer: 'NO' }]),
+        ).rejects.toMatchObject({ status: 409 });
+        expect(repo.upsertAnswer).not.toHaveBeenCalled();
+        expect(db.nis2GapAssignment.updateMany).not.toHaveBeenCalled();
+        expect(repo.lockAssessmentStatusForShare).toHaveBeenCalledWith(db, expect.anything(), 'a1');
+    });
+
+    it('refuses when the run cannot be found rather than writing into it', async () => {
+        repo.lockAssessmentStatusForShare.mockResolvedValue(null);
+        withDb(d(validAssignment));
+        await expect(
+            submitAssignmentAnswers(ctx(), 'asg-1', [{ questionId: 'q1', answer: 'NO' }]),
+        ).rejects.toMatchObject({ status: 409 });
+        expect(repo.upsertAnswer).not.toHaveBeenCalled();
     });
 });
 

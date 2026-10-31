@@ -125,7 +125,7 @@ export default function TestDashboardPage() {
                 <ErrorState
                     title={t('dashboard.loadErrorTitle')}
                     description={t('dashboard.loadErrorBody')}
-                    onRetry={() => { mutateMetrics(); }}
+                    onRetry={() => { void mutateMetrics(); }}
                     retryLabel={t('dashboard.retry')}
                     data-testid="dashboard-load-error"
                 />

@@ -19,7 +19,7 @@
 
 const mockDb: Record<string, Record<string, jest.Mock>> = {
     scannerRun: { create: jest.fn(), update: jest.fn() },
-    scannerFinding: { findMany: jest.fn(), upsert: jest.fn(), updateMany: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
+    scannerFinding: { findMany: jest.fn(), upsert: jest.fn(), updateMany: jest.fn(), update: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
     finding: { findMany: jest.fn(), updateMany: jest.fn() },
     evidence: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     evidenceControlLink: { findFirst: jest.fn(), create: jest.fn() },
@@ -28,6 +28,10 @@ const mockDb: Record<string, Record<string, jest.Mock>> = {
     asset: { findFirst: jest.fn() },
     integrationConnection: { findFirst: jest.fn() },
 };
+
+/** The ranked-id read the finding lists make before reading the rows (#4631). */
+const mockQueryRaw = jest.fn();
+Object.assign(mockDb, { $queryRaw: mockQueryRaw });
 
 const mockRunInTenantContext = jest.fn(
     async (_c: unknown, fn: (db: unknown) => unknown): Promise<unknown> => fn(mockDb),
@@ -80,10 +84,12 @@ jest.mock('@/lib/observability', () => ({
 }));
 
 import { ZodError } from 'zod';
+import { Prisma } from '@prisma/client';
 import {
     ingestScannerRun,
     listScannerRuns,
     listScannerFindings,
+    listScannerFindingsPage,
     listAssetScannerFindings,
     updateScannerFindingStatus,
 } from '@/app-layer/usecases/scanner-ingestion';
@@ -729,44 +735,101 @@ describe('listScannerRuns', () => {
     });
 });
 
+/** The ranked-id query as Postgres receives it: its SQL text and bound values. */
+function rankedQuery(call = 0): { sql: string; values: unknown[] } {
+    const [strings, ...values] = mockQueryRaw.mock.calls[call] as [TemplateStringsArray, ...unknown[]];
+    const q = Prisma.sql(strings, ...(values as Prisma.Sql[]));
+    return { sql: q.text.replace(/\s+/g, ' '), values: q.values };
+}
+
 describe('listScannerFindings', () => {
     beforeEach(() => {
+        // The database answers the ranked ids in severity order; the row read
+        // returns them in some other order, which the usecase must not keep.
+        mockQueryRaw.mockResolvedValue([{ id: 'sf-1' }, { id: 'sf-2' }]);
         mockDb.scannerFinding.findMany.mockResolvedValue([
-            { id: 'sf-1', cweIds: ['CWE-79'] },
             { id: 'sf-2', cweIds: [] },
+            { id: 'sf-1', cweIds: ['CWE-79'] },
         ]);
     });
 
-    it('applies no status/severity keys when none are given, and defaults take to 200', async () => {
+    it('ranks most severe first in the database, not by the spelling of the severity (#4631)', async () => {
         await listScannerFindings(ADMIN());
-        const args = mockDb.scannerFinding.findMany.mock.calls[0][0];
-        expect(args.where).toStrictEqual({ tenantId: 'tenant-1' });
-        expect(args.take).toBe(200);
+        const { sql, values } = rankedQuery();
+        expect(sql).toContain(`ORDER BY CASE "severity" WHEN 'LOW' THEN -1 WHEN 'MEDIUM' THEN -2 WHEN 'HIGH' THEN -3 WHEN 'CRITICAL' THEN -4 ELSE 0 END, "createdAt" DESC, "id" ASC`);
+        expect(sql).toContain('WHERE "tenantId" = $1 ORDER BY');
+        // One past the default take of 200, so truncation is observable.
+        expect(values).toStrictEqual(['tenant-1', 201]);
     });
 
     it('applies both filters when both are given, and clamps take to 500', async () => {
         await listScannerFindings(ADMIN(), { status: 'TRIAGED', severity: 'HIGH', take: 9999 });
-        const args = mockDb.scannerFinding.findMany.mock.calls[0][0];
-        expect(args.where).toStrictEqual({ tenantId: 'tenant-1', status: 'TRIAGED', severity: 'HIGH' });
-        expect(args.take).toBe(500);
+        const { sql, values } = rankedQuery();
+        expect(sql).toContain('WHERE "tenantId" = $1 AND "status" = $2 AND "severity" = $3 ORDER BY');
+        expect(values).toStrictEqual(['tenant-1', 'TRIAGED', 'HIGH', 501]);
     });
 
-    it('enriches each row with the CWE cross-walk, per row', async () => {
+    it('reads the ranked rows by id, keeps the ranked order, and enriches each row', async () => {
         const rows = await listScannerFindings(ADMIN());
+        const args = mockDb.scannerFinding.findMany.mock.calls[0][0];
+        expect(args.where).toStrictEqual({ tenantId: 'tenant-1', id: { in: ['sf-1', 'sf-2'] } });
+        expect(args.take).toBe(2);
+        expect(rows.map((r) => r.id)).toStrictEqual(['sf-1', 'sf-2']);
         expect(rows.map((r) => r.frameworks)).toStrictEqual([['MAP:CWE-79'], []]);
-        expect(rows[0].id).toBe('sf-1');
+    });
+
+    it('reads no rows when nothing ranks', async () => {
+        mockQueryRaw.mockResolvedValue([]);
+        await expect(listScannerFindings(ADMIN())).resolves.toStrictEqual([]);
+        expect(mockDb.scannerFinding.findMany).not.toHaveBeenCalled();
+    });
+});
+
+describe('listScannerFindingsPage', () => {
+    it('says when more findings exist than it returns, and counts open criticals over all of them', async () => {
+        mockQueryRaw.mockResolvedValue([{ id: 'sf-1' }, { id: 'sf-2' }, { id: 'sf-3' }]);
+        mockDb.scannerFinding.findMany.mockResolvedValue([
+            { id: 'sf-1', cweIds: [] },
+            { id: 'sf-2', cweIds: [] },
+        ]);
+        mockDb.scannerFinding.count.mockResolvedValue(7);
+
+        const page = await listScannerFindingsPage(ADMIN(), { take: 2 });
+
+        expect(rankedQuery().values).toStrictEqual(['tenant-1', 3]);
+        expect(mockDb.scannerFinding.findMany.mock.calls[0][0].where.id).toStrictEqual({ in: ['sf-1', 'sf-2'] });
+        expect(page.rows.map((r) => r.id)).toStrictEqual(['sf-1', 'sf-2']);
+        expect(page.truncated).toBe(true);
+        expect(page.openCriticalCount).toBe(7);
+        expect(mockDb.scannerFinding.count.mock.calls[0][0]).toStrictEqual({
+            where: { tenantId: 'tenant-1', status: 'OPEN', severity: 'CRITICAL' },
+        });
+    });
+
+    it('is not truncated when every finding fits', async () => {
+        mockQueryRaw.mockResolvedValue([{ id: 'sf-1' }]);
+        mockDb.scannerFinding.findMany.mockResolvedValue([{ id: 'sf-1', cweIds: [] }]);
+        mockDb.scannerFinding.count.mockResolvedValue(0);
+        await expect(listScannerFindingsPage(ADMIN())).resolves.toMatchObject({ truncated: false, openCriticalCount: 0 });
+    });
+
+    it('refuses a context without read permission before opening a tenant transaction', async () => {
+        await expect(listScannerFindingsPage(NO_READ())).rejects.toBeInstanceOf(ForbiddenError);
+        expect(mockRunInTenantContext).not.toHaveBeenCalled();
     });
 });
 
 describe('listAssetScannerFindings', () => {
-    it('scopes to the asset and enriches the rows', async () => {
+    it('scopes to the asset, most severe first, and enriches the rows', async () => {
+        mockQueryRaw.mockResolvedValue([{ id: 'sf-9' }]);
         mockDb.scannerFinding.findMany.mockResolvedValue([{ id: 'sf-9', cweIds: ['CWE-22'] }]);
 
         const rows = await listAssetScannerFindings(ADMIN(), 'asset-42');
 
-        const args = mockDb.scannerFinding.findMany.mock.calls[0][0];
-        expect(args.where).toStrictEqual({ tenantId: 'tenant-1', assetId: 'asset-42' });
-        expect(args.take).toBe(200);
+        const { sql, values } = rankedQuery();
+        expect(sql).toContain('WHERE "tenantId" = $1 AND "assetId" = $2 ORDER BY CASE "severity"');
+        expect(values).toStrictEqual(['tenant-1', 'asset-42', 201]);
+        expect(mockDb.scannerFinding.findMany.mock.calls[0][0].where).toStrictEqual({ tenantId: 'tenant-1', id: { in: ['sf-9'] } });
         expect(rows).toStrictEqual([{ id: 'sf-9', cweIds: ['CWE-22'], frameworks: ['MAP:CWE-22'] }]);
     });
 });

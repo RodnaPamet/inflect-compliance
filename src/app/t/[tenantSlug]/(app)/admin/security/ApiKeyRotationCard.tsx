@@ -67,7 +67,7 @@ export function ApiKeyRotationCard() {
     }, [apiUrl, adopt]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => { void load(); }, [load]);
 
     async function save() {
         setBusy(true);

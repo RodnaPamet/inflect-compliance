@@ -140,7 +140,7 @@ export function NewEvidenceLinkModal({
             }
             const data = await res.json();
             const evidenceUrlPrefix = apiUrl(CACHE_KEYS.evidence.list());
-            swrMutate(
+            void swrMutate(
                 (key) =>
                     typeof key === 'string' &&
                     (key === evidenceUrlPrefix ||

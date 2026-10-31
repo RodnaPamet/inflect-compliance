@@ -72,13 +72,15 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
         try {
             const res = await fetch(apiUrl(`/controls/${controlId}/tests/plans`));
             if (res.ok) setPlans(await res.json());
+        } catch {
+            // A network failure keeps what is shown, as a non-ok response does.
         } finally {
             setLoading(false);
         }
     }, [apiUrl, controlId]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchPlans(); }, [fetchPlans]);
+    useEffect(() => { void fetchPlans(); }, [fetchPlans]);
 
     // #107 PUBLISH side. This panel is the only surface that lists ONE
     // control's test plans, so it owns their order — the control-scoped plan

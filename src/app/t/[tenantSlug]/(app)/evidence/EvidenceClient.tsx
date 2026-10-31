@@ -696,8 +696,8 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
             // status flips affect the "approved-only" / "rejected-
             // only" filter views which the primary key revalidation
             // doesn't cover.
-            invalidateEvidence();
-            invalidateEvidenceRecord(id);
+            void invalidateEvidence();
+            void invalidateEvidenceRecord(id);
         });
     };
 
@@ -1374,8 +1374,8 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                             id={`${archived ? 'unarchive' : 'archive'}-${ev.id}`}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                if (archived) unarchiveEvidence(ev.id);
-                                else archiveEvidence(ev.id);
+                                if (archived) void unarchiveEvidence(ev.id);
+                                else void archiveEvidence(ev.id);
                             }}
                         >
                             <BoxArchive className={`size-3.5${archived ? ' text-content-emphasis' : ''}`} />
@@ -1716,8 +1716,8 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                     // Revalidate the list cache so the freshly-saved
                     // values flow back into the table — and the record's
                     // own reads, so an open details panel shows them too.
-                    invalidateEvidence();
-                    if (editInitial) invalidateEvidenceRecord(editInitial.id);
+                    void invalidateEvidence();
+                    if (editInitial) void invalidateEvidenceRecord(editInitial.id);
                 }}
             />
 

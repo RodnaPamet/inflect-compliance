@@ -103,7 +103,7 @@ export function ControlReverseLookupModal({
         let cancelled = false;
         setLoading(true);
         setError(null);
-        (async () => {
+        void (async () => {
             const base = `/api/t/${tenantSlug}/controls/${controlId}`;
             const [mapsRes, reqRes, traceRes] = await Promise.allSettled([
                 fetch(`${base}/process-maps`),

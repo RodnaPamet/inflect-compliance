@@ -312,7 +312,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
             // Revalidate every variant of the controls list key (unfiltered +
             // each `?<filters>`) so the new control appears under any filter.
             const controlsUrlPrefix = apiUrl(CACHE_KEYS.controls.list());
-            swrMutate(
+            void swrMutate(
                 (key) =>
                     typeof key === 'string' &&
                     (key === controlsUrlPrefix || key.startsWith(`${controlsUrlPrefix}?`)),

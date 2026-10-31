@@ -4016,6 +4016,54 @@
       "saveImpact": "Save impact profile"
     },
     "nis2Gap": {
+      "runStatus": {
+        "DRAFT": "Draft",
+        "IN_PROGRESS": "In progress",
+        "COMPLETED": "Completed",
+        "ARCHIVED": "Archived"
+      },
+      "crit": {
+        "CRITICAL": "Critical",
+        "HIGH": "High",
+        "MEDIUM": "Medium",
+        "LOW": "Low"
+      },
+      "consequence": {
+        "AUDIT_FINDING": "Audit finding",
+        "OPERATIONAL_RISK": "Operational risk",
+        "FINE": "Fine",
+        "PERSONAL_LIABILITY": "Personal liability"
+      },
+      "answer": {
+        "YES": "Yes",
+        "PARTIALLY": "Partially",
+        "NO": "No",
+        "NA": "Not applicable"
+      },
+      "effort": {
+        "QUICK_WIN": "Quick win",
+        "DAYS": "Days",
+        "WEEKS": "Weeks",
+        "MONTHS": "Months"
+      },
+      "assignmentStatus": {
+        "PENDING": "Pending",
+        "IN_PROGRESS": "In progress",
+        "SUBMITTED": "Submitted"
+      },
+      "kind": {
+        "RISK": "Risk",
+        "TASK": "Task",
+        "CONTROL_LINK": "Link control",
+        "CONTROL_CREATE": "New control"
+      },
+      "respondentRole": {
+        "CEO": "CEO — scoping & governance",
+        "IT": "IT — technical & cryptography",
+        "HR": "HR — training & awareness",
+        "PROCUREMENT": "Procurement — supply chain",
+        "ANYONE": "General"
+      },
       "loadFailed": "Failed to load NIS2 gap assessment.",
       "rerunFailed": "Failed to start a re-assessment.",
       "rerunStarted": "New re-assessment started. Answer it from the onboarding NIS2 step, then return here — this run joins the history below.",
@@ -4087,6 +4135,7 @@
       "description": "Answer only the questions assigned to you. Your answers feed the shared assessment; the owner finalises it.",
       "loading": "Loading your questions…",
       "alreadySubmitted": "You have already submitted this assignment. You can update your answers and re-submit.",
+      "finalized": "This assessment has been finalised, so its answers can no longer change.",
       "legalBasis": "Legal basis: {legalBasis}",
       "loadingAria": "Loading your NIS2 questions",
       "submitZero": "Submit answers",
@@ -7149,6 +7198,7 @@
     },
     "templateBuilder": {
       "loadError": "Failed to load template ({status})",
+      "loadErrorNetwork": "Couldn't load this template. Check your connection and try again.",
       "published": "Published",
       "draft": "Draft",
       "saving": "Saving…",
@@ -7179,6 +7229,7 @@
     },
     "assessmentReview": {
       "loadError": "Failed to load ({status})",
+      "loadErrorNetwork": "Couldn't load this assessment. Check your connection and try again.",
       "saveError": "Save failed ({status})",
       "closeError": "Close failed ({status})",
       "notFound": "Assessment not found",
@@ -8171,6 +8222,7 @@
       "colRisk": "Risk rating",
       "colSubmitted": "Submitted",
       "loadError": "Failed to load the review queue (status {status}).",
+      "loadErrorNetwork": "Couldn't load the review queue. Check your connection and try again.",
       "resourceSingular": "assessment",
       "resourcePlural": "assessments",
       "emptyTitle": "No assessments to review",
@@ -11607,6 +11659,25 @@
     }
   },
   "securityTesting": {
+    "scanType": {
+      "SAST": "SAST",
+      "SCA": "SCA",
+      "DAST": "DAST",
+      "SECRETS": "Secrets",
+      "IAC": "IaC"
+    },
+    "runOutcome": {
+      "PASS": "Passed",
+      "FAIL": "Failed",
+      "ERROR": "Error"
+    },
+    "ingestedVia": {
+      "API": "API",
+      "UPLOAD": "Upload"
+    },
+    "truncatedHint": "The most severe are shown first, and the filters apply to these only.",
+    "uploadInvalidSarif": "The file is not a valid SARIF report.",
+    "uploadInvalidSarifReason": "The file is not a valid SARIF report: {reason}",
     "title": "Security Testing",
     "colSeverity": "Severity",
     "colFinding": "Finding",
@@ -11691,6 +11762,7 @@
     "newTaskOnDay": "New task on this day",
     "ganttEmpty": "No deadlines in this window.",
     "clickDay": "Click a day to see events on that date.",
+    "clickDayTimeline": "The timeline has no days to click. Switch to Month or Heatmap to open a day.",
     "eventsEmptyDay": "No events on this day.",
     "heatmapWindowLabel": "Past year + next 6 months",
     "ganttWindowLabel": "12-month timeline (fixed window)",
@@ -11722,7 +11794,9 @@
       "treatment-milestone-due": "Milestone",
       "treatment-plan-target": "Plan target",
       "finding-due": "Finding due",
-      "agent-harness-acceptance-expiry": "Harness acceptance expires"
+      "agent-harness-acceptance-expiry": "Harness acceptance expires",
+      "vulnerability-remediation-due": "Vulnerability fix due",
+      "audit-scheduled": "Audit scheduled"
     },
     "category": {
       "evidence": "Evidence",
@@ -11759,7 +11833,9 @@
       "finding": "Findings",
       "treatment-milestone": "Treatment milestones",
       "treatment-plan": "Treatment plans",
-      "agent-harness-acceptance": "Harness acceptances"
+      "agent-harness-acceptance": "Harness acceptances",
+      "asset-vulnerability": "Asset vulnerabilities",
+      "audit": "Audits"
     },
     "filterAria": "Filter deadlines by category",
     "myDeadlines": "My deadlines",

@@ -244,8 +244,8 @@ export default function AssetDetailPage() {
             }
             // Refresh both feeds so the converted row reflects its new state
             // (a converted vuln/finding no longer shows the convert affordance).
-            vulnQuery.mutate();
-            scannerQuery.mutate();
+            void vulnQuery.mutate();
+            void scannerQuery.mutate();
             toast.success(
                 kind === 'risk'
                     ? t('detail.vuln.convertedRisk')
@@ -275,7 +275,7 @@ export default function AssetDetailPage() {
                 body: JSON.stringify(body),
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            vulnQuery.mutate();
+            void vulnQuery.mutate();
         } catch {
             setVulnOverrides((p) => { const n = { ...p }; delete n[id]; return n; });
             setError(t('detail.vuln.updateFailed'));
@@ -291,7 +291,7 @@ export default function AssetDetailPage() {
                 body: JSON.stringify({ status }),
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            scannerQuery.mutate();
+            void scannerQuery.mutate();
         } catch {
             setScannerOverrides((p) => { const n = { ...p }; delete n[id]; return n; });
             setError(t('detail.vuln.updateFailed'));
@@ -481,7 +481,7 @@ export default function AssetDetailPage() {
                             hideSearch
                             id="asset-status-select"
                             selected={ASSET_STATUS_OPTIONS.find(o => o.value === (asset.status || 'ACTIVE')) ?? null}
-                            setSelected={(opt) => { if (opt) changeStatus(opt.value); }}
+                            setSelected={(opt) => { if (opt) void changeStatus(opt.value); }}
                             options={ASSET_STATUS_OPTIONS}
                             disabled={changingStatus}
                             placeholder={t('detail.statusPlaceholder')}
@@ -719,7 +719,7 @@ export default function AssetDetailPage() {
                                             value={r.remediationDueAt ? new Date(r.remediationDueAt) : null}
                                             onChange={(next) => {
                                                 const ymd = toYMD(next);
-                                                patchVulnRow(r.id, { remediationDueAt: ymd }, { remediationDueAt: ymd ?? null });
+                                                void patchVulnRow(r.id, { remediationDueAt: ymd }, { remediationDueAt: ymd ?? null });
                                             }}
                                             aria-label={t('detail.vuln.due')}
                                         />

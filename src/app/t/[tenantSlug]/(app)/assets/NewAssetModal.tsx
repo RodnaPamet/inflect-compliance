@@ -49,7 +49,7 @@ export function NewAssetModal({
             // each `?<filters>`), so the new asset appears regardless of the
             // filter the list is currently showing (dual-cache failure mode).
             const assetsUrlPrefix = buildApiUrl(CACHE_KEYS.assets.list());
-            swrMutate(
+            void swrMutate(
                 (key) =>
                     typeof key === 'string' &&
                     (key === assetsUrlPrefix || key.startsWith(`${assetsUrlPrefix}?`)),
