@@ -316,7 +316,41 @@ describe('override freshness — every override is inside the detector', () => {
          * vacuously when both are empty; this is the assertion that
          * refuses that. Read these off the failure message.
          */
-        const NESTED_ONLY_TODAY = ['@istanbuljs/load-nyc-config > js-yaml', 'jsdom > ws'];
+        /*
+         * The two @sentry/bundler-plugins pins (2026-10-31) are a SECURITY pair and
+         * are nested-only on purpose, so they carry their reason here rather than in
+         * `override-registry.json` — that registry governs version-forcing TOP-LEVEL
+         * overrides, and `parseOverrides` skips object-valued entries, so registering
+         * a nested-only pin there registers a ghost. `jsdom > ws` is the precedent.
+         *
+         * GHSA-3g3m-2fjr-6pw4 (glob, AbortSignal cancellation bypass, affects
+         * 3.0.0-14.0.1) and GHSA-g3hv-75wg-m249 (minimatch, DoS via globparts
+         * amplification, <11.0.1). Both published 2026-10-31 and both turned EVERY
+         * merge-queue candidate red within the hour: the same lockfile passed the
+         * audit gate on PR #4672's own CI at 00:30Z and failed its candidate at
+         * 00:51Z, because `npm audit` reads the live advisory database and the
+         * lockfile had not moved.
+         *
+         * Nested rather than top-level because the production path is exactly one:
+         * @sentry/nextjs -> @sentry/bundler-plugins -> glob -> minimatch, a
+         * build-time source-map plugin. The tree holds other glob and minimatch
+         * copies that are dev-only, outside `npm audit --omit=dev`, so a top-level
+         * pin would force a major bump on dev tooling to fix a production finding it
+         * does not have.
+         *
+         * BOTH are needed, and that was measured rather than reasoned. glob@14.0.3
+         * declares minimatch ^11.0.2, so the first attempt pinned glob alone on the
+         * view that minimatch would follow. It did not: npm resolved the nested
+         * glob@14.0.3 against the HOISTED minimatch@10.2.5 — which does not satisfy
+         * glob's own declared range — and the gate stayed red. A declared dependency
+         * range is not a resolved one.
+         */
+        const NESTED_ONLY_TODAY = [
+            '@istanbuljs/load-nyc-config > js-yaml',
+            '@sentry/bundler-plugins > glob',
+            '@sentry/bundler-plugins > minimatch',
+            'jsdom > ws',
+        ];
 
         it('the nested-only pins are still in the population', () => {
             const topLevelIds = new Set(
