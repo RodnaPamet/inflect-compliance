@@ -45,6 +45,7 @@ import type {
     RiskMatrixConfigShape,
     RiskMatrixLevelLabels,
 } from '@/lib/risk-matrix/types';
+import { foldRiskLevelGroups, type RiskLevelsInUse } from '@/lib/risk-matrix/levels-in-use';
 import type { RequestContext } from '@/app-layer/types';
 
 // ─── Read ───────────────────────────────────────────────────────────
@@ -75,6 +76,36 @@ export async function getRiskMatrixConfig(
         return cloneConfig(DEFAULT_RISK_MATRIX_CONFIG);
     }
     return rowToShape(row);
+}
+
+/**
+ * The highest levels the workspace's live risks use, grouped (#4823). The
+ * editor reads it to warn before a smaller grid leaves risks with no cell on
+ * the heat map. Gated as the config read is: the counts say nothing a
+ * `risks.view` holder cannot already see on the Risks page.
+ *
+ * One `groupBy` over four small integer columns, so the result is bounded by
+ * the distinct level combinations (at most 10^4, in practice a few dozen),
+ * never by the number of risks.
+ */
+export async function listRiskLevelsInUse(ctx: RequestContext): Promise<RiskLevelsInUse[]> {
+    assertCanRead(ctx);
+    const groups = await runInTenantContext(ctx, (db) =>
+        db.risk.groupBy({
+            by: ['likelihood', 'impact', 'residualLikelihood', 'residualImpact'],
+            where: { tenantId: ctx.tenantId, deletedAt: null },
+            _count: { _all: true },
+        }),
+    );
+    return foldRiskLevelGroups(
+        groups.map((g) => ({
+            likelihood: g.likelihood,
+            impact: g.impact,
+            residualLikelihood: g.residualLikelihood,
+            residualImpact: g.residualImpact,
+            count: g._count._all,
+        })),
+    );
 }
 
 // ─── Update ─────────────────────────────────────────────────────────

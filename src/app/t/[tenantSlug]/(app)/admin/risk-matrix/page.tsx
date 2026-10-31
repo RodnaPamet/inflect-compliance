@@ -17,7 +17,7 @@
  *      (see `src/lib/security/route-permissions.ts`).
  */
 
-import { getRiskMatrixConfig } from '@/app-layer/usecases/risk-matrix-config';
+import { listRiskLevelsInUse, getRiskMatrixConfig } from '@/app-layer/usecases/risk-matrix-config';
 import { gateAdminPage } from '../_lib/admin-page-gate';
 import { RiskMatrixAdminClient } from './RiskMatrixAdminClient';
 
@@ -31,12 +31,18 @@ export default async function RiskMatrixAdminPage({
     const gate = await gateAdminPage('/admin/risk-matrix', params);
     if (!gate.allowed) return gate.forbidden;
     const { ctx, tenantSlug } = gate;
-    const initialConfig = await getRiskMatrixConfig(ctx);
+    const [initialConfig, levelsInUse] = await Promise.all([
+        getRiskMatrixConfig(ctx),
+        // What the risks already use, so a smaller grid is warned about before
+        // it is saved rather than discovered on the heat map (#4823).
+        listRiskLevelsInUse(ctx),
+    ]);
 
     return (
         <RiskMatrixAdminClient
             tenantSlug={tenantSlug}
             initialConfig={initialConfig}
+            levelsInUse={levelsInUse}
         />
     );
 }
