@@ -30,3 +30,25 @@ export const RISK_CATEGORIES = [
 ] as const;
 
 export type RiskCategory = (typeof RISK_CATEGORIES)[number];
+
+/**
+ * Each category's key under `risks.categories` (#4692). The stored value
+ * stays the English word above; only its DISPLAY is translated, through this
+ * map, so the filter and the column are untouched.
+ */
+export const RISK_CATEGORY_MESSAGE_KEYS: Readonly<Record<RiskCategory, string>> = {
+    Technical: 'technical',
+    Operational: 'operational',
+    Compliance: 'compliance',
+    Strategic: 'strategic',
+    Financial: 'financial',
+    Reputational: 'reputational',
+    Physical: 'physical',
+    'Human Resources': 'humanResources',
+};
+
+/** The message key for a stored category, or null for a value outside the list. */
+export function riskCategoryMessageKey(value: string | null | undefined): string | null {
+    if (!value) return null;
+    return (RISK_CATEGORY_MESSAGE_KEYS as Record<string, string>)[value] ?? null;
+}

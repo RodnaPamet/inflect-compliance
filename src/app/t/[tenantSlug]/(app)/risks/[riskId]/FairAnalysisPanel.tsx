@@ -51,9 +51,13 @@ import {
     getCategoryPrior,
     FAIR_FACTOR_KEYS,
     FAIR_FACTOR_LABELS,
+    type CalibrationWarning,
     type FairFactorKey,
+    type ReflectionWords,
     type TripleDraft,
 } from '@/lib/fair-calibration';
+import { riskCategoryMessageKey } from '@/lib/risk/categories';
+import { apiErrorMessage } from '@/lib/api-error';
 
 type Conf = 'LOW' | 'MEDIUM' | 'HIGH';
 
@@ -218,7 +222,13 @@ export function FairAnalysisPanel({
                     competitiveAdvantageLoss: N(secondary.competitiveAdvantageLoss),
                 }),
             });
-            setMsg(res.ok ? t('fair.saved') : t('fair.saveFailed'));
+            if (res.ok) {
+                setMsg(t('fair.saved'));
+            } else {
+                // Say why (#4692): the server's reason, else the panel's sentence.
+                const err = await res.json().catch(() => ({}));
+                setMsg(apiErrorMessage(err, t('fair.saveFailed')));
+            }
             setMsgOk(res.ok);
         } catch {
             setMsg(t('fair.saveFailedNetwork'));
@@ -231,13 +241,49 @@ export function FairAnalysisPanel({
     // RQ2-7 → RQ3-2 — warn-only range checks + category anchors.
     const warnings = useMemo(() => validateFairTriples(triples), [triples]);
     const prior = getCategoryPrior(category);
+    // #4692 — every sentence the panel derives is worded in the user's
+    // language: factor names, units, the anchors, the reflections and the
+    // warnings. The English in `fair-calibration` is the fallback.
+    const categoryKey = riskCategoryMessageKey(category);
+    const priorHint = (which: 'tef' | 'loss', english: string | undefined) =>
+        prior && categoryKey && t.has(`fair.priors.${categoryKey}.${which}`)
+            ? t(`fair.priors.${categoryKey}.${which}`)
+            : english;
+    const factorLabel = (k: FairFactorKey) =>
+        t.has(`fair.factors.${k}`) ? t(`fair.factors.${k}`) : FAIR_FACTOR_LABELS[k];
+    const words: ReflectionWords = {
+        tef: (occurs, frequency) => t(occurs ? 'fair.reflect.tefOccurs' : 'fair.reflect.tefExpected', { frequency }),
+        vulnerability: (probability) => t('fair.reflect.vulnerability', { probability }),
+        plm: (amount) => t('fair.reflect.plm', { amount }),
+        slef: (probability) => t('fair.reflect.slef', { probability }),
+        slm: (amount) => t('fair.reflect.slm', { amount }),
+        spread: (base, ratio) => t('fair.reflect.spread', { base, ratio }),
+        frequency: (f) =>
+            f.kind === 'never'
+                ? t('fair.reflect.freqNever')
+                : f.kind === 'perYear'
+                  ? t('fair.reflect.freqPerYear', { n: f.n })
+                  : t('fair.reflect.freqEveryYears', { years: f.years }),
+        probability: (p) =>
+            p.kind === 'zero'
+                ? t('fair.reflect.probZero')
+                : p.kind === 'negative'
+                  ? t('fair.reflect.probNegative')
+                  : p.kind === 'certain'
+                    ? t('fair.reflect.probCertain')
+                    : t('fair.reflect.probOneIn', { oneIn: p.oneIn, percent: p.percent }),
+    };
+    const warningText = (w: CalibrationWarning) =>
+        w.factor && t.has(`fair.warnings.${w.code}`)
+            ? t(`fair.warnings.${w.code}`, { factor: factorLabel(w.factor), ...w.params })
+            : w.message;
 
     const FACTOR_META: Record<FairFactorKey, { unit: string; isMoney: boolean; ghost?: string | null }> = {
-        tef: { unit: '/yr', isMoney: false, ghost: prior?.tefHint },
-        vulnerability: { unit: '0–1', isMoney: false },
-        plm: { unit: 'per event', isMoney: true, ghost: prior?.lossHint },
-        slef: { unit: '0–1', isMoney: false },
-        slm: { unit: 'per event', isMoney: true },
+        tef: { unit: t('fair.units.perYear'), isMoney: false, ghost: priorHint('tef', prior?.tefHint) },
+        vulnerability: { unit: t('fair.units.probability'), isMoney: false },
+        plm: { unit: t('fair.units.perEvent'), isMoney: true, ghost: priorHint('loss', prior?.lossHint) },
+        slef: { unit: t('fair.units.probability'), isMoney: false },
+        slm: { unit: t('fair.units.perEvent'), isMoney: true },
     };
 
     const bound = (k: FairFactorKey, b: Bound, label: string) => (
@@ -255,13 +301,13 @@ export function FairAnalysisPanel({
 
     const factorGroup = (k: FairFactorKey) => {
         const meta = FACTOR_META[k];
-        const reflection = reflectTriple(k, triples[k]);
+        const reflection = reflectTriple(k, triples[k], words);
         const mean = derived.means[k];
         return (
             <div key={k} className="space-y-tight rounded-md border border-border-subtle p-3">
                 <div className="flex items-baseline justify-between gap-default">
                     <p className="text-xs font-medium text-content-emphasis">
-                        {FAIR_FACTOR_LABELS[k]} <span className="font-normal text-content-subtle">({meta.unit})</span>
+                        {factorLabel(k)} <span className="font-normal text-content-subtle">({meta.unit})</span>
                     </p>
                     {/* RQ3-2 — the point estimate is derived (PERT
                         mean), shown, never asked. */}
@@ -347,7 +393,7 @@ export function FairAnalysisPanel({
                 <InlineNotice variant="warning" data-testid="fair-calibration-warnings">
                     <ul className="list-disc pl-4">
                         {warnings.map((w) => (
-                            <li key={`${w.field}-${w.message}`}>{w.message}</li>
+                            <li key={`${w.field}-${w.message}`}>{warningText(w)}</li>
                         ))}
                     </ul>
                 </InlineNotice>

@@ -15,7 +15,9 @@ import {
     validateFairTriples,
     getCategoryPrior,
     CATEGORY_PRIORS,
+    ENGLISH_REFLECTION_WORDS,
     type FairFieldKey,
+    type ReflectionWords,
     type FairPointValues,
 } from '@/lib/fair-calibration';
 
@@ -227,5 +229,35 @@ describe('validateFairTriples (RQ3-2) — warn-only range checks', () => {
 
     it('blank triples warn about nothing (zero-cost default)', () => {
         expect(validateFairTriples(EMPTY_TRIPLES)).toHaveLength(0);
+    });
+});
+
+describe('the panel can word every sentence in the user\'s language (#4692)', () => {
+    it('reflectTriple uses the words it is given, and English by default', () => {
+        const words: ReflectionWords = {
+            ...ENGLISH_REFLECTION_WORDS,
+            tef: (occurs, frequency) => `TEF[${occurs}](${frequency})`,
+            frequency: (f) => (f.kind === 'perYear' ? `PER_YEAR:${f.n}` : f.kind),
+            spread: (base, ratio) => `${base}+SPREAD:${ratio}`,
+        };
+        expect(reflectTriple('tef', { min: 1, mode: 2, max: 40 }, words)).toBe('TEF[true](PER_YEAR:2)+SPREAD:40');
+        expect(reflectTriple('tef', { min: null, mode: 2, max: null })).toBe(
+            'most likely: a threat event occurs about 2× per year',
+        );
+    });
+
+    it('a range warning names its factor, code and numbers, beside the English sentence', () => {
+        const [w] = validateFairTriples({
+            ...EMPTY_TRIPLES,
+            tef: { min: 5, mode: 2, max: 1 },
+        });
+        expect(w).toMatchObject({
+            code: 'rangeInverted',
+            factor: 'tef',
+            params: { min: 5, mode: 2, max: 1 },
+        });
+        expect(w.message).toMatch(/^Threat event frequency: range is inverted/);
+        const bounds = validateFairTriples({ ...EMPTY_TRIPLES, vulnerability: { min: 0.2, mode: 1.5, max: 2 } });
+        expect(bounds).toContainEqual(expect.objectContaining({ code: 'boundsProbability', factor: 'vulnerability' }));
     });
 });
