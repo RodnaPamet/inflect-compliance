@@ -1160,7 +1160,63 @@
       "regulatoryFine": "Regulatory fine",
       "reputationDamage": "Reputation damage",
       "competitiveLoss": "Competitive-advantage loss",
-      "secondaryLossPlaceholder": "Amount"
+      "secondaryLossPlaceholder": "Amount",
+      "factors": {
+        "tef": "Threat event frequency",
+        "vulnerability": "Vulnerability",
+        "plm": "Primary loss magnitude",
+        "slef": "Secondary loss event frequency",
+        "slm": "Secondary loss magnitude"
+      },
+      "units": {
+        "perYear": "/yr",
+        "probability": "0–1",
+        "perEvent": "per event"
+      },
+      "warnings": {
+        "rangeInverted": "{factor}: range is inverted (expected min ≤ mode ≤ max, got {min}/{mode}/{max})",
+        "rangeTooWide": "{factor}: range spans more than 3 orders of magnitude ({min} → {max}) — consider calibrating with a reference event",
+        "boundsProbability": "{factor} is a probability — every bound lives on 0–1",
+        "boundsNegative": "{factor} cannot be negative — negative values invert the model"
+      },
+      "reflect": {
+        "tefOccurs": "most likely: a threat event occurs {frequency}",
+        "tefExpected": "most likely: a threat event is expected {frequency}",
+        "vulnerability": "most likely: an attempted event succeeds with {probability}",
+        "plm": "most likely: each primary loss event costs {amount}",
+        "slef": "most likely: secondary losses follow {probability} of primary events",
+        "slm": "most likely: each secondary fallout costs {amount}",
+        "spread": "{base} — that's a ~{ratio}× spread; anchor it with a reference event",
+        "freqNever": "never (zero events expected)",
+        "freqPerYear": "about {n}× per year",
+        "freqEveryYears": "about one event every {years} years",
+        "probZero": "0% — impossible by your model; did you mean 0.5?",
+        "probNegative": "negative — probabilities live on 0..1",
+        "probCertain": "certain (100% chance)",
+        "probOneIn": "a 1-in-{oneIn} chance ({percent}%)"
+      },
+      "priors": {
+        "technical": {
+          "tef": "Reference: ransomware/intrusion attempts for a mid-size org typically land at TEF 0.05–0.5/yr",
+          "loss": "Reference: single-incident response + recovery commonly runs €50K–€500K"
+        },
+        "operational": {
+          "tef": "Reference: significant process/outage events typically 0.5–4/yr",
+          "loss": "Reference: per-incident operational losses commonly €10K–€250K"
+        },
+        "compliance": {
+          "tef": "Reference: regulator findings/audit events typically 0.1–1/yr",
+          "loss": "Reference: fines + remediation commonly €25K–€2M depending on regime"
+        },
+        "financial": {
+          "tef": "Reference: material financial-control failures typically 0.1–0.5/yr",
+          "loss": "Reference: single-event financial losses commonly €50K–€1M"
+        },
+        "reputational": {
+          "tef": "Reference: public-trust incidents typically 0.05–0.3/yr",
+          "loss": "Reference: churn + PR response commonly €100K–€5M (hardest to calibrate — use customer-lifetime maths)"
+        }
+      }
     },
     "assessment": {
       "kriBreachedOne": "Key risk indicator \"{name}\" is breached (RED).",
@@ -1945,7 +2001,17 @@
       "resourceSingular": "arrangement",
       "resourcePlural": "arrangements"
     },
-    "loadError": "Couldn't load risks. Check your connection and try again."
+    "loadError": "Couldn't load risks. Check your connection and try again.",
+    "categories": {
+      "technical": "Technical",
+      "operational": "Operational",
+      "compliance": "Compliance",
+      "strategic": "Strategic",
+      "financial": "Financial",
+      "reputational": "Reputational",
+      "physical": "Physical",
+      "humanResources": "Human resources"
+    }
   },
   "controls": {
     "title": "Controls Library",
@@ -3382,7 +3448,21 @@
         "ackRequested": "Acknowledgement requested",
         "controlLinked": "Control linked",
         "controlUnlinked": "Control unlinked",
-        "rolledBack": "Rolled back"
+        "rolledBack": "Rolled back",
+        "unarchived": "Restored from archive",
+        "approvalSuperseded": "Approval superseded",
+        "publishBypass": "Published without approval",
+        "evidenceLinked": "Evidence linked",
+        "evidenceUnlinked": "Evidence unlinked",
+        "evidenceItemAdded": "Evidence item added",
+        "ackCarriedForward": "Acknowledgements carried forward",
+        "sharepointLinked": "Linked to SharePoint",
+        "sharepointUnlinked": "Unlinked from SharePoint",
+        "sharepointSyncedTo": "Synced to SharePoint",
+        "sharepointSyncedFrom": "Synced from SharePoint",
+        "externalChangeProposed": "External change proposed",
+        "deleted": "Deleted",
+        "other": "Changed"
       },
       "errCreateVersion": "Failed to create version",
       "errUnknown": "Unknown error",
@@ -3817,7 +3897,8 @@
         "added": "Item added to pack",
         "addError": "Could not add the item. Please try again.",
         "cancel": "Cancel",
-        "submit": "Add to pack"
+        "submit": "Add to pack",
+        "noneOfType": "There is nothing of this type to add."
       },
       "revokeShareModal": {
         "title": "Revoke share link?",
@@ -3874,6 +3955,25 @@
         "removed": "Item removed from the pack",
         "undo": "Undo",
         "error": "Could not remove the item. Please try again."
+      },
+      "showAllItems": "Show all {count}",
+      "refused": {
+        "PACK_NOT_FOUND": "This pack no longer exists. It may have been deleted.",
+        "PACK_NOT_DRAFT": "This pack is frozen, so its items can no longer change.",
+        "PACK_ALREADY_FROZEN": "This pack is already frozen.",
+        "PACK_EMPTY": "Add at least one item before you freeze the pack.",
+        "PACK_DRAFT_NOT_SHAREABLE": "Freeze the pack before you share it.",
+        "PACK_DRAFT_NOT_CLONEABLE": "Freeze the pack before you clone it for a retest.",
+        "PACK_ITEM_NOT_FOUND": "That item is no longer in the pack.",
+        "PACK_ITEM_REF_INVALID": "That item no longer exists in this workspace.",
+        "SHARE_NOT_FOUND": "That share link no longer exists.",
+        "SHARE_ALREADY_REVOKED": "That share link is already revoked.",
+        "ENTRY_NOT_FOUND": "That auditor entry is no longer on this pack.",
+        "ENTRY_NOT_RESOLVABLE": "A comment has nothing to resolve.",
+        "ENTRY_ALREADY_RESOLVED": "That entry is already resolved.",
+        "ENTRY_NOT_MATERIALISABLE": "Only a finding or an evidence request can become a finding.",
+        "ENTRY_RESOLVED_WITHOUT_FINDING": "That entry is resolved, but its finding was not created. Reopen the entry to try again.",
+        "ENTRY_BEING_MATERIALISED": "Another reviewer is creating the finding from this entry. Refresh in a moment."
       }
     },
     "auditor": {
@@ -8494,7 +8594,12 @@
       },
       "inviteExpired": "Link expired",
       "inviteRevoked": "Link revoked",
-      "linkGroupNamed": "{type} ({count})"
+      "linkGroupNamed": "{type} ({count})",
+      "sendRefused": {
+        "SEND_RESPONDENT_EMAIL_INVALID": "Give a valid email address for the respondent.",
+        "SEND_TEMPLATE_DRAFT": "That questionnaire template is a draft. Publish it before sending it.",
+        "SEND_ALREADY_IN_FLIGHT": "This respondent already has this questionnaire waiting for an answer. Resend that invite instead of sending another."
+      }
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",
@@ -8708,7 +8813,7 @@
       "packsTab": "Packs",
       "coverageTab": "Coverage",
       "builderTab": "Builder",
-      "reorderFailed": "Reorder failed ({status})",
+      "reorderFailed": "The new order could not be saved. Try again.",
       "version": "Version",
       "kind": "Kind",
       "browseTemplates": "Browse Templates",
@@ -8730,7 +8835,7 @@
       "packRemoved": "Removed \"{name}\" from your chosen packs. Its controls stay.",
       "undo": "Undo",
       "packRemoveFailed": "The pack could not be removed. Reload the page and try again.",
-      "reorderRestricted": "Reordering is restricted to OWNER / ADMIN roles.",
+      "reorderRestricted": "Only Owners and Admins can reorder requirements.",
       "packsEmpty": "No packs available for this framework.",
       "inherited": {
         "heading": "Coverage from your other frameworks",
@@ -8756,7 +8861,13 @@
         "errorTitle": "Couldn't load inherited coverage",
         "errorLoad": "Try again in a moment.",
         "retry": "Retry"
-      }
+      },
+      "treeLoadFailed": "The requirements could not load.",
+      "packsLoadFailed": "The packs could not load.",
+      "coverageLoadFailed": "The coverage could not load.",
+      "retry": "Try again",
+      "coverageAria": "Framework coverage",
+      "sectionCoverageAria": "{section} coverage"
     },
     "diff": {
       "loading": "Loading diff…",
@@ -12274,6 +12385,13 @@
       "READER": "Reader",
       "AUDITOR": "Auditor",
       "AI_ADMIN": "AI admin"
+    },
+    "refused": {
+      "CAMPAIGN_NEVER_PROMOTES_TO_OWNER": "A review never makes anyone an Owner. An Owner assigns that role on the members page.",
+      "CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE": "A review changes a member to a built-in role only. Custom roles are assigned on the members page.",
+      "OWNER_SUBJECT_NEEDS_OWNER_CLOSER": "This review revokes or changes an Owner's access, which only an Owner can do. Ask an Owner to close it.",
+      "AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER": "This review revokes or changes an AI admin's access, which only an Owner can do, as on the members page. Ask an Owner to close it.",
+      "CAMPAIGN_SUBJECT_MAY_NOT_DECIDE_OWN_ACCESS": "You can't decide on your own access. The review's reviewer, or another Owner or Admin, decides that row."
     }
   },
   "frameworkUpdates": {
@@ -12835,7 +12953,7 @@
       "compensating": "compensating: {name}",
       "renew": "Renew",
       "requested": "Requested {date}",
-      "renewedFrom": " • renewed from {id}…",
+      "renewedFrom": " • renews the exception requested {date}",
       "requestHeader": "Request control exception",
       "justification": "Justification",
       "justificationPlaceholder": "Explain why this control cannot be implemented as designed.",
@@ -12861,7 +12979,14 @@
       "expiryRequired": "Expiry date is required for approval.",
       "exceptionLabel": "Exception",
       "exceptedUntil": "Excepted until {date}",
-      "pickRiskAcceptor": "Select who accepts this risk"
+      "pickRiskAcceptor": "Select who accepts this risk",
+      "renewedFromEarlier": " • renews an earlier exception",
+      "status": {
+        "REQUESTED": "Requested",
+        "APPROVED": "Approved",
+        "REJECTED": "Rejected",
+        "EXPIRED": "Expired"
+      }
     },
     "testPlans": {
       "title": "Test Plans",

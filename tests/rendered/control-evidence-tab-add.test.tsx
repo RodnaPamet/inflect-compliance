@@ -102,18 +102,28 @@ const CONTROL = {
     doneControlTasks: 0,
 };
 
+// Per-test fields layered over CONTROL (#4691's overview labels).
+let mockControlOverride: Record<string, unknown> = {};
+
 const mutateEvidence = jest.fn(async () => undefined);
 const mutatePage = jest.fn(async () => undefined);
 jest.mock('@/lib/hooks/use-tenant-swr', () => ({
     useTenantSWR: (key: string | null) => {
         if (key === '/controls/ctrl_1/page-data') {
-            return { data: { control: CONTROL, syncStatus: null }, isLoading: false, error: undefined, mutate: mutatePage };
+            return { data: { control: { ...CONTROL, ...mockControlOverride }, syncStatus: null }, isLoading: false, error: undefined, mutate: mutatePage };
         }
         if (key === '/controls/ctrl_1/evidence') {
             return { data: { links: [], evidence: [] }, isLoading: false, error: undefined, mutate: mutateEvidence };
         }
         return { data: undefined, isLoading: false, error: undefined, mutate: jest.fn() };
     },
+}));
+
+// The page's plain toasts, observed (#4691); the undo toast stays real.
+const mockToastError = jest.fn();
+jest.mock('@/components/ui/hooks', () => ({
+    ...jest.requireActual('@/components/ui/hooks'),
+    useToast: () => ({ error: mockToastError, success: jest.fn(), info: jest.fn(), warning: jest.fn() }),
 }));
 
 // Self-fetching children that are not under test.
@@ -139,6 +149,8 @@ function json(body: unknown, status = 200): Response {
 
 beforeEach(() => {
     mockControlsEdit = true;
+    mockControlOverride = {};
+    mockToastError.mockClear();
     fetchMock.mockReset();
     mutateEvidence.mockClear();
     mutatePage.mockClear();
@@ -336,5 +348,58 @@ describe('control detail page — the write controls need controls.edit', () => 
         await settled();
 
         expect(document.getElementById('control-where-used-btn')).not.toBeNull();
+    });
+});
+
+describe('control overview — stored codes read as words (#4691)', () => {
+    it('names the category and a linked policy\'s status, and falls back to an owner\'s email', async () => {
+        const en = require('../../messages/en.json');
+        mockControlOverride = {
+            category: 'TECHNOLOGICAL',
+            owner: { id: 'u_2', name: null, email: 'owner@example.com' },
+            policyLinks: [{ id: 'pl_1', policy: { id: 'pol_1', title: 'Access policy', status: 'PUBLISHED' } }],
+        };
+        render(
+            <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, dedupingInterval: 0 }}>
+                <ControlDetailPage />
+            </SWRConfig>,
+        );
+
+        expect(await screen.findByText(en.controls.categoryLabels.TECHNOLOGICAL)).toBeInTheDocument();
+        expect(screen.queryByText('TECHNOLOGICAL')).toBeNull();
+        expect(screen.getByText('owner@example.com')).toBeInTheDocument();
+        const policies = document.getElementById('control-policies-list') as HTMLElement;
+        expect(policies).toHaveTextContent(en.policies.filterEnums.status.published);
+        expect(policies).not.toHaveTextContent('PUBLISHED');
+    });
+});
+
+describe('control status — a refused change says why (#4691)', () => {
+    it('toasts the server\'s reason when the status write is refused', async () => {
+        fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+            String(url).endsWith('/controls/ctrl_1/status') && init?.method === 'POST'
+                ? json({ error: { code: 'FORBIDDEN', message: 'This control is frozen for the audit.' } }, 403)
+                : json({}),
+        );
+        const en = require('../../messages/en.json');
+        render(
+            <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, dedupingInterval: 0 }}>
+                <ControlDetailPage />
+            </SWRConfig>,
+        );
+        const select = await waitFor(() => {
+            const el = document.getElementById('control-status-select');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        await act(async () => {
+            fireEvent.click(select);
+        });
+        const option = await screen.findByRole('option', { name: en.controls.statusLabels.IMPLEMENTED });
+        await act(async () => {
+            fireEvent.click(option);
+        });
+
+        await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('This control is frozen for the audit.'));
     });
 });

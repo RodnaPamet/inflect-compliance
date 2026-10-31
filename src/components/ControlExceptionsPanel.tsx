@@ -98,6 +98,14 @@ export function ControlExceptionsPanel({
 
     const rows = exceptionsQuery.data?.rows ?? [];
     const activeException = rows.find((r) => r.status === 'APPROVED' || r.status === 'REQUESTED');
+    // A renewal names the exception it renews by when that was requested
+    // (#4691), never by a slice of its id.
+    const renewedFromText = (previousId: string): string => {
+        const previous = rows.find((x) => x.id === previousId);
+        return previous
+            ? t('renewedFrom', { date: formatDate(previous.createdAt) })
+            : t('renewedFromEarlier');
+    };
 
     const [requestOpen, setRequestOpen] = useState(false);
     const [approveTargetId, setApproveTargetId] = useState<string | null>(null);
@@ -148,7 +156,7 @@ export function ControlExceptionsPanel({
                             <div className="flex items-center justify-between gap-compact">
                                 <div className="flex items-center gap-tight">
                                     <StatusBadge variant={STATUS_VARIANT[r.status]}>
-                                        {r.status}
+                                        {t(`status.${r.status}`)}
                                     </StatusBadge>
                                     <span className="text-sm text-content-muted">
                                         {r.expiresAt
@@ -193,7 +201,7 @@ export function ControlExceptionsPanel({
                             </div>
                             <p className="mt-2 text-xs text-content-muted">
                                 {t('requested', { date: formatDateTime(r.createdAt) })}
-                                {r.renewedFromId ? t('renewedFrom', { id: r.renewedFromId.slice(0, 8) }) : ''}
+                                {r.renewedFromId ? renewedFromText(r.renewedFromId) : ''}
                             </p>
                         </li>
                     ))}
@@ -300,7 +308,7 @@ function ExceptionHeaderBadge({ ex }: { ex?: ExceptionSummary }) {
         >
             {inForce
                 ? t('exceptedUntil', { date: formatDate(ex.expiresAt!) })
-                : `${t('exceptionLabel')}: ${ex.status}`}
+                : `${t('exceptionLabel')}: ${t(`status.${ex.status}`)}`}
         </StatusBadge>
     );
 }

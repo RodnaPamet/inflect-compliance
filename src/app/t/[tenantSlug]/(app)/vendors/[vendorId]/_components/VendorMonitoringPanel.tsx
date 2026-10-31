@@ -99,8 +99,10 @@ export function VendorMonitoringPanel({
             if (!res.ok) throw new Error(t('monitoring.loadFailed'));
             setPosture(await res.json());
             setError(null);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t('monitoring.loadFailed'));
+        } catch {
+            // The panel's own sentence: the only other message here is the
+            // browser's network error, which is English and says nothing (#4696).
+            setError(t('monitoring.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -116,8 +118,10 @@ export function VendorMonitoringPanel({
             if (!res.ok) throw new Error(t('monitoring.runFailed'));
             await load();
             onChange?.();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t('monitoring.runFailed'));
+        } catch {
+            // The panel's own sentence: the only other message here is the
+            // browser's network error, which is English and says nothing (#4696).
+            setError(t('monitoring.runFailed'));
         } finally {
             setRunning(false);
         }
@@ -135,8 +139,10 @@ export function VendorMonitoringPanel({
             if (!res.ok) throw new Error(t('monitoring.settingsSaveFailed'));
             await load();
             onChange?.();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t('monitoring.settingsSaveFailed'));
+        } catch {
+            // The panel's own sentence: the only other message here is the
+            // browser's network error, which is English and says nothing (#4696).
+            setError(t('monitoring.settingsSaveFailed'));
         } finally {
             setSaving(null);
         }

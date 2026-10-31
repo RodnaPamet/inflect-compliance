@@ -9,6 +9,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { useEffect, useMemo, useState, useCallback, use } from 'react';
 import { useTranslations } from 'next-intl';
+import { vendorSendRefusal } from '@/lib/vendor-assessment-refusals';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref, useTenantContext, usePermissions } from '@/lib/tenant-context-provider';
@@ -689,7 +690,14 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             );
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                setSendError(err?.error?.message || err?.message || tx('detail.sendFailed'));
+                // #4696 — a refusal the server names reads in the user's
+                // language; anything else keeps the server's message.
+                const refusal = vendorSendRefusal(err);
+                setSendError(
+                    refusal
+                        ? tx(`detail.sendRefused.${refusal}`)
+                        : err?.error?.message || err?.message || tx('detail.sendFailed'),
+                );
                 return;
             }
             const result = (await res.json()) as {

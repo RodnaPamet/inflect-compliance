@@ -16,7 +16,12 @@ export function extractMutationError(err: unknown, fallback = 'An error occurred
     if (err && typeof err === 'object') {
         const obj = err as Record<string, unknown>;
         const e = obj.error ?? obj.message ?? fallback;
-        return typeof e === 'string' ? e : JSON.stringify(e);
+        if (typeof e === 'string') return e;
+        // The API's envelope is `{ error: { code, message } }` (#4691): its
+        // message is the reason. A shape with no message falls back — it was
+        // once JSON-stringified, which put `{"code":…}` on screen.
+        const message = e && typeof e === 'object' ? (e as Record<string, unknown>).message : undefined;
+        return typeof message === 'string' && message ? message : fallback;
     }
     return fallback;
 }

@@ -333,7 +333,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx': 2, // partial, 1 jsx + 1 prop
-    'src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/PolicySharePointSection.tsx': 1, // partial, 1 jsx
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx': 1, // partial, 1 prop
