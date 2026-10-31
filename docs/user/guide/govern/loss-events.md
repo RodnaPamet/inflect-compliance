@@ -28,19 +28,19 @@ Check your money estimates against reality. A model that keeps most risks at or 
 
 **{{ui:risks.lossEvents.calibrationTitle}}.** Shown once some losses are linked to risks that have a simulated estimate. It shows how many risks stayed within their pessimistic (P90) estimate, how many were beaten, and how many were scored. Each risk is listed with its status and its actual loss against its typical (P50) and pessimistic (P90) estimates. For a risk that missed, **{{ui:risks.lossEvents.reestimate}}** opens its Quantification tab.
 
-**{{ui:risks.lossEvents.recordLoss}}**, for roles that can: **{{ui:risks.lossEvents.date}}**, **{{ui:risks.lossEvents.amount}}**, **{{ui:risks.lossEvents.whatHappened}}**, **{{ui:risks.lossEvents.riskLabel}}**, and where the loss came from: entered by hand, from a finding or from an incident.
+**{{ui:risks.lossEvents.recordLoss}}**, for roles that can: **{{ui:risks.lossEvents.date}}**, **{{ui:risks.lossEvents.amount}}**, **{{ui:risks.lossEvents.whatHappened}}**, **{{ui:risks.lossEvents.riskLabel}}**, and **{{ui:risks.lossEvents.sourceLabel}}**: **{{ui:risks.lossEvents.source_USER}}**, **{{ui:risks.lossEvents.source_FINDING}}** or **{{ui:risks.lossEvents.source_INCIDENT}}**.
 
-**{{ui:risks.lossEvents.register}}.** The latest 50 losses, newest first: date, source, amount and description.
+**{{ui:risks.lossEvents.register}}.** The latest 50 losses, newest first: date, source, amount, description, the risk each one is linked to (or **{{ui:risks.lossEvents.riskNone}}**) and the justification when one was given. When there are more, the register says how many it shows, and **{{ui:risks.lossEvents.showMore}}** reads 50 more, up to 500.
 
 ## What you can do
 
 ### Record a loss
 
-Fill in the date, the amount and what happened, link the risk it belongs to, and click **{{ui:risks.lossEvents.record}}**. Linking a risk is what lets the comparison score that risk's estimate.
+Fill in the date, the amount and what happened, link the risk it belongs to, and click **{{ui:risks.lossEvents.record}}**. Linking a risk is what lets the comparison score that risk's estimate. Type the amount as a plain number, with no thousands separators; anything else is refused with **{{ui:risks.lossEvents.amountInvalid}}**. If the loss is refused, the message says why.
 
 ### Remove a loss
 
-Owners and Admins click **{{ui:risks.lossEvents.remove}}** on a loss in the register. It is removed at once.
+Owners and Admins click **{{ui:risks.lossEvents.remove}}** on a loss in the register. It leaves the register at once, with a few seconds to undo before it is removed.
 
 ## Empty and error states
 
@@ -49,7 +49,9 @@ Owners and Admins click **{{ui:risks.lossEvents.remove}}** on a loss in the regi
 | **{{ui:risks.lossEvents.emptyActuals}}** | No loss has been recorded yet | Record one |
 | **{{ui:risks.lossEvents.emptyRegister}}** | The register is empty | Record a loss |
 | **{{ui:risks.lossEvents.loadError}}** | The register could not load | Reload the page |
-| **{{ui:risks.lossEvents.saveFailed}}** | The loss was not recorded or removed | Try again |
+| **{{ui:risks.lossEvents.aggErrorTitle}}** | The totals could not load | Click **{{ui:risks.lossEvents.retry}}** |
+| **{{ui:risks.lossEvents.saveFailed}}** | The loss was not recorded | Try again |
+| **{{ui:risks.lossEvents.removeFailed}}** | The loss was not removed, and is back in the register | Try again |
 
 ## Related
 

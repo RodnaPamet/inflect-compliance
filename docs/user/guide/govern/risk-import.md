@@ -8,7 +8,7 @@ route: /t/[tenantSlug]/risks/import
 
 ## Where to find it
 
-Open **{{ui:nav.risks}}** under **{{ui:nav.govern}}**, then **{{ui:risks.viewsMenu}}** › **{{ui:risks.importRisks}}**. The entry appears only for roles that can create risks.
+Open **{{ui:nav.risks}}** under **{{ui:nav.govern}}**, then **{{ui:risks.viewsMenu}}** › **{{ui:risks.importRisks}}**. The entry appears only for roles that can create risks. The breadcrumb reads **{{ui:risks.breadcrumbRoot}}** › **{{ui:riskManager.importBreadcrumb}}**.
 
 ## Who can use it
 
@@ -20,13 +20,13 @@ Move an existing register into Inflect without typing every risk in by hand.
 
 ## What you see
 
-**{{ui:riskManager.csvFormat}}.** The columns the file can have, and an example. Only a `title` column is required. The others are `description`, `category`, `likelihood`, `impact` and `owner`.
+**{{ui:riskManager.csvFormat}}.** The columns the file can have, and an example. Only a `title` column is required. The others are `description`, `category`, `likelihood`, `impact` and `owner`. The card gives the likelihood and impact range of your workspace's risk matrix.
 
 **{{ui:riskManager.chooseFile}}.** Picks the file.
 
-**The preview.** How many risks the file holds, and the first 20 rows: title, category, likelihood × impact and owner. A likelihood or impact outside your risk matrix is flagged, and that row is imported at the default value instead.
+**The preview.** How many risks the file holds, and the first 20 rows: title, category, **{{ui:riskManager.colLikelihoodImpact}}** and owner. A likelihood or impact outside your risk matrix is flagged, and that row is imported at the default value instead. Rows with no title are left out, and a line says how many.
 
-**The result.** How many risks were created, how many rows were skipped because a risk with the same title already exists, and any rows that failed with the reason.
+**The result.** How many risks were created, how many rows were skipped because a risk with the same title already exists, and any rows that failed, each with its row number, title and reason. If the import was refused as a whole, the card says **{{ui:riskManager.importFailed}}** with the reason; nothing was created, and **{{ui:riskManager.backToPreview}}** returns to your file.
 
 ## What you can do
 
@@ -44,6 +44,8 @@ The new risks appear in the register. A risk imported without a likelihood or im
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:riskManager.noValidRows}}** | No row of the file has a title | Check the first row names a `title` column |
+| **{{ui:riskManager.fileReadError}}** | The browser could not read the file | Check it is a CSV saved as text, then choose it again |
+| **{{ui:riskManager.importFailed}}** | The import was refused, for example by your plan's limit | Follow the reason, then try again |
 | **{{ui:riskManager.noImportPermission}}** | Your role cannot create risks | Ask an Owner, Admin or Editor |
 | **{{ui:riskManager.errors}}** | Some rows were not created | Read each reason, correct those rows and import them again |
 
