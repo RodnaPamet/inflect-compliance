@@ -12987,7 +12987,12 @@
       "newPasswordsNoMatch": "The two new passwords do not match.",
       "tooShort": "Your new password must be at least 8 characters long.",
       "mustDiffer": "Your new password must be different from your current password.",
-      "couldNotChange": "Could not change your password."
+      "couldNotChange": "Could not change your password.",
+      "tooLong": "Your new password must be at most 128 characters long.",
+      "breached": "This password appears in known data breaches. Choose a different one.",
+      "withoutPassword": "This account signs in with Google, Microsoft or single sign-on, so it has no password to change.",
+      "currentIncorrect": "Your current password is incorrect.",
+      "passwordlessNotice": "You sign in with Google, Microsoft or single sign-on, so this account has no password to change here. Your sign-in is managed by that provider."
     }
   },
   "invite": {

@@ -8,6 +8,26 @@ import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { Heading } from '@/components/ui/typography';
+import { apiErrorMessage } from '@/lib/api-error';
+import {
+    isChangePasswordRefusal,
+    type ChangePasswordRefusal,
+} from '@/lib/auth/change-password-refusals';
+
+/**
+ * Each refusal's label under `account.security`. The route's own sentences
+ * are English, so a known refusal is said from the catalogue instead (#4645).
+ * Exhaustive: a new code does not compile without a label.
+ */
+const REFUSAL_LABEL: Record<ChangePasswordRefusal, string> = {
+    SAME_AS_CURRENT: 'mustDiffer',
+    PASSWORD_EMPTY: 'fillAllThree',
+    PASSWORD_TOO_SHORT: 'tooShort',
+    PASSWORD_TOO_LONG: 'tooLong',
+    PASSWORD_BREACHED: 'breached',
+    NO_PASSWORD: 'withoutPassword',
+    CURRENT_PASSWORD_INCORRECT: 'currentIncorrect',
+};
 
 export function ChangePasswordForm() {
     const t = useTranslations('account.security');
@@ -53,8 +73,13 @@ export function ChangePasswordForm() {
                 }, 1500);
                 return;
             }
-            const data = await res.json().catch(() => ({}));
-            setError(typeof data?.error === 'string' ? data.error : t('couldNotChange'));
+            const data: unknown = await res.json().catch(() => null);
+            const code = data && typeof data === 'object' ? (data as { code?: unknown }).code : undefined;
+            setError(
+                isChangePasswordRefusal(code)
+                    ? t(REFUSAL_LABEL[code] as Parameters<typeof t>[0])
+                    : apiErrorMessage(data, t('couldNotChange')),
+            );
         } catch {
             setError(t('couldNotChange'));
         }
