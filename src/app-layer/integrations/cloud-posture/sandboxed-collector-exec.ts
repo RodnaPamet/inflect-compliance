@@ -66,6 +66,8 @@ import {
 } from '@/lib/agentic/openshell/transport';
 import { readSandboxExecutionPlatformEnabled } from '@/app-layer/usecases/sandbox-runtime-config';
 import { scrubSecrets } from './powerpipe-core';
+import { collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
+import { grpcSandboxTransport } from '@/lib/agentic/openshell/grpc-transport';
 import {
     gatewayIsReady,
     startGatewayAndWait,
@@ -111,6 +113,20 @@ export interface SandboxedCollectorDeps {
      * seconds of cold boot inside a scan's latency budget, measured.
      */
     readonly startGateway?: () => Promise<StartResult>;
+    /**
+     * The benchmark this runner will execute — #4561.
+     *
+     * Needed because `SandboxSpec` requires a policy and
+     * `collectorSandboxPolicy` is keyed by benchmark. Optional, and without it
+     * no transport is constructed: a sandbox created with no policy is not a
+     * narrower thing than one with the wrong policy, it is an unpoliced
+     * sandbox.
+     *
+     * The alternative was reading the id out of `args` — the collector runs
+     * `powerpipe benchmark run <id>` — and parsing argv to decide a SECURITY
+     * POLICY is the coupling that breaks silently when a flag order changes.
+     */
+    readonly benchmarkId?: string;
 }
 
 /** A failed result in the one shape the collectors' classifier reads. */
@@ -146,6 +162,51 @@ function startFromEnv(): Promise<StartResult> {
     });
 }
 
+/**
+ * The workspace every request is scoped to.
+ *
+ * Measured, not assumed: `ListWorkspaces` against the running 0.1.6 gateway
+ * returned exactly one, `default`. Every request in this contract requires a
+ * scope — a missing one answers `InvalidArgument: workspace_scope is required`
+ * — and `all_workspaces` is a cross-workspace read this product must never
+ * make.
+ */
+export const GATEWAY_WORKSPACE = 'default';
+
+/** Whether this deploy has a client identity to talk to a gateway with. */
+export function gatewayTransportIsConfigured(): boolean {
+    return Boolean(
+        env.SANDBOX_RUNTIME_GATEWAY_ENDPOINT &&
+            env.SANDBOX_RUNTIME_CA_CERT_PATH &&
+            env.SANDBOX_RUNTIME_CLIENT_CERT_PATH &&
+            env.SANDBOX_RUNTIME_CLIENT_KEY_PATH,
+    );
+}
+
+/**
+ * Build the production transport for one benchmark — #4561.
+ *
+ * Null unless the deploy named an endpoint AND all three PEM paths AND the
+ * caller named a benchmark: a partial identity cannot authenticate, and the
+ * spec requires a policy.
+ *
+ * THIS IS THE FIRST CALLER OF `collectorSandboxPolicy`. Until now the module
+ * existed and nothing used it, so the policy had never reached a sandbox —
+ * worth saying plainly, because "the policy enforces" was true of the code that
+ * composes it and of nothing that ran.
+ */
+export function transportFromEnv(benchmarkId: string | undefined): SandboxTransport | null {
+    if (benchmarkId === undefined || !gatewayTransportIsConfigured()) return null;
+    return grpcSandboxTransport({
+        endpoint: env.SANDBOX_RUNTIME_GATEWAY_ENDPOINT as string,
+        caCertPath: env.SANDBOX_RUNTIME_CA_CERT_PATH as string,
+        clientCertPath: env.SANDBOX_RUNTIME_CLIENT_CERT_PATH as string,
+        clientKeyPath: env.SANDBOX_RUNTIME_CLIENT_KEY_PATH as string,
+        workspace: GATEWAY_WORKSPACE,
+        policy: collectorSandboxPolicy(benchmarkId),
+    });
+}
+
 /** Whether this deploy names a VM to start at all. */
 export function gatewayStartIsConfigured(): boolean {
     return Boolean(
@@ -156,7 +217,6 @@ export function gatewayStartIsConfigured(): boolean {
 }
 
 export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorExec {
-    const transport = deps.transport ?? unconfiguredTransport;
     const startGateway = deps.startGateway ?? startFromEnv;
     const timeoutMs = deps.timeoutMs ?? TOOL_EXEC_TIMEOUT_MS;
     const maxOutputBytes = deps.maxOutputBytes ?? TOOL_EXEC_MAX_OUTPUT_BYTES;
@@ -203,6 +263,26 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
                     );
                 }
             }
+
+            /*
+                CONSTRUCT THE TRANSPORT HERE, not at build time — #4561.
+
+                Inside this try for the same reason the start is: building it
+                READS THREE PEM FILES, and a missing client key throws
+                `SandboxUnreachableError` by design rather than degrading to an
+                insecure channel. Thrown from outside, that would escape as an
+                exception instead of the classified `SANDBOX_UNREACHABLE`
+                result the ladder reads.
+
+                AFTER the start, because the files are local but the endpoint is
+                not: there is no point reading a key for a machine that never
+                came up.
+
+                An INJECTED transport still wins, unchanged — that is the test
+                seam and the drill's, and it must not start depending on a
+                deploy's environment.
+            */
+            const transport = deps.transport ?? transportFromEnv(deps.benchmarkId) ?? unconfiguredTransport;
 
             // The provider is attached through the executor's own hook, which
             // runs after the sandbox exists and before the tool does. Attaching

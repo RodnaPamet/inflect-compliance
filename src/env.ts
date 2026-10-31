@@ -369,6 +369,29 @@ export const env = createEnv({
          * the service account's, which is why #4562 narrowed that to exactly
          * `instances.get`, `instances.start` and `zoneOperations.get`.
          */
+        /**
+         * THE gRPC ENDPOINT AND THE CLIENT IDENTITY — #4561.
+         *
+         * `host:port`, not a URL: the gateway's client-facing service is gRPC on
+         * 17670 over the VPC, and it is a different port and a different
+         * protocol from `SANDBOX_RUNTIME_HEALTH_URL`'s unauthenticated health
+         * port. One variable cannot serve both.
+         *
+         * The three PEM paths are FILES, not contents. Owner decision
+         * 2026-10-30: the client key reaches the app VM as a root-owned `0400`
+         * file delivered out of band — chosen over a PEM in this env file,
+         * which would make the key process-wide and visible to anything that
+         * dumps the environment or ships a crash report. So these name a path
+         * and never a secret, and the env file stays safe to read.
+         *
+         * All four empty-coerced and optional. Absent means this deploy has no
+         * client identity and the transport is not constructed — which is every
+         * deploy today, and is why the refusing default stays load-bearing.
+         */
+        SANDBOX_RUNTIME_GATEWAY_ENDPOINT: emptyToUndefined(z.string().optional()),
+        SANDBOX_RUNTIME_CA_CERT_PATH: emptyToUndefined(z.string().optional()),
+        SANDBOX_RUNTIME_CLIENT_CERT_PATH: emptyToUndefined(z.string().optional()),
+        SANDBOX_RUNTIME_CLIENT_KEY_PATH: emptyToUndefined(z.string().optional()),
         SANDBOX_RUNTIME_GATEWAY_PROJECT: emptyToUndefined(z.string().optional()),
         SANDBOX_RUNTIME_GATEWAY_ZONE: emptyToUndefined(z.string().optional()),
         SANDBOX_RUNTIME_GATEWAY_INSTANCE: emptyToUndefined(z.string().optional()),
@@ -786,6 +809,10 @@ export const env = createEnv({
         SANDBOX_RUNTIME_CONFIG_DIGEST: process.env.SANDBOX_RUNTIME_CONFIG_DIGEST,
         SANDBOX_RUNTIME_APPLIED_AT: process.env.SANDBOX_RUNTIME_APPLIED_AT,
         SANDBOX_RUNTIME_CHANNELS: process.env.SANDBOX_RUNTIME_CHANNELS,
+        SANDBOX_RUNTIME_GATEWAY_ENDPOINT: process.env.SANDBOX_RUNTIME_GATEWAY_ENDPOINT,
+        SANDBOX_RUNTIME_CA_CERT_PATH: process.env.SANDBOX_RUNTIME_CA_CERT_PATH,
+        SANDBOX_RUNTIME_CLIENT_CERT_PATH: process.env.SANDBOX_RUNTIME_CLIENT_CERT_PATH,
+        SANDBOX_RUNTIME_CLIENT_KEY_PATH: process.env.SANDBOX_RUNTIME_CLIENT_KEY_PATH,
         SANDBOX_RUNTIME_GATEWAY_PROJECT: process.env.SANDBOX_RUNTIME_GATEWAY_PROJECT,
         SANDBOX_RUNTIME_GATEWAY_ZONE: process.env.SANDBOX_RUNTIME_GATEWAY_ZONE,
         SANDBOX_RUNTIME_GATEWAY_INSTANCE: process.env.SANDBOX_RUNTIME_GATEWAY_INSTANCE,

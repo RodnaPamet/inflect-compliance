@@ -270,11 +270,57 @@ SANDBOX_RUNTIME_HEALTH_URL=http://10.132.0.28:8081
 SANDBOX_RUNTIME_GATEWAY_PROJECT=hazel-design-419410
 SANDBOX_RUNTIME_GATEWAY_ZONE=europe-west1-b
 SANDBOX_RUNTIME_GATEWAY_INSTANCE=openshell-gateway
+SANDBOX_RUNTIME_GATEWAY_ENDPOINT=10.132.0.28:17670
+SANDBOX_RUNTIME_CA_CERT_PATH=/etc/inflect/openshell/ca.crt
+SANDBOX_RUNTIME_CLIENT_CERT_PATH=/etc/inflect/openshell/tls.crt
+SANDBOX_RUNTIME_CLIENT_KEY_PATH=/etc/inflect/openshell/tls.key
 ```
 
-**All seven are optional and absence is a working state**, not a broken one. With
+**All eleven are optional and absence is a working state**, not a broken one. With
 no digest the page reports `not-configured` for every row, which is true of a
 deploy that declared nothing.
+
+#### The last four are the CLIENT IDENTITY — #4561
+
+`SANDBOX_RUNTIME_GATEWAY_ENDPOINT` is `host:port`, **not** a URL: the gateway's
+client-facing service is gRPC on **17670** over the VPC, a different port and a
+different protocol from `SANDBOX_RUNTIME_HEALTH_URL`'s unauthenticated health
+port. One variable cannot serve both.
+
+The three PEM entries are **paths, not contents**. Owner decision 2026-10-30:
+the client key reaches the app VM as a **root-owned `0400` file delivered out of
+band** — chosen over a PEM in this env file, which would make the key
+process-wide and visible to anything that dumps the environment or ships a
+crash report. So this file names a path and never a secret, and stays safe to
+read.
+
+All four are needed together. A partial identity cannot authenticate, so any one
+missing means no transport is constructed and every collection answers
+`SANDBOX_UNREACHABLE` — the refusing default, which the ladder reports as ERROR.
+
+**Getting the material onto the app VM** (the one step this repository cannot
+do, by that decision):
+
+```
+# on the gateway VM, signing with the CA that exists only there
+openssl genrsa -out client.key 2048
+openssl req -new -key client.key -out client.csr \
+    -subj "/CN=openshell-client/OU=openshell-user"
+openssl x509 -req -in client.csr -CA /etc/openshell/pki/ca.crt \
+    -CAkey /etc/openshell/pki/ca.key -CAcreateserial \
+    -out client.crt -days 365 -extfile <(printf 'extendedKeyUsage=clientAuth')
+
+# on the app VM
+install -d -m 0755 /etc/inflect/openshell
+install -o root -g root -m 0400 client.key /etc/inflect/openshell/tls.key
+install -o root -g root -m 0444 client.crt /etc/inflect/openshell/tls.crt
+install -o root -g root -m 0444 ca.crt     /etc/inflect/openshell/ca.crt
+```
+
+`OU=openshell-user` is load-bearing: the gateway authorises an mTLS identity by
+ROLE, and that OU is what `whoami` reports as `Roles: openshell-user` —
+measured. `OU=operator` would be a different and wider identity, and the
+operator certificate is deliberately absent from both VMs.
 
 #### The last three are what lets a scan START the machine — 4.3 (#4562)
 

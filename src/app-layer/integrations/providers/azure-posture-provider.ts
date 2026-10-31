@@ -153,10 +153,11 @@ export class AzurePostureProvider implements ScheduledCheckProvider {
      * — see the recorder's own note on why a constructor-bound tenant would be
      * worse than none.
      */
-    private execForScan(input: CheckInput): RunBenchmarkInput['exec'] {
+    private execForScan(input: CheckInput, benchmarkId: string): RunBenchmarkInput['exec'] {
         if (!this.execFromDeploy) return this.exec;
         return (
             collectorExecForDeploy({
+                benchmarkId,
                 onDecision: sandboxDecisionRecorderForScan({
                     tenantId: input.tenantId,
                     job: 'azure-posture-collect',
@@ -186,7 +187,7 @@ export class AzurePostureProvider implements ScheduledCheckProvider {
         const secretValues = [secrets.clientSecret].filter((v): v is string => !!v);
         // Resolved once per scan — see `execForScan`. Azure writes no
         // credential file, so unlike GCP this value has one consumer.
-        const exec = this.execForScan(input);
+        const exec = this.execForScan(input, benchmarkId);
         const { summaryObj: _s, ...result } = await runPowerpipeBenchmark({ benchmarkId, env, secretValues, patterns: AZURE_CREDENTIAL_PATTERNS, exec });
         return result;
     }
