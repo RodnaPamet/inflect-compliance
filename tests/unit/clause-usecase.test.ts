@@ -76,7 +76,10 @@ describe('updateClauseProgress', () => {
         expect(payload.detailsJson.category).toBe('status_change');
         expect(payload.detailsJson.fromStatus).toBeNull();
         expect(payload.detailsJson.toStatus).toBe('IN_PROGRESS');
-        expect(payload.detailsJson.reason).toBe('work started');
+        // #4738 — the notes are free text, and an audit row's details stream
+        // to the tenant's SIEM, so they no longer ride in the audit row.
+        expect(payload.detailsJson.reason).toBeUndefined();
+        expect(JSON.stringify(payload)).not.toContain('work started');
     });
 
     it('audit reason is undefined when notes is empty/null (no falsy leak)', async () => {

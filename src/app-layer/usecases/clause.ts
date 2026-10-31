@@ -5,6 +5,7 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { UpdateClauseProgressSchema } from '@/lib/schemas';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 
 export async function listClauses(ctx: RequestContext) {
     assertCanRead(ctx);
@@ -17,9 +18,12 @@ export async function updateClauseProgress(ctx: RequestContext, id: string, data
     assertCanWrite(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // Notes are free text a person typed: sanitise before storing, and
+        // pass `undefined` through so a status-only save keeps them (#4738).
+        const notes = data.notes == null ? data.notes : sanitizePlainText(data.notes);
         const progress = await ClauseRepository.updateProgress(db, ctx, id, {
             status: data.status,
-            notes: data.notes,
+            notes,
         });
 
         await logEvent(db, ctx, {
@@ -32,7 +36,6 @@ export async function updateClauseProgress(ctx: RequestContext, id: string, data
                 entityName: 'ClauseProgress',
                 fromStatus: null,
                 toStatus: data.status,
-                reason: data.notes || undefined,
             },
         });
 

@@ -957,9 +957,14 @@ export const BulkAgentProposalRejectSchema = z.object({
 
 // ─── Clauses ───
 
+export const CLAUSE_PROGRESS_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'READY', 'NEEDS_REVIEW'] as const;
+
 export const UpdateClauseProgressSchema = z.object({
-    status: z.string().min(1, 'Status is required'),
-    notes: z.string().optional().nullable(),
+    // The ClauseStatus enum (#4738): a value outside it used to reach Prisma
+    // and fail as a 500 rather than a 400.
+    status: z.enum(CLAUSE_PROGRESS_STATUSES),
+    // Absent leaves the stored notes as they are; null or '' clears them.
+    notes: z.string().max(5000).optional().nullable(),
 }).strip();
 
 // ─── Auth ───

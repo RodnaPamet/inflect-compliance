@@ -685,7 +685,15 @@
     "inProgress": "In Progress",
     "ready": "Ready",
     "needsReview": "Needs Review",
-    "loadingAria": "Loading clauses"
+    "loadingAria": "Loading clauses",
+    "statusSaved": "Status saved.",
+    "saveFailed": "The change was not saved. Try again.",
+    "notes": "Notes",
+    "notesPlaceholder": "What has been done for this clause, and what is still open",
+    "saveNotes": "Save notes",
+    "savingNotes": "Saving…",
+    "notesSaved": "Notes saved.",
+    "noNotes": "No notes yet"
   },
   "assets": {
     "title": "Asset Inventory",
@@ -8922,7 +8930,8 @@
       "coverageLoadFailed": "The coverage could not load.",
       "retry": "Try again",
       "coverageAria": "Framework coverage",
-      "sectionCoverageAria": "{section} coverage"
+      "sectionCoverageAria": "{section} coverage",
+      "clauseTracker": "Clauses 4–10"
     },
     "diff": {
       "loading": "Loading diff…",
