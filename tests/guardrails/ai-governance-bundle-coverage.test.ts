@@ -136,9 +136,14 @@ describe('AI-governance bundle — generic machinery + reused surfaces', () => {
     });
 
     it('reuses the EXISTING cross-framework traceability/mapping surfaces (no bespoke dashboard)', () => {
-        // The crosswalks surface through the existing mapping/traceability
-        // surface + the standard coverage flow — not a bespoke AI-governance page.
-        expect(exists('src/app/t/[tenantSlug]/(app)/mapping/page.tsx')).toBe(true);
+        // The crosswalks surface through the existing framework Coverage tab
+        // (its "coverage from your other frameworks" panel reads the imported
+        // mapping sets) + traceability — not a bespoke AI-governance page.
+        // The standalone /mapping page this used to name read a hardcoded
+        // ISO→SOC 2/NIS2 guidance table, never these crosswalks, and was
+        // folded into ISO 27001's Coverage tab.
+        expect(exists('src/components/frameworks/InheritedCoveragePanel.tsx')).toBe(true);
+        expect(exists('src/app/t/[tenantSlug]/(app)/mapping')).toBe(false);
         expect(exists('src/app-layer/usecases/traceability.ts')).toBe(true);
         // Guard against accidentally introducing a one-off bespoke surface.
         expect(exists('src/app/t/[tenantSlug]/(app)/ai-governance')).toBe(false);

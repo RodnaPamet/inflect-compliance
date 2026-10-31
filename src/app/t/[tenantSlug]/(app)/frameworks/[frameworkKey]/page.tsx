@@ -8,6 +8,7 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { FrameworkExplorer } from '@/components/frameworks/FrameworkExplorer';
 import { FrameworkBuilder } from '@/components/ui/FrameworkBuilder';
 import { InheritedCoveragePanel } from '@/components/frameworks/InheritedCoveragePanel';
+import { IsoEstimatePanel } from '@/components/frameworks/IsoEstimatePanel';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { useCelebration, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { Button } from '@/components/ui/button';
@@ -26,7 +27,7 @@ import { frameworkOrderKey } from '../framework-order';
 import { apiErrorMessage } from '@/lib/api-error';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { frameworkKindLabel } from '../framework-kind-label';
-import { frameworkHasClauseTracker } from '@/lib/compliance/iso27001-clauses';
+import { frameworkHasClauseTracker, isIso27001Framework } from '@/lib/compliance/iso27001-clauses';
 
 type Tab = 'requirements' | 'packs' | 'coverage' | 'builder';
 
@@ -314,14 +315,6 @@ export default function FrameworkDetailPage() {
                             {t('detail.clauseTracker')}
                         </Link>
                     )}
-                    {/* #4737 — the SOC 2 / NIS2 estimate is worked out from
-                        ISO 27001 controls, so it is offered from ISO 27001's
-                        page; nothing linked it at all. */}
-                    {frameworkHasClauseTracker(frameworkKey) && (
-                        <Link href={tenantHref('/mapping')} className={buttonVariants({ variant: 'secondary' })} id="mapping-estimate-link">
-                            {t('detail.mappingEstimate')}
-                        </Link>
-                    )}
                     <Link href={tenantHref(`/frameworks/${frameworkKey}/templates`)} className={buttonVariants({ variant: 'secondary' })} id="browse-templates-cta">
                         {t('detail.browseTemplates')}
                     </Link>
@@ -525,6 +518,13 @@ export default function FrameworkDetailPage() {
                         a framework nobody opens the Coverage tab of costs
                         nothing; never added to the figures above. */}
                     <InheritedCoveragePanel tenantSlug={tenantSlug} frameworkKey={frameworkKey} />
+
+                    {/* The SOC 2 and NIS2 estimate is worked out from ISO
+                        27001 controls, so it lives on ISO 27001's Coverage
+                        tab. It was a page of its own (/mapping); the panel
+                        shows only the frameworks the workspace does not use
+                        yet, and nothing once it uses both. */}
+                    {isIso27001Framework(frameworkKey) && <IsoEstimatePanel />}
 
                 </div>
             )}

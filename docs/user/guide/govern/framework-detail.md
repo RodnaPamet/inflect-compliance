@@ -24,7 +24,7 @@ See how far your workspace is towards meeting a framework: which of its requirem
 
 ## What you see
 
-**The header.** The framework's name, its **{{ui:frameworks.detail.version}}** and its **{{ui:frameworks.detail.kind}}**, and a short description. On the right: for ISO 27001, **{{ui:frameworks.detail.clauseTracker}}**, which opens the [clause tracker](clauses.md), and **{{ui:frameworks.detail.mappingEstimate}}**, which opens the [SOC 2 and NIS2 estimate](framework-mapping.md) worked out from your ISO 27001 controls; then **{{ui:frameworks.detail.browseTemplates}}**, **{{ui:frameworks.detail.compareRequirements}}**, which opens the [{{ui:frameworks.diff.heading}}](framework-diff.md) page, and, for Owners and Admins, **{{ui:frameworks.detail.installPack}}**.
+**The header.** The framework's name, its **{{ui:frameworks.detail.version}}** and its **{{ui:frameworks.detail.kind}}**, and a short description. On the right: for ISO 27001, **{{ui:frameworks.detail.clauseTracker}}**, which opens the [clause tracker](clauses.md),; then **{{ui:frameworks.detail.browseTemplates}}**, **{{ui:frameworks.detail.compareRequirements}}**, which opens the [{{ui:frameworks.diff.heading}}](framework-diff.md) page, and, for Owners and Admins, **{{ui:frameworks.detail.installPack}}**.
 
 **The tabs.**
 
@@ -36,6 +36,8 @@ See how far your workspace is towards meeting a framework: which of its requirem
 | **{{ui:frameworks.detail.builderTab}}** | The order of sections and requirements, which Owners and Admins can change |
 
 **The coverage.** Three cards: **{{ui:frameworks.detail.totalRequirements}}**, **{{ui:frameworks.detail.mapped}}** and **{{ui:frameworks.detail.unmapped}}**, and a fourth, **{{ui:frameworks.detail.outOfScope}}**, when some requirements belong to packs you did not choose. Then **{{ui:frameworks.detail.overallCoverage}}** as a percentage, **{{ui:frameworks.detail.coverageBySection}}**, and the list of requirements with no control. At the bottom, **{{ui:frameworks.detail.inherited.heading}}**: {{ui:frameworks.detail.inherited.description}}
+
+**{{ui:frameworks.detail.isoEstimate.heading}}.** On ISO 27001's Coverage tab only, below the inherited coverage. For SOC 2 and NIS2, whichever your workspace does not use yet, it estimates how far your ISO 27001 controls already go, by the standard guidance that relates Annex A controls to SOC 2 criteria and NIS2 areas. Each framework shows how many of its criteria relate to one of your controls and the estimated implementation across those criteria. Open the list of criteria under each framework to see each criterion's estimate, how many related controls are implemented and how many carry evidence. A criterion that relates to none of your controls says so, and is left out of the estimate. These are estimates, not coverage: once you install SOC 2 or NIS2 and map controls to it, its own page shows its real coverage and it leaves this panel. When your workspace uses both, the panel does not appear.
 
 ## What you can do
 
@@ -74,6 +76,7 @@ On **{{ui:frameworks.detail.builderTab}}**, drag sections and requirements into 
 | **{{ui:frameworks.detail.packRemoveFailed}}** | The pack is still in scope | Reload the page and try again |
 | **{{ui:frameworks.detail.inherited.emptyTitle}}** | No framework you hold controls on is mapped to this one | Nothing to do |
 | **{{ui:frameworks.detail.inherited.errorTitle}}** | The inherited coverage could not load | Click **{{ui:frameworks.detail.inherited.retry}}** |
+| **{{ui:frameworks.detail.isoEstimate.errorTitle}}** | The SOC 2 and NIS2 estimate could not load | Click **{{ui:frameworks.detail.isoEstimate.retry}}** |
 
 ## Related
 

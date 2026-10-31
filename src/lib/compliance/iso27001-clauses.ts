@@ -10,6 +10,11 @@
  */
 const ISO27001_FRAMEWORK_KEYS: ReadonlySet<string> = new Set(['ISO27001', 'ISO27001-2022']);
 
-export function frameworkHasClauseTracker(frameworkKey: string): boolean {
+/** Whether a framework key names ISO 27001, under either spelling. */
+export function isIso27001Framework(frameworkKey: string): boolean {
     return ISO27001_FRAMEWORK_KEYS.has(frameworkKey);
+}
+
+export function frameworkHasClauseTracker(frameworkKey: string): boolean {
+    return isIso27001Framework(frameworkKey);
 }
