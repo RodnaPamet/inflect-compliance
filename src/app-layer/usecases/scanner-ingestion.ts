@@ -31,7 +31,7 @@
 import { z } from 'zod';
 import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { logger } from '@/lib/observability';
@@ -44,7 +44,7 @@ import {
     type ScanType,
 } from '../services/sarif';
 import { mapCwes } from '../services/cwe-mapping';
-import type { FindingSeverity } from '@prisma/client';
+import { Prisma, type FindingSeverity } from '@prisma/client';
 import { drainPages, DRAIN_PAGE_SIZE } from '@/app-layer/jobs/drain-pages';
 import { recordScannerFindingsTruncated } from '@/lib/observability/integration-metrics';
 
@@ -491,42 +491,111 @@ export async function listScannerRuns(ctx: RequestContext, opts?: { source?: str
     });
 }
 
-/** Tenant-scoped read: scanner findings, filterable by status/severity.
- *  Each row is enriched with the CWE → OWASP/SSDF cross-walk so the UI can
- *  show "relates to OWASP A03 / SSDF PW.5" without a second round-trip. */
+/**
+ * Most severe first, in the database. `severity` is a String column, so
+ * `orderBy: { severity: 'desc' }` sorted the SPELLING — MEDIUM, LOW, HIGH,
+ * CRITICAL — which put critical findings last and let a capped read drop
+ * them first (#4631). The CASE is built from `SEVERITY_RANK`, so the ranking
+ * the threshold gate uses and the one the list sorts by cannot disagree; an
+ * unknown value sorts after LOW.
+ */
+// `Prisma.raw` is safe here: every token comes from the constant map above,
+// none from a caller.
+const SEVERITY_ORDER_SQL = Prisma.raw(
+    `CASE "severity" ${(Object.entries(SEVERITY_RANK) as Array<[ScannerSeverity, number]>)
+        .map(([severity, rank]) => `WHEN '${severity}' THEN ${-rank}`)
+        .join(' ')} ELSE 0 END`,
+);
+
+/** What a scanner-finding list row carries beside its own columns. */
+const FINDING_ROW_INCLUDE = {
+    scannerRun: { select: { source: true, scanType: true, ranAt: true, repoRef: true } },
+} as const;
+
+/**
+ * The first `take` findings matching `filter`, most severe first, then
+ * newest, then by id so a tie is stable. Reads ONE past `take`, so whether
+ * more exist is a fact the caller holds rather than one it cannot observe.
+ * Two reads: the ranked ids (the ORDER BY Prisma cannot express), then the
+ * rows by id with their run.
+ */
+async function readFindingsMostSevereFirst(
+    db: PrismaTx,
+    ctx: RequestContext,
+    filter: { status?: string; severity?: string; assetId?: string },
+    take: number,
+) {
+    const conditions = [Prisma.sql`"tenantId" = ${ctx.tenantId}`];
+    if (filter.status) conditions.push(Prisma.sql`"status" = ${filter.status}`);
+    if (filter.severity) conditions.push(Prisma.sql`"severity" = ${filter.severity}`);
+    if (filter.assetId) conditions.push(Prisma.sql`"assetId" = ${filter.assetId}`);
+    const ranked = await db.$queryRaw<Array<{ id: string }>>`
+        SELECT "id"
+          FROM "ScannerFinding"
+         WHERE ${Prisma.join(conditions, ' AND ')}
+         ORDER BY ${SEVERITY_ORDER_SQL}, "createdAt" DESC, "id" ASC
+         LIMIT ${take + 1}`;
+    const more = ranked.length > take;
+    const ids = ranked.slice(0, take).map((r) => r.id);
+    if (ids.length === 0) return { rows: [], more };
+    const found = await db.scannerFinding.findMany({
+        where: { tenantId: ctx.tenantId, id: { in: ids } },
+        include: FINDING_ROW_INCLUDE,
+        take: ids.length,
+    });
+    const position = new Map(ids.map((id, i) => [id, i] as const));
+    const rows = found.sort((a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0));
+    return { rows, more };
+}
+
+/** Tenant-scoped read: scanner findings, filterable by status/severity, most
+ *  severe first. Each row is enriched with the CWE → OWASP/SSDF cross-walk so
+ *  the UI can show "relates to OWASP A03 / SSDF PW.5" without a second
+ *  round-trip. */
 export async function listScannerFindings(
     ctx: RequestContext,
     opts?: { status?: string; severity?: string; take?: number },
 ) {
     assertCanRead(ctx);
-    const rows = await runInTenantContext(ctx, async (db) => {
-        return db.scannerFinding.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                ...(opts?.status ? { status: opts.status } : {}),
-                ...(opts?.severity ? { severity: opts.severity } : {}),
-            },
-            include: { scannerRun: { select: { source: true, scanType: true, ranAt: true } } },
-            orderBy: [{ severity: 'desc' }, { createdAt: 'desc' }],
-            take: Math.min(opts?.take ?? 200, 500),
-        });
-    });
+    const take = Math.min(opts?.take ?? 200, 500);
+    const { rows } = await runInTenantContext(ctx, (db) =>
+        readFindingsMostSevereFirst(db, ctx, { status: opts?.status, severity: opts?.severity }, take),
+    );
     return rows.map((r) => ({ ...r, frameworks: mapCwes(r.cweIds) }));
+}
+
+/**
+ * The Security Testing page's read: the first `take` findings, most severe
+ * first, whether more exist (`truncated`), and the count of open critical
+ * findings over ALL of them — the header's number, which used to be counted
+ * over the fetched rows only and so undercounted past the cap.
+ */
+export async function listScannerFindingsPage(ctx: RequestContext, opts?: { take?: number }) {
+    assertCanRead(ctx);
+    const take = Math.min(opts?.take ?? 500, 500);
+    const { rows, more, openCriticalCount } = await runInTenantContext(ctx, async (db) => {
+        const page = await readFindingsMostSevereFirst(db, ctx, {}, take);
+        const openCritical = await db.scannerFinding.count({
+            where: { tenantId: ctx.tenantId, status: 'OPEN', severity: 'CRITICAL' },
+        });
+        return { ...page, openCriticalCount: openCritical };
+    });
+    return {
+        rows: rows.map((r) => ({ ...r, frameworks: mapCwes(r.cweIds) })),
+        truncated: more,
+        openCriticalCount,
+    };
 }
 
 /** Scanner findings resolved to a given asset (ScannerFinding.assetId) — the
  *  asset detail vuln tab surfaces these alongside the CVE-matched
- *  AssetVulnerability rows, so an asset shows its full vulnerability picture. */
+ *  AssetVulnerability rows, so an asset shows its full vulnerability picture.
+ *  Most severe first, like the Security Testing list. */
 export async function listAssetScannerFindings(ctx: RequestContext, assetId: string) {
     assertCanRead(ctx);
-    const rows = await runInTenantContext(ctx, async (db) => {
-        return db.scannerFinding.findMany({
-            where: { tenantId: ctx.tenantId, assetId },
-            include: { scannerRun: { select: { source: true, scanType: true, ranAt: true, repoRef: true } } },
-            orderBy: [{ severity: 'desc' }, { createdAt: 'desc' }],
-            take: 200,
-        });
-    });
+    const { rows } = await runInTenantContext(ctx, (db) =>
+        readFindingsMostSevereFirst(db, ctx, { assetId }, 200),
+    );
     return rows.map((r) => ({ ...r, frameworks: mapCwes(r.cweIds) }));
 }
 
