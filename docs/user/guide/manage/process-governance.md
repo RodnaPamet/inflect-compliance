@@ -25,9 +25,9 @@ Use it to see the automation estate as a whole: which maps carry the most rules,
 - its name and an **{{ui:processes.governance.canvasMode.AUTOMATION}}** badge;
 - how many rules it holds;
 - its success rate over the last 30 days, or **{{ui:processes.governance.noRuns}}** when it has not run;
-- a coloured ring for its health: green at 90% success or more, amber from 70%, red below that, and grey when it has not run.
+- its health, as a coloured ring and a badge naming it: **{{ui:processes.governance.health.green}}** at 90% success or more, **{{ui:processes.governance.health.amber}}** from 70%, **{{ui:processes.governance.health.red}}** below that, and **{{ui:processes.governance.health.unknown}}** when it has not run. A line under the description states the same rule.
 
-**{{ui:processes.governance.subflowCalls}}.** When maps are connected, a list of the connections, each as "source map → target map" with the kind of connection: a sub-flow call, where one map starts another, or a shared rule, where two maps use the same rule.
+**{{ui:processes.governance.connections}}.** When maps are connected, a list of the connections, each as "source map → target map" with the kind of connection: **{{ui:processes.governance.edgeKind.subflow-call}}**, where one map starts another, or **{{ui:processes.governance.edgeKind.shared-rule}}**, where two maps use the same rule. A connection to a map outside the list names it **{{ui:processes.governance.unknownMap}}**.
 
 ## What you can do
 

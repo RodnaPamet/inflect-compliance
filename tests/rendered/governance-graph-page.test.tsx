@@ -63,4 +63,33 @@ describe('GovernanceGraphPage', () => {
         render(<GovernanceGraphPage />);
         expect(screen.getByText(/create an automation workflow/)).toBeInTheDocument();
     });
+
+    it('names each map\'s health in words, not only by ring colour (#4801)', () => {
+        mockSWR.mockReturnValue({ data: GRAPH, isLoading: false });
+        const { container } = render(<GovernanceGraphPage />);
+        expect(container.querySelector('[data-governance-health-label="green"]')).toHaveTextContent('Healthy');
+        expect(container.querySelector('[data-governance-health-label="red"]')).toHaveTextContent('Failing');
+        expect(document.getElementById('governance-health-legend')).toHaveTextContent('90%');
+    });
+
+    it('words the connection kind and names a map outside the list (#4801)', () => {
+        mockSWR.mockReturnValue({
+            data: {
+                nodes: GRAPH.nodes,
+                edges: [
+                    ...GRAPH.edges,
+                    { id: 'shared-rule:m1->gone', source: 'm1', target: 'gone', kind: 'shared-rule' },
+                ],
+            },
+            isLoading: false,
+        });
+        render(<GovernanceGraphPage />);
+        expect(screen.getByText('Connections between maps')).toBeInTheDocument();
+        const edges = screen.getByTestId('governance-edges');
+        expect(edges).toHaveTextContent('(sub-flow call)');
+        expect(edges).toHaveTextContent('(shared rule)');
+        expect(edges).toHaveTextContent('A map not in this list');
+        expect(edges).not.toHaveTextContent('gone');
+        expect(edges).not.toHaveTextContent('subflow-call');
+    });
 });

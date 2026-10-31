@@ -26,6 +26,7 @@
  *     Splitting keeps the page chrome simple and lets the canvas
  *     own its xyflow state without prop-drilling.
  */
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -177,13 +178,14 @@ export function ProcessesClient({
                     );
                 })}
                 {/* PR-B follow-up — cross-map governance meta-graph. */}
-                <a
+                {/* A client-side link (#4801): the raw <a> reloaded the whole app. */}
+                <Link
                     href={`/t/${tenantSlug}/processes/governance`}
                     className="ml-auto self-center px-4 py-2 text-sm font-medium text-content-muted hover:text-content-emphasis whitespace-nowrap"
                     data-testid="governance-graph-link"
                 >
                     {t("governanceLink")}
-                </a>
+                </Link>
             </nav>
             <div className="flex min-h-0 flex-1 flex-col pt-3">
                 {tab === "rules" ? (
