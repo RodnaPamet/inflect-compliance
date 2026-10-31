@@ -4287,7 +4287,7 @@
       "baselineDelegateTitle": "Delegate this assessment",
       "baselineDelegateBody": "This is an onboarding baseline run, which can't be delegated. Start a standalone re-assessment to route each part to the person who can answer it.",
       "baselineDelegateAction": "Start re-assessment",
-      "viewCoverage": "View NIS2 coverage",
+      "viewReadiness": "View NIS2 readiness",
       "kpiReadinessHint": "Your NIS2 gap-questionnaire score — distinct from the cycle control-coverage readiness.",
       "continueAnswering": "Continue answering"
     },
@@ -9007,8 +9007,8 @@
     "loadingAria": "Loading frameworks",
     "readiness": {
       "loading": "Loading readiness…",
-      "loadFailed": "Failed to load readiness.",
-      "createFailed": "Failed to create findings.",
+      "loadFailed": "Could not load the NIS2 readiness.",
+      "createFailed": "Could not create the findings. Please try again.",
       "created": "Created {created} findings and {tasks} tasks · reopened {reopened} · closed {closed}.",
       "heading": "NIS2 readiness",
       "disclaimer": "This is a self-assessment maturity aid, <strong>not a legal compliance determination</strong> of NIS2 conformance. It informs remediation; it does not certify anything or replace an auditor.",
@@ -9036,7 +9036,35 @@
       "source": "source",
       "confirmTitle": "Create findings + tasks from these gaps?",
       "confirmDesc": "This will create up to {count} findings (HIGH/CRITICAL gaps) and a remediation task for each. Re-running reconciles: gaps you've since resolved are closed. This is reversible — you can close or delete the findings.",
-      "onlyNis2": "Self-assessment readiness is only available for the NIS2 framework."
+      "onlyNis2": "Self-assessment readiness is only available for the NIS2 framework.",
+      "retry": "Retry",
+      "createRestricted": "Only a role that can edit, such as an Owner, Admin or Editor, can create findings and tasks from the gaps.",
+      "createFindingsNone": "There is no HIGH or CRITICAL gap to turn into a finding.",
+      "questionsInEnglish": "The NIS2 questions and domain names are shown in English, the language of their source.",
+      "criticality": {
+        "LOW": "Low",
+        "MEDIUM": "Medium",
+        "HIGH": "High",
+        "CRITICAL": "Critical"
+      },
+      "answer": {
+        "NA": "Not applicable",
+        "NO": "No",
+        "PARTIALLY": "Partially",
+        "YES": "Yes"
+      },
+      "priorityTier": {
+        "URGENT": "Urgent",
+        "HIGH": "High",
+        "MEDIUM": "Medium",
+        "LOW": "Low"
+      },
+      "timeToFix": {
+        "QUICK_WIN": "Quick win",
+        "DAYS": "Days",
+        "WEEKS": "Weeks",
+        "MONTHS": "Months"
+      }
     },
     "selfAssessment": {
       "heading": "NIS2 self-assessment",
