@@ -8380,7 +8380,40 @@
       "loading": "Loading…",
       "loadFailed": "The joiner pass report could not be loaded.",
       "empty": "No joiner pass yet",
-      "noDecisions": "No per-starter decisions yet"
+      "noDecisions": "No per-starter decisions yet",
+      "colStarter": "Starter",
+      "starterUnknown": "No longer in the HR roster",
+      "runNow": "Run now: {provider}",
+      "runQueued": "A {provider} pass is queued. It appears here when it finishes.",
+      "runFailed": "The pass could not be started.",
+      "linkLabel": "Joiner passes",
+      "statusLabel": {
+        "PASSED": "Ran",
+        "PARTIAL": "Ran — incomplete",
+        "NOT_APPLICABLE": "Ran and refused",
+        "ERROR": "Failed"
+      },
+      "refusalLabel": {
+        "MODE_DISABLED": "The joiner direction is off",
+        "MODE_ABOVE_CLAMP": "Set above what Inflect acts on",
+        "NO_STARTERS": "HR reported no new starter",
+        "NO_DEPARTMENT_MAP": "No department-to-group map is set up",
+        "NO_DEFAULT_GROUP": "No default group is set up",
+        "BATCH_OVER_CAP": "Too many starters in one pass"
+      },
+      "outcomeLabel": {
+        "PLANNED": "Planned",
+        "CREATED": "Created",
+        "ALREADY_PROVISIONED": "Already has an account",
+        "ACCOUNT_OBSERVED": "Account already in the directory",
+        "NOT_IN_WINDOW": "Not starting yet",
+        "REFUSED_NO_START_DATE": "Held: no start date",
+        "START_DATE_UNPARSEABLE": "Held: start date unreadable",
+        "REFUSED_SOURCE_MANUAL": "Held: added by hand, not from HR",
+        "REFUSED_IDENTIFIER_UNSTABLE": "Held: HR id not stable",
+        "REFUSED_NAME_UNDERIVABLE": "Held: no name to build an address from",
+        "REFUSED_IDENTITY_DIVERGES": "Held: HR and the directory disagree"
+      }
     },
     "scopeGroup": {
       "controls": "Controls",

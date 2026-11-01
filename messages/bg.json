@@ -8380,7 +8380,40 @@
       "loading": "Зареждане…",
       "loadFailed": "Отчетът не можа да бъде зареден.",
       "empty": "Още няма изпълнено преминаване",
-      "noDecisions": "Още няма решения по служител"
+      "noDecisions": "Още няма решения по служител",
+      "colStarter": "Новопостъпил",
+      "starterUnknown": "Вече не е в списъка на HR",
+      "runNow": "Изпълни сега: {provider}",
+      "runQueued": "Проверка за {provider} е поставена на опашка. Ще се появи тук, когато приключи.",
+      "runFailed": "Проверката не можа да бъде стартирана.",
+      "linkLabel": "Проверки за новопостъпили",
+      "statusLabel": {
+        "PASSED": "Изпълнена",
+        "PARTIAL": "Изпълнена — непълна",
+        "NOT_APPLICABLE": "Изпълнена и отказана",
+        "ERROR": "Неуспешна"
+      },
+      "refusalLabel": {
+        "MODE_DISABLED": "Посоката за новопостъпили е изключена",
+        "MODE_ABOVE_CLAMP": "Зададено над това, на което Inflect действа",
+        "NO_STARTERS": "HR не е отчел нов служител",
+        "NO_DEPARTMENT_MAP": "Няма настроено съответствие отдел–група",
+        "NO_DEFAULT_GROUP": "Няма настроена група по подразбиране",
+        "BATCH_OVER_CAP": "Твърде много новопостъпили в една проверка"
+      },
+      "outcomeLabel": {
+        "PLANNED": "Планиран",
+        "CREATED": "Създаден",
+        "ALREADY_PROVISIONED": "Вече има акаунт",
+        "ACCOUNT_OBSERVED": "Акаунтът вече е в директорията",
+        "NOT_IN_WINDOW": "Още не постъпва",
+        "REFUSED_NO_START_DATE": "Задържан: няма начална дата",
+        "START_DATE_UNPARSEABLE": "Задържан: началната дата не може да се прочете",
+        "REFUSED_SOURCE_MANUAL": "Задържан: добавен ръчно, не от HR",
+        "REFUSED_IDENTIFIER_UNSTABLE": "Задържан: идентификаторът в HR не е стабилен",
+        "REFUSED_NAME_UNDERIVABLE": "Задържан: няма име, от което да се изгради адрес",
+        "REFUSED_IDENTITY_DIVERGES": "Задържан: HR и директорията се разминават"
+      }
     },
     "scopeGroup": {
       "controls": "Контроли",

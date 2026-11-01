@@ -766,6 +766,12 @@ export default function AdminIntegrationsPage() {
                                 <Link href={tenantHref('/admin/identity-leaver-passes')} className={buttonVariants({ variant: 'secondary', size: 'sm' })} id="leaver-passes-link">
                                     {t('leaverPasses.linkLabel')}
                                 </Link>
+                                {/* Its twin for new starters (#4876), which had no way
+                                    in although the write policy tells an Owner to read
+                                    it before widening joiners. Same gate, same reason. */}
+                                <Link href={tenantHref('/admin/identity-joiner-passes')} className={buttonVariants({ variant: 'secondary', size: 'sm' })} id="joiner-passes-link">
+                                    {t('joinerPasses.linkLabel')}
+                                </Link>
                                 {/* The ladder itself. It shipped with a route and
                                     no door, so the only way to start the mandated
                                     seven-day dry run was a hand-made request from
