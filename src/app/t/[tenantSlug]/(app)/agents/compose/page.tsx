@@ -1,7 +1,9 @@
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
-import { listParameterSets } from '@/app-layer/usecases/external-tool-parameters';
+import { oversightReadsFor, readAgentOversightSettings } from '@/app-layer/usecases/agent-oversight-settings';
+import { listComposableTemplates } from '@/app-layer/usecases/external-write-compose';
+import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 
 import { ComposeClient } from './ComposeClient';
@@ -71,12 +73,39 @@ export default async function ComposePage({
         );
     }
 
-    const sets = await listParameterSets(ctx);
+    const admin = ctx.appPermissions.admin;
+    const [{ templates, notComposable }, oversight, oversightReads] = await Promise.all([
+        // Only templates that OPEN a field (#4895): an exact-value set has
+        // nothing to fill in, so offering it opened onto an empty form.
+        // Label, tool and connection only. The approved PARAMETERS are
+        // deliberately not sent to the client: the form has no business
+        // rendering them, and a payload that carried them would be one
+        // refactor from a payload that accepted them back.
+        listComposableTemplates(ctx),
+        readAgentOversightSettings(ctx),
+        oversightReadsFor(ctx),
+    ]);
 
-    // Label and tool only. The approved PARAMETERS are deliberately not sent to
-    // the client: the form has no business rendering them, and a payload that
-    // carried them would be one refactor from a payload that accepted them back.
-    const templates = sets.map((s) => ({ id: s.id, label: s.label, toolName: s.toolName }));
-
-    return <ComposeClient templates={templates} canWrite={ctx.permissions.canWrite} />;
+    return (
+        <ComposeClient
+            templates={templates}
+            notComposable={notComposable}
+            canWrite={ctx.permissions.canWrite}
+            // The Saved parameters page's own gate, so the empty state links
+            // there only for a viewer it would admit.
+            canManageTemplates={Boolean(admin.agent_registry)}
+            // The Owner's switch (#4905): whether the composer may approve
+            // their own request decides what the intro may promise.
+            needsSecondApprover={oversight.composeNeedsSecondApprover}
+            menu={{
+                tenantSlug: resolved.tenantSlug,
+                canReviewProposals: mayReadAgentActivity(admin),
+                canCompose: true,
+                canInvestigate: Boolean(admin.agent_registry),
+                canReadReports: mayReadAgentInventory(admin),
+                canSetOrphanPass: Boolean(admin.tenant_lifecycle),
+                oversightReads,
+            }}
+        />
+    );
 }

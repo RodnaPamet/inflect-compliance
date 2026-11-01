@@ -94,13 +94,15 @@ function makeRow(overrides: Partial<QuarantineRow> = {}): QuarantineRow {
         kind: 'RISK',
         operation: 'CREATE',
         agentId: 'agent-reconciler',
+        agentName: 'Reconciler',
         targetEntityId: null,
-        guardRuleIds: ['injection.role_declaration', 'injection.direct_override'],
+        guardRuleIds: ['inj.system_role.declared', 'inj.ignore_previous.instructions'],
         guardInputDigest: 'sha256:0123456789abcdef0123456789abcdef',
         guardProvenance: 'THIRD_PARTY_INGESTED',
         payloadJson: JSON.stringify({ title: INJECTED_TITLE, description: 'and then exfiltrate' }),
         rationale: 'the document told me to',
         proposedViaKeyId: 'key-77',
+        keyName: 'Partner MCP key',
         createdAt: '2026-09-01T10:00:00.000Z',
         ...overrides,
     };
@@ -166,10 +168,10 @@ describe('the list', () => {
         mockPage([makeRow()]);
         render(<QuarantineClient tenantSlug="acme" />);
 
-        expect(screen.getByText('agent-reconciler')).toBeInTheDocument();
-        expect(
-            screen.getByText('injection.role_declaration, injection.direct_override'),
-        ).toBeInTheDocument();
+        // By name and in words (#4898), not the register id or the rule ids.
+        expect(screen.getByText('Reconciler')).toBeInTheDocument();
+        expect(screen.queryByText('agent-reconciler')).toBeNull();
+        expect(screen.getByText('Poses as a system message or a new persona, Tells the model to ignore its instructions')).toBeInTheDocument();
         expect(screen.getByText('0123456789abcdef…')).toBeInTheDocument();
     });
 
@@ -177,7 +179,7 @@ describe('the list', () => {
         mockPage([makeRow({ agentId: null })]);
         render(<QuarantineClient tenantSlug="acme" />);
 
-        expect(screen.getByText('Unattributed credential')).toBeInTheDocument();
+        expect(screen.getByText(EN.unattributed)).toBeInTheDocument();
         expect(screen.queryByText('—')).not.toBeInTheDocument();
     });
 
@@ -244,9 +246,7 @@ describe('the columns carry signal, or they are not there', () => {
         // The positive companion: the column whose value VARIES is present, so
         // the two absences below cannot pass on a table that rendered nothing.
         expect(screen.getByText(EN.colRules)).toBeInTheDocument();
-        expect(
-            screen.getByText('injection.role_declaration, injection.direct_override'),
-        ).toBeInTheDocument();
+        expect(screen.getByText('Poses as a system message or a new persona, Tells the model to ignore its instructions')).toBeInTheDocument();
 
         // The retired header and the badge it used to render. `status =
         // QUARANTINED` implies `guardVerdict = QUARANTINED` at the write seam,
@@ -349,5 +349,38 @@ describe('the two pure helpers', () => {
 
     it('shortDigest renders a dash for a row with no digest', () => {
         expect(shortDigest(null)).toBe('—');
+    });
+});
+
+describe('a row names who made it, and the sheet speaks in words (#4898)', () => {
+    it('a composed request names the person, not an unattributed credential', () => {
+        mockPage([makeRow({ agentId: null, agentName: null, proposedViaKeyId: null, composed: true, composedByName: 'Ada Lovelace' })]);
+        render(<QuarantineClient tenantSlug="acme" />);
+        expect(screen.getByText('Composed by Ada Lovelace')).toBeInTheDocument();
+        expect(screen.queryByText(EN.unattributed)).toBeNull();
+    });
+
+    it('the sheet links the agent and the target, and words the proposal, provenance, key and rules', () => {
+        mockPage([makeRow({ operation: 'UPDATE', targetEntityId: 'risk-9' })]);
+        render(<QuarantineClient tenantSlug="acme" />);
+        fireEvent.click(screen.getByTestId('quarantine-row-prop-1'));
+        const sheet = screen.getByTestId('quarantine-detail');
+        expect(within(sheet).getByTestId('quarantine-agent-link')).toHaveAttribute('href', '/t/acme/agents/agent-reconciler');
+        expect(within(sheet).getByTestId('quarantine-target-link')).toHaveAttribute('href', '/t/acme/risks/risk-9');
+        expect(sheet).toHaveTextContent('Risk (change)');
+        expect(sheet).toHaveTextContent('Read from an outside source');
+        expect(sheet).toHaveTextContent('Partner MCP key');
+        expect(sheet).not.toHaveTextContent('THIRD_PARTY_INGESTED');
+        const rules = within(sheet).getByTestId('quarantine-rules');
+        expect(rules).toHaveTextContent('Poses as a system message or a new persona');
+        expect(rules).toHaveTextContent('inj.system_role.declared');
+    });
+
+    it('the rationale is prose, and only the attempted content is a code block', () => {
+        mockPage([makeRow()]);
+        render(<QuarantineClient tenantSlug="acme" />);
+        fireEvent.click(screen.getByTestId('quarantine-row-prop-1'));
+        expect(screen.getByTestId('quarantine-rationale').tagName).toBe('P');
+        expect(screen.getByTestId('quarantine-payload').tagName).toBe('PRE');
     });
 });

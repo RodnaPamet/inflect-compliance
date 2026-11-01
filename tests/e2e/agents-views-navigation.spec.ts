@@ -42,6 +42,8 @@ const ENTRIES = [
     // this file catches, and an approval screen nobody can reach is the exact
     // shape that shipped three times in this subsystem already.
     { id: 'agents-view-external-tools', path: '/agents/external-tools' },
+    // #4900 — listed with its menu entry, for the reason the notes here give.
+    { id: 'agents-view-parameter-sets', path: '/agents/parameter-sets' },
     // Listed late, and it should not have been. `agents-view-decisions` has
     // been a live menu entry since the EU AI Act record shipped, and this list
     // never learned it — the exact omission the note above says the file

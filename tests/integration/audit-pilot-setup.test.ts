@@ -138,6 +138,12 @@ describeFn('scripts/audit-pilot-setup', () => {
                 activate: 'PENDING',
             });
             expect(r.steps.find((s) => s.step === 'activate')?.detail).toMatch(/^UNSCORED/);
+            // The page words each step by its kind, and links a waiting
+            // activation to the auditor (#4904).
+            expect(r.steps.find((s) => s.step === 'activate')).toMatchObject({ kind: 'ACTIVATE', waitingOn: 'UNSCORED' });
+            expect(r.steps.filter((s) => s.kind === 'PLAN').map((s) => s.procedure).sort()).toEqual(
+                [...LIBRARY_V1_PROCEDURE_IDS].sort(),
+            );
 
             const agent = await prisma.registeredAgent.findUniqueOrThrow({
                 where: { id: r.agentId! },

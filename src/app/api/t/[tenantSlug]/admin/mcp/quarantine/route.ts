@@ -56,7 +56,7 @@
  */
 import { NextRequest } from 'next/server';
 
-import { listQuarantinedAgentProposals } from '@/app-layer/usecases/agent-proposals';
+import { listQuarantinedAgentProposals, readQuarantineNames } from '@/app-layer/usecases/agent-proposals';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
@@ -87,6 +87,16 @@ export interface QuarantinedProposalDTO {
     rationale: string | null;
     proposedViaKeyId: string | null;
     createdAt: string;
+    /** The registered agent's name, the key's name (#4898); `null` when unknown. */
+    agentName: string | null;
+    keyName: string | null;
+    /**
+     * Whether a PERSON composed this request on `/agents/compose`, and who
+     * (#4898, using #4905's `composedByUserId`). A composed request carries no
+     * agent and no key, so without this it read "Unattributed credential".
+     */
+    composed: boolean;
+    composedByName: string | null;
 }
 
 export interface QuarantineTriagePage {
@@ -108,9 +118,9 @@ export const GET = withApiErrorHandling(
             take: QUARANTINE_TRIAGE_PAGE_SIZE + 1,
         });
         const truncated = found.length > QUARANTINE_TRIAGE_PAGE_SIZE;
-        const rows: QuarantinedProposalDTO[] = found
-            .slice(0, QUARANTINE_TRIAGE_PAGE_SIZE)
-            .map((p) => ({
+        const shown = found.slice(0, QUARANTINE_TRIAGE_PAGE_SIZE);
+        const names = await readQuarantineNames(ctx, shown);
+        const rows: QuarantinedProposalDTO[] = shown.map((p) => ({
                 id: p.id,
                 kind: p.kind,
                 operation: p.operation,
@@ -123,6 +133,10 @@ export const GET = withApiErrorHandling(
                 rationale: p.rationale,
                 proposedViaKeyId: p.proposedViaKeyId,
                 createdAt: p.createdAt.toISOString(),
+                agentName: p.agentId ? (names.agents[p.agentId] ?? null) : null,
+                keyName: p.proposedViaKeyId ? (names.keys[p.proposedViaKeyId] ?? null) : null,
+                composed: Boolean(p.composedByUserId),
+                composedByName: p.composedByUserId ? (names.people[p.composedByUserId] ?? null) : null,
             }));
         return jsonResponse<QuarantineTriagePage>({ rows, truncated });
     }),

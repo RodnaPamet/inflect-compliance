@@ -52,7 +52,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { runInTenantContext } from '@/lib/db-context';
-import { parseOpenFields, type OpenFields } from '@/lib/integrations/open-fields';
+import { parseOpenFields, type OpenFieldBound, type OpenFields } from '@/lib/integrations/open-fields';
 import { refusalForValue } from '@/lib/integrations/parameter-constraints';
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 import { callTool } from '@/app-layer/integrations/mcp/client';
@@ -64,6 +64,7 @@ import { logger } from '@/lib/observability/logger';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { createAgentProposal } from './agent-proposals';
 import { getPriorStateRead } from './external-prior-state-read';
+import { listParameterSets } from './external-tool-parameters';
 import {
     checkTargetInPopulation,
     resolveTargetPopulation,
@@ -220,6 +221,28 @@ export interface ComposeFieldOffer {
     readonly candidates?: ReadonlyArray<{ readonly value: string; readonly label: string }>;
     /** Present when the candidates could not be resolved, saying why. */
     readonly unavailable?: string;
+    /**
+     * The values an `enum` field allows, so the form offers a choice rather
+     * than a text box (#4895). These are the open field's BOUNDS, which the
+     * operator is meant to choose within, not an approved parameter value.
+     */
+    readonly allowed?: readonly string[];
+    /** The range an `integer` field allows, or the length a `length` field allows. */
+    readonly min?: number;
+    readonly max?: number;
+}
+
+/** What the form may say about a value field's bound. A pattern is not shown. */
+function boundsOf(constraint: Exclude<OpenFieldBound, { kind: 'target' }>): Pick<ComposeFieldOffer, 'allowed' | 'min' | 'max'> {
+    switch (constraint.kind) {
+        case 'enum':
+            return { allowed: [...constraint.values] };
+        case 'integer':
+        case 'length':
+            return { min: constraint.min, max: constraint.max };
+        default:
+            return {};
+    }
 }
 
 export type ComposeOfferOutcome =
@@ -230,6 +253,55 @@ export type ComposeOfferOutcome =
           readonly fields: readonly ComposeFieldOffer[];
       }
     | { readonly ok: false; readonly refusal: ComposeRefusal };
+
+/**
+ * The templates the compose page offers (#4895): saved parameter sets that
+ * OPEN at least one field, each named by its tool and the connection it runs
+ * on. An exact-value set (no open fields), or one whose open fields cannot be
+ * read, has nothing to fill in, so it is counted rather than offered — a picker
+ * that offered it would open onto an empty form and a button that never
+ * enables.
+ */
+export interface ComposableTemplate {
+    readonly id: string;
+    readonly label: string;
+    /** The tool's own name on its server, not the qualified `mcp__…` name. */
+    readonly toolName: string;
+    /** The connection's name, or `null` when the tool name or the connection cannot be read. */
+    readonly connectionName: string | null;
+}
+
+export async function listComposableTemplates(
+    ctx: RequestContext,
+): Promise<{ templates: ComposableTemplate[]; notComposable: number }> {
+    const sets = await listParameterSets(ctx);
+    const composable = sets.filter((s) => {
+        const parsed = parseOpenFields(s.openFields, s.targetPopulation);
+        return parsed.state === 'ok' && Object.keys(parsed.fields).length > 0;
+    });
+    const refs = composable.map((set) => ({ set, ref: parseExternalToolName(set.toolName) }));
+    const ids = [...new Set(refs.flatMap(({ ref }) => (ref ? [ref.connectionId] : [])))];
+    const connections =
+        ids.length === 0
+            ? []
+            : await runInTenantContext(ctx, (db) =>
+                  db.integrationConnection.findMany({
+                      where: { tenantId: ctx.tenantId, id: { in: ids } },
+                      select: { id: true, name: true },
+                      take: ids.length,
+                  }),
+              );
+    const names = new Map(connections.map((c) => [c.id, c.name]));
+    return {
+        templates: refs.map(({ set, ref }) => ({
+            id: set.id,
+            label: set.label,
+            toolName: ref?.toolName ?? set.toolName,
+            connectionName: ref ? (names.get(ref.connectionId) ?? null) : null,
+        })),
+        notComposable: sets.length - composable.length,
+    };
+}
 
 export async function listComposeOffer(
     ctx: RequestContext,
@@ -255,7 +327,7 @@ export async function listComposeOffer(
     const fields: ComposeFieldOffer[] = [];
     for (const [name, constraint] of Object.entries(open)) {
         if (constraint.kind !== 'target') {
-            fields.push({ name, kind: constraint.kind });
+            fields.push({ name, kind: constraint.kind, ...boundsOf(constraint) });
             continue;
         }
         const resolved = await resolveTargetPopulation(ctx, constraint.population);

@@ -46,6 +46,31 @@ interface CardRead {
     admission: { admitted: true } | { admitted: false; reason: string };
 }
 
+/**
+ * The codes the card read and the admission check name, in words (#4902).
+ * A code this page does not know reads as the generic sentence, never as the
+ * code: a new one is a reason to add a sentence, not to show an identifier.
+ */
+const READ_REASONS = new Set([
+    'SCHEME_REFUSED',
+    'TIMEOUT',
+    'EGRESS_REFUSED',
+    'HTTP_ERROR',
+    'TOO_LARGE',
+    'NOT_JSON',
+    'NOT_AN_AGENT_CARD',
+    'ENDPOINT_NOT_HTTPS',
+]);
+const ADMISSION_REFUSALS = new Set([
+    'PEER_NOT_ACTIVE',
+    'PEER_OWNER_INACTIVE',
+    'PEER_UNSCORED',
+    'PEER_UNPINNED',
+    'PEER_CARD_UNREADABLE',
+    'PEER_CARD_CHANGED',
+]);
+const MOVED_PARTS = new Set(['TEXT', 'ENDPOINT', 'OTHER']);
+
 const VERDICT_VARIANT: Readonly<Record<Verdict['status'], StatusBadgeVariant>> = {
     MATCH: 'success',
     CHANGED: 'error',
@@ -163,7 +188,9 @@ export function PeerCardReview({
 
             {read && !read.live.readable && (
                 <InlineNotice variant="warning" data-testid="peer-card-unreadable">
-                    {t('peers.cardReview.unreadable', { reason: read.live.reason })}
+                    {t('peers.cardReview.unreadable', {
+                        reason: t(`peers.cardReview.readReason.${READ_REASONS.has(read.live.reason) ? read.live.reason : 'UNKNOWN'}`),
+                    })}
                 </InlineNotice>
             )}
 
@@ -182,7 +209,11 @@ export function PeerCardReview({
                     </div>
                     {read.verdict?.status === 'CHANGED' && read.verdict.moved.length > 0 && (
                         <p className="text-xs text-content-muted">
-                            {t('peers.cardReview.moved', { parts: read.verdict.moved.join(', ') })}
+                            {t('peers.cardReview.moved', {
+                                parts: read.verdict.moved
+                                    .map((m) => t(`peers.cardReview.movedPart.${MOVED_PARTS.has(m) ? m : 'OTHER'}`))
+                                    .join(', '),
+                            })}
                         </p>
                     )}
                     <p className="text-xs font-medium text-content-muted">{t('peers.cardReview.textHeading')}</p>
@@ -199,7 +230,11 @@ export function PeerCardReview({
                 <p className="text-sm" data-testid="peer-card-admission">
                     {read.admission.admitted
                         ? t('peers.cardReview.admitted')
-                        : t('peers.cardReview.refused', { reason: read.admission.reason })}
+                        : t('peers.cardReview.refused', {
+                              reason: t(
+                                  `peers.cardReview.refusal.${ADMISSION_REFUSALS.has(read.admission.reason) ? read.admission.reason : 'UNKNOWN'}`,
+                              ),
+                          })}
                 </p>
             )}
 
