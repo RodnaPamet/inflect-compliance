@@ -19,6 +19,10 @@ import {
     resolveAutonomyCeiling,
     riskTierCeilingFor,
 } from '@/lib/agentic/autonomy-ceiling';
+import { agentCredentialStanding, agentTermsApply } from '@/lib/agentic/agent-credential-standing';
+import { isAgentRegistrationEnforced } from '@/lib/agentic/agent-registration-gate';
+import { readPlatformKill } from '@/lib/agentic/kill-switch';
+import { MCP_ENDPOINT_SCOPES } from '@/lib/mcp/endpoint-scope';
 
 // ─── List API Keys ───
 
@@ -55,10 +59,12 @@ export async function listApiKeys(ctx: RequestContext) {
     );
 }
 
+/** How many agent credentials `/admin/mcp` lists before it says it stopped. */
+export const AGENT_CREDENTIALS_CAP = 200;
+
 /**
- * The agent-bound credentials, with the two facts an operator running agents
- * actually needs: is this key still live, and how far up the autonomy ladder can
- * it drive its agent?
+ * The agent credentials, with the facts an operator running agents needs: can
+ * this key act right now, and how far up the autonomy ladder can it drive?
  *
  * A separate reader from `listApiKeys` rather than a filter over it, because the
  * questions differ. `/admin/api-keys` asks "what integrations exist"; this asks
@@ -67,14 +73,40 @@ export async function listApiKeys(ctx: RequestContext) {
  * revocation you cannot see is one nobody can confirm took effect, and the whole
  * point of surfacing it here is that revoking a key is the operator's move
  * during an incident.
+ *
+ * THE POPULATION is credential hygiene's (`isAgentCredential`): a key bound to
+ * an agent, OR one the `/api/mcp` gate admits (`MCP_ENDPOINT_SCOPES`). In a
+ * workspace that does not require registered agents, an unbound key with an
+ * agent-tool scope reaches the agent tools, and leaving it off this page made
+ * "what can act" narrower than what can (#4879).
+ *
+ * THE ANSWER is `agentCredentialStanding`: the key's state, the registration
+ * gate, the kill switch, suspension and the risk assessment, in the order the
+ * tool boundary applies them. A key bound to a suspended or killed agent used
+ * to read "Live".
+ *
+ * It reads one past the cap, so a truncated list says it is truncated rather
+ * than passing for the whole population.
  */
 export async function listAgentCredentials(ctx: RequestContext) {
     assertCanViewAdminSettings(ctx);
 
     const now = new Date();
+    const [enforcing, platformKill] = await Promise.all([
+        isAgentRegistrationEnforced(ctx.tenantId),
+        readPlatformKill(),
+    ]);
     return runInTenantContext(ctx, async (db) => {
-        const rows = await db.tenantApiKey.findMany({
-            where: { tenantId: ctx.tenantId, agentId: { not: null } },
+        const found = await db.tenantApiKey.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                OR: [
+                    { agentId: { not: null } },
+                    ...MCP_ENDPOINT_SCOPES.map((scope) => ({
+                        scopes: { array_contains: [scope] },
+                    })),
+                ],
+            },
             select: {
                 id: true,
                 name: true,
@@ -90,6 +122,7 @@ export async function listAgentCredentials(ctx: RequestContext) {
                         id: true,
                         name: true,
                         status: true,
+                        deletedAt: true,
                         autonomyLevel: true,
                         // The tier is a TERM in the ceiling below, so this
                         // column is not decoration: omitting it would make the
@@ -100,59 +133,98 @@ export async function listAgentCredentials(ctx: RequestContext) {
                     },
                 },
             },
-            orderBy: { createdAt: 'desc' },
-            take: 200,
+            orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+            take: AGENT_CREDENTIALS_CAP + 1,
         });
+        const truncated = found.length > AGENT_CREDENTIALS_CAP;
+        const rows = truncated ? found.slice(0, AGENT_CREDENTIALS_CAP) : found;
 
-        return rows.map((row) => ({
-            id: row.id,
-            name: row.name,
-            keyPrefix: row.keyPrefix,
-            scopes: Array.isArray(row.scopes) ? (row.scopes as string[]) : [],
-            lastUsedAt: row.lastUsedAt,
-            revokedAt: row.revokedAt,
-            expiresAt: row.expiresAt,
+        // The kills in force, read once for the whole page: the workspace's
+        // own (agentId NULL) and each listed agent's.
+        const agentIds = [...new Set(rows.flatMap((row) => (row.agentId ? [row.agentId] : [])))];
+        const kills = await db.agentKillSwitch.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                liftedAt: null,
+                OR: [{ agentId: null }, { agentId: { in: agentIds } }],
+            },
+            select: { agentId: true },
+            take: agentIds.length + 1,
+        });
+        const killFacts = {
+            platform: platformKill !== null,
+            tenant: kills.some((kill) => kill.agentId === null),
+            agentIds: new Set(kills.flatMap((kill) => (kill.agentId ? [kill.agentId] : []))),
+        };
+
+        const credentials = rows.map((row) => {
             /**
              * One word an operator can scan a column for. `revoked` wins over
              * `expired` when both apply: revocation is the deliberate act and is
              * what somebody wants confirmation of.
              */
-            state: row.revokedAt
+            const state = row.revokedAt
                 ? ('revoked' as const)
                 : row.expiresAt !== null && row.expiresAt <= now
                   ? ('expired' as const)
-                  : ('live' as const),
-            agent: row.agent
-                ? {
-                      id: row.agent.id,
-                      name: row.agent.name,
-                      status: row.agent.status,
-                      autonomyLevel: row.agent.autonomyLevel,
-                      riskTier: row.agent.riskTier,
-                  }
-                : null,
-            keyMaxAutonomy: row.maxAutonomyLevel,
-            /**
-             * The ceiling this credential actually exercises — the SAME `min`
-             * the tool funnel computes, from the same three terms. Shown rather
-             * than left for the reader to do in their head, because the whole
-             * hazard the column exists for is somebody assuming the key's own
-             * number is the answer.
-             *
-             * `DENY_CEILING` here is not a rendering bug: it means the agent
-             * has never been risk-assessed, and the credential can therefore
-             * call nothing. `unscored` says so in a word so a UI does not have
-             * to recognise a magic -1.
-             */
-            effectiveAutonomy: resolveAutonomyCeiling({
-                keyMax: row.maxAutonomyLevel,
-                agentAutonomy: row.agent?.autonomyLevel ?? null,
-                riskTierCeiling: riskTierCeilingFor(
-                    row.agent ? { riskTier: row.agent.riskTier } : null,
-                ),
-            }),
-            unscored: row.agent !== null && row.agent.riskTier === null,
-        }));
+                  : ('live' as const);
+            // A soft-deleted agent no longer resolves at the gate.
+            const liveAgent = row.agent && row.agent.deletedAt === null ? row.agent : null;
+            const resolved = liveAgent
+                ? { status: liveAgent.status, riskTier: liveAgent.riskTier }
+                : null;
+            const governs = agentTermsApply(resolved);
+            return {
+                id: row.id,
+                name: row.name,
+                keyPrefix: row.keyPrefix,
+                scopes: Array.isArray(row.scopes) ? (row.scopes as string[]) : [],
+                lastUsedAt: row.lastUsedAt,
+                revokedAt: row.revokedAt,
+                expiresAt: row.expiresAt,
+                state,
+                agent: row.agent
+                    ? {
+                          id: row.agent.id,
+                          name: row.agent.name,
+                          status: row.agent.status,
+                          autonomyLevel: row.agent.autonomyLevel,
+                          riskTier: row.agent.riskTier,
+                      }
+                    : null,
+                keyMaxAutonomy: row.maxAutonomyLevel,
+                standing: agentCredentialStanding({
+                    live: state === 'live',
+                    agentId: row.agentId,
+                    agent: resolved,
+                    enforcing,
+                    kills: killFacts,
+                }),
+                /**
+                 * The ceiling this credential actually exercises — the SAME
+                 * `min` the tool funnel computes, from the same three terms,
+                 * with the agent's terms applied only where its agent governs
+                 * the key (`governedAgentIdOf`). Shown rather than left for the
+                 * reader to do in their head, because the whole hazard the
+                 * column exists for is somebody assuming the key's own number
+                 * is the answer.
+                 *
+                 * `DENY_CEILING` here is not a rendering bug: it means the agent
+                 * has never been risk-assessed, and the credential can therefore
+                 * call nothing. `unscored` says so in a word so a UI does not
+                 * have to recognise a magic -1.
+                 */
+                effectiveAutonomy: resolveAutonomyCeiling({
+                    keyMax: row.maxAutonomyLevel,
+                    agentAutonomy: governs ? (liveAgent?.autonomyLevel ?? null) : null,
+                    riskTierCeiling: riskTierCeilingFor(
+                        governs && liveAgent ? { riskTier: liveAgent.riskTier } : null,
+                    ),
+                }),
+                unscored: row.agent !== null && row.agent.riskTier === null,
+            };
+        });
+        return { credentials, truncated };
     });
 }
 

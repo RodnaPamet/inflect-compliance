@@ -565,7 +565,7 @@ describeFn('the assessed risk tier is load-bearing', () => {
             await mintKey(scoredId);
             await mintKey(unscoredId);
 
-            const rows = await listAgentCredentials(ctx());
+            const { credentials: rows } = await listAgentCredentials(ctx());
             const scored = rows.find((r) => r.agent?.id === scoredId);
             const unscored = rows.find((r) => r.agent?.id === unscoredId);
 
