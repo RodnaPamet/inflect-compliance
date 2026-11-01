@@ -111,6 +111,12 @@ jest.mock('@/app-layer/usecases/agent-action-receipt', () => {
             listReceiptsSpy(...a);
             return (actual as { listReceipts: (...x: unknown[]) => unknown }).listReceipts(...a);
         },
+        // The page's own read since #4897 (the window, the cap, the names);
+        // the same spy, because the claim is "the page's data load ran".
+        readReceiptPage: (...a: unknown[]) => {
+            listReceiptsSpy(...a);
+            return (actual as { readReceiptPage: (...x: unknown[]) => unknown }).readReceiptPage(...a);
+        },
     };
 });
 
