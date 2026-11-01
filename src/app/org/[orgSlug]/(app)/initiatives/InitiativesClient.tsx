@@ -15,7 +15,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { DatePicker } from '@/components/ui/date-picker/date-picker';
+import { LazyDatePicker } from './LazyDatePicker';
 import { parseYMD, toYMD } from '@/components/ui/date-picker/date-utils';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -276,7 +276,7 @@ function CreateInitiativeModal({
                         />
                     </FormField>
                     <FormField label={t('initiatives.targetLabel')} description={t('initiatives.targetHint')}>
-                        <DatePicker
+                        <LazyDatePicker
                             id="org-initiative-target"
                             className="w-full"
                             clearable

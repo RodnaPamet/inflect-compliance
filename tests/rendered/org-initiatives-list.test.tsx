@@ -81,3 +81,13 @@ it('creates with the owner, and shows the server\'s reason when refused', async 
     await user.click(screen.getByRole('button', { name: EN.createInitiative }));
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/org/acme/initiatives/new-1'));
 });
+
+it('the target date field loads in the dialog, though the picker is loaded lazily', async () => {
+    const user = userEvent.setup();
+    render(<InitiativesClient orgSlug="acme" canManage members={members} initiatives={[]} />);
+    await user.click(screen.getByRole('button', { name: EN.newInitiative }));
+    const form = screen.getByTestId('org-initiative-create-form');
+    // The other fields are there at once; the date picker arrives after.
+    expect(within(form).getByLabelText(new RegExp(EN.titleLabel))).toBeInTheDocument();
+    expect(await within(form).findByRole('button', { name: EN.targetLabel })).toBeInTheDocument();
+});
