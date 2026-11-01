@@ -4,30 +4,36 @@
  * Org-invite acceptance page. Mirrors /invite/[token] for tenant
  * invites:
  *   - Server-rendered preview via previewOrgInviteByToken.
- *   - If valid + signed in as matching email: direct accept form.
+ *   - If valid + signed in as matching email: `OrgInviteAcceptButton`, which
+ *     redeems, re-mints the session's claims and goes into the organization.
  *   - If valid + not signed in: "Sign in to accept" link → start-signin.
- *   - If valid + email mismatch: prompt to switch accounts.
+ *   - If valid + signed in as a different email: "Sign out and use another
+ *     account". Signing in again would redeem the invitation in the sign-in
+ *     callback and use it up on the email check (#4853).
  *   - If invalid/expired/revoked: friendly single-shape error.
  *
- * Submission uses POST `/api/org/invite/<token>/accept-redirect` so
- * the browser follows the 303 to /org/<slug> on success or back to
- * this page with an `?error=` query on failure.
+ * The page renders nothing from the query string (#4853). It used to print
+ * `?error=` verbatim, so any link to a live invitation could put a sentence of
+ * the link-maker's choosing beside the organization's name. The only writer of
+ * that parameter was the `accept-redirect` route, and it is gone; a refusal is
+ * now shown by the Accept button, from the reason the redemption names.
  */
 import { auth } from '@/auth';
 import { getTranslations } from 'next-intl/server';
 import { previewOrgInviteByToken } from '@/app-layer/usecases/org-invites';
 import { formatDateLong } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
-import { InlineNotice } from '@/components/ui/inline-notice';
+import { buttonVariants } from '@/components/ui/button-variants';
+import { AppIcon } from '@/components/icons/AppIcon';
+import { InviteSwitchAccountButton } from '../../_components/InviteSwitchAccountButton';
+import { OrgInviteAcceptButton } from './OrgInviteAcceptButton';
 
 interface InvitePageProps {
     params: Promise<{ token: string }>;
-    searchParams: Promise<{ error?: string }>;
 }
 
-export default async function OrgInvitePage({ params, searchParams }: InvitePageProps) {
+export default async function OrgInvitePage({ params }: InvitePageProps) {
     const { token } = await params;
-    const { error: errorParam } = await searchParams;
     const session = await auth();
     const sessionEmail = session?.user?.email ?? null;
 
@@ -40,7 +46,7 @@ export default async function OrgInvitePage({ params, searchParams }: InvitePage
         return (
             <main className="min-h-screen bg-bg-default flex items-center justify-center p-4">
                 <div className="max-w-md w-full bg-bg-default rounded-lg border border-border-subtle p-8 text-center">
-                    <div className="text-4xl mb-4">&#x26A0;&#xFE0F;</div>
+                    <AppIcon name="warning" size={40} className="mx-auto mb-4 text-content-warning" />
                     <Heading level={1} className="mb-2">
                         {t('notAvailableTitle')}
                     </Heading>
@@ -57,6 +63,7 @@ export default async function OrgInvitePage({ params, searchParams }: InvitePage
         : preview.role;
     const expiryLabel = formatDateLong(preview.expiresAt);
     const isReady = session && preview.matchesSession;
+    const isWrongAccount = session && !preview.matchesSession;
     const loginUrl = `/api/org/invite/${token}/start-signin`;
 
     return (
@@ -80,30 +87,24 @@ export default async function OrgInvitePage({ params, searchParams }: InvitePage
                     {t('expires', { date: expiryLabel })}
                 </p>
 
-                {errorParam && (
-                    <InlineNotice
-                        variant="error"
-                        icon={null}
-                        className="mb-4 text-center"
-                        data-testid="org-invite-error"
-                    >
-                        {errorParam}
-                    </InlineNotice>
-                )}
-
                 {isReady ? (
-                    <OrgInviteAcceptForm token={token} label={t('acceptInvitation')} />
+                    <OrgInviteAcceptButton token={token} />
+                ) : isWrongAccount ? (
+                    <InviteSwitchAccountButton
+                        returnTo={`/invite/org/${encodeURIComponent(token)}`}
+                        id="org-invite-switch-account"
+                    />
                 ) : (
                     <a
                         href={loginUrl}
-                        className="block w-full text-center rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
-                        data-testid="org-invite-signin-cta"
+                        id="org-invite-signin-cta"
+                        className={buttonVariants({ variant: 'primary', className: 'w-full' })}
                     >
                         {t('signInToAccept')}
                     </a>
                 )}
 
-                {session && !preview.matchesSession && (
+                {isWrongAccount && (
                     <p className="mt-4 text-xs text-content-muted text-center">
                         {t.rich('wrongAccount', {
                             email: session.user?.email ?? '',
@@ -118,16 +119,3 @@ export default async function OrgInvitePage({ params, searchParams }: InvitePage
     );
 }
 
-function OrgInviteAcceptForm({ token, label }: { token: string; label: string }) {
-    return (
-        <form action={`/api/org/invite/${token}/accept-redirect`} method="POST">
-            <button
-                type="submit"
-                className="w-full rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
-                data-testid="org-invite-accept"
-            >
-                {label}
-            </button>
-        </form>
-    );
-}

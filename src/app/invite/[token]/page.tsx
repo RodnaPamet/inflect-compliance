@@ -17,6 +17,7 @@ import { formatDateLong } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { AppIcon } from '@/components/icons/AppIcon';
+import { InviteSwitchAccountButton } from '../_components/InviteSwitchAccountButton';
 import { InviteAcceptButton } from './InviteAcceptButton';
 
 interface InvitePageProps {
@@ -65,6 +66,10 @@ export default async function InvitePage({ params }: InvitePageProps) {
     // redeemInvite and returns JSON), re-mints the session's membership
     // claims, then navigates into the workspace.
     const isReady = session && preview.matchesSession;
+    // Signed in as somebody else: signing in again would redeem the invite in
+    // the sign-in callback and use it up on the email check (#4853), so the
+    // way forward is to sign out first.
+    const isWrongAccount = session && !preview.matchesSession;
 
     // start-signin sets the inflect_invite_token cookie then redirects to /login.
     // After sign-in the signIn callback reads the cookie and calls redeemInvite,
@@ -94,6 +99,11 @@ export default async function InvitePage({ params }: InvitePageProps) {
 
                 {isReady ? (
                     <InviteAcceptButton token={token} />
+                ) : isWrongAccount ? (
+                    <InviteSwitchAccountButton
+                        returnTo={`/invite/${encodeURIComponent(token)}`}
+                        id="invite-switch-account"
+                    />
                 ) : (
                     <a
                         href={loginUrl}
@@ -104,7 +114,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
                     </a>
                 )}
 
-                {session && !preview.matchesSession && (
+                {isWrongAccount && (
                     <p className="mt-4 text-xs text-content-muted text-center">
                         {t.rich('wrongAccount', {
                             email: session.user?.email ?? '',

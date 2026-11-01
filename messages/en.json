@@ -13865,9 +13865,10 @@
     "joinOrgAs": "Join the <b>{org}</b> organization as a <b>{role}</b>.",
     "expires": "Expires {date}",
     "signInToAccept": "Sign in to accept",
+    "switchAccount": "Sign out and use another account",
     "acceptInvitation": "Accept invitation",
     "acceptFailed": "Could not accept the invitation. Please try again.",
-    "wrongAccount": "You are signed in as <b>{email}</b>, but this invite was sent to a different email address. Sign in with the correct account to accept it.",
+    "wrongAccount": "You are signed in as <b>{email}</b>, but this invitation was sent to a different email address. Sign out, then sign in with the address it was sent to. Signing in again with this account would use up the invitation.",
     "refused": {
       "INVITE_NOT_FOUND": "This invitation does not exist. Check the link, or ask your admin to send a new invite.",
       "INVITE_REVOKED": "This invitation has been withdrawn. Ask your admin to send a new invite.",
@@ -13875,6 +13876,14 @@
       "INVITE_ALREADY_REDEEMED": "This invitation has already been used. If it was not you, ask your admin to send a new invite.",
       "INVITE_EMAIL_MISMATCH": "This invitation was sent to a different email address from the account you signed in with, so it can no longer be used. Ask your admin to send a new invite to the address you sign in with.",
       "INVITE_NOT_COMPLETED": "This invitation was claimed, but joining the workspace did not finish. Ask your admin to send a new invite."
+    },
+    "orgRefused": {
+      "INVITE_NOT_FOUND": "This invitation does not exist. Check the link, or ask the organization's admin to send a new invitation.",
+      "INVITE_REVOKED": "This invitation has been withdrawn. Ask the organization's admin to send a new invitation.",
+      "INVITE_EXPIRED": "This invitation has expired. Ask the organization's admin to send a new invitation.",
+      "INVITE_ALREADY_REDEEMED": "This invitation has already been used. If it was not you, ask the organization's admin to send a new invitation.",
+      "INVITE_EMAIL_MISMATCH": "This invitation was sent to a different email address from the account you signed in with, so it can no longer be used. Ask the organization's admin to send a new invitation to the address you sign in with.",
+      "INVITE_NOT_COMPLETED": "This invitation was claimed, but joining the organization did not finish. Ask the organization's admin to send a new invitation."
     },
     "result": {
       "title": "Invitation not accepted",

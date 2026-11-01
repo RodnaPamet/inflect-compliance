@@ -412,7 +412,10 @@ describe('redeemOrgInvite', () => {
     it('atomic-claim-fails + invite missing → notFound', async () => {
         mockPrisma.orgInvite.updateMany.mockResolvedValueOnce({ count: 0 });
         mockPrisma.orgInvite.findUnique.mockResolvedValueOnce(null);
-        await expect(redeemOrgInvite(redeemInput)).rejects.toThrow(/invite not found/i);
+        const err = await redeemOrgInvite(redeemInput).catch((e: unknown) => e);
+        expect(String((err as Error).message)).toMatch(/invite not found/i);
+        // The page answers from the reason, not the English message (#4853).
+        expect((err as { details?: unknown }).details).toEqual({ reason: 'INVITE_NOT_FOUND' });
     });
 
     it('atomic-claim-fails + revoked → gone', async () => {
@@ -420,7 +423,10 @@ describe('redeemOrgInvite', () => {
         mockPrisma.orgInvite.findUnique.mockResolvedValueOnce({
             acceptedAt: null, revokedAt: new Date(), expiresAt: new Date(Date.now() + 1_000_000),
         });
-        await expect(redeemOrgInvite(redeemInput)).rejects.toThrow(/revoked/i);
+        const err = await redeemOrgInvite(redeemInput).catch((e: unknown) => e);
+        expect(String((err as Error).message)).toMatch(/revoked/i);
+        // The page answers from the reason, not the English message (#4853).
+        expect((err as { details?: unknown }).details).toEqual({ reason: 'INVITE_REVOKED' });
     });
 
     it('atomic-claim-fails + expired → gone', async () => {
@@ -428,7 +434,10 @@ describe('redeemOrgInvite', () => {
         mockPrisma.orgInvite.findUnique.mockResolvedValueOnce({
             acceptedAt: null, revokedAt: null, expiresAt: new Date('2020-01-01'),
         });
-        await expect(redeemOrgInvite(redeemInput)).rejects.toThrow(/expired/i);
+        const err = await redeemOrgInvite(redeemInput).catch((e: unknown) => e);
+        expect(String((err as Error).message)).toMatch(/expired/i);
+        // The page answers from the reason, not the English message (#4853).
+        expect((err as { details?: unknown }).details).toEqual({ reason: 'INVITE_EXPIRED' });
     });
 
     it('atomic-claim-fails + already accepted → gone', async () => {
@@ -436,7 +445,10 @@ describe('redeemOrgInvite', () => {
         mockPrisma.orgInvite.findUnique.mockResolvedValueOnce({
             acceptedAt: new Date(), revokedAt: null, expiresAt: new Date(Date.now() + 1_000_000),
         });
-        await expect(redeemOrgInvite(redeemInput)).rejects.toThrow(/already been redeemed/i);
+        const err = await redeemOrgInvite(redeemInput).catch((e: unknown) => e);
+        expect(String((err as Error).message)).toMatch(/already been redeemed/i);
+        // The page answers from the reason, not the English message (#4853).
+        expect((err as { details?: unknown }).details).toEqual({ reason: 'INVITE_ALREADY_REDEEMED' });
     });
 
     it('atomic-claim-fails + no specific reason → internal (race condition)', async () => {
@@ -476,9 +488,11 @@ describe('redeemOrgInvite', () => {
             invitedById: 'u-admin',
         });
 
-        await expect(
-            redeemOrgInvite({ ...redeemInput, userEmail: 'bob@example.com' }),
-        ).rejects.toThrow(/email does not match/i);
+        const err = await redeemOrgInvite({ ...redeemInput, userEmail: 'bob@example.com' }).catch(
+            (e: unknown) => e,
+        );
+        expect(String((err as Error).message)).toMatch(/email does not match/i);
+        expect((err as { details?: unknown }).details).toEqual({ reason: 'INVITE_EMAIL_MISMATCH' });
         // No membership write attempted on the email-mismatch branch.
         expect(mockPrisma.orgMembership.upsert).not.toHaveBeenCalled();
     });
