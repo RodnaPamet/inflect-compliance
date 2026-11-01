@@ -46,6 +46,16 @@
         },
         {
             "group": "Page guides",
+            "label": "Organization",
+            "docs": [
+                "docs/user/guide/organization/portfolio-overview.md",
+                "docs/user/guide/organization/workspaces.md",
+                "docs/user/guide/organization/members.md",
+                "docs/user/guide/organization/"
+            ]
+        },
+        {
+            "group": "Page guides",
             "label": "{{ui:nav.account}}",
             "docs": [
                 "docs/user/guide/account/profile.md",
