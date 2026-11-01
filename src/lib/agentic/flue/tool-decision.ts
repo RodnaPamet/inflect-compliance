@@ -88,6 +88,12 @@ export async function recordExternalToolDecision(
                 sanitizedInput: ref.toolName,
                 outputSummary: `external ${input.status.toLowerCase()}`,
                 sessionRef: input.runId,
+                // The call has already left the platform when this row is
+                // written, and no person reviews it: terminal at insert, so the
+                // log does not carry it as "awaiting review" for ever (#4896,
+                // owner decision 2026-11-01). A run checkpoint stamps only the
+                // rows still PENDING, so it leaves this one as it is.
+                humanOutcome: 'AUTONOMOUS',
                 latencyMs: input.latencyMs ?? null,
                 aiSystemId: ctx.agentId ? await aiSystemIdFor(db, ctx) : null,
             });

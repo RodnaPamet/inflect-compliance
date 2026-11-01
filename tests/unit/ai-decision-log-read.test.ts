@@ -94,7 +94,7 @@ describe('listAiDecisions', () => {
         // A `Date` does not survive the server->client hop. Converting here is
         // what every other agentic payload in this tree does.
         findMany.mockResolvedValue([
-            { id: 'd1', createdAt: new Date('2026-09-22T10:00:00.000Z'), inputDigest: 'x' },
+            { id: 'd1', feature: 'assistant', createdAt: new Date('2026-09-22T10:00:00.000Z'), inputDigest: 'x' },
         ]);
         const [row] = await listAiDecisions(CTX);
         expect(row.createdAt).toBe('2026-09-22T10:00:00.000Z');
@@ -108,6 +108,19 @@ describe('listAiDecisions', () => {
         await listAiDecisions(CTX);
         const selected = Object.keys(findMany.mock.calls[0][0].select);
         expect(selected).toContain('outputSummary');
-        expect(selected).not.toContain('sessionRef');
+    });
+
+    it('never surfaces sessionRef; a run’s row carries only its run id (#4896)', async () => {
+        // `sessionRef` is read, to link a run's rows to their run, and goes no
+        // further: on other features it is a session key that can carry text
+        // (a composed request's template label).
+        findMany.mockResolvedValue([
+            { id: 'r', feature: 'agentic-run:audit-prep', sessionRef: 'run_1', createdAt: new Date(), inputDigest: 'x' },
+            { id: 't', feature: 'agentic-tool:external', sessionRef: 'run_2', createdAt: new Date(), inputDigest: 'y' },
+            { id: 'p', feature: 'agent-proposal', sessionRef: 'compose:Grant a role:abc', createdAt: new Date(), inputDigest: 'z' },
+        ]);
+        const rows = await listAiDecisions(CTX);
+        expect(rows.map((r) => r.runId)).toEqual(['run_1', 'run_2', null]);
+        for (const r of rows) expect(r).not.toHaveProperty('sessionRef');
     });
 });
