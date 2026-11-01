@@ -19,6 +19,10 @@ const mockList = jest.fn();
 jest.mock('@/app-layer/usecases/identity-write-journal', () => ({
     listUnsettledWrites: (...a: unknown[]) => mockList(...a),
 }));
+const mockPeople = jest.fn();
+jest.mock('@/app-layer/usecases/identity-journal-people', () => ({
+    readJournalPeople: (...a: unknown[]) => mockPeople(...a),
+}));
 jest.mock('@/lib/security/permission-middleware', () => ({
     requirePermission: (_key: string, handler: unknown) => handler,
 }));
@@ -46,6 +50,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(Date, 'now').mockReturnValue(NOW);
     mockList.mockResolvedValue([]);
+    mockPeople.mockResolvedValue({ accounts: {}, actors: {} });
 });
 
 afterEach(() => jest.restoreAllMocks());
@@ -90,6 +95,36 @@ describe('the age window', () => {
 });
 
 describe('the response', () => {
+    it("gives each row the index's journalId, and names its account and actor (#4877)", async () => {
+        // The page keys its backlog table on `journalId`, as it keys the
+        // history. The usecase's row names it `id`, so a backlog row clicked
+        // used to open nothing.
+        mockList.mockResolvedValue([
+            {
+                id: 'jr_1',
+                linkId: 'link-1',
+                provider: 'entra-id',
+                action: 'DISABLE_ACCOUNT',
+                mode: 'AUTOMATIC',
+                outcome: 'INDETERMINATE',
+                attemptedAt: new Date(NOW - 2 * 3_600_000),
+                settledAt: null,
+                actorUserId: 'u-1',
+            },
+        ]);
+        mockPeople.mockResolvedValue({
+            accounts: { 'link-1': { name: 'Ana Petrova', email: 'ana@acme.test' } },
+            actors: { 'u-1': { name: 'Ivo Owner', email: null } },
+        });
+        const body = await (await call()).json();
+        expect(body.writes).toEqual([
+            expect.objectContaining({ journalId: 'jr_1', linkId: 'link-1', actorUserId: 'u-1', outcome: 'INDETERMINATE' }),
+        ]);
+        expect(body.writes[0]).not.toHaveProperty('id');
+        expect(body.accounts['link-1'].name).toBe('Ana Petrova');
+        expect(body.actors['u-1'].name).toBe('Ivo Owner');
+    });
+
     it('carries the cutoff, so an empty list is legible', async () => {
         // Without this, "nothing outstanding" and "you asked about the wrong
         // window" render identically.

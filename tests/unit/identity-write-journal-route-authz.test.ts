@@ -59,6 +59,16 @@ jest.mock('@/app-layer/usecases/identity-write-journal', () => ({
     getJournalWrite: (ctx: unknown, id: string) => getJournalWriteMock(ctx, id),
 }));
 
+// Who each entry is about (#4877). Read only after the gate, so a refused
+// caller never reaches it — asserted below.
+const readJournalPeopleMock = jest.fn(async (_ctx: unknown, _entries: unknown) => ({
+    accounts: { 'link-1': { name: 'Ana Petrova', email: 'ana@acme.test' } },
+    actors: {},
+}));
+jest.mock('@/app-layer/usecases/identity-journal-people', () => ({
+    readJournalPeople: (ctx: unknown, entries: unknown) => readJournalPeopleMock(ctx, entries),
+}));
+
 import { NextRequest } from 'next/server';
 import { GET as GET_INDEX } from '@/app/api/t/[tenantSlug]/admin/identity-write-journal/route';
 import { GET as GET_ONE } from '@/app/api/t/[tenantSlug]/admin/identity-write-journal/[journalId]/route';
@@ -119,6 +129,10 @@ beforeEach(() => {
     jest.clearAllMocks();
     listJournalWritesMock.mockResolvedValue([ENTRY]);
     getJournalWriteMock.mockResolvedValue(ENTRY);
+    readJournalPeopleMock.mockResolvedValue({
+        accounts: { 'link-1': { name: 'Ana Petrova', email: 'ana@acme.test' } },
+        actors: {},
+    });
 });
 
 describe('GET …/admin/identity-write-journal (the index)', () => {
@@ -133,6 +147,7 @@ describe('GET …/admin/identity-write-journal (the index)', () => {
         // has already run is a disclosure that happens to be discarded, and the
         // status alone cannot tell the two apart.
         expect(listJournalWritesMock).not.toHaveBeenCalled();
+        expect(readJournalPeopleMock).not.toHaveBeenCalled();
     });
 
     it('refuses an EDITOR with 403', async () => {
@@ -154,6 +169,10 @@ describe('GET …/admin/identity-write-journal (the index)', () => {
         const body = await res.json();
         expect(body.writes).toHaveLength(1);
         expect(body.writes[0]).toMatchObject({ journalId: 'j1', outcome: 'APPLIED' });
+        // Each page names whose accounts its entries are about (#4877), read
+        // for exactly the entries the page returned.
+        expect(body.accounts).toEqual({ 'link-1': { name: 'Ana Petrova', email: 'ana@acme.test' } });
+        expect(readJournalPeopleMock.mock.calls[0][1]).toEqual([ENTRY]);
 
         const [ctx] = listJournalWritesMock.mock.calls[0];
         expect((ctx as { tenantId: string }).tenantId).toBe('tenant-A');
@@ -236,6 +255,7 @@ describe('GET …/admin/identity-write-journal/<reference> (the captured state)'
 
         expect(res.status).toBe(403);
         expect(getJournalWriteMock).not.toHaveBeenCalled();
+        expect(readJournalPeopleMock).not.toHaveBeenCalled();
     });
 
     it('refuses an EDITOR with 403', async () => {

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { listUnsettledWrites } from '@/app-layer/usecases/identity-write-journal';
+import { readJournalPeople } from '@/app-layer/usecases/identity-journal-people';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
@@ -64,10 +65,24 @@ export const GET = withApiErrorHandling(
         const provider = url.searchParams.get('provider') ?? undefined;
         const olderThan = new Date(Date.now() - minutes * 60_000);
 
-        const writes = await listUnsettledWrites(ctx, olderThan, provider);
+        // In the index's shape (#4877): the page shares one table definition
+        // between the backlog and the history, keyed on `journalId`, and the
+        // usecase's row names it `id` — so a backlog row clicked opened nothing.
+        const writes = (await listUnsettledWrites(ctx, olderThan, provider)).map((w) => ({
+            journalId: w.id,
+            linkId: w.linkId,
+            provider: w.provider,
+            action: w.action,
+            mode: w.mode,
+            outcome: w.outcome,
+            attemptedAt: w.attemptedAt,
+            settledAt: w.settledAt,
+            actorUserId: w.actorUserId,
+        }));
+        const { accounts, actors } = await readJournalPeople(ctx, writes);
         // The cutoff travels with the answer. Without it a page showing an
         // empty list cannot tell an operator whether there is no backlog or
         // whether it asked about the wrong window.
-        return jsonResponse({ writes, olderThan: olderThan.toISOString(), minutes });
+        return jsonResponse({ writes, accounts, actors, olderThan: olderThan.toISOString(), minutes });
     }),
 );

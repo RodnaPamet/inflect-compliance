@@ -1113,6 +1113,11 @@ describe('a decision that wrote carries its journal reference', () => {
         // administrator, so transcribing a cuid by eye is the failure mode.
         const copy = await screen.findByRole('button', { name: M.journalCopyLabel });
         expect(copy).toHaveTextContent('jrnl0000000000000000disabled');
+        // …and it opens its entry in the journal, which resolves `?ref=` (#4877).
+        expect(screen.getByRole('link', { name: M.journalOpen })).toHaveAttribute(
+            'href',
+            expect.stringContaining('/admin/identity-write-journal?ref=jrnl0000000000000000disabled'),
+        );
 
         // NEGATIVE, paired: the refused row has no reference, and there is no
         // second copy button to be found. Without the positive above this would

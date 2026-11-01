@@ -8052,7 +8052,8 @@
         "READ_BIND_ONLY": "a read-only account",
         "UNKNOWN": "unknown"
       },
-      "journalLink": "Open the journal"
+      "journalLink": "Open the journal",
+      "journalOpen": "Open the entry"
     },
     "section": {
       "identity": "Identity & access",
@@ -8466,7 +8467,7 @@
       "forbidden": "Reading the identity write journal is restricted to owners. A row here names a change made to one of your people’s accounts.",
       "breadcrumb": "Identity write journal",
       "title": "Identity write journal",
-      "intro": "What this product replaced when it wrote to your directory, and which writes never reported back. The reference quoted in a disable notification resolves here.",
+      "intro": "What this product replaced when it wrote to your directory, and which writes never reported back. Paste the reference from a disable notification below to open its entry.",
       "unsettledTitle": "Writes that never reported an outcome",
       "unsettledNotice": "{count, plural, one {# account may or may not have been changed. Check it in the directory — this product could not confirm the write either way.} other {# accounts may or may not have been changed. Check them in the directory — this product could not confirm the writes either way.}}",
       "unsettledEmpty": "Nothing outstanding.",
@@ -8478,7 +8479,38 @@
       "actorScheduled": "Scheduled run",
       "loading": "Loading…",
       "loadFailed": "The journal could not be loaded.",
-      "empty": "No directory writes have been journalled for this tenant."
+      "empty": "No directory writes have been journalled for this tenant.",
+      "colAccount": "Account",
+      "accountUnlinked": "Not linked to a person",
+      "accountGone": "Link no longer exists",
+      "actorFormer": "Former member",
+      "action": {
+        "DISABLE_ACCOUNT": "Disable account",
+        "ENABLE_ACCOUNT": "Enable account",
+        "CREATE_ACCOUNT": "Create account",
+        "ASSIGN_GROUP": "Add to group",
+        "REMOVE_GROUP": "Remove from group",
+        "ISSUE_CREDENTIAL": "Issue credential"
+      },
+      "outcome": {
+        "APPLIED": "Applied",
+        "FAILED": "Failed",
+        "PENDING": "Pending",
+        "INDETERMINATE": "Unknown",
+        "REVERTED": "Reverted"
+      },
+      "unsettledLoadFailed": "Couldn't check for writes that never reported an outcome. Reload the page to try again.",
+      "findLabel": "Journal reference",
+      "findHint": "The reference a disable notification quotes, or one copied from a leaver pass.",
+      "findOpen": "Open",
+      "referenceNotFound": "No journal entry has the reference {ref}. Check it was copied whole, from this workspace's notification.",
+      "entryLoadFailed": "Couldn't load this entry. Try again.",
+      "priorStateTitle": "What the directory held before the write",
+      "priorStateHint": "Each field under the directory's own name. To undo the write, re-apply these values in the directory: Inflect does not write them back itself.",
+      "priorStateCopy": "Copy the captured state",
+      "valueYes": "Yes",
+      "valueNo": "No",
+      "valueEmpty": "(empty)"
     },
     "joinerPasses": {
       "forbidden": "Reading joiner pass reports is restricted to owners. The report names which of your people the product would create an account for, and at what address.",

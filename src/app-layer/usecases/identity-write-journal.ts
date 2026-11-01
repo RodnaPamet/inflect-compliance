@@ -609,10 +609,14 @@ export async function listUnsettledWrites(
             //   that structural rather than a matter of caller discipline.
             //
             // `linkId` is the safe handle: opaque, tenant-scoped, and enough to
-            // find the row by hand.
+            // find the row by hand. `actorUserId` and `settledAt` are selected
+            // so the journal page can say who started each write (#4877); a
+            // user id is no directory identifier, and the leaver pass reads
+            // only the count and the link ids.
             select: {
                 id: true, provider: true, action: true,
                 mode: true, attemptedAt: true, linkId: true, outcome: true,
+                settledAt: true, actorUserId: true,
             },
         }),
     );
