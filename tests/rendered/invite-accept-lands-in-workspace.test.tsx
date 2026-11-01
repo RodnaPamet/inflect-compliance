@@ -48,7 +48,11 @@ jest.mock('@/app-layer/usecases/tenant-invites', () => ({
     previewInviteByToken: (...a: unknown[]) => previewMock(...a),
 }));
 
-jest.mock('next-auth/react', () => ({ getCsrfToken: jest.fn(async () => 'csrf-1') }));
+const signOutMock = jest.fn();
+jest.mock('next-auth/react', () => ({
+    getCsrfToken: jest.fn(async () => 'csrf-1'),
+    signOut: (...a: unknown[]) => signOutMock(...a),
+}));
 
 import InvitePage from '@/app/invite/[token]/page';
 
@@ -179,5 +183,25 @@ describe('/invite/[token] — accepting as the signed-in invitee', () => {
 
         expect(screen.queryByText(/Call \+1 555 0100/)).not.toBeInTheDocument();
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+});
+
+describe('/invite/[token] — signed in as a different account (#4853)', () => {
+    it('offers a sign-out that returns here, and no sign-in that would use up the invite', async () => {
+        authMock.mockResolvedValue({ user: { id: 'u-2', email: 'someone-else@example.com' } });
+        previewMock.mockResolvedValue({
+            tenantName: 'Acme',
+            tenantSlug: 'acme',
+            role: 'EDITOR',
+            expiresAt: new Date('2026-11-01T00:00:00Z'),
+            matchesSession: false,
+        });
+        render(await InvitePage({ params: Promise.resolve({ token: 'tok-abc' }) }));
+
+        expect(screen.queryByRole('link', { name: 'Sign in to accept' })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Sign out and use another account' }));
+
+        expect(signOutMock).toHaveBeenCalledWith({ callbackUrl: '/invite/tok-abc' });
     });
 });

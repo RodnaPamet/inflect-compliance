@@ -20,7 +20,7 @@ const PUBLIC_PATH_PREFIXES = [
     '/invite/',          // Invite preview page (tenant + org) — public so unauthenticated users can see invite details
     '/api/auth',         // Auth.js callbacks, session, csrf, providers
     '/api/invites/',     // Tenant invite redemption API (public) + start-signin cookie setter
-    '/api/org/invite/',  // Org invite API (public) — start-signin cookie setter + accept-redirect, mirrors /api/invites/
+    '/api/org/invite/',  // Org invite API (public) — preview/redeem + start-signin cookie setter, mirrors /api/invites/
     '/api/health',       // Health check (no auth) — deprecated alias
     '/api/livez',        // Liveness probe (no auth)
     '/api/readyz',       // Readiness probe (no auth)
