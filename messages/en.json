@@ -6448,7 +6448,40 @@
       "failedKpi": "Failed",
       "policyLinks": "Policy links",
       "recentActivity": "Recent sync activity",
-      "activityEmpty": "No SharePoint activity yet."
+      "activityEmpty": "No SharePoint activity yet.",
+      "healthLoadError": "Couldn't load SharePoint sync health.",
+      "notConnected": "SharePoint is not connected to this workspace. Connect it on the Integrations page.",
+      "staleHint": "Deleted or moved in SharePoint since it was imported. The evidence stays in Inflect, but no longer follows the file.",
+      "failedHint": "Could not be read on the last sync. Inflect tries again on the next one.",
+      "problemsTitle": "Documents that need attention",
+      "problemNoEvidence": "A SharePoint file with no evidence in Inflect",
+      "problemsMore": "Showing {shown} of {total}. Failures are listed first.",
+      "connectionState": {
+        "ok": "OK",
+        "error": "Error",
+        "never": "Never tested",
+        "disabled": "Disabled"
+      },
+      "runKind": {
+        "audit_pack_export": "Audit pack export"
+      },
+      "runStatus": {
+        "PASSED": "Passed",
+        "FAILED": "Failed",
+        "ERROR": "Error",
+        "RUNNING": "Running",
+        "PENDING": "Pending",
+        "NOT_APPLICABLE": "Not applicable",
+        "PARTIAL": "Partial"
+      },
+      "trigger": {
+        "manual": "Manual",
+        "scheduled": "Scheduled",
+        "schedule": "Scheduled",
+        "webhook": "Webhook",
+        "user": "Manual"
+      },
+      "healthLoading": "Loading SharePoint sync health…"
     },
     "integrations": {
       "title": "Integrations",

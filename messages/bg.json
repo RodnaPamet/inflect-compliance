@@ -6448,7 +6448,40 @@
       "failedKpi": "Неуспешни",
       "policyLinks": "Връзки към политики",
       "recentActivity": "Скорошна активност по синхронизация",
-      "activityEmpty": "Все още няма активност в SharePoint."
+      "activityEmpty": "Все още няма активност в SharePoint.",
+      "healthLoadError": "Състоянието на синхронизацията със SharePoint не можа да се зареди.",
+      "notConnected": "SharePoint не е свързан с това работно пространство. Свържете го на страницата Интеграции.",
+      "staleHint": "Изтрити или преместени в SharePoint след импортирането. Доказателството остава в Inflect, но вече не следва файла.",
+      "failedHint": "Не можаха да бъдат прочетени при последната синхронизация. Inflect опитва отново при следващата.",
+      "problemsTitle": "Документи, които изискват внимание",
+      "problemNoEvidence": "Файл от SharePoint без доказателство в Inflect",
+      "problemsMore": "Показани са {shown} от {total}. Неуспешните са първи.",
+      "connectionState": {
+        "ok": "OK",
+        "error": "Грешка",
+        "never": "Не е тествана",
+        "disabled": "Изключена"
+      },
+      "runKind": {
+        "audit_pack_export": "Експорт на одитен пакет"
+      },
+      "runStatus": {
+        "PASSED": "Успешно",
+        "FAILED": "Неуспешно",
+        "ERROR": "Грешка",
+        "RUNNING": "Изпълнява се",
+        "PENDING": "Изчаква",
+        "NOT_APPLICABLE": "Неприложимо",
+        "PARTIAL": "Частично"
+      },
+      "trigger": {
+        "manual": "Ръчно",
+        "scheduled": "По график",
+        "schedule": "По график",
+        "webhook": "Уебкукичка",
+        "user": "Ръчно"
+      },
+      "healthLoading": "Зареждане на състоянието на синхронизацията със SharePoint…"
     },
     "integrations": {
       "title": "Интеграции",
