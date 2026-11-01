@@ -7,6 +7,7 @@ import { getPeerInboundCredential } from '@/app-layer/usecases/a2a-peer-credenti
 import { listPeerKills } from '@/app-layer/usecases/a2a-peer-kill';
 import { listPeerMessages } from '@/app-layer/usecases/a2a-messages';
 import { listRegisteredAgents } from '@/app-layer/usecases/agent-registry';
+import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { NotFoundError } from '@/lib/errors/types';
@@ -28,7 +29,16 @@ export const dynamic = 'force-dynamic';
  *
  * The kill read is made only for a holder of the kill key — the same rule
  * its route applies — and the tab says why it is empty for anybody else.
+ *
+ * Each capped list is read ONE PAST its cap (#4902), so the page can say it is
+ * showing the latest N rather than a count that reads as the whole history.
+ * The member list (for moving the peer to another accountable owner) is read
+ * fail-soft: a failed read says so beside the owner, rather than taking the
+ * page down.
  */
+const MESSAGE_CAP = 100;
+const AGENT_CAP = 200;
+
 export default async function PeerDetailPage({
     params,
 }: {
@@ -51,12 +61,15 @@ export default async function PeerDetailPage({
         throw err;
     }
     const canKill = Boolean(admin.agent_kill_switch);
-    const [credential, messages, kills, agents] = await Promise.all([
+    const [credential, messagesRead, kills, agentsRead, members] = await Promise.all([
         getPeerInboundCredential(ctx, peer.id),
-        listPeerMessages(ctx, peer.id, { take: 100 }),
+        listPeerMessages(ctx, peer.id, { take: MESSAGE_CAP + 1 }),
         canKill ? listPeerKills(ctx, peer.id) : Promise.resolve(null),
-        listRegisteredAgents(ctx, { take: 200 }),
+        listRegisteredAgents(ctx, { take: AGENT_CAP + 1 }),
+        listAssignableUsers(ctx).catch(() => null),
     ]);
+    const messages = messagesRead.slice(0, MESSAGE_CAP);
+    const agents = agentsRead.slice(0, AGENT_CAP);
 
     const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
     const detail: PeerDetail = {
@@ -73,6 +86,10 @@ export default async function PeerDetailPage({
             observedAt: iso(peer.observedAt),
             inboundMessagesPerHour: peer.inboundMessagesPerHour,
             riskTier: peer.riskTier,
+            ownerUserId: peer.ownerUserId,
+            ownerName: peer.owner?.name || peer.owner?.email || null,
+            vendorId: peer.vendorId,
+            vendorName: peer.vendor?.name ?? null,
         },
         credential: {
             live: credential.credential
@@ -115,10 +132,19 @@ export default async function PeerDetailPage({
                   liftReason: k.liftReason,
               }))
             : null,
+        messagesCapped: messagesRead.length > MESSAGE_CAP ? MESSAGE_CAP : null,
         agents: agents
             .filter((a) => a.status !== 'RETIRED')
             .map((a) => ({ id: a.id, name: a.name })),
+        agentsCapped: agentsRead.length > AGENT_CAP ? AGENT_CAP : null,
         workflows: listWorkflowDefinitions().map((w) => ({ key: w.key, name: w.name })),
+        owners:
+            members === null
+                ? null
+                : members.map((m: { id: string; name: string | null; email: string }) => ({
+                      id: m.id,
+                      label: m.name ?? m.email,
+                  })),
     };
 
     return (

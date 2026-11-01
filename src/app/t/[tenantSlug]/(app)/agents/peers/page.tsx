@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { listPeerAgents } from '@/app-layer/usecases/peer-agents';
 import { getTenantA2aSigningKeys } from '@/app-layer/usecases/a2a-signing-key';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
@@ -42,11 +43,12 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
     // A failed member or vendor read is SAID, not swallowed into an empty
     // picker that cannot be filled (#4901). The vendor list is only the first
     // page; the form searches the vendor register for the rest.
-    const [peers, keys, owners, vendors] = await Promise.all([
+    const [peers, keys, owners, vendors, oversightReads] = await Promise.all([
         listPeerAgents(ctx),
         getTenantA2aSigningKeys(ctx),
         listAssignableUsers(ctx).catch(() => null),
         listVendors(ctx, {}, { take: 50 }).catch(() => null),
+        oversightReadsFor(ctx),
     ]);
 
     const rows: PeerRow[] = peers.map((p) => ({
@@ -82,6 +84,8 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
             signingKey={signingKey}
             canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
             canCompose={Boolean(ctx.appPermissions?.admin?.view)}
+            canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
+            oversightReads={oversightReads}
             ownersUnavailable={owners === null}
             vendorsUnavailable={vendors === null}
             owners={(owners ?? []).map((m: { id: string; name: string | null; email: string }) => ({

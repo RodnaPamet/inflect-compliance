@@ -157,7 +157,9 @@ describe("reviewing and approving a peer's card", () => {
         fireEvent.click(screen.getByTestId('peer-card-read'));
         expect(await screen.findByTestId('peer-card-live-hash')).toHaveTextContent(HASH);
         expect(screen.getByTestId('peer-card-text')).toHaveTextContent('https://partner.example/a2a');
-        expect(screen.getByTestId('peer-card-admission')).toHaveTextContent('PEER_UNPINNED');
+        // Worded from its code (#4902), never the code itself.
+        expect(screen.getByTestId('peer-card-admission')).toHaveTextContent('Nobody has approved its card yet.');
+        expect(screen.getByTestId('peer-card-admission')).not.toHaveTextContent('PEER_UNPINNED');
 
         fireEvent.click(screen.getByTestId('peer-card-approve'));
         expect(calls).toHaveLength(1);
@@ -199,7 +201,8 @@ describe("reviewing and approving a peer's card", () => {
         mockFetch([{ ok: true, body: { ...unpinnedRead, live: { readable: false, reason: 'HTTP_ERROR' }, verdict: null } }]);
         const second = render(<PeerCardReview peerId="peer_1" retired={false} canManage />);
         fireEvent.click(screen.getByTestId('peer-card-read'));
-        expect(await screen.findByTestId('peer-card-unreadable')).toHaveTextContent('HTTP_ERROR');
+        expect(await screen.findByTestId('peer-card-unreadable')).toHaveTextContent("The peer's server answered with an error.");
+        expect(screen.getByTestId('peer-card-unreadable')).not.toHaveTextContent('HTTP_ERROR');
         expect(screen.queryByTestId('peer-card-approve')).not.toBeInTheDocument();
         second.unmount();
 

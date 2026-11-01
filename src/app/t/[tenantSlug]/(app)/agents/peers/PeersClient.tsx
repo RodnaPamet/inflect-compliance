@@ -52,6 +52,10 @@ interface Props {
     signingKey: SigningKeyView;
     canReviewProposals: boolean;
     canCompose: boolean;
+    /** `admin.tenant_lifecycle`, the Owner departures page's gate (#4902). */
+    canSetOrphanPass?: boolean;
+    /** Which assurance surfaces the viewer may read (#4905). */
+    oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
     /** Active members, who may answer for a peer. */
     owners?: PeerChoice[];
     /** The first page of the tenant's suppliers; the form searches for the rest. */
@@ -109,6 +113,8 @@ function PeersInner({
     signingKey,
     canReviewProposals,
     canCompose,
+    canSetOrphanPass = false,
+    oversightReads,
     owners = [],
     vendors = [],
     ownersUnavailable = false,
@@ -298,6 +304,8 @@ function PeersInner({
                         canReviewProposals={canReviewProposals}
                         canCompose={canCompose}
                         canInvestigate
+                        canSetOrphanPass={canSetOrphanPass}
+                        oversightReads={oversightReads}
                     />
                 ),
             }}

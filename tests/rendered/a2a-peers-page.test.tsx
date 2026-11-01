@@ -428,3 +428,116 @@ describe('one peer: overview and messages', () => {
         expect(screen.getByTestId('peer-message-verifies-m3').textContent).toBe(P.messages.verifiesUnknown);
     });
 });
+
+describe('one peer: who answers for it, and the acts on it (#4902)', () => {
+    const owned = (over: Partial<PeerDetail['peer']> = {}) =>
+        detail({
+            peer: {
+                ...detail().peer,
+                ownerUserId: 'user-1',
+                ownerName: 'Ada Lovelace',
+                vendorId: 'vendor-1',
+                vendorName: 'Partner Ltd',
+                ...over,
+            },
+            owners: [
+                { id: 'user-1', label: 'Ada Lovelace' },
+                { id: 'user-2', label: 'Bo Diddley' },
+            ],
+        });
+
+    it('names the accountable owner and links the supplier', () => {
+        renderDetail(owned());
+        expect(screen.getByTestId('peer-owner').textContent).toBe('Ada Lovelace');
+        expect(screen.getByTestId('peer-vendor').getAttribute('href')).toBe('/t/acme/vendors/vendor-1');
+    });
+
+    it('renames the peer, as a PATCH', async () => {
+        renderDetail(owned());
+        expect((screen.getByTestId('peer-rename-save') as HTMLButtonElement).disabled).toBe(true);
+        fireEvent.change(screen.getByLabelText(P.detail.nameLabel), { target: { value: 'Renamed partner' } });
+        await userEvent.click(screen.getByTestId('peer-rename-save'));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+        const [url, init] = fetchMock.mock.calls[0];
+        expect(url).toBe('/api/t/acme/admin/agents/peers/peerpinned1');
+        expect(JSON.parse(init.body)).toEqual({ name: 'Renamed partner' });
+    });
+
+    it('suspends an active peer, and resumes a suspended one', async () => {
+        const { unmount } = renderDetail(owned());
+        await userEvent.click(screen.getByTestId('peer-suspend'));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ status: 'SUSPENDED' });
+        unmount();
+        renderDetail(owned({ status: 'SUSPENDED' }));
+        expect(screen.queryByTestId('peer-suspend')).toBeNull();
+        await userEvent.click(screen.getByTestId('peer-resume'));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ status: 'ACTIVE' });
+    });
+
+    it('retires only through a confirmation', async () => {
+        renderDetail(owned());
+        await userEvent.click(screen.getByTestId('peer-retire'));
+        expect(fetchMock).not.toHaveBeenCalled();
+        const dialog = await screen.findByRole('dialog');
+        await userEvent.click(within(dialog).getByRole('button', { name: P.detail.retire }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ status: 'RETIRED' });
+    });
+
+    it('a retired peer offers no act on itself', () => {
+        renderDetail(owned({ status: 'RETIRED' }));
+        expect(screen.getByTestId('peer-status-actions').textContent).toContain(P.detail.retiredNote);
+        for (const id of ['peer-suspend', 'peer-resume', 'peer-retire', 'peer-rename-save', 'peer-owner-save']) {
+            expect(screen.queryByTestId(id)).toBeNull();
+        }
+    });
+
+    it('says when the member list could not be read, rather than an empty picker', () => {
+        renderDetail({ ...owned(), owners: null });
+        expect(screen.getByTestId('peer-owners-unavailable').textContent).toBe(P.detail.ownersUnavailable);
+    });
+
+    it('a peer never approved says so, and is not called "changed"', () => {
+        renderDetail(detail({ peer: { ...detail().peer, pinnedCardHash: null, pinRevision: 0, observedCardHash: HASH_B } }));
+        expect(screen.getByTestId('peer-card-unapproved').textContent).toBe(P.detail.cardUnapprovedNotice);
+        expect(screen.queryByTestId('peer-card-changed')).toBeNull();
+    });
+
+    it('words each message kind and method', async () => {
+        renderDetail();
+        await openTab(P.detail.tabMessages);
+        const table = screen.getByTestId('peer-messages-table');
+        expect(table.textContent).toContain(`${P.messages.kind.TASK} · ${P.messages.method.send}`);
+        expect(table.textContent).toContain(P.messages.kind.RESULT);
+        expect(table.textContent).not.toContain('message/send');
+    });
+
+    it('says when the messages are cut at the cap, and shows no count that reads as the whole history', async () => {
+        renderDetail(detail({ messagesCapped: 100 }));
+        expect(screen.getByRole('tab', { name: new RegExp(P.detail.tabMessages) }).textContent).not.toMatch(/\d/);
+        await openTab(P.detail.tabMessages);
+        expect(screen.getByTestId('peer-messages-capped').textContent).toBe(P.messages.capped.replace('{count}', '100'));
+    });
+
+    it('names the live token’s workflows and gives its issue date a value', async () => {
+        renderDetail(
+            detail({
+                credential: {
+                    ...detail().credential,
+                    live: {
+                        id: 'cred-1',
+                        keyPrefix: 'iflp_abc',
+                        receivingAgentId: 'agent-1',
+                        workflowKeys: ['diagnostic'],
+                        createdAt: '2026-10-19T08:00:00.000Z',
+                    },
+                },
+            }),
+        );
+        await openTab(P.detail.tabCredential);
+        expect(screen.getByTestId('peer-credential-workflows').textContent).toBe('Diagnostic');
+        expect(screen.getByTestId('peer-credential-issued').textContent).not.toBe('');
+    });
+});
