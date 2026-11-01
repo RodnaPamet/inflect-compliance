@@ -1,4 +1,5 @@
 import { getJournalWrite } from '@/app-layer/usecases/identity-write-journal';
+import { readJournalPeople } from '@/app-layer/usecases/identity-journal-people';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
@@ -83,7 +84,8 @@ export const GET = withApiErrorHandling(
                 throw notFound(`No identity write journal entry for reference ${quoted}`);
             }
 
-            return jsonResponse({ write });
+            const { accounts, actors } = await readJournalPeople(ctx, [write]);
+            return jsonResponse({ write, accounts, actors });
         },
     ),
 );

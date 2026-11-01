@@ -815,13 +815,23 @@ export function LeaverPassesClient() {
             cell: ({ row }) => {
                 const journalId = row.original.journalId;
                 if (!journalId) return <span className="text-content-subtle">—</span>;
+                // …and openable: the journal resolves `?ref=` to the entry
+                // (#4877), so nobody has to paste what is already on screen.
                 return (
-                    <CopyText
-                        value={journalId}
-                        label={t('leaverPasses.journalCopyLabel')}
-                        truncate
-                        className="font-mono text-xs"
-                    />
+                    <span className="inline-flex items-center gap-compact">
+                        <CopyText
+                            value={journalId}
+                            label={t('leaverPasses.journalCopyLabel')}
+                            truncate
+                            className="font-mono text-xs"
+                        />
+                        <Link
+                            href={tenantHref(`/admin/identity-write-journal?ref=${encodeURIComponent(journalId)}`)}
+                            className="text-xs font-medium text-content-info hover:underline"
+                        >
+                            {t('leaverPasses.journalOpen')}
+                        </Link>
+                    </span>
                 );
             },
         },

@@ -1,4 +1,5 @@
 import { listJournalWrites } from '@/app-layer/usecases/identity-write-journal';
+import { readJournalPeople } from '@/app-layer/usecases/identity-journal-people';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
@@ -68,6 +69,9 @@ export const GET = withApiErrorHandling(
         const provider = url.searchParams.get('provider') ?? undefined;
 
         const writes = await listJournalWrites(ctx, { limit, provider });
-        return jsonResponse({ writes });
+        // Whose account, and who made each write (#4877): an index that names
+        // neither cannot answer "was Jane disabled?".
+        const { accounts, actors } = await readJournalPeople(ctx, writes);
+        return jsonResponse({ writes, accounts, actors });
     }),
 );
