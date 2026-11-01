@@ -118,6 +118,7 @@ export function ExternalToolsClient({
     canCompose,
     canInvestigate,
     canSetPriorState = true,
+    canSetOrphanPass = false,
 }: {
     tenantSlug: string;
     connections: readonly ConnectionRow[];
@@ -132,6 +133,8 @@ export function ExternalToolsClient({
      * on every visit and showed every write tool as unusable.
      */
     canSetPriorState?: boolean;
+    /** `admin.tenant_lifecycle` — the views menu offers Owner departures (#4903). */
+    canSetOrphanPass?: boolean;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
@@ -311,6 +314,7 @@ export function ExternalToolsClient({
                         canReviewProposals={canReviewProposals}
                         canCompose={canCompose}
                         canInvestigate={canInvestigate}
+                        canSetOrphanPass={canSetOrphanPass}
                     />
                 }
             />

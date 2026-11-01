@@ -30,7 +30,14 @@ jest.mock('next-intl', () => {
                 dict,
             );
             if (typeof v !== 'string') return key;
-            return values ? v.replace(/\{(\w+)\}/g, (m, name) => (name in values ? String(values[name]) : m)) : v;
+            if (!values) return v;
+            // A simple ICU plural, formatted for real (#4903's counts use them).
+            const plural = v.replace(
+                /\{(\w+), plural, one \{([^{}]*)\} other \{([^{}]*)\}\}/g,
+                (_m, name: string, one: string, other: string) =>
+                    (Number(values[name]) === 1 ? one : other).replace(/#/g, String(values[name])),
+            );
+            return plural.replace(/\{(\w+)\}/g, (m, name) => (name in values ? String(values[name]) : m));
         };
         t.rich = t;
         return t;
@@ -76,7 +83,7 @@ function mockFetch(response: { ok: boolean; error?: string } = { ok: true }) {
     return calls;
 }
 
-const modeCard = () => screen.getByRole('region', { name: 'Owner-orphan pass' });
+const modeCard = () => screen.getByRole('region', { name: 'Owner departure check' });
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -122,6 +129,23 @@ describe('the mode', () => {
         render(<OwnerOrphanPassClient />);
         expect(within(modeCard()).getByRole('button', { name: 'Widen to Automatic' })).toBeDisabled();
         expect(within(modeCard()).getByText('Must remain in DRY_RUN for 7 days before widening.')).toBeInTheDocument();
+    });
+
+    // #4903: the server's English sentence named modes by their codes. When the
+    // structured refusal is there, the page words it instead.
+    it('words a structured refusal rather than showing the server sentence', () => {
+        setPayload('DRY_RUN', {
+            dryRunSince: '2026-10-19T00:00:00.000Z',
+            blockedReason: 'Dry-run has been active for 2 of 7 required days.',
+            blockedRefusal: { code: 'DWELL', days: 2, required: 7, left: 5 },
+        });
+        render(<OwnerOrphanPassClient />);
+        expect(
+            within(modeCard()).getByText(
+                'Dry run has lasted 2 of 7 days. 5 more to go, so the agents it reports can be compared with who actually left.',
+            ),
+        ).toBeInTheDocument();
+        expect(within(modeCard()).queryByText(/Dry-run has been active/)).toBeNull();
     });
 
     it("keeps the confirmation open over the server's refusal", async () => {
@@ -179,11 +203,58 @@ describe('the recorded passes', () => {
         render(<OwnerOrphanPassClient />);
 
         expect(screen.getByTestId('orphan-pass-refusal-pass_1')).toHaveTextContent('Off: no owner was checked.');
-        expect(screen.getByTestId('orphan-pass-counts-pass_2')).toHaveTextContent('1 orphan(s) found. Nothing was changed.');
+        expect(screen.getByTestId('orphan-pass-counts-pass_2')).toHaveTextContent(
+            '1 agent without an owner found. Nothing was changed.',
+        );
         const decision = screen.getByTestId('orphan-decision-pass_2-agt_orphan');
+        // With no name known, the link falls back to the id it targets.
         expect(within(decision).getByRole('link', { name: 'agt_orphan' })).toHaveAttribute('href', '/t/acme/agents/agt_orphan');
         expect(decision).toHaveTextContent('Would be stopped and suspended');
-        expect(decision).toHaveTextContent('MEMBERSHIP_NOT_ACTIVE:DEACTIVATED');
+        // #4903: the signal is worded, not printed as `kind:membership`.
+        expect(decision).toHaveTextContent('Membership: deactivated');
+        expect(decision).not.toHaveTextContent('MEMBERSHIP_NOT_ACTIVE');
+        // A service-principal outcome this build has no words for is shown as stored.
         expect(decision).toHaveTextContent('Service principal: WOULD_REQUEST');
+        // The pass status is a label, not its code.
+        expect(screen.getByTestId('orphan-pass-pass_2')).toHaveTextContent('Did not check');
+        expect(screen.getByTestId('orphan-pass-pass_2')).toHaveTextContent('Mode: Dry run');
     });
+
+    it('names each agent the pass decided about, and words a known service-principal outcome', () => {
+        setPayload('AUTOMATIC', {
+            agentNames: { agt_orphan: 'Access reviewer' },
+            passes: [
+                {
+                    id: 'pass_3',
+                    status: 'PASSED',
+                    executedAt: '2026-10-21T05:15:00.000Z',
+                    resultJson: {
+                        mode: 'AUTOMATIC',
+                        refusal: null,
+                        counts: { orphans: 2, contained: 2, failed: 0 },
+                        decisions: [
+                            {
+                                agentId: 'agt_orphan',
+                                signals: [{ kind: 'HR_TERMINATED' }],
+                                outcome: 'SUSPENDED_AND_KILLED',
+                                servicePrincipal: { status: 'LINK_UNCONFIRMED' },
+                            },
+                        ],
+                    },
+                },
+            ],
+        });
+        render(<OwnerOrphanPassClient />);
+        const decision = screen.getByTestId('orphan-decision-pass_3-agt_orphan');
+        expect(within(decision).getByRole('link', { name: 'Access reviewer' })).toHaveAttribute(
+            'href',
+            '/t/acme/agents/agt_orphan',
+        );
+        expect(decision).toHaveTextContent('HR records them as left');
+        expect(decision).toHaveTextContent('Nobody has confirmed this agent’s service principal link');
+        expect(screen.getByTestId('orphan-pass-counts-pass_3')).toHaveTextContent(
+            '2 agents without an owner: 2 stopped, 0 not fully stopped.',
+        );
+    });
+
 });

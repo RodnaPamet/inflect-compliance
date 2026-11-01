@@ -107,6 +107,13 @@ jest.mock('@/app-layer/usecases/workflow-runs', () => ({
     getWorkflowRun: (...a: unknown[]) => getWorkflowRunMock(...a),
 }));
 
+// Who started the run and which rule caused it (#4894): a database read the
+// page makes, which this page test has no database for.
+jest.mock('@/app-layer/usecases/workflow-run-provenance', () => ({
+    __esModule: true,
+    readWorkflowRunProvenance: async () => ({ startedBy: null, ruleName: null }),
+}));
+
 jest.mock('next-intl/server', () => ({
     __esModule: true,
     getTranslations: async () => (key: string) => key,

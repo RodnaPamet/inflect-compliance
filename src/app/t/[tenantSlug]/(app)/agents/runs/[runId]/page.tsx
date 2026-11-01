@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
+import { readWorkflowRunProvenance } from '@/app-layer/usecases/workflow-run-provenance';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { projectRunSteps } from '@/lib/agentic/run-step-projection';
 import { parseMountedSkillPins } from '@/lib/agentic/flue/skills/mount-gate';
@@ -87,6 +88,9 @@ export default async function AgentRunDetailPage({
     // would have rotted against it silently, and the copy nobody opened would
     // be the one under-reporting what an agent touched.
     const steps: RunStepRow[] = projectRunSteps(def?.steps, run.steps, run.proposals);
+    // Who started it and, for an automation-started run, which rule (#4894).
+    // A failed read leaves both unnamed rather than failing the page.
+    const provenance = await readWorkflowRunProvenance(ctx, run).catch(() => ({ startedBy: null, ruleName: null }));
 
     return (
         <AgentRunDetailClient
@@ -107,11 +111,15 @@ export default async function AgentRunDetailPage({
                 // field here — the usecase returns the whole row and the whole
                 // row is not something to hand a browser.
                 parentExecutionId: run.parentExecutionId,
+                startedBy: provenance.startedBy,
+                ruleName: provenance.ruleName,
                 // WHAT IT WAS TAUGHT (#3666): names, versions and hashes, or
                 // null for a run that predates the pin.
                 mountedSkills: parseMountedSkillPins(run.mountedSkills),
             }}
             steps={steps}
+            // Resume and abort open with `assertCanWrite`, as on the runs list.
+            canOperate={ctx.permissions?.canWrite === true}
         />
     );
 }

@@ -1,10 +1,10 @@
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 
-import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { OwnerOrphanPassClient } from './OwnerOrphanPassClient';
 
 export const dynamic = 'force-dynamic';
@@ -29,20 +29,19 @@ export default async function OwnerOrphanPassPage({ params }: { params: Promise<
         return <ForbiddenPage title={t('orphanPass.accessTitle')} message={t('orphanPass.accessMessage')} />;
     }
 
+    // The views menu sits in the page header (#4903), so it is handed to the
+    // client rather than rendered in a row of its own above it.
     return (
-        <div className="space-y-section">
-            <div className="flex justify-end">
-                <AgentsViewsMenu
-                    current="owner-orphan-pass"
-                    tenantSlug={resolved.tenantSlug}
-                    canReviewProposals={mayReadAgentActivity(admin)}
-                    canCompose={Boolean(admin.view)}
-                    canInvestigate={Boolean(admin.agent_registry)}
-                    canReadReports={mayReadAgentInventory(admin)}
-                    canSetOrphanPass
-                />
-            </div>
-            <OwnerOrphanPassClient />
-        </div>
+        <OwnerOrphanPassClient
+            menu={{
+                tenantSlug: resolved.tenantSlug,
+                canReviewProposals: mayReadAgentActivity(admin),
+                canCompose: Boolean(admin.view),
+                canInvestigate: Boolean(admin.agent_registry),
+                canReadReports: mayReadAgentInventory(admin),
+                canSetOrphanPass: true,
+                oversightReads: await oversightReadsFor(ctx),
+            }}
+        />
     );
 }

@@ -80,6 +80,7 @@ export function DecisionsClient({
     canCompose,
     canInvestigate,
     oversightReads,
+    canSetOrphanPass = false,
 }: {
     tenantSlug: string;
     decisions: readonly DecisionRow[];
@@ -92,6 +93,8 @@ export function DecisionsClient({
     canInvestigate: boolean;
     /** Which assurance surfaces the viewer may read (`agent-oversight-settings.ts`). */
     oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
+    /** `admin.tenant_lifecycle` — the views menu offers Owner departures (#4903). */
+    canSetOrphanPass?: boolean;
 }) {
     const t = useTranslations('agents');
 
@@ -115,6 +118,7 @@ export function DecisionsClient({
                         canCompose={canCompose}
                         canInvestigate={canInvestigate}
                         oversightReads={oversightReads}
+                        canSetOrphanPass={canSetOrphanPass}
                     />
                 }
             />
