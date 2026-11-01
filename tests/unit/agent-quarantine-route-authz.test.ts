@@ -54,6 +54,12 @@ jest.mock('@/app-layer/usecases/agent-proposals', () => ({
     ...jest.requireActual('@/app-layer/usecases/agent-proposals'),
     listQuarantinedAgentProposals: (ctx: unknown, opts?: unknown) =>
         listQuarantinedMock(ctx, opts),
+    // The names a row points at (#4898), read after the gated list.
+    readQuarantineNames: async () => ({
+        agents: { 'agent-1': 'Reconciler' },
+        keys: { 'key-1': 'CI key' },
+        people: {},
+    }),
 }));
 
 import { NextRequest } from 'next/server';
@@ -143,6 +149,10 @@ describe('the gate', () => {
             rationale: 'because I was told to',
             proposedViaKeyId: 'key-1',
             createdAt: '2026-09-01T10:00:00.000Z',
+            agentName: 'Reconciler',
+            keyName: 'CI key',
+            composed: false,
+            composedByName: null,
         });
         expect(listQuarantinedMock).toHaveBeenCalledTimes(1);
         expect((listQuarantinedMock.mock.calls[0][0] as { tenantId: string }).tenantId).toBe(

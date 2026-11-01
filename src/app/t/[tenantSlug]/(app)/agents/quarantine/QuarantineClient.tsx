@@ -60,6 +60,7 @@
  * detail sheet rather than a table cell so that scanning the list does not put
  * a wall of injected prose in front of somebody who only wanted the counts.
  */
+import Link from 'next/link';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
@@ -95,7 +96,48 @@ export interface QuarantineRow {
     rationale: string | null;
     proposedViaKeyId: string | null;
     createdAt: string;
+    /** Names (#4898). Optional for a payload that predates them. */
+    agentName?: string | null;
+    keyName?: string | null;
+    composed?: boolean;
+    composedByName?: string | null;
 }
+
+/**
+ * A guard rule's family, in words (#4898). A rule id is `<scanner>.<family>.
+ * <variant>`; the family says what the rule looks for, and the variant is kept
+ * beside it as the reference an investigator searches by.
+ */
+const RULE_FAMILY_KEY: Readonly<Record<string, string>> = {
+    'inj.answer_steering': 'answerSteering',
+    'inj.ignore_previous': 'ignorePrevious',
+    'inj.system_role': 'systemRole',
+    'inj.instruction_override': 'instructionOverride',
+    'inj.tool_poisoning': 'toolPoisoning',
+    'inj.exfil': 'exfil',
+    'egr.api_key': 'apiKey',
+    'egr.bearer_or_jwt': 'bearerOrJwt',
+    'egr.high_entropy_secret': 'highEntropySecret',
+    'egr.private_key': 'privateKey',
+    'egr.seed_phrase': 'seedPhrase',
+};
+
+/** The family key a rule id belongs to, or `null` for one this page does not know. */
+export function ruleFamilyOf(ruleId: string): string | null {
+    const [scanner, family] = ruleId.split('.');
+    return RULE_FAMILY_KEY[`${scanner}.${family}`] ?? null;
+}
+
+const KINDS = new Set(['RISK', 'CONTROL', 'POLICY', 'FINDING', 'EXTERNAL_WRITE']);
+const OPERATIONS = new Set(['CREATE', 'UPDATE']);
+const PROVENANCES = new Set(['TENANT_AUTHORED', 'THIRD_PARTY_INGESTED', 'SYSTEM']);
+
+/** The page a proposal's target record opens on, where it has one. */
+const TARGET_PATH: Readonly<Record<string, string>> = {
+    RISK: '/risks/',
+    CONTROL: '/controls/',
+    POLICY: '/policies/',
+};
 
 export interface QuarantinePage {
     rows: QuarantineRow[];
@@ -122,6 +164,9 @@ function searchableText(row: QuarantineRow): string {
         row.kind,
         row.operation,
         row.agentId ?? '',
+        row.agentName ?? '',
+        row.keyName ?? '',
+        row.composedByName ?? '',
         row.targetEntityId ?? '',
         row.guardRuleIds.join(' '),
         row.guardInputDigest ?? '',
@@ -197,6 +242,35 @@ function QuarantineInner({
     const [openId, setOpenId] = useState<string | null>(null);
 
     const query = useTenantSWR<QuarantinePage>(QUARANTINE_ENDPOINT);
+
+    /** Who made the row: the agent by name, or the person who composed it (#4898). */
+    const madeBy = useCallback(
+        (r: QuarantineRow): string => {
+            if (r.agentId) return r.agentName ?? t('quarantine.agentUnknown');
+            if (r.composed) {
+                return r.composedByName
+                    ? t('quarantine.composedBy', { name: r.composedByName })
+                    : t('quarantine.composedUnknown');
+            }
+            return t('quarantine.unattributed');
+        },
+        [t],
+    );
+    const proposalLabel = useCallback(
+        (r: QuarantineRow): string =>
+            t('quarantine.kindOperation', {
+                kind: KINDS.has(r.kind) ? t(`proposals.kind.${r.kind}`) : r.kind,
+                operation: OPERATIONS.has(r.operation) ? t(`quarantine.operation.${r.operation}`) : r.operation,
+            }),
+        [t],
+    );
+    const ruleLabel = useCallback(
+        (ruleId: string): string => {
+            const family = ruleFamilyOf(ruleId);
+            return family ? t(`quarantine.ruleFamily.${family}`) : t('quarantine.ruleFamilyOther');
+        },
+        [t],
+    );
     const allRows = useMemo(() => query.data?.rows ?? [], [query.data]);
 
     const needle = search.trim().toLowerCase();
@@ -237,34 +311,29 @@ function QuarantineInner({
                 {
                     id: 'agentId',
                     header: t('quarantine.colAgent'),
-                    accessorFn: (r) => r.agentId ?? '',
-                    cell: ({ row }) =>
-                        row.original.agentId ? (
-                            <span className="truncate font-medium text-content-default">
-                                {row.original.agentId}
-                            </span>
-                        ) : (
-                            // Not a dash. A NULL here means the credential named
-                            // no registered agent, which is a finding in its own
-                            // right — it is the state a tenant with the
-                            // registration gate switched off can still produce.
-                            <span className="text-content-subtle">
-                                {t('quarantine.unattributed')}
-                            </span>
-                        ),
+                    accessorFn: (r) => madeBy(r),
+                    // Not a dash. A NULL agent with no composer means the
+                    // credential named no registered agent, which is a finding in
+                    // its own right — it is the state a tenant with the
+                    // registration gate switched off can still produce. A
+                    // composed request names the PERSON (#4898).
+                    cell: ({ row }) => (
+                        <span
+                            className={
+                                row.original.agentId || row.original.composed
+                                    ? 'truncate font-medium text-content-default'
+                                    : 'text-content-subtle'
+                            }
+                        >
+                            {madeBy(row.original)}
+                        </span>
+                    ),
                 },
                 {
                     id: 'kind',
                     header: t('quarantine.colKind'),
                     accessorFn: (r) => r.kind,
-                    cell: ({ row }) => (
-                        <span className="text-content-muted">
-                            {t('quarantine.kindOperation', {
-                                kind: row.original.kind,
-                                operation: row.original.operation,
-                            })}
-                        </span>
-                    ),
+                    cell: ({ row }) => <span className="text-content-muted">{proposalLabel(row.original)}</span>,
                 },
                 {
                     id: 'guardRuleIds',
@@ -272,8 +341,8 @@ function QuarantineInner({
                     accessorFn: (r) => r.guardRuleIds.join(' '),
                     cell: ({ row }) =>
                         row.original.guardRuleIds.length > 0 ? (
-                            <span className="font-mono text-content-muted">
-                                {row.original.guardRuleIds.join(', ')}
+                            <span className="text-content-muted">
+                                {[...new Set(row.original.guardRuleIds.map(ruleLabel))].join(', ')}
                             </span>
                         ) : (
                             // A quarantined row with no rule ids would mean the
@@ -296,7 +365,7 @@ function QuarantineInner({
                     ),
                 },
             ]),
-        [t],
+        [t, madeBy, proposalLabel, ruleLabel],
     );
 
     // Stable identities — a fresh one rebuilds the table model mid-click.
@@ -439,27 +508,61 @@ function QuarantineInner({
                                         {formatDateTime(selected.createdAt)}
                                     </Field>
                                     <Field label={t('quarantine.sheetAgent')}>
-                                        {selected.agentId ?? t('quarantine.unattributed')}
+                                        {selected.agentId ? (
+                                            <Link
+                                                href={`/t/${tenantSlug}/agents/${selected.agentId}`}
+                                                className="text-content-info hover:underline"
+                                                data-testid="quarantine-agent-link"
+                                            >
+                                                {madeBy(selected)}
+                                            </Link>
+                                        ) : (
+                                            madeBy(selected)
+                                        )}
                                     </Field>
-                                    <Field label={t('quarantine.sheetKind')}>
-                                        {t('quarantine.kindOperation', {
-                                            kind: selected.kind,
-                                            operation: selected.operation,
-                                        })}
-                                    </Field>
+                                    <Field label={t('quarantine.sheetKind')}>{proposalLabel(selected)}</Field>
                                     <Field label={t('quarantine.sheetTarget')}>
-                                        {selected.targetEntityId ?? t('quarantine.none')}
+                                        {selected.targetEntityId ? (
+                                            TARGET_PATH[selected.kind] ? (
+                                                <Link
+                                                    href={`/t/${tenantSlug}${TARGET_PATH[selected.kind]}${selected.targetEntityId}`}
+                                                    className="text-content-info hover:underline"
+                                                    data-testid="quarantine-target-link"
+                                                >
+                                                    {t('quarantine.openTarget', { kind: t(`proposals.kind.${selected.kind}`) })}
+                                                </Link>
+                                            ) : (
+                                                <span className="font-mono text-xs">{selected.targetEntityId}</span>
+                                            )
+                                        ) : (
+                                            t('quarantine.targetNew')
+                                        )}
                                     </Field>
                                     <Field label={t('quarantine.sheetProvenance')}>
-                                        {selected.guardProvenance}
+                                        {PROVENANCES.has(selected.guardProvenance)
+                                            ? t(`quarantine.provenance.${selected.guardProvenance}`)
+                                            : selected.guardProvenance}
                                     </Field>
                                     <Field label={t('quarantine.sheetCredential')}>
-                                        {selected.proposedViaKeyId ?? t('quarantine.none')}
+                                        {selected.proposedViaKeyId
+                                            ? (selected.keyName ?? t('quarantine.keyUnknown'))
+                                            : selected.composed
+                                              ? t('quarantine.credentialComposed')
+                                              : t('quarantine.none')}
                                     </Field>
                                     <Field label={t('quarantine.sheetRules')}>
-                                        {selected.guardRuleIds.length > 0
-                                            ? selected.guardRuleIds.join(', ')
-                                            : t('guard.noRules')}
+                                        {selected.guardRuleIds.length > 0 ? (
+                                            <ul className="space-y-tight" data-testid="quarantine-rules">
+                                                {selected.guardRuleIds.map((id) => (
+                                                    <li key={id}>
+                                                        {ruleLabel(id)}{' '}
+                                                        <span className="font-mono text-xs text-content-subtle">{id}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        ) : (
+                                            t('guard.noRules')
+                                        )}
                                     </Field>
                                     <Field label={t('quarantine.sheetDigest')}>
                                         {selected.guardInputDigest ? (
@@ -478,12 +581,14 @@ function QuarantineInner({
                                     <Heading level={3} as="h3">
                                         {t('quarantine.sheetRationale')}
                                     </Heading>
-                                    <pre
-                                        className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border-subtle bg-bg-subtle p-3 font-mono text-xs text-content-muted"
+                                    {/* Prose, as React text (#4898): only the attempted
+                                        content below needs to look inert. */}
+                                    <p
+                                        className="max-h-40 overflow-auto whitespace-pre-wrap break-words text-sm text-content-default"
                                         data-testid="quarantine-rationale"
                                     >
                                         {selected.rationale ?? t('quarantine.none')}
-                                    </pre>
+                                    </p>
                                 </section>
 
                                 <section className="space-y-tight">
