@@ -78,7 +78,10 @@ describe('GAP O4-2 — org members page structural contract', () => {
         expect(src).toMatch(/getOrgCtx\s*\(\s*\{[^}]*orgSlug/);
         expect(src).toMatch(/}\s*catch\b[\s\S]*?notFound\s*\(\s*\)/);
         expect(src).toMatch(/ctx\.permissions\.canManageMembers/);
-        expect(src).toMatch(/throw\s+forbidden\(/);
+        // A Reader is TOLD who manages members (#4848), not thrown into the
+        // root error boundary as a crash.
+        expect(src).toMatch(/<OrgForbiddenPage\b/);
+        expect(src).not.toMatch(/throw\s+forbidden\(/);
     });
 
     it('server page reads the member list via the listOrgMembers usecase', () => {
@@ -129,7 +132,7 @@ describe('GAP O4-2 — org members page structural contract', () => {
         // `members.promotionCallout` — assert the wiring + the copy.
         expect(src).toMatch(/t\('members\.promotionCallout'\)/);
         expect(enOrg('members.promotionCallout')).toMatch(
-            /ADMIN\s+membership[\s\S]*?every[\s\S]*?child\s+tenant/i,
+            /Admin\s+access\s+to\s+every\s+workspace/,
         );
     });
 

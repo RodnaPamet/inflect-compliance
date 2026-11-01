@@ -388,9 +388,12 @@ describe('removeOrgMember', () => {
         orgMembershipFindUniqueMock.mockResolvedValue({ id: 'mem-1', role: 'ORG_ADMIN' });
         orgMembershipCountMock.mockResolvedValue(1); // last admin
 
-        await expect(
-            removeOrgMember(ctxFor(), { userId: 'user-2' }),
-        ).rejects.toMatchObject({ status: 409 });
+        const err = await removeOrgMember(ctxFor(), { userId: 'user-2' }).catch((e: unknown) => e);
+        // A reason the page translates, and words a person uses (#4848): no
+        // stored role value, and no "delete the organization", which nothing
+        // offers.
+        expect(err).toMatchObject({ status: 409, details: { reason: 'LAST_ORG_ADMIN' } });
+        expect(String((err as Error).message)).not.toMatch(/ORG_ADMIN|delete the organization/);
 
         expect(deprovisionOrgAdminMock).not.toHaveBeenCalled();
         expect(orgMembershipDeleteMock).not.toHaveBeenCalled();

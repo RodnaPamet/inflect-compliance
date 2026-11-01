@@ -10,10 +10,12 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { TableEmptyState } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Modal } from '@/components/ui/modal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Tooltip } from '@/components/ui/tooltip';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { isOrgAdminTier, isOrgOwner } from '@/lib/org-roles';
@@ -62,6 +64,35 @@ const ROLE_LABEL_KEY: Record<MemberRow['role'], string> = {
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * The refusals the membership usecases NAME (#4848), shown in the reader's
+ * language from `members.refused.<reason>` rather than as the server's English
+ * sentence, which used to print stored role values such as ORG_ADMIN.
+ */
+const MEMBER_REFUSALS = ['LAST_ORG_OWNER', 'LAST_ORG_ADMIN', 'OWNER_MEMBERSHIP_NEEDS_OWNER'] as const;
+
+type OrgTranslate = ReturnType<typeof useTranslations>;
+
+/**
+ * What to say when a membership request fails: the named refusal, else the
+ * server's own sentence, else this action's fallback. Never the HTTP status,
+ * which said nothing a person could act on.
+ */
+async function refusalMessage(res: Response, t: OrgTranslate, fallbackKey: string): Promise<string> {
+    try {
+        const body = (await res.json()) as { error?: { message?: unknown; details?: { reason?: unknown } } };
+        const reason = body?.error?.details?.reason;
+        if (typeof reason === 'string' && (MEMBER_REFUSALS as readonly string[]).includes(reason)) {
+            return t(`members.refused.${reason}`);
+        }
+        const message = body?.error?.message;
+        if (typeof message === 'string' && message) return message;
+    } catch {
+        /* not JSON */
+    }
+    return t(fallbackKey);
+}
 
 export function MembersTable({ orgSlug, currentUserId, viewerRole, rows, invites }: Props) {
     const router = useRouter();
@@ -217,7 +248,7 @@ export function MembersTable({ orgSlug, currentUserId, viewerRole, rows, invites
                     data={rows}
                     columns={columns}
                     getRowId={(r) => r.membershipId}
-                    resourceName={(plural) => (plural ? 'members' : 'member')}
+                    resourceName={(plural) => (plural ? t('members.resourceMembers') : t('members.resourceMember'))}
                     emptyState={
                         <TableEmptyState
                             title={t('members.emptyTitle')}
@@ -331,25 +362,16 @@ function AddMemberModal({ orgSlug, open, onClose, onSuccess }: AddMemberModalPro
                 body: JSON.stringify({ userEmail: trimmed, role }),
             });
             if (!res.ok) {
-                let message = t('members.failedAddMember', { status: res.status });
-                try {
-                    const body = (await res.json()) as { error?: { message?: string } };
-                    if (body?.error?.message) message = body.error.message;
-                } catch {
-                    /* not JSON */
-                }
-                setError(message);
+                setError(await refusalMessage(res, t, 'members.failedAddMember'));
                 setSubmitting(false);
                 return;
             }
             reset();
             onSuccess();
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : t('members.unexpectedAddMember'),
-            );
+        } catch {
+                // A network failure's own message ("Failed to fetch") says
+                // nothing a person can act on.
+                setError(t('members.unexpectedAddMember'));
             setSubmitting(false);
         }
     };
@@ -365,6 +387,16 @@ function AddMemberModal({ orgSlug, open, onClose, onSuccess }: AddMemberModalPro
                     className="space-y-default"
                     data-testid="org-add-member-form"
                 >
+                    {/* Owner decision (2026-11-01, #4848): keep the direct add,
+                        and say what it does. It writes the membership now, with
+                        no invitation, and an admin's fan-out to every workspace
+                        runs with it. */}
+                    <InlineNotice variant="info" icon={null}>
+                        <span data-testid="org-add-member-joins-now">
+                            {t('members.addMemberJoinsNow')}
+                            {role === 'ORG_ADMIN' ? ` ${t('members.addMemberAdminReach')}` : ''}
+                        </span>
+                    </InlineNotice>
                     <FormField
                         label={t('members.emailLabel')}
                         description={t('members.addMemberEmailDesc')}
@@ -499,24 +531,15 @@ function RemoveMemberModal({
                 credentials: 'same-origin',
             });
             if (!res.ok) {
-                let message = t('members.failedRemoveMember', { status: res.status });
-                try {
-                    const body = (await res.json()) as { error?: { message?: string } };
-                    if (body?.error?.message) message = body.error.message;
-                } catch {
-                    /* not JSON */
-                }
-                setError(message);
+                setError(await refusalMessage(res, t, 'members.failedRemoveMember'));
                 setSubmitting(false);
                 return;
             }
             onSuccess();
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : t('members.unexpectedRemoveMember'),
-            );
+        } catch {
+                // A network failure's own message ("Failed to fetch") says
+                // nothing a person can act on.
+                setError(t('members.unexpectedRemoveMember'));
             setSubmitting(false);
         }
     };
@@ -649,14 +672,7 @@ function ChangeRoleModal({
                 body: JSON.stringify({ userId: target.userId, role: chosen }),
             });
             if (!res.ok) {
-                let message = t('members.failedChangeRole', { status: res.status });
-                try {
-                    const body = (await res.json()) as { error?: { message?: string } };
-                    if (body?.error?.message) message = body.error.message;
-                } catch {
-                    /* not JSON */
-                }
-                setError(message);
+                setError(await refusalMessage(res, t, 'members.failedChangeRole'));
                 setSubmitting(false);
                 return;
             }
@@ -664,12 +680,10 @@ function ChangeRoleModal({
             // Reset cached chosen role so the next open recomputes
             // the default.
             setChosen(null);
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : t('members.unexpectedChangeRole'),
-            );
+        } catch {
+                // A network failure's own message ("Failed to fetch") says
+                // nothing a person can act on.
+                setError(t('members.unexpectedChangeRole'));
             setSubmitting(false);
         }
     };
@@ -873,14 +887,7 @@ function InviteMemberModal({ orgSlug, open, onClose, onSuccess }: InviteMemberMo
                 body: JSON.stringify({ email: trimmed, role }),
             });
             if (!res.ok) {
-                let message = t('members.failedCreateInvite', { status: res.status });
-                try {
-                    const body = (await res.json()) as { error?: { message?: string } };
-                    if (body?.error?.message) message = body.error.message;
-                } catch {
-                    /* not JSON */
-                }
-                setError(message);
+                setError(await refusalMessage(res, t, 'members.failedCreateInvite'));
                 setSubmitting(false);
                 return;
             }
@@ -899,12 +906,10 @@ function InviteMemberModal({ orgSlug, open, onClose, onSuccess }: InviteMemberMo
             setEmailSent(body.emailSent === true);
             setIssuedEmail(body.invite?.email ?? trimmed);
             setSubmitting(false);
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : t('members.unexpectedCreateInvite'),
-            );
+        } catch {
+                // A network failure's own message ("Failed to fetch") says
+                // nothing a person can act on.
+                setError(t('members.unexpectedCreateInvite'));
             setSubmitting(false);
         }
     };
@@ -1091,6 +1096,9 @@ function PendingInvitesSection({ orgSlug, invites, onMutate }: PendingInvitesSec
     const t = useTranslations('org');
     const [revokingId, setRevokingId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // Revoking asks first (#4848): the link stops working at once, and there
+    // is no undo, only a fresh invitation.
+    const [confirmRevoke, setConfirmRevoke] = useState<PendingInviteRow | null>(null);
 
     const revoke = useCallback(
         async (inviteId: string) => {
@@ -1102,26 +1110,15 @@ function PendingInvitesSection({ orgSlug, invites, onMutate }: PendingInvitesSec
                     { method: 'DELETE', credentials: 'same-origin' },
                 );
                 if (!res.ok) {
-                    let message = t('members.failedRevokeInvite', { status: res.status });
-                    try {
-                        const body = (await res.json()) as {
-                            error?: { message?: string };
-                        };
-                        if (body?.error?.message) message = body.error.message;
-                    } catch {
-                        /* not JSON */
-                    }
-                    setError(message);
+                    setError(await refusalMessage(res, t, 'members.failedRevokeInvite'));
                     setRevokingId(null);
                     return;
                 }
                 onMutate();
-            } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : t('members.unexpectedRevokeInvite'),
-                );
+            } catch {
+                // A network failure's own message ("Failed to fetch") says
+                // nothing a person can act on.
+                setError(t('members.unexpectedRevokeInvite'));
                 setRevokingId(null);
             }
         },
@@ -1181,7 +1178,7 @@ function PendingInvitesSection({ orgSlug, invites, onMutate }: PendingInvitesSec
                                     size="sm"
                                     className="text-content-error"
                                     disabled={revokingId === row.original.id}
-                                    onClick={() => revoke(row.original.id)}
+                                    onClick={() => setConfirmRevoke(row.original)}
                                     data-testid={`org-invite-revoke-${row.original.id}`}
                                 >
                                     <X className="size-3.5" aria-hidden="true" />
@@ -1192,7 +1189,7 @@ function PendingInvitesSection({ orgSlug, invites, onMutate }: PendingInvitesSec
                     ),
                 },
             ]),
-        [revokingId, revoke, t],
+        [revokingId, t],
     );
 
     return (
@@ -1216,8 +1213,22 @@ function PendingInvitesSection({ orgSlug, invites, onMutate }: PendingInvitesSec
                 data={invites}
                 columns={inviteColumns}
                 getRowId={(r) => r.id}
-                resourceName={(plural) => (plural ? 'invitations' : 'invitation')}
+                resourceName={(plural) => (plural ? t('members.resourceInvitations') : t('members.resourceInvitation'))}
                 data-testid="org-pending-invites-table"
+            />
+            <ConfirmDialog
+                showModal={confirmRevoke !== null}
+                setShowModal={(open) => {
+                    if (!open) setConfirmRevoke(null);
+                }}
+                tone="danger"
+                title={t('members.revokeInviteTitle')}
+                description={confirmRevoke ? t('members.revokeInviteBody', { email: confirmRevoke.email }) : undefined}
+                confirmLabel={t('members.revokeInviteConfirm')}
+                onConfirm={async () => {
+                    if (confirmRevoke) await revoke(confirmRevoke.id);
+                }}
+                onCancel={() => setConfirmRevoke(null)}
             />
         </div>
     );

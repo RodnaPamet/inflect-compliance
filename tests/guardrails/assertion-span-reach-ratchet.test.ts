@@ -143,7 +143,7 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 //   `k8s-runbook-coverage.test.ts` pinned a Helm/EKS/RDS runbook in
 //   `docs/deployment.md` for a cluster that never existed; it was deleted with
 //   that section, and its two unbounded interior spans went with it.
-const UNBOUNDED_INTERIOR_SPAN_BASELINE = 140;
+const UNBOUNDED_INTERIOR_SPAN_BASELINE = 139;
 
 /**
  * Interior spans of ANY boundedness, including `[\s\S]{0,200}`.
@@ -207,7 +207,7 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 140;
 //   `oi-3-runbook-and-slos.test.ts`'s severity assertion (CRITICAL…PagerDuty,
 //   WARNING…Slack), retired with the EKS-era runbook text they pinned. Both
 //   were bounded, so the unbounded baseline does not move.
-const INTERIOR_SPAN_BASELINE = 303;
+const INTERIOR_SPAN_BASELINE = 302;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

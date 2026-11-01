@@ -430,7 +430,9 @@ async function assertMayChangeOwnerRow(
         targetUserId,
         detailsJson: { reason: 'OWNER_MEMBERSHIP_NEEDS_OWNER', verb, orgRole: ctx.orgRole },
     });
-    throw forbidden("Only an organization owner can change an owner's membership.");
+    throw forbidden("Only an organization owner can change an owner's membership.", {
+        reason: 'OWNER_MEMBERSHIP_NEEDS_OWNER',
+    });
 }
 
 /** Refuse a change that would leave the organization with no owner (#4576). */
@@ -443,8 +445,11 @@ async function assertNotLastOwner(
         where: { organizationId: ctx.organizationId, role: 'ORG_OWNER' },
     });
     if (owners <= 1) {
+        // Plain words and a reason the page translates (#4848): the role's
+        // stored value is not a word a person uses.
         throw new ConflictError(
-            `Cannot ${verb} the last ORG_OWNER of an organization. Make another member an owner first.`,
+            `Cannot ${verb} the last owner of an organization. Make another member an owner first.`,
+            { reason: 'LAST_ORG_OWNER' },
         );
     }
 }
@@ -502,10 +507,11 @@ export async function removeOrgMember(
             },
         });
         if (adminCount <= 1) {
+            // No "delete the organization" (#4848): there is no way to.
             throw new ConflictError(
-                'Cannot remove the last ORG_ADMIN of an organization. ' +
-                    'Promote another member to ORG_ADMIN first, or delete the ' +
-                    'organization.',
+                'Cannot remove the last owner or admin of an organization. ' +
+                    'Make another member an admin first.',
+                { reason: 'LAST_ORG_ADMIN' },
             );
         }
     }
@@ -702,9 +708,9 @@ export async function changeOrgMemberRole(
         });
         if (adminCount <= 1) {
             throw new ConflictError(
-                'Cannot demote the last ORG_ADMIN of an organization. ' +
-                    'Promote another member to ORG_ADMIN first, or delete the ' +
-                    'organization.',
+                'Cannot demote the last owner or admin of an organization. ' +
+                    'Make another member an admin first.',
+                { reason: 'LAST_ORG_ADMIN' },
             );
         }
     }
@@ -726,9 +732,9 @@ export async function changeOrgMemberRole(
             });
             if (adminCount <= 1) {
                 throw new ConflictError(
-                    'Cannot demote the last ORG_ADMIN of an organization. ' +
-                        'Promote another member to ORG_ADMIN first, or delete the ' +
-                        'organization.',
+                    'Cannot demote the last owner or admin of an organization. ' +
+                        'Make another member an admin first.',
+                    { reason: 'LAST_ORG_ADMIN' },
                 );
             }
         }
