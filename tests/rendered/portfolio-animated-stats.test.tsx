@@ -149,7 +149,7 @@ describe('PortfolioDashboard — header stats animate', () => {
         expect(getByText('7')).toBeInTheDocument();
         expect(getByText('2')).toBeInTheDocument();
         // Static descriptive text is preserved.
-        expect(container.textContent).toContain('tenants');
+        expect(container.textContent).toContain('workspaces');
         expect(container.textContent).toContain('pending first snapshot');
     });
 
@@ -171,7 +171,7 @@ describe('PortfolioDashboard — header stats animate', () => {
             header?.querySelectorAll('[data-animated-number]').length,
         ).toBe(1);
         // Singular noun for total=1.
-        expect(header?.textContent).toContain('1 tenant');
+        expect(header?.textContent).toContain('1 workspace');
         expect(header?.textContent).not.toContain('pending');
     });
 
@@ -200,7 +200,7 @@ describe('PortfolioDashboard — header stats animate', () => {
             />,
         );
         expect(container.textContent).not.toBe(before);
-        expect(container.textContent).toContain('12 tenants');
+        expect(container.textContent).toContain('12 workspaces');
         expect(container.textContent).toContain('2 pending');
     });
 });

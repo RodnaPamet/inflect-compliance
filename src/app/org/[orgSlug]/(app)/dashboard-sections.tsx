@@ -118,7 +118,9 @@ export function RagPill({ rag }: { rag: RagBadge | null }) {
     if (rag === null) return <StatusBadge variant="neutral">{t('common.pending')}</StatusBadge>;
     const variant: 'success' | 'warning' | 'error' =
         rag === 'GREEN' ? 'success' : rag === 'AMBER' ? 'warning' : 'error';
-    return <StatusBadge variant={variant}>{rag}</StatusBadge>;
+    // The stored GREEN / AMBER / RED is a code; the pill says what it means
+    // (#4842), from the same `org.health` words as the workspaces list.
+    return <StatusBadge variant={variant}>{t(`health.${rag}`)}</StatusBadge>;
 }
 
 export function CoverageBar({

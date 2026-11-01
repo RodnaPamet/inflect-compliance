@@ -40,6 +40,7 @@ import { AnimatedNumber } from '@/components/ui/animated-number';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { useToastWithUndo } from '@/components/ui/hooks';
 import { formatDateTimeLong, formatRelativeTime } from '@inflect/ui/lib/format-date';
 import type {
     CreateOrgDashboardWidgetInput,
@@ -83,7 +84,7 @@ async function patchWidget(
             body: JSON.stringify(body),
         },
     );
-    if (!res.ok) throw new Error(`patch_failed_${res.status}`);
+    if (!res.ok) throw new Error('request failed');
     const json = (await res.json()) as { widget: OrgDashboardWidgetDto };
     return json.widget;
 }
@@ -98,7 +99,7 @@ async function postWidget(
         credentials: 'same-origin',
         body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`post_failed_${res.status}`);
+    if (!res.ok) throw new Error('request failed');
     const json = (await res.json()) as { widget: OrgDashboardWidgetDto };
     return json.widget;
 }
@@ -108,7 +109,7 @@ async function deleteWidget(orgSlug: string, id: string): Promise<void> {
         `/api/org/${orgSlug}/dashboard/widgets/${id}`,
         { method: 'DELETE', credentials: 'same-origin' },
     );
-    if (!res.ok) throw new Error(`delete_failed_${res.status}`);
+    if (!res.ok) throw new Error('request failed');
 }
 
 async function resetWidgets(
@@ -118,7 +119,7 @@ async function resetWidgets(
         method: 'POST',
         credentials: 'same-origin',
     });
-    if (!res.ok) throw new Error(`reset_failed_${res.status}`);
+    if (!res.ok) throw new Error('request failed');
     const json = (await res.json()) as { widgets: OrgDashboardWidgetDto[] };
     return json.widgets;
 }
@@ -169,7 +170,6 @@ export function PortfolioDashboard({
     // the picker is in add mode.
     const [editWidget, setEditWidget] = useState<OrgDashboardWidgetDto | null>(null);
     const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-    const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // ── Layout-change handler ──
@@ -195,12 +195,9 @@ export function PortfolioDashboard({
                     const byId = new Map(updates.map((u) => [u.id, u]));
                     return prev.map((w) => byId.get(w.id) ?? w);
                 });
-            } catch (e) {
-                setError(
-                    e instanceof Error
-                        ? t('dashboard.failedSaveLayout', { message: e.message })
-                        : t('dashboard.failedSaveLayoutShort'),
-                );
+            } catch {
+                // The sentence, never the request's status code (#4842).
+                setError(t('dashboard.failedSaveLayout'));
             }
         },
         [data.orgSlug, t],
@@ -227,26 +224,34 @@ export function PortfolioDashboard({
         [data.orgSlug],
     );
 
-    const handleDelete = useCallback(
-        async (id: string) => {
-            if (busy) return;
-            setBusy(true);
-            setError(null);
-            try {
-                await deleteWidget(data.orgSlug, id);
-                setWidgets((prev) => prev.filter((w) => w.id !== id));
-            } catch (e) {
-                setError(
-                    e instanceof Error
-                        ? t('dashboard.failedDeleteWidget', { message: e.message })
-                        : t('dashboard.failedDeleteWidgetShort'),
-                );
-            } finally {
-                setBusy(false);
-            }
-        },
-        [data.orgSlug, busy, t],
-    );
+    // ── Remove a widget, with Undo (#4842, Epic 67) ──
+    // The tile leaves the grid at once; the DELETE is sent when the undo
+    // window closes. Undo, or a refused DELETE, puts it back where it was.
+    const triggerUndoToast = useToastWithUndo();
+    const handleDelete = useCallback((id: string) => {
+        const index = widgets.findIndex((w) => w.id === id);
+        const removed = index >= 0 ? widgets[index] : undefined;
+        if (!removed) return;
+        setError(null);
+        setWidgets((prev) => prev.filter((w) => w.id !== id));
+        const restore = () =>
+            setWidgets((prev) => {
+                if (prev.some((w) => w.id === id)) return prev;
+                const next = [...prev];
+                next.splice(Math.min(index, next.length), 0, removed);
+                return next;
+            });
+        triggerUndoToast({
+            action: () => deleteWidget(data.orgSlug, id),
+            undoAction: restore,
+            message: t('dashboard.widgetRemoved', { name: removed.title ?? removed.chartType }),
+            undoMessage: t('dashboard.undo'),
+            onError: () => {
+                restore();
+                setError(t('dashboard.failedDeleteWidget'));
+            },
+        });
+    }, [widgets, data.orgSlug, triggerUndoToast, t]);
 
     // ── Reset-to-preset handler ──
     //
@@ -262,12 +267,8 @@ export function PortfolioDashboard({
             setWidgets(next);
             setEditMode(false);
             router.refresh();
-        } catch (e) {
-            setError(
-                e instanceof Error
-                    ? t('dashboard.failedResetLayout', { message: e.message })
-                    : t('dashboard.failedResetLayoutShort'),
-            );
+        } catch {
+            setError(t('dashboard.failedResetLayout'));
         }
     }, [data.orgSlug, router, t]);
 
@@ -379,11 +380,10 @@ export function PortfolioDashboard({
                 </div>
             )}
 
-            {/* Empty-state for orgs that haven't been backfilled. The
-             *  POST /api/org seed lands new orgs with the preset
-             *  pre-installed; existing orgs need
-             *  `npm run db:backfill-org-widgets -- --execute`. ORG_ADMIN
-             *  sees a clear hint; ORG_READER sees a softer one. */}
+            {/* Empty-state for a dashboard with no widgets. The POST /api/org
+             *  seed lands new orgs with the preset pre-installed. An editor is
+             *  told what to click (#4842: this said to run a backfill script);
+             *  a reader who to ask. */}
             {widgets.length === 0 && (
                 <div
                     data-testid="dashboard-empty-state"
@@ -441,7 +441,6 @@ export function PortfolioDashboard({
                                                 setEditWidget(w);
                                                 setPickerOpen(true);
                                             }}
-                                            disabled={busy}
                                             aria-label={t('dashboard.editWidgetAria', { name: w.title ?? w.chartType })}
                                             data-testid={`dashboard-edit-widget-${w.id}`}
                                             className="text-content-subtle hover:text-content-emphasis transition-colors p-1 rounded"
@@ -451,9 +450,8 @@ export function PortfolioDashboard({
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                void handleDelete(w.id);
+                                                handleDelete(w.id);
                                             }}
-                                            disabled={busy}
                                             aria-label={t('dashboard.deleteWidgetAria', { name: w.title ?? w.chartType })}
                                             data-testid={`dashboard-delete-widget-${w.id}`}
                                             className="text-content-subtle hover:text-content-error transition-colors p-1 rounded"
