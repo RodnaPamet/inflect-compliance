@@ -59,6 +59,14 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Cross-entity unlink (TraceabilityPanel)',
         handlers: ['handleUnlink'],
     },
+    {
+        // #4842 — removing a widget from the organization dashboard. The
+        // tile leaves the grid at once; the DELETE is sent when the window
+        // closes, and Undo or a refusal puts the tile back where it was.
+        file: 'src/app/org/[orgSlug]/(app)/PortfolioDashboard.tsx',
+        name: 'Org dashboard widget removal (PortfolioDashboard)',
+        handlers: ['handleDelete'],
+    },
     // ── Audits ──────────────────────────────────────────────────────
     // This surface had NO entry here at all, which meant two things went
     // unnoticed: BiaDetailClient's correct adoption was unprotected (a

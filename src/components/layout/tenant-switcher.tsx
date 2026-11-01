@@ -124,6 +124,12 @@ export function TenantSwitcher({
     orgMemberships,
 }: TenantSwitcherProps) {
     const t = useTranslations('common.ui');
+    // Roles as words (#4842): the row read "org · admin" from the stored
+    // value. A role this build has no word for is shown as stored.
+    const tOrgRoles = useTranslations('orgRoles');
+    const tRoles = useTranslations('roles');
+    const orgRoleLabel = (role: string) => (tOrgRoles.has(role) ? tOrgRoles(role) : role);
+    const roleLabel = (role: string) => (tRoles.has(role) ? tRoles(role) : role);
     const { tenantName, tenantSlug } = useTenantContext();
     const [open, setOpen] = useState(false);
     const close = useCallback(() => setOpen(false), []);
@@ -147,7 +153,7 @@ export function TenantSwitcher({
                     {orgs.length > 0 && (
                         <>
                             <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
-                                Organizations
+                                {t('switcherOrganizations')}
                             </p>
                             {orgs.map((o) => (
                                 <Link
@@ -165,7 +171,7 @@ export function TenantSwitcher({
                                                 {o.slug}
                                             </span>
                                             <span className="break-words text-[10px] text-content-subtle">
-                                                org · {o.role.toLowerCase().replace('org_', '')}
+                                                {orgRoleLabel(o.role)}
                                             </span>
                                         </span>
                                     </span>
@@ -175,7 +181,7 @@ export function TenantSwitcher({
                         </>
                     )}
                     <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
-                        Workspaces
+                        {t('switcherWorkspaces')}
                     </p>
 
                     {memberships.length === 0 ? (
@@ -185,7 +191,7 @@ export function TenantSwitcher({
                         // popover renders before hydration completes
                         // we still want a graceful empty state.
                         <p className="px-2.5 py-3 text-xs text-content-muted">
-                            No workspaces in this session.
+                            {t('switcherNoWorkspaces')}
                         </p>
                     ) : (
                         memberships.map((m) => {
@@ -207,7 +213,7 @@ export function TenantSwitcher({
                                                 {m.slug}
                                             </span>
                                             <span className="break-words text-[10px] text-content-subtle">
-                                                {m.role.toLowerCase()}
+                                                {roleLabel(m.role)}
                                             </span>
                                         </span>
                                     </span>
@@ -232,7 +238,7 @@ export function TenantSwitcher({
                         className={MENU_ROW_CLASS}
                     >
                         <span className="text-content-muted">
-                            Manage workspaces
+                            {t('switcherManageWorkspaces')}
                         </span>
                     </Link>
                 </Popover.Menu>
