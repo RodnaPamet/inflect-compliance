@@ -142,6 +142,8 @@ interface ReportsCommonProps {
      * the inventory read, which a view-key reader holds without this key.
      */
     canInvestigate: boolean;
+    /** `admin.tenant_lifecycle` — the views menu offers Owner departures (#4903). */
+    canSetOrphanPass?: boolean;
     /**
      * `evidence.edit`. NOT true by construction: the register key and the
      * evidence key are separate grants, so an assessor-facing reader can hold
@@ -170,7 +172,7 @@ export type HarnessTabProps = ReportsCommonProps & {
 };
 
 export function ReportsClient(props: PackTabProps | HarnessTabProps) {
-    const { tenantSlug, canReviewProposals, canCompose, canInvestigate, canExport } = props;
+    const { tenantSlug, canReviewProposals, canCompose, canInvestigate, canExport, canSetOrphanPass = false } = props;
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
     const tab = props.tab === 'harness' ? 'harness' : 'pack';
@@ -199,6 +201,7 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps) {
                             canReviewProposals={canReviewProposals}
                             canCompose={canCompose}
                             canInvestigate={canInvestigate}
+                            canSetOrphanPass={canSetOrphanPass}
                             // This page's own gate, so true by construction.
                             canReadReports
                         />

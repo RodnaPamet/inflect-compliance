@@ -18,7 +18,7 @@ import {
     ownerDepartedReasonText,
     type RosterEmployee,
 } from '@/lib/agentic/owner-orphan';
-import { describeOrphanPassModeRefusal } from '@/app-layer/usecases/agent-owner-orphan-policy';
+import { describeOrphanPassModeRefusal, orphanPassModeRefusal } from '@/app-layer/usecases/agent-owner-orphan-policy';
 import { DRY_RUN_MIN_DAYS } from '@/app-layer/usecases/identity-write-policy';
 import { resolveRoutePermission } from '@/lib/security/route-permissions';
 
@@ -196,6 +196,29 @@ describe('the pass mode climbs the identity ladder', () => {
 
     it('refuses widening by more than one rung', () => {
         expect(describeOrphanPassModeRefusal(at('DISABLED'), 'AUTOMATIC', NOW)).toMatch(/one level at a time/);
+    });
+
+    // #4903: the page words the refusal from its code; the sentence is built
+    // from the same answer, so the two cannot disagree.
+    it('returns each refusal as a code and its arguments', () => {
+        expect(orphanPassModeRefusal(at('DISABLED'), 'AUTOMATIC', NOW)).toEqual({
+            code: 'MULTI_RUNG',
+            from: 'DISABLED',
+            to: 'AUTOMATIC',
+        });
+        expect(orphanPassModeRefusal(at('DRY_RUN'), 'AUTOMATIC', NOW)).toEqual({ code: 'NO_DRY_RUN_START' });
+        expect(orphanPassModeRefusal(at('DRY_RUN', 30), 'AUTOMATIC', NOW, 0)).toEqual({
+            code: 'TOO_FEW_PASSES',
+            passes: 0,
+            required: expect.any(Number),
+        });
+        expect(orphanPassModeRefusal(at('DRY_RUN', 2), 'AUTOMATIC', NOW, 6)).toEqual({
+            code: 'DWELL',
+            days: 2,
+            required: DRY_RUN_MIN_DAYS,
+            left: DRY_RUN_MIN_DAYS - 2,
+        });
+        expect(orphanPassModeRefusal(at('AUTOMATIC'), 'DISABLED', NOW)).toBeNull();
     });
 
     it('allows DISABLED → DRY_RUN outright', () => {

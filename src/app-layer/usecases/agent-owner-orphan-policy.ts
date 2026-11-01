@@ -106,6 +106,62 @@ export function describeOrphanPassModeRefusal(
     passesInWindow?: number,
     clamp: IdentityWriteMode = ORPHAN_PASS_MAX_MODE,
 ): string | null {
+    const refusal = orphanPassModeRefusal(current, next, now, passesInWindow, clamp);
+    if (!refusal) return null;
+    switch (refusal.code) {
+        case 'ABOVE_CLAMP':
+            return (
+                `${refusal.next} is above the highest rung the owner-orphan pass acts at (${refusal.clamp}). ` +
+                'Raising that ceiling is a reviewed change to the pass, not a setting.'
+            );
+        case 'MULTI_RUNG': {
+            const from = LADDER.indexOf(refusal.from);
+            const to = LADDER.indexOf(refusal.to);
+            return (
+                `Cannot go from ${refusal.from} to ${refusal.to} in one step. Widen one level at a time ` +
+                `(${LADDER.slice(from, to + 1).join(' → ')}), so each level is observed before the ` +
+                'next is granted.'
+            );
+        }
+        case 'NO_DRY_RUN_START':
+            return 'Dry-run has no recorded start. Re-select DRY_RUN to start the observation window.';
+        case 'TOO_FEW_PASSES':
+            return (
+                `Dry-run has recorded ${refusal.passes} owner-orphan passes since the window opened, ` +
+                `and at least ${refusal.required} is required. A week with no pass at all is a ` +
+                'pass that never ran, not a quiet week — check the recorded passes before ' +
+                'letting it stop agents unattended.'
+            );
+        case 'DWELL':
+            return (
+                `Dry-run has been active for ${refusal.days} of ${refusal.required} required ` +
+                `days. ${refusal.left} more before the pass may stop agents unattended — the window exists ` +
+                'so the orphans it reports can be compared against who actually left. This counts ' +
+                'elapsed days, so running more passes does not shorten it.'
+            );
+    }
+}
+
+/**
+ * WHY a widen is refused, as a code and its arguments, so the page can word it
+ * in the reader's language rather than show the server's English with mode
+ * codes in it (#4903). `describeOrphanPassModeRefusal` builds its sentence from
+ * this same answer, so the two cannot disagree.
+ */
+export type OrphanPassModeRefusal =
+    | { code: 'ABOVE_CLAMP'; next: IdentityWriteMode; clamp: IdentityWriteMode }
+    | { code: 'MULTI_RUNG'; from: IdentityWriteMode; to: IdentityWriteMode }
+    | { code: 'NO_DRY_RUN_START' }
+    | { code: 'TOO_FEW_PASSES'; passes: number; required: number }
+    | { code: 'DWELL'; days: number; required: number; left: number };
+
+export function orphanPassModeRefusal(
+    current: OrphanPassPolicy,
+    next: IdentityWriteMode,
+    now: Date,
+    passesInWindow?: number,
+    clamp: IdentityWriteMode = ORPHAN_PASS_MAX_MODE,
+): OrphanPassModeRefusal | null {
     if (current.mode === next) return null;
     const from = LADDER.indexOf(current.mode);
     const to = LADDER.indexOf(next);
@@ -114,42 +170,22 @@ export function describeOrphanPassModeRefusal(
     // turning automatic kills off is reacting to something.
     if (to < from) return null;
 
-    if (isAboveClamp(next, clamp)) {
-        return (
-            `${next} is above the highest rung the owner-orphan pass acts at (${clamp}). ` +
-            'Raising that ceiling is a reviewed change to the pass, not a setting.'
-        );
-    }
-
-    if (to - from > 1) {
-        return (
-            `Cannot go from ${current.mode} to ${next} in one step. Widen one level at a time ` +
-            `(${LADDER.slice(from, to + 1).join(' → ')}), so each level is observed before the ` +
-            'next is granted.'
-        );
-    }
+    if (isAboveClamp(next, clamp)) return { code: 'ABOVE_CLAMP', next, clamp };
+    if (to - from > 1) return { code: 'MULTI_RUNG', from: current.mode, to: next };
 
     if (current.mode === 'DRY_RUN') {
-        if (!current.dryRunSince) {
-            return 'Dry-run has no recorded start. Re-select DRY_RUN to start the observation window.';
-        }
+        if (!current.dryRunSince) return { code: 'NO_DRY_RUN_START' };
         if (passesInWindow !== undefined && passesInWindow < DRY_RUN_MIN_PASSES) {
-            return (
-                `Dry-run has recorded ${passesInWindow} owner-orphan passes since the window opened, ` +
-                `and at least ${DRY_RUN_MIN_PASSES} is required. A week with no pass at all is a ` +
-                'pass that never ran, not a quiet week — check the recorded passes before ' +
-                'letting it stop agents unattended.'
-            );
+            return { code: 'TOO_FEW_PASSES', passes: passesInWindow, required: DRY_RUN_MIN_PASSES };
         }
         const days = (now.getTime() - current.dryRunSince.getTime()) / 86_400_000;
         if (days < DRY_RUN_MIN_DAYS) {
-            const left = Math.ceil(DRY_RUN_MIN_DAYS - days);
-            return (
-                `Dry-run has been active for ${Math.floor(days)} of ${DRY_RUN_MIN_DAYS} required ` +
-                `days. ${left} more before the pass may stop agents unattended — the window exists ` +
-                'so the orphans it reports can be compared against who actually left. This counts ' +
-                'elapsed days, so running more passes does not shorten it.'
-            );
+            return {
+                code: 'DWELL',
+                days: Math.floor(days),
+                required: DRY_RUN_MIN_DAYS,
+                left: Math.ceil(DRY_RUN_MIN_DAYS - days),
+            };
         }
     }
     return null;

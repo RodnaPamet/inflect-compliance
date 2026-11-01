@@ -30,9 +30,10 @@ import { ORPHAN_PASS_MAX_MODE } from '@/lib/agentic/owner-orphan';
 import {
     describeOrphanPassModeRefusal,
     getAgentOrphanPassPolicy,
+    orphanPassModeRefusal,
     setAgentOrphanPassMode,
 } from '@/app-layer/usecases/agent-owner-orphan-policy';
-import { listOrphanPasses } from '@/app-layer/usecases/agent-owner-orphan-pass';
+import { listOrphanPasses, orphanPassAgentNames } from '@/app-layer/usecases/agent-owner-orphan-pass';
 import { DRY_RUN_MIN_DAYS } from '@/app-layer/usecases/identity-write-policy';
 
 type Params = { tenantSlug: string };
@@ -45,6 +46,8 @@ export const GET = withApiErrorHandling(
         const policy = await getAgentOrphanPassPolicy(ctx);
         const next = LADDER[Math.min(LADDER.indexOf(policy.mode) + 1, LADDER.length - 1)];
         const passes = await listOrphanPasses(ctx);
+        const agentNames = await orphanPassAgentNames(ctx, passes);
+        const now = new Date();
         return jsonResponse({
             mode: policy.mode,
             dryRunSince: policy.dryRunSince,
@@ -52,10 +55,14 @@ export const GET = withApiErrorHandling(
             blockedReason:
                 next === policy.mode
                     ? null
-                    : describeOrphanPassModeRefusal(policy, next, new Date()),
+                    : describeOrphanPassModeRefusal(policy, next, now),
+            // The same answer as a code and its arguments, which the page words
+            // (#4903). `blockedReason` stays for API callers.
+            blockedRefusal: next === policy.mode ? null : orphanPassModeRefusal(policy, next, now),
             dryRunMinDays: DRY_RUN_MIN_DAYS,
             maxMode: ORPHAN_PASS_MAX_MODE,
             passes,
+            agentNames,
         });
     }),
 );

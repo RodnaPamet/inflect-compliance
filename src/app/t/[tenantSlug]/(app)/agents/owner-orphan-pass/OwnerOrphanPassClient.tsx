@@ -23,8 +23,7 @@ import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { LadderRungCard } from '@/components/admin/LadderRungCard';
-import { BackAffordance } from '@/components/nav/BackAffordance';
-import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
@@ -35,6 +34,9 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import type { IdentityWriteMode } from '@/lib/identity/write-ladder';
+import type { OrphanPassModeRefusal } from '@/app-layer/usecases/agent-owner-orphan-policy';
+
+import { AgentsViewsMenu, type AgentsViewsMenuProps } from '../AgentsViewsMenu';
 
 interface DecisionRow {
     agentId: string;
@@ -64,9 +66,13 @@ interface OrphanPassPayload {
     dryRunSince: string | null;
     nextMode: IdentityWriteMode | null;
     blockedReason: string | null;
+    /** The same refusal as a code and its arguments, which this page words (#4903). */
+    blockedRefusal?: OrphanPassModeRefusal | null;
     dryRunMinDays: number;
     maxMode: IdentityWriteMode;
     passes: PassRow[];
+    /** Agent id → name, for the agents the listed passes decided about (#4903). */
+    agentNames?: Record<string, string>;
 }
 
 const STATUS_VARIANT: Readonly<Record<string, StatusBadgeVariant>> = {
@@ -76,20 +82,67 @@ const STATUS_VARIANT: Readonly<Record<string, StatusBadgeVariant>> = {
     ERROR: 'error',
 };
 
-function PassBlock({ pass }: { pass: PassRow }) {
+/**
+ * The codes this page has words for (#4903). Each list is the union its
+ * writer declares; a code outside it is shown as stored, never guessed at.
+ */
+const KNOWN_PASS_STATUS = new Set(Object.keys(STATUS_VARIANT));
+const KNOWN_MODES = new Set(['DISABLED', 'DRY_RUN', 'AUTOMATIC']);
+const KNOWN_SIGNALS = new Set(['MEMBERSHIP_NOT_ACTIVE', 'HR_TERMINATED']);
+const KNOWN_MEMBERSHIP = new Set(['INVITED', 'DEACTIVATED', 'REMOVED', 'ABSENT']);
+/** `ServicePrincipalDisableStatus` in `@/lib/agentic/service-principal-disable`. */
+const KNOWN_SP_STATUS = new Set([
+    'NOT_LINKED',
+    'AMBIGUOUS_LINK',
+    'NO_PAIRED_ENDPOINT',
+    'AMBIGUOUS_PAIRED_ENDPOINT',
+    'CONNECTION_UNUSABLE',
+    'RUNG_DISABLED',
+    'LINK_UNCONFIRMED',
+    'NO_APPROVED_TEMPLATE',
+    'AMBIGUOUS_TEMPLATE',
+    'NOT_IN_POPULATION',
+    'PRIOR_STATE_UNREADABLE',
+    'ALREADY_DISABLED',
+    'RECORDED_INTENT',
+    'PROPOSED',
+    'QUARANTINED',
+    'QUEUED',
+    'REFUSED',
+    'FAILED',
+]);
+
+function PassBlock({ pass, agentNames }: { pass: PassRow; agentNames: Readonly<Record<string, string>> }) {
     const tPass = useTranslations('agents');
+    // Its own name, not `tAdmin`: the i18n key guard binds each translator by
+    // identifier, and the page component below already binds `tAdmin`.
+    const tLadder = useTranslations('admin');
     const tenantHref = useTenantHref();
     const result = pass.resultJson ?? {};
     const decisions = result.decisions ?? [];
+    const modeLabel = (mode: string) => (KNOWN_MODES.has(mode) ? tLadder(`writeLadder.mode.${mode}`) : mode);
+    const signalLabel = (s: { kind: string; membership?: string }) => {
+        if (!KNOWN_SIGNALS.has(s.kind)) return s.kind;
+        if (s.kind === 'MEMBERSHIP_NOT_ACTIVE') {
+            const state =
+                s.membership && KNOWN_MEMBERSHIP.has(s.membership)
+                    ? tPass(`orphanPass.membership.${s.membership}`)
+                    : (s.membership ?? '');
+            return tPass('orphanPass.signal.MEMBERSHIP_NOT_ACTIVE', { state });
+        }
+        return tPass(`orphanPass.signal.${s.kind}`);
+    };
     return (
         <li className="space-y-compact border-t border-border-subtle pt-default" data-testid={`orphan-pass-${pass.id}`}>
             <div className="flex flex-wrap items-center gap-compact">
                 <span className="text-sm font-medium text-content-emphasis">{formatDateTime(pass.executedAt)}</span>
                 <StatusBadge variant={STATUS_VARIANT[pass.status] ?? 'neutral'} size="sm">
-                    {pass.status}
+                    {KNOWN_PASS_STATUS.has(pass.status) ? tPass(`orphanPass.passStatus.${pass.status}`) : pass.status}
                 </StatusBadge>
                 {result.mode && (
-                    <span className="text-xs text-content-muted">{tPass('orphanPass.passMode', { mode: result.mode })}</span>
+                    <span className="text-xs text-content-muted">
+                        {tPass('orphanPass.passMode', { mode: modeLabel(result.mode) })}
+                    </span>
                 )}
             </div>
             {result.refusal ? (
@@ -120,18 +173,23 @@ function PassBlock({ pass }: { pass: PassRow }) {
                             className="flex flex-wrap items-center gap-compact text-xs"
                             data-testid={`orphan-decision-${pass.id}-${d.agentId}`}
                         >
-                            <Link href={tenantHref(`/agents/${d.agentId}`)} className="font-mono text-content-emphasis underline">
-                                {d.agentId}
+                            {/* By NAME, with the id kept as the link target
+                                (#4903). A pass records ids only; an agent the
+                                register no longer holds is shown by its id. */}
+                            <Link href={tenantHref(`/agents/${d.agentId}`)} className="text-content-emphasis underline">
+                                {agentNames[d.agentId] ?? d.agentId}
                             </Link>
                             <span>{tPass(`orphanPass.outcome.${d.outcome}`)}</span>
                             {(d.signals ?? []).map((s) => (
-                                <span key={`${s.kind}-${s.membership ?? ''}`} className="font-mono text-content-muted">
-                                    {s.membership ? `${s.kind}:${s.membership}` : s.kind}
+                                <span key={`${s.kind}-${s.membership ?? ''}`} className="text-content-muted">
+                                    {signalLabel(s)}
                                 </span>
                             ))}
                             {d.servicePrincipal && d.servicePrincipal.status !== 'NOT_CONTAINED' && (
                                 <span className="text-content-muted">
-                                    {tPass('orphanPass.servicePrincipal', { status: d.servicePrincipal.status })}
+                                    {KNOWN_SP_STATUS.has(d.servicePrincipal.status)
+                                        ? tPass(`orphanPass.servicePrincipalStatus.${d.servicePrincipal.status}`)
+                                        : tPass('orphanPass.servicePrincipal', { status: d.servicePrincipal.status })}
                                 </span>
                             )}
                         </li>
@@ -145,7 +203,12 @@ function PassBlock({ pass }: { pass: PassRow }) {
     );
 }
 
-export function OwnerOrphanPassClient() {
+export function OwnerOrphanPassClient({
+    menu,
+}: {
+    /** The views menu, rendered in the page header rather than a row of its own (#4903). */
+    menu?: Omit<AgentsViewsMenuProps, 'current'>;
+} = {}) {
     const t = useTranslations('agents');
     const tAdmin = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
@@ -155,6 +218,32 @@ export function OwnerOrphanPassClient() {
     const [pending, setPending] = useState<IdentityWriteMode | null>(null);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+
+    const modeLabel = (mode: string) =>
+        ['DISABLED', 'DRY_RUN', 'AUTOMATIC'].includes(mode) ? tAdmin(`writeLadder.mode.${mode}`) : mode;
+    /**
+     * The reason a widen is blocked, worded here from its code (#4903). The
+     * server's English sentence carried mode codes and was not translated; it
+     * stays only as the fallback for a code this build does not know.
+     */
+    const blockedReason = (payload: OrphanPassPayload): string | null => {
+        const r = payload.blockedRefusal;
+        if (!r) return payload.blockedReason;
+        switch (r.code) {
+            case 'ABOVE_CLAMP':
+                return t('orphanPass.blocked.ABOVE_CLAMP', { next: modeLabel(r.next), clamp: modeLabel(r.clamp) });
+            case 'MULTI_RUNG':
+                return t('orphanPass.blocked.MULTI_RUNG', { from: modeLabel(r.from), to: modeLabel(r.to) });
+            case 'NO_DRY_RUN_START':
+                return t('orphanPass.blocked.NO_DRY_RUN_START', { mode: modeLabel('DRY_RUN') });
+            case 'TOO_FEW_PASSES':
+                return t('orphanPass.blocked.TOO_FEW_PASSES', { passes: r.passes, required: r.required });
+            case 'DWELL':
+                return t('orphanPass.blocked.DWELL', { days: r.days, required: r.required, left: r.left });
+            default:
+                return payload.blockedReason;
+        }
+    };
 
     /**
      * Rejects on refusal, because `ConfirmDialog` stays open when `onConfirm`
@@ -188,14 +277,17 @@ export function OwnerOrphanPassClient() {
 
     return (
         <div className="space-y-section">
-            <BackAffordance />
-            <PageBreadcrumbs
-                items={[{ label: t('orphanPass.crumbAgents'), href: tenantHref('/agents') }, { label: t('orphanPass.title') }]}
+            <PageHeader
+                back={{ smart: true }}
+                breadcrumbs={[
+                    { label: t('crumbDashboard'), href: tenantHref('/dashboard') },
+                    { label: t('orphanPass.crumbAgents'), href: tenantHref('/agents') },
+                    { label: t('orphanPass.title') },
+                ]}
+                title={t('orphanPass.title')}
+                description={t('orphanPass.intro')}
+                actions={menu ? <AgentsViewsMenu {...menu} current="owner-orphan-pass" /> : undefined}
             />
-            <div className="space-y-tight">
-                <Heading level={1}>{t('orphanPass.title')}</Heading>
-                <p className="max-w-3xl text-sm text-content-muted">{t('orphanPass.intro')}</p>
-            </div>
 
             {saveError && pending === null && (
                 <InlineNotice variant="error" data-testid="orphan-pass-save-error">
@@ -217,7 +309,7 @@ export function OwnerOrphanPassClient() {
                         dryRunSince={data.dryRunSince}
                         dryRunMinDays={data.dryRunMinDays}
                         nextMode={data.nextMode}
-                        blockedReason={data.blockedReason}
+                        blockedReason={blockedReason(data)}
                         saving={saving}
                         onWiden={(mode) => {
                             setSaveError(null);
@@ -236,7 +328,7 @@ export function OwnerOrphanPassClient() {
                         ) : (
                             <ul className="space-y-default">
                                 {data.passes.map((p) => (
-                                    <PassBlock key={p.id} pass={p} />
+                                    <PassBlock key={p.id} pass={p} agentNames={data.agentNames ?? {}} />
                                 ))}
                             </ul>
                         )}

@@ -12560,9 +12560,9 @@
       "accessTitle": "Owners only",
       "accessMessage": "Only an owner can view or change the owner-orphan pass. Its mode decides whether a nightly job stops agents whose owner has left.",
       "title": "Owner departures",
-      "intro": "Every night at 05:15 UTC, the owner-orphan pass looks for active agents whose accountable owner has left this workspace: no active membership, or an HR record marked terminated. Its mode decides what it does about them.",
-      "modeHeading": "Owner-orphan pass",
-      "blurb": "Off checks nothing. Dry run records each orphan and tells the owners, and changes nothing. Automatic engages each orphan's kill switch, suspends it, and asks for its Entra service principal to be disabled through the external write ladder.",
+      "intro": "Every night at 05:15 UTC, this check looks for active agents whose accountable owner has left this workspace: no active membership, or an HR record marked terminated. Its mode decides what it does about them.",
+      "modeHeading": "Owner departure check",
+      "blurb": "Off checks nothing. Dry run records each agent whose owner has left and tells the owners, and changes nothing. Automatic stops each such agent with its kill switch, suspends it, and asks for its Entra service principal to be disabled, as far as the external write policy of that connection allows.",
       "loading": "Loading the owner-orphan pass…",
       "loadError": "Couldn't load the owner-orphan pass.",
       "saveError": "Couldn't change the owner-orphan pass.",
@@ -12574,8 +12574,8 @@
       "passesIntro": "The newest passes first, each with what it decided about every orphan. Compare a week of dry runs with who actually left before widening.",
       "passesNone": "No pass has run yet. The next one runs at 05:15 UTC.",
       "passMode": "Mode: {mode}",
-      "countsAutomatic": "{orphans} orphan(s): {contained} contained, {failed} failed.",
-      "countsDryRun": "{orphans} orphan(s) found. Nothing was changed.",
+      "countsAutomatic": "{orphans, plural, one {# agent without an owner} other {# agents without an owner}}: {contained} stopped, {failed} not fully stopped.",
+      "countsDryRun": "{orphans, plural, one {# agent without an owner found} other {# agents without an owner found}}. Nothing was changed.",
       "rosterNotRead": "The HR roster was not read in full, so this pass may have missed a departure that only HR records.",
       "decisionsTruncated": "More orphans were found than this record lists.",
       "servicePrincipal": "Service principal: {status}",
@@ -12590,7 +12590,50 @@
         "SUSPENDED_KILL_ALREADY_IN_FORCE": "Suspended; a kill was already in force",
         "FAILED": "Could not be fully contained"
       },
-      "crumbAgents": "Agents"
+      "crumbAgents": "Agents",
+      "passStatus": {
+        "PASSED": "Completed",
+        "PARTIAL": "Partly completed",
+        "NOT_APPLICABLE": "Did not check",
+        "ERROR": "Failed"
+      },
+      "signal": {
+        "MEMBERSHIP_NOT_ACTIVE": "Membership: {state}",
+        "HR_TERMINATED": "HR records them as left"
+      },
+      "membership": {
+        "INVITED": "invited, never joined",
+        "DEACTIVATED": "deactivated",
+        "REMOVED": "removed",
+        "ABSENT": "none"
+      },
+      "servicePrincipalStatus": {
+        "NOT_LINKED": "No Entra service principal is linked to this agent",
+        "AMBIGUOUS_LINK": "More than one service principal is linked; none was disabled",
+        "NO_PAIRED_ENDPOINT": "No connection can disable service principals yet",
+        "AMBIGUOUS_PAIRED_ENDPOINT": "More than one connection could disable it; none was used",
+        "CONNECTION_UNUSABLE": "The connection that disables service principals cannot be used",
+        "RUNG_DISABLED": "That connection’s external write policy is off",
+        "LINK_UNCONFIRMED": "Nobody has confirmed this agent’s service principal link",
+        "NO_APPROVED_TEMPLATE": "No approved saved parameters allow this write",
+        "AMBIGUOUS_TEMPLATE": "More than one set of saved parameters could apply; none was used",
+        "NOT_IN_POPULATION": "This service principal is outside what the saved parameters allow",
+        "PRIOR_STATE_UNREADABLE": "Its current state could not be read, so nothing was sent",
+        "ALREADY_DISABLED": "Its service principal was already disabled",
+        "RECORDED_INTENT": "Disabling its service principal was recorded, not sent (dry run)",
+        "PROPOSED": "Disabling its service principal is waiting for approval",
+        "QUARANTINED": "The request to disable its service principal was refused by the output guard",
+        "QUEUED": "Disabling its service principal is queued",
+        "REFUSED": "The request to disable its service principal was refused",
+        "FAILED": "The request to disable its service principal failed"
+      },
+      "blocked": {
+        "ABOVE_CLAMP": "{next} is above the highest mode this check acts at, {clamp}.",
+        "MULTI_RUNG": "The mode moves one step at a time, so {from} cannot go straight to {to}.",
+        "NO_DRY_RUN_START": "Dry run has no recorded start. Choose {mode} again to start its seven days.",
+        "TOO_FEW_PASSES": "Dry run has seen {passes} completed checks and needs at least {required}.",
+        "DWELL": "Dry run has lasted {days} of {required} days. {left} more to go, so the agents it reports can be compared with who actually left."
+      }
     },
     "auditPilot": {
       "title": "Audit pilot set-up",

@@ -92,6 +92,7 @@ export default async function ExternalToolsPage({
             canInvestigate={Boolean(ctx.appPermissions?.admin?.agent_registry)}
             // The prior-state pairing is Owner-only (#4899).
             canSetPriorState={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
+            canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
         />
     );
 }

@@ -127,6 +127,7 @@ export function AgentRunsClient({
     canInvestigate = false,
     canReadReports = false,
     oversightReads,
+    canSetOrphanPass = false,
     startAbilities = NO_START_ABILITIES,
 }: {
     tenantSlug: string;
@@ -162,6 +163,8 @@ export function AgentRunsClient({
     canReadReports?: boolean;
     /** Which assurance surfaces the viewer may read (`agent-oversight-settings.ts`). */
     oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
+    /** `admin.tenant_lifecycle` — the views menu offers Owner departures (#4903). */
+    canSetOrphanPass?: boolean;
     /**
      * What this caller may read for the start forms' pickers, and whether the
      * Ask page admits them — resolved by `page.tsx` from the same gates those
@@ -309,6 +312,7 @@ export function AgentRunsClient({
                         canInvestigate={canInvestigate}
                         canReadReports={canReadReports}
                         oversightReads={oversightReads}
+                        canSetOrphanPass={canSetOrphanPass}
                     />
                 }
             />
