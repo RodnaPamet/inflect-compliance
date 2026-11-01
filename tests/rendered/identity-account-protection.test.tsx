@@ -99,6 +99,13 @@ jest.mock('@/lib/tenant-context-provider', () => {
     return { useTenantApiUrl: () => apiUrl, useTenantHref: () => href };
 });
 
+// The protection route is Owner-only (`admin.tenant_lifecycle`); the page asks
+// that gate through this hook (#4872). An Owner by default.
+let offersProtection = true;
+jest.mock('@/lib/auth/use-offers-admin-api-write', () => ({
+    useOffersAdminApiWrite: () => offersProtection,
+}));
+
 import IdentityAccountsPage from '@/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page';
 import { __resetPendingUndoToastsForTest } from '@/components/ui/hooks/use-toast-with-undo';
 
@@ -166,6 +173,7 @@ function clickUndo(): void {
 }
 
 beforeEach(() => {
+    offersProtection = true;
     customCalls.length = 0;
     dismissedIds.length = 0;
     nextSonnerId = 1;
@@ -335,3 +343,85 @@ describe('the never-offboard flag on the identity roster', () => {
         expect(screen.getByText('Protected').tagName).toBe('SPAN');
     });
 });
+
+describe('who is offered the flag, and what the roster says in words (#4872)', () => {
+    it('an Admin is offered neither Protect nor Release, and is told who can', async () => {
+        offersProtection = false;
+        mockFetch([
+            account({ id: 'a-1' }),
+            account({ id: 'a-2', email: 'ops@acme.test', isProtected: true, protectionReason: 'shared mailbox' }),
+        ]);
+        render(<IdentityAccountsPage />);
+
+        expect(await screen.findByText('ops@acme.test')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Protect' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Release' })).not.toBeInTheDocument();
+        // A protected account still reads protected; only the control is gone.
+        expect(screen.getByText('Protected')).toBeInTheDocument();
+        expect(document.getElementById('identity-accounts-protect-owner-only')).toHaveTextContent(
+            'Only an Owner can protect an account',
+        );
+    });
+
+    it('an Owner is not shown the Owner-only note', async () => {
+        mockFetch([account()]);
+        render(<IdentityAccountsPage />);
+        await screen.findByRole('button', { name: 'Protect' });
+        expect(document.getElementById('identity-accounts-protect-owner-only')).toBeNull();
+    });
+
+    it('names the provider, the status and why an account has no HR record, in words', async () => {
+        mockFetch([
+            account({ id: 'a-1', provider: 'entra-id', status: 'SUSPENDED', linked: false, unlinkedReason: 'AMBIGUOUS_EMPLOYEE' }),
+            account({ id: 'a-2', email: 'svc@acme.test', provider: 'active-directory', linked: false, unlinkedReason: 'NO_EMPLOYEE' }),
+        ]);
+        render(<IdentityAccountsPage />);
+
+        expect(await screen.findByText('Microsoft Entra ID')).toBeInTheDocument();
+        expect(screen.getByText('Active Directory')).toBeInTheDocument();
+        expect(screen.getByText('Suspended')).toBeInTheDocument();
+        expect(screen.getByText(/More than one employee has this email address/)).toBeInTheDocument();
+        expect(screen.getByText(/No employee has this email address/)).toBeInTheDocument();
+        for (const code of ['entra-id', 'SUSPENDED', 'AMBIGUOUS_EMPLOYEE', 'NO_EMPLOYEE']) {
+            expect(document.body.textContent).not.toContain(code);
+        }
+    });
+
+    it('a protection reason is reachable by keyboard, not only by a title attribute', async () => {
+        mockFetch([account({ isProtected: true, protectionReason: 'break-glass admin' })]);
+        render(<IdentityAccountsPage />);
+
+        const label = await screen.findByText('Protected');
+        expect(label).not.toHaveAttribute('title');
+        expect(label).toHaveAttribute('tabindex', '0');
+    });
+
+    it("a refused protect says why, in the server's words", async () => {
+        const calls: string[] = [];
+        global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+            calls.push(url);
+            if (init?.method === 'PATCH') {
+                return {
+                    ok: false,
+                    status: 404,
+                    json: async () => ({ error: { code: 'NOT_FOUND', message: 'Account not found.' } }),
+                } as Response;
+            }
+            return { ok: true, json: async () => ({ accounts: [account()] }) } as Response;
+        }) as unknown as typeof fetch;
+        render(<IdentityAccountsPage />);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Protect' }));
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'shared mailbox' } });
+        const dialog = screen.getByRole('dialog');
+        const submit = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Protect');
+        fireEvent.click(submit!);
+
+        await waitFor(() =>
+            expect(screen.getByRole('alert')).toHaveTextContent(
+                "Couldn't change protection for this account. Account not found.",
+            ),
+        );
+    });
+});
+
