@@ -23,7 +23,7 @@ Open the organization. In the sidebar, under {{ui:org.nav.manage}}, click **{{ui
 | Remove an Admin or a Reader | Owner, Admin |
 | Revoke a pending invitation | Owner, Admin |
 
-Nobody can change their own role or remove themselves. An organization always keeps at least one Owner and at least one Owner or Admin. A Reader who opens the page's address gets an error page instead.
+Nobody can change their own role or remove themselves. An organization always keeps at least one Owner and at least one Owner or Admin. A Reader who opens the page's address gets **{{ui:org.forbidden.title}}**, saying that owners and admins manage members.
 
 ## What it is for
 
@@ -58,7 +58,7 @@ Inflect emails them a link that works once and expires in 7 days. The dialog als
 
 ### Add someone directly
 
-Click **{{ui:org.members.addMember}}**, enter their email, choose a role and confirm. They join straight away, without accepting anything. If they have never signed in to Inflect, an account is set up for that email, ready for when they do.
+Click **{{ui:org.members.addMember}}**, enter their email, choose a role and confirm. The dialog says what happens: they join the organization at once, without an invitation to accept, and as an Admin they get Admin access to every workspace straight away. If they have never signed in to Inflect, an account is set up for that email, ready for when they do.
 
 ### Change someone's role
 
@@ -70,7 +70,7 @@ Click **{{ui:org.common.remove}}** on their row and confirm. They leave the orga
 
 ### Revoke an invitation
 
-Click **{{ui:org.members.revoke}}** on the invitation. Its link stops working at once.
+Click **{{ui:org.members.revoke}}** on the invitation, then **{{ui:org.members.revokeInviteConfirm}}** to confirm. Its link stops working at once; you can invite them again afterwards.
 
 Every addition, removal, role change and invitation is recorded in the organization's [{{ui:org.nav.auditLog}}](audit-log.md).
 
@@ -80,7 +80,10 @@ Every addition, removal, role change and invitation is recorded in the organizat
 | --- | --- | --- |
 | **{{ui:org.members.emptyTitle}}** | Nobody belongs to the organization yet | Invite or add someone |
 | **{{ui:org.members.invalidEmail}}** | The email address is not valid | Correct it |
-| A red message in a dialog | The change was refused, for example because the person is already a member, or because it would leave the organization without an Owner | Read the reason; for the last Owner, make someone else an Owner first |
+| A red message in a dialog | The change was refused, for example because the person is already a member | Read the reason, and try again |
+| **{{ui:org.members.refused.LAST_ORG_OWNER}}** | The change would leave the organization without an Owner | Make another member an Owner first |
+| **{{ui:org.members.refused.LAST_ORG_ADMIN}}** | The change would leave the organization without an Owner or Admin | Make another member an Admin first |
+| **{{ui:org.forbidden.title}}** | You are a Reader | Ask an Owner or Admin |
 | **{{ui:org.members.ownerNeedsOwner}}** | You are an Admin and the row is an Owner's | Ask an Owner |
 
 ## Related

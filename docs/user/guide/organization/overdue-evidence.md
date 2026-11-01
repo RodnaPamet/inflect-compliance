@@ -25,7 +25,7 @@ A table, one row per evidence item, the longest overdue first:
 | --- | --- |
 | {{ui:org.evidence.colTenant}} | The workspace the evidence belongs to |
 | {{ui:org.evidence.colEvidence}} | The evidence item's title. Click it to open it in its workspace |
-| {{ui:org.evidence.colOverdue}} | How many days past its review date it is |
+| {{ui:org.evidence.colOverdue}} | How many days past its review date it is, such as **12 days overdue** |
 | {{ui:org.evidence.colStatus}} | **{{ui:org.evidence.statusDraft}}**, **{{ui:org.evidence.statusSubmitted}}** or **{{ui:org.evidence.statusRejected}}** |
 | {{ui:org.evidence.colReviewDue}} | The review date that has passed |
 
@@ -35,7 +35,7 @@ Approved evidence is not listed. The list is read live.
 
 **Sort.** Click a column heading.
 
-**Load more.** When there are more items than the first batch, the line under the title says **more available**; click **{{ui:org.evidence.loadMore}}** below the table.
+**Load more.** The line under the title counts the items loaded so far. When there are more, it adds **more to load below**; click **{{ui:org.evidence.loadMore}}** below the table.
 
 **Open an evidence item.** Click its title to review or replace it in its workspace.
 

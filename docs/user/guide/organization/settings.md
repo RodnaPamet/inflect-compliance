@@ -4,11 +4,11 @@ route: /org/[orgSlug]/settings
 
 # {{ui:org.settings.heading}}
 
-The organization's {{ui:org.settings.heading}} page holds settings that apply to every workspace in the organization. Today it has one section: **{{ui:org.settings.agentSwitches.title}}**, two switches for agent features.
+The organization's {{ui:org.settings.heading}} page holds settings that apply to every workspace in the organization. Its first line names the organization and its address. Today it has one section: **{{ui:org.settings.agentSwitches.title}}**, two switches for agent features.
 
 ## Where to find it
 
-Open the organization. In the sidebar, under {{ui:org.nav.manage}}, click **{{ui:org.nav.settings}}**. The item appears for Owners and Admins; any member can open the page's address and read it.
+Open the organization. In the sidebar, under {{ui:org.nav.manage}}, click **{{ui:org.nav.settings}}**. Every member of the organization sees the item.
 
 ## Who can use it
 
@@ -34,7 +34,9 @@ A workspace that does not belong to any organization has both features off.
 
 ## What you can do
 
-Click a switch to turn it on or off. The change is saved at once, applies to every workspace in the organization, and is recorded in the organization's [{{ui:org.nav.auditLog}}](audit-log.md).
+Click a switch to turn it on or off. Turning one off first asks you to confirm, naming the organization and how many workspaces it reaches, and what stops working; click **{{ui:org.settings.agentSwitches.confirmOff.confirm}}**. Turning one on is saved at once, and so is turning one off when it changes nothing today: a switch the deployment settles, or an organization with no workspace yet.
+
+Each change applies to every workspace in the organization and is recorded in the organization's [{{ui:org.nav.auditLog}}](audit-log.md). Turning agent profiles off keeps every saved profile; they come back if you turn it on again.
 
 ## Empty and error states
 

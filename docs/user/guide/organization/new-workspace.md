@@ -16,7 +16,7 @@ On [{{ui:org.nav.allTenants}}](workspaces.md), click **{{ui:org.tenants.newTenan
 | --- | --- |
 | Create a workspace | Owner |
 
-An Admin or Reader of the organization who opens the page's address gets an error page instead.
+An Admin or Reader of the organization who opens the page's address gets **{{ui:org.forbidden.title}}**, saying that only an owner can create a workspace.
 
 ## What you see
 
@@ -34,7 +34,7 @@ Fill in the form and click **{{ui:org.newTenant.createTenant}}**. When the works
 
 - you become its Owner;
 - every other Owner and Admin of the organization is given Admin access to it;
-- you are taken into it: to its dashboard, or, if you chose a framework, to its frameworks page, where you install it.
+- you are taken into it: to its dashboard or, if you chose a framework, straight to that framework's install page.
 
 Click **{{ui:org.common.cancel}}** or **{{ui:org.newTenant.backToTenants}}** to leave without creating anything.
 
@@ -45,6 +45,8 @@ Click **{{ui:org.common.cancel}}** or **{{ui:org.newTenant.backToTenants}}** to 
 | **{{ui:org.newTenant.nameRequired}}** or **{{ui:org.newTenant.nameTooLong}}** | The name is missing or too long | Fix the name |
 | **{{ui:org.newTenant.slugRequired}}** or **{{ui:org.newTenant.slugInvalid}}** | The address name is missing or has characters it cannot have | Fix it |
 | A message under the form that the slug already exists | Another workspace already uses that address name | Choose a different one |
+| **{{ui:org.newTenant.tenantCreationFailed}}** | The workspace was not created | Try again |
+| **{{ui:org.forbidden.title}}** | Only an organization owner can create a workspace | Ask one of the organization's owners |
 
 ## Related
 

@@ -13950,10 +13950,6 @@
       "signOut": "Sign out",
       "loading": "Loading…"
     },
-    "errors": {
-      "noPermissionMembers": "You do not have permission to manage members of this organization",
-      "noPermissionAudit": "You do not have permission to view the audit log of this organization"
-    },
     "nav": {
       "ariaLabel": "Organization navigation",
       "portfolio": "Portfolio",

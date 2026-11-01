@@ -26,16 +26,16 @@ A table, one row per risk, highest score first:
 | {{ui:org.risks.colTenant}} | The workspace the risk belongs to |
 | {{ui:org.risks.colRisk}} | The risk's title. Click it to open the risk in its workspace |
 | {{ui:org.risks.colScore}} | Its inherent score, likelihood × impact |
-| {{ui:org.risks.colStatus}} | **{{ui:org.risks.statusOpen}}**, **{{ui:org.risks.statusMitigating}}** or **{{ui:org.risks.statusAccepted}}** |
+| {{ui:org.risks.colStatus}} | **{{ui:org.risks.statusOpen}}** or **{{ui:org.risks.statusMitigating}}** |
 | {{ui:org.risks.colUpdated}} | When the risk last changed |
 
-Here, a risk is critical when its inherent score is 15 or more, the top band of the standard 5 × 5 grid. The same threshold is used for every workspace, whatever risk matrix the workspace has set up. The list is read live.
+Here, a risk is critical when its inherent score falls in the highest severity band of its own workspace's risk matrix, and it is still open or being mitigated. A workspace on the standard 5 × 5 grid has that band at 15 and above; a workspace with its own matrix uses its own top band. Accepted and closed risks are not listed. The dashboard's critical-risks figure counts the same risks. The list is read live.
 
 ## What you can do
 
 **Sort.** Click a column heading.
 
-**Load more.** When there are more risks than the first batch, the line under the title says **more available**; click **{{ui:org.risks.loadMore}}** below the table.
+**Load more.** The line under the title counts the risks loaded so far. When there are more, it adds **more to load below**; click **{{ui:org.risks.loadMore}}** below the table.
 
 **Open a risk.** Click its title to work on it in its workspace.
 
@@ -43,7 +43,7 @@ Here, a risk is critical when its inherent score is 15 or more, the top band of 
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:org.risks.emptyTitle}}** | No open risk in any workspace scores 15 or more | Nothing |
+| **{{ui:org.risks.emptyTitle}}** | No risk in any workspace is in its workspace's highest band and still open or being mitigated | Nothing |
 | **{{ui:org.risks.failedLoadMore}}** | The next batch did not load | Click **{{ui:org.risks.loadMore}}** again |
 
 ## Related
