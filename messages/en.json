@@ -7822,7 +7822,7 @@
       "linkLabel": "Synced identities",
       "breadcrumb": "Identity accounts",
       "title": "Synced identity accounts",
-      "intro": "Accounts synced from your identity providers (Okta, Google Workspace). Use these to launch a connected-app access review.",
+      "intro": "Accounts synced from your identity directories: Okta, Google Workspace, Microsoft Entra ID and Active Directory. Use them to launch a connected-app access review, and to mark the accounts that must never be offboarded automatically.",
       "colEmail": "Email",
       "colName": "Name",
       "colAdmin": "Admin",
@@ -7840,7 +7840,7 @@
       "admin": "Admin",
       "mfaOn": "On",
       "mfaOff": "Off",
-      "empty": "No synced accounts yet. Connect and sync Okta or Google Workspace.",
+      "empty": "No synced accounts yet. Connect and sync a directory on the Integrations page.",
       "loadError": "Couldn't load identity accounts.",
       "colProtected": "Never offboard",
       "truncatedTitle": "Showing the first {cap} accounts",
@@ -7869,7 +7869,19 @@
       "reasonLabel": "Reason",
       "cancel": "Cancel",
       "selfAccount": "Integration's own account",
-      "selfAccountHint": "This integration authenticates as this account. Automated offboarding already refuses to disable it — marking it protected records that decision explicitly."
+      "selfAccountHint": "This integration authenticates as this account. Automated offboarding already refuses to disable it — marking it protected records that decision explicitly.",
+      "protectOwnerOnly": "Only an Owner can protect an account from automated offboarding, or release it.",
+      "connectionUnnamed": "Unnamed connection · {ref}",
+      "statusLabels": {
+        "ACTIVE": "Active",
+        "SUSPENDED": "Suspended",
+        "DEPROVISIONED": "Deprovisioned"
+      },
+      "unlinkedReasons": {
+        "NO_EMPLOYEE": "No employee has this email address. Often a service or shared account.",
+        "AMBIGUOUS_EMPLOYEE": "More than one employee has this email address, so matching either would be a guess.",
+        "LINKED_ELSEWHERE": "Already matched to a different employee than this email address suggests."
+      }
     },
     "leaverPasses": {
       "linkLabel": "Leaver passes",

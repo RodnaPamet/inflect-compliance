@@ -2,9 +2,16 @@
 
 /**
  * P1 — synced-identity roster. Gives ConnectedIdentityAccount a browse surface
- * (like Personnel / Devices) so an Okta / Google Workspace directory sync
- * produces something visible, and a CONNECTED_APP access review can be
- * pre-checked instead of throwing "zero subjects" on empty.
+ * (like Personnel / Devices) so a directory sync (Okta, Google Workspace,
+ * Microsoft Entra ID, Active Directory) produces something visible, and a
+ * CONNECTED_APP access review can be pre-checked instead of throwing "zero
+ * subjects" on empty.
+ *
+ * PROTECT AND RELEASE ARE OFFERED ONLY WHERE THE SERVER TAKES THEM (#4872).
+ * The protection route is `admin.tenant_lifecycle` — Owner-only — and the page
+ * rendered both buttons for everyone who could open it, so an Admin typed a
+ * reason, clicked Protect and was refused. The buttons now ask the route's own
+ * gate (`useOffersAdminApiWrite`), and a viewer without it is told who can.
  *
  * THE SEARCH ON THIS PAGE IS SERVER-SIDE, and that is the point (#2418). The
  * roster is capped at IDENTITY_ROSTER_PAGE_SIZE with no cursor, so a filter
@@ -36,6 +43,8 @@ import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/fi
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { buildIdentityAccountFilters, IDENTITY_ACCOUNT_FILTER_KEYS } from './filter-defs';
 import { IDENTITY_ROSTER_PAGE_SIZE } from '@/lib/identity-roster';
+import { useOffersAdminApiWrite } from '@/lib/auth/use-offers-admin-api-write';
+import { apiRefusalMessage } from '@/lib/api-error';
 
 interface AccountRow {
     id: string;
@@ -115,6 +124,14 @@ function writeSignal(row: AccountRow): { label: string; tip: string } | null {
     }
 }
 
+const STATUSES = ['ACTIVE', 'SUSPENDED', 'DEPROVISIONED'] as const;
+const UNLINKED_REASONS = ['NO_EMPLOYEE', 'AMBIGUOUS_EMPLOYEE', 'LINKED_ELSEWHERE'] as const;
+const PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'] as const;
+
+function known<T extends string>(list: readonly T[], value: string | null): value is T {
+    return value !== null && (list as readonly string[]).includes(value);
+}
+
 export default function IdentityAccountsPage() {
     // The toolbar's state IS this page's server query — see the docblock at the
     // top of the file — so it has to live above the component that fetches.
@@ -142,14 +159,36 @@ function IdentityAccountsContent() {
     const [protecting, setProtecting] = useState<AccountRow | null>(null);
     const [reason, setReason] = useState('');
     const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState(false);
+    // The SERVER's sentence when it gives one (#4872): a fixed "couldn't
+    // change protection" read the same for a refusal, a missing account and a
+    // validation error.
+    const [saveError, setSaveError] = useState<string | null>(null);
     // The RELEASE path's own error surface. `saveError` above is rendered
     // inside Modal.Body, which only mounts while `protecting` is non-null — so
     // a failed release (the 403 an ADMIN gets on this very page, or a dropped
     // connection) had nowhere at all to show, and the account stayed protected
     // while the operator was told nothing. An undo toast that reports nothing
     // when the PATCH fails would be a worse lie than no toast.
-    const [releaseError, setReleaseError] = useState(false);
+    const [releaseError, setReleaseError] = useState<string | null>(null);
+    // The protection route's own gate — Owner-only (`admin.tenant_lifecycle`).
+    const canProtect = useOffersAdminApiWrite({ key: 'admin.tenant_lifecycle' });
+
+    const providerLabel = (provider: string): string =>
+        known(PROVIDERS, provider) ? t(`identityAccounts.providerLabels.${provider}`) : provider;
+    const statusLabel = (status: string): string =>
+        known(STATUSES, status) ? t(`identityAccounts.statusLabels.${status}`) : status;
+    // What the operator reads when a protect or release is refused: what did
+    // not happen, then why. The route's one 403 is its Owner-only key, so that
+    // is named; anything else is the server's own sentence.
+    const refusal = useCallback(
+        async (res: Response, what: string): Promise<string> => {
+            if (res.status === 403) return `${what} ${t('identityAccounts.protectOwnerOnly')}`;
+            const body = await res.json().catch(() => null);
+            const why = apiRefusalMessage(body, '');
+            return why ? `${what} ${why}` : what;
+        },
+        [t],
+    );
 
     // The adapter idiom every filter-defs consumer uses: `useTranslations`
     // returns a Translator whose key + values types are narrowed to the
@@ -244,25 +283,28 @@ function IdentityAccountsContent() {
 
     const setProtection = useCallback(async (account: AccountRow, isProtected: boolean, why: string | null) => {
         setSaving(true);
-        setSaveError(false);
+        setSaveError(null);
         try {
             const res = await fetch(apiUrl(`/admin/identity-account-protection/${account.id}`), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ isProtected, reason: why }),
             });
-            if (!res.ok) { setSaveError(true); return; }
+            if (!res.ok) {
+                setSaveError(await refusal(res, t('identityAccounts.protectError')));
+                return;
+            }
             setProtecting(null);
             setReason('');
             // Refetch rather than patch in place: the server owns protectedAt and
             // protectedByUserId, and a row assembled here would drift from it.
             await load();
         } catch {
-            setSaveError(true);
+            setSaveError(t('identityAccounts.protectError'));
         } finally {
             setSaving(false);
         }
-    }, [apiUrl, load]);
+    }, [apiUrl, load, refusal, t]);
 
     // RELEASING IS THE DESTRUCTIVE DIRECTION, and until now it was the only one
     // with no guard: protecting opened a modal and demanded a reason, releasing
@@ -279,7 +321,7 @@ function IdentityAccountsContent() {
     const releaseProtection = (account: AccountRow) => {
         // 1. Snapshot the operator's visible state.
         const previous = rows;
-        setReleaseError(false);
+        setReleaseError(null);
         // 2. Optimistic release — the row reads unprotected immediately. The
         //    toast IS the pending indicator; no row-level spinner.
         setRows((rs) =>
@@ -300,7 +342,7 @@ function IdentityAccountsContent() {
                     // non-null reason on this direction anyway.
                     body: JSON.stringify({ isProtected: false, reason: null }),
                 });
-                if (!res.ok) throw new Error('release failed');
+                if (!res.ok) throw new Error(await refusal(res, t('identityAccounts.releaseError')));
                 // Refetch for the same reason the protect path does: the server
                 // owns protectedAt and protectedByUserId.
                 await load();
@@ -308,15 +350,17 @@ function IdentityAccountsContent() {
             // Undo and commit-failure restore the same snapshot — "the row came
             // back" must look identical either way.
             undoAction: () => setRows(previous),
-            onError: () => {
+            onError: (err) => {
                 setRows(previous);
-                setReleaseError(true);
+                setReleaseError(
+                    err instanceof Error && err.message ? err.message : t('identityAccounts.releaseError'),
+                );
             },
         });
     };
 
     const cols = createColumns<AccountRow>([
-        { accessorKey: 'provider', header: t('integrations.colProvider'), cell: ({ getValue }) => <StatusBadge variant="info">{getValue()}</StatusBadge> },
+        { accessorKey: 'provider', header: t('integrations.colProvider'), cell: ({ row }) => <StatusBadge variant="info">{providerLabel(row.original.provider)}</StatusBadge> },
         // Plain text, NOT a StatusBadge: this page is at its badge budget, and
         // a connection name is an identifier rather than a state signal.
         ...(showConnection
@@ -325,7 +369,12 @@ function IdentityAccountsContent() {
                 accessorKey: 'connectionName',
                 header: t('identityAccounts.colConnection'),
                 cell: ({ row }: { row: { original: AccountRow } }) => (
-                    <span className="text-content-muted">{row.original.connectionName ?? row.original.connectionId}</span>
+                    <span className="text-content-muted">
+                        {/* Unnamed still has to tell two connections apart —
+                            the column's whole job — so it keeps the id's tail. */}
+                        {row.original.connectionName ??
+                            t('identityAccounts.connectionUnnamed', { ref: row.original.connectionId.slice(-6) })}
+                    </span>
                 ),
             }]
             : []),
@@ -357,7 +406,7 @@ function IdentityAccountsContent() {
                         tooltip={
                             signal
                                 ? t(`identityAccounts.${signal.tip}`, {
-                                      status: row.original.status,
+                                      status: statusLabel(row.original.status),
                                       observedAt: row.original.syncedAt ? formatDateTime(row.original.syncedAt) : '—',
                                       appliedAt: row.original.lastWriteAt
                                           ? formatDateTime(row.original.lastWriteAt)
@@ -366,7 +415,7 @@ function IdentityAccountsContent() {
                                 : undefined
                         }
                     >
-                        {signal ? t(`identityAccounts.${signal.label}`) : row.original.status}
+                        {signal ? t(`identityAccounts.${signal.label}`) : statusLabel(row.original.status)}
                     </StatusBadge>
                 );
             },
@@ -404,8 +453,10 @@ function IdentityAccountsContent() {
                             reconcile did not name this one", which happens when
                             the sample hits its cap. Rendered as unknown, never
                             as fine. */}
-                        <span className="font-mono text-xs text-content-muted">
-                            {reason ?? t('identityAccounts.unlinkedReasonUnknown')}
+                        <span className="text-xs text-content-muted">
+                            {known(UNLINKED_REASONS, reason)
+                                ? t(`identityAccounts.unlinkedReasons.${reason}`)
+                                : t('identityAccounts.unlinkedReasonUnknown')}
                         </span>
                     </span>
                 );
@@ -452,27 +503,39 @@ function IdentityAccountsContent() {
                             </span>
                         </Tooltip>
                     )}
-                    {row.original.isProtected && (
-                        <span className="text-sm text-content-default" title={row.original.protectionReason ?? undefined}>
-                            {t('identityAccounts.protected')}
-                        </span>
+                    {/* The reason rides <Tooltip>, which a keyboard reaches, not a
+                        `title=` attribute, which nothing but a mouse does. */}
+                    {row.original.isProtected &&
+                        (row.original.protectionReason ? (
+                            <Tooltip content={row.original.protectionReason}>
+                                <span tabIndex={0} className="text-sm text-content-default underline decoration-dotted">
+                                    {t('identityAccounts.protected')}
+                                </span>
+                            </Tooltip>
+                        ) : (
+                            <span className="text-sm text-content-default">{t('identityAccounts.protected')}</span>
+                        ))}
+                    {canProtect ? (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={saving}
+                            onClick={() => {
+                                if (row.original.isProtected) {
+                                    releaseProtection(row.original);
+                                } else {
+                                    setSaveError(null);
+                                    setReason('');
+                                    setProtecting(row.original);
+                                }
+                            }}
+                        >
+                            {row.original.isProtected ? t('identityAccounts.release') : t('identityAccounts.protect')}
+                        </Button>
+                    ) : (
+                        !row.original.isProtected &&
+                        !row.original.isSelfAccount && <span className="text-content-subtle">—</span>
                     )}
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={saving}
-                        onClick={() => {
-                            if (row.original.isProtected) {
-                                releaseProtection(row.original);
-                            } else {
-                                setSaveError(false);
-                                setReason('');
-                                setProtecting(row.original);
-                            }
-                        }}
-                    >
-                        {row.original.isProtected ? t('identityAccounts.release') : t('identityAccounts.protect')}
-                    </Button>
                 </div>
             ),
         },
@@ -483,9 +546,21 @@ function IdentityAccountsContent() {
     return (
         <div className="space-y-section">
             <BackAffordance />
-            <PageBreadcrumbs items={[{ label: t('integrations.title'), href: tenantHref('/admin/integrations') }, { label: t('identityAccounts.breadcrumb') }]} />
+            <PageBreadcrumbs
+                items={[
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('crumb.integrations'), href: tenantHref('/admin/integrations') },
+                    { label: t('identityAccounts.breadcrumb') },
+                ]}
+            />
             <Heading level={1}>{t('identityAccounts.title')}</Heading>
             <p className="text-sm text-content-muted">{t('identityAccounts.intro')}</p>
+            {!canProtect && (
+                <p id="identity-accounts-protect-owner-only" className="text-sm text-content-muted">
+                    {t('identityAccounts.protectOwnerOnly')}
+                </p>
+            )}
 
             {/* ABOVE the card, and outside every loading / empty / error
                 branch below it. A filter that produced no rows must still be
@@ -504,8 +579,8 @@ function IdentityAccountsContent() {
                     release path's only visible failure, and the modal never
                     mounts on it. */}
                 {releaseError && (
-                    <InlineNotice variant="error" onDismiss={() => setReleaseError(false)}>
-                        {t('identityAccounts.releaseError')}
+                    <InlineNotice variant="error" onDismiss={() => setReleaseError(null)}>
+                        {releaseError}
                     </InlineNotice>
                 )}
                 {error ? (
@@ -550,7 +625,7 @@ function IdentityAccountsContent() {
                         description={t('identityAccounts.protectPrompt')}
                     />
                     <Modal.Body>
-                        {saveError && <InlineNotice variant="error">{t('identityAccounts.protectError')}</InlineNotice>}
+                        {saveError && <InlineNotice variant="error">{saveError}</InlineNotice>}
                         {/* The PROMPT is the modal description; the field label is
                             just "Reason". Rendering the same sentence twice made
                             the control ambiguous to a screen reader and to any

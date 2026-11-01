@@ -72,6 +72,13 @@ jest.mock('@/lib/tenant-context-provider', () => {
     return { useTenantApiUrl: () => apiUrl, useTenantHref: () => href };
 });
 
+// The protection route is Owner-only (`admin.tenant_lifecycle`); the page asks
+// that gate through this hook (#4872). An Owner by default.
+let offersProtection = true;
+jest.mock('@/lib/auth/use-offers-admin-api-write', () => ({
+    useOffersAdminApiWrite: () => offersProtection,
+}));
+
 import IdentityAccountsPage from '@/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page';
 import { IDENTITY_ROSTER_PAGE_SIZE } from '@/lib/identity-roster';
 
@@ -180,14 +187,15 @@ describe('two rows for one human are told apart', () => {
         expect(screen.queryByText('Corp Entra')).not.toBeInTheDocument();
     });
 
-    it('falls back to the id rather than an empty cell if the name is missing', async () => {
+    it('says an unnamed connection is unnamed, keeping enough of its id to tell it apart', async () => {
         mockFetch([
-            account({ id: 'a-eu', connectionId: 'conn-eu', connectionName: null }),
-            account({ id: 'a-us', connectionId: 'conn-us', connectionName: 'US forest' }),
+            account({ id: 'a-eu', connectionId: 'cm0000conn-eu', connectionName: null }),
+            account({ id: 'a-us', connectionId: 'cm0000conn-us', connectionName: 'US forest' }),
         ]);
         render(<IdentityAccountsPage />);
 
-        expect(await screen.findByText('conn-eu')).toBeInTheDocument();
+        // Not an empty cell, and not the raw id alone (#4872).
+        expect(await screen.findByText(/Unnamed connection · onn-eu/)).toBeInTheDocument();
     });
 });
 
