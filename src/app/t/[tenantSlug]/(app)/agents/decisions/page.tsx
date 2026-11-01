@@ -87,6 +87,7 @@ export default async function AgentDecisionsPage({
             canCompose={Boolean(ctx.appPermissions?.admin?.view)}
             canInvestigate={Boolean(ctx.appPermissions?.admin?.agent_registry)}
             oversightReads={reads}
+            canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
         />
     );
 }

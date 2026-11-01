@@ -167,6 +167,8 @@ export interface QuarantineClientProps {
     canInvestigate?: boolean;
     /** Which assurance surfaces the viewer may read (`agent-oversight-settings.ts`). */
     oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
+    /** `admin.tenant_lifecycle` — the views menu offers Owner departures (#4903). */
+    canSetOrphanPass?: boolean;
 }
 
 export function QuarantineClient(props: QuarantineClientProps) {
@@ -188,6 +190,7 @@ function QuarantineInner({
     canCompose = canReviewProposals,
     canInvestigate = true,
     oversightReads,
+    canSetOrphanPass = false,
 }: QuarantineClientProps) {
     const t = useTranslations('agents');
     const { search } = useFilters();
@@ -349,6 +352,7 @@ function QuarantineInner({
                             canCompose={canCompose}
                             canInvestigate={canInvestigate}
                             oversightReads={oversightReads}
+                            canSetOrphanPass={canSetOrphanPass}
                         />
                     ),
                 }}

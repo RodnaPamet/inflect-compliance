@@ -244,6 +244,7 @@ export function AgentProposalsClient({
     canInvestigate = false,
     canReadReports = false,
     oversightReads,
+    canSetOrphanPass = false,
     truncated = false,
 }: {
     tenantSlug: string;
@@ -272,6 +273,8 @@ export function AgentProposalsClient({
     canReadReports?: boolean;
     /** Which assurance surfaces the viewer may read (`agent-oversight-settings.ts`). */
     oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
+    /** `admin.tenant_lifecycle` — the views menu offers Owner departures (#4903). */
+    canSetOrphanPass?: boolean;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
@@ -512,6 +515,7 @@ export function AgentProposalsClient({
                         canInvestigate={canInvestigate}
                         canReadReports={canReadReports}
                         oversightReads={oversightReads}
+                        canSetOrphanPass={canSetOrphanPass}
                     />
                 }
             />

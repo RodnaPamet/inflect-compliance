@@ -136,6 +136,7 @@ export default async function AgentReportsPage({
                 canReviewProposals={canReviewProposals}
                 canCompose={canCompose}
                 canInvestigate={canInvestigate}
+                canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
                 canExport={canExport}
             />
         );
@@ -161,6 +162,7 @@ export default async function AgentReportsPage({
             canReviewProposals={canReviewProposals}
             canCompose={canCompose}
             canInvestigate={canInvestigate}
+                canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
             canExport={canExport}
         />
     );

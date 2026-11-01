@@ -146,6 +146,7 @@ export default async function AgentRunsPage({
             canCompose={ctx.appPermissions.admin.view}
             canInvestigate={ctx.appPermissions.admin.agent_registry}
             oversightReads={await oversightReadsFor(ctx)}
+            canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
             canReadReports={mayReadAgentInventory(ctx.appPermissions.admin)}
         />
     );

@@ -99,6 +99,7 @@ export default async function AgentReviewQualityPage({
                         canReviewProposals={mayReadAgentActivity(ctx.appPermissions.admin)}
                         canCompose={ctx.appPermissions.admin.view}
                         canInvestigate
+                        canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
                     />
                 }
             />

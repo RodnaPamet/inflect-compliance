@@ -83,6 +83,7 @@ export default async function AgentReceiptsPage({
                         canCompose={ctx.appPermissions.admin.view}
                         canInvestigate={ctx.appPermissions.admin.agent_registry}
                         oversightReads={reads}
+                        canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
                     />
                 }
             />

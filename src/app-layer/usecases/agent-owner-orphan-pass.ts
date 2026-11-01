@@ -861,6 +861,36 @@ const MAX_LISTED_PASSES = 60;
  * The passes this tenant has run, newest first — the read half of the record.
  * `resultJson` verbatim: the per-orphan decision list IS the artefact.
  */
+/**
+ * The names of the agents a list of recorded passes decided about, keyed by id
+ * (#4903). A pass records agent ids only, so the page used to print each one
+ * raw. One bounded read over the ids the passes name; an id the register no
+ * longer holds is simply absent, and the page falls back to the id.
+ */
+export async function orphanPassAgentNames(
+    ctx: RequestContext,
+    passes: ReadonlyArray<{ resultJson: unknown }>,
+): Promise<Record<string, string>> {
+    const ids = new Set<string>();
+    for (const pass of passes) {
+        const decisions = (pass.resultJson as { decisions?: unknown } | null)?.decisions;
+        if (!Array.isArray(decisions)) continue;
+        for (const d of decisions) {
+            const id = (d as { agentId?: unknown } | null)?.agentId;
+            if (typeof id === 'string' && id.length > 0) ids.add(id);
+        }
+    }
+    if (ids.size === 0) return {};
+    const rows = await runInTenantContext(ctx, (db) =>
+        db.registeredAgent.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] } },
+            select: { id: true, name: true },
+            take: ids.size,
+        }),
+    );
+    return Object.fromEntries(rows.map((r) => [r.id, r.name]));
+}
+
 export async function listOrphanPasses(ctx: RequestContext, options: { limit?: number } = {}) {
     return runInTenantContext(ctx, (db) =>
         db.integrationExecution.findMany({
