@@ -154,7 +154,10 @@ describe('Epic O-4 — new-tenant page structural contract', () => {
         expect(src).toMatch(/getOrgCtx\s*\(\s*\{[^}]*orgSlug/);
         expect(src).toMatch(/}\s*catch\b[\s\S]*?notFound\s*\(\s*\)/);
         expect(src).toMatch(/ctx\.permissions\.canManageTenants/);
-        expect(src).toMatch(/throw\s+forbidden\(/);
+        // A member who may not create one is TOLD so (#4844), rather than
+        // thrown into the root error boundary as a crash.
+        expect(src).toMatch(/<OrgForbiddenPage\b/);
+        expect(src).not.toMatch(/throw\s+forbidden\(/);
     });
 
     it('client form is a "use client" component using shared form primitives', () => {
@@ -182,12 +185,15 @@ describe('Epic O-4 — new-tenant page structural contract', () => {
         );
     });
 
-    it('redirects to the new tenant frameworks page when a framework is picked, otherwise dashboard', () => {
+    it('redirects to the chosen framework\'s install page when one is picked, otherwise dashboard', () => {
         const src = read(NEW_TENANT_FORM);
         expect(src).toMatch(/router\.push\(`\/t\/\$\{newSlug\}\/dashboard`\)/);
+        // The install page itself (#4844): the frameworks list never read
+        // the `?install=` hint this used to pass.
         expect(src).toMatch(
-            /router\.push\(`\/t\/\$\{newSlug\}\/frameworks\?install=\$\{framework\}`\)/,
+            /router\.push\(`\/t\/\$\{newSlug\}\/frameworks\/\$\{framework\}\/install`\)/,
         );
+        expect(src).not.toMatch(/\?install=/);
     });
 
     it('validates the slug with the API contract regex before sending', () => {

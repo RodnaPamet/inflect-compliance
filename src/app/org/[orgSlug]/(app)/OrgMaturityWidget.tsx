@@ -21,6 +21,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { KPIStat } from '@/components/ui/metric';
 import { Button } from '@/components/ui/button';
 import { Sheet } from '@/components/ui/sheet';
+import { apiErrorMessage } from '@/lib/api-error';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import type { OrgMaturityDto, MaturityDomainRating } from '@/app-layer/usecases/org-maturity';
@@ -223,16 +224,22 @@ function RateMaturitySheet({
     const save = useCallback(
         async (domain: string, level: string) => {
             setSavingDomain(domain);
+            setError(null);
             try {
                 const res = await fetch(`/api/org/${orgSlug}/maturity`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ domain, level }),
                 });
-                if (!res.ok) throw new Error(t('widgets.failedSaveRating'));
+                if (!res.ok) {
+                    // The server's reason when it gives one (#4842).
+                    const body = await res.json().catch(() => ({}));
+                    setError(apiErrorMessage(body, t('widgets.failedSaveRating')));
+                    return;
+                }
                 onSaved();
-            } catch (e) {
-                setError(e instanceof Error ? e.message : t('widgets.failedSaveRating'));
+            } catch {
+                setError(t('widgets.failedSaveRating'));
             } finally {
                 setSavingDomain(null);
             }

@@ -18,6 +18,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { useOrgPermissions } from '@/lib/org-context-provider';
 import type { TenantHealthRow, RagBadge } from '@/app-layer/schemas/portfolio';
 import { Heading } from '@/components/ui/typography';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 interface Props {
     rows: TenantHealthRow[];
@@ -28,13 +29,15 @@ function formatPercent(value: number | null): string {
     return value === null ? '—' : `${value.toFixed(1)}%`;
 }
 
+// The stored GREEN / AMBER / RED is a code; the pill says what it means
+// (#4843): Healthy, At risk, Critical.
 function RagPill({ rag }: { rag: RagBadge | null }) {
     const t = useTranslations('org');
     if (rag === null) {
         return <StatusBadge variant="neutral">{t('common.pending')}</StatusBadge>;
     }
     const variant = rag === 'GREEN' ? 'success' : rag === 'AMBER' ? 'warning' : 'error';
-    return <StatusBadge variant={variant}>{rag}</StatusBadge>;
+    return <StatusBadge variant={variant}>{t(`health.${rag}`)}</StatusBadge>;
 }
 
 export function TenantsTable({ rows, orgSlug }: Props) {
@@ -44,10 +47,12 @@ export function TenantsTable({ rows, orgSlug }: Props) {
     const [sortBy, setSortBy] = useState<string>('rag');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
-    // Remove-tenant flow — a typed-confirmation modal (the sanctioned
+    // Delete-workspace flow — a typed-confirmation modal (the sanctioned
     // pattern for top-level entity deletion; NOT the undo-toast). The
-    // tenant is soft-deleted server-side: it disappears from this list
-    // and becomes inaccessible, but its data is retained.
+    // workspace is soft-deleted server-side: it disappears from this list
+    // and becomes inaccessible. Nothing restores it, and the tenant purge
+    // erases its data 90 days later (apart from the retained regulatory
+    // tables), so the dialog says exactly that (#4843).
     const [deleteTarget, setDeleteTarget] = useState<TenantHealthRow | null>(
         null,
     );
@@ -72,7 +77,7 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                 { method: 'DELETE', credentials: 'same-origin' },
             );
             if (!res.ok) {
-                let message = t('tenants.failedRemove', { status: res.status });
+                let message = t('tenants.failedRemove');
                 try {
                     const body = (await res.json()) as {
                         error?: { message?: string };
@@ -89,18 +94,16 @@ export function TenantsTable({ rows, orgSlug }: Props) {
             // The deleted tenant is now filtered out of the portfolio
             // query — re-render the server component to drop the row.
             router.refresh();
-        } catch (err) {
-            setDeleteError(
-                err instanceof Error
-                    ? err.message
-                    : t('tenants.unexpectedRemove'),
-            );
+        } catch {
+            // A network failure's own message ("Failed to fetch") says
+            // nothing a person can act on.
+            setDeleteError(t('tenants.unexpectedRemove'));
             setDeleting(false);
         }
     };
 
     // Sort by what each column DISPLAYS so same-displayed-value rows group
-    // contiguously. The Health cell (`RagPill`) renders the RAG label, or
+    // contiguously. The Health cell (`RagPill`) renders the health label, or
     // "Pending" when null — sort by that label, not the old severity rank,
     // which drifted from the displayed text. The numeric cells render their
     // raw counts / percentage (null → "—"); returning the raw number sorts
@@ -108,13 +111,13 @@ export function TenantsTable({ rows, orgSlug }: Props) {
     const sortAccessors = useMemo<SortAccessors<TenantHealthRow>>(
         () => ({
             name: (x) => x.name || '',
-            rag: (x) => x.rag ?? 'Pending',
+            rag: (x) => (x.rag ? t(`health.${x.rag}`) : t('common.pending')),
             coverage: (x) => x.coveragePercent,
             openRisks: (x) => x.openRisks,
             criticalRisks: (x) => x.criticalRisks,
             overdueEvidence: (x) => x.overdueEvidence,
         }),
-        [],
+        [t],
     );
     const sorted = useMemo(
         () => sortRowsByDisplay(rows, sortAccessors, sortBy, sortOrder),
@@ -183,7 +186,9 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                     header: t('tenants.colLatestSnapshot'),
                     cell: ({ row }) => (
                         <span className="text-xs text-content-subtle">
-                            {row.original.snapshotDate ?? t('common.pending')}
+                            {row.original.snapshotDate
+                                ? formatDate(row.original.snapshotDate)
+                                : t('common.pending')}
                         </span>
                     ),
                 },
@@ -202,7 +207,7 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                                           icon={<Trash2 className="size-3.5" aria-hidden="true" />}
                                           onClick={() => setDeleteTarget(row.original)}
                                           data-testid={`org-tenant-delete-${row.original.slug}`}
-                                          text={t('common.remove')}
+                                          text={t('tenants.delete')}
                                       />
                                   </div>
                               ),
@@ -257,7 +262,7 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                         if (p.sortBy) setSortBy(p.sortBy);
                         if (p.sortOrder) setSortOrder(p.sortOrder);
                     }}
-                    resourceName={(plural) => (plural ? 'tenants' : 'tenant')}
+                    resourceName={(plural) => (plural ? t('tenants.resourceMany') : t('tenants.resourceOne'))}
                     emptyState={
                         <TableEmptyState
                             title={t('tenants.emptyTitle')}
@@ -270,7 +275,7 @@ export function TenantsTable({ rows, orgSlug }: Props) {
             </ListPageShell.Body>
 
             {/* Typed-confirmation modal — top-level entity deletion uses
-                this (not the undo-toast). Requires typing the tenant slug
+                this (not the undo-toast). Requires typing the workspace's slug
                 so a misclick can't remove a workspace. */}
             <Modal
                 showModal={deleteTarget !== null}

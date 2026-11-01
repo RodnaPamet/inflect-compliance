@@ -20,6 +20,8 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Sheet } from '@/components/ui/sheet';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { apiErrorMessage } from '@/lib/api-error';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { OrgThreatLevelDto } from '@/app-layer/usecases/org-threat-level';
 import { formatDate } from '@inflect/ui/lib/format-date';
@@ -186,10 +188,16 @@ function UpdateThreatModal({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ level, summary, detail: detail || null }),
             });
-            if (!res.ok) throw new Error(t('widgets.setThreatFailed'));
+            if (!res.ok) {
+                // The server's reason when it gives one (#4842), never a
+                // fixed sentence that hides why.
+                const body = await res.json().catch(() => ({}));
+                setError(apiErrorMessage(body, t('widgets.setThreatFailed')));
+                return;
+            }
             onSaved();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t('widgets.setThreatFailed'));
+        } catch {
+            setError(t('widgets.setThreatFailed'));
         } finally {
             setSaving(false);
         }
@@ -253,14 +261,21 @@ function ThreatHistorySheet({
 }) {
     const t = useTranslations('org');
     const [rows, setRows] = useState<OrgThreatLevelDto[] | null>(null);
+    // A failed read says so (#4842); it used to leave the sheet empty, which
+    // reads the same as "no history".
+    const [failed, setFailed] = useState(false);
     const load = useCallback(async () => {
+        setFailed(false);
         try {
             const res = await fetch(`/api/org/${orgSlug}/threat-level/history`);
-            if (!res.ok) return;
+            if (!res.ok) {
+                setFailed(true);
+                return;
+            }
             const data = await res.json();
             setRows(data.history ?? []);
         } catch {
-            /* best-effort */
+            setFailed(true);
         }
     }, [orgSlug]);
 
@@ -294,7 +309,12 @@ function ThreatHistorySheet({
                             </div>
                         );
                     })}
-                    {rows !== null && rows.length === 0 && (
+                    {failed && (
+                        <InlineNotice variant="error" icon={null}>
+                            <span data-testid="threat-history-failed">{t('widgets.historyFailed')}</span>
+                        </InlineNotice>
+                    )}
+                    {!failed && rows !== null && rows.length === 0 && (
                         <p className="text-sm text-content-muted">{t('widgets.historyEmpty')}</p>
                     )}
                 </div>

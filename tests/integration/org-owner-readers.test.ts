@@ -169,9 +169,9 @@ describe('an owner\'s membership is changed only by an owner', () => {
         // The second owner is the actor, not a member yet: the org has one owner.
         await expect(
             changeOrgMemberRole(ctxAs('owner2', 'ORG_OWNER'), { userId: ids.owner, role: 'ORG_ADMIN' }),
-        ).rejects.toThrow(/last ORG_OWNER/);
+        ).rejects.toThrow(/last owner of an organization/);
         await expect(removeOrgMember(ctxAs('owner2', 'ORG_OWNER'), { userId: ids.owner })).rejects.toThrow(
-            /last ORG_OWNER/,
+            /last owner of an organization/,
         );
         expect(await roleOf('owner')).toBe('ORG_OWNER');
     });
@@ -202,7 +202,7 @@ describe('the last-administrator guard counts an owner', () => {
         expect(r2.wasOrgAdmin).toBe(true);
         // owner2 alone administers the org now, and is the last owner too.
         await expect(removeOrgMember(ctxAs('admin2', 'ORG_OWNER'), { userId: ids.owner2 })).rejects.toThrow(
-            /last ORG_OWNER/,
+            /last owner of an organization/,
         );
     });
 });

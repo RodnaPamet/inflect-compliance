@@ -3,9 +3,9 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 
 import { getOrgCtx } from '@/app-layer/context';
-import { forbidden } from '@/lib/errors/types';
 import { listOrgMembers } from '@/app-layer/usecases/org-members';
 import { listPendingOrgInvites } from '@/app-layer/usecases/org-invites';
+import { OrgForbiddenPage } from '../_components/OrgForbiddenPage';
 import { MembersTable } from './MembersTable';
 
 /**
@@ -40,11 +40,12 @@ export default async function OrgMembersPage({ params }: PageProps) {
     }
 
     if (!ctx.permissions.canManageMembers) {
-        // Same posture as `/org/{slug}/tenants/new` — non-managers
-        // get the standard forbidden response, anti-enumeration
-        // already collapsed at getOrgCtx for non-members.
+        // A Reader is told who manages members (#4848). Throwing
+        // `forbidden(...)` here reached the root error boundary, which showed
+        // "an unexpected error has occurred" and reported it as a crash.
+        // Non-members are still collapsed to 404 by getOrgCtx above.
         const t = await getTranslations('org');
-        throw forbidden(t('errors.noPermissionMembers'));
+        return <OrgForbiddenPage orgSlug={orgSlug} message={t('members.forbiddenMessage')} />;
     }
 
     const [rows, invites] = await Promise.all([
