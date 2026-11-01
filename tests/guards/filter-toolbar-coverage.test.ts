@@ -77,7 +77,7 @@ const EXEMPTIONS: Record<string, string> = {
     // per-tenant filtering surface that FilterToolbar provides.
     // Sort + cursor pagination is the entire interaction surface.
     "src/app/org/[orgSlug]/(app)/audit/AuditLogTable.tsx":
-        "Org-level cross-tenant audit log — chronological view with sort + load-more, no faceted filters appropriate at the portfolio aggregation tier.",
+        "Org-level audit log — a chronological, server-paged, append-only view with load-more and ONE server-side action filter (a Combobox passing the API's `action`, #4849). Faceted client-side filtering does not fit a log read page by page.",
     "src/app/org/[orgSlug]/(app)/controls/ControlsTable.tsx":
         "Org-level non-performing controls digest — fixed scope (status != IMPLEMENTED) + sort, no per-tenant facets.",
     "src/app/org/[orgSlug]/(app)/evidence/EvidenceTable.tsx":

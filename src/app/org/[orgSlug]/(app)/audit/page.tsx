@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 
 import { getOrgCtx } from '@/app-layer/context';
-import { forbidden } from '@/lib/errors/types';
 import { listOrgAudit } from '@/app-layer/usecases/org-audit';
+import { OrgForbiddenPage } from '../_components/OrgForbiddenPage';
 import { AuditLogTable } from './AuditLogTable';
 
 /**
@@ -17,7 +17,7 @@ import { AuditLogTable } from './AuditLogTable';
  *
  * RBAC: ORG_ADMIN only (`canManageMembers`). Same anti-enumeration
  * posture as the rest of `/org/[orgSlug]/...` — non-members get a
- * 404 via `getOrgCtx`'s collapse, non-managers get a forbidden.
+ * 404 via `getOrgCtx`'s collapse, non-managers are told who reads it.
  */
 export const dynamic = 'force-dynamic';
 
@@ -36,8 +36,11 @@ export default async function OrgAuditPage({ params }: PageProps) {
     }
 
     if (!ctx.permissions.canManageMembers) {
+        // A Reader is told who reads the log (#4849). Throwing `forbidden(...)`
+        // here reached the root error boundary, which showed "an unexpected
+        // error has occurred" and reported it as a crash.
         const t = await getTranslations('org');
-        throw forbidden(t('errors.noPermissionAudit'));
+        return <OrgForbiddenPage orgSlug={orgSlug} message={t('audit.forbiddenMessage')} />;
     }
 
     const initial = await listOrgAudit(ctx, { limit: 20 });

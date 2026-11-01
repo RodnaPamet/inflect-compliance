@@ -8,6 +8,7 @@ import { ListPageShell } from '@/components/layout/ListPageShell';
 import { DataTable, createColumns, TableEmptyState } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 
@@ -17,15 +18,32 @@ interface UserRef {
     name: string | null;
 }
 
+/** Every `OrgAuditAction` the log stores (#4849): the page knew five. */
+export const ORG_AUDIT_ACTIONS = [
+    'ORG_MEMBER_ADDED',
+    'ORG_MEMBER_REMOVED',
+    'ORG_MEMBER_ROLE_CHANGED',
+    'ORG_ADMIN_PROVISIONED_TO_TENANTS',
+    'ORG_ADMIN_DEPROVISIONED_FROM_TENANTS',
+    'ORG_INVITE_CREATED',
+    'ORG_INVITE_REDEEMED',
+    'ORG_INVITE_REVOKED',
+    'ORG_THREAT_LEVEL_SET',
+    'ORG_MATURITY_RATING_SET',
+    'ORG_INITIATIVE_CREATED',
+    'ORG_INITIATIVE_STATUS_CHANGED',
+    'ORG_AUTHZ_DENIED',
+    'ORG_TENANT_DELETED',
+    'ORG_AGENT_SWITCHES_CHANGED',
+] as const;
+
+export type OrgAuditActionValue = (typeof ORG_AUDIT_ACTIONS)[number];
+
 interface AuditRow {
     id: string;
     occurredAt: string;
-    action:
-        | 'ORG_MEMBER_ADDED'
-        | 'ORG_MEMBER_REMOVED'
-        | 'ORG_MEMBER_ROLE_CHANGED'
-        | 'ORG_ADMIN_PROVISIONED_TO_TENANTS'
-        | 'ORG_ADMIN_DEPROVISIONED_FROM_TENANTS';
+    /** A value this build does not know still renders, as "Other event". */
+    action: string;
     actorType: string;
     actor: UserRef | null;
     target: UserRef | null;
@@ -42,23 +60,104 @@ interface Props {
     initialNextCursor: string | null;
 }
 
-const ACTION_LABEL_KEY: Record<AuditRow['action'], string> = {
+const ACTION_LABEL_KEY: Record<OrgAuditActionValue, string> = {
     ORG_MEMBER_ADDED: 'audit.actionMemberAdded',
     ORG_MEMBER_REMOVED: 'audit.actionMemberRemoved',
     ORG_MEMBER_ROLE_CHANGED: 'audit.actionRoleChanged',
     ORG_ADMIN_PROVISIONED_TO_TENANTS: 'audit.actionProvisioned',
     ORG_ADMIN_DEPROVISIONED_FROM_TENANTS: 'audit.actionDeprovisioned',
+    ORG_INVITE_CREATED: 'audit.actionInviteCreated',
+    ORG_INVITE_REDEEMED: 'audit.actionInviteRedeemed',
+    ORG_INVITE_REVOKED: 'audit.actionInviteRevoked',
+    ORG_THREAT_LEVEL_SET: 'audit.actionThreatLevelSet',
+    ORG_MATURITY_RATING_SET: 'audit.actionMaturityRated',
+    ORG_INITIATIVE_CREATED: 'audit.actionInitiativeCreated',
+    ORG_INITIATIVE_STATUS_CHANGED: 'audit.actionInitiativeStatusChanged',
+    ORG_AUTHZ_DENIED: 'audit.actionAccessRefused',
+    ORG_TENANT_DELETED: 'audit.actionWorkspaceDeleted',
+    ORG_AGENT_SWITCHES_CHANGED: 'audit.actionAgentSwitchesChanged',
 };
 
 type OrgTranslate = ReturnType<typeof useTranslations>;
 
-const ACTION_VARIANT: Record<AuditRow['action'], 'success' | 'error' | 'info' | 'warning'> = {
+const ACTION_VARIANT: Record<OrgAuditActionValue, 'success' | 'error' | 'info' | 'warning' | 'neutral'> = {
     ORG_MEMBER_ADDED: 'success',
     ORG_MEMBER_REMOVED: 'error',
     ORG_MEMBER_ROLE_CHANGED: 'warning',
     ORG_ADMIN_PROVISIONED_TO_TENANTS: 'info',
     ORG_ADMIN_DEPROVISIONED_FROM_TENANTS: 'info',
+    ORG_INVITE_CREATED: 'info',
+    ORG_INVITE_REDEEMED: 'success',
+    ORG_INVITE_REVOKED: 'warning',
+    ORG_THREAT_LEVEL_SET: 'info',
+    ORG_MATURITY_RATING_SET: 'info',
+    ORG_INITIATIVE_CREATED: 'success',
+    ORG_INITIATIVE_STATUS_CHANGED: 'info',
+    ORG_AUTHZ_DENIED: 'error',
+    ORG_TENANT_DELETED: 'error',
+    ORG_AGENT_SWITCHES_CHANGED: 'warning',
 };
+
+function isKnownAction(action: string): action is OrgAuditActionValue {
+    return (ORG_AUDIT_ACTIONS as readonly string[]).includes(action);
+}
+
+/** Organization roles as words: a stored ORG_ADMIN is "Org admin". */
+const ORG_ROLE_LABEL_KEY: Record<string, string> = {
+    ORG_OWNER: 'members.roleOrgOwner',
+    ORG_ADMIN: 'members.roleOrgAdmin',
+    ORG_READER: 'members.roleOrgReader',
+};
+/** Workspace roles the provisioning fan-out writes. */
+const WORKSPACE_ROLE_LABEL_KEY: Record<string, string> = {
+    OWNER: 'audit.workspaceRole.OWNER',
+    ADMIN: 'audit.workspaceRole.ADMIN',
+    AUDITOR: 'audit.workspaceRole.AUDITOR',
+};
+const THREAT_TIER_KEY: Record<string, string> = {
+    GUARDED: 'widgets.tierGuarded',
+    LOW: 'widgets.tierLow',
+    ELEVATED: 'widgets.tierElevated',
+    HIGH: 'widgets.tierHigh',
+    SEVERE: 'widgets.tierSevere',
+};
+const MATURITY_LEVEL_KEY: Record<string, string> = {
+    INITIAL: 'widgets.levelInitial',
+    REPEATABLE: 'widgets.levelRepeatable',
+    DEFINED: 'widgets.levelDefined',
+    MANAGED: 'widgets.levelManaged',
+    OPTIMIZING: 'widgets.levelOptimizing',
+};
+const MATURITY_DOMAIN_KEY: Record<string, string> = {
+    GOVERN: 'widgets.domainGovern',
+    IDENTIFY: 'widgets.domainIdentify',
+    PROTECT: 'widgets.domainProtect',
+    DETECT: 'widgets.domainDetect',
+    RESPOND: 'widgets.domainRespond',
+    RECOVER: 'widgets.domainRecover',
+};
+const INITIATIVE_STATUS_KEY: Record<string, string> = {
+    PLANNED: 'widgets.statusPlanned',
+    IN_PROGRESS: 'widgets.statusInProgress',
+    BLOCKED: 'widgets.statusBlocked',
+    COMPLETED: 'widgets.statusCompleted',
+    CANCELLED: 'widgets.statusCancelled',
+};
+const AGENT_SWITCH_LABEL_KEY: Record<string, string> = {
+    agentProfiles: 'settings.agentSwitches.agentProfiles.label',
+    toolRunner: 'settings.agentSwitches.toolRunner.label',
+};
+
+/**
+ * A stored value as words, through `keys`. A value this build has no word for
+ * is shown as stored rather than dropped: the log is a record, and a blank
+ * would hide what it says.
+ */
+function word(t: OrgTranslate, keys: Record<string, string>, value: unknown): string {
+    const v = typeof value === 'string' ? value : '';
+    if (!v) return '—';
+    return keys[v] ? t(keys[v]) : v;
+}
 
 /**
  * Defensive renderer — strips PII ciphertext envelopes that may leak
@@ -82,35 +181,76 @@ function userLabel(t: OrgTranslate, u: UserRef | null): string {
     return t('audit.userFallback', { id: u.id.slice(0, 8) });
 }
 
+function onOff(t: OrgTranslate, value: unknown): string {
+    return value === true ? t('audit.switchOn') : value === false ? t('audit.switchOff') : '—';
+}
+
 /**
- * Compact, human-readable summary of the row's `detailsJson`. Each
- * action shape carries different fields — the details payload is
- * authoritative; this is just a glance-friendly projection.
+ * Compact, human-readable summary of the row's `detailsJson`, for every
+ * action the log stores (#4849). Each action shape carries different fields —
+ * the details payload is authoritative; this is just a glance-friendly
+ * projection, with stored role, level and status values put into words.
  */
-function summarize(t: OrgTranslate, row: AuditRow): string {
+export function summarize(t: OrgTranslate, row: AuditRow): string {
     const d = row.detailsJson as Record<string, unknown> | null;
     if (!d) return '';
     switch (row.action) {
         case 'ORG_MEMBER_ADDED':
-            return t('audit.roleSummary', { role: String(d.role ?? '—') }) +
+            return t('audit.roleSummary', { role: word(t, ORG_ROLE_LABEL_KEY, d.role) }) +
                 (typeof d.provisionedTenantCount === 'number' && d.provisionedTenantCount > 0
                     ? t('audit.provisionedSuffix', { count: d.provisionedTenantCount })
                     : '');
         case 'ORG_MEMBER_REMOVED':
-            return t('audit.wasSummary', { role: String(d.previousRole ?? '—') }) +
+            return t('audit.wasSummary', { role: word(t, ORG_ROLE_LABEL_KEY, d.previousRole) }) +
                 (typeof d.deprovisionedTenantCount === 'number' && d.deprovisionedTenantCount > 0
                     ? t('audit.deprovisionedSuffix', { count: d.deprovisionedTenantCount })
                     : '');
         case 'ORG_MEMBER_ROLE_CHANGED':
-            return `${d.previousRole ?? '—'} → ${d.newRole ?? '—'}`;
+            return `${word(t, ORG_ROLE_LABEL_KEY, d.previousRole)} → ${word(t, ORG_ROLE_LABEL_KEY, d.newRole)}`;
         case 'ORG_ADMIN_PROVISIONED_TO_TENANTS':
         case 'ORG_ADMIN_DEPROVISIONED_FROM_TENANTS':
             return typeof d.tenantCount === 'number'
                 ? t('audit.tenantCountSummary', {
                       count: d.tenantCount,
-                      role: String(d.role ?? 'AUDITOR'),
+                      role: word(t, WORKSPACE_ROLE_LABEL_KEY, d.role ?? 'ADMIN'),
                   })
                 : '';
+        case 'ORG_INVITE_CREATED':
+        case 'ORG_INVITE_REVOKED':
+            return t('audit.inviteSummary', {
+                email: readableField(typeof d.email === 'string' ? d.email : null) ?? '—',
+                role: word(t, ORG_ROLE_LABEL_KEY, d.role),
+            });
+        case 'ORG_INVITE_REDEEMED':
+            return t('audit.joinedAsSummary', { role: word(t, ORG_ROLE_LABEL_KEY, d.role) });
+        case 'ORG_THREAT_LEVEL_SET':
+            return t('audit.levelSummary', { level: word(t, THREAT_TIER_KEY, d.level) });
+        case 'ORG_MATURITY_RATING_SET':
+            return `${word(t, MATURITY_DOMAIN_KEY, d.domain)}: ${word(t, MATURITY_LEVEL_KEY, d.level)}`;
+        case 'ORG_INITIATIVE_CREATED':
+            return typeof d.title === 'string' ? d.title : '';
+        case 'ORG_INITIATIVE_STATUS_CHANGED':
+            return `${word(t, INITIATIVE_STATUS_KEY, d.from)} → ${word(t, INITIATIVE_STATUS_KEY, d.to)}`;
+        case 'ORG_AUTHZ_DENIED':
+            if (d.reason === 'OWNER_MEMBERSHIP_NEEDS_OWNER') return t('audit.deniedOwnerMembership');
+            return typeof d.path === 'string'
+                ? t('audit.deniedRequestSummary', {
+                      role: word(t, ORG_ROLE_LABEL_KEY, d.orgRole),
+                      request: `${typeof d.method === 'string' ? d.method : ''} ${d.path}`.trim(),
+                  })
+                : '';
+        case 'ORG_TENANT_DELETED':
+            return t('audit.workspaceDeletedSummary', {
+                name: typeof d.name === 'string' ? d.name : '—',
+                slug: typeof d.slug === 'string' ? d.slug : '—',
+                count: typeof d.revokedMemberships === 'number' ? d.revokedMemberships : 0,
+            });
+        case 'ORG_AGENT_SWITCHES_CHANGED': {
+            const changes = (d.changes ?? {}) as Record<string, { before?: unknown; after?: unknown }>;
+            return Object.entries(changes)
+                .map(([key, c]) => `${word(t, AGENT_SWITCH_LABEL_KEY, key)}: ${onOff(t, c?.before)} → ${onOff(t, c?.after)}`)
+                .join('; ');
+        }
         default:
             return '';
     }
@@ -122,26 +262,65 @@ export function AuditLogTable({ orgSlug, initialRows, initialNextCursor }: Props
     const [cursor, setCursor] = useState<string | null>(initialNextCursor);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // The action filter (#4849). The API took `action` all along; the page
+    // offered no way to pass it. Empty is every action.
+    const [action, setAction] = useState<OrgAuditActionValue | ''>('');
+
+    const actionOptions = useMemo<ComboboxOption[]>(
+        () => [
+            { value: '', label: t('audit.allActions') },
+            ...ORG_AUDIT_ACTIONS.map((a) => ({ value: a, label: t(ACTION_LABEL_KEY[a]) })),
+        ],
+        [t],
+    );
+
+    /** One page of entries; `from` is the cursor to continue from, or none. */
+    const fetchPage = useCallback(
+        async (forAction: OrgAuditActionValue | '', from: string | null) => {
+            const params = new URLSearchParams({ limit: '20' });
+            if (from) params.set('cursor', from);
+            if (forAction) params.set('action', forAction);
+            const res = await fetch(`/api/org/${orgSlug}/audit-log?${params.toString()}`);
+            if (!res.ok) throw new Error('fetch failed');
+            return (await res.json()) as { rows: AuditRow[]; nextCursor: string | null };
+        },
+        [orgSlug],
+    );
 
     const loadMore = useCallback(async () => {
         if (!cursor || loading) return;
         setLoading(true);
         setError(null);
         try {
-            const url = `/api/org/${orgSlug}/audit-log?cursor=${encodeURIComponent(cursor)}&limit=20`;
-            const res = await fetch(url);
-            if (!res.ok) {
-                throw new Error(`Audit log fetch failed: ${res.status}`);
-            }
-            const data = (await res.json()) as { rows: AuditRow[]; nextCursor: string | null };
+            const data = await fetchPage(action, cursor);
             setRows((prev) => [...prev, ...data.rows]);
             setCursor(data.nextCursor);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t('audit.fetchFailed'));
+        } catch {
+            // Never the HTTP status or a JavaScript message: neither is
+            // something a person can act on.
+            setError(t('audit.fetchFailed'));
         } finally {
             setLoading(false);
         }
-    }, [orgSlug, cursor, loading, t]);
+    }, [action, cursor, loading, fetchPage, t]);
+
+    const chooseAction = useCallback(
+        async (next: OrgAuditActionValue | '') => {
+            setAction(next);
+            setLoading(true);
+            setError(null);
+            try {
+                const data = await fetchPage(next, null);
+                setRows(data.rows);
+                setCursor(data.nextCursor);
+            } catch {
+                setError(t('audit.fetchFailed'));
+            } finally {
+                setLoading(false);
+            }
+        },
+        [fetchPage, t],
+    );
 
     const columns = useMemo(
         () =>
@@ -161,11 +340,16 @@ export function AuditLogTable({ orgSlug, initialRows, initialNextCursor }: Props
                 {
                     id: 'action',
                     header: t('audit.colAction'),
-                    cell: ({ row }) => (
-                        <StatusBadge variant={ACTION_VARIANT[row.original.action]}>
-                            {t(ACTION_LABEL_KEY[row.original.action])}
-                        </StatusBadge>
-                    ),
+                    cell: ({ row }) => {
+                        const a = row.original.action;
+                        // An action a newer deploy wrote is named, never a
+                        // missing translation key.
+                        return isKnownAction(a) ? (
+                            <StatusBadge variant={ACTION_VARIANT[a]}>{t(ACTION_LABEL_KEY[a])}</StatusBadge>
+                        ) : (
+                            <StatusBadge variant="neutral">{t('audit.actionOther')}</StatusBadge>
+                        );
+                    },
                 },
                 {
                     id: 'actor',
@@ -211,13 +395,27 @@ export function AuditLogTable({ orgSlug, initialRows, initialNextCursor }: Props
                             {t('audit.subtitle')}
                         </p>
                     </div>
+                    <div className="w-full sm:w-64">
+                        <Combobox
+                            hideSearch
+                            id="org-audit-action-filter"
+                            selected={actionOptions.find((o) => o.value === action) ?? null}
+                            setSelected={(opt) => {
+                                void chooseAction((opt?.value ?? '') as OrgAuditActionValue | '');
+                            }}
+                            options={actionOptions}
+                            placeholder={t('audit.allActions')}
+                            matchTriggerWidth
+                            buttonProps={{ className: 'w-full', 'aria-label': t('audit.filterLabel') }}
+                        />
+                    </div>
                 </div>
             </ListPageShell.Header>
             <ListPageShell.Body>
                 {rows.length === 0 ? (
                     <TableEmptyState
-                        title={t('audit.emptyTitle')}
-                        description={t('audit.emptyDesc')}
+                        title={action ? t('audit.emptyFilteredTitle') : t('audit.emptyTitle')}
+                        description={action ? t('audit.emptyFilteredDesc') : t('audit.emptyDesc')}
                     />
                 ) : (
                     <DataTable
