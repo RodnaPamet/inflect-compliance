@@ -34,13 +34,17 @@ A card with the connection's name and its current step:
 | **{{ui:admin.externalWriteLadder.mode.PROPOSE_ONLY}}** | Queued as a proposal. Nothing reaches the system until a person accepts it |
 | **{{ui:admin.externalWriteLadder.mode.AUTOMATIC}}** | Sent without asking |
 
-The card says since when the connection has been on its step, and how long it must stay there before it can widen. When this build of Inflect will not act above a certain step, a note says so, and the steps above it are unavailable.
+The card says since when the connection has been on its step, and how long it must stay there before it can widen. Widening also needs evidence from the current step: at {{ui:admin.externalWriteLadder.mode.DRY_RUN}}, at least one recorded dry-run write, and at {{ui:admin.externalWriteLadder.mode.PROPOSE_ONLY}}, at least one approved proposal. The card says how many it needs and how many it has so far. When this build of Inflect will not act above a certain step, a note says so, and the steps above it are unavailable.
+
+Two links lead to where each step's effect shows: **{{ui:admin.externalWriteLadder.passportLink}}**, the connection's page with its write step and pairings, and **{{ui:admin.externalWriteLadder.proposalsLink}}**, where proposals wait for a person.
 
 ## What you can do
 
 ### Widen
 
-Click **Widen to** the next step, read what it means, and confirm. A connection moves one step at a time, and only after it has spent the stated number of days on its current step with enough recorded activity to judge it by. Until then the button is greyed out, with the reason under it.
+Click **Widen to** the next step, read what it means, and confirm. A connection moves one step at a time, and only after it has spent the stated number of days on its current step with the evidence the card names. Until then the button is greyed out, with the reason under it in words: for example how many days are left, or how many approved proposals there are of how many needed.
+
+Confirming {{ui:admin.externalWriteLadder.mode.AUTOMATIC}} says what still stands between the agent and the system: it changes the system only through a parameter set an Owner approved, with the system's state captured first, and a write with neither is refused.
 
 ### Narrow
 
@@ -59,7 +63,7 @@ Click **Narrow to** the step below. It takes effect at once.
 | **{{ui:admin.externalWriteLadder.forbidden}}** | You are not an Owner | Ask an Owner |
 | A reason under a greyed-out widen button | The connection cannot widen yet | Wait, or do what the reason names |
 | **{{ui:admin.externalWriteLadder.saveError}}**, or a reason from the server | The change was not made | Read the reason, and try again |
-| **{{ui:admin.externalWriteLadder.loadError}}** | The policy did not load | Reload the page |
+| **{{ui:admin.externalWriteLadder.loadError}}** | The policy did not load. The page keeps its title, breadcrumb and links | Reload the page |
 
 ## Related
 

@@ -34,7 +34,7 @@ SCIM manages who is a member. It does not sign anyone in: that is [{{ui:admin.ss
 
 **{{ui:admin.scim.endpointHeading}}.** The address your identity provider sends to, with a copy button.
 
-**{{ui:admin.scim.tokensHeading}}.** Each active token, with its label, the date it was created and, once the identity provider has used it, the date it was last used. Below the active tokens, **revoked tokens** folds away the tokens revoked earlier, with the date each was revoked.
+**{{ui:admin.scim.tokensHeading}}.** Each active token, with its label, the date it was created and, once the identity provider has used it, the date it was last used. Below the active tokens, a fold names how many tokens were revoked earlier and lists them, marked **{{ui:admin.scim.revoked}}**, with the date each was revoked.
 
 **{{ui:admin.scim.setupHeading}}.** The steps to follow in your identity provider, and how roles are given.
 
@@ -43,7 +43,7 @@ SCIM manages who is a member. It does not sign anyone in: that is [{{ui:admin.ss
 ### Create a token
 
 1. In {{ui:admin.scim.tokensHeading}}, click **{{ui:admin.scim.tokenBtn}}**.
-2. Give it a label that says where it is used, such as Okta SCIM. Left empty, it is called SCIM Token.
+2. Under **{{ui:admin.scim.tokenLabel}}**, say where it is used, such as Okta SCIM. Left empty, it is called SCIM Token.
 3. Click **{{ui:admin.scim.create}}**.
 
 A yellow box, **{{ui:admin.scim.newTokenTitle}}**, shows the token. Click **{{ui:admin.scim.copy}}** and paste it into your identity provider straight away: Inflect keeps only a fingerprint of it, so it is never shown again. Click **{{ui:admin.scim.dismissCopied}}** when you have it.
@@ -67,7 +67,9 @@ Groups the identity provider pushes can also give roles, through the group mappi
 
 ### Revoke a token
 
-Click **{{ui:admin.scim.revoke}}** on the token, then **{{ui:admin.scim.revokeConfirm}}** to confirm. Any identity provider using it is refused from then on. A revoked token cannot be brought back; create a new one.
+Click **{{ui:admin.scim.revoke}}** on the token, then **{{ui:admin.scim.revokeConfirm}}** to confirm. The page says **{{ui:admin.scim.revokedToast}}**, and any identity provider using it is refused from then on. A revoked token cannot be brought back; create a new one.
+
+Creating and revoking a token are both recorded in the [{{ui:admin.auditLog}}](audit-log.md), with who did it and the token's label.
 
 ## What happens next
 
@@ -80,8 +82,9 @@ Click **{{ui:admin.scim.revoke}}** on the token, then **{{ui:admin.scim.revokeCo
 | --- | --- | --- |
 | **{{ui:admin.scim.noActive}}** | No token is active, so no identity provider can provision | Create a token |
 | **{{ui:admin.scim.errNoPermission}}** | Your role cannot manage SCIM | Ask an Owner or Admin |
-| **{{ui:admin.scim.errGenerate}}** | The token was not created | Try again |
-| A message that the SCIM state did not load | The page could not read the tokens | Reload the page |
+| **{{ui:admin.scim.errGenerate}}**, or the server's reason | The token was not created | Try again, or act on the reason |
+| **{{ui:admin.scim.errRevoke}}**, or the server's reason | The token was not revoked, and still works | Try again. If the token was already revoked or no longer exists, reload the page |
+| **{{ui:admin.scim.errLoad}}** | The page could not read the tokens | Reload the page |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
 
 ## Related

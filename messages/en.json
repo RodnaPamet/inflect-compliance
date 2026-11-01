@@ -6383,7 +6383,6 @@
       "credentialsEmpty": "No API key is bound to an agent or allowed to use the agent tools yet. Bind one to an agent when you create it.",
       "credentialAutonomy": "Autonomy ceiling L{level} · {rung}",
       "credentialNoAgent": "Not bound to an agent",
-      "credentialUnassessed": "Unassessed — no authority",
       "credentialLive": "Live",
       "credentialRevoked": "Revoked",
       "credentialExpired": "Expired",
