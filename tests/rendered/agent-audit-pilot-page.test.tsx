@@ -6,9 +6,14 @@
  *      steps it reports are shown as what WOULD happen.
  *   2. ONLY "SET UP" WRITES, through a confirmation, sending `{ apply: true }`
  *      with the same inputs the dry run was checked with.
- *   3. A REFUSAL IS THE ANSWER, not an error: its name and sentence are shown,
- *      and Set up stays off. A control refusal points at the control picker.
+ *   3. A REFUSAL IS THE ANSWER, not an error: it is worded from its code, the
+ *      server's sentence is folded away as technical detail, and Set up stays
+ *      off. A control refusal points at the control picker.
  *   4. Nothing to change offers nothing to apply.
+ *   5. A VIEWER WHO CANNOT SET IT UP IS TOLD WHY FIRST (#4904): the readiness
+ *      notice names the missing permission or marking, and no dry run is sent.
+ *   6. STEPS ARE WORDED BY KIND (#4904), a plan by its procedure's title, and
+ *      an activation waiting on the risk assessment links to the auditor.
  */
 import * as React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -55,8 +60,19 @@ const DRY_RUN = {
     applied: false,
     agentId: null,
     steps: [
-        { step: 'register auditor', outcome: 'WOULD_CHANGE', detail: 'would register "Pilot auditor (library v1)" as an auditor' },
-        { step: 'activate', outcome: 'PENDING', detail: "UNSCORED: complete the agent's risk assessment in the product" },
+        {
+            step: 'register auditor',
+            kind: 'REGISTER',
+            outcome: 'WOULD_CHANGE',
+            detail: 'would register "Pilot auditor (library v1)" as an auditor',
+        },
+        {
+            step: 'activate',
+            kind: 'ACTIVATE',
+            waitingOn: 'UNSCORED',
+            outcome: 'PENDING',
+            detail: "UNSCORED: complete the agent's risk assessment in the product",
+        },
     ],
 };
 
@@ -92,8 +108,12 @@ it('opens on a dry run and shows what would happen', async () => {
     const steps = await screen.findByTestId('audit-pilot-steps');
     expect(posts(calls)[0]).toEqual({ url: '/api/t/acme/admin/agents/audit-pilot', method: 'POST', body: { apply: false } });
     expect(screen.getByTestId('audit-pilot-result')).toHaveTextContent('What the set-up would do');
+    expect(steps).toHaveTextContent('Register the auditor');
     expect(steps).toHaveTextContent('Would change');
-    expect(steps).toHaveTextContent('UNSCORED');
+    expect(steps).toHaveTextContent('Activate the auditor');
+    expect(screen.getByTestId('audit-pilot-waiting')).toHaveTextContent('once its risk assessment is complete');
+    // Not registered yet, so there is no auditor page to link to.
+    expect(screen.queryByTestId('audit-pilot-open-auditor')).toBeNull();
 });
 
 it('writes only through the confirmation, with the inputs it was checked with', async () => {
@@ -118,7 +138,7 @@ it('writes only through the confirmation, with the inputs it was checked with', 
     expect(await screen.findByText('What the set-up did')).toBeInTheDocument();
 });
 
-it('shows a refusal by name and sentence, offers nothing to apply, and points a control refusal at the picker', async () => {
+it('words a refusal from its code, offers nothing to apply, and points a control refusal at the picker', async () => {
     mockFetch([
         {
             ok: false,
@@ -128,8 +148,10 @@ it('shows a refusal by name and sentence, offers nothing to apply, and points a 
     ]);
     renderPage();
     const refusal = await screen.findByTestId('audit-pilot-refusal');
-    expect(refusal).toHaveTextContent('CONTROL_AMBIGUOUS');
-    expect(refusal).toHaveTextContent('maps by A.5.18 to 2 controls');
+    expect(refusal).toHaveTextContent('A procedure matches more than one control.');
+    expect(refusal).not.toHaveTextContent('CONTROL_AMBIGUOUS');
+    // The server's sentence is kept, folded away as technical detail.
+    expect(screen.getByTestId('audit-pilot-refusal-detail')).toHaveTextContent('maps by A.5.18 to 2 controls');
     expect(refusal).toHaveTextContent('Name the control for that procedure above');
     expect(screen.getByTestId('audit-pilot-apply')).toBeDisabled();
     expect(screen.getByTestId('audit-pilot-procedure-iam.leaver_timeliness')).toBeInTheDocument();
@@ -140,4 +162,77 @@ it('offers nothing to apply when every step is already in place', async () => {
     renderPage();
     expect(await screen.findByTestId('audit-pilot-steps')).toHaveTextContent('In place');
     expect(screen.getByTestId('audit-pilot-apply')).toBeDisabled();
+});
+
+it('words a refusal it has no sentence for without echoing the code', async () => {
+    mockFetch([{ ok: false, refusal: 'SOMETHING_NEW', detail: 'a newer server said so' }]);
+    renderPage();
+    const refusal = await screen.findByTestId('audit-pilot-refusal');
+    expect(refusal).toHaveTextContent("The set-up can't go ahead.");
+    expect(refusal).not.toHaveTextContent('SOMETHING_NEW');
+});
+
+it('words a plan by its procedure and links a waiting activation to the auditor', async () => {
+    mockFetch([
+        {
+            ok: true,
+            applied: false,
+            agentId: 'agt_1',
+            steps: [
+                {
+                    step: 'activate',
+                    kind: 'ACTIVATE',
+                    waitingOn: 'UNSCORED',
+                    outcome: 'PENDING',
+                    detail: 'UNSCORED: complete the risk assessment',
+                },
+                {
+                    step: 'plan iam.leaver_timeliness',
+                    kind: 'PLAN',
+                    procedure: 'iam.leaver_timeliness',
+                    outcome: 'WOULD_CHANGE',
+                    detail: 'would create and schedule on A.5.18',
+                },
+            ],
+        },
+    ]);
+    renderPage();
+    const steps = await screen.findByTestId('audit-pilot-steps');
+    expect(steps).toHaveTextContent('Schedule Leaver timeliness');
+    expect(screen.getByTestId('audit-pilot-open-auditor')).toHaveAttribute('href', '/t/acme/agents/agt_1');
+    // The procedure's id is not shown beside its title.
+    expect(screen.getByTestId('audit-pilot-procedure-iam.leaver_timeliness')).not.toHaveTextContent('iam.leaver_timeliness');
+});
+
+it('tells a viewer who cannot set it up why, and sends no dry run', async () => {
+    const calls = mockFetch([DRY_RUN]);
+    render(
+        <AuditPilotClient
+            defaultAgentName="Pilot auditor (library v1)"
+            procedures={PROCEDURES}
+            readiness={{ missingPermissions: ['tests.create'], lineOfDefence: null, ready: false }}
+        />,
+    );
+    const notice = screen.getByTestId('audit-pilot-readiness');
+    expect(notice).toHaveTextContent("You can't set up the pilot yet");
+    expect(notice).toHaveTextContent('create control test plans');
+    expect(notice).toHaveTextContent('Your membership is marked not declared');
+    expect(screen.getByTestId('audit-pilot-check')).toBeDisabled();
+    expect(screen.getByTestId('audit-pilot-apply')).toBeDisabled();
+    expect(screen.queryByTestId('audit-pilot-result')).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posts(calls)).toHaveLength(0);
+});
+
+it('a ready viewer sees no readiness notice', async () => {
+    mockFetch([DRY_RUN]);
+    render(
+        <AuditPilotClient
+            defaultAgentName="Pilot auditor (library v1)"
+            procedures={PROCEDURES}
+            readiness={{ missingPermissions: [], lineOfDefence: 'SECOND', ready: true }}
+        />,
+    );
+    await screen.findByTestId('audit-pilot-steps');
+    expect(screen.queryByTestId('audit-pilot-readiness')).toBeNull();
 });

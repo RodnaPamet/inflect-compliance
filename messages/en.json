@@ -12597,7 +12597,7 @@
       "crumbAgents": "Agents",
       "accessTitle": "You can't set up the audit pilot",
       "accessMessage": "Setting up the pilot auditor needs the agent register permission.",
-      "intro": "Registers the pilot auditor agent with you as its owner, grants it propose_finding and nothing else, activates it once its risk assessment is complete, and schedules one plan for each of the five library v1 procedures with the pilot's parameters. You must be a second-line member who may own an auditor. Nothing is written until you set it up: what you see first is a dry run.",
+      "intro": "Registers an auditor agent with you as its owner. The auditor can only propose findings, which a person then decides. Once its risk assessment is complete it is activated, and one scheduled plan is set up for each of the five audit procedures, with the pilot's settings. Nothing is written until you choose Set up: the page first shows what the set-up would do.",
       "inputsHeading": "What to set up",
       "nameLabel": "Auditor name",
       "nameHint": "The auditor is found by this name, so running the set-up again changes nothing that is already in place. Leave it empty to use the default.",
@@ -12622,7 +12622,52 @@
       "confirmTitle": "Set up the pilot auditor",
       "confirmBody": "You will own the auditor agent and its five procedure plans. Each write is made as you and lands in the audit trail. Steps already in place are left as they are, and a plan that differs from the pilot's is reported, never changed.",
       "confirmAction": "Set up the pilot",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "readiness": {
+        "heading": "You can't set up the pilot yet",
+        "permission": {
+          "agentRegistry": "Your role does not let you manage the agent register.",
+          "agentToolExposure": "Your role does not let you choose which tools an agent can use.",
+          "testsCreate": "Your role does not let you create control test plans."
+        },
+        "notSecondLine": "The auditor's owner must be a second-line member. Your membership is marked {line}. An owner sets the line of defence on the Members page, and nobody can set their own.",
+        "line": {
+          "UNDECLARED": "not declared",
+          "FIRST": "first line",
+          "SECOND": "second line",
+          "THIRD": "third line"
+        }
+      },
+      "refusal": {
+        "TENANT_NOT_FOUND": "This workspace could not be found.",
+        "OWNER_NOT_A_MEMBER": "You are not a member of this workspace.",
+        "OWNER_NOT_A_PERSON": "The pilot is set up by a person in their own session, not by an API key, an agent or a scheduled job.",
+        "OWNER_NOT_ACTIVE": "Your membership of this workspace is not active.",
+        "OWNER_NOT_SECOND_LINE": "The auditor's owner must be a second-line member, and your membership is not marked second line. An owner sets the line of defence on the Members page.",
+        "OWNER_NOT_INDEPENDENT": "You can't own an auditor while you also own agents it would audit. Move those agents to another owner first.",
+        "OWNER_LACKS_PERMISSION": "Your role is missing a permission the set-up needs.",
+        "NAME_HELD_BY_NON_AUDITOR": "An agent with this name already exists and is not an auditor. Choose another name.",
+        "AUDITOR_OWNED_BY_ANOTHER": "An auditor with this name already exists and is owned by someone else. Choose another name.",
+        "AUDITOR_RETIRED": "The auditor with this name has been retired, and a retired agent can't be used again. Choose another name.",
+        "UNKNOWN_PROCEDURE": "A control was named for a procedure the pilot does not run.",
+        "CONTROL_MISSING": "A procedure has no control to run on.",
+        "CONTROL_AMBIGUOUS": "A procedure matches more than one control.",
+        "UNKNOWN": "The set-up can't go ahead."
+      },
+      "stepKind": {
+        "REGISTER": "Register the auditor",
+        "GRANT": "Let it propose findings",
+        "ACTIVATE": "Activate the auditor",
+        "PLAN": "Schedule {procedure}"
+      },
+      "waitingOn": {
+        "SUSPENDED": "The auditor is suspended, so the set-up leaves it as it is. Resuming it is its owner's decision, on the auditor's page.",
+        "UNSCORED": "The auditor is activated once its risk assessment is complete. Complete the assessment on the auditor's page, then check again.",
+        "AI_SYSTEM_UNCLASSIFIED": "The AI system the auditor belongs to has not been classified. Classify it, then check again."
+      },
+      "openAuditor": "Open the auditor",
+      "planDiffers": "A plan for this procedure already exists with other settings. It is left as it is.",
+      "technicalDetail": "Technical detail"
     },
     "ask": {
       "checkAgain": "Check again",

@@ -123,8 +123,19 @@ export type PilotRefusal =
 
 export type StepOutcome = 'UNCHANGED' | 'WOULD_CHANGE' | 'CHANGED' | 'PENDING' | 'DIFFERS';
 
+/**
+ * WHICH step, as a code the page words (#4904). `step` and `detail` stay the
+ * CLI's English; the page shows `detail` only as the folded technical detail.
+ */
+export type PilotStepKind = 'REGISTER' | 'GRANT' | 'ACTIVATE' | 'PLAN';
+
 export interface PilotStep {
     readonly step: string;
+    readonly kind: PilotStepKind;
+    /** The procedure a PLAN step schedules. */
+    readonly procedure?: string;
+    /** Why an ACTIVATE step is waiting: SUSPENDED, UNSCORED or AI_SYSTEM_UNCLASSIFIED. */
+    readonly waitingOn?: string;
     readonly outcome: StepOutcome;
     readonly detail: string;
 }
@@ -142,6 +153,33 @@ export interface PilotSetupAsOwnerOptions {
     readonly ownerLabel?: string;
     /** Receives one line per step and the run's header; silent by default. */
     readonly log?: (line: string) => void;
+}
+
+/** The kind a step's CLI label names. Exported for the tests. */
+export function kindOfStep(step: string): PilotStepKind {
+    if (step.startsWith('register')) return 'REGISTER';
+    if (step.startsWith('grant')) return 'GRANT';
+    if (step.startsWith('plan')) return 'PLAN';
+    return 'ACTIVATE';
+}
+
+/**
+ * The viewer's own line of defence, for the set-up page to say before the dry
+ * run whether they could own the auditor (#4904). `null` when undeclared or not
+ * a member. Read-only; the set-up asks it again.
+ *
+ * The page asks the PERMISSION half of the same question itself, in its own
+ * module: one of the keys is consumed only behind the admin API, and a page may
+ * read such a key only there (`admin-membership-only-keys-are-dead-elsewhere`).
+ */
+export async function readPilotOwnerLineOfDefence(ctx: RequestContext): Promise<string | null> {
+    const membership = await runInTenantContext(ctx, (db) =>
+        db.tenantMembership.findFirst({
+            where: { tenantId: ctx.tenantId, userId: ctx.userId },
+            select: { lineOfDefence: true },
+        }),
+    );
+    return membership?.lineOfDefence ?? null;
 }
 
 export class PilotRefused extends Error {
@@ -379,8 +417,13 @@ async function setUp(
 
     // ── Plan, then (with apply) act ──────────────────────────────────────────
     const steps: PilotStep[] = [];
-    const record = (step: string, outcome: StepOutcome, detail: string) => {
-        steps.push({ step, outcome, detail });
+    const record = (
+        step: string,
+        outcome: StepOutcome,
+        detail: string,
+        about: { kind: PilotStepKind; procedure?: string; waitingOn?: string } = { kind: kindOfStep(step) },
+    ) => {
+        steps.push({ step, ...about, outcome, detail });
         log(`  ${step.padEnd(36)} ${outcome.padEnd(12)} ${detail}`);
     };
     log(
@@ -436,9 +479,15 @@ async function setUp(
     if (status === 'ACTIVE') {
         record('activate', 'UNCHANGED', 'ACTIVE');
     } else if (status === 'SUSPENDED') {
-        record('activate', 'PENDING', 'SUSPENDED: left as it is; resuming a suspended auditor is its owner\'s act in the product');
+        record('activate', 'PENDING', 'SUSPENDED: left as it is; resuming a suspended auditor is its owner\'s act in the product', {
+            kind: 'ACTIVATE',
+            waitingOn: 'SUSPENDED',
+        });
     } else if (!scored) {
-        record('activate', 'PENDING', 'UNSCORED: complete the agent\'s risk assessment in the product, then run this again');
+        record('activate', 'PENDING', 'UNSCORED: complete the agent\'s risk assessment in the product, then run this again', {
+            kind: 'ACTIVATE',
+            waitingOn: 'UNSCORED',
+        });
     } else if (!opts.apply || agentId === null) {
         record('activate', 'WOULD_CHANGE', 'would activate');
     } else {
@@ -448,7 +497,10 @@ async function setUp(
         } catch (err) {
             const reason = (err as { details?: { reason?: unknown } }).details?.reason;
             if (reason === 'AI_SYSTEM_UNCLASSIFIED' || reason === 'UNSCORED') {
-                record('activate', 'PENDING', `${String(reason)}: ${(err as Error).message}`);
+                record('activate', 'PENDING', `${String(reason)}: ${(err as Error).message}`, {
+                    kind: 'ACTIVATE',
+                    waitingOn: String(reason),
+                });
             } else {
                 throw err;
             }
@@ -474,6 +526,7 @@ async function setUp(
                     ? `${existing.id} on control ${existing.controlId}, ${existing.status}, "${want.schedule}" ${TIMEZONE}, ${params}`
                     : `${existing.id} differs from the pilot's (${existing.schedule ?? 'no schedule'}, ` +
                           `${JSON.stringify(existing.automationConfig)}); left as the second line set it`,
+                { kind: 'PLAN', procedure },
             );
             continue;
         }
@@ -484,6 +537,7 @@ async function setUp(
                 label,
                 'WOULD_CHANGE',
                 `would ${orphan ? `schedule ${orphan.id}` : 'create and schedule'} on ${target.label}: "${want.schedule}" ${TIMEZONE}, ${params}`,
+                { kind: 'PLAN', procedure },
             );
             continue;
         }
@@ -503,7 +557,10 @@ async function setUp(
             automationType: 'INTEGRATION',
             automationConfig: want.config,
         });
-        record(label, 'CHANGED', `${planId} on ${target.label}: "${want.schedule}" ${TIMEZONE}, ${params}`);
+        record(label, 'CHANGED', `${planId} on ${target.label}: "${want.schedule}" ${TIMEZONE}, ${params}`, {
+            kind: 'PLAN',
+            procedure,
+        });
     }
 
     return { ok: true, applied: opts.apply, agentId, steps };
