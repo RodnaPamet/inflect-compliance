@@ -151,7 +151,12 @@ export function ViewsMenu({ groups, label, ariaLabel, id, className }: ViewsMenu
             align="end"
             side="bottom"
             sideOffset={6}
-            popoverContentClassName="w-full sm:w-56 p-1"
+            // Capped to the room Radix measured beside the trigger, and
+            // scrolled past it. The content is position: fixed, so a menu
+            // taller than the window cannot be reached by scrolling the page:
+            // the agents menu's fourteenth entry left its last one off-screen
+            // on a 720px-high window, unclickable (#4900).
+            popoverContentClassName="w-full sm:w-56 p-1 max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
             content={
                 <Popover.Menu aria-label={menuAria}>
                     {populated.map((group, gi) => (
