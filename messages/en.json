@@ -5103,9 +5103,9 @@
     "scim": {
       "crumbSelf": "SCIM Provisioning",
       "title": "SCIM Provisioning",
-      "subtitle": "Automate user provisioning from your identity provider (Okta, Azure AD, OneLogin).",
+      "subtitle": "Automate user provisioning from your identity provider (Okta, Microsoft Entra ID, OneLogin).",
       "enabled": "Enabled",
-      "notConfigured": "Not Configured",
+      "notConfigured": "Not configured",
       "endpointHeading": "SCIM Endpoint",
       "loadingEndpoint": "Loading endpoint…",
       "copyEndpoint": "Copy SCIM endpoint",
@@ -5125,10 +5125,8 @@
       "copyToastOk": "SCIM token copied — paste it into your IdP now.",
       "copyToastFail": "Copy failed — select the token and copy manually.",
       "errNoPermission": "You do not have permission to view SCIM tokens.",
-      "errLoadStatus": "Failed to load SCIM state ({status}).",
-      "errLoad": "Failed to load SCIM state.",
-      "errGenerate": "Failed to generate token",
-      "errGeneric": "Failed",
+      "errLoad": "Couldn't load the SCIM tokens.",
+      "errGenerate": "Couldn't generate a token.",
       "fetching": "Fetching tokens",
       "noActive": "No active SCIM tokens",
       "active": "Active",
@@ -5149,8 +5147,11 @@
       "setup3": "Set the <b>SCIM connector base URL</b> to the endpoint shown above.",
       "setup4": "Set <b>Authentication</b> to \"HTTP Header\" with the bearer token.",
       "setupActions": "Enable provisioning actions: <i>Create Users</i>, <i>Update User Attributes</i>, <i>Deactivate Users</i>.",
-      "roleMapBody": "<b>Role mapping:</b> SCIM-provisioned users are assigned the <s>Reader</s> role by default. Editors and Auditors can be mapped via your IdP\\s group/role assignment. Admin role cannot be assigned via SCIM — it must be set manually.",
-      "emptyTokensHint": "Generate a token to enable automated provisioning from your identity provider."
+      "roleMapBody": "<b>Role mapping:</b> SCIM-provisioned users are assigned the <s>Reader</s> role by default. Editors and Auditors can be mapped through your identity provider's group or role assignment. A group push from Microsoft Entra ID applies the Entra page's group mappings, up to the AI admin role. The Admin and Owner roles cannot be assigned through SCIM; they are set by hand.",
+      "emptyTokensHint": "Generate a token to enable automated provisioning from your identity provider.",
+      "tokenLabel": "Token label",
+      "errRevoke": "Couldn't revoke the token. It is still active.",
+      "revokedToast": "Token revoked"
     },
     "entra": {
       "crumbSelf": "Entra ID",

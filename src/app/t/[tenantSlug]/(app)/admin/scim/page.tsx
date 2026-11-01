@@ -9,7 +9,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
-import { CloudCog, Trash2, Copy, Check, AlertTriangle, Clock, ExternalLink } from 'lucide-react';
+import { CloudCog, Trash2, Copy, Check, AlertTriangle, Clock } from 'lucide-react';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
@@ -23,6 +23,9 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { IdentityCrossLinks } from '@/components/admin/IdentityCrossLinks';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { apiErrorMessage } from '@/lib/api-error';
 
 interface ScimToken {
     id: string;
@@ -61,10 +64,12 @@ export default function ScimAdminPage() {
             } else if (res.status === 401 || res.status === 403) {
                 setError(t('scim.errNoPermission'));
             } else {
-                setError(t('scim.errLoadStatus', { status: res.status }));
+                // The server's sentence, never a bare status code (#4868).
+                const body = await res.json().catch(() => null);
+                setError(apiErrorMessage(body, t('scim.errLoad')));
             }
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t('scim.errLoad'));
+        } catch {
+            setError(t('scim.errLoad'));
         } finally {
             setLoading(false);
         }
@@ -82,14 +87,18 @@ export default function ScimAdminPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ label: newLabel || 'SCIM Token' }),
             });
-            if (!res.ok) throw new Error(t('scim.errGenerate'));
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                setError(apiErrorMessage(body, t('scim.errGenerate')));
+                return;
+            }
             const data = await res.json();
             setNewTokenPlaintext(data.plaintext);
             setShowForm(false);
             setNewLabel('');
             void fetchTokens();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : t('scim.errGeneric'));
+        } catch {
+            setError(t('scim.errGenerate'));
         } finally {
             setGenerating(false);
         }
@@ -97,15 +106,27 @@ export default function ScimAdminPage() {
 
     const revokeToken = (tokenId: string) => setTokenIdToRevoke(tokenId);
 
+    // A refused revoke used to be swallowed, leaving the token listed as
+    // active with no word (#4868). It now says why, and only a revoke the
+    // server accepted is reported as done.
     const performRevoke = async (tokenId: string) => {
+        setError(null);
         try {
-            await fetch(apiUrl('/admin/scim'), {
+            const res = await fetch(apiUrl('/admin/scim'), {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tokenId }),
             });
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                setError(apiErrorMessage(body, t('scim.errRevoke')));
+                return;
+            }
+            toast.success(t('scim.revokedToast'));
             void fetchTokens();
-        } catch { /* ignore */ }
+        } catch {
+            setError(t('scim.errRevoke'));
+        }
     };
 
     const copyToken = async () => {
@@ -146,13 +167,9 @@ export default function ScimAdminPage() {
                         <IdentityCrossLinks current="scim" />
                     </div>
                 </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    activeTokens.length > 0
-                        ? 'bg-bg-success text-content-success border border-border-success'
-                        : 'bg-bg-elevated/50 text-content-muted border border-border-emphasis'
-                }`}>
+                <StatusBadge id="scim-status" variant={activeTokens.length > 0 ? 'success' : 'neutral'}>
                     {activeTokens.length > 0 ? t('scim.enabled') : t('scim.notConfigured')}
-                </div>
+                </StatusBadge>
             </div>
 
             {/* Endpoint Info — render the slot eagerly so #scim-endpoint-url
@@ -173,7 +190,6 @@ export default function ScimAdminPage() {
                         size="sm"
                         disabled={!state?.scimEndpoint}
                     />
-                    <ExternalLink className="w-3.5 h-3.5 text-content-subtle" />
                 </div>
                 <p className="text-xs text-content-subtle mt-1">
                     {t('scim.endpointHint')}
@@ -230,16 +246,18 @@ export default function ScimAdminPage() {
                 {/* Generate form */}
                 {showForm && (
                     <div className="p-4 border-b border-border-default/50 bg-bg-default/30">
-                        <div className="flex gap-tight">
-                            <input
-                                type="text"
-                                value={newLabel}
-                                onChange={e => setNewLabel(e.target.value)}
-                                placeholder={t('scim.tokenLabelPlaceholder')}
-                                className="input flex-1"
-                                id="token-label-input"
-                                autoFocus
-                            />
+                        <div className="flex items-end gap-tight">
+                            <FormField label={t('scim.tokenLabel')} className="flex-1">
+                                <Input
+                                    type="text"
+                                    value={newLabel}
+                                    onChange={e => setNewLabel(e.target.value)}
+                                    placeholder={t('scim.tokenLabelPlaceholder')}
+                                    id="token-label-input"
+                                    maxLength={100}
+                                    autoFocus
+                                />
+                            </FormField>
                             <Button variant="primary" size="sm" onClick={generateToken} disabled={generating} loading={generating}>
                                 {generating ? t('scim.generating') : t('scim.create')}
                             </Button>
@@ -251,8 +269,10 @@ export default function ScimAdminPage() {
                 )}
 
                 {error && (
-                    <div className="p-3 text-xs text-content-error bg-bg-error border-b border-border-error">
-                        {error}
+                    <div className="p-4 border-b border-border-default/50">
+                        <InlineNotice variant="error" id="scim-error" onDismiss={() => setError(null)}>
+                            {error}
+                        </InlineNotice>
                     </div>
                 )}
 
