@@ -377,6 +377,28 @@ export interface ExternalWriteState {
 }
 
 /**
+ * Why a move is refused, as a CODE with its figures (#4878).
+ *
+ * The page printed `refusalForMove`'s English verbatim under the widen button,
+ * with stored mode names. The code is what the page words in the reader's
+ * language; `refusalForMove` keeps the sentence, built from the same
+ * classification, so the two cannot disagree.
+ */
+export type ExternalWriteRefusal =
+    | { code: 'ABOVE_CLAMP'; next: ExternalWriteMode; clamp: ExternalWriteMode }
+    | { code: 'MULTI_RUNG'; from: ExternalWriteMode; to: ExternalWriteMode }
+    | { code: 'NO_START'; mode: ExternalWriteMode }
+    | { code: 'EVIDENCE_UNCOUNTED'; mode: ExternalWriteMode }
+    | {
+          code: 'TOO_LITTLE_EVIDENCE';
+          mode: ExternalWriteMode;
+          count: number;
+          required: number;
+          kind: 'intents' | 'approvals';
+      }
+    | { code: 'DWELL'; mode: ExternalWriteMode; days: number; required: number; left: number };
+
+/**
  * Why a move is refused, or `null` when it is permitted.
  *
  * A string rather than a boolean because every refusal here is shown to an
@@ -390,6 +412,59 @@ export function refusalForMove(
     next: ExternalWriteMode,
     now: Date,
 ): string | null {
+    const r = classifyMove(current, next, now);
+    return r ? describeExternalRefusal(r) : null;
+}
+
+/** The operator-facing English for a classified refusal — the PUT's error body. */
+export function describeExternalRefusal(r: ExternalWriteRefusal): string {
+    switch (r.code) {
+        case 'ABOVE_CLAMP':
+            return (
+                `${r.next} is above the ceiling this build honours (${r.clamp}). `
+                + 'The rung is implemented; this build is deliberately held below it, and '
+                + 'raising the ceiling is a reviewed code change rather than a setting. '
+                + 'Selecting it here would name an authority the dispatch would refuse.'
+            );
+        case 'MULTI_RUNG': {
+            const from = LADDER.indexOf(r.from);
+            const to = LADDER.indexOf(r.to);
+            return (
+                `Cannot go from ${r.from} to ${r.to} in one step. Widen one level at a time `
+                + `(${LADDER.slice(from, to + 1).join(' → ')}), so each level is observed before `
+                + 'the next is granted.'
+            );
+        }
+        case 'NO_START':
+            return `${r.mode} has no recorded start. Re-select ${r.mode} to open the observation window.`;
+        case 'EVIDENCE_UNCOUNTED':
+            return (
+                `Cannot confirm what ${r.mode} has recorded since the window opened, so the `
+                + 'move cannot be granted. "We could not look" and "we looked and found nothing" '
+                + 'are different answers and only one of them is evidence.'
+            );
+        case 'TOO_LITTLE_EVIDENCE':
+            return (
+                `${r.mode} has recorded ${r.count} of the ${r.required} `
+                + `required ${r.kind === 'approvals' ? 'approved proposals' : 'dry-run intents'} `
+                + 'since the window opened. The window measures elapsed days, but a week with '
+                + 'nothing recorded is a path that never fired rather than a quiet week.'
+            );
+        case 'DWELL':
+            return (
+                `${r.mode} has been held for ${r.days} of the ${r.required} required `
+                + `days. ${r.left} to go, so there is time for what this rung records to be read before `
+                + 'a wider one acts on it.'
+            );
+    }
+}
+
+/** The classification `refusalForMove` words. Same arguments. */
+export function classifyMove(
+    current: ExternalWriteState,
+    next: ExternalWriteMode,
+    now: Date,
+): ExternalWriteRefusal | null {
     const from = LADDER.indexOf(current.mode);
     const to = LADDER.indexOf(next);
 
@@ -399,11 +474,7 @@ export function refusalForMove(
     if (to <= from) return null;
 
     if (to - from > 1) {
-        return (
-            `Cannot go from ${current.mode} to ${next} in one step. Widen one level at a time `
-            + `(${LADDER.slice(from, to + 1).join(' → ')}), so each level is observed before `
-            + 'the next is granted.'
-        );
+        return { code: 'MULTI_RUNG', from: current.mode, to: next };
     }
 
     // ── DISABLED HAS NO OBSERVATION WINDOW, BECAUSE IT OBSERVES NOTHING ─────
@@ -411,27 +482,12 @@ export function refusalForMove(
     // Owner decision, 2026-09-27. The dwell exists so that "what this rung
     // records can be read before a wider one acts on it" — and `DISABLED`
     // records nothing BY CONSTRUCTION. `MODE_MIN_EVIDENCE` already exempts it
-    // for precisely that reason, so the evidence axis had reached this
-    // conclusion and the elapsed-days axis had not.
-    //
-    // What it cost while both applied: a connection that had never been set has
-    // no `modeSince`, so its FIRST widen was refused and the operator was sent
-    // to re-select `DISABLED` as a no-op, then wait seven days — a week spent
-    // at a rung that produces nothing to read. The rung above it, `DRY_RUN`,
-    // sends nothing either, so the week bought no safety it did not already
-    // have.
-    //
-    // The protection is untouched. `DRY_RUN → PROPOSE_ONLY` and above still
+    // for precisely that reason. `DRY_RUN → PROPOSE_ONLY` and above still
     // require the full seven days AND recorded intents, which is where the
     // authority actually begins, and narrowing is still never gated.
-    //
-    // This also makes the connection gate deployable: with the rung governing
-    // whether an agent may call a connection at all, a seven-day wait at
-    // `DISABLED` would be seven days of outage for every connection that needs
-    // widening.
     if (current.mode !== 'DISABLED') {
         if (!current.modeSince) {
-            return `${current.mode} has no recorded start. Re-select ${current.mode} to open the observation window.`;
+            return { code: 'NO_START', mode: current.mode };
         }
     }
 
@@ -441,19 +497,16 @@ export function refusalForMove(
     const required = MODE_MIN_EVIDENCE[current.mode];
     if (required !== undefined) {
         if (current.evidenceInWindow === undefined) {
-            return (
-                `Cannot confirm what ${current.mode} has recorded since the window opened, so the `
-                + 'move cannot be granted. "We could not look" and "we looked and found nothing" '
-                + 'are different answers and only one of them is evidence.'
-            );
+            return { code: 'EVIDENCE_UNCOUNTED', mode: current.mode };
         }
         if (current.evidenceInWindow < required) {
-            return (
-                `${current.mode} has recorded ${current.evidenceInWindow} of the ${required} `
-                + `required ${current.mode === 'PROPOSE_ONLY' ? 'approved proposals' : 'dry-run intents'} `
-                + 'since the window opened. The window measures elapsed days, but a week with '
-                + 'nothing recorded is a path that never fired rather than a quiet week.'
-            );
+            return {
+                code: 'TOO_LITTLE_EVIDENCE',
+                mode: current.mode,
+                count: current.evidenceInWindow,
+                required,
+                kind: current.mode === 'PROPOSE_ONLY' ? 'approvals' : 'intents',
+            };
         }
     }
 
@@ -466,11 +519,7 @@ export function refusalForMove(
     const days = (now.getTime() - current.modeSince!.getTime()) / 86_400_000;
     if (days < MODE_MIN_DAYS) {
         const left = Math.ceil(MODE_MIN_DAYS - days);
-        return (
-            `${current.mode} has been held for ${Math.floor(days)} of the ${MODE_MIN_DAYS} required `
-            + `days. ${left} to go, so there is time for what this rung records to be read before `
-            + 'a wider one acts on it.'
-        );
+        return { code: 'DWELL', mode: current.mode, days: Math.floor(days), required: MODE_MIN_DAYS, left };
     }
 
     return null;

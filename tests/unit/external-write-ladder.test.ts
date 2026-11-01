@@ -18,6 +18,7 @@ import {
     refusesEveryWrite,
     requiresHumanApproval,
     refusalForMove,
+    classifyMove,
     type ExternalWriteMode,
 } from '@/lib/integrations/external-write-ladder';
 
@@ -298,3 +299,32 @@ describe('DISABLED is exempt from the observation window', () => {
         ).toMatch(/recorded 0 of the 1 required/);
     });
 });
+
+describe('classifyMove — the code a page words (#4878)', () => {
+    const ladder = { classifyMove, refusalForMove };
+    const NOW = new Date('2026-10-30T12:00:00Z');
+    const ago = (days: number) => new Date(NOW.getTime() - days * 86_400_000);
+
+    it('agrees with refusalForMove on whether a move is refused, for every branch', () => {
+        const cases: Array<[Parameters<typeof ladder.classifyMove>, string | null]> = [
+            [[{ mode: 'DISABLED', modeSince: null }, 'PROPOSE_ONLY', NOW], 'MULTI_RUNG'],
+            [[{ mode: 'DRY_RUN', modeSince: null, evidenceInWindow: 5 }, 'PROPOSE_ONLY', NOW], 'NO_START'],
+            [[{ mode: 'DRY_RUN', modeSince: ago(10) }, 'PROPOSE_ONLY', NOW], 'EVIDENCE_UNCOUNTED'],
+            [[{ mode: 'DRY_RUN', modeSince: ago(10), evidenceInWindow: 0 }, 'PROPOSE_ONLY', NOW], 'TOO_LITTLE_EVIDENCE'],
+            [[{ mode: 'DRY_RUN', modeSince: ago(2), evidenceInWindow: 4 }, 'PROPOSE_ONLY', NOW], 'DWELL'],
+            [[{ mode: 'DRY_RUN', modeSince: ago(10), evidenceInWindow: 4 }, 'PROPOSE_ONLY', NOW], null],
+            [[{ mode: 'AUTOMATIC', modeSince: null }, 'DISABLED', NOW], null],
+        ];
+        for (const [args, code] of cases) {
+            expect(ladder.classifyMove(...args)?.code ?? null).toBe(code);
+            expect(ladder.refusalForMove(...args) === null).toBe(code === null);
+        }
+    });
+
+    it('names the kind of evidence the current rung needs', () => {
+        expect(
+            ladder.classifyMove({ mode: 'PROPOSE_ONLY', modeSince: ago(10), evidenceInWindow: 0 }, 'AUTOMATIC', NOW),
+        ).toEqual({ code: 'TOO_LITTLE_EVIDENCE', mode: 'PROPOSE_ONLY', count: 0, required: 1, kind: 'approvals' });
+    });
+});
+

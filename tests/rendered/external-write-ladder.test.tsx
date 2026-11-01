@@ -61,9 +61,10 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 type Mode = 'DISABLED' | 'DRY_RUN' | 'PROPOSE_ONLY' | 'AUTOMATIC';
 
 let payload: Record<string, unknown> | undefined;
+let swrError: unknown = undefined;
 const swrMutate = jest.fn(async () => undefined);
 jest.mock('@/lib/hooks/use-tenant-swr', () => ({
-    useTenantSWR: () => ({ data: payload, error: undefined, isLoading: !payload, mutate: swrMutate }),
+    useTenantSWR: () => ({ data: payload, error: swrError, isLoading: !payload && !swrError, mutate: swrMutate }),
 }));
 
 import { ExternalWriteLadderClient } from '@/app/t/[tenantSlug]/(app)/admin/external-write-policy/[connectionId]/ExternalWriteLadderClient';
@@ -239,3 +240,52 @@ describe('the top of the ladder', () => {
         expect(screen.queryByRole('button', { name: /^Widen to/ })).not.toBeInTheDocument();
     });
 });
+
+describe('external write ladder — refusals in words, the evidence condition, a kept page (#4878)', () => {
+    afterEach(() => {
+        swrError = undefined;
+    });
+
+    it('words a refusal from its code, with no stored mode name', () => {
+        payload = {
+            ...makePayload({ mode: 'DRY_RUN', maxMode: 'AUTOMATIC' }),
+            refusals: { DISABLED: null, DRY_RUN: null, PROPOSE_ONLY: 'DRY_RUN has recorded 0 of the 1 …', AUTOMATIC: null },
+            blocked: {
+                DISABLED: null,
+                DRY_RUN: null,
+                PROPOSE_ONLY: { code: 'TOO_LITTLE_EVIDENCE', mode: 'DRY_RUN', count: 0, required: 1, kind: 'intents' },
+                AUTOMATIC: null,
+            },
+        };
+        render(<ExternalWriteLadderClient connectionId="conn_1" />);
+        const reason = screen.getByTestId('external-write-ladder-refusal');
+        expect(reason).toHaveTextContent('This step has recorded 0 dry-run intents and needs at least 1.');
+        expect(reason.textContent).not.toContain('DRY_RUN');
+    });
+
+    it('states the evidence condition beside the days, with the count so far', () => {
+        payload = { ...makePayload({ mode: 'DRY_RUN', maxMode: 'AUTOMATIC' }), evidenceInWindow: 3 };
+        render(<ExternalWriteLadderClient connectionId="conn_1" />);
+        expect(document.getElementById('external-write-ladder-evidence')).toHaveTextContent(
+            'Widening also needs at least 1 recorded dry-run intent in that time. Recorded so far: 3.',
+        );
+    });
+
+    it('a failed load keeps the title, the breadcrumb and the links', () => {
+        payload = undefined;
+        swrError = new Error('500');
+        render(<ExternalWriteLadderClient connectionId="conn_1" />);
+        expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+        expect(screen.getByText("Couldn't load the external write policy.")).toBeInTheDocument();
+        expect(document.getElementById('external-write-ladder-links')).not.toBeNull();
+    });
+
+    it("links to the connection's passport and the proposal queue", () => {
+        payload = makePayload({ mode: 'DRY_RUN' });
+        render(<ExternalWriteLadderClient connectionId="conn_1" />);
+        const links = document.getElementById('external-write-ladder-links') as HTMLElement;
+        const hrefs = Array.from(links.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+        expect(hrefs).toEqual(['/t/acme/admin/integrations/conn_1', '/t/acme/agents/proposals']);
+    });
+});
+
