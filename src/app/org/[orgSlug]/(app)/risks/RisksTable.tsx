@@ -152,7 +152,7 @@ export function RisksTable({ rows: initialRows, nextCursor: initialNextCursor, o
                         if (p.sortBy) setSortBy(p.sortBy);
                         if (p.sortOrder) setSortOrder(p.sortOrder);
                     }}
-                    resourceName={(plural) => (plural ? 'risks' : 'risk')}
+                    resourceName={(plural) => (plural ? t('risks.resourceMany') : t('risks.resourceOne'))}
                     emptyState={
                         <TableEmptyState
                             title={t('risks.emptyTitle')}

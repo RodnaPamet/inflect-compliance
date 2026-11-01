@@ -157,7 +157,7 @@ export function EvidenceTable({ rows: initialRows, nextCursor: initialNextCursor
                         if (p.sortBy) setSortBy(p.sortBy);
                         if (p.sortOrder) setSortOrder(p.sortOrder);
                     }}
-                    resourceName={(plural) => (plural ? 'evidence items' : 'evidence item')}
+                    resourceName={(plural) => (plural ? t('evidence.resourceMany') : t('evidence.resourceOne'))}
                     emptyState={
                         <TableEmptyState
                             title={t('evidence.emptyTitle')}

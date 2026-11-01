@@ -115,13 +115,6 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
             'Status discrimination on the redirect target is the ' +
             'caller-facing contract.',
     },
-    {
-        file: 'org/invite/[token]/accept-redirect/route.ts',
-        category: 'redirect_only',
-        reason:
-            'Org invite redeemer (POST, from the org invite page\'s form): ' +
-            'success → /org/<slug>; failure → /invite/org/<token>?error=<msg>.',
-    },
 
     // ─── Anti-enumeration uniform-200 ───
     //

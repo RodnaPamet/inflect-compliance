@@ -59,6 +59,11 @@ export interface OrgAgentSwitches {
     readonly toolRunner: OrgAgentSwitchState;
     /** Whether the caller may change them. */
     readonly canManage: boolean;
+    /**
+     * How many live workspaces the organization has: the reach of a switch,
+     * which the page names before a switch is turned off (#4850).
+     */
+    readonly workspaceCount: number;
 }
 
 export type OrgAgentSwitchesPatch = Partial<Record<AgentSwitch, boolean>>;
@@ -77,15 +82,22 @@ async function readRow(organizationId: string) {
     });
 }
 
+/** The organization's live workspaces: a soft-deleted one is reached by no switch. */
+async function countWorkspaces(organizationId: string): Promise<number> {
+    return prisma.tenant.count({ where: { organizationId, deletedAt: null } });
+}
+
 function present(
     row: { agentProfilesEnabled: boolean; agentToolRunnerEnabled: boolean },
     canManage: boolean,
+    workspaceCount: number,
 ): OrgAgentSwitches {
     const deployment = deploymentStates();
     return {
         agentProfiles: { organization: row.agentProfilesEnabled, deployment: deployment.agentProfiles },
         toolRunner: { organization: row.agentToolRunnerEnabled, deployment: deployment.toolRunner },
         canManage,
+        workspaceCount,
     };
 }
 
@@ -94,7 +106,11 @@ export async function getOrgAgentSwitches(ctx: OrgContext): Promise<OrgAgentSwit
     if (!ctx.permissions.canViewPortfolio) {
         throw forbidden('You do not have access to this organization.');
     }
-    return present(await readRow(ctx.organizationId), ctx.permissions.canManageAgentSwitches);
+    const [row, workspaceCount] = await Promise.all([
+        readRow(ctx.organizationId),
+        countWorkspaces(ctx.organizationId),
+    ]);
+    return present(row, ctx.permissions.canManageAgentSwitches, workspaceCount);
 }
 
 /**
@@ -125,7 +141,7 @@ export async function setOrgAgentSwitches(
     }
 
     if (Object.keys(moved.changes).length === 0) {
-        return present(before, true);
+        return present(before, true, await countWorkspaces(ctx.organizationId));
     }
 
     const after = await prisma.organization.update({
@@ -156,5 +172,5 @@ export async function setOrgAgentSwitches(
         });
     }
 
-    return present(after, true);
+    return present(after, true, await countWorkspaces(ctx.organizationId));
 }

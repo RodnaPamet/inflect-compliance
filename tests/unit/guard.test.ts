@@ -35,7 +35,7 @@ describe('isPublicPath', () => {
         ['/invite/org/abc123', true],
         ['/api/invites/abc123/start-signin', true],
         ['/api/org/invite/abc123/start-signin', true],
-        ['/api/org/invite/abc123/accept-redirect', true],
+        ['/api/org/invite/abc123', true],
     ])('"%s" → %s (public)', (path, expected) => {
         expect(isPublicPath(path)).toBe(expected);
     });

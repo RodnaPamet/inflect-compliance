@@ -14,24 +14,36 @@
  *
  * Each switch saves on its own, sending only its key: the PUT is a patch, and
  * one switch's failure must not look like the other's.
+ *
+ * ═══ TURNING ONE OFF ASKS FIRST (#4850) ═══
+ *
+ * Off reaches every workspace in the organization at once: the Behaviour tab
+ * leaves every agent, and profile runs are refused. So turning a switch off
+ * opens a confirmation that names the organization and how many workspaces it
+ * reaches, from the server's own count. It is skipped where it would change
+ * nothing: while the deployment overrides the switch, or when the
+ * organization has no workspace yet. Turning one on saves at once.
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { Card } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Label } from '@/components/ui/label';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Switch } from '@/components/ui/switch';
 import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
-import { useOrgApiUrl } from '@/lib/org-context-provider';
+import { useOrgApiUrl, useOrgContext } from '@/lib/org-context-provider';
 import type { AgentSwitch, DeploymentSwitch } from '@/lib/agentic/agent-switches';
 
 export interface OrgAgentSwitchesPayload {
     agentProfiles: { organization: boolean; deployment: DeploymentSwitch };
     toolRunner: { organization: boolean; deployment: DeploymentSwitch };
     canManage: boolean;
+    /** The organization's live workspaces: what a switch reaches. */
+    workspaceCount: number;
 }
 
 const ORDER: readonly AgentSwitch[] = ['agentProfiles', 'toolRunner'];
@@ -39,9 +51,21 @@ const ORDER: readonly AgentSwitch[] = ['agentProfiles', 'toolRunner'];
 export function OrgAgentSwitchesSection({ initial }: { initial: OrgAgentSwitchesPayload }) {
     const t = useTranslations('org.settings.agentSwitches');
     const apiUrl = useOrgApiUrl();
+    const { orgName } = useOrgContext();
     const [state, setState] = useState<OrgAgentSwitchesPayload>(initial);
     const [busy, setBusy] = useState<AgentSwitch | null>(null);
     const [error, setError] = useState<{ key: AgentSwitch; message: string } | null>(null);
+    const [confirmingOff, setConfirmingOff] = useState<AgentSwitch | null>(null);
+
+    /** Off asks first where it reaches a workspace; everything else saves at once. */
+    function request(key: AgentSwitch, next: boolean) {
+        const reachesWorkspaces = state[key].deployment === 'UNSET' && state.workspaceCount > 0;
+        if (!next && reachesWorkspaces) {
+            setConfirmingOff(key);
+            return;
+        }
+        void flip(key, next);
+    }
 
     async function flip(key: AgentSwitch, next: boolean) {
         setBusy(key);
@@ -96,7 +120,7 @@ export function OrgAgentSwitchesSection({ initial }: { initial: OrgAgentSwitches
                                         id={id}
                                         checked={s.organization}
                                         disabled={!state.canManage || busy !== null}
-                                        onCheckedChange={(on) => flip(key, on)}
+                                        onCheckedChange={(on) => request(key, on)}
                                         aria-describedby={`${id}-help`}
                                         data-testid={id}
                                     />
@@ -129,6 +153,24 @@ export function OrgAgentSwitchesSection({ initial }: { initial: OrgAgentSwitches
                     })}
                 </ul>
             </div>
+            <ConfirmDialog
+                showModal={confirmingOff !== null}
+                setShowModal={(open) => {
+                    if (!open) setConfirmingOff(null);
+                }}
+                tone="warning"
+                title={confirmingOff ? t(`confirmOff.${confirmingOff}.title`) : ''}
+                description={
+                    confirmingOff
+                        ? t(`confirmOff.${confirmingOff}.body`, { org: orgName, count: state.workspaceCount })
+                        : undefined
+                }
+                confirmLabel={t('confirmOff.confirm')}
+                onConfirm={async () => {
+                    if (confirmingOff) await flip(confirmingOff, false);
+                }}
+                onCancel={() => setConfirmingOff(null)}
+            />
         </Card>
     );
 }

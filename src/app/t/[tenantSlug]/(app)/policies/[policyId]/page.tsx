@@ -1097,7 +1097,7 @@ export default function PolicyDetailPage() {
                                             cycle kept the button and every click was
                                             refused. */}
                                         {canAdmin && v.id === publishableId && (
-                                            <Button variant="primary" size="sm" onClick={() => publishVersion(v.id)} disabled={!!actionLoading} loading={actionLoading === 'publish-' + v.id} id={`publish-version-${v.versionNumber}`}>
+                                            <Button variant="secondary" size="sm" onClick={() => publishVersion(v.id)} disabled={!!actionLoading} loading={actionLoading === 'publish-' + v.id} id={`publish-version-${v.versionNumber}`}>
                                                 {t('detail.publish')}
                                             </Button>
                                         )}

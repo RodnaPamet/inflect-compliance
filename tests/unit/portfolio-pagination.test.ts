@@ -89,6 +89,7 @@ beforeEach(() => {
             control: { findMany: controlFindManyMock },
             risk: { findMany: riskFindManyMock },
             evidence: { findMany: evidenceFindManyMock },
+            riskMatrixConfig: { findUnique: () => Promise.resolve(null) },
         };
         return fn(db);
     });

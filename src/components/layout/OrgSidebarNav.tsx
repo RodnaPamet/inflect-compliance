@@ -114,15 +114,14 @@ export function useOrgNavSections(): OrgNavSectionDef[] {
                     requiresManageMembers: true,
                 },
                 {
-                    // #4557 — the organization's agent switches. Restored to
-                    // the sidebar with a page behind it, in the Manage group
-                    // and for org admins, like Members and Audit Log. Every
-                    // member may read /settings directly; the write gate is
-                    // the route's.
+                    // #4557 — the organization's agent switches, in the Manage
+                    // group. Shown to EVERY member (#4850): the page is open to
+                    // anyone who can see the portfolio and shows a Reader the
+                    // switches read-only, so hiding the item only hid a page
+                    // they may read. The write gate is the route's.
                     href: orgHref('/settings'),
                     label: t('nav.settings'),
                     icon: Gear,
-                    requiresManageMembers: true,
                 },
             ],
         },

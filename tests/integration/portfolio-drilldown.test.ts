@@ -182,13 +182,54 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
                 data: {
                     tenantId: tenant.id,
                     title: `t${i + 1} low risk`,
-                    inherentScore: 5, // excluded
+                    inherentScore: 5, // excluded: below either workspace's top band
                     score: 5,
                     status: 'OPEN',
                     likelihood: 1,
                     impact: 5,
                 },
             });
+            // ACCEPTED leaves the critical count (#4846): its treatment is
+            // decided, as on the workspace's own dashboard.
+            await prisma.risk.create({
+                data: {
+                    tenantId: tenant.id,
+                    title: `t${i + 1} accepted critical risk`,
+                    inherentScore: 20,
+                    score: 20,
+                    status: 'ACCEPTED', // excluded
+                    likelihood: 4,
+                    impact: 5,
+                },
+            });
+            if (i === 1) {
+                // The second workspace runs a 3 x 3 matrix whose top band is
+                // 6-9 (#4846): a 6 is critical THERE, and would never reach
+                // the old fixed 15.
+                await prisma.riskMatrixConfig.create({
+                    data: {
+                        tenantId: tenant.id,
+                        likelihoodLevels: 3,
+                        impactLevels: 3,
+                        bands: [
+                            { name: 'Low', minScore: 1, maxScore: 2, color: '#22c55e' },
+                            { name: 'Medium', minScore: 3, maxScore: 5, color: '#f59e0b' },
+                            { name: 'High', minScore: 6, maxScore: 9, color: '#ef4444' },
+                        ],
+                    },
+                });
+                await prisma.risk.create({
+                    data: {
+                        tenantId: tenant.id,
+                        title: `t${i + 1} band critical risk`,
+                        inherentScore: 6,
+                        score: 6,
+                        status: 'MITIGATING',
+                        likelihood: 2,
+                        impact: 3,
+                    },
+                });
+            }
 
             // ── Evidence ──
             // One overdue + one excluded (APPROVED, regardless of date) + one excluded (future review).
@@ -227,6 +268,7 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
     afterAll(async () => {
         await prisma.evidence.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.risk.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
+        await prisma.riskMatrixConfig.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.control.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
         await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } });
@@ -257,18 +299,22 @@ describeFn('Epic O-3 — portfolio drill-down lifecycle (DB-backed)', () => {
 
     // ── Drill-down: risks ─────────────────────────────────────────
 
-    it('getCriticalRisksAcrossOrg returns rows with inherentScore≥15 AND status≠CLOSED', async () => {
+    it("getCriticalRisksAcrossOrg returns each workspace's top-band risks still needing treatment (#4846)", async () => {
         const rows = await getCriticalRisksAcrossOrg(ctxFor());
 
-        // 2 tenants × 1 OPEN-critical = 2 rows. Closed-critical and
-        // low-score rows must be excluded.
-        expect(rows).toHaveLength(2);
+        // Workspace 1 (default grid, top band 15+): its OPEN 20.
+        // Workspace 2 (3 x 3, top band 6+): its OPEN 20 and its MITIGATING 6.
+        // Closed, accepted and low-score rows are excluded everywhere.
+        expect(rows.map((r) => r.title).sort()).toEqual(
+            ['t1 critical risk', 't2 band critical risk', 't2 critical risk'].sort(),
+        );
         for (const r of rows) {
-            expect(r.inherentScore).toBeGreaterThanOrEqual(15);
-            expect(r.status).not.toBe('CLOSED');
-            expect(r.title).toMatch(/critical risk$/);
+            expect(['OPEN', 'MITIGATING']).toContain(r.status);
             expect(r.drillDownUrl).toBe(`/t/${r.tenantSlug}/risks/${r.riskId}`);
         }
+        const band = rows.find((r) => r.title === 't2 band critical risk');
+        expect(band?.tenantSlug).toBe(tenantSlugs[1]);
+        expect(band?.inherentScore).toBe(6);
     });
 
     // ── Drill-down: evidence ──────────────────────────────────────

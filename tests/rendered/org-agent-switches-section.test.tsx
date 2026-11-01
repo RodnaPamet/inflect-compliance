@@ -9,6 +9,10 @@
  *      sentence saying who can change them.
  *   5. A refused save shows the server's sentence under THAT switch and keeps
  *      the stored state.
+ *   6. Turning a switch OFF asks first, naming the organization and how many
+ *      workspaces it reaches (#4850); cancelling sends nothing. Turning one on,
+ *      a switch the deployment overrides, and an organization with no
+ *      workspace save at once.
  */
 import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
@@ -23,16 +27,41 @@ jest.mock('next-intl', () => {
             (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
             en,
         );
-    const make = (ns: string) => (key: string) => {
+    // `{name}` and the flat `plural` blocks the catalogue uses, so a test can
+    // assert the confirmation's reach rather than its template.
+    const PLURAL = /\{(\w+),\s*plural,((?:\s*(?:=\d+|one|other)\s*\{[^{}]*\})+)\s*\}/g;
+    const OPTION = /(=\d+|one|other)\s*\{([^{}]*)\}/g;
+    const format = (str: string, params?: Record<string, unknown>) =>
+        str
+            .replace(PLURAL, (block: string, name: string, options: string) => {
+                if (!params || !(name in params)) return block;
+                const n = Number(params[name]);
+                const forms = new Map<string, string>();
+                for (const m of options.matchAll(OPTION)) forms.set(m[1], m[2]);
+                const body = forms.get(`=${n}`) ?? (n === 1 ? forms.get('one') : undefined) ?? forms.get('other');
+                return body === undefined ? block : body.split('#').join(String(n));
+            })
+            .replace(/\{(\w+)\}/g, (m: string, name: string) => (params && name in params ? String(params[name]) : m));
+    const make = (ns: string) => (key: string, params?: Record<string, unknown>) => {
         const v = resolve(`${ns}.${key}`);
-        return typeof v === 'string' ? v : key;
+        return typeof v === 'string' ? format(v, params) : key;
     };
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };
 });
 
+// The confirmation is a Modal, which reads the router.
+jest.mock('next/navigation', () => ({
+    useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn(), back: jest.fn(), prefetch: jest.fn() }),
+    usePathname: () => '/org/acme/settings',
+    useSearchParams: () => new URLSearchParams(),
+}));
+
 jest.mock('@/lib/org-context-provider', () => {
     const apiUrl = (path: string) => `/api/org/acme${path.startsWith('/') ? path : `/${path}`}`;
-    return { useOrgApiUrl: () => apiUrl };
+    return {
+        useOrgApiUrl: () => apiUrl,
+        useOrgContext: () => ({ orgName: 'Acme Group', orgSlug: 'acme' }),
+    };
 });
 
 import {
@@ -52,6 +81,7 @@ function payload(over: Partial<OrgAgentSwitchesPayload> = {}): OrgAgentSwitchesP
         agentProfiles: { organization: false, deployment: 'UNSET' },
         toolRunner: { organization: false, deployment: 'UNSET' },
         canManage: true,
+        workspaceCount: 3,
         ...over,
     };
 }
@@ -135,5 +165,52 @@ describe('the organization\'s agent switches', () => {
         expect(await within(row).findByText('Permission denied')).toBeInTheDocument();
         expect(screen.getByTestId('org-agent-switch-toolRunner')).not.toBeChecked();
         expect(within(screen.getByTestId('org-agent-switch-agentProfiles-row')).queryByText('Permission denied')).toBeNull();
+    });
+
+    it('turning a switch off asks first, naming the organization and its reach (#4850)', async () => {
+        const user = userEvent.setup();
+        const initial = payload({ agentProfiles: { organization: true, deployment: 'UNSET' } });
+        stubPut(initial);
+        render(<OrgAgentSwitchesSection initial={initial} />);
+
+        await user.click(screen.getByTestId('org-agent-switch-agentProfiles'));
+        const dialog = await screen.findByRole('dialog');
+        expect(dialog).toHaveTextContent('Turn off agent profiles?');
+        expect(dialog).toHaveTextContent('Agent profiles stop working in every workspace in Acme Group (3 workspaces)');
+        // Nothing is sent while the person decides.
+        expect(calls).toEqual([]);
+
+        await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+        expect(calls).toEqual([]);
+        expect(screen.getByTestId('org-agent-switch-agentProfiles')).toBeChecked();
+
+        await user.click(screen.getByTestId('org-agent-switch-agentProfiles'));
+        await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Turn off' }));
+        expect(calls).toEqual([{ url: '/api/org/acme/agent-switches', method: 'PUT', body: { agentProfiles: false } }]);
+        expect(await screen.findByTestId('org-agent-switch-agentProfiles')).not.toBeChecked();
+    });
+
+    it('names the one workspace when the organization has exactly one', async () => {
+        const user = userEvent.setup();
+        const initial = payload({ toolRunner: { organization: true, deployment: 'UNSET' }, workspaceCount: 1 });
+        stubPut(initial);
+        render(<OrgAgentSwitchesSection initial={initial} />);
+        await user.click(screen.getByTestId('org-agent-switch-toolRunner'));
+        expect(await screen.findByRole('dialog')).toHaveTextContent(
+            'The Tool Runner engine stops being available in every workspace in Acme Group (1 workspace).',
+        );
+    });
+
+    it.each([
+        ['the deployment overrides it', { deployment: 'ON' as const }, 3],
+        ['the organization has no workspace yet', { deployment: 'UNSET' as const }, 0],
+    ])('turning off saves at once when %s: it changes no workspace', async (_why, state, workspaceCount) => {
+        const user = userEvent.setup();
+        const initial = payload({ agentProfiles: { organization: true, ...state }, workspaceCount });
+        stubPut(initial);
+        render(<OrgAgentSwitchesSection initial={initial} />);
+        await user.click(screen.getByTestId('org-agent-switch-agentProfiles'));
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(calls.map((c) => c.body)).toEqual([{ agentProfiles: false }]);
     });
 });

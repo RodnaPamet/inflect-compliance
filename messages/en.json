@@ -13865,9 +13865,10 @@
     "joinOrgAs": "Join the <b>{org}</b> organization as a <b>{role}</b>.",
     "expires": "Expires {date}",
     "signInToAccept": "Sign in to accept",
+    "switchAccount": "Sign out and use another account",
     "acceptInvitation": "Accept invitation",
     "acceptFailed": "Could not accept the invitation. Please try again.",
-    "wrongAccount": "You are signed in as <b>{email}</b>, but this invite was sent to a different email address. Sign in with the correct account to accept it.",
+    "wrongAccount": "You are signed in as <b>{email}</b>, but this invitation was sent to a different email address. Sign out, then sign in with the address it was sent to. Signing in again with this account would use up the invitation.",
     "refused": {
       "INVITE_NOT_FOUND": "This invitation does not exist. Check the link, or ask your admin to send a new invite.",
       "INVITE_REVOKED": "This invitation has been withdrawn. Ask your admin to send a new invite.",
@@ -13875,6 +13876,14 @@
       "INVITE_ALREADY_REDEEMED": "This invitation has already been used. If it was not you, ask your admin to send a new invite.",
       "INVITE_EMAIL_MISMATCH": "This invitation was sent to a different email address from the account you signed in with, so it can no longer be used. Ask your admin to send a new invite to the address you sign in with.",
       "INVITE_NOT_COMPLETED": "This invitation was claimed, but joining the workspace did not finish. Ask your admin to send a new invite."
+    },
+    "orgRefused": {
+      "INVITE_NOT_FOUND": "This invitation does not exist. Check the link, or ask the organization's admin to send a new invitation.",
+      "INVITE_REVOKED": "This invitation has been withdrawn. Ask the organization's admin to send a new invitation.",
+      "INVITE_EXPIRED": "This invitation has expired. Ask the organization's admin to send a new invitation.",
+      "INVITE_ALREADY_REDEEMED": "This invitation has already been used. If it was not you, ask the organization's admin to send a new invitation.",
+      "INVITE_EMAIL_MISMATCH": "This invitation was sent to a different email address from the account you signed in with, so it can no longer be used. Ask the organization's admin to send a new invitation to the address you sign in with.",
+      "INVITE_NOT_COMPLETED": "This invitation was claimed, but joining the organization did not finish. Ask the organization's admin to send a new invitation."
     },
     "result": {
       "title": "Invitation not accepted",
@@ -14227,31 +14236,35 @@
       "emptyTitle": "All controls performing",
       "emptyDesc": "No applicable control in any of this organization's workspaces is short of implemented.",
       "loadMore": "Load more controls",
-      "failedLoadMore": "Failed to load more — please retry."
+      "failedLoadMore": "Failed to load more — please retry.",
+      "resourceOne": "control",
+      "resourceMany": "controls"
     },
     "evidence": {
       "title": "Overdue Evidence",
-      "subtitle": "{count, plural, one {# evidence item} other {# evidence items}} past review across the portfolio",
-      "moreAvailable": " (more available)",
-      "colTenant": "Tenant",
+      "subtitle": "Showing {count, plural, one {# evidence item} other {# evidence items}} not yet approved, whose review date has passed, across every workspace in the organization",
+      "moreAvailable": " — more to load below",
+      "colTenant": "Workspace",
       "colEvidence": "Evidence",
       "colOverdue": "Overdue",
       "colStatus": "Status",
       "colReviewDue": "Review due",
-      "overdueBadge": "{days}d overdue",
+      "overdueBadge": "{days, plural, one {# day} other {# days}} overdue",
       "statusDraft": "Draft",
       "statusSubmitted": "Submitted",
       "statusRejected": "Rejected",
       "emptyTitle": "No overdue evidence",
-      "emptyDesc": "Every non-approved evidence item is within its review window across this organization's tenants.",
+      "emptyDesc": "No evidence item awaiting approval in any of this organization's workspaces is past its review date.",
       "loadMore": "Load more evidence",
-      "failedLoadMore": "Failed to load more — please retry."
+      "failedLoadMore": "Failed to load more — please retry.",
+      "resourceOne": "evidence item",
+      "resourceMany": "evidence items"
     },
     "risks": {
       "title": "Critical Risks",
-      "subtitle": "{count, plural, one {# critical risk} other {# critical risks}} (score ≥ 15, not closed) across the portfolio",
-      "moreAvailable": " (more available)",
-      "colTenant": "Tenant",
+      "subtitle": "Showing {count, plural, one {# risk} other {# risks}} in its workspace's highest severity band and still open or being mitigated, across every workspace in the organization",
+      "moreAvailable": " — more to load below",
+      "colTenant": "Workspace",
       "colRisk": "Risk",
       "colScore": "Score",
       "colStatus": "Status",
@@ -14260,9 +14273,11 @@
       "statusMitigating": "Mitigating",
       "statusAccepted": "Accepted",
       "emptyTitle": "No critical risks",
-      "emptyDesc": "No risk with inherent score ≥ 15 is currently open across this organization's tenants.",
+      "emptyDesc": "No risk in any of this organization's workspaces is in that workspace's highest severity band and still open or being mitigated.",
       "loadMore": "Load more risks",
-      "failedLoadMore": "Failed to load more — please retry."
+      "failedLoadMore": "Failed to load more — please retry.",
+      "resourceOne": "risk",
+      "resourceMany": "risks"
     },
     "initiatives": {
       "title": "Security initiatives",
@@ -14326,7 +14341,7 @@
     },
     "settings": {
       "heading": "Settings",
-      "intro": "Settings that apply to every workspace in this organization.",
+      "intro": "Settings for <b>{org}</b> (/org/{slug}). They apply to every workspace in the organization.",
       "agentSwitches": {
         "title": "Agent features",
         "description": "Turn agent features on or off for every workspace in this organization. Each change is recorded in the organization's audit log.",
@@ -14343,7 +14358,18 @@
         "deploymentOnBadge": "On for every workspace",
         "deploymentOffBadge": "Off for every workspace",
         "deploymentOn": "This deployment turns it on for every workspace, so this switch changes nothing today. Your choice applies once the deployment leaves it to organizations.",
-        "deploymentOff": "This deployment turns it off for every workspace, so this switch changes nothing today. Your choice applies once the deployment leaves it to organizations."
+        "deploymentOff": "This deployment turns it off for every workspace, so this switch changes nothing today. Your choice applies once the deployment leaves it to organizations.",
+        "confirmOff": {
+          "agentProfiles": {
+            "title": "Turn off agent profiles?",
+            "body": "Agent profiles stop working in every workspace in {org} ({count, plural, one {# workspace} other {# workspaces}}): the Behaviour tab disappears from every agent, and runs that use a profile are refused. Saved profiles are kept, and come back if you turn this on again."
+          },
+          "toolRunner": {
+            "title": "Turn off the Tool Runner engine?",
+            "body": "The Tool Runner engine stops being available in every workspace in {org} ({count, plural, one {# workspace} other {# workspaces}}). A workspace that chose it runs its agents on the built-in engine instead, and runs that use an agent profile are refused."
+          },
+          "confirm": "Turn off"
+        }
       }
     },
     "forbidden": {
