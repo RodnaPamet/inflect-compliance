@@ -7953,7 +7953,6 @@
       "colSync": "Sync",
       "colDecisions": "Decisions",
       "colRan": "Ran at",
-      "colLink": "Account link",
       "colOutcome": "Outcome",
       "colReason": "Reason",
       "colBasis": "Basis",
@@ -8011,7 +8010,49 @@
       "unsettledUnknownBody": "This pass could not count the directory writes still waiting for an outcome, so this report cannot say whether there are any. That is not the same as none. Nothing was stopped — the read is deliberately allowed to fail rather than end an offboarding — but treat the figure as unknown, not as zero.",
       "readinessHeading": "Write readiness: {readiness}",
       "noProtectedHeading": "No account here is marked protected",
-      "noProtectedBody": "Leaver writes are enabled for this direction and none of the {population} active account(s) in scope is marked protected. The account this integration signs in as is still protected automatically — that rail is separate and always on. Everything else is not: a break-glass account, a shared service account or a contractor identity that appears in an HR export as a leaver will be disabled by an automated pass with nothing to stop it. Mark those accounts protected on the connected accounts page before this direction runs unattended."
+      "noProtectedBody": "Leaver writes are enabled for this direction and none of the {population} active account(s) in scope is marked protected. The account this integration signs in as is still protected automatically — that rail is separate and always on. Everything else is not: a break-glass account, a shared service account or a contractor identity that appears in an HR export as a leaver will be disabled by an automated pass with nothing to stop it. Mark those accounts protected on the connected accounts page before this direction runs unattended.",
+      "colAccount": "Account",
+      "accountUnlinked": "No longer linked to a person",
+      "journalLine": "What each write changed, and the account's state before it, is recorded in the identity write journal.",
+      "runNow": "Run now: {provider}",
+      "runQueued": "A {provider} pass is queued. It appears here when it finishes.",
+      "runFailed": "The pass could not be started.",
+      "refusalLabel": {
+        "MODE_DISABLED": "The leaver direction is off",
+        "MODE_ABOVE_CLAMP": "Set above what Inflect acts on",
+        "NO_TERMINATED_WORKERS": "HR reported nobody as having left",
+        "NO_FRESH_LINKS": "No account was matched by a recent complete sync",
+        "BATCH_REFUSED": "The batch was refused whole",
+        "WRITER_UNSUPPORTED_PROVIDER": "Inflect cannot write to this directory",
+        "WRITER_NO_CONNECTION": "No enabled connection for this directory",
+        "WRITER_AMBIGUOUS_CONNECTION": "More than one enabled connection for this directory",
+        "WRITER_SECRETS_UNREADABLE": "The connection's credentials could not be read",
+        "WRITER_WRITES_NOT_ENABLED": "The connection has not been granted offboarding writes",
+        "WRITER_WRITER_REFUSED": "The directory connection refused to write"
+      },
+      "outcomeLabel": {
+        "DISABLED": "Disabled",
+        "DRY_RUN": "Would disable",
+        "REFUSED_MODE": "Held: write policy",
+        "REFUSED_TARGET": "Held: cannot be written here",
+        "REFUSED_PROTECTED": "Held: protected",
+        "REFUSED_UNMEASURED": "Held: not measured",
+        "ALREADY_DISABLED": "Already disabled",
+        "FAILED": "Failed",
+        "INDETERMINATE": "Not confirmed"
+      },
+      "evidenceLabel": {
+        "live": "The live directory",
+        "snapshot": "The last synced snapshot",
+        "none": "None"
+      },
+      "readinessLabel": {
+        "APPLICATION_CREDENTIAL": "an application credential",
+        "DEDICATED_WRITE_BIND": "a dedicated write account",
+        "READ_BIND_ONLY": "a read-only account",
+        "UNKNOWN": "unknown"
+      },
+      "journalLink": "Open the journal"
     },
     "section": {
       "identity": "Identity & access",

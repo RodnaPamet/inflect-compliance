@@ -1,4 +1,5 @@
 import { listLeaverPasses } from '@/app-layer/usecases/identity-leaver-pass';
+import { decisionLinkIds, resolvePassAccounts } from '@/app-layer/usecases/identity-pass-accounts';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
@@ -27,10 +28,14 @@ type LeaverPassParams = { tenantSlug: string };
  * is first-match-wins, and the `admin/integrations` rule resolves to
  * `admin.manage`, so a nested path would leave the permission map documenting a
  * weaker gate than the handler enforces.
+ *
+ * `accounts` names each decision's account (#4875): the person and the
+ * directory address behind each `linkId`, so the page never shows the id.
  */
 export const GET = withApiErrorHandling(
     requirePermission<LeaverPassParams>('admin.tenant_lifecycle', async (_req, _params, ctx) => {
         const passes = await listLeaverPasses(ctx);
-        return jsonResponse({ passes });
+        const accounts = await resolvePassAccounts(ctx, decisionLinkIds(passes));
+        return jsonResponse({ passes, accounts });
     }),
 );

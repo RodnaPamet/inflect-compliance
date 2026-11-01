@@ -62,10 +62,14 @@
  * future one, must degrade to a thinner render, never to a thrown page.
  */
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 
 import { formatDateTime } from '@inflect/ui/lib/format-date';
-import { useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { Button } from '@/components/ui/button';
+import { apiErrorMessage } from '@/lib/api-error';
+import { WRITABLE_IDENTITY_PROVIDERS } from '@/app-layer/integrations/identity-writable-providers';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
@@ -172,6 +176,48 @@ interface PassResult {
      * distinction the server went out of its way to preserve.
      */
     unsettledOnEntry?: number | null;
+}
+
+/** The person and address behind a decision's `linkId` (#4875). */
+interface PassAccount {
+    name: string | null;
+    email: string | null;
+}
+
+/**
+ * Codes this page words. A code outside a list still renders, as itself, so a
+ * newer build's code is never hidden — only unlabelled.
+ */
+const REFUSAL_CODES = [
+    'MODE_DISABLED',
+    'MODE_ABOVE_CLAMP',
+    'NO_TERMINATED_WORKERS',
+    'NO_FRESH_LINKS',
+    'BATCH_REFUSED',
+    'WRITER_UNSUPPORTED_PROVIDER',
+    'WRITER_NO_CONNECTION',
+    'WRITER_AMBIGUOUS_CONNECTION',
+    'WRITER_SECRETS_UNREADABLE',
+    'WRITER_WRITES_NOT_ENABLED',
+    'WRITER_WRITER_REFUSED',
+] as const;
+const OUTCOME_CODES = [
+    'DISABLED',
+    'DRY_RUN',
+    'REFUSED_MODE',
+    'REFUSED_TARGET',
+    'REFUSED_PROTECTED',
+    'REFUSED_UNMEASURED',
+    'ALREADY_DISABLED',
+    'FAILED',
+    'INDETERMINATE',
+] as const;
+const EVIDENCE_CODES = ['live', 'snapshot', 'none'] as const;
+const READINESS_CODES = ['APPLICATION_CREDENTIAL', 'DEDICATED_WRITE_BIND', 'READ_BIND_ONLY', 'UNKNOWN'] as const;
+const PROVIDER_CODES = ['okta', 'google-workspace', 'entra-id', 'active-directory'] as const;
+
+function known<T extends string>(list: readonly T[], value: string | null | undefined): value is T {
+    return typeof value === 'string' && (list as readonly string[]).includes(value);
 }
 
 export interface LeaverPassRow {
@@ -474,9 +520,47 @@ function lastDueAt(now: Date): Date {
 export function LeaverPassesClient() {
     const t = useTranslations('admin');
     const tenantHref = useTenantHref();
-    const { data, error, isLoading } = useTenantSWR<{ passes: LeaverPassRow[] }>(
-        '/admin/identity-leaver-passes',
-    );
+    const apiUrl = useTenantApiUrl();
+    const { data, error, isLoading, mutate } = useTenantSWR<{
+        passes: LeaverPassRow[];
+        accounts?: Record<string, PassAccount>;
+    }>('/admin/identity-leaver-passes');
+    const accounts = data?.accounts ?? {};
+
+    // Words for the stored codes (#4875). Each falls back to the code itself.
+    const providerLabel = (p: string) =>
+        known(PROVIDER_CODES, p) ? t(`identityAccounts.providerLabels.${p}`) : p;
+    const refusalLabel = (code: string) =>
+        known(REFUSAL_CODES, code) ? t(`leaverPasses.refusalLabel.${code}`) : code;
+    const outcomeLabel = (code: string) =>
+        known(OUTCOME_CODES, code) ? t(`leaverPasses.outcomeLabel.${code}`) : code;
+
+    // RUN NOW (#4875). The route existed; nothing called it, so an Owner who
+    // had just fixed a refusal waited for 05:00 UTC to see whether it worked.
+    const [running, setRunning] = useState<string | null>(null);
+    const [runMessage, setRunMessage] = useState<{ ok: boolean; text: string } | null>(null);
+    const runNow = async (provider: string) => {
+        setRunning(provider);
+        setRunMessage(null);
+        try {
+            const res = await fetch(apiUrl('/admin/identity-leaver-passes/run'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider }),
+            });
+            const body = await res.json().catch(() => null);
+            if (!res.ok) {
+                setRunMessage({ ok: false, text: apiErrorMessage(body, t('leaverPasses.runFailed')) });
+                return;
+            }
+            setRunMessage({ ok: true, text: t('leaverPasses.runQueued', { provider: providerLabel(provider) }) });
+            void mutate();
+        } catch {
+            setRunMessage({ ok: false, text: t('leaverPasses.runFailed') });
+        } finally {
+            setRunning(null);
+        }
+    };
     // The report must NEVER gate on this call — `error` and `isLoading` are
     // deliberately dropped. A sibling endpoint returning 500 must not blank a
     // page whose own data loaded fine; the empty state simply falls back to the
@@ -597,7 +681,7 @@ export function LeaverPassesClient() {
         {
             accessorKey: 'provider',
             header: t('integrations.colProvider'),
-            cell: ({ getValue }) => <StatusBadge variant="info">{String(getValue())}</StatusBadge>,
+            cell: ({ row }) => <StatusBadge variant="info">{providerLabel(row.original.provider)}</StatusBadge>,
         },
         {
             id: 'status',
@@ -644,7 +728,7 @@ export function LeaverPassesClient() {
             cell: ({ row }) => {
                 const refusal = readResult(row.original.resultJson).refusal;
                 return refusal ? (
-                    <span className="font-mono text-content-muted">{refusal}</span>
+                    <span className="text-content-muted">{refusalLabel(refusal)}</span>
                 ) : (
                     <span className="text-content-subtle">—</span>
                 );
@@ -687,8 +771,23 @@ export function LeaverPassesClient() {
     const decisionCols = createColumns<PassDecision>([
         {
             accessorKey: 'linkId',
-            header: t('leaverPasses.colLink'),
-            cell: ({ getValue }) => <span className="font-mono">{String(getValue())}</span>,
+            header: t('leaverPasses.colAccount'),
+            // WHO, not the link's id (#4875): the person HR holds and the
+            // directory address. A link deleted since says so.
+            cell: ({ row }) => {
+                const account = accounts[row.original.linkId];
+                if (!account) {
+                    return <span className="text-content-subtle">{t('leaverPasses.accountUnlinked')}</span>;
+                }
+                return (
+                    <span className="flex flex-col">
+                        <span className="font-medium text-content-emphasis">{account.name ?? account.email ?? '—'}</span>
+                        {account.name && account.email && (
+                            <span className="text-xs text-content-muted">{account.email}</span>
+                        )}
+                    </span>
+                );
+            },
         },
         {
             id: 'outcome',
@@ -696,7 +795,7 @@ export function LeaverPassesClient() {
             header: t('leaverPasses.colOutcome'),
             cell: ({ row }) => (
                 <StatusBadge variant={OUTCOME_VARIANT[row.original.outcome] ?? 'neutral'}>
-                    {row.original.outcome}
+                    {outcomeLabel(row.original.outcome)}
                 </StatusBadge>
             ),
         },
@@ -785,8 +884,19 @@ export function LeaverPassesClient() {
 
     const facts: { label: string; value: string }[] = selected
         ? [
-              { label: t('leaverPasses.factMode'), value: selectedResult.mode ?? '—' },
-              { label: t('leaverPasses.factEvidence'), value: selectedResult.evidence ?? '—' },
+              {
+                  label: t('leaverPasses.factMode'),
+                  value:
+                      selectedResult.mode && (LADDER as readonly string[]).includes(selectedResult.mode)
+                          ? t(`writeLadder.mode.${selectedResult.mode as IdentityWriteMode}`)
+                          : (selectedResult.mode ?? '—'),
+              },
+              {
+                  label: t('leaverPasses.factEvidence'),
+                  value: known(EVIDENCE_CODES, selectedResult.evidence)
+                      ? t(`leaverPasses.evidenceLabel.${selectedResult.evidence}`)
+                      : (selectedResult.evidence ?? '—'),
+              },
               {
                   label: t('leaverPasses.factTerminated'),
                   value: String(selectedResult.terminatedWorkers ?? 0),
@@ -820,12 +930,29 @@ export function LeaverPassesClient() {
             <BackAffordance />
             <PageBreadcrumbs
                 items={[
-                    { label: t('integrations.title'), href: tenantHref('/admin/integrations') },
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('crumb.integrations'), href: tenantHref('/admin/integrations') },
                     { label: t('leaverPasses.breadcrumb') },
                 ]}
             />
             <Heading level={1}>{t('leaverPasses.title')}</Heading>
             <p className="max-w-3xl text-sm text-content-muted">{t('leaverPasses.intro')}</p>
+            <p className="max-w-3xl text-sm text-content-muted" id="leaver-pass-journal-line">
+                {t('leaverPasses.journalLine')}{' '}
+                <Link
+                    href={tenantHref('/admin/identity-write-journal')}
+                    className="font-medium text-content-info hover:underline"
+                    id="leaver-pass-journal-link"
+                >
+                    {t('leaverPasses.journalLink')}
+                </Link>
+            </p>
+            {runMessage && (
+                <InlineNotice variant={runMessage.ok ? 'success' : 'error'} onDismiss={() => setRunMessage(null)}>
+                    {runMessage.text}
+                </InlineNotice>
+            )}
             {mode && (
                 <p id="leaver-pass-mode" className="max-w-3xl text-sm text-content-muted">
                     {t('leaverPasses.currentMode', {
@@ -836,7 +963,22 @@ export function LeaverPassesClient() {
             )}
 
             <Card className="space-y-default p-6">
-                <Heading level={2}>{t('leaverPasses.passesHeading')}</Heading>
+                <div className="flex flex-wrap items-center justify-between gap-default">
+                    <Heading level={2}>{t('leaverPasses.passesHeading')}</Heading>
+                    <div className="flex flex-wrap items-center gap-tight" id="leaver-pass-run">
+                        {WRITABLE_IDENTITY_PROVIDERS.map((provider) => (
+                            <Button
+                                key={provider}
+                                variant="secondary"
+                                size="sm"
+                                disabled={running !== null}
+                                onClick={() => void runNow(provider)}
+                            >
+                                {t('leaverPasses.runNow', { provider: providerLabel(provider) })}
+                            </Button>
+                        ))}
+                    </div>
+                </div>
                 {error ? (
                     <InlineNotice variant="error">{t('leaverPasses.loadError')}</InlineNotice>
                 ) : isLoading ? (
@@ -946,7 +1088,7 @@ export function LeaverPassesClient() {
                 <Card className="space-y-default p-6" id="leaver-pass-detail">
                     <Heading level={2}>
                         {t('leaverPasses.detailHeading', {
-                            provider: selected.provider,
+                            provider: providerLabel(selected.provider),
                             ran: formatDateTime(selected.completedAt ?? selected.executedAt),
                         })}
                     </Heading>
@@ -1027,7 +1169,9 @@ export function LeaverPassesClient() {
                         <InlineNotice
                             variant={selectedReadiness.readiness === 'UNKNOWN' ? 'warning' : 'info'}
                             title={t('leaverPasses.readinessHeading', {
-                                readiness: selectedReadiness.readiness ?? '',
+                                readiness: known(READINESS_CODES, selectedReadiness.readiness)
+                                    ? t(`leaverPasses.readinessLabel.${selectedReadiness.readiness}`)
+                                    : (selectedReadiness.readiness ?? ''),
                             })}
                         >
                             {selectedReadiness.detail ?? ''}
@@ -1085,7 +1229,7 @@ export function LeaverPassesClient() {
                             }
                             title={t('leaverPasses.refusalHeading')}
                         >
-                            <span className="font-mono text-xs">{selectedResult.refusal}</span>
+                            <span className="font-medium">{refusalLabel(selectedResult.refusal)}</span>
                             {selectedResult.detail ? ` — ${selectedResult.detail}` : ''}
                         </InlineNotice>
                     )}
