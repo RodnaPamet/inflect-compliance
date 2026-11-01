@@ -26,11 +26,15 @@
  * read degrades to a thinner render rather than a thrown page — the same
  * discipline `LeaverPassesClient` applies to its own result.
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { formatDateTime } from '@inflect/ui/lib/format-date';
-import { useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { Button } from '@/components/ui/button';
+import { apiErrorMessage } from '@/lib/api-error';
+import { WRITABLE_IDENTITY_PROVIDERS } from '@/app-layer/integrations/identity-writable-providers';
+import { LADDER, type IdentityWriteMode } from '@/lib/identity/write-ladder';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
@@ -76,6 +80,31 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
 };
 
 /**
+ * Codes this page words (#4876). A code outside a list still renders, as
+ * itself, so a newer build's value is unlabelled rather than hidden.
+ */
+const STATUS_CODES = ['PASSED', 'PARTIAL', 'NOT_APPLICABLE', 'ERROR'] as const;
+const REFUSAL_CODES = ['MODE_DISABLED', 'MODE_ABOVE_CLAMP', 'NO_STARTERS', 'NO_DEPARTMENT_MAP', 'NO_DEFAULT_GROUP', 'BATCH_OVER_CAP'] as const;
+const OUTCOME_CODES = [
+    'PLANNED',
+    'CREATED',
+    'ALREADY_PROVISIONED',
+    'ACCOUNT_OBSERVED',
+    'NOT_IN_WINDOW',
+    'REFUSED_NO_START_DATE',
+    'START_DATE_UNPARSEABLE',
+    'REFUSED_SOURCE_MANUAL',
+    'REFUSED_IDENTIFIER_UNSTABLE',
+    'REFUSED_NAME_UNDERIVABLE',
+    'REFUSED_IDENTITY_DIVERGES',
+] as const;
+const PROVIDER_CODES = ['okta', 'google-workspace', 'entra-id', 'active-directory'] as const;
+
+function known<T extends string>(list: readonly T[], value: string | null | undefined): value is T {
+    return typeof value === 'string' && (list as readonly string[]).includes(value);
+}
+
+/**
  * An outcome's tone.
  *
  * PLANNED is `info`, not `success`: at DRY_RUN nothing was created, and a green
@@ -84,16 +113,58 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
 const OUTCOME_VARIANT: Record<string, StatusBadgeVariant> = {
     PLANNED: 'info',
     CREATED: 'success',
+    // A starter held back for a reason someone must look at (#4876). They read
+    // the same grey as "already has an account" before, which is the opposite.
+    REFUSED_NO_START_DATE: 'warning',
+    START_DATE_UNPARSEABLE: 'warning',
+    REFUSED_SOURCE_MANUAL: 'warning',
+    REFUSED_IDENTIFIER_UNSTABLE: 'warning',
+    REFUSED_NAME_UNDERIVABLE: 'warning',
+    REFUSED_IDENTITY_DIVERGES: 'error',
 };
 
 export function JoinerPassesClient() {
     const t = useTranslations('admin');
     const tenantHref = useTenantHref();
+    const apiUrl = useTenantApiUrl();
     const [selectedId, setSelectedId] = useState<string | null>(null);
 
-    const { data, error, isLoading } = useTenantSWR<{ passes: JoinerPassRow[] }>(
-        '/admin/identity-joiner-passes',
+    const { data, error, isLoading, mutate } = useTenantSWR<{
+        passes: JoinerPassRow[];
+        starters?: Record<string, string>;
+    }>('/admin/identity-joiner-passes');
+    const starters = useMemo(() => data?.starters ?? {}, [data]);
+
+    const providerLabel = useCallback(
+        (p: string) => (known(PROVIDER_CODES, p) ? t(`identityAccounts.providerLabels.${p}`) : p),
+        [t],
     );
+
+    // RUN NOW (#4876), as for leavers: the route existed and nothing called it.
+    const [running, setRunning] = useState(false);
+    const [runMessage, setRunMessage] = useState<{ ok: boolean; text: string } | null>(null);
+    const runNow = async (provider: string) => {
+        setRunning(true);
+        setRunMessage(null);
+        try {
+            const res = await fetch(apiUrl('/admin/identity-joiner-passes/run'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider }),
+            });
+            const body = await res.json().catch(() => null);
+            if (!res.ok) {
+                setRunMessage({ ok: false, text: apiErrorMessage(body, t('joinerPasses.runFailed')) });
+                return;
+            }
+            setRunMessage({ ok: true, text: t('joinerPasses.runQueued', { provider: providerLabel(provider) }) });
+            void mutate();
+        } catch {
+            setRunMessage({ ok: false, text: t('joinerPasses.runFailed') });
+        } finally {
+            setRunning(false);
+        }
+    };
 
     const rows = useMemo(() => data?.passes ?? [], [data]);
     const selected = useMemo(() => rows.find((r) => r.id === selectedId) ?? null, [rows, selectedId]);
@@ -105,7 +176,7 @@ export function JoinerPassesClient() {
                 {
                     accessorKey: 'provider',
                     header: t('integrations.colProvider'),
-                    cell: ({ getValue }) => <StatusBadge variant="info">{String(getValue())}</StatusBadge>,
+                    cell: ({ row }) => <StatusBadge variant="info">{providerLabel(row.original.provider)}</StatusBadge>,
                 },
                 {
                     id: 'status',
@@ -113,7 +184,9 @@ export function JoinerPassesClient() {
                     header: t('integrations.colStatus'),
                     cell: ({ row }) => (
                         <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'}>
-                            {row.original.status}
+                            {known(STATUS_CODES, row.original.status)
+                                ? t(`joinerPasses.statusLabel.${row.original.status}`)
+                                : row.original.status}
                         </StatusBadge>
                     ),
                 },
@@ -123,9 +196,16 @@ export function JoinerPassesClient() {
                     // The rung the pass ran at. Absent on a row from before the
                     // field existed, which renders as a dash rather than a
                     // guess.
-                    cell: ({ row }) => (
-                        <span className="text-sm text-content-muted">{row.original.resultJson?.mode ?? '—'}</span>
-                    ),
+                    cell: ({ row }) => {
+                        const mode = row.original.resultJson?.mode;
+                        return (
+                            <span className="text-sm text-content-muted">
+                                {mode && (LADDER as readonly string[]).includes(mode)
+                                    ? t(`writeLadder.mode.${mode as IdentityWriteMode}`)
+                                    : (mode ?? '—')}
+                            </span>
+                        );
+                    },
                 },
                 {
                     id: 'starters',
@@ -158,19 +238,35 @@ export function JoinerPassesClient() {
                     ),
                 },
             ]),
-        [t],
+        [t, providerLabel],
     );
 
     const decisionCols = useMemo(
         () =>
             createColumns<JoinerDecision>([
                 {
+                    id: 'starter',
+                    header: t('joinerPasses.colStarter'),
+                    // WHO (#4876). The id was the row key and never shown, so an
+                    // intended address could not be judged against the person.
+                    cell: ({ row }) => {
+                        const name = starters[row.original.employeeId];
+                        return name ? (
+                            <span className="font-medium text-content-emphasis">{name}</span>
+                        ) : (
+                            <span className="text-content-subtle">{t('joinerPasses.starterUnknown')}</span>
+                        );
+                    },
+                },
+                {
                     id: 'outcome',
                     accessorKey: 'outcome',
                     header: t('joinerPasses.colOutcome'),
                     cell: ({ row }) => (
                         <StatusBadge variant={OUTCOME_VARIANT[row.original.outcome] ?? 'neutral'}>
-                            {row.original.outcome}
+                            {known(OUTCOME_CODES, row.original.outcome)
+                                ? t(`joinerPasses.outcomeLabel.${row.original.outcome}`)
+                                : row.original.outcome}
                         </StatusBadge>
                     ),
                 },
@@ -203,7 +299,7 @@ export function JoinerPassesClient() {
                     ),
                 },
             ]),
-        [t],
+        [t, starters],
     );
 
     return (
@@ -211,12 +307,33 @@ export function JoinerPassesClient() {
             <BackAffordance />
             <PageBreadcrumbs
                 items={[
-                    { label: t('integrations.title'), href: tenantHref('/admin/integrations') },
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('crumb.integrations'), href: tenantHref('/admin/integrations') },
                     { label: t('joinerPasses.breadcrumb') },
                 ]}
             />
             <Heading level={1}>{t('joinerPasses.title')}</Heading>
             <p className="text-sm text-content-muted">{t('joinerPasses.intro')}</p>
+            {runMessage && (
+                <InlineNotice variant={runMessage.ok ? 'success' : 'error'} onDismiss={() => setRunMessage(null)}>
+                    {runMessage.text}
+                </InlineNotice>
+            )}
+
+            <div className="flex flex-wrap items-center gap-tight" id="joiner-pass-run">
+                {WRITABLE_IDENTITY_PROVIDERS.map((provider) => (
+                    <Button
+                        key={provider}
+                        variant="secondary"
+                        size="sm"
+                        disabled={running}
+                        onClick={() => void runNow(provider)}
+                    >
+                        {t('joinerPasses.runNow', { provider: providerLabel(provider) })}
+                    </Button>
+                ))}
+            </div>
 
             <Card>
                 {error ? (
@@ -241,7 +358,11 @@ export function JoinerPassesClient() {
                         // A refusal is the pass's ANSWER, not an error. Rendered
                         // as a notice so it reads as the outcome it is.
                         <InlineNotice variant="warning">
-                            {selected.resultJson.refusal}
+                            <span className="font-medium">
+                                {known(REFUSAL_CODES, selected.resultJson.refusal)
+                                    ? t(`joinerPasses.refusalLabel.${selected.resultJson.refusal}`)
+                                    : selected.resultJson.refusal}
+                            </span>
                             {selected.resultJson.detail ? ` — ${selected.resultJson.detail}` : ''}
                         </InlineNotice>
                     )}

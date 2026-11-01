@@ -44,7 +44,11 @@
  * "never reached the read" assertions weaker than they look — they would prove
  * a wrapper was not called, not that no query was issued.
  */
-const mockDb = { integrationExecution: { findMany: jest.fn() } };
+const mockDb = {
+    integrationExecution: { findMany: jest.fn() },
+    // The route also names each decision's starter (#4876).
+    employee: { findMany: jest.fn(async () => [{ id: 'e1', fullName: 'Ada Lovelace' }]) },
+};
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_c: unknown, fn: (db: unknown) => unknown) => fn(mockDb)),
 }));
@@ -218,6 +222,8 @@ describe('GET …/admin/identity-joiner-passes — authorisation', () => {
         const body = await res.json();
         expect(body.passes).toHaveLength(1);
         expect(body.passes[0]).toMatchObject({ id: 'exec-1', provider: 'entra-id' });
+        // Each decision's starter is named (#4876), from this tenant's roster.
+        expect(body.starters).toEqual({ e1: 'Ada Lovelace' });
         expect(mockDb.integrationExecution.findMany).toHaveBeenCalledTimes(1);
     });
 
@@ -231,6 +237,7 @@ describe('GET …/admin/identity-joiner-passes — authorisation', () => {
 
             expect(res.status).toBe(403);
             expect(mockDb.integrationExecution.findMany).not.toHaveBeenCalled();
+            expect(mockDb.employee.findMany).not.toHaveBeenCalled();
         },
     );
 

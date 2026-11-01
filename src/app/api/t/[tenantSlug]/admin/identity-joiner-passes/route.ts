@@ -1,4 +1,5 @@
 import { listJoinerPasses } from '@/app-layer/usecases/identity-joiner-run';
+import { decisionEmployeeIds, resolveStarterNames } from '@/app-layer/usecases/identity-pass-starters';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
@@ -34,6 +35,8 @@ type JoinerPassParams = { tenantSlug: string };
 export const GET = withApiErrorHandling(
     requirePermission<JoinerPassParams>('admin.tenant_lifecycle', async (_req, _params, ctx) => {
         const passes = await listJoinerPasses(ctx);
-        return jsonResponse({ passes });
+        // Who each decision is about (#4876): the page never shows the id.
+        const starters = await resolveStarterNames(ctx, decisionEmployeeIds(passes));
+        return jsonResponse({ passes, starters });
     }),
 );
