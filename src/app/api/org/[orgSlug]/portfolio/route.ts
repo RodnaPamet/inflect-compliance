@@ -63,12 +63,10 @@ export const GET = withApiErrorHandling(
         }
         const view = rawView as View;
 
-        // Drill-down views need both canViewPortfolio (covered by usecase
-        // assert) AND canDrillDown (route-level fail-fast). The usecases
-        // themselves only check canViewPortfolio because the cross-
-        // tenant safety property is enforced by the ADMIN-membership
-        // RLS at the data plane — but failing at the route layer gives
-        // ORG_READERs a clean 403 rather than an empty array.
+        // Drill-down views need canDrillDown. The usecases assert it too
+        // (#4845): row-level security binds the workspace id only and does
+        // not check membership, so the usecase is the gate, and this check
+        // is the early answer for the API.
         if (DRILL_DOWN_VIEWS.has(view) && !ctx.permissions.canDrillDown) {
             throw forbidden(
                 'Drill-down access is restricted to org admins with auto-provisioned tenant access',

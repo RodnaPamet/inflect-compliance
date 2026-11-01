@@ -14213,9 +14213,9 @@
     },
     "controls": {
       "title": "Non-Performing Controls",
-      "subtitle": "{count, plural, one {# applicable control} other {# applicable controls}} not yet implemented across the portfolio",
-      "moreAvailable": " (more available)",
-      "colTenant": "Tenant",
+      "subtitle": "Showing {count, plural, one {# applicable control} other {# applicable controls}} not yet implemented, across every workspace in the organization",
+      "moreAvailable": " — more to load below",
+      "colTenant": "Workspace",
       "colControl": "Control",
       "colCode": "Code",
       "colStatus": "Status",
@@ -14226,7 +14226,7 @@
       "statusImplementing": "Implementing",
       "statusNeedsReview": "Needs review",
       "emptyTitle": "All controls performing",
-      "emptyDesc": "No applicable controls are sitting in a non-implemented state across this organization's tenants.",
+      "emptyDesc": "No applicable control in any of this organization's workspaces is short of implemented.",
       "loadMore": "Load more controls",
       "failedLoadMore": "Failed to load more — please retry."
     },
@@ -14346,6 +14346,11 @@
         "deploymentOn": "This deployment turns it on for every workspace, so this switch changes nothing today. Your choice applies once the deployment leaves it to organizations.",
         "deploymentOff": "This deployment turns it off for every workspace, so this switch changes nothing today. Your choice applies once the deployment leaves it to organizations."
       }
+    },
+    "forbidden": {
+      "title": "Not available for your role",
+      "back": "Back to the portfolio overview",
+      "drillDown": "This list names controls, risks and evidence inside the organization's workspaces. Organization owners and admins can open it; readers see the portfolio summary."
     }
   },
   "automation": {
