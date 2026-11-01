@@ -27,7 +27,7 @@ On [{{ui:org.initiatives.title}}](initiatives.md), click a row. On the dashboard
 - **{{ui:org.initiativeDetail.progressDerived}}**: the share of linked items that are done, with the count. A control is done when implemented; a risk when mitigated, accepted or closed; a task when resolved or closed; a finding when closed.
 - **{{ui:org.initiativeDetail.progressManual}}**: a percentage set for the initiative by hand, which takes the place of the linked work.
 
-**{{ui:org.initiativeDetail.linkedWork}}.** The items linked to the initiative, and how many workspaces they come from. Each row gives its {{ui:org.initiativeDetail.colType}} (control, risk, task or finding), its {{ui:org.initiativeDetail.colTenant}} and the {{ui:org.initiativeDetail.colEntity}}.
+**{{ui:org.initiativeDetail.linkedWork}}.** The items linked to the initiative, and how many workspaces they come from. Each row gives its {{ui:org.initiativeDetail.colType}} (control, risk, task or finding), its {{ui:org.initiativeDetail.colWorkspace}} and the {{ui:org.initiativeDetail.colEntity}}.
 
 ## What you can do
 
