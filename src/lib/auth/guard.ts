@@ -658,6 +658,10 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
  *     schedule health, built from the scans (owner decision, 2026-10-19). The
  *     exact list template only: one estate's path is PATCH and DELETE
  *   - `/api/t/[slug]/admin/agents/reports`        the governance pack
+ *   - `/api/t/[slug]/admin/mcp/quarantine`        the quarantine triage read
+ *     (#4898). Its route takes the view key and its usecase refuses an AUDITOR
+ *     unless an owner has turned `auditorReadsQuarantine` on, so the edge
+ *     admitting it decides nothing by itself
  *
  * Nothing under those paths, no other method, and no other admin path: AUDITOR
  * holds no key that writes, and the only other admin key it holds
@@ -670,6 +674,10 @@ export const AUDITOR_ADMIN_READ_PATHS: readonly string[] = [
     '/api/t/[slug]/admin/agents/harness-scans',
     '/api/t/[slug]/admin/agents/harness-estates',
     '/api/t/[slug]/admin/agents/reports',
+    // The quarantine triage read (#4898). Admitted at the edge so the usecase
+    // can apply the Owner's switch: an AUDITOR reads it only while an owner has
+    // turned `auditorReadsQuarantine` on, and is refused there otherwise.
+    '/api/t/[slug]/admin/mcp/quarantine',
 ];
 
 const AGENT_DETAIL_TEMPLATE = '/api/t/[slug]/admin/agents/[agentId]';

@@ -231,6 +231,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // nested under it, for the first-match-wins reason its own note gives.
     't/[tenantSlug]/admin/mcp-server-token/[connectionId]/route.ts',
     't/[tenantSlug]/admin/agent-driver/route.ts',
+    // Round 15 (#4895, #4900, #4896–#4898) — the owner's five agent oversight
+    // switches: who approves a composed request and an exact-value parameter
+    // edit, and whether Auditors read the decision log, receipts and
+    // quarantine. OWNER-only. Linked from Admin → AI features, the section that
+    // renders them.
+    't/[tenantSlug]/admin/agent-oversight/route.ts',
     // The owner's checklist in that section: which of the six terms are
     // satisfied and which one blocks. Read-only, on the PUT's tenant-lifecycle key.
     't/[tenantSlug]/admin/flue-wiring/route.ts',

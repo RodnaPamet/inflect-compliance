@@ -36,6 +36,13 @@ model AgentProposal {
   rationale            String?
   proposedViaKeyId     String?
   proposedBySessionRef String?
+  /// The PERSON who composed this request on `/agents/compose`, written once by
+  /// `external-write-compose.ts` and by no other path (NULL on every proposal an
+  /// agent or another flow made). While the tenant's
+  /// `agentComposeNeedsSecondApprover` is on, `approveAgentProposal` refuses
+  /// this user (`COMPOSER_MAY_NOT_APPROVE`). No FK: `User` is global, and the
+  /// value is a fact about who asked, not a relation anything navigates.
+  composedByUserId     String?
   reviewedByUserId     String?
   reviewedAt           DateTime?
   createdEntityId      String?

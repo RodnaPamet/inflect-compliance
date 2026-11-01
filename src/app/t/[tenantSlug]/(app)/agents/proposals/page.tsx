@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { listAgentProposals } from '@/app-layer/usecases/agent-proposals';
 import { buildProposalDiffs } from '@/app-layer/usecases/agent-proposal-diff';
 import {
@@ -144,6 +145,7 @@ export default async function AgentProposalsPage({
             // The views menu's other gates (#3710) — see the runs page.
             canCompose={ctx.appPermissions.admin.view}
             canInvestigate={ctx.appPermissions.admin.agent_registry}
+            oversightReads={await oversightReadsFor(ctx)}
             canReadReports={mayReadAgentInventory(ctx.appPermissions.admin)}
         />
     );

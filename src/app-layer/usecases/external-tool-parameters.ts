@@ -39,7 +39,8 @@ import { z } from 'zod';
 
 import { canonicalJson } from '@/lib/canonical-json';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { appendAuditEntry } from '@/lib/audit';
+import { badRequest, forbidden, notFound } from '@/lib/errors/types';
 import {
     declaresTargetField,
     OpenFieldsSchema,
@@ -53,6 +54,7 @@ import {
 } from './external-tool-target-populations';
 
 import { logEvent } from '../events/audit';
+import { readAgentOversightSettings } from './agent-oversight-settings';
 import { assertCanRead } from '../policies/common';
 import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import type { RequestContext } from '../types';
@@ -980,6 +982,38 @@ function fourEyesRefusal(err: unknown): string | null {
  * advances, and the displaced digest is kept so an incident review can tell
  * what was replaced without reconstructing it from the trail.
  */
+const EXACT_EDIT_PROPOSER_MESSAGE =
+    'You proposed this change, so somebody else approves it. An owner requires a second person for every change to saved parameters.';
+
+/** An exact-value edit (no open fields before or after) proposed by this user. */
+function isExactValueEditBy(
+    row: { pendingByUserId: string | null; openFields: unknown; pendingOpenFields: unknown },
+    userId: string | null | undefined,
+): boolean {
+    const template = row.openFields !== null || row.pendingOpenFields !== null;
+    return !template && row.pendingByUserId !== null && row.pendingByUserId === userId;
+}
+
+async function refuseExactEditProposer(ctx: RequestContext, id: string): Promise<never> {
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'ExternalToolParameterSet',
+        entityId: id,
+        action: 'AUTHZ_DENIED',
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            event: 'authz_denied',
+            reason: 'external_tool_parameters_exact_edit_proposer',
+            refusal: 'PROPOSER_MAY_NOT_APPROVE_EXACT_EDIT',
+        },
+        metadataJson: { role: ctx.role, apiKeyId: ctx.apiKeyId ?? null },
+    }).catch(() => undefined);
+    throw forbidden(EXACT_EDIT_PROPOSER_MESSAGE, { reason: 'PROPOSER_MAY_NOT_APPROVE_EXACT_EDIT' });
+}
+
 export async function approveParameterChange(
     ctx: RequestContext,
     input: unknown,
@@ -992,6 +1026,27 @@ export async function approveParameterChange(
     if (!ctx.userId) throw badRequest('An approving user is required');
 
     const { id, expectedPendingHash } = parsed.data;
+
+    // ═══ AN EXACT-VALUE EDIT, WHEN THE OWNER ASKS FOR A SECOND PERSON ═══
+    //
+    // A template edit's proposer is refused by the approval trigger. An
+    // exact-value edit's proposer is refused only while the tenant's Owner has
+    // turned `exactParameterEditNeedsSecondApprover` on (#4900). Asked BEFORE
+    // the write transaction so the refusal's AUTHZ_DENIED row is not rolled
+    // back with it; the transaction asks again, against the row it locks.
+    const requireOtherApprover = (await readAgentOversightSettings(ctx))
+        .exactParameterEditNeedsSecondApprover;
+    if (requireOtherApprover) {
+        const pending = await runInTenantContext(ctx, (db) =>
+            db.externalToolParameterSet.findFirst({
+                where: { id, tenantId: ctx.tenantId },
+                select: { pendingByUserId: true, openFields: true, pendingOpenFields: true },
+            }),
+        );
+        if (pending && isExactValueEditBy(pending, ctx.userId)) {
+            await refuseExactEditProposer(ctx, id);
+        }
+    }
 
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.externalToolParameterSet.findFirst({
@@ -1006,6 +1061,7 @@ export async function approveParameterChange(
                 pendingOpenFields: true,
                 pendingTargetPopulation: true,
                 pendingHash: true,
+                pendingByUserId: true,
                 openFields: true,
                 targetPopulation: true,
             },
@@ -1019,6 +1075,9 @@ export async function approveParameterChange(
                 'The proposed parameters changed since they were reviewed. Re-read the ' +
                     'pending change and approve that hash.',
             );
+        }
+        if (requireOtherApprover && isExactValueEditBy(existing, ctx.userId)) {
+            throw forbidden(EXACT_EDIT_PROPOSER_MESSAGE, { reason: 'PROPOSER_MAY_NOT_APPROVE_EXACT_EDIT' });
         }
 
         const revision = existing.revision + 1;

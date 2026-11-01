@@ -140,6 +140,8 @@ interface Props {
     canCompose?: boolean;
     /** `admin.tenant_lifecycle` — the owner-orphan pass page's gate (#3807). */
     canSetOrphanPass?: boolean;
+    /** Which assurance surfaces the viewer may read (`agent-oversight-settings.ts`). */
+    oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
 }
 
 /** Where an agent sits in its lifecycle. Only ACTIVE reaches the agent surface. */
@@ -223,6 +225,7 @@ function AgentsInner({
     canReviewProposals,
     canCompose,
     canSetOrphanPass = false,
+    oversightReads,
 }: Props) {
     const router = useRouter();
     const guardedPush = useGuardedPush();
@@ -642,6 +645,7 @@ function AgentsInner({
                                 canReviewProposals={canReviewProposals}
                                 canCompose={canCompose}
                                 canSetOrphanPass={canSetOrphanPass}
+                                oversightReads={oversightReads}
                                 // `admin.agent_registry` — the same key the
                                 // three assurance surfaces gate themselves on.
                                 canInvestigate={canInvestigate}

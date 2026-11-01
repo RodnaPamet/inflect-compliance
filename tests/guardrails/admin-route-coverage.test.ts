@@ -50,6 +50,9 @@ const ADMIN_ONLY_ROUTES = [
     // data and the control honouring that cannot sit where day-to-day
     // administration reaches it.
     'admin/ai-features/route.ts',
+    // The owner's agent oversight switches (round 15). `admin.tenant_lifecycle`,
+    // because they govern what agents and the roles that operate them may do.
+    'admin/agent-oversight/route.ts',
     'admin/calendar/consent/route.ts',
     // Legacy access recertification (Step 2a). Both admin.manage: PUT decides
     // which legacy column means email and which means employeeNumber, and GET

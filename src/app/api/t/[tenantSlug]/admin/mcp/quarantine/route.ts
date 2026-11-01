@@ -99,7 +99,11 @@ export interface QuarantineTriagePage {
 }
 
 export const GET = withApiErrorHandling(
-    requirePermission('admin.agent_registry', async (_req: NextRequest, _routeArgs, ctx) => {
+    // The inventory VIEW key here, and the full rule in the usecase: the
+    // register key, or the view key while an owner lets Auditors read the
+    // quarantine (`agent-oversight-settings.ts`, #4898). A view-key holder the
+    // switch does not admit is refused there, with an AUTHZ_DENIED row.
+    requirePermission('admin.agent_registry_view', async (_req: NextRequest, _routeArgs, ctx) => {
         const found = await listQuarantinedAgentProposals(ctx, {
             take: QUARANTINE_TRIAGE_PAGE_SIZE + 1,
         });

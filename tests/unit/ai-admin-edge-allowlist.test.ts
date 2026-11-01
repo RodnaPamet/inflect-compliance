@@ -266,10 +266,12 @@ describe('the other roles are unchanged', () => {
     // view key, so the edge admits a GET of the agent inventory and nothing else
     // under `/admin` (`AUDITOR_ADMIN_READ_PATHS`, pinned in
     // `tests/unit/agent-registry-view-key.test.ts`).
-    it('AUDITOR reads the agent inventory and is refused every other agent API', async () => {
+    // #4898 added the quarantine read: the edge admits the GET, and the usecase
+    // refuses an AUDITOR unless an owner has turned the switch on.
+    it('AUDITOR reads the agent inventory and the quarantine, and is refused every other agent API', async () => {
         expect(await refusedAtEdge('AUDITOR', '/api/t/acme/admin/agents')).toBe(false);
         expect(await refusedAtEdge('AUDITOR', '/api/t/acme/admin/agents', 'POST')).toBe(true);
-        expect(await refusedAtEdge('AUDITOR', '/api/t/acme/admin/mcp/quarantine')).toBe(true);
+        expect(await refusedAtEdge('AUDITOR', '/api/t/acme/admin/mcp/quarantine')).toBe(false);
         expect(await refusedAtEdge('AUDITOR', '/api/t/acme/admin/agents/kill-switch')).toBe(true);
     });
 

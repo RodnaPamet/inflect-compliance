@@ -26,14 +26,38 @@ jest.mock('@/lib/db/rls-middleware', () => ({
     ),
 }));
 
-const CTX = { tenantId: 't1', userId: 'u1' } as never;
+// The read rule (#4896) is its own module and has its own tests
+// (`agent-oversight-settings.test.ts`); here it is a seam the read must call.
+const mockAssertMayRead = jest.fn(async (_ctx: unknown, _surface: string) => undefined);
+jest.mock('@/app-layer/usecases/agent-oversight-settings', () => ({
+    assertMayReadOversightSurface: (ctx: unknown, surface: string) => mockAssertMayRead(ctx, surface),
+}));
+
+const CTX = {
+    tenantId: 't1',
+    userId: 'u1',
+    permissions: { canRead: true, canWrite: false, canAdmin: false, canAudit: false, canExport: false },
+} as never;
 
 beforeEach(() => {
+    (jest.requireMock('@/lib/db/rls-middleware') as { runInTenantContext: jest.Mock }).runInTenantContext.mockClear();
+    mockAssertMayRead.mockClear();
     findMany.mockReset();
     findMany.mockResolvedValue([]);
 });
 
 describe('listAiDecisions', () => {
+    it('asks the decision-log read rule before it reads anything', async () => {
+        await listAiDecisions(CTX);
+        expect(mockAssertMayRead).toHaveBeenCalledWith(CTX, 'decisions');
+    });
+
+    it('reads nothing when the read rule refuses', async () => {
+        mockAssertMayRead.mockRejectedValueOnce(new Error('refused'));
+        await expect(listAiDecisions(CTX)).rejects.toThrow('refused');
+        expect(findMany).not.toHaveBeenCalled();
+    });
+
     it('runs inside the tenant context rather than filtering by hand', async () => {
         const { runInTenantContext } = jest.requireMock('@/lib/db/rls-middleware');
         await listAiDecisions(CTX);

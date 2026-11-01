@@ -1885,6 +1885,26 @@ model TenantSecuritySettings {
   /// nothing while looking configured, and a reader that met an out-of-range
   /// value reads it as 100, never less.
   workpaperReviewSamplePercent Int @default(100)
+  /// AGENT OVERSIGHT SETTINGS (round 15, #4895 / #4900 / #4896–#4898). Five
+  /// switches an OWNER sets on Admin → AI features, through
+  /// `usecases/agent-oversight-settings.ts` and nothing else.
+  ///
+  /// A request composed on `/agents/compose` may not be approved by the person
+  /// who composed it while this is true (the default). The composer is
+  /// `AgentProposal.composedByUserId`.
+  agentComposeNeedsSecondApprover Boolean @default(true)
+  /// An EXACT-VALUE edit to a saved parameter set (no open fields before or
+  /// after) may not be approved by its proposer while this is true. Off by
+  /// default: a template edit already needs another person by trigger, and an
+  /// exact-value edit did not, which is the behaviour this keeps until an
+  /// owner turns it on.
+  agentExactParameterEditNeedsSecondApprover Boolean @default(false)
+  /// Whether a holder of the agent inventory VIEW key who lacks the register
+  /// key (an AUDITOR, by default) may read each of the three agent assurance
+  /// surfaces. Off by default, which is the access those surfaces had before.
+  auditorReadsAiDecisionLog    Boolean @default(false)
+  auditorReadsAgentReceipts    Boolean @default(false)
+  auditorReadsAgentQuarantine  Boolean @default(false)
 
   createdAt                    DateTime          @default(now())
   updatedAt                    DateTime          @updatedAt

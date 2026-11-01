@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth';
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { authOptions } from '@/auth';
 import { listWorkflowRuns } from '@/app-layer/usecases/workflow-runs';
 import { getWorkflowDefinition, listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
@@ -144,6 +145,7 @@ export default async function AgentRunsPage({
             // register key or `admin.view`.
             canCompose={ctx.appPermissions.admin.view}
             canInvestigate={ctx.appPermissions.admin.agent_registry}
+            oversightReads={await oversightReadsFor(ctx)}
             canReadReports={mayReadAgentInventory(ctx.appPermissions.admin)}
         />
     );

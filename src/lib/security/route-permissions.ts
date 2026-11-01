@@ -593,13 +593,15 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     {
         path: new RegExp(`^${T}\\/admin\\/mcp\\/quarantine$`),
         methods: ['GET'],
-        permission: 'admin.agent_registry',
+        permission: 'admin.agent_registry_view',
         note:
             'The QUARANTINE TRIAGE read — the proposals the agentic output ' +
-            'guard refused, with the payload that was attempted. Same key as ' +
-            'the agent register below and NOT a wider one: the operator move ' +
-            'after reading this page is to suspend or retire the agent that ' +
-            'produced the row, which is the authority that key names. This ' +
+            'guard refused, with the payload that was attempted. The route ' +
+            'takes the inventory VIEW key and the usecase applies the full ' +
+            'rule: the register key, or the view key only while an owner has ' +
+            'let Auditors read the quarantine (owner decision 2026-11-01, ' +
+            '#4898; `agent-oversight-settings.ts`). Off by default, which is ' +
+            'the register-key-only access this read had before. This ' +
             'rule is REQUIRED, not a stylistic preference over a prefix ' +
             'match: no other rule in this map matches /admin/mcp/** at all, ' +
             'so without it the path carries no declared permission.',
@@ -944,6 +946,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'configuration. Note the route can only ever flip the TENANT ' +
             'layer: the env flags are read once at process start, so no ' +
             'permission grants the power to change them from here.',
+    },
+
+    // ── Agent oversight settings (round 15) ────────────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/agent-oversight(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'The five switches that decide whether a composed request needs ' +
+            'a second approver, whether an exact-value parameter edit does, ' +
+            'and whether Auditors read the decision log, receipts and ' +
+            'quarantine. OWNER-only by owner decision (2026-11-01): they ' +
+            'govern what agents and their operators may do, so the roles ' +
+            'they bind must not be able to switch them off.',
     },
 
     // ── JML identity-write authority (per direction) ────────────────

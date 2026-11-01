@@ -6,6 +6,7 @@ import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity } from '@/lib/permissions';
 import { getTenantCtx } from '@/app-layer/context';
 import { listReceipts } from '@/app-layer/usecases/agent-action-receipt';
+import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { getTranslations } from 'next-intl/server';
 
@@ -48,11 +49,15 @@ export default async function AgentReceiptsPage({
     const t = await getTranslations('admin');
     const tAgents = await getTranslations('agents');
 
-    if (!ctx.appPermissions.admin.agent_registry) {
+    // The register key, or the inventory view key while an owner lets Auditors
+    // read receipts (`agent-oversight-settings.ts`, #4897). The list and export
+    // API apply the same rule, in the usecase.
+    const reads = await oversightReadsFor(ctx);
+    if (!reads.receipts) {
         return (
             <ForbiddenPage
-                title={tAgents('receipts.accessTitle')}
-                message={tAgents('receipts.accessMessage')}
+                title={tAgents('oversightAccess.title')}
+                message={tAgents('oversightAccess.message')}
             />
         );
     }
@@ -76,7 +81,8 @@ export default async function AgentReceiptsPage({
                         tenantSlug={tenantSlug}
                         canReviewProposals={mayReadAgentActivity(ctx.appPermissions.admin)}
                         canCompose={ctx.appPermissions.admin.view}
-                        canInvestigate
+                        canInvestigate={ctx.appPermissions.admin.agent_registry}
+                        oversightReads={reads}
                     />
                 }
             />

@@ -2,6 +2,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { auth } from '@/auth';
 import { getTenantCtx } from '@/app-layer/context';
+import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import {
     getAgentGovernanceStatus,
     getAgenticAssuranceSignals,
@@ -168,6 +169,7 @@ export default async function AgentRegisterPage({
             // they are pages, not admin API writes — so the menu entry asks
             // the key, not the write affordance above.
             canInvestigate={ctx.appPermissions?.admin?.agent_registry === true}
+            oversightReads={await oversightReadsFor(ctx)}
             // The proposal queue is gated at its own page on `admin.view` OR the
             // view key (`mayReadAgentActivity`, #3710), NOT on the register key
             // — see the note there. The menu entry has to ask the same question

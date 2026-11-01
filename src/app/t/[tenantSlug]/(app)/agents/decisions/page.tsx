@@ -2,6 +2,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { listAiDecisions } from '@/app-layer/usecases/ai-decision-log';
+import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity } from '@/lib/permissions';
 
@@ -57,14 +58,16 @@ export default async function AgentDecisionsPage({
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
 
-    // The register key, matching every sibling under `/agents`. The rows name
-    // people — `userId` is who decided — so this is not a read for everyone.
-    if (!ctx.appPermissions?.admin?.agent_registry) {
+    // The register key, or the inventory view key while an owner lets Auditors
+    // read the log (`agent-oversight-settings.ts`, #4896). Not a read for
+    // everyone: it is the record of what the workspace's models decided.
+    const reads = await oversightReadsFor(ctx);
+    if (!reads.decisions) {
         const t = await getTranslations('agents');
         return (
             <ForbiddenPage
-                title={t('register.accessTitle')}
-                message={t('register.accessMessage')}
+                title={t('oversightAccess.title')}
+                message={t('oversightAccess.message')}
             />
         );
     }
@@ -83,6 +86,7 @@ export default async function AgentDecisionsPage({
             canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
             canCompose={Boolean(ctx.appPermissions?.admin?.view)}
             canInvestigate={Boolean(ctx.appPermissions?.admin?.agent_registry)}
+            oversightReads={reads}
         />
     );
 }

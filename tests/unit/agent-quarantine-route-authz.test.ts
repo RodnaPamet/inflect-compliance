@@ -157,7 +157,17 @@ describe('the gate', () => {
         expect(res.status).toBe(200);
     });
 
-    for (const role of ['EDITOR', 'READER', 'AUDITOR'] as const) {
+    // An AUDITOR holds the inventory view key the route asks, so it reaches
+    // the usecase, which applies the Owner's switch (#4898) — tested there.
+    it('lets an AUDITOR reach the usecase, which applies the owner’s switch', async () => {
+        getTenantCtxMock.mockResolvedValueOnce(ctxFor('AUDITOR'));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = await GET(req(), routeArgs as any);
+        expect(res.status).toBe(200);
+        expect(listQuarantinedMock).toHaveBeenCalledTimes(1);
+    });
+
+    for (const role of ['EDITOR', 'READER'] as const) {
         it(`refuses ${role} with 403 and never reaches the usecase`, async () => {
             getTenantCtxMock.mockResolvedValueOnce(ctxFor(role));
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -262,7 +272,7 @@ describe('the page it returns', () => {
 describe('the declarative side of the same policy', () => {
     it('ROUTE_PERMISSIONS resolves this path to the same key the handler names', () => {
         const rule = resolveRoutePermission(PATH, 'GET');
-        expect(rule?.permission).toBe('admin.agent_registry');
+        expect(rule?.permission).toBe('admin.agent_registry_view');
     });
 
     it('exactly one rule in the whole map matches this path', () => {
@@ -279,12 +289,14 @@ describe('the declarative side of the same policy', () => {
         const matching = ROUTE_PERMISSIONS.filter((r) => r.path.test(PATH));
         expect(matching).toHaveLength(1);
         expect(matching[0].note).toContain('QUARANTINE TRIAGE');
-        expect(matching[0].permission).toBe('admin.agent_registry');
+        expect(matching[0].permission).toBe('admin.agent_registry_view');
     });
 
-    it('the key it names is one an EDITOR does not hold', () => {
-        expect(getPermissionsForRole('OWNER').admin.agent_registry).toBe(true);
-        expect(getPermissionsForRole('ADMIN').admin.agent_registry).toBe(true);
-        expect(getPermissionsForRole('EDITOR').admin.agent_registry).toBe(false);
+    it('the key it names is one an EDITOR and a READER do not hold', () => {
+        expect(getPermissionsForRole('OWNER').admin.agent_registry_view).toBe(true);
+        expect(getPermissionsForRole('ADMIN').admin.agent_registry_view).toBe(true);
+        expect(getPermissionsForRole('AUDITOR').admin.agent_registry_view).toBe(true);
+        expect(getPermissionsForRole('EDITOR').admin.agent_registry_view).toBe(false);
+        expect(getPermissionsForRole('READER').admin.agent_registry_view).toBe(false);
     });
 });
