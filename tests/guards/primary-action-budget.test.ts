@@ -66,12 +66,13 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // ENTRY REMOVED (#4851): the Initiatives list's create dialog moved into
     // its own lazily loaded file (CreateInitiativeModal.tsx, one primary), so
     // the list renders one primary, "New initiative": DEFAULT_BUDGET.
-    // One initiative (#4852): the Edit sheet's "Save changes" and the Link
-    // work dialog's "Link work" — two overlays, each closed until asked for,
-    // and `modal-action-order` requires each one's last action to be primary.
-    // The page's own Edit and Link work triggers are secondary. Paid for under
-    // the product-wide ceiling by two row actions (see primary-secondary-ratio).
-    "src/app/org/[orgSlug]/(app)/initiatives/[initiativeId]/InitiativeDetailClient.tsx": 2,
+    // One initiative's dialogs (#4852): the Edit sheet's "Save changes" and
+    // the Link work dialog's "Link work" — two overlays, each closed until
+    // asked for and loaded lazily by the page, and `modal-action-order`
+    // requires each one's last action to be primary. The page's own Edit and
+    // Link work triggers are secondary. Paid for under the product-wide
+    // ceiling by two row actions (see primary-secondary-ratio).
+    "src/app/org/[orgSlug]/(app)/initiatives/[initiativeId]/InitiativeDialogs.tsx": 2,
     // SP-F1 — the file picker has two mutually-exclusive footer modes:
     // file-select ("Import/Select") and folder-select ("Use this folder").
     // Each is the single primary of its mode; the static scanner counts both.
