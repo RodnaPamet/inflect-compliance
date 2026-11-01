@@ -351,6 +351,11 @@ async function runGoverned(
                 tokensIn: by.tokensIn,
                 tokensOut: by.tokensOut,
                 sessionRef: ctx.requestId,
+                // No step ever reviews an assistant answer: it goes straight to
+                // the person who asked. Written terminal, so the log does not
+                // carry it as "awaiting review" for ever (#4896, owner decision
+                // 2026-11-01).
+                humanOutcome: 'AUTONOMOUS',
             }),
         );
     } catch (err) {

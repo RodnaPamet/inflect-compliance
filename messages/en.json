@@ -11770,13 +11770,12 @@
     },
     "decisions": {
       "title": "AI decision log",
-      "description": "One row per model call — what was decided, and whether a person reviewed it.",
+      "description": "One row per model call or outside tool call: what was decided, and whether a person reviewed it.",
       "emptyTitle": "No model calls recorded yet",
       "emptyDesc": "A row is written here every time this workspace calls a model.",
       "emptyFilteredTitle": "No decisions over that content",
       "emptyFilteredDesc": "Nothing in the recent window was guarded over this digest.",
       "filteredByDigest": "Showing decisions over one piece of content ({digest}…).",
-      "guardLabel": "guard: {verdict}",
       "tokensIn": "{count} in",
       "tokensOut": "{count} out",
       "latency": "{ms} ms",
@@ -11786,7 +11785,57 @@
         "EDITED": "edited",
         "REJECTED": "rejected",
         "AUTONOMOUS": "no human review"
-      }
+      },
+      "feature": {
+        "run": "Agent run: {workflow}",
+        "assistant": "Assistant answer",
+        "tool": "Outside tool call",
+        "proposal": "Agent proposal",
+        "automatic": "Automatic external change",
+        "risk": "Risk suggestions",
+        "matching": "Account matching"
+      },
+      "toolServer": "on {name}",
+      "toolServerUnknown": "on an outside tool server",
+      "guard": {
+        "CLEAN": "Guard: passed",
+        "FLAGGED": "Guard: flagged",
+        "QUARANTINED": "Guard: blocked",
+        "MALICIOUS": "Guard: flagged as malicious",
+        "OTHER": "Guard: other result"
+      },
+      "toolSummary": {
+        "done": "The call succeeded.",
+        "failed": "The call failed."
+      },
+      "outcomeFilterAria": "Filter by review",
+      "outcomeAll": "All",
+      "outcomeFilter": {
+        "PENDING": "Awaiting review",
+        "REVIEWED": "Reviewed",
+        "AUTONOMOUS": "No human review"
+      },
+      "kindAll": "Every kind of call",
+      "kindFilter": {
+        "assistant": "Assistant answers",
+        "run": "Agent runs",
+        "tool": "Outside tool calls",
+        "proposal": "Agent proposals",
+        "automatic": "Automatic external changes",
+        "risk": "Risk suggestions",
+        "matching": "Account matching"
+      },
+      "filteredByAgent": "Showing only {agent}.",
+      "clearAgent": "Show every agent",
+      "showAll": "Show all decisions",
+      "capped": "Showing the newest {count}. Older decisions are not listed here; narrow the list to reach them.",
+      "emptyNarrowedTitle": "No matching decisions",
+      "emptyNarrowedDesc": "Nothing in the log matches these filters.",
+      "reviewRun": "Review in the run",
+      "openRun": "Open the run",
+      "openProposals": "Open the proposal queue",
+      "agentUnknown": "An agent no longer registered",
+      "onlyThisAgent": "Only this agent"
     },
     "externalTools": {
       "title": "External tools",

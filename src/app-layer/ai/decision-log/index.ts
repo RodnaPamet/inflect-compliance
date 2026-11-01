@@ -114,10 +114,12 @@ export interface LogAiDecisionInput {
     /**
      * Stamp the row terminal AT INSERT, for a decision no human will review.
      *
-     * The only caller is the external-write ladder's `AUTOMATIC` arm (#2861),
-     * which dispatches with nobody in the loop. Omit it and the row lands
-     * `PENDING`, which is the right default for every other feature — those
-     * decisions DO reach a reviewer.
+     * Three callers: the external-write ladder's `AUTOMATIC` arm (#2861),
+     * which dispatches with nobody in the loop; an assistant answer, which
+     * goes straight to the person who asked; and an external tool call a run
+     * made, which has left the platform before the row is written (both
+     * #4896). Omit it and the row lands `PENDING`, which is the right default
+     * for every other feature — those decisions DO reach a reviewer.
      *
      * Leaving such a row PENDING instead was the first design and it is wrong
      * in a way that compounds: nothing can ever stamp it, so
@@ -197,6 +199,64 @@ export async function recordDecisionOutcome(
         data: { humanOutcome: outcome },
     });
     if (res.count > 0) recordAiDecisionOutcome({ outcome });
+    return res.count;
+}
+
+/**
+ * Stamp a FINISHED run's still-pending rows "no human review" (#4896).
+ *
+ * ── THE ONE PATH FROM PENDING TO AUTONOMOUS ─────────────────────────────────
+ *
+ * `AiDecisionOutcome` keeps `AUTONOMOUS` out of the human stamp, so that
+ * "nobody reviewed this" can never be asserted about a row that was queued
+ * for a reviewer. A run's model calls are written PENDING because, when they
+ * are written, nobody knows whether the run will stop for approval. One that
+ * finishes without stopping — and leaves no proposal for a person to decide —
+ * was never going to be reviewed, and leaving its rows PENDING built a
+ * backlog no person is ever asked to clear, which the evidence pack counted
+ * as "still pending review". The owner decided on 2026-11-01 that such rows
+ * are stamped "no human review" when the run settles. This function and its
+ * batch twin below are that stamp, and the only writers of `AUTONOMOUS` after
+ * insert: neither takes an outcome, so no caller can pass a human verdict
+ * through them.
+ *
+ * Keyed by the run id, which every run-written row carries as `sessionRef`.
+ * One-way like the others: only PENDING rows move, and the DB trigger refuses
+ * any second change. The CALLER decides that the run is finished and left no
+ * pending proposal; see `settleRunDecisionLog` in `workflow-runs.ts` and the
+ * expiry sweep.
+ */
+export async function recordRunDecisionsUnreviewed(
+    db: PrismaTx,
+    ctx: RequestContext,
+    runId: string,
+): Promise<number> {
+    const res = await db.aiDecisionLog.updateMany({
+        where: { tenantId: ctx.tenantId, sessionRef: runId, humanOutcome: 'PENDING' },
+        data: { humanOutcome: 'AUTONOMOUS' },
+    });
+    return res.count;
+}
+
+/**
+ * `recordRunDecisionsUnreviewed` for several runs across tenants at once — the
+ * proposal expiry sweep's (#4896): a run whose last pending proposal expired
+ * undecided was never reviewed. The CALLER passes only runs that are finished
+ * and hold no other pending proposal. One statement, so a sweep over many runs
+ * is not a write per run.
+ */
+export async function recordRunsDecisionsUnreviewed(
+    db: PrismaTx,
+    runs: ReadonlyArray<{ readonly tenantId: string; readonly runId: string }>,
+): Promise<number> {
+    if (runs.length === 0) return 0;
+    const res = await db.aiDecisionLog.updateMany({
+        where: {
+            humanOutcome: 'PENDING',
+            OR: runs.map((r) => ({ tenantId: r.tenantId, sessionRef: r.runId })),
+        },
+        data: { humanOutcome: 'AUTONOMOUS' },
+    });
     return res.count;
 }
 

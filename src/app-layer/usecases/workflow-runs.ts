@@ -100,7 +100,8 @@ import {
     recordAgentRunSettled,
 } from '@/lib/observability/metrics';
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
-import { recordDecisionOutcome } from '@/app-layer/ai/decision-log';
+import { recordDecisionOutcome, recordRunDecisionsUnreviewed } from '@/app-layer/ai/decision-log';
+import { logger } from '@/lib/observability/logger';
 import { captureReviewAttributionAfterRun } from './agent-harness-attribution';
 import { captureAuditNarrativeAfterRun } from './audit-workpaper-narrative';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
@@ -1161,6 +1162,9 @@ async function executeFrom(
     try {
         const outcome = await run(runCtx, runId, def, fromSeq, runStartMs);
         await recordRunSettlementMetrics(runCtx, runId, driverLabel, outcome.status);
+        // A FINISHED run's unreviewed model calls are stamped "no human
+        // review" here (#4896), at the one seam that sees every settlement.
+        await settleRunDecisionLog(runCtx, runId, outcome.status);
         // A COMPLETED discovered-agent review's owner suggestion is parsed and
         // stored here (#3728), at the same one seam for the same reason: both
         // engines settle their own runs, and only this function sees every
@@ -1178,9 +1182,45 @@ async function executeFrom(
         // started-minus-settled gap is the first thing an operator reads as a
         // leak.
         recordAgentRunSettled({ driver: driverLabel, outcome: 'failed' });
+        // The caller fails the run; nobody reviews what it did before the throw.
+        await settleRunDecisionLog(runCtx, runId, 'FAILED');
         throw err;
     } finally {
         untrackInFlightRun(runId);
+    }
+}
+
+/**
+ * Stamp a FINISHED run's still-pending decision rows "no human review"
+ * (#4896, owner decision 2026-11-01), unless it left a proposal for a person
+ * to decide — then its rows take that person's decision when it is made
+ * (`approveAgentProposal`, `rejectAgentProposal`), or "no human review" if the
+ * proposal expires undecided (the expiry sweep).
+ *
+ * AWAITING_APPROVAL and PAUSED are not settlements: a person is expected, and
+ * the approve and abort paths stamp the rows then. NEVER THROWS: the run has
+ * settled already, and a failed stamp leaves rows PENDING, which is the state
+ * they were in before this existed.
+ */
+export async function settleRunDecisionLog(ctx: RequestContext, runId: string, status: string): Promise<void> {
+    if (status !== 'COMPLETED' && status !== 'FAILED' && status !== 'ABORTED') return;
+    try {
+        await runInTenantContext(ctx, async (db) => {
+            const awaitingPerson = await db.agentProposal.findFirst({
+                where: { tenantId: ctx.tenantId, runId, status: 'PENDING' },
+                select: { id: true },
+            });
+            if (awaitingPerson) return;
+            await recordRunDecisionsUnreviewed(db, ctx, runId);
+        });
+    } catch {
+        // The tenant only: the failure is the fact worth an alert, and the
+        // prompt-logging census vouches for no field bound elsewhere. The rows
+        // stay PENDING, which is where they were before this existed.
+        logger.warn('workflow run: decision log not settled', {
+            component: 'workflow-runs',
+            tenantId: ctx.tenantId,
+        });
     }
 }
 
