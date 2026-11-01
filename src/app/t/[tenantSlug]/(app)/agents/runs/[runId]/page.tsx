@@ -119,7 +119,7 @@ export default async function AgentRunDetailPage({
             }}
             steps={steps}
             // Resume and abort open with `assertCanWrite`, as on the runs list.
-            canOperate={ctx.permissions.canWrite}
+            canOperate={ctx.permissions?.canWrite === true}
         />
     );
 }
