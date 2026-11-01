@@ -186,6 +186,22 @@ export async function getInitiative(ctx: OrgContext, id: string) {
     return init;
 }
 
+/**
+ * An initiative's owner must be a member of its organization (#4851). Both
+ * writers took any user id, so an owner could be somebody the organization
+ * does not know, and the page could not show them.
+ */
+async function assertOwnerIsMember(ctx: OrgContext, ownerUserId: string | null | undefined): Promise<void> {
+    if (!ownerUserId) return;
+    const member = await prisma.orgMembership.findUnique({
+        where: { organizationId_userId: { organizationId: ctx.organizationId, userId: ownerUserId } },
+        select: { id: true },
+    });
+    if (!member) {
+        throw badRequest('The owner must be a member of this organization.', { reason: 'OWNER_NOT_MEMBER' });
+    }
+}
+
 export async function createInitiative(
     ctx: OrgContext,
     input: { title: string; description?: string | null; ownerUserId?: string | null; targetDate?: string | null },
@@ -193,6 +209,7 @@ export async function createInitiative(
     assertWrite(ctx);
     const title = sanitizePlainText(input.title ?? '').trim();
     if (!title) throw badRequest('A title is required.');
+    await assertOwnerIsMember(ctx, input.ownerUserId);
     const created = await prisma.orgSecurityInitiative.create({
         data: {
             organizationId: ctx.organizationId,
@@ -219,6 +236,7 @@ export async function updateInitiative(
 ) {
     assertWrite(ctx);
     await getInitiative(ctx, id); // existence + org scope
+    if (input.ownerUserId !== undefined) await assertOwnerIsMember(ctx, input.ownerUserId);
     const data: Prisma.OrgSecurityInitiativeUpdateInput = {};
     if (input.title !== undefined) data.title = sanitizePlainText(input.title);
     if (input.description !== undefined) data.description = input.description ? sanitizePlainText(input.description) : null;

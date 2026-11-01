@@ -33,7 +33,6 @@ const ROOT = path.resolve(__dirname, '../..');
  * countdown or a date-picker bound may want something else.
  */
 const KNOWN_CLOCK_IN_RENDER = new Set<string>([
-    'src/app/org/[orgSlug]/(app)/initiatives/InitiativesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx',
     'src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/_components/AssessmentPrefillPanel.tsx',
     'src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx',

@@ -33,6 +33,7 @@ const TAG = `osi-${randomUUID().slice(0, 8)}`;
 const ORG_ID = `org-${TAG}`;
 const TENANT_ID = `t-${TAG}`;
 let ownerUserId: string;
+let outsiderUserId: string;
 let controlId: string;
 
 const FULL_PERMS: OrgPermissionSet = {
@@ -61,6 +62,15 @@ describeFn('org-security-initiative usecase — branch coverage (integration)', 
         const email = `${TAG}@example.test`;
         const u = await globalPrisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
         ownerUserId = u.id;
+        // An initiative's owner must be a member of its organization (#4851).
+        await globalPrisma.orgMembership.create({
+            data: { organizationId: ORG_ID, userId: ownerUserId, role: 'ORG_ADMIN' },
+        });
+        const outsiderEmail = `${TAG}-outsider@example.test`;
+        const outsider = await globalPrisma.user.create({
+            data: { email: outsiderEmail, emailHash: hashForLookup(outsiderEmail) },
+        });
+        outsiderUserId = outsider.id;
         await globalPrisma.tenantMembership.create({
             data: { tenantId: TENANT_ID, userId: ownerUserId, role: Role.OWNER, status: MembershipStatus.ACTIVE },
         });
@@ -82,11 +92,16 @@ describeFn('org-security-initiative usecase — branch coverage (integration)', 
         });
         // Guarded: an undefined filter value is DROPPED, not matched —
         // see the teardown note in ./db-helper.ts.
+        await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
+        // The organization goes first: it cascades its memberships, which the
+        // last-owner guard would otherwise refuse one by one.
+        await globalPrisma.organization.deleteMany({ where: { id: ORG_ID } });
         if (ownerUserId) {
             await globalPrisma.user.deleteMany({ where: { id: ownerUserId } });
         }
-        await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
-        await globalPrisma.organization.deleteMany({ where: { id: ORG_ID } });
+        if (outsiderUserId) {
+            await globalPrisma.user.deleteMany({ where: { id: outsiderUserId } });
+        }
         await globalPrisma.$disconnect();
     });
 
@@ -102,6 +117,18 @@ describeFn('org-security-initiative usecase — branch coverage (integration)', 
         await expect(createInitiative(ctx, { title: '   ' })).rejects.toThrow(/title is required/i);
         await expect(createInitiative(orgCtx({ canConfigureDashboard: false }), { title: 'x' }))
             .rejects.toThrow(/admin/i);
+    });
+
+    it('an owner must be a member of the organization, on create and on update (#4851)', async () => {
+        const ctx = orgCtx();
+        await expect(createInitiative(ctx, { title: 'Outsider-owned', ownerUserId: outsiderUserId }))
+            .rejects.toMatchObject({ status: 400, details: { reason: 'OWNER_NOT_MEMBER' } });
+        const created = await createInitiative(ctx, { title: 'Member-owned', ownerUserId });
+        await expect(updateInitiative(ctx, created.id, { ownerUserId: outsiderUserId }))
+            .rejects.toMatchObject({ details: { reason: 'OWNER_NOT_MEMBER' } });
+        // Clearing the owner is always allowed.
+        const cleared = await updateInitiative(ctx, created.id, { ownerUserId: null });
+        expect(cleared.ownerUserId).toBeNull();
     });
 
     it('list / get: filters, not-found, read permission gate', async () => {

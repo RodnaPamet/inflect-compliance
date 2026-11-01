@@ -65,10 +65,10 @@ describe('OrgSidebarNav renders every Nucleo glyph it imports', () => {
     it('mounts EXPANDED with all eight nav entries, so eight glyphs really render', () => {
         const { container } = mount(false);
 
-        // Eight nav rows (Settings since #4557) + the collapse toggle + sign-out. If any icon import
+        // Nine nav rows (Settings since #4557, Initiatives since #4851) + the collapse toggle + sign-out. If any icon import
         // were undefined, render() above would already have thrown.
         const links = container.querySelectorAll('a[href^="/org/globex"]');
-        expect(links.length).toBe(8);
+        expect(links.length).toBe(9);
 
         // An <svg> per nav row is what proves the glyph COMPONENT ran, not just
         // that a row exists — a row whose icon failed would render without one.

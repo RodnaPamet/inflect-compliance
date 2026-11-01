@@ -13964,7 +13964,8 @@
       "settings": "Настройки",
       "collapse": "Свий",
       "expandSidebar": "Разгъни страничната лента",
-      "collapseSidebar": "Свий страничната лента"
+      "collapseSidebar": "Свий страничната лента",
+      "initiatives": "Инициативи"
     },
     "switcher": {
       "switchContextAria": "Смяна на контекста",
@@ -14289,13 +14290,25 @@
       "colLinkedWork": "Свързана работа",
       "colTarget": "Цел",
       "atRisk": "В риск",
-      "tenantSpan": " · {count, plural, one {# наемател} other {# наематели}}",
+      "tenantSpan": " · {count, plural, one {# работно пространство} other {# работни пространства}}",
       "createModalTitle": "Нова инициатива за сигурност",
-      "titlePlaceholder": "Заглавие (напр. Внедряване на MFA във всички дъщерни дружества)",
-      "descriptionPlaceholder": "Описание (незадължително)",
+      "titlePlaceholder": "Например: Внедряване на MFA във всяко дъщерно дружество",
       "titleRequired": "Необходимо е заглавие.",
-      "failedCreate": "Неуспешно създаване на инициатива.",
-      "createInitiative": "Създай инициатива"
+      "failedCreate": "Инициативата не беше създадена. Опитайте отново.",
+      "createInitiative": "Създай инициатива",
+      "colOwner": "Отговорник",
+      "noOwner": "Без отговорник",
+      "emptyTitle": "Все още няма инициативи",
+      "emptyDescManage": "Създайте инициатива с „Нова инициатива“, за да следите програма за сигурност в работните пространства на организацията.",
+      "emptyDescRead": "Собственик или администратор на организацията създава инициативите тук.",
+      "titleLabel": "Заглавие",
+      "descriptionLabel": "Описание",
+      "ownerLabel": "Отговорник",
+      "ownerHint": "Член на организацията, който отговаря за нея.",
+      "targetLabel": "Целева дата",
+      "targetHint": "Отворена инициатива след тази дата се отбелязва като в риск.",
+      "resourceOne": "инициатива",
+      "resourceMany": "инициативи"
     },
     "initiativeDetail": {
       "backToInitiatives": "Назад към инициативите",
