@@ -1083,6 +1083,27 @@ export async function listAllControlChecks(
  * Powers the per-connection outcome view so a connector's value doesn't
  * depend on which controls happen to be wired to it.
  */
+/**
+ * The few facts a connection's own page needs to name it (#4870): its name,
+ * its provider, whether it is enabled and who answers for it.
+ *
+ * The page used to take its title from the first check run's provider, so it
+ * named no connection at all until one had run, and never the connection's
+ * own name, which is what tells two Okta connections apart. Its owner card
+ * downloaded every connection in the workspace to learn one connection's
+ * provider. No configuration and no secret: those stay on the list read.
+ */
+export async function getConnectionHeader(ctx: RequestContext, connectionId: string) {
+    const connection = await runInTenantContext(ctx, (db) =>
+        db.integrationConnection.findFirst({
+            where: { tenantId: ctx.tenantId, id: connectionId },
+            select: { id: true, name: true, provider: true, isEnabled: true, ownerUserId: true },
+        }),
+    );
+    if (!connection) throw notFound('This connection no longer exists in this workspace.');
+    return connection;
+}
+
 export async function listExecutionsForConnection(
     ctx: RequestContext,
     connectionId: string,

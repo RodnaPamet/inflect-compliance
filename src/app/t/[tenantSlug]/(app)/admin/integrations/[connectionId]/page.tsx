@@ -5,8 +5,15 @@
  * for EVERY connector: this connection's check executions (status / last run /
  * summary) plus a connection-level "Sync now" trigger, independent of whether a
  * control is wired to it.
+ *
+ * NAMED BY THE CONNECTION, IN WORDS (#4870). The title is the connection's own
+ * name, read from the executions route's `connection` header — it used to be
+ * the provider of the first check run, so a connection that had never run was
+ * named nothing. Each run's check, status and trigger are words, Sync is
+ * offered only on an enabled connection, and links navigate in the app.
  */
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { formatDate } from '@inflect/ui/lib/format-date';
@@ -14,6 +21,7 @@ import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { apiErrorMessage } from '@/lib/api-error';
 import { summariseSync, type SyncConnectionResponse, type SyncTone } from '@/lib/integrations/sync-outcome';
 import { LABELLED_PROVIDERS } from '@/lib/integrations/provider-labels';
+import { LABELLED_CHECKS } from '@/lib/integrations/check-labels';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +37,18 @@ import { LegacyAccessMappingCard } from './LegacyAccessMappingCard';
 import { LegacyAccessRunsCard } from './LegacyAccessRunsCard';
 import { IntegrationOwnerCard } from './IntegrationOwnerCard';
 import { IntegrationPassportCard } from './IntegrationPassportCard';
+import type { ConnectionHeader } from './connection-header';
+
+/** Statuses an execution row can carry, each with a label. */
+const STATUSES = ['PASSED', 'FAILED', 'ERROR', 'RUNNING', 'PENDING', 'NOT_APPLICABLE', 'PARTIAL'] as const;
+/** Who or what started a run. `schedule` and `user` are older spellings. */
+const TRIGGERS = ['manual', 'scheduled', 'schedule', 'webhook', 'user'] as const;
+/** Runs that are not checks: syncs, the JML passes, the legacy pull and match. */
+const RUN_KINDS = ['sync', 'leaver_pass', 'joiner_pass', 'pull', 'reconcile', 'audit_pack_export'] as const;
+
+function known<T extends string>(list: readonly T[], value: string | null): value is T {
+    return value !== null && (list as readonly string[]).includes(value);
+}
 
 interface ExecutionRow {
     id: string;
@@ -67,6 +87,7 @@ export default function ConnectionOutcomePage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const [rows, setRows] = useState<ExecutionRow[]>([]);
+    const [connection, setConnection] = useState<ConnectionHeader | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [syncing, setSyncing] = useState(false);
@@ -77,7 +98,9 @@ export default function ConnectionOutcomePage() {
         try {
             const res = await fetch(apiUrl(`/admin/integrations/${connectionId}/executions`));
             if (!res.ok) { setError(true); return; }
-            setRows((await res.json()).executions ?? []);
+            const body = await res.json();
+            setRows(body.executions ?? []);
+            setConnection(body.connection ?? null);
         } catch {
             setError(true);
         } finally {
@@ -110,21 +133,60 @@ export default function ConnectionOutcomePage() {
         }
     };
 
-    const providerId = rows[0]?.provider ?? null;
+    const providerId = connection?.provider ?? rows[0]?.provider ?? null;
     // The provider's translated name, as the Integrations page shows it — not
     // the id (`mcp-server`) in the page title (#4466).
     const provider = providerId && LABELLED_PROVIDERS.has(providerId)
         ? t(`integrations.providerLabels.${providerId}` as Parameters<typeof t>[0])
         : providerId;
+    /** A run's check or kind, after its `<provider>.` prefix, in words. */
+    const runLabel = (automationKey: string): string | null => {
+        const part = automationKey.includes('.') ? automationKey.slice(automationKey.indexOf('.') + 1) : automationKey;
+        if (LABELLED_CHECKS.has(part)) return t(`integrations.checkLabels.${part}` as Parameters<typeof t>[0]);
+        if (known(RUN_KINDS, part)) return t(`integrations.outcome.runLabels.${part}`);
+        return null;
+    };
     const cols = createColumns<ExecutionRow>([
-        { accessorKey: 'automationKey', header: t('integrations.outcome.colCheck'), cell: ({ getValue }) => <span className="font-mono">{getValue()}</span> },
-        { id: 'status', accessorKey: 'status', header: t('integrations.colStatus'), cell: ({ row }) => <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'}>{row.original.status}</StatusBadge> },
-        { id: 'trigger', accessorKey: 'triggeredBy', header: t('integrations.outcome.colTrigger'), cell: ({ getValue }) => <span className="text-content-muted">{String(getValue() ?? '—')}</span> },
+        {
+            accessorKey: 'automationKey',
+            header: t('integrations.outcome.colCheck'),
+            cell: ({ row }) => {
+                const label = runLabel(row.original.automationKey);
+                return label
+                    ? <span>{label}</span>
+                    : <span className="font-mono text-content-muted">{row.original.automationKey}</span>;
+            },
+        },
+        {
+            id: 'status',
+            accessorKey: 'status',
+            header: t('integrations.colStatus'),
+            cell: ({ row }) => (
+                <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'}>
+                    {known(STATUSES, row.original.status)
+                        ? t(`integrations.outcome.statusLabels.${row.original.status}`)
+                        : row.original.status}
+                </StatusBadge>
+            ),
+        },
+        {
+            id: 'trigger',
+            accessorKey: 'triggeredBy',
+            header: t('integrations.outcome.colTrigger'),
+            cell: ({ row }) => {
+                const by = row.original.triggeredBy;
+                return (
+                    <span className="text-content-muted">
+                        {known(TRIGGERS, by) ? t(`integrations.outcome.triggerLabels.${by}`) : (by ?? '—')}
+                    </span>
+                );
+            },
+        },
         { id: 'ran', accessorKey: 'executedAt', header: t('integrations.outcome.colRan'), cell: ({ row }) => <span className="text-content-muted tabular-nums">{formatDate(row.original.completedAt ?? row.original.executedAt)}</span> },
         {
             id: 'control', header: t('integrations.outcome.colControl'),
             cell: ({ row }) => row.original.controlId
-                ? <a className="text-content-info underline underline-offset-2" href={tenantHref(`/controls/${row.original.controlId}`)}>{t('integrations.outcome.viewControl')}</a>
+                ? <Link className="text-content-info underline underline-offset-2" href={tenantHref(`/controls/${row.original.controlId}`)}>{t('integrations.outcome.viewControl')}</Link>
                 : <span className="text-content-subtle">{t('integrations.outcome.unmapped')}</span>,
         },
     ]);
@@ -132,12 +194,34 @@ export default function ConnectionOutcomePage() {
     return (
         <div className="space-y-section">
             <BackAffordance />
-            <PageBreadcrumbs items={[{ label: t('integrations.title'), href: tenantHref('/admin/integrations') }, { label: t('integrations.outcome.breadcrumb') }]} />
-            <div className="flex items-center justify-between">
-                <Heading level={1}>{provider ? t('integrations.outcome.titleFor', { provider }) : t('integrations.outcome.title')}</Heading>
-                <Button variant="secondary" icon={<RefreshCw className={cn('size-4', syncing && 'animate-spin')} />} onClick={syncNow} disabled={syncing} id="connection-sync-btn">
-                    {t('integrations.syncNow')}
-                </Button>
+            <PageBreadcrumbs
+                items={[
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('crumb.integrations'), href: tenantHref('/admin/integrations') },
+                    { label: connection?.name ?? t('integrations.outcome.breadcrumb') },
+                ]}
+            />
+            <div className="flex items-start justify-between gap-default">
+                <div className="space-y-tight">
+                    <Heading level={1}>
+                        {connection?.name ?? (provider ? t('integrations.outcome.titleFor', { provider }) : t('integrations.outcome.title'))}
+                    </Heading>
+                    {connection && (
+                        <p className="text-sm text-content-muted" id="connection-subtitle">
+                            {connection.isEnabled
+                                ? t('integrations.outcome.subtitle', { provider: provider ?? connection.provider })
+                                : t('integrations.outcome.subtitleDisabled', { provider: provider ?? connection.provider })}
+                        </p>
+                    )}
+                </div>
+                {/* Offered only on an enabled connection, as the Integrations
+                    page does: a disabled one has nothing to sync. */}
+                {connection?.isEnabled && (
+                    <Button variant="secondary" icon={<RefreshCw className={cn('size-4', syncing && 'animate-spin')} />} onClick={syncNow} disabled={syncing} id="connection-sync-btn">
+                        {t('integrations.syncNow')}
+                    </Button>
+                )}
             </div>
             {msg && <InlineNotice variant={msg.tone}>{msg.text}</InlineNotice>}
 
@@ -185,7 +269,7 @@ export default function ConnectionOutcomePage() {
               * be refused — and never writes an AUTHZ_DENIED row by visiting.
               */}
             <RequirePermission resource="admin" action="manage">
-                <IntegrationOwnerCard connectionId={connectionId} />
+                {connection && <IntegrationOwnerCard connection={connection} />}
             </RequirePermission>
             <RequirePermission resource="admin" action="tenant_lifecycle">
                 <IntegrationPassportCard connectionId={connectionId} />

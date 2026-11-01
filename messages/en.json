@@ -6990,7 +6990,33 @@
         "viewControl": "View control",
         "unmapped": "Not mapped",
         "empty": "No check runs yet. Use \"Sync now\" to run this connection’s checks.",
-        "loadError": "Couldn't load check runs."
+        "loadError": "Couldn't load check runs.",
+        "subtitle": "{provider} connection. Its check runs, newest first.",
+        "subtitleDisabled": "{provider} connection, disabled. It runs nothing until it is enabled again on the Integrations page.",
+        "statusLabels": {
+          "PASSED": "Passed",
+          "FAILED": "Failed",
+          "ERROR": "Error",
+          "RUNNING": "Running",
+          "PENDING": "Pending",
+          "NOT_APPLICABLE": "Not applicable",
+          "PARTIAL": "Partial"
+        },
+        "triggerLabels": {
+          "manual": "Manual",
+          "scheduled": "Scheduled",
+          "schedule": "Scheduled",
+          "webhook": "Webhook",
+          "user": "Manual"
+        },
+        "runLabels": {
+          "sync": "Sync",
+          "leaver_pass": "Leaver pass",
+          "joiner_pass": "Joiner pass",
+          "pull": "Access read",
+          "reconcile": "Matching to people",
+          "audit_pack_export": "Audit pack export"
+        }
       },
       "leaveBlankHint": "Leave blank to keep the stored secret.",
       "testVerified": "Connection verified — live check passed.",
@@ -7202,7 +7228,7 @@
         "missing": "No owner is named. Drift findings on this connection go to the tenant's owners, and the weekly sweep raises a finding until one is named.",
         "placeholder": "Choose a member",
         "save": "Save owner",
-        "saveFailed": "The owner could not be saved. The owner must be an active member of this workspace.",
+        "saveFailed": "The owner could not be saved.",
         "saved": "Owner saved.",
         "title": "Connection owner"
       },
