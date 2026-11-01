@@ -63,9 +63,9 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // falls under the implicit default of 1 and needs no entry — listed nowhere
     // rather than listed at 3, which would be a standing licence to put the
     // loud buttons back without paying for them.
-    // Initiatives list: "New initiative" (page) + "Create initiative"
-    // (modal confirm) — two distinct regions, both legit primaries.
-    "src/app/org/[orgSlug]/(app)/initiatives/InitiativesClient.tsx": 2,
+    // ENTRY REMOVED (#4851): the Initiatives list's create dialog moved into
+    // its own lazily loaded file (CreateInitiativeModal.tsx, one primary), so
+    // the list renders one primary, "New initiative": DEFAULT_BUDGET.
     // One initiative (#4852): the Edit sheet's "Save changes" and the Link
     // work dialog's "Link work" — two overlays, each closed until asked for,
     // and `modal-action-order` requires each one's last action to be primary.
