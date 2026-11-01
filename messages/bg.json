@@ -6383,7 +6383,6 @@
       "credentialsEmpty": "Все още няма API ключ, свързан с агент или с достъп до инструментите за агенти. Свържете ключ с агент при създаването му.",
       "credentialAutonomy": "Таван на автономност L{level} · {rung}",
       "credentialNoAgent": "Не е свързан с агент",
-      "credentialUnassessed": "Неоценен — без права",
       "credentialLive": "Активен",
       "credentialRevoked": "Отменен",
       "credentialExpired": "Изтекъл",

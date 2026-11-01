@@ -8,7 +8,13 @@ The {{ui:admin.identityWriteJournal.title}} is the record of every change Inflec
 
 ## Where to find it
 
-The page has no link in the app yet. Open its address, `/admin/identity-write-journal` in your workspace. The breadcrumb reads **{{ui:admin.integrations.title}}** › **{{ui:admin.identityWriteJournal.breadcrumb}}**.
+Three ways in, all for Owners:
+
+- on the [{{ui:admin.leaverPasses.title}}](identity-leaver-passes.md) page, **{{ui:admin.leaverPasses.journalLink}}** under the title, or **{{ui:admin.leaverPasses.journalOpen}}** beside a decision's journal reference, which opens that entry;
+- on the [{{ui:admin.writeLadder.title}}](identity-write-policy.md) page, the link on each direction's card;
+- the reference quoted in a disable notification, pasted into the page's **{{ui:admin.identityWriteJournal.findLabel}}** field.
+
+The breadcrumb reads **{{ui:admin.crumb.dashboard}}** › **{{ui:admin.crumb.admin}}** › **{{ui:admin.crumb.integrations}}** › **{{ui:admin.identityWriteJournal.breadcrumb}}**, and its steps go back.
 
 ## Who can use it
 
@@ -28,25 +34,28 @@ An empty journal is not evidence that the passes ran. It is empty for every work
 
 ## What you see
 
+**{{ui:admin.identityWriteJournal.findLabel}}.** {{ui:admin.identityWriteJournal.findHint}} Paste it and click **{{ui:admin.identityWriteJournal.findOpen}}** to open its entry.
+
 **{{ui:admin.identityWriteJournal.unsettledTitle}}.** Shown only when there are any: writes that were attempted more than an hour ago and never reported an outcome. Check each in your directory.
 
 **{{ui:admin.identityWriteJournal.historyTitle}}.** Every write, newest first:
 
 | Column | What it shows |
 | --- | --- |
+| {{ui:admin.identityWriteJournal.colAccount}} | Whose account: the person HR names and the account's address. **{{ui:admin.identityWriteJournal.accountUnlinked}}** or **{{ui:admin.identityWriteJournal.accountGone}}** when it cannot be named |
 | {{ui:admin.integrations.colProvider}} | The directory written to |
-| {{ui:admin.identityWriteJournal.colAction}} | What was done: disabling an account, or creating one |
-| {{ui:admin.integrations.colStatus}} | How it ended: applied, failed, pending, not confirmed either way, or reverted |
+| {{ui:admin.identityWriteJournal.colAction}} | What was done, such as **{{ui:admin.identityWriteJournal.action.DISABLE_ACCOUNT}}** or **{{ui:admin.identityWriteJournal.action.CREATE_ACCOUNT}}** |
+| {{ui:admin.integrations.colStatus}} | How it ended: **{{ui:admin.identityWriteJournal.outcome.APPLIED}}**, **{{ui:admin.identityWriteJournal.outcome.FAILED}}**, **{{ui:admin.identityWriteJournal.outcome.PENDING}}**, **{{ui:admin.identityWriteJournal.outcome.INDETERMINATE}}** (not confirmed either way) or **{{ui:admin.identityWriteJournal.outcome.REVERTED}}** |
 | {{ui:admin.identityWriteJournal.colAttempted}} | When it was attempted |
-| {{ui:admin.identityWriteJournal.colActor}} | Who started the pass, or **{{ui:admin.identityWriteJournal.actorScheduled}}** for the nightly pass |
+| {{ui:admin.identityWriteJournal.colActor}} | The member who started the pass, **{{ui:admin.identityWriteJournal.actorScheduled}}** for the nightly pass, or **{{ui:admin.identityWriteJournal.actorFormer}}** |
 
-**{{ui:admin.identityWriteJournal.capturedTitle}}.** Click a row to see its journal reference, to copy, and the account's state as it was just before the write.
+**{{ui:admin.identityWriteJournal.capturedTitle}}.** Click a row, or open a reference, to see the entry: its journal reference, to copy; whose account, what was done, how it ended, when and by whom; and, under **{{ui:admin.identityWriteJournal.priorStateTitle}}**, each field the directory held just before the write, under the directory's own name. **{{ui:admin.identityWriteJournal.priorStateCopy}}** copies the whole capture as it was stored.
 
 ## What you can do
 
 Read. The journal cannot be changed or deleted.
 
-To reverse a disable, re-enable the account in your directory, using the captured state as your guide. If the person should not be disabled again, protect the account on [{{ui:admin.identityAccounts.title}}](identity-accounts.md), or correct their record in your HR system.
+To reverse a disable, re-enable the account in your directory, re-applying the fields under {{ui:admin.identityWriteJournal.priorStateTitle}}. If the person should not be disabled again, protect the account on [{{ui:admin.identityAccounts.title}}](identity-accounts.md), or correct their record in your HR system.
 
 ## Empty and error states
 
@@ -54,6 +63,9 @@ To reverse a disable, re-enable the account in your directory, using the capture
 | --- | --- | --- |
 | **{{ui:admin.identityWriteJournal.empty}}** | Inflect has never written to your directory | Nothing. This is what a workspace in dry run looks like |
 | **{{ui:admin.identityWriteJournal.loadFailed}}** | The journal did not load | Reload the page |
+| **{{ui:admin.identityWriteJournal.unsettledLoadFailed}}** | The page could not check for writes that never reported back | Reload the page. Until it loads, do not read the absence of the list as "nothing outstanding" |
+| A message that no journal entry has the reference you entered | The reference is not in this workspace's journal | Check it was copied whole, from this workspace's notification |
+| **{{ui:admin.identityWriteJournal.entryLoadFailed}}** | The entry did not load | Try again |
 | **{{ui:admin.identityWriteJournal.forbidden}}** | You are not an Owner | Ask an Owner |
 
 ## Related

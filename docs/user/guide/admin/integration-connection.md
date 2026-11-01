@@ -8,9 +8,9 @@ A connection's own page shows what one integration connection has done: every ch
 
 ## Where to find it
 
-On the [{{ui:admin.integrations.title}}](integrations.md) page, click **{{ui:admin.integrations.viewOutcomes}}** on the connection's row. The breadcrumb reads **{{ui:admin.integrations.title}}** › **{{ui:admin.integrations.outcome.breadcrumb}}**, and its first step goes back.
+On the [{{ui:admin.integrations.title}}](integrations.md) page, click **{{ui:admin.integrations.viewOutcomes}}** on the connection's row. The breadcrumb reads **{{ui:admin.crumb.dashboard}}** › **{{ui:admin.crumb.admin}}** › **{{ui:admin.crumb.integrations}}** › the connection's name, and its steps go back.
 
-The title names the kind of system, such as **Okta — outcomes**, once the connection has run at least once.
+The title is the connection's name. Under it, a line names the kind of system and says whether the connection is switched on.
 
 ## Who can use it
 
@@ -30,9 +30,9 @@ Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** in
 
 | Column | What it shows |
 | --- | --- |
-| {{ui:admin.integrations.outcome.colCheck}} | The check that ran |
-| {{ui:admin.integrations.colStatus}} | How it ended: passed, failed, error, partial (the read stopped early and continues next time), running, pending or not applicable |
-| {{ui:admin.integrations.outcome.colTrigger}} | What started it: a person, the nightly schedule or an event |
+| {{ui:admin.integrations.outcome.colCheck}} | The check that ran, in words, such as **{{ui:admin.integrations.outcome.runLabels.sync}}** or **{{ui:admin.integrations.outcome.runLabels.leaver_pass}}** |
+| {{ui:admin.integrations.colStatus}} | How it ended: **{{ui:admin.integrations.outcome.statusLabels.PASSED}}**, **{{ui:admin.integrations.outcome.statusLabels.FAILED}}**, **{{ui:admin.integrations.outcome.statusLabels.ERROR}}**, **{{ui:admin.integrations.outcome.statusLabels.PARTIAL}}** (the read stopped early and continues next time), **{{ui:admin.integrations.outcome.statusLabels.RUNNING}}**, **{{ui:admin.integrations.outcome.statusLabels.PENDING}}** or **{{ui:admin.integrations.outcome.statusLabels.NOT_APPLICABLE}}** |
+| {{ui:admin.integrations.outcome.colTrigger}} | What started it: **{{ui:admin.integrations.outcome.triggerLabels.manual}}**, **{{ui:admin.integrations.outcome.triggerLabels.scheduled}}** or **{{ui:admin.integrations.outcome.triggerLabels.webhook}}** |
 | {{ui:admin.integrations.outcome.colRan}} | When it finished, or when it started if it has not finished |
 | {{ui:admin.integrations.outcome.colControl}} | **{{ui:admin.integrations.outcome.viewControl}}** when the check is wired to a control, or **{{ui:admin.integrations.outcome.unmapped}}** |
 
@@ -42,7 +42,7 @@ The extra cards appear below it only for the connections they apply to.
 
 ### Run the connection now
 
-Click **{{ui:admin.integrations.syncNow}}**. The connection reads its system and runs every check wired to it, as on the [{{ui:admin.integrations.title}}](integrations.md) page, and a summary appears above the table: green when everything worked, amber when a read stopped early or nothing was collected, red with the reason when a read failed. The table then shows the new runs.
+Click **{{ui:admin.integrations.syncNow}}**. It is offered only while the connection is switched on. The connection reads its system and runs every check wired to it, as on the [{{ui:admin.integrations.title}}](integrations.md) page, and a summary appears above the table: green when everything worked, amber when a read stopped early or nothing was collected, red with the reason when a read failed. The table then shows the new runs.
 
 ### Map a legacy application's columns
 
