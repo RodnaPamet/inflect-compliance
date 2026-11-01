@@ -3,21 +3,23 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 
 import { getOrgCtx } from '@/app-layer/context';
-import { forbidden } from '@/lib/errors/types';
+import { OrgForbiddenPage } from '../../_components/OrgForbiddenPage';
 import { NewTenantForm } from './NewTenantForm';
 
 /**
- * Epic O-4 — Create a new tenant under the org.
+ * Epic O-4 — Create a new workspace under the org.
  *
  * Server component: resolves the OrgContext, gates on
- * `canManageTenants`, and renders the client form. The form POSTs to
- * `/api/org/{slug}/tenants` (Epic O-2), which auto-provisions every
- * other ORG_ADMIN as AUDITOR in the new tenant — that's what makes
- * the portfolio drill-down work for the rest of the team.
+ * `canManageTenants` (organization owners, #4576), and renders the client
+ * form. The form POSTs to `/api/org/{slug}/tenants` (Epic O-2), which makes
+ * the creator the workspace's OWNER and provisions every other owner and
+ * admin of the organization as ADMIN in it.
  *
- * Anti-enumeration: a non-member or an org member without
- * `canManageTenants` collapses to the standard 404 surface, same as
- * the rest of the org tree.
+ * A non-member collapses to the standard 404 surface through `getOrgCtx`,
+ * as the rest of the org tree does. A MEMBER who may not create workspaces
+ * is told so, with `OrgForbiddenPage` (#4844): throwing `forbidden(...)`
+ * here reached the root error boundary, which showed "an unexpected error
+ * has occurred" and reported the refusal as a crash.
  */
 export const dynamic = 'force-dynamic';
 
@@ -36,11 +38,8 @@ export default async function NewTenantPage({ params }: PageProps) {
     }
 
     if (!ctx.permissions.canManageTenants) {
-        // Same anti-enumeration posture as the layout: a non-admin
-        // sees a 404 rather than a "not allowed" message that
-        // confirms the org exists and they're a member.
         const t = await getTranslations('org');
-        throw forbidden(t('errors.noPermissionTenants'));
+        return <OrgForbiddenPage orgSlug={orgSlug} message={t('forbidden.newWorkspace')} />;
     }
 
     return <NewTenantForm orgSlug={orgSlug} />;

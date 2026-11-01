@@ -5,10 +5,11 @@
  *
  * Three fields: name, slug, framework. Only `name` and `slug` are
  * POSTed to `/api/org/{slug}/tenants` (Epic O-2 contract); the
- * framework selection is captured client-side and threaded through to
- * the new tenant's frameworks page on success so the user lands one
- * click away from installation. When "Choose later" is selected, we
- * just redirect to the new tenant's dashboard.
+ * framework selection is captured client-side and, on success, sends the
+ * user straight to that framework's install page in the new workspace
+ * (#4844: it used to land on the frameworks list with an `?install=` hint
+ * that page never read). When "Choose later" is selected, we just redirect
+ * to the new workspace's dashboard.
  *
  * The slug is auto-derived from the name on the first keystroke and
  * stops auto-syncing once the user edits it manually — the same
@@ -142,7 +143,7 @@ export function NewTenantForm({ orgSlug }: Props) {
                     body: JSON.stringify({ name: name.trim(), slug: slug.trim() }),
                 });
                 if (!res.ok) {
-                    let message = t('newTenant.tenantCreationFailed', { status: res.status });
+                    let message = t('newTenant.tenantCreationFailed');
                     try {
                         const body = (await res.json()) as { error?: { message?: string } };
                         if (body?.error?.message) message = body.error.message;
@@ -161,16 +162,13 @@ export function NewTenantForm({ orgSlug }: Props) {
                 if (framework === 'later') {
                     router.push(`/t/${newSlug}/dashboard`);
                 } else {
-                    // Land on the frameworks page with a hint so the user
-                    // can install the chosen framework in one step.
-                    router.push(`/t/${newSlug}/frameworks?install=${framework}`);
+                    // Straight to installing the chosen framework.
+                    router.push(`/t/${newSlug}/frameworks/${framework}/install`);
                 }
-            } catch (err) {
-                setSubmitError(
-                    err instanceof Error
-                        ? err.message
-                        : t('newTenant.unexpectedCreate'),
-                );
+            } catch {
+                // A network failure's own message ("Failed to fetch") says
+                // nothing a person can act on.
+                setSubmitError(t('newTenant.unexpectedCreate'));
                 setSubmitting(false);
             }
         },

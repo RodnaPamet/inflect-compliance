@@ -13938,8 +13938,7 @@
     },
     "errors": {
       "noPermissionMembers": "You do not have permission to manage members of this organization",
-      "noPermissionAudit": "You do not have permission to view the audit log of this organization",
-      "noPermissionTenants": "You do not have permission to create tenants in this organization"
+      "noPermissionAudit": "You do not have permission to view the audit log of this organization"
     },
     "nav": {
       "ariaLabel": "Organization navigation",
@@ -14299,18 +14298,18 @@
       "undo": "Undo"
     },
     "newTenant": {
-      "backToTenants": "Back to tenants",
-      "title": "Create a new tenant",
-      "subtitle": "Tenants are isolated workspaces under this organization. Other org admins are auto-provisioned with ADMIN access on creation.",
+      "backToTenants": "Back to workspaces",
+      "title": "New workspace",
+      "subtitle": "A workspace keeps one company's or team's controls, risks, evidence and policies apart from every other. You become its owner, and every other owner and admin of this organization gets Admin access to it.",
       "nameLabel": "Name",
-      "nameDesc": "Display name shown across the tenant workspace and audit reports.",
+      "nameDesc": "Shown across the workspace and in its reports.",
       "slugLabel": "Slug",
-      "slugDesc": "Lowercase URL identifier. Auto-derived from the name; edit if you need something different.",
+      "slugDesc": "Lowercase letters, numbers and dashes, used in the workspace's web address. Filled in from the name; edit it if you want something else.",
       "startingFramework": "Starting framework",
-      "frameworkHint": "Pick the compliance framework you want to install first. You can add more (or change this choice) from the new tenant dashboard.",
+      "frameworkHint": "Pick the framework you want to start with: once the workspace is created, you go straight to installing it. You can add more frameworks later.",
       "frameworkAria": "Starting framework",
       "fwChooseLater": "Choose later",
-      "fwChooseLaterDesc": "Skip framework selection — pick on the new tenant dashboard.",
+      "fwChooseLaterDesc": "Skip this for now, and choose a framework from the new workspace.",
       "fwIso27001Desc": "Information security management.",
       "fwNis2Desc": "EU cybersecurity directive.",
       "fwIso9001Desc": "Quality management system.",
@@ -14320,10 +14319,10 @@
       "nameTooLong": "Name must be 120 characters or fewer.",
       "slugRequired": "Slug is required.",
       "slugInvalid": "Slug must be lowercase letters, numbers, and dashes (no leading or trailing dashes).",
-      "tenantCreationFailed": "Tenant creation failed ({status}).",
-      "unexpectedCreate": "Unexpected error while creating tenant.",
+      "tenantCreationFailed": "The workspace was not created. Try again.",
+      "unexpectedCreate": "The workspace was not created. Try again.",
       "creating": "Creating…",
-      "createTenant": "Create tenant"
+      "createTenant": "Create workspace"
     },
     "settings": {
       "heading": "Settings",
@@ -14350,7 +14349,8 @@
     "forbidden": {
       "title": "Not available for your role",
       "back": "Back to the portfolio overview",
-      "drillDown": "This list names controls, risks and evidence inside the organization's workspaces. Organization owners and admins can open it; readers see the portfolio summary."
+      "drillDown": "This list names controls, risks and evidence inside the organization's workspaces. Organization owners and admins can open it; readers see the portfolio summary.",
+      "newWorkspace": "Only an organization owner can create a workspace. Ask one of this organization's owners."
     }
   },
   "automation": {
