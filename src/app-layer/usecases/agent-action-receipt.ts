@@ -39,6 +39,7 @@ import {
 } from '@/lib/mcp/receipt-verification';
 import { env } from '@/env';
 import { isKnownMcpTool } from '@/lib/mcp/tool-catalogue';
+import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 import {
     TOOL_PROVENANCE_BUILTIN,
     TOOL_PROVENANCE_PIN_MOVED,
@@ -302,6 +303,133 @@ export async function listReceipts(ctx: RequestContext, filter: ListReceiptsFilt
             },
         }),
     );
+}
+
+// ── The receipts page (#4897) ───────────────────────────────────────────────
+
+/** How many receipts the page shows; it reads one past this to say when it is cut. */
+export const RECEIPT_PAGE_SIZE = 100;
+
+export interface ReceiptPageRow {
+    id: string;
+    /** The tool's own name; for an outside tool, its name on its server. */
+    toolName: string;
+    /** The outside tool's connection, by name, or `null` for a built-in tool. */
+    connectionName: string | null;
+    decisionVerdict: string;
+    activePolicy: string | null;
+    verified: boolean;
+    occurredAt: string;
+    /**
+     * The registered agent the SUBMITTING key is bound to — our binding, never
+     * the receipt's own claim (CLAUDE.md, "per-agent evidence"). `null` when
+     * the key is bound to no agent.
+     */
+    agent: { id: string; name: string } | null;
+    /**
+     * What the receipt itself names as its agent, shown only on a VERIFIED
+     * receipt and labelled as its claim: on an unverified one it is whatever
+     * the sender chose to write.
+     */
+    claimedAgentId: string | null;
+    auditLogId: string | null;
+    toolProvenance: string | null;
+    toolManifestRevision: number | null;
+}
+
+/**
+ * The page's read (#4897): the newest window, whether older receipts exist,
+ * and the names the rows point at. Same rule as the list — the register key,
+ * or the view key while an owner lets Auditors read receipts.
+ */
+export async function readReceiptPage(
+    ctx: RequestContext,
+    filter: { verified?: boolean; toolName?: string } = {},
+): Promise<{ rows: ReceiptPageRow[]; capped: number | null }> {
+    assertCanRead(ctx);
+    await assertMayReadOversightSurface(ctx, 'receipts');
+
+    return runInTenantContext(ctx, async (db) => {
+        const read = await db.agentActionReceipt.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                ...(filter.verified !== undefined ? { verified: filter.verified } : {}),
+                ...(filter.toolName ? { toolName: filter.toolName } : {}),
+            },
+            orderBy: { occurredAt: 'desc' },
+            take: RECEIPT_PAGE_SIZE + 1,
+            select: {
+                id: true,
+                mcpKeyId: true,
+                toolName: true,
+                decisionVerdict: true,
+                activePolicy: true,
+                agentId: true,
+                verified: true,
+                auditLogId: true,
+                occurredAt: true,
+                toolProvenance: true,
+                toolManifestRevision: true,
+            },
+        });
+        const rows = read.slice(0, RECEIPT_PAGE_SIZE);
+
+        const keyIds = [...new Set(rows.flatMap((r) => (r.mcpKeyId ? [r.mcpKeyId] : [])))];
+        const keys = keyIds.length
+            ? await db.tenantApiKey.findMany({
+                  where: { tenantId: ctx.tenantId, id: { in: keyIds } },
+                  select: { id: true, agentId: true },
+                  take: keyIds.length,
+              })
+            : [];
+        const agentOfKey = new Map(keys.map((k) => [k.id, k.agentId]));
+        const agentIds = [...new Set(keys.flatMap((k) => (k.agentId ? [k.agentId] : [])))];
+        const refs = rows.map((r) => parseExternalToolName(r.toolName));
+        const connectionIds = [...new Set(refs.flatMap((ref) => (ref ? [ref.connectionId] : [])))];
+        const [agents, connections] = await Promise.all([
+            agentIds.length
+                ? db.registeredAgent.findMany({
+                      where: { tenantId: ctx.tenantId, id: { in: agentIds } },
+                      select: { id: true, name: true },
+                      take: agentIds.length,
+                  })
+                : Promise.resolve([] as { id: string; name: string }[]),
+            connectionIds.length
+                ? db.integrationConnection.findMany({
+                      where: { tenantId: ctx.tenantId, id: { in: connectionIds } },
+                      select: { id: true, name: true },
+                      take: connectionIds.length,
+                  })
+                : Promise.resolve([] as { id: string; name: string }[]),
+        ]);
+        const agentName = new Map(agents.map((a) => [a.id, a.name]));
+        const connectionName = new Map(connections.map((c) => [c.id, c.name]));
+
+        return {
+            rows: rows.map((r, i) => {
+                const ref = refs[i];
+                const boundAgentId = r.mcpKeyId ? (agentOfKey.get(r.mcpKeyId) ?? null) : null;
+                return {
+                    id: r.id,
+                    toolName: ref ? ref.toolName : r.toolName,
+                    connectionName: ref ? (connectionName.get(ref.connectionId) ?? null) : null,
+                    decisionVerdict: r.decisionVerdict,
+                    activePolicy: r.activePolicy,
+                    verified: r.verified,
+                    occurredAt: r.occurredAt.toISOString(),
+                    agent:
+                        boundAgentId && agentName.has(boundAgentId)
+                            ? { id: boundAgentId, name: agentName.get(boundAgentId)! }
+                            : null,
+                    claimedAgentId: r.verified ? r.agentId : null,
+                    auditLogId: r.auditLogId,
+                    toolProvenance: r.toolProvenance,
+                    toolManifestRevision: r.toolManifestRevision,
+                };
+            }),
+            capped: read.length > RECEIPT_PAGE_SIZE ? RECEIPT_PAGE_SIZE : null,
+        };
+    });
 }
 
 // ── Export (external auditor verification) ──────────────────────────────────

@@ -70,6 +70,7 @@ export type AgentsViewRoute =
     | 'reports'
     | 'decisions'
     | 'external-tools'
+    | 'parameter-sets'
     | 'peers'
     | 'compose'
     | 'owner-orphan-pass'
@@ -261,6 +262,19 @@ export function AgentsViewsMenu({
                             icon: <Workflow className="size-4" />,
                             href: href('/agents/external-tools'),
                             selected: current === 'external-tools',
+                        },
+                        canInvestigate && {
+                            // The saved arguments an external tool is called
+                            // with, and the approvals a change to them takes
+                            // (#3124). Beside External tools, whose catalogue it
+                            // reads, and reachable on its own since #4900 — it
+                            // was linked only from there. `admin.agent_registry`,
+                            // as its page asks.
+                            id: 'agents-view-parameter-sets',
+                            label: t('views.parameterSets'),
+                            icon: <Workflow className="size-4" />,
+                            href: href('/agents/parameter-sets'),
+                            selected: current === 'parameter-sets',
                         },
                         canInvestigate && {
                             // A2A peers (#3679): which other organisation's

@@ -179,8 +179,9 @@ test.describe('every agentic route renders its data', () => {
             // The tool name is carried on the receipt's `action_record` and
             // extracted server-side by `extractReceiptFields`, so finding it on
             // the page walks the whole chain: POST -> extract -> persist ->
-            // list -> render.
-            await expect(main.getByText(receiptTool).first()).toBeVisible({ timeout: 30_000 });
+            // list -> render. The page shows it in words (#4897):
+            // `e2e_surface_tool_<stamp>` reads "E2e surface tool <stamp>".
+            await expect(main.getByText(`E2e surface tool ${stamp}`).first()).toBeVisible({ timeout: 30_000 });
         });
 
         await test.step('the reports page counts the register it can see', async () => {

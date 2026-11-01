@@ -1161,6 +1161,60 @@ export async function listQuarantinedAgentProposals(
     );
 }
 
+/**
+ * The names a quarantine row points at (#4898): the registered agent, the API
+ * key it came through, and — for a request a person composed on
+ * `/agents/compose` — that person. Read after `listQuarantinedAgentProposals`,
+ * which holds the surface's rule; this reads names only, for rows the caller
+ * was already allowed to see.
+ */
+export interface QuarantineNames {
+    agents: Record<string, string>;
+    keys: Record<string, string>;
+    people: Record<string, string>;
+}
+
+export async function readQuarantineNames(
+    ctx: RequestContext,
+    rows: ReadonlyArray<{ agentId: string | null; proposedViaKeyId: string | null; composedByUserId?: string | null }>,
+): Promise<QuarantineNames> {
+    assertCanRead(ctx);
+    const unique = (xs: (string | null | undefined)[]) => [...new Set(xs.filter((x): x is string => Boolean(x)))];
+    const agentIds = unique(rows.map((r) => r.agentId));
+    const keyIds = unique(rows.map((r) => r.proposedViaKeyId));
+    const userIds = unique(rows.map((r) => r.composedByUserId));
+    const [agents, keys, members] = await runInTenantContext(ctx, (db) =>
+        Promise.all([
+            agentIds.length
+                ? db.registeredAgent.findMany({
+                      where: { tenantId: ctx.tenantId, id: { in: agentIds } },
+                      select: { id: true, name: true },
+                      take: agentIds.length,
+                  })
+                : Promise.resolve([] as { id: string; name: string }[]),
+            keyIds.length
+                ? db.tenantApiKey.findMany({
+                      where: { tenantId: ctx.tenantId, id: { in: keyIds } },
+                      select: { id: true, name: true },
+                      take: keyIds.length,
+                  })
+                : Promise.resolve([] as { id: string; name: string }[]),
+            userIds.length
+                ? db.tenantMembership.findMany({
+                      where: { tenantId: ctx.tenantId, userId: { in: userIds } },
+                      select: { userId: true, user: { select: { name: true, email: true } } },
+                      take: userIds.length,
+                  })
+                : Promise.resolve([] as { userId: string; user: { name: string | null; email: string } }[]),
+        ]),
+    );
+    return {
+        agents: Object.fromEntries(agents.map((a) => [a.id, a.name])),
+        keys: Object.fromEntries(keys.map((k) => [k.id, k.name])),
+        people: Object.fromEntries(members.map((m) => [m.userId, m.user.name || m.user.email])),
+    };
+}
+
 export async function getAgentProposal(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     const proposal = await runInTenantContext(ctx, (db) =>

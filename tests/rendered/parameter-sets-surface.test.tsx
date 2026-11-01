@@ -275,7 +275,10 @@ function clipboardUser() {
     return { user, writeText };
 }
 
-function mount() {
+/** Member names, as the page passes them (#4900). */
+const PEOPLE = { user_approver: 'Ada Approver', user_signer: 'Sam Signer', user_proposer: 'Pat Proposer' };
+
+function mount(props: Partial<React.ComponentProps<typeof ParameterSetsClient>> = {}) {
     // `TooltipProvider` is mounted because this tree reaches Radix Tooltip
     // through the `@/components/ui/tooltip` alias (Button, StatusBadge and the
     // Combobox chrome all do), and a Radix consumer throws outside a provider.
@@ -295,6 +298,8 @@ function mount() {
                 connections={CONNECTIONS}
                 targetPopulations={POPULATIONS}
                 initialConnectionId="conn_1"
+                people={PEOPLE}
+                {...props}
             />
         </TooltipProvider>,
     );
@@ -342,7 +347,8 @@ describe('the four states each render their own thing', () => {
         ];
         mount();
         const card = await screen.findByTestId('parameter-set-Nightly roster push');
-        expect(within(card).getByText(/Approved by user_approver/)).toBeInTheDocument();
+        // By name, not by user id (#4900).
+        expect(within(card).getByText(/Approved by Ada Approver/)).toBeInTheDocument();
         expect(within(card).queryByText(/trust on first use/)).not.toBeInTheDocument();
     });
 
@@ -351,8 +357,8 @@ describe('the four states each render their own thing', () => {
         mount();
         const pending = await screen.findByTestId('parameter-set-pending-Nightly roster push');
         expect(within(pending).getByText(/An edit is waiting for a human/)).toBeInTheDocument();
-        expect(within(pending).getByText(/keeps dispatching what is approved/)).toBeInTheDocument();
-        expect(within(pending).getByText(/Proposed by user_proposer/)).toBeInTheDocument();
+        expect(within(pending).getByText(/keep using the approved values/)).toBeInTheDocument();
+        expect(within(pending).getByText(/Proposed by Pat Proposer/)).toBeInTheDocument();
     });
 
     it('a row with NO pending edit offers Propose and no Sign/Approve', async () => {
@@ -456,7 +462,7 @@ describe('the signature count sits beside the digest it is against', () => {
         // it could not be, because `copy-text.tsx` reaches its Tooltip by the
         // relative `./tooltip` and that path resolved to a pass-through stub.
         const digest = within(sigs).getByRole('button', {
-            name: new RegExp(`^Copy the full digest ${PENDING_HASH}$`),
+            name: new RegExp(`^Copy the full fingerprint ${PENDING_HASH}$`),
         });
         expect(digest).not.toHaveAttribute('title');
         expect(digest).toHaveTextContent(PENDING_HASH.slice(0, 12));
@@ -479,13 +485,13 @@ describe('the signature count sits beside the digest it is against', () => {
         mount();
         const sigs = await screen.findByTestId('parameter-set-signatures-Nightly roster push');
         expect(within(sigs).getByText(/1 of 1 signatures on this digest/)).toBeInTheDocument();
-        expect(within(sigs).getByText('user_signer')).toBeInTheDocument();
+        expect(within(sigs).getByText('Sam Signer')).toBeInTheDocument();
         // The FULL hash on the signature row too, not only on the pending digest
         // above it — the operator's question is whether the two are the same, so
         // BOTH name it in full and both are focusable copy controls. Exactly
         // two inside this region: the pending-digest line and this one.
         const carriers = within(sigs).getAllByRole('button', {
-            name: new RegExp(`^Copy the full digest ${PENDING_HASH}$`),
+            name: new RegExp(`^Copy the full fingerprint ${PENDING_HASH}$`),
         });
         expect(carriers).toHaveLength(2);
         const against = carriers.filter((el) => /against/.test(el.textContent ?? ''));
@@ -535,7 +541,7 @@ describe('every digest is reachable from the keyboard, not only the mouse', () =
         // as a hover-only <p> reads fewer than three here, and a `toHaveLength`
         // cannot be satisfied by an empty query the way a loop over hits can.
         const copies = screen.getAllByRole('button', {
-            name: /^Copy the full digest [0-9a-f]{64}$/,
+            name: /^Copy the full fingerprint [0-9a-f]{64}$/,
         });
         expect(copies).toHaveLength(3);
         for (const el of copies) {
@@ -559,7 +565,7 @@ describe('every digest is reachable from the keyboard, not only the mouse', () =
         mount();
         const sigs = await screen.findByTestId('parameter-set-signatures-Nightly roster push');
         const digest = within(sigs).getByRole('button', {
-            name: new RegExp(`^Copy the full digest ${PENDING_HASH}$`),
+            name: new RegExp(`^Copy the full fingerprint ${PENDING_HASH}$`),
         });
 
         // KEYBOARD, deliberately. A `click()` would pass on a control no Tab
@@ -618,7 +624,7 @@ describe('every digest is reachable from the keyboard, not only the mouse', () =
         mount();
         const sigs = await screen.findByTestId('parameter-set-signatures-Nightly roster push');
         const digest = within(sigs).getByRole('button', {
-            name: new RegExp(`^Copy the full digest ${PENDING_HASH}$`),
+            name: new RegExp(`^Copy the full fingerprint ${PENDING_HASH}$`),
         });
 
         // NEGATIVE half of the pair, before anything is touched: nothing with
@@ -672,15 +678,15 @@ describe('sign and approve carry the digest that is on screen', () => {
         expect(call?.body).toEqual({ id: 'set_1', expectedPendingHash: PENDING_HASH });
     });
 
-    it('APPROVE puts to the collection with the SAME hash, and names it on the button', async () => {
+    it('APPROVE puts to the collection with the SAME hash as the pending fingerprint on screen', async () => {
         listBody = [withPending()];
         mount();
-        await screen.findByTestId('parameter-set-pending-Nightly roster push');
+        const pending = await screen.findByTestId('parameter-set-pending-Nightly roster push');
 
-        // The label names the digest, so the operator approves what they read.
-        const approve = screen.getByRole('button', {
-            name: new RegExp(`Approve ${PENDING_HASH.slice(0, 12)}`),
-        });
+        // The fingerprint the operator reads sits above the button, which says
+        // what it does rather than repeating a hash (#4900).
+        expect(pending).toHaveTextContent(`Pending fingerprint ${PENDING_HASH.slice(0, 12)}`);
+        const approve = screen.getByRole('button', { name: 'Approve this change' });
         fireEvent.click(approve);
         await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
         const call = calls.find((c) => c.method === 'PUT');
@@ -712,11 +718,7 @@ describe('sign and approve carry the digest that is on screen', () => {
         mount();
         await screen.findByTestId('parameter-set-pending-Nightly roster push');
 
-        fireEvent.click(
-            screen.getByRole('button', {
-                name: new RegExp(`Approve ${PENDING_HASH.slice(0, 12)}`),
-            }),
-        );
+        fireEvent.click(screen.getByRole('button', { name: 'Approve this change' }));
         const notice = await screen.findByTestId('parameter-set-error-Nightly roster push');
         expect(notice).toHaveTextContent(/approving signature from a human other than/);
     });
@@ -772,12 +774,11 @@ describe('proposing an edit', () => {
 });
 
 describe('the baseline form', () => {
-    it('states the trust-on-first-use ordering BEFORE the refusal is reached', async () => {
+    it('states why a first save takes exact values only, BEFORE the refusal is reached', async () => {
         mount();
         const card = await screen.findByTestId('parameter-set-create');
-        expect(within(card).getByText(/trust-on-first-use/)).toBeInTheDocument();
-        expect(within(card).getByText(/open fields and a target population are refused here/))
-            .toBeInTheDocument();
+        expect(within(card).getByText(/nothing earlier to compare it with/)).toBeInTheDocument();
+        expect(within(card).getByText(/It takes exact values only/i)).toBeInTheDocument();
     });
 
     it('surfaces the SERVER\'s open-fields refusal as a sentence', async () => {
@@ -833,5 +834,75 @@ describe('a connection the operator is not looking at', () => {
         mount();
         await screen.findByTestId('parameter-set-Nightly roster push');
         expect(screen.queryByTestId('parameter-set-Other server set')).not.toBeInTheDocument();
+    });
+});
+
+describe('the proposer is not offered what the server refuses them (#4900)', () => {
+    it('the proposer of a template edit can neither sign nor approve, and is told why', async () => {
+        listBody = [withPending()];
+        mount({ viewerUserId: 'user_proposer' });
+        await screen.findByTestId('parameter-set-pending-Nightly roster push');
+        expect(screen.getByTestId('parameter-set-sign-Nightly roster push')).toBeDisabled();
+        expect(screen.getByTestId('parameter-set-approve-Nightly roster push')).toBeDisabled();
+        expect(screen.getByTestId('parameter-set-proposer-note-Nightly roster push')).toBeInTheDocument();
+        expect(screen.getByText(/Proposed by Pat Proposer/)).toBeInTheDocument();
+    });
+
+    it('somebody else is offered both', async () => {
+        listBody = [withPending()];
+        mount({ viewerUserId: 'user_other' });
+        await screen.findByTestId('parameter-set-pending-Nightly roster push');
+        expect(screen.getByTestId('parameter-set-sign-Nightly roster push')).not.toBeDisabled();
+        expect(screen.getByTestId('parameter-set-approve-Nightly roster push')).not.toBeDisabled();
+        expect(screen.queryByTestId('parameter-set-proposer-note-Nightly roster push')).toBeNull();
+    });
+});
+
+describe('an exact-value edit shows no signature block (#4900)', () => {
+    const exactEdit = () =>
+        baseline({
+            pending: {
+                parameters: { host: 'b.test', limit: 10 },
+                openFields: null,
+                targetPopulation: null,
+                hash: PENDING_HASH,
+                byUserId: 'user_proposer',
+                at: '2026-09-20T00:00:00.000Z',
+                requiredApprovals: 1,
+            },
+        });
+
+    it('says it needs no signature, offers no Sign, and lets its proposer approve', async () => {
+        listBody = [exactEdit()];
+        mount({ viewerUserId: 'user_proposer' });
+        await screen.findByTestId('parameter-set-pending-Nightly roster push');
+        expect(screen.queryByTestId('parameter-set-signatures-Nightly roster push')).toBeNull();
+        expect(screen.queryByTestId('parameter-set-sign-Nightly roster push')).toBeNull();
+        expect(screen.getByTestId('parameter-set-exact-edit-Nightly roster push')).toHaveTextContent(
+            /approved straight away/,
+        );
+        expect(screen.getByTestId('parameter-set-approve-Nightly roster push')).not.toBeDisabled();
+    });
+
+    it('…unless the Owner requires a second person, when its proposer cannot approve', async () => {
+        listBody = [exactEdit()];
+        mount({ viewerUserId: 'user_proposer', exactEditNeedsSecondApprover: true });
+        await screen.findByTestId('parameter-set-pending-Nightly roster push');
+        expect(screen.getByTestId('parameter-set-exact-edit-Nightly roster push')).toHaveTextContent(
+            /Somebody other than its proposer approves it/,
+        );
+        expect(screen.getByTestId('parameter-set-approve-Nightly roster push')).toBeDisabled();
+    });
+});
+
+describe('words, not codes (#4900)', () => {
+    it('the source badge and the tool read in words', async () => {
+        listBody = [baseline()];
+        mount();
+        const card = await screen.findByTestId('parameter-set-Nightly roster push');
+        expect(card).toHaveTextContent('First save, not reviewed');
+        expect(card).toHaveTextContent('Update user');
+        expect(card).not.toHaveTextContent('BASELINE');
+        expect(card).toHaveTextContent('Revision 1');
     });
 });

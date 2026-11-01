@@ -1,6 +1,9 @@
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { oversightReadsFor, readAgentOversightSettings } from '@/app-layer/usecases/agent-oversight-settings';
+import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
+import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 import { listIntegrationConnections } from '@/app-layer/usecases/integrations';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 import { TARGET_POPULATIONS, targetPopulationKeys } from '@/app-layer/usecases/external-tool-target-populations';
@@ -98,11 +101,35 @@ export default async function ParameterSetsPage({
     const query = await searchParams;
     const requested = typeof query.connectionId === 'string' ? query.connectionId : null;
 
+    // Who proposed, approved and signed, by name (#4900): the active members.
+    // Anybody else reads "a former member". Fail-soft: names are a courtesy,
+    // and a failed read must not take the approvals off the page.
+    const admin = ctx.appPermissions.admin;
+    const [members, oversight, oversightReads] = await Promise.all([
+        listAssignableUsers(ctx).catch(() => []),
+        readAgentOversightSettings(ctx),
+        oversightReadsFor(ctx),
+    ]);
+
     return (
         <ParameterSetsClient
             connections={mcpConnections}
             targetPopulations={targetPopulations}
             initialConnectionId={requested}
+            viewerUserId={ctx.userId}
+            people={Object.fromEntries(members.map((m) => [m.id, m.name || m.email]))}
+            // The Owner's switch (#4905): whether an exact-value edit needs
+            // somebody other than its proposer to approve it.
+            exactEditNeedsSecondApprover={oversight.exactParameterEditNeedsSecondApprover}
+            menu={{
+                tenantSlug: resolved.tenantSlug,
+                canReviewProposals: mayReadAgentActivity(admin),
+                canCompose: Boolean(admin.view),
+                canInvestigate: true,
+                canReadReports: mayReadAgentInventory(admin),
+                canSetOrphanPass: Boolean(admin.tenant_lifecycle),
+                oversightReads,
+            }}
         />
     );
 }

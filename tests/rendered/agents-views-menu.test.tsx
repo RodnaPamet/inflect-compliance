@@ -92,6 +92,8 @@ const ENTRY_IDS = [
     'agents-view-audit-pilot',
     'agents-view-review-quality',
     'agents-view-external-tools',
+    // #4900 — reachable on its own, beside the catalogue it reads.
+    'agents-view-parameter-sets',
     'agents-view-peers',
 ] as const;
 
@@ -125,7 +127,7 @@ async function openMenu(
 /** The rendered menu-item rows, in DOM order. */
 const items = () => screen.queryAllByRole('menuitem');
 
-describe('eleven entries in two labelled groups', () => {
+describe('twelve entries in two labelled groups', () => {
     it('renders exactly those, in order', async () => {
         await openMenu();
         // The ids, as an exact ordered list — a count would pass for six rows
@@ -148,6 +150,7 @@ describe('eleven entries in two labelled groups', () => {
             '/t/acme/agents/audit-pilot',
             '/t/acme/agents/review-quality',
             '/t/acme/agents/external-tools',
+            '/t/acme/agents/parameter-sets',
             '/t/acme/agents/peers',
         ]);
     });
@@ -171,6 +174,7 @@ describe('eleven entries in two labelled groups', () => {
             VIEWS.auditPilot,
             VIEWS.reviewQuality,
             VIEWS.externalTools,
+            VIEWS.parameterSets,
             VIEWS.peers,
         ]);
     });
@@ -215,6 +219,7 @@ describe('a permission-absent entry is NOT RENDERED', () => {
             'agents-view-audit-pilot',
             'agents-view-review-quality',
             'agents-view-external-tools',
+            'agents-view-parameter-sets',
             'agents-view-peers',
         ]);
     });
