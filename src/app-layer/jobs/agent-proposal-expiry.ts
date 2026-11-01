@@ -47,6 +47,7 @@ import type { PrismaClient } from '@prisma/client';
 import { appendAuditEntry } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
 import { UNCARDED_PROPOSAL_WINDOW_DAYS } from '@/lib/agentic/proposal-expiry';
+import { recordRunsDecisionsUnreviewed } from '@/app-layer/ai/decision-log';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -83,6 +84,8 @@ export interface AgentProposalExpiryResult {
      * the claim predicate exists to lose safely.
      */
     raced: number;
+    /** Decision-log rows stamped "no human review" for runs whose last proposal expired (#4896). */
+    runsSettled: number;
 }
 
 export async function runAgentProposalExpiry(
@@ -112,13 +115,15 @@ export async function runAgentProposalExpiry(
     // ── 2. The due rows. ONE read; the loop below writes only. ──
     const due = await db.agentProposal.findMany({
         where: { ...tenantScope, status: 'PENDING', expiresAt: { lte: now } },
-        select: { id: true, tenantId: true, kind: true, agentId: true, expiresAt: true },
+        select: { id: true, tenantId: true, kind: true, agentId: true, expiresAt: true, runId: true },
         orderBy: { expiresAt: 'asc' },
         take: EXPIRY_BATCH_LIMIT,
     });
 
     let expired = 0;
     let raced = 0;
+    /** The runs whose proposals expired here, for the decision log (#4896). */
+    const expiredFromRuns: { tenantId: string; runId: string }[] = [];
 
     for (const proposal of due) {
         // Conditional claim, exactly as `approveAgentProposal` does it: the
@@ -134,6 +139,7 @@ export async function runAgentProposalExpiry(
             continue;
         }
         expired += 1;
+        if (proposal.runId) expiredFromRuns.push({ tenantId: proposal.tenantId, runId: proposal.runId });
 
         await appendAuditEntry({
             tenantId: proposal.tenantId,
@@ -155,6 +161,18 @@ export async function runAgentProposalExpiry(
         }).catch(() => undefined);
     }
 
+    // ── 3. The runs those proposals came from (#4896). ──
+    // A finished run whose last pending proposal expired undecided was never
+    // reviewed, so its model calls are stamped "no human review" rather than
+    // left "awaiting review" for ever. Best-effort: the expiries are written.
+    const runsSettled = await settleExpiredProposalRuns(db, expiredFromRuns).catch(() => {
+        logger.warn('agent-proposal expiry: decision log not settled', {
+            component: 'agent-proposal-expiry',
+            runs: expiredFromRuns.length,
+        });
+        return 0;
+    });
+
     logger.info('agent-proposal expiry sweep complete', {
         component: 'agent-proposal-expiry',
         scanned: due.length,
@@ -163,5 +181,36 @@ export async function runAgentProposalExpiry(
         raced,
     });
 
-    return { scanned: due.length, expired, backfilled: backfill.count, raced };
+    return { scanned: due.length, expired, backfilled: backfill.count, raced, runsSettled };
+}
+
+/**
+ * Of the runs whose proposals just expired, stamp the decision rows of those
+ * that are FINISHED and hold no other pending proposal (#4896). Two reads and
+ * one write, however many runs: no read per run.
+ */
+async function settleExpiredProposalRuns(
+    db: PrismaClient,
+    runs: ReadonlyArray<{ tenantId: string; runId: string }>,
+): Promise<number> {
+    if (runs.length === 0) return 0;
+    const runIds = [...new Set(runs.map((r) => r.runId))];
+    const [stillPending, finished] = await Promise.all([
+        db.agentProposal.findMany({
+            where: { runId: { in: runIds }, status: 'PENDING' },
+            select: { runId: true },
+            distinct: ['runId'],
+            take: runIds.length,
+        }),
+        db.workflowRun.findMany({
+            where: { id: { in: runIds }, status: { in: ['COMPLETED', 'FAILED', 'ABORTED'] } },
+            select: { id: true, tenantId: true },
+            take: runIds.length,
+        }),
+    ]);
+    const waiting = new Set(stillPending.map((r) => r.runId));
+    return recordRunsDecisionsUnreviewed(
+        db,
+        finished.filter((r) => !waiting.has(r.id)).map((r) => ({ tenantId: r.tenantId, runId: r.id })),
+    );
 }

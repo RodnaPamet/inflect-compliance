@@ -1,9 +1,14 @@
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
-import { listAiDecisions } from '@/app-layer/usecases/ai-decision-log';
+import {
+    AI_DECISION_KINDS,
+    readAiDecisionPage,
+    type AiDecisionOutcomeFilter,
+} from '@/app-layer/usecases/ai-decision-log';
 import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { mayReadAgentActivity } from '@/lib/permissions';
 
 import { DecisionsClient } from './DecisionsClient';
@@ -53,7 +58,7 @@ export default async function AgentDecisionsPage({
     searchParams,
 }: {
     params: Promise<{ tenantSlug: string }>;
-    searchParams: Promise<{ digest?: string }>;
+    searchParams: Promise<{ digest?: string; outcome?: string; kind?: string; agent?: string }>;
 }) {
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
@@ -72,17 +77,33 @@ export default async function AgentDecisionsPage({
         );
     }
 
-    const { digest } = await searchParams;
-    const decisions = await listAiDecisions(ctx, { digest });
+    const query = await searchParams;
+    const digest = query.digest || undefined;
+    // An unknown outcome is ignored rather than refused: a stale link narrows
+    // nothing instead of showing an error page.
+    const outcome = (['PENDING', 'REVIEWED', 'AUTONOMOUS'] as const).find((o) => o === query.outcome) as
+        | AiDecisionOutcomeFilter
+        | undefined;
+    const kind = AI_DECISION_KINDS.find((k) => k === query.kind);
+    const agentId = query.agent || undefined;
+    const page = await readAiDecisionPage(ctx, { digest, outcome, kind, agentId });
 
     return (
         <DecisionsClient
             tenantSlug={resolved.tenantSlug}
-            decisions={decisions}
+            decisions={page.rows}
+            capped={page.capped}
+            agentNames={page.agentNames}
+            connectionNames={page.connectionNames}
+            // The workflow names, so a run's rows read "Agent run: Posture
+            // review" rather than the registry key (#4896). Read here because
+            // the registry is server code.
+            workflowNames={Object.fromEntries(listWorkflowDefinitions().map((w) => [w.key, w.name]))}
             // Echoed back so the page can say it is showing a NARROWED view.
             // Without it a digest that matches nothing renders as "no
             // decisions yet", which is a different and wrong claim.
             digest={digest ?? null}
+            filters={{ outcome: outcome ?? null, kind: kind ?? null, agentId: agentId ?? null }}
             canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
             canCompose={Boolean(ctx.appPermissions?.admin?.view)}
             canInvestigate={Boolean(ctx.appPermissions?.admin?.agent_registry)}

@@ -38,7 +38,7 @@ import {
     guardAgentProposal,
     type AgentProposalGuardResult,
 } from '@/app-layer/ai/guard/proposal-guard';
-import { logAiDecision, recordDecisionOutcomeForDigest } from '@/app-layer/ai/decision-log';
+import { logAiDecision, recordDecisionOutcome, recordDecisionOutcomeForDigest } from '@/app-layer/ai/decision-log';
 import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { NO_POLICY_CARD, narrowApprovalRung, type ApprovalRung } from '@/lib/agentic/policy-card';
 import {
@@ -1898,6 +1898,15 @@ export async function approveAgentProposal(
             recordDecisionOutcomeForDigest(db, ctx, proposal.guardInputDigest!, status),
         ).catch(() => undefined);
     }
+    // …and the model calls of the RUN that proposed it (#4896): a person has
+    // now reviewed what that run produced. Keyed by the run id, which those
+    // rows carry as `sessionRef`. One-way, so the first decision on a run's
+    // proposals is the one its calls record.
+    if (proposal.runId) {
+        await runInTenantContext(ctx, (db) => recordDecisionOutcome(db, ctx, proposal.runId!, status)).catch(
+            () => undefined,
+        );
+    }
 
     return { proposalId: id, kind, operation, createdEntityId, status };
 }
@@ -1940,6 +1949,10 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
         // have already refused.
         if (proposal.guardInputDigest) {
             await recordDecisionOutcomeForDigest(db, ctx, proposal.guardInputDigest, 'REJECTED');
+        }
+        // …and the model calls of the run that proposed it (#4896).
+        if (proposal.runId) {
+            await recordDecisionOutcome(db, ctx, proposal.runId, 'REJECTED');
         }
     });
     await appendAuditEntry({
@@ -2032,6 +2045,7 @@ export async function bulkRejectAgentProposals(
                 expiresAt: true,
                 guardInputDigest: true,
                 proposedBySessionRef: true,
+                runId: true,
             },
         }),
     );
@@ -2121,6 +2135,10 @@ export async function bulkRejectAgentProposals(
         for (const row of accepted) {
             if (ids.has(row.id) && row.guardInputDigest) {
                 await recordDecisionOutcomeForDigest(db, ctx, row.guardInputDigest, 'REJECTED');
+            }
+            // …and the model calls of the run that proposed it (#4896).
+            if (ids.has(row.id) && row.runId) {
+                await recordDecisionOutcome(db, ctx, row.runId, 'REJECTED');
             }
         }
         return ids;
