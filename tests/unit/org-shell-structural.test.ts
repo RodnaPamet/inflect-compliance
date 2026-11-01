@@ -108,6 +108,7 @@ describe('Epic O-4 — org shell structural contract', () => {
             ['nonPerformingControls', 'Non-Performing Controls'],
             ['criticalRisks', 'Critical Risks'],
             ['overdueEvidence', 'Overdue Evidence'],
+            ['initiatives', 'Initiatives'],
             ['members', 'Members'],
             ['auditLog', 'Audit Log'],
         ] as const) {

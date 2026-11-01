@@ -13968,7 +13968,8 @@
       "settings": "Settings",
       "collapse": "Collapse",
       "expandSidebar": "Expand sidebar",
-      "collapseSidebar": "Collapse sidebar"
+      "collapseSidebar": "Collapse sidebar",
+      "initiatives": "Initiatives"
     },
     "switcher": {
       "switchContextAria": "Switch context",
@@ -14345,13 +14346,25 @@
       "colLinkedWork": "Linked work",
       "colTarget": "Target",
       "atRisk": "At risk",
-      "tenantSpan": " · {count, plural, one {# tenant} other {# tenants}}",
+      "tenantSpan": " · {count, plural, one {# workspace} other {# workspaces}}",
       "createModalTitle": "New security initiative",
-      "titlePlaceholder": "Title (e.g. Roll out MFA across all subsidiaries)",
-      "descriptionPlaceholder": "Description (optional)",
+      "titlePlaceholder": "For example: Roll out MFA in every subsidiary",
       "titleRequired": "A title is required.",
-      "failedCreate": "Failed to create initiative.",
-      "createInitiative": "Create initiative"
+      "failedCreate": "The initiative was not created. Try again.",
+      "createInitiative": "Create initiative",
+      "colOwner": "Owner",
+      "noOwner": "No owner",
+      "emptyTitle": "No initiatives yet",
+      "emptyDescManage": "Create one with New initiative to track a security programme across the organization's workspaces.",
+      "emptyDescRead": "An organization owner or admin creates initiatives here.",
+      "titleLabel": "Title",
+      "descriptionLabel": "Description",
+      "ownerLabel": "Owner",
+      "ownerHint": "A member of the organization who is accountable for it.",
+      "targetLabel": "Target date",
+      "targetHint": "An open initiative past this date is marked at risk.",
+      "resourceOne": "initiative",
+      "resourceMany": "initiatives"
     },
     "initiativeDetail": {
       "backToInitiatives": "Back to initiatives",

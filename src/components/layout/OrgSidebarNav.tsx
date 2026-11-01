@@ -7,6 +7,7 @@ import {
     FolderBookmark,
     Gear,
     GridIcon,
+    MarketingTarget,
     Menu3,
     OfficeBuilding,
     ShieldCheck,
@@ -92,6 +93,14 @@ export function useOrgNavSections(): OrgNavSectionDef[] {
                     label: t('nav.overdueEvidence'),
                     icon: FolderBookmark,
                     requiresDrillDown: true,
+                },
+                {
+                    // #4851 — the page was reachable only from the
+                    // dashboard widget's "View all", so removing that widget
+                    // left it with no way in. Every member reads it.
+                    href: orgHref('/initiatives'),
+                    label: t('nav.initiatives'),
+                    icon: MarketingTarget,
                 },
             ],
         },
