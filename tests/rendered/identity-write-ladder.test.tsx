@@ -218,12 +218,16 @@ describe('identity write ladder — the operator surface', () => {
             .toBeInTheDocument();
     });
 
-    it('says the joiner direction is not built, rather than pretending it works', () => {
+    it('says a switched-off direction is switched off, rather than pretending it works', () => {
+        // The brake (`DIRECTION_IMPLEMENTED`) is true for both directions today;
+        // the fixture sets the joiner's false to prove the page still says so.
+        // The old sentence claimed the joiner was not built, which #2949 made
+        // false (#4874).
         render(<WriteLadderClient />);
-        expect(within(card(/Joiners/i)).getByText(/not built yet/i)).toBeInTheDocument();
+        expect(within(card(/Joiners/i)).getByText(/switched off in this build/i)).toBeInTheDocument();
     });
 
-    it('disables the joiner widen control, and says why, while the joiner is unbuilt', () => {
+    it('disables the joiner widen control, and says why, while the joiner is switched off', () => {
         render(<WriteLadderClient />);
         const joiner = card(/Joiners/i);
 
@@ -242,7 +246,7 @@ describe('identity write ladder — the operator surface', () => {
         expect(within(joiner).getByRole('button', { name: /Widen to Dry run/i })).toBeDisabled();
         // Disabled AND explained. A greyed control with nothing beside it is the
         // failure mode this page exists to avoid.
-        expect(within(joiner).getByText(/not built yet/i)).toBeInTheDocument();
+        expect(within(joiner).getByText(/switched off in this build/i)).toBeInTheDocument();
     });
 
     it('leaves the leaver widen control enabled in the same render', () => {
@@ -262,3 +266,62 @@ describe('identity write ladder — the operator surface', () => {
         expect(screen.queryByRole('heading', { name: /Leavers/i })).not.toBeInTheDocument();
     });
 });
+
+describe('identity write ladder — refusals in words, and what Automatic needs (#4874)', () => {
+    it('words a dwell refusal from its code, with no stored mode name', () => {
+        setPayload(
+            state('DRY_RUN', {
+                dryRunSince: '2026-10-28T00:00:00Z',
+                blockedReason: 'Dry-run has been active for 3 of 7 required days. Re-select DRY_RUN …',
+                blocked: { code: 'DWELL', days: 3, required: 7, left: 4 },
+                passesInWindow: 2,
+            }),
+            { dryRunMinPasses: 1 },
+        );
+        render(<WriteLadderClient />);
+        const leaver = card(/Leavers/i);
+        expect(within(leaver).getByText(/The dry run has lasted 3 of 7 days\. 4 more to go/)).toBeInTheDocument();
+        expect(leaver.textContent).not.toContain('DRY_RUN');
+        expect(within(leaver).getByRole('button', { name: /Widen to Automatic/i })).toBeDisabled();
+    });
+
+    it('states the pass requirement beside the days, with the count so far', () => {
+        setPayload(
+            state('DRY_RUN', { dryRunSince: '2026-10-20T00:00:00Z', blocked: null, passesInWindow: 0 }),
+            { dryRunMinPasses: 1 },
+        );
+        render(<WriteLadderClient />);
+        expect(
+            within(card(/Leavers/i)).getByText(/with at least 1 completed pass in that time.*Completed passes so far: 0/),
+        ).toBeInTheDocument();
+    });
+
+    it('a too-few-passes refusal says so, before the operator submits', () => {
+        setPayload(
+            state('DRY_RUN', {
+                dryRunSince: '2026-10-20T00:00:00Z',
+                blocked: { code: 'TOO_FEW_PASSES', passes: 0, required: 1 },
+                passesInWindow: 0,
+            }),
+            { dryRunMinPasses: 1 },
+        );
+        render(<WriteLadderClient />);
+        expect(within(card(/Leavers/i)).getByText(/has seen 0 completed passes and needs at least 1/)).toBeInTheDocument();
+    });
+
+    it('says what Automatic still needs from the connection, and links to Integrations', () => {
+        setPayload(state('DRY_RUN', { dryRunSince: '2026-10-20T00:00:00Z', blocked: null, passesInWindow: 3 }));
+        render(<WriteLadderClient />);
+        const needs = screen.getByTestId('write-ladder-leaver-automatic-needs');
+        expect(needs).toHaveTextContent(/exactly one enabled directory connection/);
+        expect(within(needs).getByRole('link', { name: 'Integrations' })).toHaveAttribute('href', '/t/acme/admin/integrations');
+    });
+
+    it('links each direction to its passes and to the write journal', () => {
+        render(<WriteLadderClient />);
+        const links = document.getElementById('write-ladder-leaver-links') as HTMLElement;
+        expect(within(links).getByRole('link', { name: 'Leaver passes' })).toHaveAttribute('href', '/t/acme/admin/identity-leaver-passes');
+        expect(within(links).getByRole('link', { name: 'Identity write journal' })).toHaveAttribute('href', '/t/acme/admin/identity-write-journal');
+    });
+});
+

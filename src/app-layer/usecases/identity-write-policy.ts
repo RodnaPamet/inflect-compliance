@@ -41,12 +41,13 @@ import {
     type IdentityWriteMode,
     type IdentityDirection,
     PASS_AUTOMATION_SUFFIX,
+    type WriteModeRefusal,
 } from '@/lib/identity/write-ladder';
 
 // Re-exported so the dozen existing importers keep their import path. The
 // definition moved to a server-free module because the admin client needs the
 // same ladder and cannot import a usecase.
-export type { IdentityWriteMode, IdentityDirection };
+export type { IdentityWriteMode, IdentityDirection, WriteModeRefusal };
 
 /** Widening order. Index is authority: higher means the product may do more. */
 
@@ -144,6 +145,42 @@ export function describeRefusal(
     current: DirectionState,
     next: IdentityWriteMode,
     now: Date,
+    passesInWindow?: number,
+    clamp?: IdentityWriteMode,
+): string | null {
+    const refusal = classifyRefusal(direction, current, next, now, passesInWindow, clamp);
+    if (!refusal) return null;
+    switch (refusal.code) {
+        case 'NOT_IMPLEMENTED':
+            return `The ${direction} direction has no implementation behind it — a ${direction} pass cannot act on the mode it reads, so a rung above DISABLED would be recorded and would do nothing. It cannot be widened until the ${direction} runtime ships.`;
+        case 'ABOVE_CLAMP':
+            return `${refusal.next} is above the highest rung the ${direction} runtime will act at (${refusal.clamp}). A tenant set to ${refusal.next} would record the wider authority while every pass refused it as above the clamp, so the ladder would be spent without ever granting anything. Raising that ceiling is a reviewed change to the ${direction} pass, not a setting.`;
+        case 'MULTI_RUNG': {
+            const from = LADDER.indexOf(refusal.from);
+            const to = LADDER.indexOf(refusal.to);
+            return `Cannot go from ${refusal.from} to ${refusal.to} in one step. Widen one level at a time (${LADDER.slice(from, to + 1).join(' → ')}), so each level is observed before the next is granted.`;
+        }
+        case 'NO_DRY_RUN_START':
+            return 'Dry-run has no recorded start. Re-select DRY_RUN to start the observation window.';
+        case 'TOO_FEW_PASSES':
+            return (
+                `Dry-run has recorded ${refusal.passes} completed ${direction} ` +
+                `passes since the window opened, and at least ${refusal.required} is required. ` +
+                'The window measures elapsed days, but a week with no pass at all is a ' +
+                'dispatcher that never fired or a directory that never resolved — not a quiet ' +
+                'week. Check the pass report for this direction before widening the mode.'
+            );
+        case 'DWELL':
+            return `Dry-run has been active for ${refusal.days} of ${refusal.required} required days. ${refusal.left} more before this direction can widen — the window exists so there is time for a real termination-and-hire cycle to happen and be compared against what HR and IT actually did. This branch counts elapsed days, so running more passes does not shorten it — though widening also requires the window to contain real passes, which is checked separately.`;
+    }
+}
+
+/** The classification `describeRefusal` words. Same arguments. */
+export function classifyRefusal(
+    direction: IdentityDirection,
+    current: DirectionState,
+    next: IdentityWriteMode,
+    now: Date,
     /**
      * Passes that EXECUTED since the window opened — #2843 finding 31.
      *
@@ -171,7 +208,7 @@ export function describeRefusal(
      * supplies it.
      */
     clamp?: IdentityWriteMode,
-): string | null {
+): WriteModeRefusal | null {
     if (current.mode === next) return null;
 
     const from = LADDER.indexOf(current.mode);
@@ -223,7 +260,7 @@ export function describeRefusal(
         // joiner in particular, is that the pass cannot ACT on the mode: it
         // can now DECIDE a group (#2713 gave the map a home), but there is
         // no create verb behind that decision (#2714).
-        return `The ${direction} direction has no implementation behind it — a ${direction} pass cannot act on the mode it reads, so a rung above DISABLED would be recorded and would do nothing. It cannot be widened until the ${direction} runtime ships.`;
+        return { code: 'NOT_IMPLEMENTED' };
     }
 
     // ═══ A WIDEN ABOVE THE PUBLISHED CEILING IS REFUSED ON THE WRITE PATH ═══
@@ -255,13 +292,13 @@ export function describeRefusal(
     // `LADDER` before calling — which matters, since `isAboveClamp` sorts an
     // unrecognised mode to -1 and would read it as BELOW the clamp.
     if (clamp !== undefined && isAboveClamp(next, clamp)) {
-        return `${next} is above the highest rung the ${direction} runtime will act at (${clamp}). A tenant set to ${next} would record the wider authority while every pass refused it as above the clamp, so the ladder would be spent without ever granting anything. Raising that ceiling is a reviewed change to the ${direction} pass, not a setting.`;
+        return { code: 'ABOVE_CLAMP', next, clamp };
     }
 
     // Widening by more than one rung skips the step whose entire purpose is to
     // catch the mistake the next rung would then make for real.
     if (to - from > 1) {
-        return `Cannot go from ${current.mode} to ${next} in one step. Widen one level at a time (${LADDER.slice(from, to + 1).join(' → ')}), so each level is observed before the next is granted.`;
+        return { code: 'MULTI_RUNG', from: current.mode, to: next };
     }
 
     // ═══ THE DWELL. SINCE #2241 IT GATES THE ONLY WIDEN THAT GRANTS AUTHORITY. ═══
@@ -284,19 +321,13 @@ export function describeRefusal(
     // to reach without them.
     if (current.mode === 'DRY_RUN') {
         if (!current.dryRunSince) {
-            return 'Dry-run has no recorded start. Re-select DRY_RUN to start the observation window.';
+            return { code: 'NO_DRY_RUN_START' };
         }
         // EVIDENCE as well as elapsed time (#2843 finding 31). Checked before
         // the day count so an operator who has waited the week and run nothing
         // is told the useful thing rather than being sent away to wait again.
         if (passesInWindow !== undefined && passesInWindow < DRY_RUN_MIN_PASSES) {
-            return (
-                `Dry-run has recorded ${passesInWindow} completed ${direction} ` +
-                `passes since the window opened, and at least ${DRY_RUN_MIN_PASSES} is required. ` +
-                'The window measures elapsed days, but a week with no pass at all is a ' +
-                'dispatcher that never fired or a directory that never resolved — not a quiet ' +
-                'week. Check the pass report for this direction before widening the mode.'
-            );
+            return { code: 'TOO_FEW_PASSES', passes: passesInWindow, required: DRY_RUN_MIN_PASSES };
         }
         const days = (now.getTime() - current.dryRunSince.getTime()) / 86_400_000;
         if (days < DRY_RUN_MIN_DAYS) {
@@ -322,7 +353,7 @@ export function describeRefusal(
             // last time the sentence over-claimed, this time it under-claimed.
             // A refusal an operator can disprove by reading the refusal next to
             // it is worth no more than a wrong one.
-            return `Dry-run has been active for ${Math.floor(days)} of ${DRY_RUN_MIN_DAYS} required days. ${left} more before this direction can widen — the window exists so there is time for a real termination-and-hire cycle to happen and be compared against what HR and IT actually did. This branch counts elapsed days, so running more passes does not shorten it — though widening also requires the window to contain real passes, which is checked separately.`;
+            return { code: 'DWELL', days: Math.floor(days), required: DRY_RUN_MIN_DAYS, left };
         }
     }
 
@@ -346,7 +377,7 @@ export function describeRefusal(
  * found nobody is still the machinery working end to end, which is the fact
  * the dwell gate cannot otherwise see.
  */
-async function countExecutedPasses(
+export async function countExecutedPasses(
     ctx: RequestContext,
     direction: IdentityDirection,
     since: Date,

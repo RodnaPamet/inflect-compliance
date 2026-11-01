@@ -22,6 +22,9 @@ import {
     getIdentityWritePolicy,
     setIdentityWriteMode,
     describeRefusal,
+    classifyRefusal,
+    countExecutedPasses,
+    DRY_RUN_MIN_PASSES,
     DRY_RUN_MIN_DAYS,
 } from '@/app-layer/usecases/identity-write-policy';
 import { LEAVER_MAX_MODE } from '@/app-layer/usecases/identity-leaver-pass';
@@ -53,6 +56,21 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
     const policy = await getIdentityWritePolicy(requestCtx);
     const now = new Date();
 
+    // THE SAME ARGUMENTS THE PUT GIVES THE REFUSAL (#4874). This read used to
+    // pass neither the passes in the dry-run window nor the clamp, so the page
+    // offered a widen that the PUT then refused for a reason the page had
+    // never shown. Counted only for a direction in DRY_RUN with a window open,
+    // as the PUT counts it.
+    const clampOf = { leaver: LEAVER_MAX_MODE, joiner: JOINER_MAX_MODE } as const;
+    const passesOf = Object.fromEntries(
+        await Promise.all(
+            (['leaver', 'joiner'] as const).map(async (d) => {
+                const since = policy[d].mode === 'DRY_RUN' ? policy[d].dryRunSince : null;
+                return [d, since ? await countExecutedPasses(requestCtx, d, since) : null] as const;
+            }),
+        ),
+    ) as Record<'leaver' | 'joiner', number | null>;
+
     // Return the refusal reason for each direction's NEXT rung alongside the
     // current state, so the UI can explain why a control is unavailable instead
     // of only disabling it. "Greyed out with no reason" is how an operator
@@ -66,18 +84,25 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
                 // one, which is how a route can go on offering a rung the ladder
                 // no longer has.
                 const next = LADDER[Math.min(LADDER.indexOf(policy[d].mode) + 1, LADDER.length - 1)];
+                const atTop = next === policy[d].mode;
+                const passes = passesOf[d] ?? undefined;
                 return [
                     d,
                     {
                         mode: policy[d].mode,
                         dryRunSince: policy[d].dryRunSince,
-                        nextMode: next === policy[d].mode ? null : next,
-                        blockedReason: next === policy[d].mode ? null : describeRefusal(d, policy[d], next, now),
+                        nextMode: atTop ? null : next,
+                        // The sentence, for any client still reading it…
+                        blockedReason: atTop ? null : describeRefusal(d, policy[d], next, now, passes, clampOf[d]),
+                        // …and the code the page words in the reader's language.
+                        blocked: atTop ? null : classifyRefusal(d, policy[d], next, now, passes, clampOf[d]),
+                        passesInWindow: passesOf[d],
                     },
                 ];
             }),
         ),
         dryRunMinDays: DRY_RUN_MIN_DAYS,
+        dryRunMinPasses: DRY_RUN_MIN_PASSES,
         // WHAT THE RUNTIME WILL ACTUALLY HONOUR, which is not the same as what
         // this policy will accept — and the difference is invisible without it.
         //
