@@ -199,7 +199,7 @@ export function ControlsTable({ rows: initialRows, nextCursor: initialNextCursor
                         if (p.sortBy) setSortBy(p.sortBy);
                         if (p.sortOrder) setSortOrder(p.sortOrder);
                     }}
-                    resourceName={(plural) => (plural ? 'controls' : 'control')}
+                    resourceName={(plural) => (plural ? t('controls.resourceMany') : t('controls.resourceOne'))}
                     emptyState={
                         <TableEmptyState
                             title={t('controls.emptyTitle')}
