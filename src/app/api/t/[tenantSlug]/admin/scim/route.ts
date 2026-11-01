@@ -7,14 +7,27 @@
  *
  * Admin-only. Tokens are stored as SHA-256 hashes. The plaintext is only
  * returned on creation and cannot be retrieved afterward.
+ *
+ * Minting and revoking are AUDITED (#4868). A SCIM token lets whoever holds it
+ * create and deactivate members, so who issued one, and who took one away, is
+ * the workspace's business in the same way an API key's is. Neither row
+ * carries the token or its hash.
  */
 import { NextRequest } from 'next/server';
 import { randomBytes, createHash } from 'crypto';
+import { z } from 'zod';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import prisma from '@/lib/prisma';
 import { jsonResponse } from '@/lib/api-response';
 import { publicBaseUrl } from '@/lib/http/public-base-url';
+import { logEvent } from '@/app-layer/events/audit';
+import { notFound } from '@/lib/errors/types';
+import { sanitizePlainText } from '@/lib/security/sanitize';
+
+const MAX_LABEL = 100;
+const CreateSchema = z.object({ label: z.string().max(MAX_LABEL).optional() });
+const RevokeSchema = z.object({ tokenId: z.string().min(1) });
 
 /**
  * GET — list SCIM tokens for tenant (admin.scim only).
@@ -51,8 +64,8 @@ export const GET = withApiErrorHandling(
  */
 export const POST = withApiErrorHandling(
     requirePermission('admin.scim', async (req: NextRequest, _routeArgs, ctx) => {
-        const body = (await req.json()) as { label?: string };
-        const label = body.label || 'SCIM Token';
+        const body = CreateSchema.parse(await req.json());
+        const label = sanitizePlainText(body.label ?? '').trim() || 'SCIM Token';
 
         // Generate a cryptographically secure token
         const plaintext = `scim_${randomBytes(32).toString('base64url')}`;
@@ -65,6 +78,19 @@ export const POST = withApiErrorHandling(
                 tokenHash,
             },
             select: { id: true, label: true, createdAt: true },
+        });
+
+        await logEvent(prisma, ctx, {
+            action: 'SCIM_TOKEN_CREATED',
+            entityType: 'TenantScimToken',
+            entityId: token.id,
+            details: `Created SCIM token: ${label}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'TenantScimToken',
+                operation: 'created',
+                after: { label },
+            },
         });
 
         // Return the plaintext token ONCE — it cannot be retrieved again
@@ -84,10 +110,7 @@ export const POST = withApiErrorHandling(
  */
 export const DELETE = withApiErrorHandling(
     requirePermission('admin.scim', async (req: NextRequest, _routeArgs, ctx) => {
-        const { tokenId } = (await req.json()) as { tokenId: string };
-        if (!tokenId) {
-            return jsonResponse({ error: 'tokenId required' }, { status: 400 });
-        }
+        const { tokenId } = RevokeSchema.parse(await req.json());
 
         // Verify token belongs to this tenant
         const existing = await prisma.tenantScimToken.findFirst({
@@ -95,14 +118,31 @@ export const DELETE = withApiErrorHandling(
         });
 
         if (!existing) {
-            return jsonResponse({ error: 'Token not found' }, { status: 404 });
+            throw notFound('This token no longer exists in this workspace.');
+        }
+        if (existing.revokedAt) {
+            return jsonResponse({ ok: true, revokedAt: existing.revokedAt.toISOString() });
         }
 
+        const revokedAt = new Date();
         await prisma.tenantScimToken.update({
             where: { id: tokenId },
-            data: { revokedAt: new Date() },
+            data: { revokedAt },
         });
 
-        return jsonResponse({ ok: true, revokedAt: new Date().toISOString() });
+        await logEvent(prisma, ctx, {
+            action: 'SCIM_TOKEN_REVOKED',
+            entityType: 'TenantScimToken',
+            entityId: existing.id,
+            details: `Revoked SCIM token: ${existing.label}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'TenantScimToken',
+                operation: 'deleted',
+                summary: `Revoked SCIM token: ${existing.label}`,
+            },
+        });
+
+        return jsonResponse({ ok: true, revokedAt: revokedAt.toISOString() });
     }),
 );
