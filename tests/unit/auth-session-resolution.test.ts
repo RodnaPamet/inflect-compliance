@@ -28,6 +28,7 @@ type SessionUserLike = {
     email?: string | null;
     role?: Role | null;
     ssoTenantId?: string | null;
+    entraGateDeniedTenantIds?: string[];
 };
 type SessionLike = { user?: SessionUserLike | null } | null;
 
