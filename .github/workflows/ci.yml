@@ -395,7 +395,7 @@ jobs:
       # (registry ECONNRESET, the Roadmap-27 prisma SIGILL). A gate that can
       # fail for reasons unconnected to what it gates is a flaky required
       # check, which is worse than no check.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       # Before trusting it: a classifier that answered "not significant" for
