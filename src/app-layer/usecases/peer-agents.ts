@@ -110,6 +110,10 @@ const PEER_SELECT = {
     createdByUserId: true,
     createdAt: true,
     updatedAt: true,
+    // WHO answers for the peer and WHICH supplier it belongs to, by name, so
+    // the peers list and a peer's page can say so (#4901, #4902).
+    owner: { select: { name: true, email: true } },
+    vendor: { select: { name: true } },
 } as const;
 
 function assertMayManagePeers(ctx: RequestContext): void {

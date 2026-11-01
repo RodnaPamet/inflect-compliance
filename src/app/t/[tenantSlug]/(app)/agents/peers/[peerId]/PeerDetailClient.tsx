@@ -43,7 +43,7 @@ import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { peerCardState, peerPinState } from '../peer-state';
+import { PEER_CARD_LABEL_KEY, PEER_CARD_VARIANT, peerCardState, peerPinState } from '../peer-state';
 import { PeerCardReview } from './PeerCardReview';
 
 /** `UpdatePeerAgentSchema`'s risk tiers; `null` withdraws a score. */
@@ -143,13 +143,8 @@ export function PeerDetailClient({ tenantSlug, detail, canManage, canKill }: Pro
         {
             kind: 'status',
             label: t('peers.detail.metaCard'),
-            value:
-                card === 'matches'
-                    ? t('peers.cardMatches')
-                    : card === 'changed'
-                      ? t('peers.cardChanged')
-                      : t('peers.cardUnobserved'),
-            variant: card === 'matches' ? 'success' : card === 'changed' ? 'error' : 'neutral',
+            value: t(PEER_CARD_LABEL_KEY[card]),
+            variant: PEER_CARD_VARIANT[card],
         },
         {
             kind: 'text',

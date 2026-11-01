@@ -15,18 +15,23 @@
  * forms: the submit is the one action of its card, and a dialog's last button
  * must be a primary, which the product-wide ceiling has no slot for.
  */
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { AsyncCombobox, type AsyncOption } from '@/components/ui/async-combobox';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
-import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+
+/** How many matches one vendor search asks for. */
+const VENDOR_SEARCH_LIMIT = 20;
 
 /** `RegisterPeerAgentSchema`'s risk tiers. Optional: an unscored peer is registered and refused. */
 const RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
@@ -44,28 +49,48 @@ export interface RegisteredPeer {
 export function RegisterPeerForm({
     owners,
     vendors,
+    ownersUnavailable = false,
+    vendorsUnavailable = false,
     onRegistered,
     onCancel,
 }: {
     owners: PeerChoice[];
+    /** The first page of suppliers, offered before anything is typed. */
     vendors: PeerChoice[];
+    ownersUnavailable?: boolean;
+    vendorsUnavailable?: boolean;
     onRegistered: (registered: RegisteredPeer) => void;
     onCancel: () => void;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
+    const tenantHref = useTenantHref();
 
     const [name, setName] = useState('');
     const [cardUrl, setCardUrl] = useState('');
     const [signingPublicKey, setSigningPublicKey] = useState('');
     const [owner, setOwner] = useState<ComboboxOption | null>(null);
-    const [vendor, setVendor] = useState<ComboboxOption | null>(null);
+    const [vendor, setVendor] = useState<AsyncOption | null>(null);
     const [riskTier, setRiskTier] = useState<ComboboxOption | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const ownerOptions: ComboboxOption[] = owners.map((o) => ({ value: o.id, label: o.label }));
-    const vendorOptions: ComboboxOption[] = vendors.map((v) => ({ value: v.id, label: v.label }));
+    const vendorOptions = useMemo<AsyncOption[]>(() => vendors.map((v) => ({ value: v.id, label: v.label })), [vendors]);
+    // The first page when nothing is typed; otherwise every supplier whose name
+    // matches, from the vendors route, so the picker is not limited to the
+    // page the server rendered (#4901: it was cut at 200, silently).
+    const searchVendors = useCallback(
+        async (query: string, signal: AbortSignal): Promise<AsyncOption[]> => {
+            const q = query.trim();
+            if (q === '') return vendorOptions;
+            const res = await fetch(apiUrl(`/vendors?q=${encodeURIComponent(q)}&limit=${VENDOR_SEARCH_LIMIT}`), { signal });
+            if (!res.ok) return [];
+            const body = (await res.json().catch(() => null)) as { items?: { id: string; name: string }[] } | null;
+            return (body?.items ?? []).map((v) => ({ value: v.id, label: v.name }));
+        },
+        [apiUrl, vendorOptions],
+    );
     const tierOptions: ComboboxOption[] = RISK_TIERS.map((tier) => ({ value: tier, label: t(`peers.register.tier.${tier}`) }));
 
     const complete =
@@ -129,6 +154,7 @@ export function RegisterPeerForm({
                     />
                 </FormField>
                 <FormField label={t('peers.register.owner')} description={t('peers.register.ownerHint')} required>
+                    <div>
                     <Combobox
                         id="peer-register-owner"
                         options={ownerOptions}
@@ -141,20 +167,38 @@ export function RegisterPeerForm({
                         buttonProps={{ className: 'w-full' }}
                         caret
                     />
+                    {ownersUnavailable && (
+                        <p className="mt-1 text-xs text-content-error" data-testid="peer-register-owners-unavailable">
+                            {t('peers.register.ownersUnavailable')}
+                        </p>
+                    )}
+                    </div>
                 </FormField>
                 <FormField label={t('peers.register.vendor')} description={t('peers.register.vendorHint')} required>
-                    <Combobox
+                    <div>
+                    <AsyncCombobox
                         id="peer-register-vendor"
-                        options={vendorOptions}
-                        selected={vendor}
-                        setSelected={setVendor}
+                        value={vendor?.value ?? null}
+                        onChange={(o) => setVendor(o)}
+                        onSearch={searchVendors}
+                        initialOptions={vendorOptions}
                         placeholder={t('peers.register.vendorPlaceholder')}
                         searchPlaceholder={t('peers.register.search')}
                         matchTriggerWidth
-                        forceDropdown
-                        buttonProps={{ className: 'w-full' }}
-                        caret
                     />
+                    {vendorsUnavailable ? (
+                        <p className="mt-1 text-xs text-content-error" data-testid="peer-register-vendors-unavailable">
+                            {t('peers.register.vendorsUnavailable')}
+                        </p>
+                    ) : vendors.length === 0 ? (
+                        <p className="mt-1 text-xs text-content-muted" data-testid="peer-register-no-vendors">
+                            {t('peers.register.vendorsEmpty')}{' '}
+                            <Link href={tenantHref('/vendors')} className="text-content-info underline">
+                                {t('peers.register.vendorsLink')}
+                            </Link>
+                        </p>
+                    ) : null}
+                    </div>
                 </FormField>
                 <FormField label={t('peers.register.riskTier')} description={t('peers.register.riskTierHint')}>
                     <Combobox

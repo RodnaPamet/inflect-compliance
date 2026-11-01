@@ -28,7 +28,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { createColumns } from '@/components/ui/table';
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { buildPeerFilters, PEER_FILTER_KEYS } from './filter-defs';
-import { peerCardState, peerPinState } from './peer-state';
+import { PEER_CARD_LABEL_KEY, PEER_CARD_VARIANT, peerCardState, peerPinState } from './peer-state';
 import { RegisterPeerForm, type PeerChoice, type RegisteredPeer } from './RegisterPeerForm';
 import { SigningKeyPanel, type SigningKeyView } from './SigningKeyPanel';
 
@@ -41,6 +41,9 @@ export interface PeerRow {
     pinRevision: number;
     observedCardHash: string | null;
     inboundMessagesPerHour: number;
+    /** Who answers for the peer, and its supplier, by name (#4901). */
+    ownerName: string | null;
+    vendorName: string | null;
 }
 
 interface Props {
@@ -51,8 +54,11 @@ interface Props {
     canCompose: boolean;
     /** Active members, who may answer for a peer. */
     owners?: PeerChoice[];
-    /** The tenant's suppliers; a peer belongs to one. */
+    /** The first page of the tenant's suppliers; the form searches for the rest. */
     vendors?: PeerChoice[];
+    /** The member or vendor read failed, so the form cannot offer them (#4901). */
+    ownersUnavailable?: boolean;
+    vendorsUnavailable?: boolean;
 }
 
 const STATUS_VARIANT: Record<PeerRow['status'], StatusBadgeVariant> = {
@@ -105,6 +111,8 @@ function PeersInner({
     canCompose,
     owners = [],
     vendors = [],
+    ownersUnavailable = false,
+    vendorsUnavailable = false,
 }: Props) {
     // `useGuardedPush`, not `router.push`: a cold row click during hydration
     // can have its transition dropped by the client router (#3099).
@@ -170,20 +178,30 @@ function PeersInner({
                     enableSorting: false,
                     cell: ({ row }) => {
                         const card = peerCardState(row.original);
-                        const variant: StatusBadgeVariant =
-                            card === 'matches' ? 'success' : card === 'changed' ? 'error' : 'neutral';
-                        const label =
-                            card === 'matches'
-                                ? t('peers.cardMatches')
-                                : card === 'changed'
-                                  ? t('peers.cardChanged')
-                                  : t('peers.cardUnobserved');
+                        const variant: StatusBadgeVariant = PEER_CARD_VARIANT[card];
+                        const label = t(PEER_CARD_LABEL_KEY[card]);
                         return (
                             <StatusBadge variant={variant} size="sm" data-testid={`peer-card-${row.original.id}`}>
                                 {label}
                             </StatusBadge>
                         );
                     },
+                },
+                {
+                    id: 'owner',
+                    header: t('peers.colOwner'),
+                    accessorFn: (r) => r.ownerName ?? '',
+                    cell: ({ row }) => (
+                        <span className="text-sm text-content-default">{row.original.ownerName ?? '—'}</span>
+                    ),
+                },
+                {
+                    id: 'vendor',
+                    header: t('peers.colVendor'),
+                    accessorFn: (r) => r.vendorName ?? '',
+                    cell: ({ row }) => (
+                        <span className="text-sm text-content-default">{row.original.vendorName ?? '—'}</span>
+                    ),
                 },
                 {
                     id: 'quota',
@@ -260,6 +278,8 @@ function PeersInner({
                         <RegisterPeerForm
                             owners={owners}
                             vendors={vendors}
+                            ownersUnavailable={ownersUnavailable}
+                            vendorsUnavailable={vendorsUnavailable}
                             onRegistered={onRegistered}
                             onCancel={() => setRegistering(false)}
                         />

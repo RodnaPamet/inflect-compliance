@@ -12272,21 +12272,21 @@
       }
     },
     "peers": {
-      "breadcrumb": "A2A peers",
-      "title": "A2A peers",
-      "description": "Agents in other organisations that this organisation exchanges tasks with. A peer is admitted only while its agent card matches the pin a person approved.",
+      "breadcrumb": "Peer agents",
+      "title": "Peer agents",
+      "description": "Agents run by other organisations that this workspace exchanges tasks with. A peer is let in only while its agent card matches the one a person approved.",
       "searchPlaceholder": "Search peers…",
       "resourceSingular": "peer",
       "resourcePlural": "peers",
       "emptyTitle": "No A2A peers",
-      "emptyDesc": "A peer is registered and its card pinned through the API before it can exchange tasks with this organisation.",
+      "emptyDesc": "Register one with the Peer button. Before it can exchange tasks, approve its agent card on its own page.",
       "emptyMatchingTitle": "No peers match",
       "emptyMatchingDesc": "Clear the filters to see every peer.",
       "colName": "Peer",
       "colStatus": "Status",
       "colPin": "Pin",
       "colCard": "Card",
-      "colQuota": "Quota",
+      "colQuota": "Messages per hour",
       "statusActive": "Active",
       "statusSuspended": "Suspended",
       "statusRetired": "Retired",
@@ -12308,9 +12308,9 @@
         }
       },
       "signingKey": {
-        "title": "This organisation's signing key",
+        "title": "This workspace’s signing key",
         "description": "Every task sent to a peer and every answer given to one is signed with this key. Hand its public key to each peer.",
-        "none": "No signing key yet. A2A is refused in both directions until an owner generates one.",
+        "none": "No signing key yet. Peers are refused in both directions until an owner generates one.",
         "publicKey": "Public key",
         "fingerprint": "Key id (fingerprint)",
         "createdAt": "Created {date}",
@@ -12329,7 +12329,7 @@
         "failed": "The signing key could not be changed"
       },
       "detail": {
-        "crumbPeers": "A2A peers",
+        "crumbPeers": "Peer agents",
         "tabOverview": "Overview",
         "tabKill": "Kill switch",
         "tabCredential": "Inbound credential",
@@ -12453,7 +12453,7 @@
         "cardUrl": "Agent card URL",
         "cardUrlHint": "The https address where the peer publishes its agent card.",
         "signingKey": "Peer signing public key",
-        "signingKeyHint": "The Ed25519 public key that signs the peer's messages: 32 bytes, hex or base64.",
+        "signingKeyHint": "The public key the peer signs its messages with. The other organisation gives it to you; paste it exactly as sent.",
         "owner": "Owner in this workspace",
         "ownerHint": "The active member who answers for this peer.",
         "ownerPlaceholder": "Choose a person",
@@ -12475,7 +12475,11 @@
         "failed": "The peer could not be registered.",
         "done": "{name} registered. Read and approve its card to admit it.",
         "doneCardUnreadable": "{name} registered, but its card could not be read. Read it again on its page before approving.",
-        "cardUrlPlaceholder": "https://partner.example/.well-known/agent-card.json"
+        "cardUrlPlaceholder": "https://partner.example/.well-known/agent-card.json",
+        "ownersUnavailable": "The member list could not be loaded, so no owner can be chosen. Reload the page.",
+        "vendorsUnavailable": "The vendor register could not be read, so no supplier can be chosen. Reload the page.",
+        "vendorsEmpty": "The vendor register has no suppliers yet. Add the peer’s supplier there first.",
+        "vendorsLink": "Open Vendors"
       },
       "cardReview": {
         "heading": "Agent card",
@@ -12502,7 +12506,10 @@
         "cancel": "Cancel",
         "approved": "Card approved",
         "approveFailed": "The card could not be approved."
-      }
+      },
+      "colOwner": "Owner",
+      "colVendor": "Supplier",
+      "cardUnapproved": "Not approved yet"
     },
     "orphanPass": {
       "accessTitle": "Owners only",
