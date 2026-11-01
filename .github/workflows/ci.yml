@@ -499,6 +499,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # The heap ceiling is the SCRIPT's own (`package.json` "typecheck"), not
+      # this job's NODE_OPTIONS: cross-env overrides it. 12288 since
+      # 2026-11-01: a cold whole-project check had reached the old 8192 on
+      # main, and #4913, adding ~1% more types, aborted at it twice with zero
+      # type errors (exit 134 from V8, not a tsc verdict). The runner has
+      # 16 GB and this job runs one tsc at a time.
       - name: Run tsc --noEmit
         run: npm run typecheck
 
