@@ -30,7 +30,7 @@
  * rendered.
  */
 import * as React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { SWRConfig } from 'swr';
 
 jest.mock('next/navigation', () => ({
@@ -92,9 +92,19 @@ import { LeaverPassesClient } from '@/app/t/[tenantSlug]/(app)/admin/identity-le
 import LeaverPassesPage from '@/app/t/[tenantSlug]/(app)/admin/identity-leaver-passes/page';
 import en from '../../messages/en.json';
 
-const M = (en as { admin: { leaverPasses: Record<string, string> } }).admin.leaverPasses;
+const M = (en as unknown as { admin: { leaverPasses: Record<string, string> } }).admin.leaverPasses;
 const EN_MODE = (en as { admin: { writeLadder: { mode: Record<string, string> } } }).admin.writeLadder
     .mode;
+/** The words the page shows for stored codes (#4875). */
+const L = (en as unknown as {
+    admin: {
+        leaverPasses: {
+            refusalLabel: Record<string, string>;
+            outcomeLabel: Record<string, string>;
+            readinessLabel: Record<string, string>;
+        };
+    };
+}).admin.leaverPasses;
 
 // ── Fixture ────────────────────────────────────────────────────────────
 
@@ -342,12 +352,28 @@ beforeEach(() => {
  * count, so that failure would be silent.
  */
 function arrange(passes: unknown[], policy: unknown = {}) {
+    // The route names each decision's account (#4875). The fixture names each
+    // by its link id, so a row is still found by the id it was written with.
+    const accounts: Record<string, { name: string; email: string }> = {};
+    for (const pass of passes as Array<{ resultJson?: { decisions?: Array<{ linkId?: string }> } }>) {
+        for (const d of pass.resultJson?.decisions ?? []) {
+            if (d.linkId) accounts[d.linkId] = { name: d.linkId, email: `${d.linkId}@acme.test` };
+        }
+    }
     fetchMock.mockImplementation(async (url: unknown) =>
         String(url).includes('identity-write-policy')
             ? { ok: true, json: async () => policy }
-            : { ok: true, json: async () => ({ passes }) },
+            : { ok: true, json: async () => ({ passes, accounts }) },
     );
 }
+
+/** A provider as the page names it (#4875). Fixture-only ids render as themselves. */
+const PROVIDER_LABEL: Record<string, string> = {
+    okta: 'Okta',
+    'google-workspace': 'Google Workspace',
+    'entra-id': 'Microsoft Entra ID',
+    'active-directory': 'Active Directory',
+};
 
 async function renderReport() {
     const utils = render(
@@ -371,7 +397,7 @@ async function renderReport() {
  */
 async function rowFor(provider: string): Promise<HTMLElement> {
     return waitFor(() => {
-        const cell = screen.getByText(provider);
+        const cell = screen.getByText(PROVIDER_LABEL[provider] ?? provider);
         const tr = cell.closest('tr');
         expect(tr).not.toBeNull();
         return tr as HTMLElement;
@@ -659,7 +685,8 @@ describe('leaver pass report — the three statuses read as three different thin
         await renderReport();
 
         const row = await rowFor('entra_legacy');
-        expect(row.textContent).toContain('BATCH_REFUSED');
+        expect(row.textContent).toContain(L.refusalLabel.BATCH_REFUSED);
+        expect(row.textContent).not.toContain('BATCH_REFUSED');
 
         // Paired positives: the row still reads as the server stored it. The
         // renderer must not overrule an audit record — the mismatch between
@@ -673,7 +700,7 @@ describe('leaver pass report — the three statuses read as three different thin
         await renderReport();
 
         // The list row carries the refusal code…
-        expect(await screen.findByText('NO_FRESH_LINKS')).toBeInTheDocument();
+        expect(await screen.findByText(L.refusalLabel.NO_FRESH_LINKS)).toBeInTheDocument();
 
         // …and selecting it surfaces the heading plus the pass's own sentence.
         await act(async () => {
@@ -718,7 +745,7 @@ describe('leaver pass report — a truncated report says it is truncated', () =>
         // are on screen. Without this the negative below would pass on a page
         // that had simply stopped rendering.
         expect(await screen.findByText('lnk-okta-2')).toBeInTheDocument();
-        expect(screen.getByText('REFUSED_PROTECTED')).toBeInTheDocument();
+        expect(screen.getByText(L.outcomeLabel.REFUSED_PROTECTED)).toBeInTheDocument();
         // Negative: no truncation claim is made about a report that is complete.
         expect(screen.queryByText(banner)).toBeNull();
     });
@@ -935,7 +962,7 @@ describe('leaver pass report — a staleness refusal does not read as a healthy 
         // The pass's OWN sentence is still what is rendered — only the colour
         // changed. Both halves asserted: a re-tone that dropped the text would
         // be a worse page, not a better one.
-        expect(staleNotice!.textContent).toContain('NO_FRESH_LINKS');
+        expect(staleNotice!.textContent).toContain(L.refusalLabel.NO_FRESH_LINKS);
         expect(staleNotice!.className).toContain('bg-bg-warning');
         expect(staleNotice!.className).not.toContain('bg-bg-info');
 
@@ -944,7 +971,7 @@ describe('leaver pass report — a staleness refusal does not read as a healthy 
         });
 
         const quietNotice = (await screen.findByText(M.refusalHeading)).closest('div[role]');
-        expect(quietNotice!.textContent).toContain('NO_TERMINATED_WORKERS');
+        expect(quietNotice!.textContent).toContain(L.refusalLabel.NO_TERMINATED_WORKERS);
         // Paired negative: "nobody left" stays the quiet colour it should be.
         expect(quietNotice!.className).toContain('bg-bg-info');
         expect(quietNotice!.className).not.toContain('bg-bg-warning');
@@ -1195,7 +1222,7 @@ describe('the write-readiness verdict is not left in the column', () => {
         await renderReport();
 
         expect(
-            await screen.findByText(M.readinessHeading.replace('{readiness}', 'READ_BIND_ONLY')),
+            await screen.findByText(M.readinessHeading.replace('{readiness}', L.readinessLabel.READ_BIND_ONLY)),
         ).toBeInTheDocument();
         expect(
             screen.getByText('Only the read bind exists; every write runs as it.'),
@@ -1223,7 +1250,7 @@ describe('the write-readiness verdict is not left in the column', () => {
         await renderReport();
 
         expect(
-            await screen.findByText(M.readinessHeading.replace('{readiness}', 'UNKNOWN')),
+            await screen.findByText(M.readinessHeading.replace('{readiness}', L.readinessLabel.UNKNOWN)),
         ).toBeInTheDocument();
     });
 
@@ -1324,3 +1351,69 @@ describe('leaver pass report — warns when no account is protected', () => {
         expect(await screen.findByText(M.noProtectedHeading)).toBeInTheDocument();
     });
 });
+
+describe('leaver pass report — whose account, and how to act (#4875)', () => {
+    it("names each decision's account by person and address, never by its link id", async () => {
+        fetchMock.mockImplementation(async (url: unknown) =>
+            String(url).includes('identity-write-policy')
+                ? { ok: true, json: async () => ({}) }
+                : {
+                      ok: true,
+                      json: async () => ({
+                          passes: [PASSED_PASS],
+                          accounts: { 'lnk-okta-1': { name: 'Ada Lovelace', email: 'ada@acme.test' } },
+                      }),
+                  },
+        );
+        await renderReport();
+
+        expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument();
+        expect(screen.getByText('ada@acme.test')).toBeInTheDocument();
+        // A link with no resolved account says so, rather than printing its id.
+        expect(screen.getByText(M.accountUnlinked)).toBeInTheDocument();
+        expect(document.body.textContent).not.toContain('lnk-okta-1');
+        expect(document.body.textContent).not.toContain('lnk-okta-2');
+    });
+
+    it('Run now starts a pass for the chosen directory and says it is queued', async () => {
+        arrange([PASSED_PASS]);
+        await renderReport();
+        fetchMock.mockImplementationOnce(async () => ({ ok: true, json: async () => ({ jobId: 'job-1' }) }));
+
+        const run = document.getElementById('leaver-pass-run') as HTMLElement;
+        await act(async () => {
+            fireEvent.click(within(run).getByRole('button', { name: /Microsoft Entra ID/ }));
+        });
+
+        const posted = fetchMock.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+        expect(posted?.[0]).toBe('/api/t/acme/admin/identity-leaver-passes/run');
+        expect(JSON.parse(String((posted?.[1] as RequestInit).body))).toEqual({ provider: 'entra-id' });
+        expect(await screen.findByText(/A Microsoft Entra ID pass is queued/)).toBeInTheDocument();
+    });
+
+    it('a refused Run now shows the server\'s sentence', async () => {
+        arrange([PASSED_PASS]);
+        await renderReport();
+        fetchMock.mockImplementationOnce(async () => ({
+            ok: false,
+            json: async () => ({ error: { code: 'TOO_MANY_REQUESTS', message: 'Too many requests.' } }),
+        }));
+
+        const run = document.getElementById('leaver-pass-run') as HTMLElement;
+        await act(async () => {
+            fireEvent.click(within(run).getByRole('button', { name: /Active Directory/ }));
+        });
+        expect(await screen.findByText('Too many requests.')).toBeInTheDocument();
+    });
+
+    it('links to the write journal, and the breadcrumb starts at Dashboard', async () => {
+        arrange([PASSED_PASS]);
+        await renderReport();
+        expect(document.getElementById('leaver-pass-journal-link')).toHaveAttribute(
+            'href',
+            '/t/acme/admin/identity-write-journal',
+        );
+        expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/t/acme/dashboard');
+    });
+});
+
