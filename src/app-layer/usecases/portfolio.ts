@@ -53,6 +53,8 @@ import {
 import { withTenantDb } from '@/lib/db-context';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
+import { DashboardRepository } from '@/app-layer/repositories/DashboardRepository';
+import { needsTreatmentRiskStatusFilter } from '@/app-layer/domain/risk-status';
 
 // ── Internal helpers ──────────────────────────────────────────────────
 
@@ -576,17 +578,15 @@ export async function getCriticalRisksAcrossOrg(
     return fanOutPerTenant<CriticalRiskRow>(
         integrity.accessibleTenants,
         async (db, tenant) => {
-            // "Critical" = inherentScore >= 15 (5×5 matrix top tier) AND
-            // still actionable (status != CLOSED). The architecture doc's
-            // hint of `inherentScore >= 15 OR status = 'OPEN'` would also
-            // surface every low-severity OPEN risk and clutter the
-            // portfolio view; the AND interpretation is what a CISO
-            // monitoring critical risk actually wants.
+            // "Critical" = a score in the workspace's own highest severity
+            // band AND still needing treatment (#4846), the same rule the
+            // snapshot's `risksCritical` counts (`countCriticalRisks`).
+            const floor = await DashboardRepository.criticalScoreFloor(db, tenant.id);
             const rows = await db.risk.findMany({
                 where: {
                     tenantId: tenant.id,
-                    inherentScore: { gte: 15 },
-                    status: { not: 'CLOSED' },
+                    inherentScore: { gte: floor },
+                    status: needsTreatmentRiskStatusFilter(),
                     deletedAt: null,
                 },
                 select: {
@@ -1013,11 +1013,15 @@ export async function listCriticalRisksAcrossOrg(
     const merged = await fanOutPerTenant<CriticalRiskRow>(
         tenants,
         async (db, tenant) => {
+            // The workspace's own highest band, and only risks still
+            // needing treatment (#4846): the rows the portfolio's Critical
+            // Risks figure counts (`DashboardRepository.countCriticalRisks`).
+            const floor = await DashboardRepository.criticalScoreFloor(db, tenant.id);
             const rows = await db.risk.findMany({
                 where: {
                     tenantId: tenant.id,
-                    inherentScore: { gte: 15 },
-                    status: { not: 'CLOSED' },
+                    inherentScore: { gte: floor },
+                    status: needsTreatmentRiskStatusFilter(),
                     deletedAt: null,
                     ...(cursorWhere ?? {}),
                 },

@@ -9,6 +9,7 @@ import {
     EVIDENCE_REVIEWED_STATUS,
 } from '../domain/evidence-expiry';
 import { normalizeActivityEntity } from '@/lib/audit/activity-humanize';
+import { criticalScoreFloor } from '@/lib/risk-matrix/critical-band';
 
 /**
  * Ratio → percentage, guaranteed finite and clamped to [0, 100], with
@@ -509,7 +510,9 @@ export class DashboardRepository {
      * too (owner decision, 2026-10-30): their treatment is done, so a
      * mitigated critical risk no longer holds the next-step card on "review
      * high-severity risks" or pulls down the posture radar's Risk axis. The
-     * daily snapshot's `risksLow`..`risksCritical` are written from this.
+     * daily snapshot's `risksLow`..`risksHigh` are written from this; its
+     * `risksCritical` is `countCriticalRisks`, which follows the workspace's
+     * own risk matrix (#4846).
      *
      * Uses 4 parallel count queries with range filters on an indexed column.
      */
@@ -525,6 +528,38 @@ export class DashboardRepository {
         ]);
 
         return { low, medium, high, critical };
+    }
+
+    /**
+     * The lowest inherent score of this workspace's HIGHEST severity band
+     * (#4846), from its risk-matrix configuration, or the default grid's 15
+     * when it has none. See `criticalScoreFloor`.
+     */
+    static async criticalScoreFloor(db: PrismaTx, tenantId: string): Promise<number> {
+        const config = await db.riskMatrixConfig.findUnique({
+            where: { tenantId },
+            select: { bands: true },
+        });
+        return criticalScoreFloor(config?.bands ?? null);
+    }
+
+    /**
+     * Risks still needing treatment (OPEN or MITIGATING) whose score is in
+     * the workspace's highest severity band: what the organization portfolio
+     * calls critical (#4846, owner decision 2026-11-01). The daily snapshot's
+     * `risksCritical` is written from this, so the portfolio's figure and its
+     * Critical Risks list (`listCriticalRisksAcrossOrg`) count the same risks.
+     */
+    static async countCriticalRisks(db: PrismaTx, ctx: RequestContext): Promise<number> {
+        const floor = await DashboardRepository.criticalScoreFloor(db, ctx.tenantId);
+        return db.risk.count({
+            where: {
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                status: needsTreatmentRiskStatusFilter(),
+                inherentScore: { gte: floor },
+            },
+        });
     }
 
     /**

@@ -18,6 +18,7 @@
 const tenantFindManyMock = jest.fn();
 const controlFindManyMock = jest.fn();
 const riskFindManyMock = jest.fn();
+const matrixFindUniqueMock = jest.fn(async (_args: { where: { tenantId: string } }): Promise<unknown> => null);
 const evidenceFindManyMock = jest.fn();
 const tenantMembershipFindManyMock = jest.fn();
 const withTenantDbCalls: string[] = [];
@@ -48,6 +49,9 @@ jest.mock('@/lib/db-context', () => {
                 control: { findMany: controlFindManyMock },
                 risk: { findMany: riskFindManyMock },
                 evidence: { findMany: evidenceFindManyMock },
+                // Each workspace's own risk matrix (#4846): no row means the
+                // default grid unless a test names its bands.
+                riskMatrixConfig: { findUnique: (args: { where: { tenantId: string } }) => matrixFindUniqueMock(args) },
             };
             return callback(fakeDb);
         }),
@@ -223,7 +227,7 @@ describe('getNonPerformingControls', () => {
 // ── getCriticalRisksAcrossOrg ─────────────────────────────────────────
 
 describe('getCriticalRisksAcrossOrg', () => {
-    it('queries inherentScore >= 15 AND status != CLOSED inside RLS', async () => {
+    it('queries the default top band (>= 15) and risks still needing treatment, inside RLS', async () => {
         tenantFindManyMock.mockResolvedValue([tenantA]);
         riskFindManyMock.mockResolvedValue([]);
 
@@ -232,8 +236,36 @@ describe('getCriticalRisksAcrossOrg', () => {
         const where = riskFindManyMock.mock.calls[0][0].where;
         expect(where.tenantId).toBe('t-a');
         expect(where.inherentScore).toEqual({ gte: 15 });
-        expect(where.status).toEqual({ not: 'CLOSED' });
+        // The snapshot's `risksCritical` counts OPEN and MITIGATING only, so
+        // the list shows the risks the figure counts (#4846).
+        expect(where.status).toEqual({ in: ['OPEN', 'MITIGATING'] });
         expect(where.deletedAt).toBeNull();
+    });
+
+    it("follows each workspace's own highest band (#4846)", async () => {
+        tenantFindManyMock.mockResolvedValue([tenantA, tenantB]);
+        riskFindManyMock.mockResolvedValue([]);
+        // tenantA runs a 3 x 3 grid (top band 6-9); tenantB has no matrix row.
+        matrixFindUniqueMock.mockImplementation(async ({ where }: { where: { tenantId: string } }) =>
+            where.tenantId === 't-a'
+                ? {
+                      bands: [
+                          { name: 'Low', minScore: 1, maxScore: 2, color: '#0f0' },
+                          { name: 'Medium', minScore: 3, maxScore: 5, color: '#ff0' },
+                          { name: 'High', minScore: 6, maxScore: 9, color: '#f00' },
+                      ],
+                  }
+                : null,
+        );
+
+        await getCriticalRisksAcrossOrg(ctxFor());
+
+        const floorFor = (tenantId: string) =>
+            riskFindManyMock.mock.calls.map((c) => c[0].where).find((w) => w.tenantId === tenantId)?.inherentScore;
+        expect(floorFor('t-a')).toEqual({ gte: 6 });
+        expect(floorFor('t-b')).toEqual({ gte: 15 });
+        matrixFindUniqueMock.mockReset();
+        matrixFindUniqueMock.mockImplementation(async () => null);
     });
 
     it('sorts by inherentScore desc, ties broken by updatedAt desc, capped at 50', async () => {

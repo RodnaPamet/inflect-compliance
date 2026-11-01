@@ -63,6 +63,8 @@ function makeCtx(overrides: Partial<RequestContext> = {}): RequestContext {
 }
 
 function setupDashboardMocks() {
+    // No risk-matrix row: the default grid, whose top band starts at 15.
+    mockTx.riskMatrixConfig = { findUnique: jest.fn(async () => null) };
     mockTx.control = {
         groupBy: jest.fn(async () => [
             { status: 'IMPLEMENTED', _count: 10 },
@@ -225,6 +227,39 @@ describe('Snapshot Job', () => {
         const upsertCall = mockUpsert.mock.calls[0][0];
         expect(upsertCall.create).toHaveProperty('risksOpen');
         expect(upsertCall.create).toHaveProperty('risksCritical');
+    });
+
+    it("counts critical risks in the workspace's own highest band, still needing treatment (#4846)", async () => {
+        setupDashboardMocks();
+        // A 3 x 3 matrix: the top band is 6-9.
+        mockTx.riskMatrixConfig = {
+            findUnique: jest.fn(async () => ({
+                bands: [
+                    { name: 'Low', minScore: 1, maxScore: 2, color: '#0f0' },
+                    { name: 'Medium', minScore: 3, maxScore: 5, color: '#ff0' },
+                    { name: 'High', minScore: 6, maxScore: 9, color: '#f00' },
+                ],
+            })),
+        };
+        const riskCount = jest.fn(async (args: { where: { inherentScore?: { gte?: number; lte?: number } } }) => {
+            const range = args.where.inherentScore;
+            // Only the band-aware count asks for an open-ended range from 6.
+            return range?.gte === 6 && range.lte === undefined ? 7 : 3;
+        });
+        mockTx.risk.count = riskCount;
+        mockUpsert.mockResolvedValue({});
+
+        await runSnapshotJob({ tenantId: 'tenant-1' });
+
+        const upsertCall = mockUpsert.mock.calls[0][0];
+        expect(upsertCall.create.risksCritical).toBe(7);
+        const bandCall = riskCount.mock.calls.find(([a]) => a.where.inherentScore?.gte === 6);
+        expect(bandCall?.[0].where).toMatchObject({
+            tenantId: 'tenant-1',
+            deletedAt: null,
+            status: { in: ['OPEN', 'MITIGATING'] },
+            inherentScore: { gte: 6 },
+        });
     });
 
     it('stores the PR3 risk + test-plan KPI metrics', async () => {
