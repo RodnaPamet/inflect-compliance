@@ -13,7 +13,8 @@ import { jsonResponse } from '@/lib/api-response';
  * WITHOUT trusting this system. The stored `scannedSummary` is scrubbed/bounded
  * (never the raw payload); full re-verification uses pipelock's original
  * evidence.jsonl keyed by this signature. Read authorisation via the usecase's
- * `assertCanRead` + the middleware tenant gate.
+ * `assertCanRead` + the oversight read rule + the middleware tenant gate.
+ * Answered as an attachment, so a browser saves it rather than showing it.
  */
 export const GET = withApiErrorHandling(
     async (
@@ -23,6 +24,10 @@ export const GET = withApiErrorHandling(
         const params = await paramsPromise;
         const ctx = await getTenantCtx(params, req);
         const receipt = await getReceiptForExport(ctx, params.id);
-        return jsonResponse(receipt);
+        // A FILE, not a page (#4897): the Export link used to navigate the tab
+        // to the JSON. The id is a cuid, so it is safe in the header as is.
+        return jsonResponse(receipt, {
+            headers: { 'Content-Disposition': `attachment; filename="agent-receipt-${receipt.id}.json"` },
+        });
     },
 );
