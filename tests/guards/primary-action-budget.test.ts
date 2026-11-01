@@ -66,6 +66,12 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // Initiatives list: "New initiative" (page) + "Create initiative"
     // (modal confirm) — two distinct regions, both legit primaries.
     "src/app/org/[orgSlug]/(app)/initiatives/InitiativesClient.tsx": 2,
+    // One initiative (#4852): the Edit sheet's "Save changes" and the Link
+    // work dialog's "Link work" — two overlays, each closed until asked for,
+    // and `modal-action-order` requires each one's last action to be primary.
+    // The page's own Edit and Link work triggers are secondary. Paid for under
+    // the product-wide ceiling by two row actions (see primary-secondary-ratio).
+    "src/app/org/[orgSlug]/(app)/initiatives/[initiativeId]/InitiativeDetailClient.tsx": 2,
     // SP-F1 — the file picker has two mutually-exclusive footer modes:
     // file-select ("Import/Select") and folder-select ("Use this folder").
     // Each is the single primary of its mode; the static scanner counts both.
@@ -162,7 +168,10 @@ const PRIMARY_BUDGET: Record<string, number> = {
     "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx": 3,
     // 2026-10-04 census 3 -> 4. Three ternary variant sites plus three literal
     // primaries; one ternary branch was invisible to the old regex.
-    "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 4,
+    // 4 -> 3 (#4852): a row's "Save & accept", shown while that row is being
+    // edited, is secondary — a row action, as the same row's Accept toggle
+    // became for #4689.
+    "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 3,
     // PR-L — KRI page: the create-form primary + the edit-modal save primary
     // (modal-action-order requires a modal's confirm action to be primary).
     "src/app/t/[tenantSlug]/(app)/risks/kri/page.tsx": 2,
@@ -204,7 +213,9 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // everywhere else. It paid for the findings panel's Save under the
     // product-wide ceiling in primary-secondary-ratio.
     "src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/templates/page.tsx": 2,
+    // ENTRY REMOVED (#4852): the framework template library's per-row Install
+    // is secondary, a row action (R7-PR1), so the file renders one primary,
+    // the page's own "Install all", which is DEFAULT_BUDGET.
     // 2026-10-04 census 2 -> 1, lowered to the measurement. The old
     // lazy counter could not see this file's real count, so the gap was never
     // visible; one-way down, per this map's own discipline.

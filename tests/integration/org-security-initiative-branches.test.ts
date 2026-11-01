@@ -22,6 +22,9 @@ import {
     linkWork,
     unlinkWork,
     getInitiativesForWidget,
+    resolveInitiativeLinks,
+    listLinkableWorkspaces,
+    searchLinkCandidates,
 } from '@/app-layer/usecases/org-security-initiative';
 import { deleteAuditRowsForTenants, deleteOrgAuditRowsForOrganizations } from '../helpers/audit-cleanup';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
@@ -180,6 +183,60 @@ describeFn('org-security-initiative usecase — branch coverage (integration)', 
         const again = await linkWork(ctx, init.id, { tenantId: TENANT_ID, entityType: 'CONTROL', entityId: controlId });
         expect(again.id).toBe(link.id);
         await unlinkWork(ctx, link.id);
+    });
+
+    it('linkWork refuses an item that does not exist; a second unlink says not found (#4852)', async () => {
+        const ctx = orgCtx();
+        const init = await createInitiative(ctx, { title: 'Checked links' });
+        // The route used to take any id: a link to nothing counted toward
+        // progress as never done.
+        await expect(linkWork(ctx, init.id, { tenantId: TENANT_ID, entityType: 'CONTROL', entityId: 'no-such-control' }))
+            .rejects.toMatchObject({ status: 400, details: { reason: 'LINKED_ITEM_NOT_FOUND' } });
+        // An id that exists, but as a different type, is not that type's item.
+        await expect(linkWork(ctx, init.id, { tenantId: TENANT_ID, entityType: 'RISK', entityId: controlId }))
+            .rejects.toMatchObject({ details: { reason: 'LINKED_ITEM_NOT_FOUND' } });
+        const link = await linkWork(ctx, init.id, { tenantId: TENANT_ID, entityType: 'CONTROL', entityId: controlId });
+        await unlinkWork(ctx, link.id);
+        await expect(unlinkWork(ctx, link.id)).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('resolveInitiativeLinks names the item and its workspace, and opens it (#4852)', async () => {
+        const ctx = orgCtx();
+        const init = await createInitiative(ctx, { title: 'Named links' });
+        const link = await linkWork(ctx, init.id, { tenantId: TENANT_ID, entityType: 'CONTROL', entityId: controlId });
+        const [resolved] = await resolveInitiativeLinks(ctx, [
+            { id: link.id, linkedTenantId: TENANT_ID, entityType: 'CONTROL', entityId: controlId },
+        ]);
+        expect(resolved).toMatchObject({
+            name: 'C-1 · Linked control',
+            workspaceName: `t ${TAG}`,
+            href: `/t/${TAG}/controls/${controlId}`,
+        });
+        // A link to an item that is gone keeps its row, named as gone.
+        const [gone] = await resolveInitiativeLinks(ctx, [
+            { id: 'l-gone', linkedTenantId: TENANT_ID, entityType: 'FINDING', entityId: 'no-such-finding' },
+        ]);
+        expect(gone).toMatchObject({ name: null, href: null, workspaceName: `t ${TAG}` });
+        // A workspace outside the organization is never read.
+        const [foreign] = await resolveInitiativeLinks(ctx, [
+            { id: 'l-foreign', linkedTenantId: 'foreign-tenant', entityType: 'CONTROL', entityId: controlId },
+        ]);
+        expect(foreign).toMatchObject({ name: null, href: null, workspaceName: null });
+    });
+
+    it('the Link work picker lists workspaces and searches items, for an editor only (#4852)', async () => {
+        const ctx = orgCtx();
+        expect(await listLinkableWorkspaces(ctx)).toEqual(expect.arrayContaining([{ id: TENANT_ID, name: `t ${TAG}` }]));
+        const hits = await searchLinkCandidates(ctx, { tenantId: TENANT_ID, entityType: 'CONTROL', q: 'linked' });
+        expect(hits).toEqual([{ id: controlId, name: 'C-1 · Linked control' }]);
+        expect(await searchLinkCandidates(ctx, { tenantId: TENANT_ID, entityType: 'CONTROL', q: 'zzz-nothing' })).toEqual([]);
+        await expect(searchLinkCandidates(ctx, { tenantId: 'foreign-tenant', entityType: 'CONTROL', q: '' }))
+            .rejects.toThrow(/belong to a workspace/i);
+        await expect(searchLinkCandidates(ctx, { tenantId: TENANT_ID, entityType: 'BOGUS', q: '' }))
+            .rejects.toThrow(/invalid link/i);
+        const reader = orgCtx({ canConfigureDashboard: false });
+        await expect(listLinkableWorkspaces(reader)).rejects.toThrow();
+        await expect(searchLinkCandidates(reader, { tenantId: TENANT_ID, entityType: 'CONTROL', q: '' })).rejects.toThrow();
     });
 
     it('getInitiativesForWidget: default + statusFilter, progress (manual + linked), atRisk', async () => {

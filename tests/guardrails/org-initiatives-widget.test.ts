@@ -15,7 +15,7 @@ import * as path from 'node:path';
 import { assertWidgetTypedShape } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 import { DEFAULT_ORG_DASHBOARD_PRESET } from '@/app-layer/usecases/org-dashboard-presets';
 import { deriveProgress } from '@/app-layer/usecases/org-security-initiative';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
@@ -58,11 +58,18 @@ describe('ORG_INITIATIVES — usecase (audit + sanctioned cross-tenant read)', (
     });
 
     it('cross-tenant link resolution goes through withTenantDb (not a raw cross-tenant prisma read)', () => {
-        expect(usecase).toMatch(/withTenantDb\(/);
-        // The completion read must happen INSIDE withTenantDb (RLS enforced),
-        // never via the global prisma client crossing tenants.
+        // Each reader of a workspace's own rows — completion, the linked
+        // items' names (#4852) and the Link work search (#4852) — reads
+        // inside withTenantDb (RLS enforced). Asserted per function: the
+        // file holds three, and one whole-file match would let two go.
+        for (const reader of ['resolveLinkCompletion', 'readEntityLabels', 'searchLinkCandidates']) {
+            expect(functionBodyOf(usecase, reader)).toMatch(/withTenantDb\(/);
+        }
+        // Never via the global prisma client crossing tenants.
         expect(usecase).not.toMatch(/prisma\.task\.findMany/);
         expect(usecase).not.toMatch(/prisma\.control\.findMany/);
+        expect(usecase).not.toMatch(/prisma\.risk\.findMany/);
+        expect(usecase).not.toMatch(/prisma\.finding\.findMany/);
     });
 
     it('write is permission-gated + sanitises free text', () => {

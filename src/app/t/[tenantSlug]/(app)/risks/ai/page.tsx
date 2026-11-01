@@ -689,8 +689,10 @@ export default function AIRiskAssessmentPage() {
                                     <div className="flex flex-col gap-tight shrink-0">
                                         {isEditing ? (
                                             <>
+                                                {/* The row's edit save is a row action too, as its
+                                                    decision toggle below: secondary (R7-PR1). */}
                                                 <Button
-                                                    variant="primary"
+                                                    variant="secondary"
                                                     size="xs"
                                                     onClick={() => saveEdit(item.id)}
                                                     id={`save-edit-${idx}`}
