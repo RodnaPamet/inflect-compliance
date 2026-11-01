@@ -104,7 +104,7 @@ describe('Epic O-4 — org shell structural contract', () => {
         // two-sided shape the drill-down test below already uses.
         for (const [key, english] of [
             ['portfolioOverview', 'Portfolio Overview'],
-            ['allTenants', 'All Tenants'],
+            ['allTenants', 'Workspaces'],
             ['nonPerformingControls', 'Non-Performing Controls'],
             ['criticalRisks', 'Critical Risks'],
             ['overdueEvidence', 'Overdue Evidence'],
