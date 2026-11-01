@@ -90,6 +90,8 @@ export default async function ExternalToolsPage({
             canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
             canCompose={Boolean(ctx.appPermissions?.admin?.view)}
             canInvestigate={Boolean(ctx.appPermissions?.admin?.agent_registry)}
+            // The prior-state pairing is Owner-only (#4899).
+            canSetPriorState={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
         />
     );
 }

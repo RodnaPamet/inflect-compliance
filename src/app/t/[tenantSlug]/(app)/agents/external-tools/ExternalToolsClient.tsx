@@ -42,6 +42,8 @@ import { useTranslations } from 'next-intl';
 
 import Link from 'next/link';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Combobox } from '@/components/ui/combobox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
@@ -49,6 +51,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { formatDate } from '@inflect/ui/lib/format-date';
+import type { ToolManifestStatus } from '@/lib/mcp/tool-manifest';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { MCP_TOOL_NAME_MAX_LENGTH } from '@/lib/mcp/external-tool-name';
 
@@ -85,15 +89,27 @@ interface CatalogueTool {
 }
 
 /**
- * Manifest status → badge tone. `unknown` falls to neutral rather than to a
- * reassuring tone: a status this build does not recognise is not a pass.
+ * Manifest status → badge tone. A status this build does not recognise falls
+ * to neutral rather than to a reassuring tone: it is not a pass.
+ *
+ * Keyed by the union the catalogue actually sends (#4899). This map used to
+ * carry `UNAPPROVED`, `CHANGED` and `REVOKED`, which the server never sends, so
+ * every changed definition — the security event this page exists to show —
+ * fell to the neutral fallback and looked exactly like a tool nobody had
+ * approved yet. A `Record` over the union, so a new status fails `tsc`.
  */
-const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = {
+const STATUS_VARIANT: Record<ToolManifestStatus, 'success' | 'warning' | 'neutral'> = {
     APPROVED: 'success',
-    UNAPPROVED: 'neutral',
-    CHANGED: 'warning',
-    REVOKED: 'error',
+    UNPINNED: 'neutral',
+    DESCRIPTION_CHANGED: 'warning',
+    SCHEMA_CHANGED: 'warning',
+    DEFINITION_CHANGED: 'warning',
+    ANNOTATIONS_CHANGED: 'warning',
 };
+
+function isKnownStatus(status: string): status is ToolManifestStatus {
+    return Object.hasOwn(STATUS_VARIANT, status);
+}
 
 export function ExternalToolsClient({
     tenantSlug,
@@ -101,6 +117,7 @@ export function ExternalToolsClient({
     canReviewProposals,
     canCompose,
     canInvestigate,
+    canSetPriorState = true,
 }: {
     tenantSlug: string;
     connections: readonly ConnectionRow[];
@@ -108,6 +125,13 @@ export function ExternalToolsClient({
     /** `admin.view` — the compose entry's gate (#3710); defaults to `canReviewProposals`. */
     canCompose?: boolean;
     canInvestigate: boolean;
+    /**
+     * `admin.tenant_lifecycle`, the prior-state pairing routes' key (#4899).
+     * They are Owner-only, so a viewer without it is neither shown the control
+     * nor made to request a read it is refused, which wrote an AUTHZ_DENIED row
+     * on every visit and showed every write tool as unusable.
+     */
+    canSetPriorState?: boolean;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
@@ -130,6 +154,7 @@ export function ExternalToolsClient({
      * unusable, on the same page.
      */
     const [pairings, setPairings] = useState<Record<string, string>>({});
+    const [confirming, setConfirming] = useState<CatalogueTool | null>(null);
 
     const loadCatalogue = useCallback(async () => {
         if (!connectionId) return;
@@ -163,6 +188,7 @@ export function ExternalToolsClient({
             // "none", which is also what they show when there genuinely are
             // none -- the one place this page is imprecise, accepted because the
             // correction is a reload and the alternative is worse.
+            if (!canSetPriorState) return;
             try {
                 const pr = await fetch(
                     apiUrl(`/admin/external-prior-state-read/${encodeURIComponent(connectionId)}`),
@@ -181,7 +207,7 @@ export function ExternalToolsClient({
         } finally {
             setLoading(false);
         }
-    }, [apiUrl, connectionId, t]);
+    }, [apiUrl, connectionId, canSetPriorState, t]);
 
     /**
      * Nominate, or withdraw, the READ that runs before a write.
@@ -263,11 +289,19 @@ export function ExternalToolsClient({
 
 
     const connectionOptions = connections.map((c) => ({ value: c.id, label: c.name }));
+    const selectedConnection = connections.find((c) => c.id === connectionId) ?? null;
+    const statusLabel = (status: string) =>
+        isKnownStatus(status) ? t(`externalTools.status.${status}`) : status;
 
     return (
         <div className="space-y-section">
             <PageHeader
                 back={{ smart: true }}
+                breadcrumbs={[
+                    { label: t('crumbDashboard'), href: tenantHref('/dashboard') },
+                    { label: t('register.breadcrumb'), href: tenantHref('/agents') },
+                    { label: t('externalTools.title') },
+                ]}
                 title={t('externalTools.title')}
                 description={t('externalTools.description')}
                 actions={
@@ -380,6 +414,15 @@ export function ExternalToolsClient({
                         like it is missing a button. */}
                     <p className="text-sm text-content-muted">{t('externalTools.grantHint')}</p>
 
+                    {/* The connection's last test, which was loaded and never
+                        shown: a failing server was discovered only when its
+                        catalogue failed to load. */}
+                    {selectedConnection?.lastTestStatus === 'error' && (
+                        <InlineNotice variant="warning" data-testid="external-tools-last-test-failed">
+                            {t('externalTools.lastTestFailed')}
+                        </InlineNotice>
+                    )}
+
                     {error && <p className="text-sm text-content-error">{error}</p>}
 
                     {loading && <p className="text-sm text-content-muted">{t('externalTools.loading')}</p>}
@@ -406,7 +449,10 @@ export function ExternalToolsClient({
                     {!loading && tools !== null && tools.length > 0 && (
                         <ol className={cn(cardVariants({ density: 'none' }), 'divide-y divide-border-subtle')}>
                             {tools.map((tool) => {
-                                const approved = tool.approvedManifestHash === tool.liveManifestHash;
+                                // "Re-approve" whenever SOME definition of this tool was
+                                // approved before, including one the server has since
+                                // changed; "Approve" only for a tool never approved.
+                                const approved = tool.approvedManifestHash !== null;
                                 // The reads an operator may nominate: this
                                 // server's own read-only tools. The SAME list
                                 // for every write on the connection, because the
@@ -419,8 +465,11 @@ export function ExternalToolsClient({
                                 return (
                                     <li key={tool.toolName} className="space-y-tight p-4">
                                         <div className="flex flex-wrap items-center gap-tight">
-                                            <StatusBadge variant={STATUS_VARIANT[tool.status] ?? 'neutral'}>
-                                                {tool.status}
+                                            <StatusBadge
+                                                variant={isKnownStatus(tool.status) ? STATUS_VARIANT[tool.status] : 'neutral'}
+                                                data-testid={`external-tool-status-${tool.advertisedName}`}
+                                            >
+                                                {statusLabel(tool.status)}
                                             </StatusBadge>
                                             <span className="text-sm font-medium text-content-emphasis">
                                                 {tool.advertisedName}
@@ -434,7 +483,7 @@ export function ExternalToolsClient({
                                                 <Button
                                                     variant="secondary"
                                                     size="xs"
-                                                    onClick={() => void approve(tool)}
+                                                    onClick={() => setConfirming(tool)}
                                                     disabled={busy === tool.toolName}
                                                 >
                                                     {approved
@@ -465,7 +514,22 @@ export function ExternalToolsClient({
                                             primary-button budget, which a
                                             page-defining action should own rather
                                             than a per-row setting. */}
-                                        {tool.declaresWrite && (
+                                        {tool.approvedAt && (
+                                            <p className="text-xs text-content-subtle">
+                                                {t('externalTools.approvedAt', { date: formatDate(tool.approvedAt) })}
+                                            </p>
+                                        )}
+
+                                        {tool.declaresWrite && !canSetPriorState && (
+                                            <p
+                                                className="text-xs text-content-muted"
+                                                data-testid={`prior-state-owner-only-${tool.advertisedName}`}
+                                            >
+                                                {t('externalTools.priorStateOwnerOnly')}
+                                            </p>
+                                        )}
+
+                                        {tool.declaresWrite && canSetPriorState && (
                                             <div
                                                 className="flex flex-wrap items-center gap-tight rounded border border-border-subtle p-2"
                                                 data-testid={`prior-state-pairing-${tool.advertisedName}`}
@@ -513,9 +577,11 @@ export function ExternalToolsClient({
                                         </details>
 
                                         <div className="flex flex-wrap gap-default text-xs text-content-subtle">
-                                            <code className="text-content-muted">
-                                                {tool.liveManifestHash.slice(0, 12)}
-                                            </code>
+                                            <span>
+                                                {t('externalTools.fingerprint', {
+                                                    hash: tool.liveManifestHash.slice(0, 12),
+                                                })}
+                                            </span>
                                             {tool.blocked && (
                                                 <span className="text-content-error">
                                                     {t('externalTools.blocked')}
@@ -528,6 +594,28 @@ export function ExternalToolsClient({
                         </ol>
                     )}
                 </>
+            )}
+
+            {confirming && (
+                <ConfirmDialog
+                    showModal
+                    setShowModal={() => setConfirming(null)}
+                    tone="warning"
+                    title={t('externalTools.confirmTitle', { name: confirming.advertisedName })}
+                    description={
+                        isKnownStatus(confirming.status) &&
+                        confirming.status !== 'APPROVED' &&
+                        confirming.status !== 'UNPINNED'
+                            ? t('externalTools.confirmChanged', { change: statusLabel(confirming.status) })
+                            : t('externalTools.confirmNew')
+                    }
+                    confirmLabel={t('externalTools.confirmAction')}
+                    onConfirm={async () => {
+                        const tool = confirming;
+                        setConfirming(null);
+                        await approve(tool);
+                    }}
+                />
             )}
         </div>
     );
