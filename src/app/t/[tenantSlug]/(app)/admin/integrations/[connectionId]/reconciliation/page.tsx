@@ -532,7 +532,7 @@ export default function ReconciliationQueuePage() {
                     loading={loading}
                     // A failed read empties the table, so its empty state is
                     // where the page says so — never "nothing to decide".
-                    emptyState={loadError ? t('loadError') : executionId ? t('empty') : t('noRun')}
+                    emptyState={loadError ? t('loadError') : executionId ? t('empty') : t('emptyNoRun')}
                     columnVisibility={columnVisibility}
                     onColumnVisibilityChange={setColumnVisibility}
                     // Bulk confirm is a decision too: offered only to a viewer

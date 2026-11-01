@@ -7082,7 +7082,7 @@
         "filterReasonEXTERNAL_EXPIRED": "External classification expired",
         "crumbDashboard": "Dashboard",
         "crumbAdmin": "Admin",
-        "noRun": "No reconciliation run yet. The queue fills after the connection's first reconciliation.",
+        "emptyNoRun": "No reconciliation run yet. The queue fills after the connection's first reconciliation.",
         "loadError": "Couldn't load the reconciliation queue. Reload the page to try again.",
         "unknownPerson": "Unknown employee",
         "confirmQueued": "Confirming {person}",

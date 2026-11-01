@@ -19,6 +19,7 @@ import { useTranslations } from 'next-intl';
 
 import { useTenantApiUrl, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
+import { Heading } from '@/components/ui/typography';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -140,7 +141,7 @@ export function DecisionForm({
 
     return (
         <section className="space-y-default border-t border-border-subtle pt-default" data-testid="legacy-decision-form">
-            <h3 className="text-sm font-medium text-content-emphasis">{t('decideTitle')}</h3>
+            <Heading level={3}>{t('decideTitle')}</Heading>
             <RadioGroup
                 value={kind}
                 onValueChange={(v) => setKind(v as DecisionKind)}
