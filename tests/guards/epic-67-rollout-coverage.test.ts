@@ -194,6 +194,15 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         handlers: ['releaseProtection'],
     },
     {
+        // #4871. A reconciliation Confirm is durable: from then on the account
+        // resolves LINKED on every run and is acted on without anybody
+        // looking. The row's one-click Confirm therefore waits out the undo
+        // window, so a mis-click in a long queue is caught before the POST.
+        file: 'src/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/page.tsx',
+        name: 'Reconciliation queue row Confirm',
+        handlers: ['confirmWithUndo'],
+    },
+    {
         // The processes/automation surface had ZERO Epic 67 sites, while
         // AutomationRuleStatus.ARCHIVED and DELETE /automation/rules/[id] both
         // shipped with no UI ever calling the route — so a rule could never be

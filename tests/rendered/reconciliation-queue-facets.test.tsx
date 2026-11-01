@@ -29,9 +29,15 @@ configure({ asyncUtilTimeout: 20_000 });
 // as the memoised translator below was.
 const API_URL = (p: string) => `/api/t/acme${p.startsWith('/') ? p : `/${p}`}`;
 const TENANT_HREF = (p: string) => `/t/acme${p}`;
+// A viewer who may decide, so the per-row and bulk Confirm render (#4871).
+const TENANT_CTX = {
+    tenantSlug: 'acme',
+    appPermissions: { identity_reconciliation: { confirm: true } },
+};
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => API_URL,
     useTenantHref: () => TENANT_HREF,
+    useTenantContext: () => TENANT_CTX,
 }));
 
 jest.mock('next/navigation', () => ({
@@ -52,7 +58,20 @@ jest.mock('next-intl', () => {
         const t = (key: string, params?: Record<string, unknown>) => {
             const v = walk(walk(en, ns), key);
             if (typeof v !== 'string') return key;
-            let s = v;
+            // Flat ICU plurals too: the subtitle is one (#4871), and a mock
+            // that left it as a template would have the count assertion below
+            // asserting on the template.
+            let s = v.replace(
+                /\{(\w+),\s*plural,((?:\s*(?:=\d+|one|other)\s*\{[^{}]*\})+)\s*\}/g,
+                (block: string, name: string, options: string) => {
+                    if (!params || !(name in params)) return block;
+                    const n = Number(params[name]);
+                    const forms = new Map<string, string>();
+                    for (const m of options.matchAll(/(=\d+|one|other)\s*\{([^{}]*)\}/g)) forms.set(m[1], m[2]);
+                    const body = forms.get(`=${n}`) ?? (n === 1 ? forms.get('one') : undefined) ?? forms.get('other');
+                    return body === undefined ? block : body.split('#').join(String(n));
+                },
+            );
             if (params) for (const [p, val] of Object.entries(params)) s = s.replace(new RegExp(`\\{${p}\\}`, 'g'), String(val));
             return s;
         };
@@ -103,12 +122,13 @@ beforeEach(() => {
         const url = new URL(String(input), 'https://test.local');
         const body = url.pathname.endsWith('/executions')
             ? {
+                  connection: { id: 'conn-1', name: 'Payroll', provider: 'legacy-mcp', isEnabled: true, ownerUserId: null },
                   executions: [
                       { id: 'exec-1', automationKey: 'legacy-mcp.reconcile', status: 'PASSED', executedAt: '2026-02-01T00:00:00.000Z' },
                   ],
               }
             : url.pathname.endsWith('/queue')
-              ? { rows: ROWS }
+              ? { rows: ROWS, people: {} }
               : {};
         return {
             ok: true,
@@ -176,9 +196,9 @@ it('reports the FILTERED count in the subtitle, not the loaded one', async () =>
     // having done nothing.
     render(<ReconciliationQueuePage />);
     await screen.findByText('acct-suggested');
-    expect(screen.getByText(L.subtitle.replace('{count}', '3'))).toBeTruthy();
+    expect(screen.getByText('3 accounts still need a decision')).toBeTruthy();
 
     await pick(L.colOutcome, L.outcomeAMBIGUOUS);
 
-    await waitFor(() => expect(screen.getByText(L.subtitle.replace('{count}', '1'))).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('1 account still needs a decision')).toBeTruthy());
 });
