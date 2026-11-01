@@ -11723,7 +11723,7 @@
       "reapprove": "Re-approve",
       "approveFailed": "Could not approve this definition.",
       "schemaLabel": "Arguments",
-      "revision": "revision {revision}",
+      "revision": "Revision {revision}",
       "blocked": "Blocked — the definition changed since it was approved.",
       "emptyTitle": "This server advertises no tools",
       "emptyDesc": "The connection works, but the server returned an empty catalogue.",
@@ -11735,7 +11735,23 @@
       "priorStateNone": "None — this write is refused",
       "priorStateMissing": "Nominate a read, or this write cannot run.",
       "pairingFailed": "Couldn't change the prior-state read.",
-      "parameterSetsLink": "Saved parameters"
+      "parameterSetsLink": "Saved parameters",
+      "status": {
+        "APPROVED": "Approved",
+        "UNPINNED": "Never approved",
+        "DESCRIPTION_CHANGED": "Description changed",
+        "SCHEMA_CHANGED": "Arguments changed",
+        "DEFINITION_CHANGED": "Definition changed",
+        "ANNOTATIONS_CHANGED": "Annotations changed"
+      },
+      "lastTestFailed": "This server’s last connection test failed, so its tools may not load. Test the connection again under Integrations.",
+      "approvedAt": "Last approved {date}",
+      "priorStateOwnerOnly": "An owner chooses the read that records this tool’s prior state. Without one, this write cannot run.",
+      "fingerprint": "Definition fingerprint {hash}",
+      "confirmTitle": "Approve {name}?",
+      "confirmNew": "Agents granted this tool will call it as this definition describes it. If the server changes the definition later, agents stop calling it until someone approves it again.",
+      "confirmChanged": "{change} since this tool was last approved. Read its description and arguments before you approve: agents granted it will use the definition shown.",
+      "confirmAction": "Approve definition"
     },
     "parameterSets": {
       "title": "Saved parameters",
