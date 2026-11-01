@@ -101,6 +101,25 @@ function assertCanViewPortfolio(ctx: OrgContext): void {
     }
 }
 
+/**
+ * The three cross-workspace drill-down lists name items INSIDE the workspaces
+ * (control names, risk titles, evidence titles) and link to them. An
+ * `ORG_READER` holds the portfolio summary only (`canDrillDown: false`).
+ *
+ * Asserted HERE, not only at the API route (#4845). The org pages call these
+ * usecases directly, and `withTenantDb` binds `app.tenant_id` and nothing
+ * else, so row-level security admits any caller for any workspace of the org:
+ * it does not ask whether the caller holds a membership there. Before this, a
+ * Reader who typed `/org/<slug>/controls` read every workspace's
+ * non-implemented controls, though the API refused the same view.
+ */
+function assertCanDrillDown(ctx: OrgContext): void {
+    assertCanViewPortfolio(ctx);
+    if (!ctx.permissions.canDrillDown) {
+        throw forbidden('The cross-workspace lists are for organization owners and admins');
+    }
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // Shared base-data loader + pure projections
 // ═════════════════════════════════════════════════════════════════════
@@ -851,7 +870,7 @@ export async function listNonPerformingControls(
     ctx: OrgContext,
     input: PaginatedDrillDownInput = {},
 ): Promise<PaginatedDrillDownResult<NonPerformingControlRow>> {
-    assertCanViewPortfolio(ctx);
+    assertCanDrillDown(ctx);
     const limit = clampPageLimit(input.limit);
     const cursor = decodeJson<ControlsCursor>(input.cursor);
     const { tenants } = await getPortfolioData(ctx.organizationId, {
@@ -963,7 +982,7 @@ export async function listCriticalRisksAcrossOrg(
     ctx: OrgContext,
     input: PaginatedDrillDownInput = {},
 ): Promise<PaginatedDrillDownResult<CriticalRiskRow>> {
-    assertCanViewPortfolio(ctx);
+    assertCanDrillDown(ctx);
     const limit = clampPageLimit(input.limit);
     const cursor = decodeJson<RisksCursor>(input.cursor);
     const { tenants } = await getPortfolioData(ctx.organizationId, {
@@ -1078,7 +1097,7 @@ export async function listOverdueEvidenceAcrossOrg(
     ctx: OrgContext,
     input: PaginatedDrillDownInput = {},
 ): Promise<PaginatedDrillDownResult<OverdueEvidenceRow>> {
-    assertCanViewPortfolio(ctx);
+    assertCanDrillDown(ctx);
     const limit = clampPageLimit(input.limit);
     const cursor = decodeJson<EvidenceCursor>(input.cursor);
     const { tenants } = await getPortfolioData(ctx.organizationId, {

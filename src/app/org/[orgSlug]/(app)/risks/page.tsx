@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 
 import { getOrgCtx } from '@/app-layer/context';
 import { listCriticalRisksAcrossOrg } from '@/app-layer/usecases/portfolio';
+import { getTranslations } from 'next-intl/server';
+import { OrgForbiddenPage } from '../_components/OrgForbiddenPage';
 import { toPlainJson } from '@/lib/server/to-plain-json';
 import { RisksTable } from './RisksTable';
 
@@ -27,6 +29,13 @@ export default async function OrgRisksPage({ params, searchParams }: PageProps) 
         ctx = await getOrgCtx({ orgSlug });
     } catch {
         notFound();
+    }
+
+    // A Reader holds the portfolio summary only; this list names items
+    // inside the workspaces (#4845). The usecase refuses too.
+    if (!ctx.permissions.canDrillDown) {
+        const t = await getTranslations('org.forbidden');
+        return <OrgForbiddenPage orgSlug={orgSlug} message={t('drillDown')} />;
     }
 
     const cursor = typeof sp.cursor === 'string' ? sp.cursor : undefined;
