@@ -18,6 +18,7 @@ import { resolveTenantContext } from '@/lib/tenant-context';
 import { forbidden, notFound } from '@/lib/errors/types';
 import { isOutsideSsoScope, SSO_SCOPE_REFUSAL } from '@/lib/auth/sso-session';
 import { assertSsoEnforcementAdmits, type SignInMethod } from '@/lib/auth/sso-enforcement';
+import { ENTRA_GATE_REFUSAL, isRefusedByEntraGate } from '@/lib/auth/entra-gate-scope';
 import type { Role } from '@prisma/client';
 import type { Permissions } from '@/lib/tenant-context';
 import type { PermissionSet } from '@/lib/permissions';
@@ -124,6 +125,7 @@ export async function resolveTenantBySlug(slug: string): Promise<TenantRecord> {
  *   userId: session.user.id,
  *   ssoTenantId: session.user.ssoTenantId,
  *   signInMethod: session.user.signInMethod,
+ *   entraGateDeniedTenantIds: session.user.entraGateDeniedTenantIds,
  * });
  * // ctx.tenant.id, ctx.role, ctx.permissions, ctx.appPermissions
  * ```
@@ -139,6 +141,12 @@ export async function getTenantServerContext(params: {
     ssoTenantId: string | null | undefined;
     /** How the session was opened (`session.user.signInMethod`); "Enforce SSO" reads it. */
     signInMethod: SignInMethod | null | undefined;
+    /**
+     * Workspaces the Entra group gate refused at sign-in
+     * (`session.user.entraGateDeniedTenantIds`). Required for the same reason
+     * as `ssoTenantId`.
+     */
+    entraGateDeniedTenantIds: readonly string[] | null | undefined;
 }): Promise<TenantServerContext> {
     // Delegate to the authoritative resolver which handles:
     // - Tenant lookup
@@ -151,6 +159,9 @@ export async function getTenantServerContext(params: {
     );
     if (isOutsideSsoScope(params.ssoTenantId, ctx.tenant.id)) {
         throw forbidden(SSO_SCOPE_REFUSAL);
+    }
+    if (isRefusedByEntraGate(params.entraGateDeniedTenantIds, ctx.tenant.id)) {
+        throw forbidden(ENTRA_GATE_REFUSAL);
     }
     await assertSsoEnforcementAdmits(params, ctx.tenant.id, ctx.membership.role);
 

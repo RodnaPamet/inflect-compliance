@@ -21,6 +21,7 @@ import { useToastWithUndo } from '@/components/ui/hooks';
 import { ENTRA_MAPPABLE_ROLES } from '@/app-layer/schemas/entra-group-mapping.schemas';
 import { usePermissions } from '@/lib/tenant-context-provider';
 import { isOwnerManagedRole } from '@/lib/roles';
+import { apiErrorMessage, validationIssueFields } from '@/lib/api-error';
 
 interface GroupMapping {
     id: string;
@@ -31,7 +32,7 @@ interface GroupMapping {
 }
 
 /**
- * EI-2 — manage the tenant's Entra security-group → IC-role mappings. At
+ * EI-2 — manage the tenant's Entra security-group → role mappings. At
  * sign-in (EI-3) a user's resolved groups are matched against these rows to
  * sync their membership role. OWNER is intentionally not offered — ownership
  * stays manually granted. AI_ADMIN is offered to an OWNER only, and only an
@@ -60,15 +61,21 @@ export function GroupMappingsSection({ apiUrl }: { apiUrl: (path: string) => str
     const [priority, setPriority] = useState(0);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // A failed read is not "No group mappings yet" (#4869).
+    const [loadError, setLoadError] = useState(false);
     const triggerUndoToast = useToastWithUndo();
 
     const load = useCallback(async () => {
+        setLoadError(false);
         try {
             const res = await fetch(apiUrl('/sso/entra/group-mappings'));
-            if (!res.ok) return;
+            if (!res.ok) {
+                setLoadError(true);
+                return;
+            }
             setRows(await res.json());
         } catch {
-            /* read-only load; ignore */
+            setLoadError(true);
         }
     }, [apiUrl]);
 
@@ -90,12 +97,19 @@ export function GroupMappingsSection({ apiUrl }: { apiUrl: (path: string) => str
                 }),
             });
             if (!res.ok) {
+                // Worded from what the server said, not guessed from the
+                // status (#4869): a 403 is usually the Owner-only AI admin
+                // rule, and the server's sentence names it.
+                const body = await res.json().catch(() => null);
+                const fields = validationIssueFields(body);
                 setError(
                     res.status === 409
                         ? t('entra.mappings.errExists')
-                        : res.status === 403
-                          ? t('entra.mappings.errDenied')
-                          : t('entra.mappings.errInvalidGuid'),
+                        : fields.includes('aadGroupId')
+                          ? t('entra.mappings.errInvalidGuid')
+                          : fields.length > 0
+                            ? t('entra.mappings.errInvalid')
+                            : apiErrorMessage(body, t('entra.mappings.errAddFailed')),
                 );
                 return;
             }
@@ -146,7 +160,11 @@ export function GroupMappingsSection({ apiUrl }: { apiUrl: (path: string) => str
 
             {error && <InlineNotice variant="error">{error}</InlineNotice>}
 
-            {rows.length === 0 ? (
+            {loadError ? (
+                <InlineNotice variant="error" id="entra-mappings-load-error">
+                    {t('entra.mappings.loadFailed')}
+                </InlineNotice>
+            ) : rows.length === 0 ? (
                 <EmptyState
                     title={t('entra.mappings.emptyTitle')}
                     description={t('entra.mappings.emptyDesc')}

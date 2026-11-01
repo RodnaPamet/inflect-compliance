@@ -28,6 +28,7 @@ type SessionUserLike = {
     email?: string | null;
     role?: Role | null;
     ssoTenantId?: string | null;
+    entraGateDeniedTenantIds?: string[];
 };
 type SessionLike = { user?: SessionUserLike | null } | null;
 
@@ -100,6 +101,7 @@ describe('getSession', () => {
             role: 'ADMIN',
             ssoTenantId: null,
             signInMethod: null,
+            entraGateDeniedTenantIds: [],
         });
     });
 
@@ -111,6 +113,16 @@ describe('getSession', () => {
             user: { id: 'usr_1', tenantId: 'tnt_1', email: 'a@b.com', role: 'READER', ssoTenantId: 'tnt_1' },
         });
         expect((await getSession())?.ssoTenantId).toBe('tnt_1');
+    });
+
+    it('carries the workspaces the Entra group gate refused through, and an absent list as none (#4869)', async () => {
+        // The DB-backed tenant gates read this to keep refusing, for the
+        // session, a workspace the gate refused at sign-in. Dropping it here
+        // would let the server-side gates admit what the edge refuses.
+        mockAuth.mockResolvedValue({
+            user: { id: 'usr_1', tenantId: 'tnt_1', email: 'a@b.com', role: 'READER', entraGateDeniedTenantIds: ['tnt_2'] },
+        });
+        expect((await getSession())?.entraGateDeniedTenantIds).toEqual(['tnt_2']);
     });
 
     it('defaults a missing role to READER — the LEAST privileged role', async () => {
@@ -142,6 +154,7 @@ describe('getSession', () => {
             role: 'READER',
             ssoTenantId: null,
             signInMethod: null,
+            entraGateDeniedTenantIds: [],
         });
     });
 });
@@ -171,6 +184,7 @@ describe('getSessionOrThrow', () => {
             role: 'EDITOR',
             ssoTenantId: null,
             signInMethod: null,
+            entraGateDeniedTenantIds: [],
         });
     });
 });

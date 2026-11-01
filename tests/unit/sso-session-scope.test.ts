@@ -116,16 +116,16 @@ describe('tenant API context', () => {
 describe('tenant page context (the tenant layout)', () => {
     it('refuses another tenant to a session opened by SSO', async () => {
         await expect(
-            getTenantServerContext({ tenantSlug: 'alpha', userId: 'user-1', ssoTenantId: 'tenant-b', signInMethod: 'sso' }),
+            getTenantServerContext({ tenantSlug: 'alpha', userId: 'user-1', ssoTenantId: 'tenant-b', signInMethod: 'sso', entraGateDeniedTenantIds: null }),
         ).rejects.toMatchObject({ status: 403 });
     });
 
     it('admits the SSO tenant, and any tenant to a session not opened by SSO', async () => {
         await expect(
-            getTenantServerContext({ tenantSlug: 'beta', userId: 'user-1', ssoTenantId: 'tenant-b', signInMethod: 'sso' }),
+            getTenantServerContext({ tenantSlug: 'beta', userId: 'user-1', ssoTenantId: 'tenant-b', signInMethod: 'sso', entraGateDeniedTenantIds: null }),
         ).resolves.toMatchObject({ tenant: { id: 'tenant-b' } });
         await expect(
-            getTenantServerContext({ tenantSlug: 'alpha', userId: 'user-1', ssoTenantId: null, signInMethod: 'credentials' }),
+            getTenantServerContext({ tenantSlug: 'alpha', userId: 'user-1', ssoTenantId: null, signInMethod: 'credentials', entraGateDeniedTenantIds: null }),
         ).resolves.toMatchObject({ tenant: { id: 'tenant-a' } });
     });
 });

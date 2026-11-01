@@ -94,7 +94,7 @@ describe('the tenant API and page gates', () => {
         await expect(getTenantCtx({ tenantSlug: 'beta' })).rejects.toMatchObject({ status: 403, message: SSO_REQUIRED_REFUSAL });
         await expect(getLegacyCtx()).rejects.toMatchObject({ status: 403 });
         await expect(
-            getTenantServerContext({ tenantSlug: 'beta', userId: 'user-1', ssoTenantId: null, signInMethod: 'credentials' }),
+            getTenantServerContext({ tenantSlug: 'beta', userId: 'user-1', ssoTenantId: null, signInMethod: 'credentials', entraGateDeniedTenantIds: null }),
         ).rejects.toMatchObject({ status: 403 });
     });
 
@@ -103,7 +103,7 @@ describe('the tenant API and page gates', () => {
         session('credentials');
         await expect(getTenantCtx({ tenantSlug: 'beta' })).resolves.toMatchObject({ tenantId: 'tenant-b' });
         await expect(
-            getTenantServerContext({ tenantSlug: 'beta', userId: 'user-1', ssoTenantId: null, signInMethod: 'credentials' }),
+            getTenantServerContext({ tenantSlug: 'beta', userId: 'user-1', ssoTenantId: null, signInMethod: 'credentials', entraGateDeniedTenantIds: null }),
         ).resolves.toMatchObject({ tenant: { id: 'tenant-b' } });
     });
 

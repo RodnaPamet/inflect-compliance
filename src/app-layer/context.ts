@@ -15,6 +15,7 @@ import { getOrgPermissions, getPermissionsForRole, parsePermissionsJson } from '
 import { logger } from '@/lib/observability/logger';
 import { isOutsideSsoScope, SSO_SCOPE_REFUSAL } from '@/lib/auth/sso-session';
 import { assertSsoEnforcementAdmits } from '@/lib/auth/sso-enforcement';
+import { ENTRA_GATE_REFUSAL, isRefusedByEntraGate } from '@/lib/auth/entra-gate-scope';
 import { assertAgentKeyMayActAtRest } from '@/lib/agentic/agent-key-rest-gate';
 
 /**
@@ -78,6 +79,11 @@ export async function getTenantCtx(
     if (isOutsideSsoScope(session.ssoTenantId, ctx.tenant.id)) {
         throw forbidden(SSO_SCOPE_REFUSAL);
     }
+    // A workspace whose Entra group gate refused this sign-in stays refused
+    // for the session (#4869).
+    if (isRefusedByEntraGate(session.entraGateDeniedTenantIds, ctx.tenant.id)) {
+        throw forbidden(ENTRA_GATE_REFUSAL);
+    }
     // "Enforce SSO": a workspace that requires its own SSO refuses any other
     // way in but a break-glass password sign-in.
     await assertSsoEnforcementAdmits(session, ctx.tenant.id, ctx.membership.role);
@@ -118,6 +124,9 @@ export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
     const ctx = await resolveTenantContext({ tenantId: session.tenantId }, session.userId);
     if (isOutsideSsoScope(session.ssoTenantId, ctx.tenant.id)) {
         throw forbidden(SSO_SCOPE_REFUSAL);
+    }
+    if (isRefusedByEntraGate(session.entraGateDeniedTenantIds, ctx.tenant.id)) {
+        throw forbidden(ENTRA_GATE_REFUSAL);
     }
     await assertSsoEnforcementAdmits(session, ctx.tenant.id, ctx.membership.role);
 

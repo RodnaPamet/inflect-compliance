@@ -889,7 +889,8 @@ export function recordEntraRoleSync(attrs: {
         | 'no_mappings'
         | 'ambiguous_tie'
         | 'custom_role_held'
-        | 'foreign_directory';
+        | 'foreign_directory'
+        | 'domain_not_allowed';
 }): void {
     getEntraRoleSync().add(1, { outcome: attrs.outcome });
 }

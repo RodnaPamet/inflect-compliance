@@ -14,7 +14,9 @@
  *   - only deactivated memberships → ask an admin to reactivate them, not
  *     for an invitation;
  *   - organisations → a link to each, so an organisation member with no
- *     workspace membership can reach the organisation.
+ *     workspace membership can reach the organisation;
+ *   - workspaces the Microsoft Entra ID group gate refused this sign-in →
+ *     which ones, and to ask an administrator there (#4869).
  */
 import { auth, signOut } from '@/auth';
 import { redirect } from 'next/navigation';
@@ -33,13 +35,19 @@ export default async function NoTenantPage() {
     const t = await getTranslations('noTenant');
     const format = await getFormatter();
     const email = session.user.email ?? t('yourAccount');
-    const { workspaces, organizations, deactivatedWorkspaces } = session.user.id
-        ? await readSignInDestinations(session.user.id, session.user.ssoTenantId)
-        : { workspaces: [], organizations: [], deactivatedWorkspaces: [] };
+    const { workspaces, organizations, deactivatedWorkspaces, entraRefusedWorkspaces } = session.user.id
+        ? await readSignInDestinations(
+              session.user.id,
+              session.user.ssoTenantId,
+              session.user.entraGateDeniedTenantIds,
+          )
+        : { workspaces: [], organizations: [], deactivatedWorkspaces: [], entraRefusedWorkspaces: [] };
     const help =
         workspaces.length > 0
             ? t('otherWorkspaceText')
-            : organizations.length > 0
+            : entraRefusedWorkspaces.length > 0
+              ? t('entraRefused', { workspaces: format.list(entraRefusedWorkspaces, { type: 'conjunction' }) })
+              : organizations.length > 0
               ? t('organizationsOnly')
               : deactivatedWorkspaces.length > 0
                 ? t('deactivated', { workspaces: format.list(deactivatedWorkspaces, { type: 'conjunction' }) })

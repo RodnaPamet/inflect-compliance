@@ -120,6 +120,8 @@ declare module 'next-auth' {
             ssoTenantId?: string | null;
             /** How the session was opened; read by "Enforce SSO" (`src/lib/auth/sso-enforcement.ts`). */
             signInMethod?: SignInMethod | null;
+            /** Workspaces the Entra group gate refused at sign-in (`src/lib/auth/entra-gate-scope.ts`). */
+            entraGateDeniedTenantIds?: string[];
         };
     }
 
@@ -176,6 +178,13 @@ declare module 'next-auth/jwt' {
          *  array of group GUIDs would bloat the JWT cookie (worst for the very
          *  overage population this flag marks) with no downstream reader. */
         aadGroupsOverage?: boolean;
+        /**
+         * Workspaces the Entra group gate refused at this sign-in (#4869). The
+         * membership re-read leaves them out and the DB-backed gates refuse
+         * them, so the refusal holds for the session
+         * (`src/lib/auth/entra-gate-scope.ts`). Reset at every sign-in.
+         */
+        entraGateDeniedTenantIds?: string[];
         accessToken?: string;
         refreshToken?: string;
         expiresAt?: number;
@@ -264,16 +273,20 @@ export async function applyMembershipClaims(
         // it does not admit carries no claim to it, and the edge refuses it.
         const { enforcementAdmits, tenantsEnforcingSso } = await import('@/lib/auth/sso-enforcement');
         const enforcing = await tenantsEnforcingSso(scopedRows.map((m) => m.tenantId));
+        // A workspace the Entra group gate refused at sign-in stays refused
+        // for the session (#4869): re-reading the claims must not restore it.
+        const entraDenied = new Set(token.entraGateDeniedTenantIds ?? []);
         const tenantRows = scopedRows.filter(
             (m) =>
-                !enforcing.has(m.tenantId) ||
-                enforcementAdmits({
-                    tenantId: m.tenantId,
-                    ssoTenantId: ssoScope,
-                    signInMethod: token.signInMethod,
-                    role: m.role,
-                    hasPassword: !!dbUser.passwordHash,
-                }),
+                !entraDenied.has(m.tenantId) &&
+                (!enforcing.has(m.tenantId) ||
+                    enforcementAdmits({
+                        tenantId: m.tenantId,
+                        ssoTenantId: ssoScope,
+                        signInMethod: token.signInMethod,
+                        role: m.role,
+                        hasPassword: !!dbUser.passwordHash,
+                    })),
         );
 
         // Active tenant memberships, capped at MAX_JWT_MEMBERSHIPS so the
@@ -841,6 +854,9 @@ export const authOptions: NextAuthOptions = {
                 // Before the claims too: "Enforce SSO" reads it.
                 const { signInMethodOf } = await import('@/lib/auth/sso-enforcement');
                 token.signInMethod = signInMethodOf(account.provider);
+                // A sign-in decides the Entra gate afresh (#4869): nothing a
+                // previous session was refused carries over.
+                token.entraGateDeniedTenantIds = [];
                 await applyMembershipClaims(token, user.id);
 
                 if (account.provider !== 'credentials') {
@@ -871,26 +887,30 @@ export const authOptions: NextAuthOptions = {
                     // the bounded overage flag rides along.
                     token.aadGroupsOverage = overage;
 
-                    // ── EI-3 — sync the active-tenant membership role from the
-                    //    tenant's group → role mappings, and enforce the group
-                    //    gate. Scoped to the primary tenant (the session's
-                    //    active tenant). A failure here must never block
-                    //    sign-in, so it's best-effort.
-                    if (token.tenantId && token.userId) {
+                    // ── EI-3 — sync the membership role from each workspace's
+                    //    group → role mappings, and enforce each workspace's
+                    //    group gate. Every workspace the person belongs to that
+                    //    has a Microsoft Entra ID provider is asked, not only
+                    //    the primary one (#4869, owner decision 2026-11-01). A
+                    //    failure here must never block sign-in, so it's
+                    //    best-effort.
+                    if (token.userId) {
                         try {
-                            const { syncEntraMembershipRole, applyEntraSyncToToken } =
+                            const { syncEntraMembershipRolesAtSignIn, applyEntraSyncToToken } =
                                 await import('@/lib/auth/entra-group-sync');
-                            const activeTenantId = token.tenantId;
                             const tid = (profile as { tid?: unknown } | undefined)?.tid;
-                            const result = await syncEntraMembershipRole({
+                            const results = await syncEntraMembershipRolesAtSignIn({
                                 userId: token.userId,
-                                tenantId: activeTenantId,
                                 aadGroups: groups,
-                                // Mappings apply only to the workspace's own
-                                // Microsoft directory (src/lib/auth/entra-group-sync.ts).
+                                // Mappings apply only to each workspace's own
+                                // Microsoft directory and allowed domains
+                                // (src/lib/auth/entra-group-sync.ts).
                                 signInDirectoryId: typeof tid === 'string' ? tid : null,
+                                signInEmail: user.email ?? null,
                             });
-                            applyEntraSyncToToken(token, activeTenantId, result);
+                            for (const { tenantId, result } of results) {
+                                applyEntraSyncToToken(token, tenantId, result);
+                            }
                         } catch (err) {
                             edgeLogger.error('Entra group role-sync failed', {
                                 component: 'entra',
@@ -1153,6 +1173,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.orgMemberships = token.orgMemberships ?? [];
                 session.user.ssoTenantId = token.ssoTenantId ?? null;
                 session.user.signInMethod = token.signInMethod ?? null;
+                session.user.entraGateDeniedTenantIds = token.entraGateDeniedTenantIds ?? [];
             }
             return session;
         },

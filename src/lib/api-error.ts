@@ -64,6 +64,26 @@ export function validationIssueMessages(body: unknown): string[] {
 }
 
 /**
+ * The top-level fields a VALIDATION_ERROR names, in order, without repeats
+ * (#4869). Lets a form word a refusal by the field it is about, in the
+ * reader's language, rather than show Zod's English. Empty for any other body.
+ */
+export function validationIssueFields(body: unknown): string[] {
+    if (!body || typeof body !== 'object') return [];
+    const error = (body as { error?: unknown }).error;
+    if (!error || typeof error !== 'object') return [];
+    const { code, details } = error as { code?: unknown; details?: unknown };
+    if (code !== 'VALIDATION_ERROR' || !Array.isArray(details)) return [];
+    const fields: string[] = [];
+    for (const issue of details) {
+        const path = issue && typeof issue === 'object' ? (issue as { path?: unknown }).path : undefined;
+        const head = Array.isArray(path) && path.length > 0 ? String(path[0]) : '';
+        if (head && !fields.includes(head)) fields.push(head);
+    }
+    return fields;
+}
+
+/**
  * The sentence to show for a refused request: a validation error's own
  * reasons when it carries any, otherwise `apiErrorMessage`. Use it wherever a
  * form posts a body the server validates with Zod, so the operator reads WHY

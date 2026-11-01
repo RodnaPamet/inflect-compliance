@@ -3,7 +3,9 @@
  *
  * EI-1 puts the user's AAD groups on the token; EI-2 stores the per-tenant
  * group → role mappings. EI-3 is where they meet: at every `microsoft-entra-id`
- * sign-in we resolve the user's groups against the active tenant's mappings and
+ * sign-in we resolve the user's groups against the mappings of EVERY workspace
+ * they belong to that has a Microsoft Entra ID provider (#4869, owner decision
+ * 2026-11-01 — it used to be the session's primary workspace alone) and
  *   1. **sync** the role of their EXISTING active membership to the mapped role
  *      (an UPDATE — never a join; membership creation stays on the Epic 1 paths
  *      so the no-auto-join invariant is untouched), and
@@ -18,6 +20,18 @@
  * configured directory applies none at sign-in. SCIM's Groups push is not a
  * sign-in and carries no directory: it is authenticated by the workspace's own
  * SCIM token instead.
+ *
+ * The provider's "Allowed sign-in domains" (`emailDomains`) narrow it further
+ * (#4869, owner decision 2026-11-01): a sign-in whose email domain is not on a
+ * non-empty list gets no role from the mappings, and is refused by the gate
+ * when it is on (`domain_not_allowed`). It only ever narrows — the directory
+ * check runs first — so it stays an Admin setting.
+ *
+ * A gate refusal holds for the session: `applyEntraSyncToToken` records the
+ * workspace in `entraGateDeniedTenantIds`, the periodic membership re-read
+ * leaves it out, and the DB-backed workspace gates refuse it
+ * (`src/lib/auth/entra-gate-scope.ts`). The next Microsoft sign-in decides
+ * again.
  *
  * OWNER is immune to both: a misconfigured mapping must never demote or lock out
  * a tenant owner (ownership is manually managed, and the last-OWNER guard would
@@ -46,6 +60,7 @@ import { recordEntraRoleSync } from '@/lib/observability/metrics';
 import { resolveRoleFromGroups } from './entra-role-mapping';
 import { customRoleCarriageRefusal, mayCarryCustomRole } from '@/lib/roles';
 import { parseEntraConfig } from '@/app-layer/schemas/entra-provider.schemas';
+import { emailDomainAllowed } from './entra-gate-scope';
 
 export interface EntraRoleSyncResult {
     /** The role the active-tenant membership should carry after sync (or null). */
@@ -60,7 +75,9 @@ const NO_OP: EntraRoleSyncResult = { effectiveRole: null, changed: false, gateDe
 
 /** Minimal Prisma surface used here — lets tests inject a mock. */
 export interface EntraSyncDb {
-    tenantIdentityProvider: { findFirst: (args: unknown) => Promise<{ configJson: unknown } | null> };
+    tenantIdentityProvider: {
+        findFirst: (args: unknown) => Promise<{ configJson: unknown; emailDomains?: string[] | null } | null>;
+    };
     tenantEntraGroupMapping: {
         findMany: (args: unknown) => Promise<Array<{ aadGroupId: string; role: Role; priority: number }>>;
     };
@@ -105,6 +122,13 @@ export async function syncEntraMembershipRole(
          * sign-in and is authenticated by the workspace's SCIM token.
          */
         signInDirectoryId?: string | null;
+        /**
+         * The email the Microsoft sign-in resolved to. Supplied by the sign-in
+         * path alongside `signInDirectoryId`; the provider's allowed domains
+         * apply only then. `null` is a sign-in with no email, which a
+         * non-empty domain list refuses.
+         */
+        signInEmail?: string | null;
     },
     deps: { db?: EntraSyncDb } = {},
 ): Promise<EntraRoleSyncResult> {
@@ -138,7 +162,7 @@ export async function syncEntraMembershipRole(
 
     const provider = await db.tenantIdentityProvider.findFirst({
         where: { tenantId, type: 'ENTRA_ID' },
-        select: { configJson: true },
+        select: { configJson: true, emailDomains: true },
     });
     const config = parseEntraConfig(provider?.configJson);
 
@@ -150,6 +174,17 @@ export async function syncEntraMembershipRole(
             component: 'entra',
             tenantId,
             reason: config?.aadTenantId ? 'directory_mismatch' : 'no_configured_directory',
+        });
+        return config?.enforceGroupGate ? { effectiveRole: null, changed: false, gateDenied: true } : NO_OP;
+    }
+
+    // From the right directory, but not from a domain the workspace allows.
+    if (input.signInEmail !== undefined && !emailDomainAllowed(input.signInEmail, provider?.emailDomains ?? [])) {
+        recordEntraRoleSync({ outcome: 'domain_not_allowed' });
+        edgeLogger.warn('Entra sign-in from a domain the workspace does not allow: group mappings not applied', {
+            component: 'entra',
+            tenantId,
+            reason: 'domain_not_allowed',
         });
         return config?.enforceGroupGate ? { effectiveRole: null, changed: false, gateDenied: true } : NO_OP;
     }
@@ -297,17 +332,21 @@ export interface SyncableToken {
     role?: Role;
     error?: string;
     memberships?: Array<{ slug: string; role: Role; tenantId: string }>;
+    /** Workspaces the gate refused at this sign-in; held for the session. */
+    entraGateDeniedTenantIds?: string[];
 }
 
 /**
  * Apply a sync result to the JWT for the tenant it was computed against. Pure +
  * synchronous so it's unit-testable without NextAuth.
  *
- * - **gate denied** → drop the gated tenant from `memberships`, set
- *   `error = 'EntraGroupGateDenied'`, and recompute the primary claims from the
- *   remaining memberships (falling back to no-tenant / READER) — the user lands
- *   on `/no-tenant` for that tenant but keeps any other tenants.
- * - **role synced** → update `role` + the matching `memberships[]` entry.
+ * - **gate denied** → drop the gated tenant from `memberships`, record it in
+ *   `entraGateDeniedTenantIds` so the refusal holds for the session, set
+ *   `error = 'EntraGroupGateDenied'`, and — only when it was the primary —
+ *   recompute the primary claims from the remaining memberships (falling back
+ *   to no-tenant / READER). The user keeps every other tenant.
+ * - **role synced** → update the matching `memberships[]` entry, and `role`
+ *   when it is the primary.
  */
 export function applyEntraSyncToToken(
     token: SyncableToken,
@@ -316,7 +355,11 @@ export function applyEntraSyncToToken(
 ): void {
     if (result.gateDenied) {
         token.memberships = (token.memberships ?? []).filter((m) => m.tenantId !== tenantId);
+        const denied = new Set(token.entraGateDeniedTenantIds ?? []);
+        denied.add(tenantId);
+        token.entraGateDeniedTenantIds = [...denied];
         token.error = 'EntraGroupGateDenied';
+        if (token.tenantId !== tenantId) return;
         const primary = token.memberships[0];
         if (primary) {
             token.tenantId = primary.tenantId;
@@ -330,11 +373,80 @@ export function applyEntraSyncToToken(
         return;
     }
 
-    if (result.effectiveRole && token.tenantId === tenantId) {
+    if (result.effectiveRole) {
         const role = result.effectiveRole;
-        token.role = role;
+        if (token.tenantId === tenantId) token.role = role;
         token.memberships = (token.memberships ?? []).map((m) =>
             m.tenantId === tenantId ? { ...m, role } : m,
         );
     }
+}
+
+/** The extra reads the sign-in fan-out needs, beside {@link EntraSyncDb}. */
+export interface EntraSignInDb extends EntraSyncDb {
+    tenantMembership: EntraSyncDb['tenantMembership'] & {
+        findMany: (args: unknown) => Promise<Array<{ tenantId: string }>>;
+    };
+    tenantIdentityProvider: EntraSyncDb['tenantIdentityProvider'] & {
+        findMany: (args: unknown) => Promise<Array<{ tenantId: string }>>;
+    };
+}
+
+/**
+ * At a Microsoft sign-in, sync every workspace the person belongs to that has
+ * a Microsoft Entra ID provider (#4869, owner decision 2026-11-01). Each
+ * workspace applies its own rules: its directory, its domains, its mappings,
+ * its gate, and OWNER immunity — `syncEntraMembershipRole` once per workspace.
+ *
+ * A workspace with mappings but no provider applies nothing at sign-in (it has
+ * no configured directory), so only workspaces with a provider are asked.
+ * One failing workspace is logged and skipped; it never blocks the others or
+ * the sign-in.
+ */
+export async function syncEntraMembershipRolesAtSignIn(
+    input: {
+        userId: string;
+        aadGroups: readonly string[];
+        signInDirectoryId: string | null;
+        signInEmail: string | null;
+    },
+    deps: { db?: EntraSignInDb } = {},
+): Promise<Array<{ tenantId: string; result: EntraRoleSyncResult }>> {
+    const db = (deps.db ?? prisma) as EntraSignInDb;
+    const memberships = await db.tenantMembership.findMany({
+        where: { userId: input.userId, status: 'ACTIVE', tenant: { deletedAt: null } },
+        select: { tenantId: true },
+        orderBy: { createdAt: 'asc' },
+    });
+    if (memberships.length === 0) return [];
+    const providers = await db.tenantIdentityProvider.findMany({
+        where: { type: 'ENTRA_ID', tenantId: { in: memberships.map((m) => m.tenantId) } },
+        select: { tenantId: true },
+    });
+    const withProvider = new Set(providers.map((p) => p.tenantId));
+
+    const results: Array<{ tenantId: string; result: EntraRoleSyncResult }> = [];
+    for (const { tenantId } of memberships) {
+        if (!withProvider.has(tenantId)) continue;
+        try {
+            const result = await syncEntraMembershipRole(
+                {
+                    userId: input.userId,
+                    tenantId,
+                    aadGroups: input.aadGroups,
+                    signInDirectoryId: input.signInDirectoryId,
+                    signInEmail: input.signInEmail,
+                },
+                { db },
+            );
+            results.push({ tenantId, result });
+        } catch (err) {
+            edgeLogger.error('Entra group role-sync failed for a workspace', {
+                component: 'entra',
+                tenantId,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+    return results;
 }

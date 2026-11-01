@@ -44,6 +44,11 @@ export interface JwtPayload {
     ssoTenantId?: string | null;
     /** How the session was opened; "Enforce SSO" reads it (`src/lib/auth/sso-enforcement.ts`). */
     signInMethod?: SignInMethod | null;
+    /**
+     * Workspaces the Microsoft Entra ID group gate refused at sign-in. Every
+     * DB-backed tenant gate refuses them — see `src/lib/auth/entra-gate-scope.ts`.
+     */
+    entraGateDeniedTenantIds?: string[];
 }
 
 // Legacy JWT secret — used only for reading old cookies during migration
@@ -66,6 +71,7 @@ export async function getSession(): Promise<JwtPayload | null> {
             role: session.user.role ?? 'READER',
             ssoTenantId: session.user.ssoTenantId ?? null,
             signInMethod: session.user.signInMethod ?? null,
+            entraGateDeniedTenantIds: session.user.entraGateDeniedTenantIds ?? [],
         };
     }
 

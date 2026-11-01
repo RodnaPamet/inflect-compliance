@@ -49,6 +49,7 @@ export default async function TenantLayout({
             userId: session.user.id,
             ssoTenantId: session.user.ssoTenantId,
             signInMethod: session.user.signInMethod,
+            entraGateDeniedTenantIds: session.user.entraGateDeniedTenantIds,
         });
     } catch {
         notFound();

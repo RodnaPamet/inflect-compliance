@@ -15,6 +15,10 @@
  * A single-sign-on session reaches only the workspace that opened it and no
  * organisation (`src/lib/auth/sso-session.ts`), so for one this returns that
  * workspace and nothing else.
+ *
+ * A workspace whose Microsoft Entra ID group gate refused this sign-in is not
+ * a destination for the session (#4869, `src/lib/auth/entra-gate-scope.ts`):
+ * it is named in `entraRefusedWorkspaces` instead, so the page can say why.
  */
 import prisma from '@/lib/prisma';
 import type { Role } from '@prisma/client';
@@ -35,19 +39,23 @@ export interface SignInDestinations {
     organizations: OrganizationDestination[];
     /** Names of the workspaces where the person's membership is DEACTIVATED. */
     deactivatedWorkspaces: string[];
+    /** Names of the workspaces the Entra group gate refused this sign-in. */
+    entraRefusedWorkspaces: string[];
 }
 
 export async function readSignInDestinations(
     userId: string,
     ssoTenantId: string | null | undefined,
+    entraGateDeniedTenantIds: readonly string[] | null | undefined = [],
 ): Promise<SignInDestinations> {
+    const entraDenied = new Set(entraGateDeniedTenantIds ?? []);
     const ssoScope = ssoTenantId != null ? { tenantId: ssoTenantId } : {};
     const [active, deactivated, orgs] = await Promise.all([
         prisma.tenantMembership.findMany({
             where: { userId, status: 'ACTIVE', tenant: { deletedAt: null }, ...ssoScope },
             orderBy: { createdAt: 'asc' },
             // No `take`: the picker lists every workspace the person holds.
-            include: { tenant: { select: { slug: true, name: true } } },
+            include: { tenant: { select: { id: true, slug: true, name: true } } },
         }),
         prisma.tenantMembership.findMany({
             where: { userId, status: 'DEACTIVATED', tenant: { deletedAt: null }, ...ssoScope },
@@ -65,7 +73,10 @@ export async function readSignInDestinations(
               }),
     ]);
     return {
-        workspaces: active.map((m) => ({ slug: m.tenant.slug, name: m.tenant.name, role: m.role })),
+        workspaces: active
+            .filter((m) => !entraDenied.has(m.tenant.id))
+            .map((m) => ({ slug: m.tenant.slug, name: m.tenant.name, role: m.role })),
+        entraRefusedWorkspaces: active.filter((m) => entraDenied.has(m.tenant.id)).map((m) => m.tenant.name),
         organizations: orgs.map((m) => ({ slug: m.organization.slug, name: m.organization.name })),
         deactivatedWorkspaces: deactivated.map((m) => m.tenant.name),
     };
