@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
@@ -8,10 +9,13 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { apiErrorMessage } from '@/lib/api-error';
+import { PermissionGated } from '../../PermissionGated';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
-import { useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { delegationSpans, delegatesClaiming } from '@/lib/agentic/delegation-spans';
@@ -60,6 +64,14 @@ export interface RunHeader {
      */
     parentExecutionId: string | null;
     /**
+     * WHO started it, by name, and WHICH rule caused it (#4894). Both null when
+     * the page could not resolve them: a starter who is no longer a member, or
+     * a run nothing caused. For an automation-started run the starter is the
+     * rule's owner, whose permissions it ran under.
+     */
+    startedBy?: string | null;
+    ruleName?: string | null;
+    /**
      * WHAT THIS RUN WAS TAUGHT (#3666) — each mounted skill's name, version and
      * content hash, pinned when the run was admitted. `[]` means it mounted
      * none; null means the row predates the pin, which is a different fact and
@@ -79,7 +91,35 @@ const STATUS_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'error' | 
     COMPLETED: 'success',
     ABORTED: 'neutral',
     FAILED: 'error',
+    // A run that could not start because it reached no tool (#4894): a
+    // failure, in the failure tone, as on the runs list.
+    EMPTY_CATALOGUE: 'error',
 };
+
+/** The statuses a run can be resumed from, and the ones it can be aborted from — as on the runs list. */
+const RESUMABLE = new Set(['AWAITING_APPROVAL', 'PAUSED']);
+const ABORTABLE = new Set(['RUNNING', 'AWAITING_APPROVAL', 'PAUSED']);
+
+/**
+ * The engines' error codes, worded (#4894). A run's `errorMessage` is written
+ * as `<code>: <detail>`; a known code gets a sentence and the rest is kept as
+ * the technical detail. An unknown one is shown as written.
+ */
+const ERROR_CODES = new Set([
+    'skill_not_mountable',
+    'skill_pin_drift',
+    'flue_run_failed',
+    'tool_runner_run_failed',
+    'monthly_token_budget_exceeded',
+]);
+
+export function runErrorParts(message: string): { code: string | null; detail: string } {
+    const match = /^([a-z_]+):\s*([\s\S]*)$/.exec(message);
+    if (!match) return { code: null, detail: message };
+    const [, raw, detail] = match;
+    if (raw.endsWith('_run_agent_killed')) return { code: 'run_agent_killed', detail };
+    return ERROR_CODES.has(raw) ? { code: raw, detail } : { code: null, detail: message };
+}
 
 /**
  * Per-STEP status. A different axis from the run's, and deliberately its own
@@ -266,13 +306,49 @@ export function AgentRunDetailClient({
     tenantSlug,
     run,
     steps,
+    canOperate = false,
 }: {
     tenantSlug: string;
     run: RunHeader;
     steps: RunStepRow[];
+    /**
+     * The role-tier `canWrite`: resume and abort open with `assertCanWrite`.
+     * As on the runs list, the controls are shown DISABLED with the reason to
+     * anybody else, never hidden.
+     */
+    canOperate?: boolean;
 }) {
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
+    const apiUrl = useTenantApiUrl();
+    const router = useRouter();
+    const [refreshing, startRefresh] = useTransition();
+    const [busy, setBusy] = useState(false);
+    const [actionError, setActionError] = useState<string | null>(null);
+    const [confirmAbort, setConfirmAbort] = useState(false);
+
+    async function act(action: 'resume' | 'abort') {
+        setBusy(true);
+        setActionError(null);
+        try {
+            const res = await fetch(apiUrl(`/agent-runs/${run.id}/${action}`), {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            if (!res.ok) {
+                setActionError(apiErrorMessage(await res.json().catch(() => null), t(`runs.${action}Failed`)));
+                return;
+            }
+            startRefresh(() => router.refresh());
+        } catch {
+            setActionError(t(`runs.${action}Failed`));
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    const errorParts = run.errorMessage ? runErrorParts(run.errorMessage) : null;
     // A stored code's name, or the code itself when this build does not know
     // it (#4532). The keys come from `run-labels` / `proposal-labels`, which
     // pin each list to its enum and to both catalogues.
@@ -307,6 +383,38 @@ export function AgentRunDetailClient({
             // arrived from a proposal should go back there instead.
             back={{ smart: true }}
             title={run.workflowName}
+            actions={
+                RESUMABLE.has(run.status) || ABORTABLE.has(run.status) ? (
+                    <div className="flex items-center gap-tight">
+                        {RESUMABLE.has(run.status) && (
+                            <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={!canOperate || busy || refreshing}
+                                    data-testid="run-detail-resume"
+                                    onClick={() => void act('resume')}
+                                >
+                                    {t('runs.resume')}
+                                </Button>
+                            </PermissionGated>
+                        )}
+                        {ABORTABLE.has(run.status) && (
+                            <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={!canOperate || busy || refreshing}
+                                    data-testid="run-detail-abort"
+                                    onClick={() => setConfirmAbort(true)}
+                                >
+                                    {t('runs.abort')}
+                                </Button>
+                            </PermissionGated>
+                        )}
+                    </div>
+                ) : undefined
+            }
             // `<MetaStrip>` rather than a hand-rolled row of badges —
             // `detail-page-metastrip-adoption` requires it of every detail page
             // passing `meta`, and the editorial cap it documents (at most five
@@ -358,14 +466,27 @@ export function AgentRunDetailClient({
                     id is shown rather than the rule's NAME because a rule can
                     be renamed or deleted after the fact and the execution id
                     is what the audit trail carries. */}
-                {run.parentExecutionId && (
+                {actionError && (
+                    <InlineNotice variant="error" data-testid="run-detail-action-error">
+                        {actionError}
+                    </InlineNotice>
+                )}
+                {run.parentExecutionId ? (
                     <p
                         className="text-sm text-content-muted"
                         data-testid="run-caused-by"
                     >
-                        {t('runs.detail.causedBy', { executionId: run.parentExecutionId })}
+                        {run.ruleName && run.startedBy
+                            ? t('runs.detail.causedByRuleAs', { rule: run.ruleName, owner: run.startedBy })
+                            : run.ruleName
+                              ? t('runs.detail.causedByRule', { rule: run.ruleName })
+                              : t('runs.detail.causedByUnnamedRule')}
                     </p>
-                )}
+                ) : run.startedBy ? (
+                    <p className="text-sm text-content-muted" data-testid="run-started-by">
+                        {t('runs.detail.startedBy', { name: run.startedBy })}
+                    </p>
+                ) : null}
                 {/* WHAT IT WAS TAUGHT. Hashes rather than text: the hash
                     names the exact document in the repository, and the text
                     of a skill is the repository's to show, not this page's. */}
@@ -392,10 +513,23 @@ export function AgentRunDetailClient({
                         </ul>
                     )}
                 </div>
-                {run.errorMessage && (
-                    <p className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-error')}>
-                        {run.errorMessage}
-                    </p>
+                {run.errorMessage && errorParts && (
+                    <div
+                        className={cn(cardVariants({ density: 'compact' }), 'space-y-tight text-sm')}
+                        data-testid="run-error"
+                    >
+                        <p className="text-content-error">
+                            {errorParts.code ? t(`runs.detail.error.${errorParts.code}`) : errorParts.detail}
+                        </p>
+                        {errorParts.code && errorParts.detail && (
+                            <details>
+                                <summary className="cursor-pointer text-xs text-content-subtle">
+                                    {t('runs.detail.error.detailLabel')}
+                                </summary>
+                                <p className="mt-1 break-words text-xs text-content-muted">{errorParts.detail}</p>
+                            </details>
+                        )}
+                    </div>
                 )}
                 {run.summary && (
                     <p className={cn(cardVariants({ density: 'comfortable' }), 'text-sm text-content-default')}>
@@ -434,9 +568,9 @@ export function AgentRunDetailClient({
                                     className="space-y-tight"
                                 >
                                     <div className="flex flex-wrap items-center gap-tight">
-                                        <code className="text-xs text-content-emphasis">
-                                            {span.agent}
-                                        </code>
+                                        <span className="text-xs font-medium text-content-emphasis">
+                                            {t('runs.detail.delegation.specialist', { name: span.agent })}
+                                        </span>
                                         {/* THE OUTCOME, from the marker's own
                                             status — the one thing a reader
                                             cannot infer from the delegation
@@ -672,6 +806,21 @@ export function AgentRunDetailClient({
                     </>
                 )}
             </div>
+            <ConfirmDialog
+                showModal={confirmAbort}
+                setShowModal={(next) => {
+                    const value = typeof next === 'function' ? next(confirmAbort) : next;
+                    if (!value) setConfirmAbort(false);
+                }}
+                tone="danger"
+                title={t('runs.abortConfirmTitle')}
+                description={t('runs.abortConfirmBody', { workflow: run.workflowName })}
+                confirmLabel={t('runs.abort')}
+                onConfirm={async () => {
+                    setConfirmAbort(false);
+                    await act('abort');
+                }}
+            />
         </EntityDetailLayout>
     );
 }

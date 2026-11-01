@@ -41,6 +41,15 @@ jest.mock('next-intl', () => {
     const make = (ns: string) => (key: string, params?: Record<string, unknown>) => {
         let v = lookup(ns, key);
         if (typeof v !== 'string') return key;
+        // An ICU plural is formatted for real, so a count reads as the
+        // product shows it rather than as the raw pattern.
+        if (params) {
+            v = (v as string).replace(
+                /\{(\w+), plural, one \{([^{}]*)\} other \{([^{}]*)\}\}/g,
+                (_m, name: string, one: string, other: string) =>
+                    (Number(params[name]) === 1 ? one : other).replace(/#/g, String(params[name])),
+            );
+        }
         if (params) for (const [p, val] of Object.entries(params)) {
             v = (v as string).replace(new RegExp('\\{' + p + '\\}', 'g'), String(val));
         }
@@ -127,8 +136,8 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
     };
 }
 
-function renderDetail(steps: RunStepRow[], run: RunHeader = RUN) {
-    return render(<AgentRunDetailClient tenantSlug="acme" run={run} steps={steps} />);
+function renderDetail(steps: RunStepRow[], run: RunHeader = RUN, extra: { canOperate?: boolean } = {}) {
+    return render(<AgentRunDetailClient tenantSlug="acme" run={run} steps={steps} {...extra} />);
 }
 
 describe('the run detail renders the step ledger', () => {
@@ -696,13 +705,25 @@ describe('the two Flue step kinds claim only what they did', () => {
  * saying a rule did.
  */
 describe('what caused the run', () => {
-    it('names the automation execution when a rule caused it', () => {
-        renderDetail([step()], { ...RUN, parentExecutionId: 'exec-xyz' });
+    it('names the rule and its owner when a rule caused it (#4894)', () => {
+        renderDetail([step()], { ...RUN, parentExecutionId: 'exec-xyz', ruleName: 'Nightly review', startedBy: 'Ana Petrova' });
         const line = screen.getByTestId('run-caused-by');
-        expect(line).toHaveTextContent('exec-xyz');
-        // …and says why the name above is not the cause, because that is the
-        // confusion the line exists to remove.
-        expect(line).toHaveTextContent(/rule owner/i);
+        expect(line).toHaveTextContent('Nightly review');
+        // …and says whose permissions it ran under, by NAME: the line used to
+        // say "the name above is the rule owner" while no name was shown.
+        expect(line).toHaveTextContent('Ana Petrova');
+        expect(line).toHaveTextContent(/not by a person/i);
+        expect(screen.queryByTestId('run-started-by')).toBeNull();
+    });
+
+    it('still says a rule caused it when the rule cannot be named', () => {
+        renderDetail([step()], { ...RUN, parentExecutionId: 'exec-xyz' });
+        expect(screen.getByTestId('run-caused-by')).toHaveTextContent(/automation rule, not by a person/i);
+    });
+
+    it('names the person who started a run nothing else caused', () => {
+        renderDetail([step()], { ...RUN, parentExecutionId: null, startedBy: 'Ana Petrova' });
+        expect(screen.getByTestId('run-started-by')).toHaveTextContent('Started by Ana Petrova.');
     });
 
     it('says nothing when nothing caused it', () => {
@@ -922,7 +943,7 @@ describe('the delegation section', () => {
         // TWO steps between the bounds, and 300 tokens — the parent's 10 and 20
         // are its own, and a rollup that swept them would make the specialist
         // look more expensive than it was.
-        expect(card).toHaveTextContent('2 step(s) between');
+        expect(card).toHaveTextContent('2 steps by this specialist');
         expect(card).toHaveTextContent('300 tokens');
     });
 
@@ -995,3 +1016,50 @@ describe('the delegation section', () => {
     });
 });
 
+
+/**
+ * #4894 — the run's error is worded, a run that needs a person offers its
+ * resume and abort here, and a run that could not start reads as failed.
+ */
+describe('a run that stopped or is waiting', () => {
+    it('words a known engine error and keeps its detail folded away', () => {
+        renderDetail([step()], {
+            ...RUN,
+            status: 'FAILED',
+            errorMessage: 'skill_not_mountable: iam-attribution has no passing evaluation record',
+        });
+        const box = screen.getByTestId('run-error');
+        expect(box).toHaveTextContent('A skill this run needs could not be loaded');
+        expect(box).toHaveTextContent('Technical detail');
+        expect(box).toHaveTextContent('iam-attribution has no passing evaluation record');
+        expect(box).not.toHaveTextContent('skill_not_mountable');
+    });
+
+    it('words a kill from either engine', () => {
+        renderDetail([step()], { ...RUN, status: 'FAILED', errorMessage: 'tool_runner_run_agent_killed: tenant kill' });
+        expect(screen.getByTestId('run-error')).toHaveTextContent('kill switch');
+    });
+
+    it('shows an error it does not know as written', () => {
+        renderDetail([step()], { ...RUN, status: 'FAILED', errorMessage: 'something odd happened' });
+        expect(screen.getByTestId('run-error')).toHaveTextContent('something odd happened');
+    });
+
+    it('offers resume and abort on a run awaiting approval', () => {
+        renderDetail([step()], { ...RUN, status: 'AWAITING_APPROVAL' }, { canOperate: true });
+        expect(screen.getByTestId('run-detail-resume')).toBeEnabled();
+        expect(screen.getByTestId('run-detail-abort')).toBeEnabled();
+    });
+
+    it('shows them disabled to a viewer who cannot write', () => {
+        renderDetail([step()], { ...RUN, status: 'PAUSED' }, { canOperate: false });
+        expect(screen.getByTestId('run-detail-resume')).toBeDisabled();
+        expect(screen.getByTestId('run-detail-abort')).toBeDisabled();
+    });
+
+    it('offers neither on a finished run', () => {
+        renderDetail([step()], { ...RUN, status: 'COMPLETED' }, { canOperate: true });
+        expect(screen.queryByTestId('run-detail-resume')).toBeNull();
+        expect(screen.queryByTestId('run-detail-abort')).toBeNull();
+    });
+});

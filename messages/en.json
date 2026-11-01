@@ -11519,7 +11519,7 @@
         "delegation": {
           "title": "Delegated to specialists",
           "body": "This run handed work to a subagent. A specialist gets a subset of what the run itself may reach — never more — and its reads are recorded below as the run's own steps, which is how they are charged to it.",
-          "stepsClaimed": "{count} step(s) between",
+          "stepsClaimed": "{count, plural, one {# step by this specialist} other {# steps by this specialist}}",
           "stepsUnknown": "Steps not attributable",
           "stepsUnknownWhy": "This delegation recorded no start position, so which steps were the specialist's cannot be said.",
           "tokens": "{count} tokens",
@@ -11527,7 +11527,8 @@
           "refused": "Answer refused by the output guard",
           "accepted": "Answer accepted",
           "overlapping": "Ran at the same time as another delegation, so the steps below are claimed by both and these figures do not sum to the run's total.",
-          "stepBadge": "via {agents}"
+          "stepBadge": "via {agents}",
+          "specialist": "Specialist: {name}"
         },
         "crumbAgents": "Agents",
         "loadingAria": "Loading run detail",
@@ -11579,7 +11580,10 @@
         },
         "stepTokens": "{count} tokens",
         "decisionLink": "Art 12 decision",
-        "causedBy": "Caused by automation execution {executionId} — this run was started by a rule, not by a person. The name above is the rule owner, whose permissions it ran under.",
+        "causedByRuleAs": "Started by the automation rule “{rule}”, not by a person. It ran under the permissions of the rule’s owner, {owner}.",
+        "causedByRule": "Started by the automation rule “{rule}”, not by a person. It ran under the permissions of the rule’s owner.",
+        "causedByUnnamedRule": "Started by an automation rule, not by a person. It ran under the permissions of the rule’s owner.",
+        "startedBy": "Started by {name}.",
         "skillsTitle": "Skills this run was taught",
         "skillsNotRecorded": "Not recorded. This run started before runs pinned their skills, so what it was taught cannot be shown.",
         "skillsNone": "This run mounted no skill.",
@@ -11592,6 +11596,15 @@
           "clear": "Clear selection",
           "position": "Step {position} of {total}",
           "none": "{total, plural, one {# step} other {# steps}} — none selected"
+        },
+        "error": {
+          "skill_not_mountable": "A skill this run needs could not be loaded, so it stopped before calling a model.",
+          "skill_pin_drift": "A skill this run uses changed while it was waiting, so it could not carry on with the version it started with. Start a new run.",
+          "flue_run_failed": "The engine running this agent failed.",
+          "tool_runner_run_failed": "The engine running this agent failed.",
+          "monthly_token_budget_exceeded": "This workspace has used its monthly token budget, so the run stopped.",
+          "run_agent_killed": "The run was stopped because a kill switch was engaged for this agent.",
+          "detailLabel": "Technical detail"
         }
       },
       "awaitingApprovalNoProposals": "Paused for review — nothing is queued for approval. Open the run to see what stopped it, then Resume.",
