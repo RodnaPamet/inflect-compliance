@@ -293,6 +293,12 @@ export async function linkWork(
         select: { id: true },
     });
     if (!tenant) throw badRequest('Linked work must belong to a tenant in this organization.');
+    // The linked item must exist in that workspace (#4852): the route took
+    // any id, and a link to nothing counts toward progress as never done.
+    const labels = await readEntityLabels(input.tenantId, new Map([[input.entityType, [input.entityId]]]));
+    if (!labels.has(`${input.entityType}:${input.entityId}`)) {
+        throw badRequest('That item does not exist in the chosen workspace.', { reason: 'LINKED_ITEM_NOT_FOUND' });
+    }
 
     return prisma.orgInitiativeLink.upsert({
         where: {
@@ -316,7 +322,197 @@ export async function linkWork(
 
 export async function unlinkWork(ctx: OrgContext, linkId: string) {
     assertWrite(ctx);
-    await prisma.orgInitiativeLink.deleteMany({ where: { id: linkId, organizationId: ctx.organizationId } });
+    const removed = await prisma.orgInitiativeLink.deleteMany({ where: { id: linkId, organizationId: ctx.organizationId } });
+    // Say so when there was nothing to remove (#4852), so a refused or stale
+    // unlink is not reported as done.
+    if (removed.count === 0) throw notFound('That link no longer exists.');
+}
+
+// ─── Linked work by name (#4852) ────────────────────────────────────
+
+/**
+ * Where each linked entity type opens inside its workspace. A finding has no
+ * page of its own: the findings list opens it in a sheet from `?finding=`.
+ */
+const LINK_HREF: Record<string, (id: string) => string> = {
+    CONTROL: (id) => `/controls/${id}`,
+    RISK: (id) => `/risks/${id}`,
+    TASK: (id) => `/tasks/${id}`,
+    FINDING: (id) => `/findings?finding=${id}`,
+};
+
+export interface ResolvedLink {
+    id: string;
+    entityType: string;
+    entityId: string;
+    linkedTenantId: string;
+    /** The workspace's name, or null once it has left the organization. */
+    workspaceName: string | null;
+    /** The linked item's name, or null when it no longer exists. */
+    name: string | null;
+    /** Where the item lives, or null when it cannot be opened. */
+    href: string | null;
+}
+
+type EntityLabel = { name: string };
+
+/** One workspace's entities of each type, by id, through its own RLS context. */
+async function readEntityLabels(
+    tenantId: string,
+    idsByType: Map<string, string[]>,
+): Promise<Map<string, EntityLabel>> {
+    return withTenantDb(tenantId, async (db) => {
+        const out = new Map<string, EntityLabel>();
+        const key = (type: string, id: string) => `${type}:${id}`;
+        const controls = idsByType.get('CONTROL') ?? [];
+        if (controls.length) {
+            for (const c of await db.control.findMany({ where: { tenantId, id: { in: controls }, deletedAt: null }, select: { id: true, name: true, code: true } })) {
+                out.set(key('CONTROL', c.id), { name: c.code ? `${c.code} · ${c.name}` : c.name });
+            }
+        }
+        const risks = idsByType.get('RISK') ?? [];
+        if (risks.length) {
+            for (const r of await db.risk.findMany({ where: { tenantId, id: { in: risks }, deletedAt: null }, select: { id: true, title: true } })) {
+                out.set(key('RISK', r.id), { name: r.title });
+            }
+        }
+        const tasks = idsByType.get('TASK') ?? [];
+        if (tasks.length) {
+            for (const tk of await db.task.findMany({ where: { tenantId, id: { in: tasks }, deletedAt: null }, select: { id: true, title: true, key: true } })) {
+                out.set(key('TASK', tk.id), { name: tk.key ? `${tk.key} · ${tk.title}` : tk.title });
+            }
+        }
+        const findings = idsByType.get('FINDING') ?? [];
+        if (findings.length) {
+            for (const f of await db.finding.findMany({ where: { tenantId, id: { in: findings }, deletedAt: null }, select: { id: true, title: true } })) {
+                out.set(key('FINDING', f.id), { name: f.title });
+            }
+        }
+        return out;
+    });
+}
+
+/** Names, workspaces and addresses of an initiative's linked work (#4852). */
+export async function resolveInitiativeLinks(
+    ctx: OrgContext,
+    links: Array<{ id: string; linkedTenantId: string; entityType: string; entityId: string }>,
+): Promise<ResolvedLink[]> {
+    assertRead(ctx);
+    if (links.length === 0) return [];
+    const tenantIds = [...new Set(links.map((l) => l.linkedTenantId))];
+    const tenants = await prisma.tenant.findMany({
+        where: { id: { in: tenantIds }, organizationId: ctx.organizationId, deletedAt: null },
+        select: { id: true, name: true, slug: true },
+    });
+    const tenantById = new Map(tenants.map((t) => [t.id, t]));
+    const labels = new Map<string, EntityLabel>();
+    // guardrail-allow: n+1 — one withTenantDb per workspace: each needs its
+    // OWN RLS-bound transaction, as `resolveLinkCompletion` above. Bounded by
+    // the number of workspaces the initiative spans.
+    for (const tenantId of tenantIds) { // guardrail-allow: n+1
+        if (!tenantById.has(tenantId)) continue;
+        const idsByType = new Map<string, string[]>();
+        for (const l of links.filter((x) => x.linkedTenantId === tenantId)) {
+            idsByType.set(l.entityType, [...(idsByType.get(l.entityType) ?? []), l.entityId]);
+        }
+        try {
+            for (const [k, v] of await readEntityLabels(tenantId, idsByType)) labels.set(`${tenantId}|${k}`, v);
+        } catch (err) {
+            logger.warn('org-initiative.link_label_failed', {
+                component: 'org-security-initiative',
+                tenantId,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+    return links.map((l) => {
+        const tenant = tenantById.get(l.linkedTenantId);
+        const label = labels.get(`${l.linkedTenantId}|${l.entityType}:${l.entityId}`);
+        const hrefFor = LINK_HREF[l.entityType];
+        return {
+            id: l.id,
+            entityType: l.entityType,
+            entityId: l.entityId,
+            linkedTenantId: l.linkedTenantId,
+            workspaceName: tenant?.name ?? null,
+            name: label?.name ?? null,
+            href: tenant && label && hrefFor ? `/t/${tenant.slug}${hrefFor(l.entityId)}` : null,
+        };
+    });
+}
+
+/** The organization's live workspaces, to choose where linked work lives. */
+export async function listLinkableWorkspaces(ctx: OrgContext): Promise<Array<{ id: string; name: string }>> {
+    assertWrite(ctx);
+    return prisma.tenant.findMany({
+        where: { organizationId: ctx.organizationId, deletedAt: null },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+        take: 500,
+    });
+}
+
+/**
+ * Items of one type in one of the organization's workspaces whose name
+ * matches `q`, for the Link work picker (#4852). Read through the
+ * workspace's own RLS context.
+ */
+export async function searchLinkCandidates(
+    ctx: OrgContext,
+    input: { tenantId: string; entityType: string; q: string },
+): Promise<Array<{ id: string; name: string }>> {
+    assertWrite(ctx);
+    if (!(INITIATIVE_LINK_TYPES as readonly string[]).includes(input.entityType)) {
+        throw badRequest(`Invalid link entity type "${input.entityType}".`);
+    }
+    const tenant = await prisma.tenant.findFirst({
+        where: { id: input.tenantId, organizationId: ctx.organizationId, deletedAt: null },
+        select: { id: true },
+    });
+    if (!tenant) throw badRequest('Linked work must belong to a workspace in this organization.');
+    const q = input.q.trim().slice(0, 200);
+    const contains = q ? { contains: q, mode: 'insensitive' as const } : undefined;
+    const take = 20;
+    return withTenantDb(input.tenantId, async (db) => {
+        switch (input.entityType) {
+            case 'CONTROL': {
+                const rows = await db.control.findMany({
+                    where: { tenantId: input.tenantId, deletedAt: null, ...(contains ? { OR: [{ name: contains }, { code: contains }] } : {}) },
+                    select: { id: true, name: true, code: true },
+                    orderBy: { updatedAt: 'desc' },
+                    take,
+                });
+                return rows.map((r) => ({ id: r.id, name: r.code ? `${r.code} · ${r.name}` : r.name }));
+            }
+            case 'RISK': {
+                const rows = await db.risk.findMany({
+                    where: { tenantId: input.tenantId, deletedAt: null, ...(contains ? { title: contains } : {}) },
+                    select: { id: true, title: true },
+                    orderBy: { updatedAt: 'desc' },
+                    take,
+                });
+                return rows.map((r) => ({ id: r.id, name: r.title }));
+            }
+            case 'TASK': {
+                const rows = await db.task.findMany({
+                    where: { tenantId: input.tenantId, deletedAt: null, ...(contains ? { OR: [{ title: contains }, { key: contains }] } : {}) },
+                    select: { id: true, title: true, key: true },
+                    orderBy: { updatedAt: 'desc' },
+                    take,
+                });
+                return rows.map((r) => ({ id: r.id, name: r.key ? `${r.key} · ${r.title}` : r.title }));
+            }
+            default: {
+                const rows = await db.finding.findMany({
+                    where: { tenantId: input.tenantId, deletedAt: null, ...(contains ? { title: contains } : {}) },
+                    select: { id: true, title: true },
+                    orderBy: { updatedAt: 'desc' },
+                    take,
+                });
+                return rows.map((r) => ({ id: r.id, name: r.title }));
+            }
+        }
+    });
 }
 
 // ─── Widget surface ─────────────────────────────────────────────────
