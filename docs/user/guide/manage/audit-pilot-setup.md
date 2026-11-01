@@ -8,20 +8,22 @@ The {{ui:agents.auditPilot.title}} page sets up the pilot auditor: a registered 
 
 ## Where to find it
 
-Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choose **{{ui:common.ui.viewsMenu}}** › **{{ui:agents.views.auditPilot}}**. The breadcrumb reads **{{ui:agents.auditPilot.crumbAgents}}** › **{{ui:agents.auditPilot.title}}**.
+Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choose **{{ui:common.ui.viewsMenu}}** › **{{ui:agents.views.auditPilot}}**. The breadcrumb reads **{{ui:agents.crumbDashboard}}** › **{{ui:agents.auditPilot.crumbAgents}}** › **{{ui:agents.auditPilot.title}}**, and the page's own **{{ui:common.ui.viewsMenu}}** sits at the top right.
 
 ## Who can use it
 
 | Action | Roles |
 | --- | --- |
-| Open the page and see the dry run | Owner, Admin, AI admin |
-| Set the pilot up | Owner or Admin whose line of defence is second line |
+| Open the page | Owner, Admin, AI admin |
+| See the dry run and set the pilot up | Owner or Admin whose line of defence is second line |
+
+An AI admin can open the page but cannot set the pilot up, because the set-up also creates control test plans, which an AI admin cannot do.
 
 Everyone else sees **{{ui:agents.auditPilot.accessTitle}}** instead of the page.
 
 ## Before you start
 
-- Your membership must be marked as **second line**. An Owner sets each member's line of defence on the [Members](../admin/members.md) page.
+- Your membership must be marked as **second line**. An Owner sets each member's line of defence on the [Members](../admin/members.md) page, and nobody can set their own.
 - The auditor must stay independent of what it audits, so its owner must not be one of the people it would be auditing. If you are not independent, the dry run says why.
 
 ## What it sets up
@@ -47,7 +49,11 @@ Each procedure's plan runs on the control it audits, matched by its ISO/IEC 2700
 | **{{ui:agents.auditPilot.outcome.PENDING}}** | Waiting for something else first, such as the auditor's risk assessment |
 | **{{ui:agents.auditPilot.outcome.DIFFERS}}** | Something already exists but differs from the pilot's set-up. It is reported, not changed |
 
-If the set-up cannot go ahead at all, the page says why instead of listing steps.
+If you cannot set the pilot up, a notice says so before anything else: **{{ui:agents.auditPilot.readiness.heading}}**, followed by each permission your role is missing and, if it applies, that your membership is not marked second line. The page then runs no dry run, and its buttons stay greyed out.
+
+Each step is named in words, such as **{{ui:agents.auditPilot.stepKind.REGISTER}}**, **{{ui:agents.auditPilot.stepKind.GRANT}}** or **{{ui:agents.auditPilot.stepKind.ACTIVATE}}**, and each plan by its procedure's name. A plan that already exists with other settings says: {{ui:agents.auditPilot.planDiffers}} Click **{{ui:agents.auditPilot.technicalDetail}}** under a step to see the exact detail the set-up recorded.
+
+If the set-up cannot go ahead at all, the page says why in a sentence instead of listing steps, with the exact detail under **{{ui:agents.auditPilot.technicalDetail}}**.
 
 ## What you can do
 
@@ -61,15 +67,17 @@ If the set-up cannot go ahead at all, the page says why instead of listing steps
 
 ### Finish activation
 
-The auditor is registered as a draft. If the step **activate** says it is waiting for a risk assessment, complete the auditor's risk assessment on its page, then come back and run the set-up again.
+The auditor is registered as a draft. If **{{ui:agents.auditPilot.stepKind.ACTIVATE}}** is waiting for a risk assessment, it says: {{ui:agents.auditPilot.waitingOn.UNSCORED}} Click **{{ui:agents.auditPilot.openAuditor}}** to go there, complete the assessment, then come back and click **{{ui:agents.auditPilot.check}}**.
 
 ## Empty and error states
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | {{ui:agents.auditPilot.nameAControl}} | A procedure's control could not be matched, or matched more than one control | Name the control for that procedure |
-| A reason saying your line of defence is not second line | Your membership is not marked second line | Ask an Owner to set it on the Members page |
-| A reason naming permissions you do not hold | Your role cannot register the auditor or schedule its plans | Ask an Owner |
+| **{{ui:agents.auditPilot.readiness.heading}}** | Your role is missing a permission the set-up needs, or your membership is not marked second line | Ask an Owner for what the notice names |
+| {{ui:agents.auditPilot.refusal.OWNER_NOT_INDEPENDENT}} | You own agents the auditor would audit | Move those agents to another owner, or have someone else own the auditor |
+| {{ui:agents.auditPilot.refusal.AUDITOR_OWNED_BY_ANOTHER}} | Someone else already owns an auditor with this name | Choose another name |
+| {{ui:agents.auditPilot.refusal.AUDITOR_RETIRED}} | An auditor with this name was retired | Choose another name |
 | {{ui:agents.auditPilot.requestFailed}} | The dry run or set-up did not go through | Try again |
 | **{{ui:agents.auditPilot.accessTitle}}** | {{ui:agents.auditPilot.accessMessage}} | Ask an Owner or Admin |
 
