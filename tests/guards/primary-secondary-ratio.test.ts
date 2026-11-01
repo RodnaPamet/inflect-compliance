@@ -476,6 +476,14 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // version list (the R7-PR1 rule; the per-approval Approve on the same page was
 // demoted for #4727). The new "Sign out and use another account" is secondary.
 // Net change: zero.
+// 2026-11-01 — #4852 initiative page: 173 stays, PAID FOR. The page gained an
+// Edit sheet and a Link work dialog, and `modal-action-order` requires each
+// one's LAST action to be primary: two primaries. They are bought by two row
+// actions (the R7-PR1 rule): the framework template library's per-row Install,
+// one per uninstalled template, and the AI risk suggestions page's per-row
+// "Save & accept", shown while that row is edited (its Accept toggle was
+// demoted for #4689). The page's Edit and Link work triggers are secondary.
+// Net change: zero.
 const MAX_PRIMARY_COUNT = 173;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));

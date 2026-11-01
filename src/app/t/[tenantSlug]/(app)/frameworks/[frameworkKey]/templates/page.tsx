@@ -352,9 +352,11 @@ export default function TemplateLibraryPage() {
                                                 )}
                                             </div>
                                         </button>
+                                        {/* A row action, so secondary (the R7-PR1 rule): every
+                                            uninstalled template renders one. */}
                                         {canInstall && !t.installed && (
                                             <Button
-                                                variant="primary"
+                                                variant="secondary"
                                                 size="xs"
                                                 onClick={() => installTemplate(t.code)}
                                                 disabled={installing === t.code}
