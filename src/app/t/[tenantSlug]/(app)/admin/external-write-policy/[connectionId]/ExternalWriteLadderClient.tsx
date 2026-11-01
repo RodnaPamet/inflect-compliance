@@ -41,6 +41,7 @@
  * place they can be wrong.
  */
 import { useCallback, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 
 // Imported, never respelled. A local union of the same four strings is how a
@@ -51,6 +52,7 @@ import {
     LADDER,
     isAboveClamp,
     type ExternalWriteMode,
+    type ExternalWriteRefusal,
 } from '@/lib/integrations/external-write-ladder';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -82,6 +84,8 @@ interface PolicyPayload {
     evidenceInWindow?: number;
     maxMode: ExternalWriteMode;
     refusals: Record<string, string | null>;
+    /** The refusals as codes, worded here (#4878). Absent from an older server. */
+    blocked?: Record<string, ExternalWriteRefusal | null>;
     honoured: {
         maxMode: ExternalWriteMode;
         ceilingBelowTopRung: boolean;
@@ -137,13 +141,28 @@ export function ExternalWriteLadderClient({ connectionId }: { connectionId: stri
         [apiUrl, path, mutate, t],
     );
 
-    if (error) {
-        return (
-            <div className="space-y-section">
-                <BackAffordance />
-                <InlineNotice variant="error">{t('externalWriteLadder.loadError')}</InlineNotice>
-            </div>
-        );
+    /** A refusal in the reader's language, never the stored mode names (#4878). */
+    function refusalText(code: ExternalWriteRefusal | null | undefined, sentence: string | null): string | null {
+        if (code === undefined) return sentence;
+        if (code === null) return null;
+        const mode = (m: ExternalWriteMode) => t(`externalWriteLadder.mode.${m}`);
+        switch (code.code) {
+            case 'ABOVE_CLAMP':
+                return t('externalWriteLadder.refusal.ABOVE_CLAMP', { next: mode(code.next), clamp: mode(code.clamp) });
+            case 'MULTI_RUNG':
+                return t('externalWriteLadder.refusal.MULTI_RUNG', { from: mode(code.from), to: mode(code.to) });
+            case 'NO_START':
+                return t('externalWriteLadder.refusal.NO_START', { mode: mode(code.mode) });
+            case 'EVIDENCE_UNCOUNTED':
+                return t('externalWriteLadder.refusal.EVIDENCE_UNCOUNTED');
+            case 'TOO_LITTLE_EVIDENCE':
+                return t(`externalWriteLadder.refusal.TOO_LITTLE_${code.kind === 'approvals' ? 'APPROVALS' : 'INTENTS'}`, {
+                    count: code.count,
+                    required: code.required,
+                });
+            case 'DWELL':
+                return t('externalWriteLadder.refusal.DWELL', { days: code.days, required: code.required, left: code.left });
+        }
     }
 
     const current = data?.mode ?? null;
@@ -153,7 +172,7 @@ export function ExternalWriteLadderClient({ connectionId }: { connectionId: stri
     // The reason the SERVER gave for this rung, whatever it is. Read rather than
     // recomputed: the dwell arithmetic, the evidence count and the ceiling all
     // live server-side, and a second copy here is a second thing to be wrong.
-    const nextRefusal = next && data ? (data.refusals[next] ?? null) : null;
+    const nextRefusal = next && data ? refusalText(data.blocked?.[next], data.refusals[next] ?? null) : null;
     const nextAboveCeiling = next && data ? isAboveClamp(next, data.honoured.maxMode) : false;
 
     return (
@@ -175,9 +194,28 @@ export function ExternalWriteLadderClient({ connectionId }: { connectionId: stri
             <Heading level={1}>{t('externalWriteLadder.title')}</Heading>
             <p className="max-w-3xl text-sm text-content-muted">{t('externalWriteLadder.intro')}</p>
 
+            {/* Where each rung's effect shows (#4878): the connection's passport
+                and the proposal queue. */}
+            <p className="text-sm text-content-muted" id="external-write-ladder-links">
+                <Link
+                    href={tenantHref(`/admin/integrations/${encodeURIComponent(connectionId)}`)}
+                    className="font-medium text-content-info hover:underline"
+                >
+                    {t('externalWriteLadder.passportLink')}
+                </Link>
+                {' · '}
+                <Link href={tenantHref('/agents/proposals')} className="font-medium text-content-info hover:underline">
+                    {t('externalWriteLadder.proposalsLink')}
+                </Link>
+            </p>
+
             {saveError && <InlineNotice variant="error">{saveError}</InlineNotice>}
 
-            {isLoading || !data ? (
+            {/* A failed load keeps the page — title, breadcrumb and links — and
+                says so where the policy would be (#4878). */}
+            {error ? (
+                <InlineNotice variant="error">{t('externalWriteLadder.loadError')}</InlineNotice>
+            ) : isLoading || !data ? (
                 <p className="text-sm text-content-muted">{t('externalWriteLadder.loading')}</p>
             ) : (
                 <Card className="space-y-default p-4" data-testid="external-write-ladder-card">
@@ -213,6 +251,22 @@ export function ExternalWriteLadderClient({ connectionId }: { connectionId: stri
                                 date: formatDate(data.modeSince),
                                 days: data.honoured.minDays,
                             })}
+                        </p>
+                    )}
+
+                    {/* THE EVIDENCE CONDITION, stated before it refuses (#4878).
+                        Widening needs both the days and this rung's evidence. */}
+                    {data.honoured.minEvidence[data.mode] !== undefined && (
+                        <p className="text-sm text-content-muted" id="external-write-ladder-evidence">
+                            {t(
+                                data.mode === 'PROPOSE_ONLY'
+                                    ? 'externalWriteLadder.evidenceApprovals'
+                                    : 'externalWriteLadder.evidenceIntents',
+                                {
+                                    required: data.honoured.minEvidence[data.mode] ?? 0,
+                                    count: data.evidenceInWindow ?? 0,
+                                },
+                            )}
                         </p>
                     )}
 

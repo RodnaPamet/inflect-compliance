@@ -65,8 +65,11 @@ import {
     EXTERNAL_MAX_MODE,
     coerceStoredMode,
     isAboveClamp,
+    classifyMove,
+    describeExternalRefusal,
     refusalForMove,
     type ExternalWriteMode,
+    type ExternalWriteRefusal,
     type ExternalWriteState,
 } from '@/lib/integrations/external-write-ladder';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
@@ -82,6 +85,8 @@ export interface ExternalWritePolicy extends ExternalWriteState {
     readonly maxMode: ExternalWriteMode;
     /** Why each rung above the current one is refused, or null where permitted. */
     readonly refusals: Readonly<Record<string, string | null>>;
+    /** The same verdicts as codes with their figures, for a page to word (#4878). */
+    readonly blocked: Readonly<Record<string, ExternalWriteRefusal | null>>;
 }
 
 /**
@@ -318,30 +323,18 @@ export async function getExternalWritePolicy(
     // guess what the next rung is; one that shows a reason per rung can explain
     // the refusal the operator is about to hit before they hit it.
     const refusals: Record<string, string | null> = {};
+    const blocked: Record<string, ExternalWriteRefusal | null> = {};
     for (const rung of LADDER) {
-        refusals[rung] = isAboveClamp(rung, EXTERNAL_MAX_MODE)
-            ? // UNREACHABLE WHILE THE CEILING IS AT THE TOP RUNG, and kept
-              // deliberately. Since 2026-10-06 `EXTERNAL_MAX_MODE` is
-              // `AUTOMATIC`, so this comparison is false for every rung and the
-              // `refusalForMove` arm answers for all four. The branch is not
-              // dead code in the sense that matters — lowering the ceiling is a
-              // reviewed one-word diff away (a rollback, an incident), and it is
-              // this sentence an operator then reads. Deleting it would mean
-              // whoever lowers the ceiling has to re-invent the wording while
-              // the incident is live.
-              //
-              // REWORDED, and the old sentence is why. It read "nothing reads
-              // this rung to decide whether to send yet", which was true while
-              // `AUTOMATIC` was unimplemented and is false now that the arm
-              // exists. An operator who can disprove a refusal's stated reason
-              // concludes the gate is broken — #2843 finding 31 — so the
-              // sentence says what is actually true: the rung works, and this
-              // build is held below it on purpose.
-              `${rung} is above the ceiling this build honours (${EXTERNAL_MAX_MODE}). `
-              + 'The rung is implemented; this build is deliberately held below it, and '
-              + 'raising the ceiling is a reviewed code change rather than a setting. '
-              + 'Selecting it here would name an authority the dispatch would refuse.'
-            : refusalForMove(state, rung, now);
+        // ABOVE_CLAMP is UNREACHABLE WHILE THE CEILING IS AT THE TOP RUNG, and
+        // kept deliberately: since 2026-10-06 `EXTERNAL_MAX_MODE` is
+        // `AUTOMATIC`, so this comparison is false for every rung. Lowering the
+        // ceiling is a reviewed one-word diff away (a rollback, an incident),
+        // and it is this verdict an operator then reads.
+        const verdict: ExternalWriteRefusal | null = isAboveClamp(rung, EXTERNAL_MAX_MODE)
+            ? { code: 'ABOVE_CLAMP', next: rung, clamp: EXTERNAL_MAX_MODE }
+            : classifyMove(state, rung, now);
+        blocked[rung] = verdict;
+        refusals[rung] = verdict ? describeExternalRefusal(verdict) : null;
     }
 
     return {
@@ -350,6 +343,7 @@ export async function getExternalWritePolicy(
         connectionName: row.name,
         maxMode: EXTERNAL_MAX_MODE,
         refusals,
+        blocked,
     };
 }
 

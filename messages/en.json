@@ -8286,7 +8286,20 @@
         "DISABLED": "Turns off external writes for this connection. Nothing will be sent and nothing recorded.",
         "DRY_RUN": "The agent will record what it WOULD change in this system, and send nothing. This is the rung the observation window is measured on.",
         "PROPOSE_ONLY": "Every change the agent decides on will be queued for a person to approve. Nothing reaches the connected system until somebody accepts it.",
-        "AUTOMATIC": "The agent will change this connected system without asking, whenever it decides to. Read the dry-run record before granting this."
+        "AUTOMATIC": "The agent will change this connected system without asking, but only through a parameter set an Owner has approved and with the system's state before each change captured. A write with neither is refused. Read the dry-run record before granting this."
+      },
+      "passportLink": "This connection's integration passport",
+      "proposalsLink": "Agent proposals",
+      "evidenceIntents": "Widening also needs at least {required} recorded dry-run intent in that time. Recorded so far: {count}.",
+      "evidenceApprovals": "Widening also needs at least {required} approved proposal in that time. Approved so far: {count}.",
+      "refusal": {
+        "ABOVE_CLAMP": "{next} is above {clamp}, the highest step this build of Inflect acts on, so it is not offered.",
+        "MULTI_RUNG": "A connection widens one step at a time, so {from} cannot go straight to {to}.",
+        "NO_START": "{mode} has no recorded start. Narrow, then choose {mode} again to start its window.",
+        "EVIDENCE_UNCOUNTED": "What this step has recorded could not be counted, so it cannot widen yet. Reload the page to try again.",
+        "TOO_LITTLE_INTENTS": "This step has recorded {count} dry-run intents and needs at least {required}. A week with nothing recorded is an agent that never tried, not a quiet week.",
+        "TOO_LITTLE_APPROVALS": "This step has {count} approved proposals and needs at least {required} before it can widen.",
+        "DWELL": "This step has been held {days} of {required} days. {left} more to go, so what it recorded can be read before a wider step acts on it."
       }
     },
     "aiFeatures": {
