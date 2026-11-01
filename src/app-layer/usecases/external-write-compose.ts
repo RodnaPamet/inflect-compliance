@@ -482,6 +482,8 @@ export async function composeExternalWriteProposal(
         // Which template was in force, so a reviewer sees what was filled in
         // rather than only the result.
         proposedBySessionRef: `compose:${set.label}:${randomUUID()}`,
+        // WHO composed it, so the second-approver rule can refuse them (#4895).
+        composedByUserId: ctx.userId,
     });
 
     logger.info('external write composed by a human', {

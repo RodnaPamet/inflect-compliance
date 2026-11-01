@@ -8752,6 +8752,42 @@
       "saved": "Saved.",
       "save": "Save",
       "forbidden": "Only an administrator can change where AI runs."
+    },
+    "agentOversight": {
+      "heading": "Agent oversight",
+      "intro": "Who approves agents’ changes to outside systems, and who can read the agent assurance pages. Only an owner can change these.",
+      "forbidden": "Only an owner can view or change the agent oversight settings.",
+      "loadFailed": "Couldn’t load the agent oversight settings.",
+      "saveFailedHeading": "The setting was not changed",
+      "saveFailedBody": "Try again. If it keeps failing, reload the page.",
+      "on": "On",
+      "off": "Off",
+      "turnOn": "Turn on",
+      "turnOff": "Turn off",
+      "groupApprovals": "Approvals",
+      "groupAuditors": "Auditor access",
+      "setting": {
+        "composeNeedsSecondApprover": {
+          "name": "A second person approves composed requests",
+          "description": "When on, the person who composes a request on the Compose a request page cannot approve it. Someone else who can review agent proposals must."
+        },
+        "exactParameterEditNeedsSecondApprover": {
+          "name": "A second person approves every saved-parameter change",
+          "description": "A change that opens a field always needs someone other than the person who proposed it. When on, so does a change to exact values."
+        },
+        "auditorReadsDecisionLog": {
+          "name": "Auditors can read the AI decision log",
+          "description": "Lets Auditors, and custom roles that can view the agent register, read the record of each model call."
+        },
+        "auditorReadsReceipts": {
+          "name": "Auditors can read agent receipts",
+          "description": "Lets them read and export the signed receipts of agents’ tool actions."
+        },
+        "auditorReadsQuarantine": {
+          "name": "Auditors can read quarantined proposals",
+          "description": "Lets them read the proposals the output guard refused, including the content that was attempted."
+        }
+      }
     }
   },
   "riskManager": {
@@ -12745,6 +12781,10 @@
       "refusal": {
         "SKILL_CATALOGUE_OVER_BUDGET": "These skills' descriptions total {used} bytes, over the {budget}-byte budget a run can mount, so a run of this version would be refused. Choose fewer skills, or skills with shorter descriptions."
       }
+    },
+    "oversightAccess": {
+      "title": "You can’t open this page",
+      "message": "Owners, Admins and AI admins can open it. An owner can also let Auditors open it, under Admin → AI features."
     }
   },
   "securityTesting": {

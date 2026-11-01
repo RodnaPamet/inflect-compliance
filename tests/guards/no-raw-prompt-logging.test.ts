@@ -178,6 +178,7 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/app-layer/jobs/agent-proposal-expiry.ts — identifier bound elsewhere',
     'src/app-layer/jobs/agent-invoke-dispatch.ts — identifier bound elsewhere',
     'src/app-layer/jobs/agent-proposal-sample-audit.ts — identifier bound elsewhere',
+    'src/app-layer/usecases/agent-oversight-settings.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-policy-card.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-proposal-sample-audit.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-proposals.ts — identifier bound elsewhere',
@@ -869,7 +870,16 @@ const SINK_FLOOR = 30;
 // template with `String(...)` concatenation made it WORSE, 218 to 223, because
 // each of those calls is another helper the rule cannot open. Recorded because
 // the obvious fix was the wrong one.
-const MEASURED_HOLES = 223;
+// 223 -> 225 on 2026-11-01 (round 15, the agent oversight settings). Three
+// holes in three new sinks, and the tree measured 222 before them. All three
+// are `identifier bound elsewhere` over values with no free text in them: the
+// settings change's audit row carries `switches`, a record of booleans keyed
+// by the closed `AgentOversightKey` union; the surface refusal's row carries
+// `surface`, a closed three-member union; the exact-value parameter refusal's
+// row carries the parameter set's id. The first was NARROWED before it was
+// counted — it had seven holes as a details template, two `.map` summaries and
+// a three-field metadata object, and is one structured field now.
+const MEASURED_HOLES = 225;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -929,7 +939,12 @@ const MEASURED_HOLES = 223;
 // audit-failure warn. TIGHTENS the ratio: (215+6)/124 = 1.782.
 //
 // 124 -> 125: the reply-claim sink of #3744, recorded beside its hole above.
-const MEASURED_SINKS = 125;
+//
+// 125 -> 130: round 15's five sinks — the settings change's audit row and its
+// info line, the surface refusal's AUTHZ_DENIED row, the composer refusal's and
+// the exact-value parameter refusal's. Raising the denominator by more than the
+// numerator TIGHTENS the ratio: (225+6)/130 = 1.777.
+const MEASURED_SINKS = 130;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

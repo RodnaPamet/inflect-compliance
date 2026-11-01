@@ -107,6 +107,13 @@ export interface AgentsViewsMenuProps {
      * entry rather than one that would be refused.
      */
     canSetOrphanPass?: boolean;
+    /**
+     * Which of the three assurance surfaces the viewer may read — the register
+     * key, or the inventory view key while an owner lets Auditors read that
+     * surface (`agent-oversight-settings.ts`, round 15). Each defaults to
+     * `canInvestigate`, the gate those three entries had before.
+     */
+    oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
 }
 
 export function AgentsViewsMenu({
@@ -118,7 +125,13 @@ export function AgentsViewsMenu({
     canReadReports = canInvestigate,
     proposalsAwaitingReview = null,
     canSetOrphanPass = false,
+    oversightReads,
 }: AgentsViewsMenuProps) {
+    const reads = oversightReads ?? {
+        decisions: canInvestigate,
+        receipts: canInvestigate,
+        quarantine: canInvestigate,
+    };
     const t = useTranslations('agents');
     const href = (path: string) => `/t/${tenantSlug}${path}`;
     return (
@@ -182,21 +195,21 @@ export function AgentsViewsMenu({
                     id: 'assurance',
                     label: t('views.groupAssurance'),
                     items: [
-                        canInvestigate && {
+                        reads.receipts && {
                             id: 'agents-view-receipts',
                             label: t('views.receipts'),
                             icon: <BadgeCheck className="size-4" />,
                             href: href('/agents/receipts'),
                             selected: current === 'receipts',
                         },
-                        canInvestigate && {
+                        reads.quarantine && {
                             id: 'agents-view-quarantine',
                             label: t('views.quarantine'),
                             icon: <ShieldSlash className="size-4" />,
                             href: href('/agents/quarantine'),
                             selected: current === 'quarantine',
                         },
-                        canInvestigate && {
+                        reads.decisions && {
                             // The EU AI Act record: one row per model call,
                             // with whether a person looked. Assurance rather
                             // than Operate — nobody acts on a run from here,

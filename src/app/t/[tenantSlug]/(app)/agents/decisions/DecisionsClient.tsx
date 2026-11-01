@@ -79,6 +79,7 @@ export function DecisionsClient({
     canReviewProposals,
     canCompose,
     canInvestigate,
+    oversightReads,
 }: {
     tenantSlug: string;
     decisions: readonly DecisionRow[];
@@ -87,8 +88,10 @@ export function DecisionsClient({
     canReviewProposals: boolean;
     /** `admin.view` — the compose entry's gate (#3710); defaults to `canReviewProposals`. */
     canCompose?: boolean;
-    /** `admin.agent_registry` — this page's own gate, and its siblings'. */
+    /** `admin.agent_registry` — the register key. */
     canInvestigate: boolean;
+    /** Which assurance surfaces the viewer may read (`agent-oversight-settings.ts`). */
+    oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
 }) {
     const t = useTranslations('agents');
 
@@ -111,6 +114,7 @@ export function DecisionsClient({
                         canReviewProposals={canReviewProposals}
                         canCompose={canCompose}
                         canInvestigate={canInvestigate}
+                        oversightReads={oversightReads}
                     />
                 }
             />

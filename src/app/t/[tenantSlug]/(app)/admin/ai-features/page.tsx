@@ -31,6 +31,7 @@ import { useTenantHref } from '@/lib/tenant-context-provider';
 import { AiFeaturesClient } from './AiFeaturesClient';
 import { AiResidencySection } from './AiResidencySection';
 import { AgentEnginesSection } from './AgentEnginesSection';
+import { AgentOversightSection } from './AgentOversightSection';
 
 export default function AiFeaturesPage() {
     const t = useTranslations('admin');
@@ -76,6 +77,18 @@ export default function AiFeaturesPage() {
             </RequirePermission>
 
             <AgentEnginesSection />
+
+            <RequirePermission
+                resource="admin"
+                action="tenant_lifecycle"
+                fallback={
+                    <InlineNotice variant="info">
+                        <span data-testid="agent-oversight-owner-only">{t('agentOversight.forbidden')}</span>
+                    </InlineNotice>
+                }
+            >
+                <AgentOversightSection />
+            </RequirePermission>
         </div>
     );
 }

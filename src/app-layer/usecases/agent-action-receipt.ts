@@ -46,6 +46,7 @@ import {
 } from '@/lib/mcp/tool-manifest';
 import { assertCanWrite, assertCanRead } from '@/app-layer/policies/common';
 import type { RequestContext } from '@/app-layer/types';
+import { assertMayReadOversightSurface } from './agent-oversight-settings';
 
 // ── Ingest ──────────────────────────────────────────────────────────────────
 
@@ -269,6 +270,9 @@ export interface ReceiptListItem {
 /** List receipts for the current tenant, newest first. Bounded (default 100). */
 export async function listReceipts(ctx: RequestContext, filter: ListReceiptsFilter = {}): Promise<ReceiptListItem[]> {
     assertCanRead(ctx);
+    // The page's own rule, at the API too (#4897): the register key, or the
+    // inventory view key while an owner lets Auditors read receipts.
+    await assertMayReadOversightSurface(ctx, 'receipts');
     const take = filter.limit ?? 100;
 
     return runInTenantContext(ctx, (db) =>
@@ -348,6 +352,7 @@ export interface ReceiptExport {
  */
 export async function getReceiptForExport(ctx: RequestContext, id: string): Promise<ReceiptExport> {
     assertCanRead(ctx);
+    await assertMayReadOversightSurface(ctx, 'receipts');
 
     const row = await runInTenantContext(ctx, (db) =>
         db.agentActionReceipt.findFirst({

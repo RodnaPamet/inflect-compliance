@@ -1,6 +1,9 @@
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 
+import { assertCanRead } from '../policies/common';
+import { assertMayReadOversightSurface } from './agent-oversight-settings';
+
 /**
  * THE EU AI ACT RECORD, READ BACK.
  *
@@ -58,6 +61,10 @@ export async function listAiDecisions(
     ctx: RequestContext,
     opts: { digest?: string } = {},
 ): Promise<AiDecisionRow[]> {
+    // The register key, or the inventory view key while an owner lets Auditors
+    // read the log (`agent-oversight-settings.ts`, #4896).
+    assertCanRead(ctx);
+    await assertMayReadOversightSurface(ctx, 'decisions');
     const rows = await runInTenantContext(ctx, (db) =>
         db.aiDecisionLog.findMany({
             // A digest narrows to "every decision taken over THIS content",

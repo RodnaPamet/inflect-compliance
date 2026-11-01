@@ -163,6 +163,10 @@ export interface QuarantineClientProps {
      */
     canReviewProposals?: boolean;
     canCompose?: boolean;
+    /** `admin.agent_registry` — the register key. Defaults to true (this page's old gate). */
+    canInvestigate?: boolean;
+    /** Which assurance surfaces the viewer may read (`agent-oversight-settings.ts`). */
+    oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
 }
 
 export function QuarantineClient(props: QuarantineClientProps) {
@@ -182,6 +186,8 @@ function QuarantineInner({
     tenantSlug,
     canReviewProposals = true,
     canCompose = canReviewProposals,
+    canInvestigate = true,
+    oversightReads,
 }: QuarantineClientProps) {
     const t = useTranslations('agents');
     const { search } = useFilters();
@@ -341,7 +347,8 @@ function QuarantineInner({
                             tenantSlug={tenantSlug}
                             canReviewProposals={canReviewProposals}
                             canCompose={canCompose}
-                            canInvestigate
+                            canInvestigate={canInvestigate}
+                            oversightReads={oversightReads}
                         />
                     ),
                 }}

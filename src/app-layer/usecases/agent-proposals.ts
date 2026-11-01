@@ -26,6 +26,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db/rls-middleware';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, forbidden, notFound, staleData } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
+import { assertMayReadOversightSurface, readAgentOversightSettings } from './agent-oversight-settings';
 import { logger } from '@/lib/observability/logger';
 import {
     createAgenticNotification,
@@ -156,6 +157,13 @@ export interface ProposeInput {
     payload: unknown;
     rationale?: string | null;
     proposedBySessionRef?: string | null;
+    /**
+     * The PERSON who composed this request on `/agents/compose`, when that is
+     * where it came from. Only `external-write-compose.ts` passes it, and it is
+     * what `approveAgentProposal` refuses while the tenant requires a second
+     * approver for composed requests (`agent-oversight-settings.ts`).
+     */
+    composedByUserId?: string | null;
     /**
      * WHICH VERSION of the proposing agent's policy card was in force.
      * `NO_POLICY_CARD` (0, from `@/lib/agentic/policy-card-pin`) when none
@@ -497,6 +505,42 @@ async function refuseDissentAuthor(
     );
 }
 
+/**
+ * Refuse the person who composed this request, while the tenant requires a
+ * second approver for composed requests (#4895). A proposal with no recorded
+ * composer — every agent's, and every composed one written before the column
+ * existed — is never refused here.
+ */
+async function assertNotComposer(
+    ctx: RequestContext,
+    proposal: { id: string; kind: string; composedByUserId: string | null },
+): Promise<void> {
+    if (!proposal.composedByUserId || proposal.composedByUserId !== ctx.userId) return;
+    const settings = await readAgentOversightSettings(ctx);
+    if (!settings.composeNeedsSecondApprover) return;
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'AgentProposal',
+        entityId: proposal.id,
+        action: 'AUTHZ_DENIED',
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            event: 'authz_denied',
+            reason: 'agent_proposal_composer',
+            refusal: 'COMPOSER_MAY_NOT_APPROVE',
+            attemptedAction: 'approve',
+            kind: proposal.kind,
+        },
+        metadataJson: { role: ctx.role, apiKeyId: ctx.apiKeyId ?? null, refusal: 'COMPOSER_MAY_NOT_APPROVE' },
+    }).catch(() => undefined);
+    throw forbidden('You composed this request, so somebody else approves it.', {
+        reason: 'COMPOSER_MAY_NOT_APPROVE',
+    });
+}
+
 /** Refuse the dissent's own author, for a single-proposal decision. */
 async function assertNotDissentAuthor(
     ctx: RequestContext,
@@ -780,6 +824,7 @@ export async function createAgentProposal(
                 guardProvenance: guard.provenance,
                 proposedViaKeyId: ctx.apiKeyId ?? null,
                 proposedBySessionRef: input.proposedBySessionRef ?? null,
+                composedByUserId: input.composedByUserId ?? null,
                 // WHICH registered agent proposed this. Resolved at the MCP
                 // entry gate from the credential's binding; `null` means the
                 // credential names no agent, which only a tenant with the
@@ -1104,6 +1149,9 @@ export async function listQuarantinedAgentProposals(
     opts: { take?: number } = {},
 ) {
     assertCanRead(ctx);
+    // The register key, or the inventory view key while an owner lets Auditors
+    // read the quarantine (`agent-oversight-settings.ts`, #4898).
+    await assertMayReadOversightSurface(ctx, 'quarantine');
     return runInTenantContext(ctx, (db) =>
         db.agentProposal.findMany({
             where: { tenantId: ctx.tenantId, status: 'QUARANTINED' },
@@ -1368,6 +1416,13 @@ export async function approveAgentProposal(
     // Approval and approval-with-edits both arrive here. An authority refusal,
     // so it sits with the two above and ahead of the PENDING check.
     await assertNotDissentAuthor(ctx, proposal, 'approve');
+    // ═══ THE COMPOSER DOES NOT APPROVE THEIR OWN REQUEST ═══
+    //
+    // While the tenant's Owner leaves the second-approver rule on (the
+    // default). Every approve path — a plain approval, with edits, a first or a
+    // second signature — arrives here, so this one check covers them all. A
+    // REJECTION by the composer is a withdrawal and stays allowed.
+    await assertNotComposer(ctx, proposal);
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
     }

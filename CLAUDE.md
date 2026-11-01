@@ -2193,8 +2193,36 @@ AI_ADMIN and AUDITOR hold it. Three rules in it are easy to undo:
   peers, intake and acceptances stay on the register key;
   `tests/unit/agent-registry-view-key.test.ts` reads every write handler off the
   filesystem and refuses a view-only caller. The edge admits an AUDITOR to a GET
-  of the five inventory routes only (`AUDITOR_ADMIN_READ_PATHS`): exact templates,
-  so `…/harness-estates` is admitted and `…/harness-estates/[estateId]` is not.
+  of the five inventory routes and the quarantine read only
+  (`AUDITOR_ADMIN_READ_PATHS`): exact templates, so `…/harness-estates` is
+  admitted and `…/harness-estates/[estateId]` is not. The quarantine read is
+  admitted so its usecase can apply the owner's switch (below); the edge decides
+  nothing by itself there.
+
+**Agent oversight settings** (round 15, owner decisions 2026-11-01;
+`usecases/agent-oversight-settings.ts`, the only writer of the five columns on
+`TenantSecuritySettings`, set on Admin → AI features under
+`admin.tenant_lifecycle`, never by an API key or an agent):
+
+- **A composed request needs another approver** while
+  `agentComposeNeedsSecondApprover` is on, its default. `/agents/compose` writes
+  `AgentProposal.composedByUserId`, and `approveAgentProposal` refuses that user
+  (`COMPOSER_MAY_NOT_APPROVE`, with an `AUTHZ_DENIED` row). Every approve path
+  passes that one check. A rejection by the composer is a withdrawal and stays
+  allowed, and a proposal with no recorded composer is never refused by it.
+- **An exact-value parameter edit needs another approver** only while
+  `agentExactParameterEditNeedsSecondApprover` is on; it is off by default,
+  which keeps the rule before it. A template edit's proposer is refused by the
+  approval trigger whatever the switch says.
+- **The decision log, receipts and quarantine are read under ONE rule**,
+  `mayReadOversightSurface`: the register key reads all three, and the
+  inventory view key reads a surface only while its switch
+  (`auditorReadsAiDecisionLog` / `…AgentReceipts` / `…AgentQuarantine`) is on.
+  All three are off by default. The usecases apply it (`listAiDecisions`,
+  `listReceipts`, `getReceiptForExport`, `listQuarantinedAgentProposals`), so
+  the receipts API, which used to answer every member, now follows the page.
+  Pages and the views menu read `oversightReadsFor`. Do not copy the rule into a
+  page.
 
 **A Flue run's declared input reaches the model as data**
 (`src/lib/agentic/flue/run-message.ts`): the definition's `requiredInput` keys

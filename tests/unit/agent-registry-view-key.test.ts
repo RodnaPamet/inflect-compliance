@@ -498,6 +498,8 @@ describe('the edge: an AUDITOR reaches the inventory GETs and nothing else under
         '/api/t/acme/admin/agents/harness-scans',
         '/api/t/acme/admin/agents/harness-estates',
         '/api/t/acme/admin/agents/reports',
+        // #4898: the usecase applies the Owner's switch; the edge only admits.
+        '/api/t/acme/admin/mcp/quarantine',
     ])('admits GET and HEAD %s', (path) => {
         expect(checkAdminAccess(path, 'AUDITOR', memberships, 'GET')).toBe('allow');
         expect(checkAdminAccess(path, 'AUDITOR', memberships, 'HEAD')).toBe('allow');
@@ -520,7 +522,6 @@ describe('the edge: an AUDITOR reaches the inventory GETs and nothing else under
             '/api/t/acme/admin/agents/agent-1/risk-assessment',
             '/api/t/acme/admin/agents/agent-1/tools',
             '/api/t/acme/admin/agents/reports/export',
-            '/api/t/acme/admin/mcp/quarantine',
             '/api/t/acme/admin/members',
             '/api/t/acme/admin/dsar-requests',
             '/t/acme/admin/agents',
@@ -543,6 +544,7 @@ describe('the edge: an AUDITOR reaches the inventory GETs and nothing else under
             '/api/t/[slug]/admin/agents/harness-scans': 'src/app/api/t/[tenantSlug]/admin/agents/harness-scans/route.ts',
             '/api/t/[slug]/admin/agents/harness-estates': 'src/app/api/t/[tenantSlug]/admin/agents/harness-estates/route.ts',
             '/api/t/[slug]/admin/agents/reports': 'src/app/api/t/[tenantSlug]/admin/agents/reports/route.ts',
+            '/api/t/[slug]/admin/mcp/quarantine': 'src/app/api/t/[tenantSlug]/admin/mcp/quarantine/route.ts',
         };
         expect(Object.keys(routeOf).sort()).toEqual([...AUDITOR_ADMIN_READ_PATHS].sort());
         for (const rel of Object.values(routeOf)) {

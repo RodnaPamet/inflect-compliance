@@ -243,6 +243,7 @@ export function AgentProposalsClient({
     canCompose = false,
     canInvestigate = false,
     canReadReports = false,
+    oversightReads,
     truncated = false,
 }: {
     tenantSlug: string;
@@ -269,6 +270,8 @@ export function AgentProposalsClient({
     canCompose?: boolean;
     canInvestigate?: boolean;
     canReadReports?: boolean;
+    /** Which assurance surfaces the viewer may read (`agent-oversight-settings.ts`). */
+    oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
@@ -508,6 +511,7 @@ export function AgentProposalsClient({
                         canCompose={canCompose}
                         canInvestigate={canInvestigate}
                         canReadReports={canReadReports}
+                        oversightReads={oversightReads}
                     />
                 }
             />

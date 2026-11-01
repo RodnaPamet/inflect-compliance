@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity } from '@/lib/permissions';
 import { QuarantineClient } from './QuarantineClient';
@@ -53,12 +54,16 @@ export default async function AgentQuarantinePage({
     const { tenantSlug } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
 
-    if (!ctx.appPermissions.admin.agent_registry) {
+    // The register key, or the inventory view key while an owner lets Auditors
+    // read the quarantine (`agent-oversight-settings.ts`, #4898). The API the
+    // client reads applies the same rule, in the usecase.
+    const reads = await oversightReadsFor(ctx);
+    if (!reads.quarantine) {
         const t = await getTranslations('agents');
         return (
             <ForbiddenPage
-                title={t('quarantine.accessTitle')}
-                message={t('quarantine.accessMessage')}
+                title={t('oversightAccess.title')}
+                message={t('oversightAccess.message')}
             />
         );
     }
@@ -68,6 +73,8 @@ export default async function AgentQuarantinePage({
             tenantSlug={tenantSlug}
             canReviewProposals={mayReadAgentActivity(ctx.appPermissions.admin)}
             canCompose={ctx.appPermissions.admin.view}
+            canInvestigate={ctx.appPermissions.admin.agent_registry}
+            oversightReads={reads}
         />
     );
 }
