@@ -39,11 +39,14 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
     // The registration form's pickers (#3807). Best-effort, as on the agent
     // page: a reader who may register but not list suppliers gets an empty
     // picker and the usecase's refusal, rather than no page at all.
+    // A failed member or vendor read is SAID, not swallowed into an empty
+    // picker that cannot be filled (#4901). The vendor list is only the first
+    // page; the form searches the vendor register for the rest.
     const [peers, keys, owners, vendors] = await Promise.all([
         listPeerAgents(ctx),
         getTenantA2aSigningKeys(ctx),
-        listAssignableUsers(ctx).catch(() => []),
-        listVendors(ctx, {}, { take: 200 }).catch(() => []),
+        listAssignableUsers(ctx).catch(() => null),
+        listVendors(ctx, {}, { take: 50 }).catch(() => null),
     ]);
 
     const rows: PeerRow[] = peers.map((p) => ({
@@ -55,6 +58,8 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
         pinRevision: p.pinRevision,
         observedCardHash: p.observedCardHash,
         inboundMessagesPerHour: p.inboundMessagesPerHour,
+        ownerName: p.owner ? p.owner.name || p.owner.email : null,
+        vendorName: p.vendor?.name ?? null,
     }));
     const iso = (d: Date | null) => (d ? d.toISOString() : null);
     const toPublic = (k: NonNullable<typeof keys.current>) => ({
@@ -77,11 +82,13 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
             signingKey={signingKey}
             canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
             canCompose={Boolean(ctx.appPermissions?.admin?.view)}
-            owners={owners.map((m: { id: string; name: string | null; email: string }) => ({
+            ownersUnavailable={owners === null}
+            vendorsUnavailable={vendors === null}
+            owners={(owners ?? []).map((m: { id: string; name: string | null; email: string }) => ({
                 id: m.id,
                 label: m.name ?? m.email,
             }))}
-            vendors={vendors.map((v: { id: string; name: string }) => ({ id: v.id, label: v.name }))}
+            vendors={(vendors ?? []).map((v: { id: string; name: string }) => ({ id: v.id, label: v.name }))}
         />
     );
 }

@@ -94,6 +94,8 @@ const ROWS: PeerRow[] = [
         pinRevision: 2,
         observedCardHash: HASH_A,
         inboundMessagesPerHour: 60,
+        ownerName: null,
+        vendorName: null,
     },
     {
         id: 'peerdrifted1',
@@ -104,6 +106,8 @@ const ROWS: PeerRow[] = [
         pinRevision: 1,
         observedCardHash: HASH_B,
         inboundMessagesPerHour: 5,
+        ownerName: null,
+        vendorName: null,
     },
     {
         id: 'peerunpinned',
@@ -114,6 +118,8 @@ const ROWS: PeerRow[] = [
         pinRevision: 0,
         observedCardHash: HASH_B,
         inboundMessagesPerHour: 60,
+        ownerName: null,
+        vendorName: null,
     },
 ];
 
@@ -143,6 +149,50 @@ describe('the peers list', () => {
         expect(screen.getByTestId('peer-card-peerpinned1').textContent).toBe(P.cardMatches);
         expect(screen.getByTestId('peer-card-peerdrifted1').textContent).toBe(P.cardChanged);
         expect(screen.getByText(P.quotaValue.replace('{count}', '5'))).toBeTruthy();
+    });
+
+    // #4901: a card that was read but never approved used to read "Changed
+    // since the pin" beside "Not pinned".
+    it('a peer never approved reads "not approved yet", not "changed"', () => {
+        renderList();
+        expect(screen.getByTestId('peer-card-peerunpinned').textContent).toBe(P.cardUnapproved);
+        expect(screen.getByTestId('peer-card-peerunpinned').textContent).not.toBe(P.cardChanged);
+    });
+
+    it('names each peer\'s owner and supplier', () => {
+        render(
+            <PeersClient
+                tenantSlug="acme"
+                initialRows={[{ ...ROWS[0], ownerName: 'Ana Petrova', vendorName: 'Partner Ltd' }]}
+                signingKey={keyView()}
+                canReviewProposals
+                canCompose
+            />,
+        );
+        expect(screen.getByText('Ana Petrova')).toBeTruthy();
+        expect(screen.getByText('Partner Ltd')).toBeTruthy();
+    });
+
+    it('the register form says when there is no supplier to choose, and links to Vendors', () => {
+        renderList();
+        fireEvent.click(screen.getByTestId('peer-register-open'));
+        expect(screen.getByTestId('peer-register-no-vendors').textContent).toContain(P.register.vendorsEmpty);
+        expect(screen.getByRole('link', { name: P.register.vendorsLink }).getAttribute('href')).toBe('/t/acme/vendors');
+    });
+
+    it('the register form says when the member list could not be loaded', () => {
+        render(
+            <PeersClient
+                tenantSlug="acme"
+                initialRows={ROWS}
+                signingKey={keyView()}
+                canReviewProposals
+                canCompose
+                ownersUnavailable
+            />,
+        );
+        fireEvent.click(screen.getByTestId('peer-register-open'));
+        expect(screen.getByTestId('peer-register-owners-unavailable').textContent).toBe(P.register.ownersUnavailable);
     });
 
     it('a row opens its peer', () => {
