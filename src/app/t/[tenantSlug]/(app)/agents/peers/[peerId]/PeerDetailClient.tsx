@@ -18,8 +18,14 @@
  *
  * Every action is gated as its route is: the quota and the credential by the
  * register key (`canManage`), the kill by the kill key (`canKill`). A control a
- * reader cannot use is not rendered, and a sentence says which key it needs.
+ * reader cannot use is not rendered, and a sentence says who can use it.
+ *
+ * The Overview also names who answers for the peer and its supplier, and
+ * carries the acts `UpdatePeerAgentSchema` took and no page offered (#4902):
+ * rename, move to another accountable owner, suspend, resume and retire.
+ * Retiring is permanent, so it is confirmed.
  */
+import Link from 'next/link';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -39,6 +45,7 @@ import { NumberStepper } from '@/components/ui/number-stepper';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
@@ -72,6 +79,11 @@ export interface PeerDetail {
         inboundMessagesPerHour: number;
         /** `null` is unscored, which admission refuses. Optional for a caller that predates it. */
         riskTier?: PeerRiskTier | null;
+        /** Who answers for the peer, and its supplier (#4902). Optional for a caller that predates them. */
+        ownerUserId?: string;
+        ownerName?: string | null;
+        vendorId?: string;
+        vendorName?: string | null;
     };
     credential: {
         live: {
@@ -94,11 +106,27 @@ export interface PeerDetail {
         createdAt: string;
         verifies: boolean | null;
     }[];
+    /** The cap when more messages exist than are listed, else `null` (#4902). */
+    messagesCapped?: number | null;
     /** `null` when the reader does not hold the kill key, so it was not read. */
     kills: { id: string; reason: string; engagedAt: string; liftedAt: string | null; liftReason: string | null }[] | null;
     agents: { id: string; name: string }[];
+    /** The cap when more agents exist than the picker lists, else `null`. */
+    agentsCapped?: number | null;
     workflows: { key: string; name: string }[];
+    /** Members who may own the peer; `null` when they could not be read. */
+    owners?: { id: string; label: string }[] | null;
 }
+
+/** A message's kind and JSON-RPC method, in words (#4902). */
+const MESSAGE_KIND_KEY: Readonly<Record<string, string>> = {
+    TASK: 'peers.messages.kind.TASK',
+    RESULT: 'peers.messages.kind.RESULT',
+};
+const MESSAGE_METHOD_KEY: Readonly<Record<string, string>> = {
+    'message/send': 'peers.messages.method.send',
+    'tasks/get': 'peers.messages.method.status',
+};
 
 type MessageRow = PeerDetail['messages'][number];
 type KillRow = NonNullable<PeerDetail['kills']>[number];
@@ -176,12 +204,17 @@ export function PeerDetailClient({ tenantSlug, detail, canManage, canKill }: Pro
                 { key: 'overview', label: t('peers.detail.tabOverview') },
                 { key: 'kill', label: t('peers.detail.tabKill') },
                 { key: 'credential', label: t('peers.detail.tabCredential') },
-                { key: 'messages', label: t('peers.detail.tabMessages'), count: detail.messages.length },
+                {
+                    key: 'messages',
+                    label: t('peers.detail.tabMessages'),
+                    // A capped list is not a count of the history.
+                    count: detail.messagesCapped ? undefined : detail.messages.length,
+                },
             ]}
             activeTab={tab}
             onTabChange={setTab}
         >
-            {tab === 'overview' && <OverviewTab detail={detail} canManage={canManage} />}
+            {tab === 'overview' && <OverviewTab detail={detail} canManage={canManage} tenantSlug={tenantSlug} />}
             {tab === 'kill' && <KillTab detail={detail} canKill={canKill} />}
             {tab === 'credential' && <CredentialTab detail={detail} canManage={canManage} />}
             {tab === 'messages' && <MessagesTab detail={detail} />}
@@ -191,7 +224,7 @@ export function PeerDetailClient({ tenantSlug, detail, canManage, canKill }: Pro
 
 // ─── Overview ────────────────────────────────────────────────────────────────
 
-function OverviewTab({ detail, canManage }: { detail: PeerDetail; canManage: boolean }) {
+function OverviewTab({ detail, canManage, tenantSlug }: { detail: PeerDetail; canManage: boolean; tenantSlug: string }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
     const router = useRouter();
@@ -246,6 +279,12 @@ function OverviewTab({ detail, canManage }: { detail: PeerDetail; canManage: boo
                     {t('peers.detail.cardChangedNotice')}
                 </InlineNotice>
             )}
+            {card === 'unapproved' && peer.status !== 'RETIRED' && (
+                <InlineNotice variant="warning" data-testid="peer-card-unapproved">
+                    {t('peers.detail.cardUnapprovedNotice')}
+                </InlineNotice>
+            )}
+            <PeerDetailsCard detail={detail} canManage={canManage} tenantSlug={tenantSlug} />
             <Card className="space-y-default">
                 <dl className="grid grid-cols-1 gap-default text-sm md:grid-cols-2">
                     <Fact label={t('peers.detail.cardUrl')}>
@@ -338,6 +377,243 @@ function OverviewTab({ detail, canManage }: { detail: PeerDetail; canManage: boo
                 )}
             </Card>
         </div>
+    );
+}
+
+/**
+ * Who answers for the peer, its supplier, and the acts on the peer itself
+ * (#4902): rename, move to another accountable owner, suspend, resume and
+ * retire — each one PATCH to the route `UpdatePeerAgentSchema` already took.
+ * Retiring is confirmed: a retired peer is refused for good and cannot be
+ * resumed or approved again, which the server enforces.
+ */
+function PeerDetailsCard({ detail, canManage, tenantSlug }: { detail: PeerDetail; canManage: boolean; tenantSlug: string }) {
+    const t = useTranslations('agents');
+    const apiUrl = useTenantApiUrl();
+    const router = useRouter();
+    const toast = useToast();
+    const { peer } = detail;
+    const retired = peer.status === 'RETIRED';
+    const [name, setName] = useState(peer.name);
+    const ownerOptions: ComboboxOption[] = (detail.owners ?? []).map((o) => ({ value: o.id, label: o.label }));
+    const [owner, setOwner] = useState<ComboboxOption | null>(
+        ownerOptions.find((o) => o.value === peer.ownerUserId) ?? null,
+    );
+    const [busy, setBusy] = useState(false);
+    const [retiring, setRetiring] = useState(false);
+    const [retireError, setRetireError] = useState<string | null>(null);
+
+    /** One PATCH; returns the refusal sentence, or `null` when it saved. */
+    const send = async (body: Record<string, unknown>, failed: string): Promise<string | null> => {
+        try {
+            const res = await fetch(apiUrl(`/admin/agents/peers/${peer.id}`), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) {
+                const json = await res.json().catch(() => null);
+                return apiErrorMessage(json, failed);
+            }
+            return null;
+        } catch {
+            return failed;
+        }
+    };
+
+    const act = async (body: Record<string, unknown>, saved: string, failed: string) => {
+        setBusy(true);
+        const refusal = await send(body, failed);
+        setBusy(false);
+        if (refusal !== null) {
+            toast.error(refusal);
+            return;
+        }
+        toast.success(saved);
+        router.refresh();
+    };
+
+    const retire = async () => {
+        setRetireError(null);
+        const refusal = await send({ status: 'RETIRED' }, t('peers.detail.statusFailed'));
+        if (refusal !== null) {
+            setRetireError(refusal);
+            // Rejecting keeps the confirmation open over the server's sentence.
+            throw new Error(refusal);
+        }
+        toast.success(t('peers.detail.retired'));
+        setRetiring(false);
+        router.refresh();
+    };
+
+    const trimmed = name.trim();
+
+    return (
+        <Card className="space-y-default" data-testid="peer-details">
+            <Heading level={2}>{t('peers.detail.detailsHeading')}</Heading>
+            <dl className="grid grid-cols-1 gap-default text-sm md:grid-cols-2">
+                <Fact label={t('peers.detail.owner')}>
+                    <span data-testid="peer-owner">{peer.ownerName ?? t('peers.detail.ownerUnknown')}</span>
+                </Fact>
+                <Fact label={t('peers.detail.vendor')}>
+                    {peer.vendorId && peer.vendorName ? (
+                        <Link
+                            href={`/t/${tenantSlug}/vendors/${peer.vendorId}`}
+                            className="text-content-info hover:underline"
+                            data-testid="peer-vendor"
+                        >
+                            {peer.vendorName}
+                        </Link>
+                    ) : (
+                        <span data-testid="peer-vendor">{t('peers.detail.vendorUnknown')}</span>
+                    )}
+                </Fact>
+            </dl>
+
+            {canManage && !retired && (
+                <div className="grid grid-cols-1 gap-default md:grid-cols-2">
+                    <form
+                        className="space-y-compact"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            if (trimmed && trimmed !== peer.name) {
+                                void act({ name: trimmed }, t('peers.detail.renamed'), t('peers.detail.renameFailed'));
+                            }
+                        }}
+                    >
+                        <FormField label={t('peers.detail.nameLabel')}>
+                            <Input
+                                id="peer-name-input"
+                                value={name}
+                                maxLength={200}
+                                onChange={(e) => setName(e.target.value)}
+                                disabled={busy}
+                            />
+                        </FormField>
+                        <Button
+                            type="submit"
+                            variant="secondary"
+                            size="sm"
+                            disabled={busy || trimmed === '' || trimmed === peer.name}
+                            data-testid="peer-rename-save"
+                        >
+                            {t('peers.detail.renameSave')}
+                        </Button>
+                    </form>
+                    <div className="space-y-compact">
+                        <FormField label={t('peers.detail.ownerLabel')} description={t('peers.detail.ownerHint')}>
+                            <Combobox
+                                id="peer-owner-select"
+                                options={ownerOptions}
+                                selected={owner}
+                                setSelected={setOwner}
+                                placeholder={t('peers.detail.ownerPlaceholder')}
+                                disabled={busy || detail.owners === null}
+                                matchTriggerWidth
+                                forceDropdown
+                            />
+                        </FormField>
+                        {detail.owners === null && (
+                            <p className="text-xs text-content-muted" data-testid="peer-owners-unavailable">
+                                {t('peers.detail.ownersUnavailable')}
+                            </p>
+                        )}
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            disabled={busy || owner === null || owner.value === peer.ownerUserId}
+                            onClick={() =>
+                                owner &&
+                                void act({ ownerUserId: owner.value }, t('peers.detail.ownerSaved'), t('peers.detail.ownerFailed'))
+                            }
+                            data-testid="peer-owner-save"
+                        >
+                            {t('peers.detail.ownerSave')}
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            <div className="space-y-compact" data-testid="peer-status-actions">
+                <Heading level={3}>{t('peers.detail.statusHeading')}</Heading>
+                <p className="text-sm text-content-muted">
+                    {retired
+                        ? t('peers.detail.retiredNote')
+                        : peer.status === 'SUSPENDED'
+                          ? t('peers.detail.suspendedNote')
+                          : t('peers.detail.activeNote')}
+                </p>
+                {canManage && !retired && (
+                    <div className="flex flex-wrap gap-compact">
+                        {peer.status === 'ACTIVE' ? (
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() =>
+                                    void act({ status: 'SUSPENDED' }, t('peers.detail.suspended'), t('peers.detail.statusFailed'))
+                                }
+                                data-testid="peer-suspend"
+                            >
+                                {t('peers.detail.suspend')}
+                            </Button>
+                        ) : (
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() =>
+                                    void act({ status: 'ACTIVE' }, t('peers.detail.resumed'), t('peers.detail.statusFailed'))
+                                }
+                                data-testid="peer-resume"
+                            >
+                                {t('peers.detail.resume')}
+                            </Button>
+                        )}
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() => {
+                                setRetireError(null);
+                                setRetiring(true);
+                            }}
+                            data-testid="peer-retire"
+                        >
+                            {t('peers.detail.retire')}
+                        </Button>
+                    </div>
+                )}
+                {!canManage && <p className="text-xs text-content-muted">{t('peers.detail.manageReadOnly')}</p>}
+            </div>
+
+            <ConfirmDialog
+                showModal={retiring}
+                setShowModal={(next) => {
+                    const value = typeof next === 'function' ? next(retiring) : next;
+                    if (!value) setRetiring(false);
+                }}
+                tone="warning"
+                title={t('peers.detail.retireTitle', { name: peer.name })}
+                description={
+                    <>
+                        {t('peers.detail.retireBody')}
+                        {retireError && (
+                            <span role="alert" className="mt-2 block text-content-error" data-testid="peer-retire-error">
+                                {retireError}
+                            </span>
+                        )}
+                    </>
+                }
+                confirmLabel={t('peers.detail.retire')}
+                cancelLabel={t('peers.cardReview.cancel')}
+                onConfirm={retire}
+            />
+        </Card>
     );
 }
 
@@ -532,6 +808,8 @@ function CredentialTab({ detail, canManage }: { detail: PeerDetail; canManage: b
     const [issued, setIssued] = useState<IssuedHandover | null>(null);
     const { live, revoked, handover } = detail.credential;
     const agentName = (id: string) => detail.agents.find((a) => a.id === id)?.name ?? id;
+    // A workflow by its name; a key the registry no longer knows stays as it is.
+    const workflowName = (key: string) => detail.workflows.find((w) => w.key === key)?.name ?? key;
 
     const revoke = async () => {
         let message: string | null = null;
@@ -574,10 +852,12 @@ function CredentialTab({ detail, canManage }: { detail: PeerDetail; canManage: b
                             <span>{agentName(live.receivingAgentId)}</span>
                         </Fact>
                         <Fact label={t('peers.credential.workflows')}>
-                            <span className="font-mono text-xs">{live.workflowKeys.join(', ')}</span>
+                            <span data-testid="peer-credential-workflows">
+                                {live.workflowKeys.map((k) => workflowName(k)).join(', ')}
+                            </span>
                         </Fact>
-                        <Fact label={t('peers.credential.issuedAt', { date: formatDate(live.createdAt) })}>
-                            <span />
+                        <Fact label={t('peers.credential.issuedLabel')}>
+                            <span data-testid="peer-credential-issued">{formatDate(live.createdAt)}</span>
                         </Fact>
                     </dl>
                 ) : (
@@ -698,6 +978,11 @@ function IssueCredentialForm({ detail, onIssued }: { detail: PeerDetail; onIssue
             <Heading level={3}>{t('peers.credential.issueTitle')}</Heading>
             <p className="text-sm text-content-muted">{t('peers.credential.issueDescription')}</p>
             {error && <InlineNotice variant="error">{error}</InlineNotice>}
+            {detail.agentsCapped ? (
+                <p className="text-xs text-content-muted" data-testid="peer-credential-agents-capped">
+                    {t('peers.credential.agentsCapped', { count: detail.agentsCapped })}
+                </p>
+            ) : null}
             <FormField label={t('peers.credential.agentLabel')} required>
                 <Combobox
                     id="peer-credential-agent"
@@ -803,12 +1088,16 @@ function MessagesTab({ detail }: { detail: PeerDetail }) {
                     id: 'kind',
                     header: t('peers.messages.colKind'),
                     enableSorting: false,
-                    cell: ({ row }) => (
-                        <span className="font-mono text-xs">
-                            {row.original.kind}
-                            {row.original.method ? ` · ${row.original.method}` : ''}
-                        </span>
-                    ),
+                    cell: ({ row }) => {
+                        const kindKey = MESSAGE_KIND_KEY[row.original.kind];
+                        const methodKey = row.original.method ? MESSAGE_METHOD_KEY[row.original.method] : undefined;
+                        return (
+                            <span className="text-sm">
+                                {kindKey ? t(kindKey) : row.original.kind}
+                                {row.original.method ? ` · ${methodKey ? t(methodKey) : row.original.method}` : ''}
+                            </span>
+                        );
+                    },
                 },
                 {
                     id: 'message',
@@ -849,7 +1138,13 @@ function MessagesTab({ detail }: { detail: PeerDetail }) {
         [t],
     );
     return (
-        <DataTable<MessageRow>
+        <div className="space-y-default">
+            {detail.messagesCapped ? (
+                <InlineNotice variant="info" data-testid="peer-messages-capped">
+                    {t('peers.messages.capped', { count: detail.messagesCapped })}
+                </InlineNotice>
+            ) : null}
+            <DataTable<MessageRow>
             data={detail.messages}
             columns={columns}
             getRowId={(r) => r.id}
@@ -859,6 +1154,7 @@ function MessagesTab({ detail }: { detail: PeerDetail }) {
                 <EmptyState title={t('peers.messages.emptyTitle')} description={t('peers.messages.emptyDesc')} />
             }
             data-testid="peer-messages-table"
-        />
+            />
+        </div>
     );
 }
