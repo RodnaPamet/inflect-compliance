@@ -135,6 +135,19 @@ describe('the workspace picker', () => {
     });
 });
 
+describe('a workspace the Entra group gate refused this session (#4869)', () => {
+    it('is not a destination: the picker goes straight to the one that remains', async () => {
+        authMock.mockResolvedValue({
+            user: { id: 'u-1', email: 'ana@example.com', entraGateDeniedTenantIds: ['t-beta'] },
+        });
+        activeRows.mockResolvedValue([
+            { role: 'EDITOR', tenant: { id: 't-acme', slug: 'acme', name: 'Acme' } },
+            { role: 'EDITOR', tenant: { id: 't-beta', slug: 'beta', name: 'Beta' } },
+        ]);
+        expect(await redirectOf(() => TenantsPage())).toBe('/t/acme/dashboard');
+    });
+});
+
 describe('/no-tenant', () => {
     it('tells a deactivated member to ask for reactivation, naming the workspace', async () => {
         deactivatedRows.mockResolvedValue([{ tenant: { name: 'Acme Corp' } }]);
@@ -156,6 +169,17 @@ describe('/no-tenant', () => {
         render(await NoTenantPage());
         expect(screen.getByText(en.noTenant.otherWorkspaceText)).toBeInTheDocument();
         expect(screen.getByRole('link', { name: en.noTenant.goToWorkspaces })).toHaveAttribute('href', '/tenants');
+    });
+
+    it('names a workspace the Entra group gate refused, rather than offering it (#4869)', async () => {
+        authMock.mockResolvedValue({
+            user: { id: 'u-1', email: 'ana@example.com', entraGateDeniedTenantIds: ['t-acme'] },
+        });
+        activeRows.mockResolvedValue([{ role: 'EDITOR', tenant: { id: 't-acme', slug: 'acme', name: 'Acme Corp' } }]);
+        render(await NoTenantPage());
+        expect(screen.getByText(en.noTenant.entraRefused.replace('{workspaces}', 'Acme Corp'))).toBeInTheDocument();
+        expect(screen.queryByText(en.noTenant.otherWorkspaceText)).toBeNull();
+        expect(screen.queryByRole('link', { name: en.noTenant.goToWorkspaces })).toBeNull();
     });
 
     it('keeps the invitation advice for a person with nothing at all', async () => {

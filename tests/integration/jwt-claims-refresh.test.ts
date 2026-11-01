@@ -186,6 +186,45 @@ describeFn('JWT membership claims refresh', () => {
         expect(token.memberships).toStrictEqual([]);
     });
 
+    it('keeps a workspace the Entra group gate refused out of the claims on every re-read (#4869)', async () => {
+        const s = stamp();
+        const email = `claims-entra-${s}@example.com`;
+        const user = await makeUser(email);
+
+        const refused = await createTenantWithOwner({
+            name: `Claims Entra Refused ${s}`,
+            slug: `claims-entra-r-${s}`.slice(0, 40),
+            ownerEmail: `owner-er-${s}@example.com`,
+            requestId: `req-er-${s}`,
+        });
+        const kept = await createTenantWithOwner({
+            name: `Claims Entra Kept ${s}`,
+            slug: `claims-entra-k-${s}`.slice(0, 40),
+            ownerEmail: `owner-ek-${s}@example.com`,
+            requestId: `req-ek-${s}`,
+        });
+        for (const tenantId of [refused.tenant.id, kept.tenant.id]) {
+            await prisma.tenantMembership.create({
+                data: { userId: user.id, tenantId, role: 'EDITOR', status: 'ACTIVE' },
+            });
+        }
+
+        // The membership is ACTIVE in both; only the session's refusal,
+        // recorded at sign-in, can keep one out. Before #4869 the re-read put
+        // it straight back.
+        const token = tokenFor(email);
+        token.entraGateDeniedTenantIds = [refused.tenant.id];
+        await applyMembershipClaims(token);
+        expect(token.memberships?.map((m) => m.tenantId)).toEqual([kept.tenant.id]);
+        await applyMembershipClaims(token);
+        expect(token.memberships?.map((m) => m.tenantId)).toEqual([kept.tenant.id]);
+
+        // A session with no refusal holds both.
+        const fresh = tokenFor(email);
+        await applyMembershipClaims(fresh);
+        expect(fresh.memberships?.map((m) => m.tenantId).sort()).toEqual([refused.tenant.id, kept.tenant.id].sort());
+    });
+
     it('carries the display name and photo the profile page saved, and clears a removed photo (#4644)', async () => {
         const s = stamp();
         const email = `claims-profile-${s}@example.com`;

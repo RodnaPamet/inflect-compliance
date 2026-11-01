@@ -137,7 +137,7 @@ describe('getTenantServerContext', () => {
         const ctx = await getTenantServerContext({
             tenantSlug: 'acme-corp',
             userId: 'user-1',
-            ssoTenantId: null, signInMethod: null,
+            ssoTenantId: null, signInMethod: null, entraGateDeniedTenantIds: null,
         });
 
         expect(ctx.tenant).toEqual({
@@ -160,7 +160,7 @@ describe('getTenantServerContext', () => {
         const ctx = await getTenantServerContext({
             tenantSlug: 'acme-corp',
             userId: 'user-1',
-            ssoTenantId: null, signInMethod: null,
+            ssoTenantId: null, signInMethod: null, entraGateDeniedTenantIds: null,
         });
 
         expect(ctx.role).toBe('EDITOR');
@@ -172,7 +172,7 @@ describe('getTenantServerContext', () => {
         mockPrisma.tenant.findUnique.mockResolvedValue(null);
 
         await expect(
-            getTenantServerContext({ tenantSlug: 'ghost', userId: 'user-1', ssoTenantId: null, signInMethod: null })
+            getTenantServerContext({ tenantSlug: 'ghost', userId: 'user-1', ssoTenantId: null, signInMethod: null, entraGateDeniedTenantIds: null })
         ).rejects.toThrow('Tenant not found');
     });
 
@@ -181,7 +181,7 @@ describe('getTenantServerContext', () => {
         mockPrisma.tenantMembership.findUnique.mockResolvedValue(null);
 
         await expect(
-            getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'outsider', ssoTenantId: null, signInMethod: null })
+            getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'outsider', ssoTenantId: null, signInMethod: null, entraGateDeniedTenantIds: null })
         ).rejects.toThrow('Not a member of this tenant');
     });
 
@@ -190,7 +190,7 @@ describe('getTenantServerContext', () => {
         mockPrisma.tenantMembership.findUnique.mockResolvedValue(MEMBERSHIP_DEACTIVATED);
 
         await expect(
-            getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1', ssoTenantId: null, signInMethod: null })
+            getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1', ssoTenantId: null, signInMethod: null, entraGateDeniedTenantIds: null })
         ).rejects.toThrow(/deactivated/i);
     });
 
@@ -201,7 +201,7 @@ describe('getTenantServerContext', () => {
         const ctx = await getTenantServerContext({
             tenantSlug: 'acme-corp',
             userId: 'user-1',
-            ssoTenantId: null, signInMethod: null,
+            ssoTenantId: null, signInMethod: null, entraGateDeniedTenantIds: null,
         });
 
         // The tenant field must be a plain object, not a Prisma model.
@@ -220,7 +220,7 @@ describe('getTenantServerContext', () => {
         const ctx = await getTenantServerContext({
             tenantSlug: 'acme-corp',
             userId: 'user-1',
-            ssoTenantId: null, signInMethod: null,
+            ssoTenantId: null, signInMethod: null, entraGateDeniedTenantIds: null,
         });
 
         // appPermissions should have the expected shape
@@ -237,7 +237,7 @@ describe('getTenantServerContext', () => {
         const ctx = await getTenantServerContext({
             tenantSlug: 'acme-corp',
             userId: 'user-1',
-            ssoTenantId: null, signInMethod: null,
+            ssoTenantId: null, signInMethod: null, entraGateDeniedTenantIds: null,
         });
 
         expect(ctx.appPermissions.admin.view).toBe(false);

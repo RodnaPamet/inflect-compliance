@@ -34,7 +34,11 @@ export default async function TenantsPage() {
     }
 
     // Complete, authoritative lists — see the file header.
-    const destinations = await readSignInDestinations(session.user.id, session.user.ssoTenantId);
+    const destinations = await readSignInDestinations(
+        session.user.id,
+        session.user.ssoTenantId,
+        session.user.entraGateDeniedTenantIds,
+    );
     const direct = directDestination(destinations);
     if (direct) {
         redirect(direct);

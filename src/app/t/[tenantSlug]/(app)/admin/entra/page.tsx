@@ -6,8 +6,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/card';
-import { useTenantApiUrl, usePermissions } from '@/lib/tenant-context-provider';
-import { apiErrorMessage } from '@/lib/api-error';
+import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
+import { apiErrorMessage, validationIssueFields } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,12 @@ interface EntraConfig {
     allowedDomains?: string[];
 }
 
+/** What the GET says about the Microsoft app this deployment signs in with. */
+interface SignInApp {
+    clientId: string | null;
+    redirectUri: string | null;
+}
+
 const EMPTY: EntraConfig = {
     aadTenantId: '',
     clientId: '',
@@ -38,6 +44,7 @@ const EMPTY: EntraConfig = {
 export default function EntraProviderWizard() {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
+    const tenantHref = useTenantHref();
     // Setting the provider up, and changing its directory or client ID, is
     // Owner-tier (src/app-layer/usecases/entra-provider.ts). The server refuses
     // it either way; this keeps an Admin from typing what they cannot save.
@@ -47,18 +54,27 @@ export default function EntraProviderWizard() {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // A failed read is not "not configured" (#4869): saving over a provider
+    // the page could not read would replace it blind, so Save waits.
+    const [loadError, setLoadError] = useState(false);
+    const [signInApp, setSignInApp] = useState<SignInApp | null>(null);
 
     const load = useCallback(async () => {
+        setLoadError(false);
         try {
             const res = await fetch(apiUrl('/sso/entra'));
-            if (!res.ok) return;
+            if (!res.ok) {
+                setLoadError(true);
+                return;
+            }
             const data = await res.json();
+            setSignInApp(data?.signInApp ?? null);
             if (data?.config) {
                 setConfig({ ...EMPTY, ...data.config });
                 setConfigured(true);
             }
         } catch {
-            /* read-only load; ignore */
+            setLoadError(true);
         }
     }, [apiUrl]);
 
@@ -80,7 +96,14 @@ export default function EntraProviderWizard() {
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => null);
-                setError(apiErrorMessage(body, t('entra.saveFailedGuids')));
+                const paths = validationIssueFields(body);
+                setError(
+                    paths.includes('aadTenantId') || paths.includes('clientId')
+                        ? t('entra.saveFailedGuids')
+                        : paths.length > 0
+                          ? t('entra.saveFailedInvalid')
+                          : apiErrorMessage(body, t('entra.saveFailed')),
+                );
                 return;
             }
             setConfigured(true);
@@ -92,10 +115,23 @@ export default function EntraProviderWizard() {
         }
     }, [apiUrl, config, t]);
 
+    const signInClientId = signInApp?.clientId ?? null;
+    const redirectUri = signInApp?.redirectUri ?? null;
+    const clientIdIsNotSignInApp =
+        !!signInClientId &&
+        config.clientId.trim() !== '' &&
+        config.clientId.trim().toLowerCase() !== signInClientId.toLowerCase();
+
     return (
         <div className="space-y-section">
             <BackAffordance />
-            <PageBreadcrumbs items={[{ label: t('crumb.admin') }, { label: t('entra.crumbSelf') }]} />
+            <PageBreadcrumbs
+                items={[
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('entra.crumbSelf') },
+                ]}
+            />
             <div className="flex items-center gap-default">
                 <Heading level={1}>{t('entra.title')}</Heading>
                 {configured && (
@@ -106,19 +142,35 @@ export default function EntraProviderWizard() {
             </div>
             <IdentityCrossLinks current="entra" />
 
-            {/* Step 1 + 2 — setup instructions the tenant admin performs in Entra */}
+            {loadError && (
+                <InlineNotice variant="error" id="entra-load-error">
+                    {t('entra.loadFailed')}
+                </InlineNotice>
+            )}
+
+            {/* Step 1 — the Microsoft app people sign in through (#4869).
+                On the shared deployment that is Inflect's own app, so an
+                administrator consents to it rather than creating one; on a
+                deployment the customer runs, it is their registration. */}
             <Card className="space-y-default p-6">
                 <Heading level={3}>{t('entra.step1Title')}</Heading>
+                <p className="text-sm text-content-muted">{t('entra.signInApp.consent')}</p>
+                {signInClientId && (
+                    <p className="text-sm text-content-muted">
+                        {t('entra.signInApp.appIdLabel')}{' '}
+                        <code id="entra-sign-in-app-id">{signInClientId}</code>
+                    </p>
+                )}
+                <p className="text-sm text-content-muted">{t('entra.signInApp.groups')}</p>
+                <p className="text-sm font-medium text-content-emphasis">{t('entra.signInApp.selfHostedTitle')}</p>
                 <ol className="list-decimal space-y-tight pl-5 text-sm text-content-muted">
                     <li>
-                        Create an App Registration in the Entra portal; set the redirect URI to{' '}
-                        <code>{`{IC_URL}`}/api/auth/callback/microsoft-entra-id</code>.
+                        {t('entra.signInApp.selfHostedRedirect')}{' '}
+                        <code id="entra-redirect-uri">{redirectUri ?? '/api/auth/callback/microsoft-entra-id'}</code>
                     </li>
                     <li>
-                        In <strong>Token configuration</strong>, add a <strong>groups</strong> claim set to
-                        <strong> Security groups</strong> (manifest{' '}
-                        <code>&quot;groupMembershipClaims&quot;: &quot;SecurityGroup&quot;</code>). IC cannot
-                        set this for you — without it, no group claims reach IC.
+                        {t('entra.signInApp.selfHostedGroups')}{' '}
+                        <code>&quot;groupMembershipClaims&quot;: &quot;SecurityGroup&quot;</code>
                     </li>
                 </ol>
                 <a
@@ -151,7 +203,7 @@ export default function EntraProviderWizard() {
                         onChange={(e) => setConfig((c) => ({ ...c, aadTenantId: e.target.value }))}
                     />
                 </FormField>
-                <FormField label={t('entra.appClientId')}>
+                <FormField label={t('entra.appClientId')} hint={t('entra.appClientIdHint')}>
                     <Input
                         id="clientId"
                         disabled={!canChangeDirectory}
@@ -160,7 +212,12 @@ export default function EntraProviderWizard() {
                         onChange={(e) => setConfig((c) => ({ ...c, clientId: e.target.value }))}
                     />
                 </FormField>
-                <FormField label={t('entra.allowedDomains')}>
+                {clientIdIsNotSignInApp && (
+                    <InlineNotice variant="info" id="entra-client-id-not-sign-in-app">
+                        {t('entra.clientIdNotSignInApp')}
+                    </InlineNotice>
+                )}
+                <FormField label={t('entra.allowedDomains')} hint={t('entra.allowedDomainsHint')}>
                     <Input
                         id="domains"
                         placeholder="contoso.com, fabrikam.com"
@@ -194,7 +251,7 @@ export default function EntraProviderWizard() {
                     <Button
                         variant="primary"
                         onClick={save}
-                        disabled={saving || (!configured && !canChangeDirectory)}
+                        disabled={saving || loadError || (!configured && !canChangeDirectory)}
                         id="entra-save-btn"
                     >
                         {saving ? t('entra.saving') : t('entra.save')}
