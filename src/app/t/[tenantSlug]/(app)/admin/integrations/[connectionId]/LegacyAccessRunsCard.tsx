@@ -40,6 +40,7 @@
  * AUTHZ_DENIED row for nothing more than a visit.
  */
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
@@ -405,9 +406,9 @@ function SnapshotStanding({
                             })}
                         </span>
                     </p>
-                    <a className="text-content-info underline underline-offset-2" href={queueHref}>
+                    <Link className="text-content-info underline underline-offset-2" href={queueHref}>
                         {t('openQueue')}
-                    </a>
+                    </Link>
                 </div>
             ) : (
                 <p className="text-content-muted">{t('notMatched')}</p>

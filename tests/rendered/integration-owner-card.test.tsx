@@ -74,25 +74,35 @@ const en = require('../../messages/en.json') as {
 const O = en.admin.integrations.owner;
 
 let calls: { url: string; method: string; body: unknown }[] = [];
-let connections: unknown[] = [];
 let putOk = true;
+let putRefusal: unknown = {};
+
+/** The connection as the page's executions read gives it (#4870). */
+const conn = (over: Record<string, unknown> = {}) => ({
+    id: 'conn_1',
+    name: 'Agent tools',
+    provider: 'mcp-server',
+    isEnabled: true,
+    ownerUserId: null as string | null,
+    ...over,
+});
 const realFetch = global.fetch;
 
 beforeEach(() => {
     calls = [];
     putOk = true;
-    connections = [{ id: 'conn_1', provider: 'mcp-server', ownerUserId: null }];
+    putRefusal = {};
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         const method = init?.method ?? 'GET';
         const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
         calls.push({ url, method, body });
         if (method === 'PUT') {
-            if (!putOk) return { ok: false, status: 400, json: async () => ({ error: 'x' }) };
+            if (!putOk) return { ok: false, status: 400, json: async () => putRefusal };
             const owner = (body as { ownerUserId: string | null }).ownerUserId;
             return { ok: true, status: 200, json: async () => ({ connectionId: 'conn_1', ownerUserId: owner, changed: true }) };
         }
-        return { ok: true, status: 200, json: async () => connections };
+        return { ok: false, status: 500, json: async () => ({}) };
     }) as unknown as typeof fetch;
 });
 
@@ -104,30 +114,29 @@ const writes = () => calls.filter((c) => c.method !== 'GET');
 
 describe('IntegrationOwnerCard — which connections', () => {
     it('renders NOTHING for a connection that is not mcp-server', async () => {
-        connections = [{ id: 'conn_1', provider: 'okta', ownerUserId: null }];
-        const { container } = render(<IntegrationOwnerCard connectionId="conn_1" />);
-        await waitFor(() => expect(calls).toHaveLength(1));
-        await waitFor(() => expect(container).toBeEmptyDOMElement());
-        // And it stays empty once the list answer has been applied.
+        const { container } = render(<IntegrationOwnerCard connection={conn({ provider: 'okta' })} />);
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
         expect(container).toBeEmptyDOMElement();
     });
 
-    it('renders for an mcp-server connection', async () => {
-        render(<IntegrationOwnerCard connectionId="conn_1" />);
-        await waitFor(() => expect(screen.getByTestId('integration-owner')).toBeInTheDocument());
+    it('renders for an mcp-server connection, and reads nothing to decide (#4870)', async () => {
+        render(<IntegrationOwnerCard connection={conn()} />);
+        expect(screen.getByTestId('integration-owner')).toBeInTheDocument();
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+        // It used to download every connection in the workspace to learn this
+        // one's provider.
+        expect(calls).toHaveLength(0);
     });
 });
 
 describe('IntegrationOwnerCard — no owner', () => {
     it('says no owner is named', async () => {
-        render(<IntegrationOwnerCard connectionId="conn_1" />);
+        render(<IntegrationOwnerCard connection={conn()} />);
         await waitFor(() => expect(screen.getByTestId('integration-owner-missing')).toHaveTextContent(O.missing));
     });
 
     it('shows no warning once an owner is stored, and pre-selects them', async () => {
-        connections = [{ id: 'conn_1', provider: 'mcp-server', ownerUserId: 'u1' }];
-        render(<IntegrationOwnerCard connectionId="conn_1" />);
+        render(<IntegrationOwnerCard connection={conn({ ownerUserId: 'u1' })} />);
         await waitFor(() => expect(screen.getByTestId('picker-selected')).toHaveTextContent('u1'));
         expect(screen.queryByTestId('integration-owner-missing')).toBeNull();
     });
@@ -135,7 +144,7 @@ describe('IntegrationOwnerCard — no owner', () => {
 
 describe('IntegrationOwnerCard — saving', () => {
     it('writes nothing until Save, then PUTs exactly { ownerUserId } to the owner route', async () => {
-        render(<IntegrationOwnerCard connectionId="conn_1" />);
+        render(<IntegrationOwnerCard connection={conn()} />);
         await waitFor(() => expect(screen.getByTestId('integration-owner')).toBeInTheDocument());
 
         const save = document.getElementById('integration-owner-save') as HTMLButtonElement;
@@ -157,8 +166,7 @@ describe('IntegrationOwnerCard — saving', () => {
     });
 
     it('clears an owner by saving null', async () => {
-        connections = [{ id: 'conn_1', provider: 'mcp-server', ownerUserId: 'u1' }];
-        render(<IntegrationOwnerCard connectionId="conn_1" />);
+        render(<IntegrationOwnerCard connection={conn({ ownerUserId: 'u1' })} />);
         await waitFor(() => expect(screen.getByTestId('picker-selected')).toHaveTextContent('u1'));
 
         fireEvent.click(document.getElementById('integration-owner-clear') as HTMLButtonElement);
@@ -170,9 +178,24 @@ describe('IntegrationOwnerCard — saving', () => {
         await waitFor(() => expect(screen.getByTestId('integration-owner-missing')).toBeInTheDocument());
     });
 
-    it('shows the refusal rather than swallowing it', async () => {
+    it("shows the server's refusal rather than one fixed sentence", async () => {
         putOk = false;
-        render(<IntegrationOwnerCard connectionId="conn_1" />);
+        putRefusal = { error: { code: 'BAD_REQUEST', message: 'Owner must be an active member of this tenant' } };
+        render(<IntegrationOwnerCard connection={conn()} />);
+        await waitFor(() => expect(screen.getByTestId('integration-owner')).toBeInTheDocument());
+        fireEvent.click(screen.getByTestId('pick-u2'));
+        fireEvent.click(document.getElementById('integration-owner-save') as HTMLButtonElement);
+        await waitFor(() =>
+            expect(screen.getByTestId('integration-owner-message')).toHaveTextContent(
+                'Owner must be an active member of this tenant',
+            ),
+        );
+    });
+
+    it('a refusal with no sentence falls back to saying the save failed', async () => {
+        putOk = false;
+        putRefusal = {};
+        render(<IntegrationOwnerCard connection={conn()} />);
         await waitFor(() => expect(screen.getByTestId('integration-owner')).toBeInTheDocument());
         fireEvent.click(screen.getByTestId('pick-u2'));
         fireEvent.click(document.getElementById('integration-owner-save') as HTMLButtonElement);

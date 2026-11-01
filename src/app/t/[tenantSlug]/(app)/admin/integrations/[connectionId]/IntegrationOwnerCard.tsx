@@ -17,9 +17,11 @@
  * ═══ ONLY FOR `mcp-server` CONNECTIONS ═══
  *
  * Only those have a passport, and the connection page is shared by every
- * provider. The card decides from the connection's PROVIDER, read off the
- * same list the integrations page reads, as the legacy mapping card does — and
- * reads the stored owner from that row, so what it shows is what is saved.
+ * provider. The card decides from the connection's PROVIDER, which the page
+ * passes in from its own read of the connection — the stored owner comes with
+ * it, so what the card shows is what is saved. It used to download every
+ * connection in the workspace to learn this one's provider, and hid itself
+ * silently when that read failed (#4870).
  *
  * ═══ NOTHING IS SAVED UNTIL SAVE IS PRESSED ═══
  *
@@ -29,7 +31,7 @@
  * re-enable a disabled connection. The server refuses an owner without an
  * ACTIVE membership of this tenant; the refusal is shown, not swallowed.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { useTenantApiUrl, useTenantContext } from '@/lib/tenant-context-provider';
@@ -39,51 +41,23 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { apiErrorMessage } from '@/lib/api-error';
+import type { ConnectionHeader } from './connection-header';
 
 const MCP_SERVER_PROVIDER = 'mcp-server';
 
-export function IntegrationOwnerCard({ connectionId }: { connectionId: string }) {
+export function IntegrationOwnerCard({ connection }: { connection: ConnectionHeader }) {
     const t = useTranslations('admin.integrations.owner');
     const apiUrl = useTenantApiUrl();
     const { tenantSlug } = useTenantContext();
+    const connectionId = connection.id;
 
-    /** null = not known yet (or the list failed); false = not an mcp-server connection. */
-    const [applies, setApplies] = useState<boolean | null>(null);
     /** The owner as stored. */
-    const [saved, setSaved] = useState<string | null>(null);
+    const [saved, setSaved] = useState<string | null>(connection.ownerUserId);
     /** The owner as picked. Local until Save. */
-    const [picked, setPicked] = useState<string | null>(null);
+    const [picked, setPicked] = useState<string | null>(connection.ownerUserId);
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-
-    useEffect(() => {
-        let alive = true;
-        void (async () => {
-            try {
-                const res = await fetch(apiUrl('/admin/integrations'));
-                if (!res.ok) throw new Error('load');
-                const body: unknown = await res.json();
-                const list = Array.isArray(body)
-                    ? body
-                    : ((body as { connections?: unknown[] }).connections ?? []);
-                const mine = (list as { id?: string; provider?: string; ownerUserId?: string | null }[])
-                    .find((c) => c.id === connectionId);
-                if (!alive) return;
-                const isMcp = mine?.provider === MCP_SERVER_PROVIDER;
-                setApplies(isMcp);
-                if (isMcp) {
-                    const stored = mine?.ownerUserId ?? null;
-                    setSaved(stored);
-                    setPicked(stored);
-                }
-            } catch {
-                // Unknown rather than false, and nothing rendered: a failed list
-                // call says nothing about whether this connection has an owner.
-                if (alive) setApplies(null);
-            }
-        })();
-        return () => { alive = false; };
-    }, [apiUrl, connectionId]);
 
     const save = useCallback(async () => {
         setSaving(true);
@@ -94,7 +68,13 @@ export function IntegrationOwnerCard({ connectionId }: { connectionId: string })
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ ownerUserId: picked }),
             });
-            if (!res.ok) throw new Error(String(res.status));
+            if (!res.ok) {
+                // The server's own sentence: the active-member rule is one
+                // refusal among several (a 403, a missing connection).
+                const refusal = await res.json().catch(() => null);
+                setMsg({ ok: false, text: apiErrorMessage(refusal, t('saveFailed')) });
+                return;
+            }
             const body = (await res.json()) as { ownerUserId: string | null };
             setSaved(body.ownerUserId);
             setPicked(body.ownerUserId);
@@ -106,7 +86,7 @@ export function IntegrationOwnerCard({ connectionId }: { connectionId: string })
         }
     }, [apiUrl, connectionId, picked, t]);
 
-    if (applies !== true) return null;
+    if (connection.provider !== MCP_SERVER_PROVIDER) return null;
 
     return (
         <Card className="space-y-default p-6" id="integration-owner" data-testid="integration-owner">

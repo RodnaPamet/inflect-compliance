@@ -34,6 +34,7 @@
  * owner's name and address are resolved for display only and are never part of
  * the passport.
  */
+import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 
@@ -360,9 +361,9 @@ export function IntegrationPassportCard({ connectionId }: { connectionId: string
                                 <StatusBadge variant={SEVERITY_VARIANT[f.severity] ?? 'neutral'}>{f.severity}</StatusBadge>
                                 {/* There is no `/findings/[id]` route: a finding's address
                                     is the register with its panel opened. */}
-                                <a className="text-content-info underline underline-offset-2" href={tenantHref(`/findings?finding=${f.id}`)}>
+                                <Link className="text-content-info underline underline-offset-2" href={tenantHref(`/findings?finding=${f.id}`)}>
                                     {f.title}
-                                </a>
+                                </Link>
                                 {f.assigneeUserId === null && <span className="text-content-muted">{t('findingOwnerRole')}</span>}
                             </li>
                         ))}
