@@ -157,7 +157,9 @@ describe('Epic O-4 — cross-tenant list pages structural contract', () => {
                 expect(src).toMatch(
                     new RegExp(`header:\\s*t\\('${spec.name}\\.colTenant'\\)`),
                 );
-                expect(enOrg(`${spec.name}.colTenant`)).toBe('Tenant');
+                // The org portal says "workspace" (owner decision, 2026-11-01,
+                // #4845); each list moves from "Tenant" in its own PR.
+                expect(['Tenant', 'Workspace']).toContain(enOrg(`${spec.name}.colTenant`));
                 // And renders the human-readable name from the row.
                 expect(src).toMatch(/row\.original\.tenantName/);
             });

@@ -136,12 +136,13 @@ describe('Epic O-4 — org shell structural contract', () => {
         expect(src).toMatch(/canManageMembers/);
     });
 
-    it('Settings is in the Manage group, for org admins, with a page behind it (#4557)', () => {
+    it('Settings is in the Manage group, for every member, with a page behind it (#4557, #4850)', () => {
         const src = read(NAV_PATH);
         // Removed earlier while it had no org page to open; restored with the
-        // org Settings page that holds the agent switches. Gated like Members,
-        // so a reader's sidebar is unchanged.
-        expect(src).toMatch(/href:\s*orgHref\('\/settings'\),\s*label:\s*t\('nav\.settings'\),\s*icon:\s*Gear,\s*requiresManageMembers:\s*true/);
+        // org Settings page that holds the agent switches. Ungated since
+        // #4850: the page shows a Reader the switches read-only, so the item
+        // is theirs too. The entry ends after its icon, with no gate flag.
+        expect(src).toMatch(/href:\s*orgHref\('\/settings'\),\s*label:\s*t\('nav\.settings'\),\s*icon:\s*Gear,\s*\}/);
         expect(enOrg('nav.settings')).toBe('Settings');
         expect(fs.existsSync(path.join(ROOT, 'src/app/org/[orgSlug]/(app)/settings/page.tsx'))).toBe(true);
     });

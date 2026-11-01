@@ -53,6 +53,8 @@ import {
 import { withTenantDb } from '@/lib/db-context';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
+import { DashboardRepository } from '@/app-layer/repositories/DashboardRepository';
+import { needsTreatmentRiskStatusFilter } from '@/app-layer/domain/risk-status';
 
 // ── Internal helpers ──────────────────────────────────────────────────
 
@@ -98,6 +100,25 @@ function trendRowToDataPoint(row: SnapshotTrendRow): PortfolioTrendDataPoint {
 function assertCanViewPortfolio(ctx: OrgContext): void {
     if (!ctx.permissions.canViewPortfolio) {
         throw forbidden('Portfolio view requires an active org membership');
+    }
+}
+
+/**
+ * The three cross-workspace drill-down lists name items INSIDE the workspaces
+ * (control names, risk titles, evidence titles) and link to them. An
+ * `ORG_READER` holds the portfolio summary only (`canDrillDown: false`).
+ *
+ * Asserted HERE, not only at the API route (#4845). The org pages call these
+ * usecases directly, and `withTenantDb` binds `app.tenant_id` and nothing
+ * else, so row-level security admits any caller for any workspace of the org:
+ * it does not ask whether the caller holds a membership there. Before this, a
+ * Reader who typed `/org/<slug>/controls` read every workspace's
+ * non-implemented controls, though the API refused the same view.
+ */
+function assertCanDrillDown(ctx: OrgContext): void {
+    assertCanViewPortfolio(ctx);
+    if (!ctx.permissions.canDrillDown) {
+        throw forbidden('The cross-workspace lists are for organization owners and admins');
     }
 }
 
@@ -557,17 +578,15 @@ export async function getCriticalRisksAcrossOrg(
     return fanOutPerTenant<CriticalRiskRow>(
         integrity.accessibleTenants,
         async (db, tenant) => {
-            // "Critical" = inherentScore >= 15 (5×5 matrix top tier) AND
-            // still actionable (status != CLOSED). The architecture doc's
-            // hint of `inherentScore >= 15 OR status = 'OPEN'` would also
-            // surface every low-severity OPEN risk and clutter the
-            // portfolio view; the AND interpretation is what a CISO
-            // monitoring critical risk actually wants.
+            // "Critical" = a score in the workspace's own highest severity
+            // band AND still needing treatment (#4846), the same rule the
+            // snapshot's `risksCritical` counts (`countCriticalRisks`).
+            const floor = await DashboardRepository.criticalScoreFloor(db, tenant.id);
             const rows = await db.risk.findMany({
                 where: {
                     tenantId: tenant.id,
-                    inherentScore: { gte: 15 },
-                    status: { not: 'CLOSED' },
+                    inherentScore: { gte: floor },
+                    status: needsTreatmentRiskStatusFilter(),
                     deletedAt: null,
                 },
                 select: {
@@ -851,7 +870,7 @@ export async function listNonPerformingControls(
     ctx: OrgContext,
     input: PaginatedDrillDownInput = {},
 ): Promise<PaginatedDrillDownResult<NonPerformingControlRow>> {
-    assertCanViewPortfolio(ctx);
+    assertCanDrillDown(ctx);
     const limit = clampPageLimit(input.limit);
     const cursor = decodeJson<ControlsCursor>(input.cursor);
     const { tenants } = await getPortfolioData(ctx.organizationId, {
@@ -963,7 +982,7 @@ export async function listCriticalRisksAcrossOrg(
     ctx: OrgContext,
     input: PaginatedDrillDownInput = {},
 ): Promise<PaginatedDrillDownResult<CriticalRiskRow>> {
-    assertCanViewPortfolio(ctx);
+    assertCanDrillDown(ctx);
     const limit = clampPageLimit(input.limit);
     const cursor = decodeJson<RisksCursor>(input.cursor);
     const { tenants } = await getPortfolioData(ctx.organizationId, {
@@ -994,11 +1013,15 @@ export async function listCriticalRisksAcrossOrg(
     const merged = await fanOutPerTenant<CriticalRiskRow>(
         tenants,
         async (db, tenant) => {
+            // The workspace's own highest band, and only risks still
+            // needing treatment (#4846): the rows the portfolio's Critical
+            // Risks figure counts (`DashboardRepository.countCriticalRisks`).
+            const floor = await DashboardRepository.criticalScoreFloor(db, tenant.id);
             const rows = await db.risk.findMany({
                 where: {
                     tenantId: tenant.id,
-                    inherentScore: { gte: 15 },
-                    status: { not: 'CLOSED' },
+                    inherentScore: { gte: floor },
+                    status: needsTreatmentRiskStatusFilter(),
                     deletedAt: null,
                     ...(cursorWhere ?? {}),
                 },
@@ -1078,7 +1101,7 @@ export async function listOverdueEvidenceAcrossOrg(
     ctx: OrgContext,
     input: PaginatedDrillDownInput = {},
 ): Promise<PaginatedDrillDownResult<OverdueEvidenceRow>> {
-    assertCanViewPortfolio(ctx);
+    assertCanDrillDown(ctx);
     const limit = clampPageLimit(input.limit);
     const cursor = decodeJson<EvidenceCursor>(input.cursor);
     const { tenants } = await getPortfolioData(ctx.organizationId, {

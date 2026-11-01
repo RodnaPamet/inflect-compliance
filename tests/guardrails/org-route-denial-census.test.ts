@@ -64,10 +64,6 @@ const UNGATED_ORG_MUTATIONS: ReadonlyArray<readonly [string, string]> = [
             'usecase audits an email-mismatch refusal itself.',
     ],
     [
-        'org/invite/[token]/accept-redirect/route.ts#POST',
-        'The browser-redirect sibling of the above, same token credential.',
-    ],
-    [
         'org/route.ts#POST',
         'Creates an organization. There is no organization yet, so no org ' +
             'permission exists to check; authorization is the authenticated ' +

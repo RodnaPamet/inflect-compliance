@@ -468,6 +468,14 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // page's per-approval Approve, a row action in the approval list and a
 // four-eyes approve (the parameter-sets precedent above). The cycle page's
 // Edit trigger is secondary. Net change: zero.
+// 2026-11-01 — #4853 org invite page: 173 stays, PAID FOR. The org invite
+// page's "Accept invitation" was a hand-rolled brand-filled <button> this
+// counter could not see; on the Button primitive (OrgInviteAcceptButton) it is
+// counted, and it is the page's one action, as on the workspace invite page.
+// It is bought by the policy page's per-version Publish, a row action in the
+// version list (the R7-PR1 rule; the per-approval Approve on the same page was
+// demoted for #4727). The new "Sign out and use another account" is secondary.
+// Net change: zero.
 const MAX_PRIMARY_COUNT = 173;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));

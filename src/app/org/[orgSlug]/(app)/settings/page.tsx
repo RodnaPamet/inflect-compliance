@@ -6,6 +6,7 @@ import { getOrgCtx } from '@/app-layer/context';
 import { getOrgAgentSwitches } from '@/app-layer/usecases/org-agent-switches';
 import { Heading } from '@/components/ui/typography';
 import { OrgAgentSwitchesSection } from './OrgAgentSwitchesSection';
+import { OrgSettingsIntro } from './OrgSettingsIntro';
 
 /**
  * Organization settings (#4557). Today one section: the two agent switches an
@@ -39,7 +40,7 @@ export default async function OrgSettingsPage({ params }: PageProps) {
         <div className="space-y-section" data-testid="org-settings-page">
             <div>
                 <Heading level={1}>{t('heading')}</Heading>
-                <p className="mt-1 max-w-3xl text-sm text-content-muted">{t('intro')}</p>
+                <OrgSettingsIntro />
             </div>
             <OrgAgentSwitchesSection initial={JSON.parse(JSON.stringify(switches))} />
         </div>

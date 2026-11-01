@@ -34,6 +34,7 @@ import { prisma } from '@/lib/prisma';
 import { hashForLookup } from '@/lib/security/encryption';
 import { appendOrgAuditEntry } from '@/lib/audit/org-audit-writer';
 import { provisionOrgAdminToTenants, type ProvisionResult } from './org-provisioning';
+import type { InviteRefusal } from '@/lib/invite-refusals';
 import {
     badRequest,
     forbidden,
@@ -369,10 +370,15 @@ export async function redeemOrgInvite(input: {
             where: { token: input.token },
             select: { acceptedAt: true, revokedAt: true, expiresAt: true },
         });
-        if (!inv) throw notFound('Invite not found');
-        if (inv.revokedAt) throw gone('Invite has been revoked');
-        if (inv.expiresAt < new Date()) throw gone('Invite has expired');
-        if (inv.acceptedAt) throw gone('Invite has already been redeemed');
+        // Each refusal names its reason (#4853), so the invite page answers in
+        // the person's language from `invite.orgRefused.<reason>` rather than
+        // printing this English message.
+        if (!inv) throw notFound('Invite not found', { reason: 'INVITE_NOT_FOUND' satisfies InviteRefusal });
+        if (inv.revokedAt) throw gone('Invite has been revoked', { reason: 'INVITE_REVOKED' satisfies InviteRefusal });
+        if (inv.expiresAt < new Date()) throw gone('Invite has expired', { reason: 'INVITE_EXPIRED' satisfies InviteRefusal });
+        if (inv.acceptedAt) {
+            throw gone('Invite has already been redeemed', { reason: 'INVITE_ALREADY_REDEEMED' satisfies InviteRefusal });
+        }
         throw internal('Invite redemption race condition');
     }
 
@@ -397,6 +403,7 @@ export async function redeemOrgInvite(input: {
         throw forbidden(
             'Invite email does not match signed-in user. ' +
                 'Ask your admin to send a new invite to your email address.',
+            { reason: 'INVITE_EMAIL_MISMATCH' satisfies InviteRefusal },
         );
     }
 

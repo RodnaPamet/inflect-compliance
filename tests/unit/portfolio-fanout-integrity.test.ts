@@ -96,6 +96,7 @@ beforeEach(() => {
             control: { findMany: () => Promise.resolve([]) },
             risk: { findMany: () => Promise.resolve([]) },
             evidence: { findMany: () => Promise.resolve([]) },
+            riskMatrixConfig: { findUnique: () => Promise.resolve(null) },
         };
         return fn(db);
     });

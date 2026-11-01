@@ -366,12 +366,6 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
     { handler: 'api/org/invite/[token]/route.ts#POST', klass: 'CAPABILITY_TOKEN',
       mechanism: /redeemOrgInvite/,
       note: 'Org redemption. Session required by the route, then redeemOrgInvite performs the same atomic updateMany claim against acceptedAt/revokedAt/expiresAt as the tenant flow.' },
-    { handler: 'api/org/invite/[token]/accept-redirect/route.ts#GET', klass: 'CAPABILITY_TOKEN',
-      mechanism: /redeemOrgInvite/,
-      note: 'GET and POST share one `handle`, so both are corroborated on the same call: unauthenticated callers redirect to /login and the token is checked by redeemOrgInvite.' },
-    { handler: 'api/org/invite/[token]/accept-redirect/route.ts#POST', klass: 'CAPABILITY_TOKEN',
-      mechanism: /redeemOrgInvite/,
-      note: 'Form-submit target on /invite/org/[token]; identical body to the GET above via the shared `handle`, verified by the redeemOrgInvite atomic claim.' },
     { handler: 'api/org/invite/[token]/start-signin/route.ts#GET', klass: 'CAPABILITY_TOKEN',
       // FINDING — the org mirror of the tenant start-signin above, same shape,
       // same absence of a check. Corroborates the distinct cookie name.
@@ -880,8 +874,9 @@ describe('every API route handler has SOME authorization (layer 2)', () => {
         const members = EXEMPT_HANDLERS.filter((e) => e.klass === 'CAPABILITY_TOKEN');
         // Positive companion: the class is populated, so an empty offender
         // list below is evidence rather than an empty scan.
-        // 13 since #4689 deleted the GET invite redeemer (`accept-redirect`).
-        expect(members.length).toBeGreaterThanOrEqual(13);
+        // 13 since #4689 deleted the GET invite redeemer (`accept-redirect`),
+        // 11 since #4853 deleted the org one (its GET and POST).
+        expect(members.length).toBeGreaterThanOrEqual(11);
         expect(EXEMPT_CLASSES.CAPABILITY_TOKEN.mechanism).toBeUndefined();
 
         // Routes drawn from classes that CANNOT hold a capability token: two
@@ -980,8 +975,9 @@ describe('every API route handler has SOME authorization (layer 2)', () => {
         // to sit here claiming to catch a run where "nothing was mutated at
         // all" — it could not: every offender path `continue`s, so zero
         // offenders already implies every checkable member incremented.
-        // 13 since #4689 deleted the GET invite redeemer (`accept-redirect`).
-        expect(checkable.length).toBeGreaterThanOrEqual(13);
+        // 13 since #4689 deleted the GET invite redeemer (`accept-redirect`),
+        // 11 since #4853 deleted the org one (its GET and POST).
+        expect(checkable.length).toBeGreaterThanOrEqual(11);
     });
 
     it('PRE_TENANT_AUTH membership stays confined to /api/auth/', () => {
