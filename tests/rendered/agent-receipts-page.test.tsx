@@ -9,7 +9,6 @@
  *      is on the row.
  *   4. THE LIST NARROWS and says when it is cut; empty is an EmptyState.
  */
-import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
 
 const en = require('../../messages/en.json') as Record<string, Record<string, unknown>>;

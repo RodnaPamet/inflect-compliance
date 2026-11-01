@@ -8,7 +8,7 @@ The {{ui:agents.externalTools.title}} page shows the tools an outside tool serve
 
 ## Where to find it
 
-Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choose **{{ui:common.ui.viewsMenu}}** › **{{ui:agents.views.externalTools}}**.
+Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choose **{{ui:common.ui.viewsMenu}}** › **{{ui:agents.views.externalTools}}**. The breadcrumb reads **{{ui:agents.crumbDashboard}}** › **{{ui:agents.register.breadcrumb}}** › **{{ui:agents.externalTools.title}}**, and the same **{{ui:common.ui.viewsMenu}}** menu sits in the page header.
 
 ## Who can use it
 
@@ -33,13 +33,26 @@ The tool server must already be connected, switched on and tested under **Integr
 
 Below them: {{ui:agents.externalTools.grantHint}}
 
+When the server's last connection test failed, a warning says so: {{ui:agents.externalTools.lastTestFailed}}
+
 Each tool shows:
 
-- a label saying whether its definition is approved, has never been approved, or has changed since it was approved;
-- its name, and the revision of its approved definition;
+- a label saying where its definition stands:
+
+  | Label | What it means |
+  | --- | --- |
+  | **{{ui:agents.externalTools.status.APPROVED}}** | The definition is the one last approved. Agents granted the tool can call it |
+  | **{{ui:agents.externalTools.status.UNPINNED}}** | Nobody has approved this tool yet |
+  | **{{ui:agents.externalTools.status.DESCRIPTION_CHANGED}}** | The server changed the tool's description since it was approved |
+  | **{{ui:agents.externalTools.status.SCHEMA_CHANGED}}** | The server changed the arguments the tool takes |
+  | **{{ui:agents.externalTools.status.DEFINITION_CHANGED}}** | The server changed more than one part of the definition |
+  | **{{ui:agents.externalTools.status.ANNOTATIONS_CHANGED}}** | The server changed the hints it gives about the tool, such as whether it changes things |
+
+  A changed definition shows in the warning colour;
+- its name, the revision of its approved definition, and when it was last approved;
 - the description the server gives for it. This is the server's own text, shown as plain text;
 - **{{ui:agents.externalTools.schemaLabel}}**, folded away: the arguments the tool takes;
-- the first characters of a fingerprint of the definition;
+- the start of the definition's fingerprint, labelled as such;
 - **{{ui:agents.externalTools.blocked}}**, when the definition changed in a way that stops agents calling it;
 - for a tool the server says changes things, **{{ui:agents.externalTools.priorStateLabel}}** (see below).
 
@@ -50,13 +63,17 @@ When the server offers tools whose names cannot be accepted, a line says how man
 ### Approve a tool's definition
 
 1. Pick the server, and read the tool's description and arguments.
-2. Click **{{ui:agents.externalTools.approve}}**. For a definition that was approved before, the button reads **{{ui:agents.externalTools.reapprove}}**.
+2. Click **{{ui:agents.externalTools.approve}}**. For a tool that was approved before, the button reads **{{ui:agents.externalTools.reapprove}}**.
+3. A confirmation asks you to approve the tool. For a new tool it says what approval means: {{ui:agents.externalTools.confirmNew}} For a changed tool it names the part that changed, so you know what to read again. The earlier text is not kept, so the page cannot show you the old and new side by side.
+4. Click **{{ui:agents.externalTools.confirmAction}}**.
 
 The approval is for the definition shown on the page. If the server changed it after the page read it, the approval is refused; refresh and read it again. Once approved, the tool can be granted to an agent on that agent's **Tools** tab.
 
 ### Choose a prior-state read for a write tool
 
 Owners only. A tool that changes something in the outside system can be used only if the workspace can first record how things stood before the change, so that it can be checked and reversed. Under **{{ui:agents.externalTools.priorStateLabel}}**, choose the server's read tool that captures that state. **{{ui:agents.externalTools.priorStateNone}}** leaves the write unusable, and the line **{{ui:agents.externalTools.priorStateMissing}}** says so.
+
+An Admin or AI admin sees no choice here. The write tool says instead: {{ui:agents.externalTools.priorStateOwnerOnly}}
 
 ## Empty and error states
 
@@ -66,7 +83,8 @@ Owners only. A tool that changes something in the outside system can be used onl
 | **{{ui:agents.externalTools.emptyTitle}}** | {{ui:agents.externalTools.emptyDesc}} | Check the server's own configuration |
 | {{ui:agents.externalTools.loadFailed}} | The server could not be reached, or refused | Test the connection under Integrations, then click **{{ui:agents.externalTools.refresh}}** |
 | {{ui:agents.externalTools.approveFailed}} | The approval did not go through | Refresh and try again |
-| {{ui:agents.externalTools.pairingFailed}} | The prior-state read could not be changed | Make sure you are an Owner, then try again |
+| {{ui:agents.externalTools.pairingFailed}} | The prior-state read could not be changed | Try again |
+| {{ui:agents.externalTools.lastTestFailed}} | The server's last connection test failed | Test the connection under Integrations |
 
 ## Related
 

@@ -28,9 +28,11 @@ Everyone else sees **{{ui:agents.register.accessTitle}}** instead of the page.
 | Column | What it shows |
 | --- | --- |
 | {{ui:agents.peers.colName}} | The peer's name, and the address of its agent card |
+| {{ui:agents.peers.colOwner}} | The member who answers for the peer here |
+| {{ui:agents.peers.colVendor}} | The supplier, from the vendor register, that runs the peer |
 | {{ui:agents.peers.colStatus}} | **{{ui:agents.peers.statusActive}}**, **{{ui:agents.peers.statusSuspended}}** or **{{ui:agents.peers.statusRetired}}** |
 | {{ui:agents.peers.colPin}} | **{{ui:agents.peers.pinNone}}**, or which approved version of its card is in force |
-| {{ui:agents.peers.colCard}} | Whether the card the peer publishes today is the one approved: **{{ui:agents.peers.cardMatches}}**, **{{ui:agents.peers.cardChanged}}** or **{{ui:agents.peers.cardUnobserved}}** |
+| {{ui:agents.peers.colCard}} | Whether the card the peer publishes today is the one approved: **{{ui:agents.peers.cardMatches}}**, **{{ui:agents.peers.cardChanged}}**, **{{ui:agents.peers.cardUnobserved}}**, or **{{ui:agents.peers.cardUnapproved}}** for a peer whose card nobody has approved yet |
 | {{ui:agents.peers.colQuota}} | How many messages the peer may send this workspace in an hour |
 
 Click a row to open the peer's own page.
@@ -43,9 +45,9 @@ Click a row to open the peer's own page.
 2. Fill in:
    - **{{ui:agents.peers.register.name}}**.
    - **{{ui:agents.peers.register.cardUrl}}**: {{ui:agents.peers.register.cardUrlHint}}
-   - **{{ui:agents.peers.register.signingKey}}**: {{ui:agents.peers.register.signingKeyHint}} Get it from the other organisation.
+   - **{{ui:agents.peers.register.signingKey}}**: {{ui:agents.peers.register.signingKeyHint}}
    - **{{ui:agents.peers.register.owner}}**: {{ui:agents.peers.register.ownerHint}}
-   - **{{ui:agents.peers.register.vendor}}**: {{ui:agents.peers.register.vendorHint}} Add the supplier to the vendor register first if it is not there.
+   - **{{ui:agents.peers.register.vendor}}**: {{ui:agents.peers.register.vendorHint}} The list shows the first suppliers; type to search the rest. Add the supplier to the vendor register first if it is not there. With no suppliers at all, the form says {{ui:agents.peers.register.vendorsEmpty}} and links to **{{ui:agents.peers.register.vendorsLink}}**.
    - **{{ui:agents.peers.register.riskTier}}**, optional. {{ui:agents.peers.register.riskTierHint}}
 3. Click **{{ui:agents.peers.register.submit}}**.
 
@@ -63,13 +65,15 @@ Open the filter to choose by **{{ui:agents.peers.filters.status}}**, or type to 
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:agents.peers.emptyTitle}}** | No peer is registered | Register one |
+| **{{ui:agents.peers.emptyTitle}}** | {{ui:agents.peers.emptyDesc}} | Register one |
 | **{{ui:agents.peers.emptyMatchingTitle}}** | {{ui:agents.peers.emptyMatchingDesc}} | Clear the filters |
 | {{ui:agents.peers.register.failed}} | The details were refused | Read the message under the form, correct it and try again |
+| {{ui:agents.peers.register.ownersUnavailable}} | The member list did not load | Reload the page |
+| {{ui:agents.peers.register.vendorsUnavailable}} | The vendor register did not load | Reload the page |
 | {{ui:agents.peers.signingKey.failed}} | The key was not changed | Try again; only an Owner can do this |
 
 ## Related
 
-- [Peer agent](peer-agent-detail.md), one peer's card, credential, messages and stop switch.
+- [Peer agent](peer-agent-detail.md), one peer's card, access token, messages and stop switch.
 - [Agents](agents.md), the agent register, where the agent that receives a peer's tasks is registered.
 - [Vendors](vendors.md), where the supplier a peer belongs to is recorded.

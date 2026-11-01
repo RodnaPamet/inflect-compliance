@@ -4,7 +4,7 @@ route: /t/[tenantSlug]/admin/ai-features
 
 # {{ui:admin.aiFeatures.heading}}
 
-The {{ui:admin.aiFeatures.heading}} page decides which AI features this workspace uses, whether its data may go to an external model provider, and which engine runs its agents. A feature that is off here is off for everyone in the workspace, whatever their role.
+The {{ui:admin.aiFeatures.heading}} page decides which AI features this workspace uses, whether its data may go to an external model provider, which engine runs its agents, and who approves and reads agents' work. A feature that is off here is off for everyone in the workspace, whatever their role.
 
 ## Where to find it
 
@@ -19,12 +19,13 @@ Click **{{ui:nav.admin}}** at the bottom of the sidebar. Under {{ui:admin.sectio
 | Change {{ui:admin.aiResidency.title}} | Owner, Admin |
 | Read {{ui:admin.agentEngines.title}} | Owner, Admin |
 | Change the engine, and see what a run still needs | Owner |
+| See and change {{ui:admin.agentOversight.heading}} | Owner |
 
-An Admin sees the sentence **{{ui:admin.aiFeatures.forbidden}}** in place of the switches, and **{{ui:admin.agentEngines.ownerOnly}}** in place of the engine choice. Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}**.
+An Admin sees the sentence **{{ui:admin.aiFeatures.forbidden}}** in place of the switches, **{{ui:admin.agentEngines.ownerOnly}}** in place of the engine choice, and **{{ui:admin.agentOversight.forbidden}}** in place of {{ui:admin.agentOversight.heading}}. Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}**.
 
 ## What you see
 
-The page has three parts, one under the other.
+The page has four parts, one under the other.
 
 ### The AI switches
 
@@ -73,6 +74,27 @@ The Flue and Tool Runner engines can be chosen only once the deployment's operat
 
 For an Owner, a checklist follows: **{{ui:admin.agentEngines.wiringHeading}}**, or **{{ui:admin.agentEngines.wiringHeadingToolRunner}}**. Each line is met or not, and some carry a **{{ui:admin.agentEngines.fix}}** link to the page that sets them up. Lines marked **{{ui:admin.agentEngines.operatorTerm}}** or **{{ui:admin.agentEngines.organizationTerm}}** are not yours to change from here.
 
+### {{ui:admin.agentOversight.heading}}
+
+{{ui:admin.agentOversight.intro}} Five switches, in two groups, each showing **{{ui:admin.agentOversight.on}}** or **{{ui:admin.agentOversight.off}}** with a button to change it.
+
+**{{ui:admin.agentOversight.groupApprovals}}**
+
+| Switch | What it does | Starts |
+| --- | --- | --- |
+| {{ui:admin.agentOversight.setting.composeNeedsSecondApprover.name}} | {{ui:admin.agentOversight.setting.composeNeedsSecondApprover.description}} | {{ui:admin.agentOversight.on}} |
+| {{ui:admin.agentOversight.setting.exactParameterEditNeedsSecondApprover.name}} | {{ui:admin.agentOversight.setting.exactParameterEditNeedsSecondApprover.description}} | {{ui:admin.agentOversight.off}} |
+
+**{{ui:admin.agentOversight.groupAuditors}}**
+
+| Switch | What it does | Starts |
+| --- | --- | --- |
+| {{ui:admin.agentOversight.setting.auditorReadsDecisionLog.name}} | {{ui:admin.agentOversight.setting.auditorReadsDecisionLog.description}} | {{ui:admin.agentOversight.off}} |
+| {{ui:admin.agentOversight.setting.auditorReadsReceipts.name}} | {{ui:admin.agentOversight.setting.auditorReadsReceipts.description}} | {{ui:admin.agentOversight.off}} |
+| {{ui:admin.agentOversight.setting.auditorReadsQuarantine.name}} | {{ui:admin.agentOversight.setting.auditorReadsQuarantine.description}} | {{ui:admin.agentOversight.off}} |
+
+The Auditor switches only add readers: people who manage the agent register read all three pages whatever these say.
+
 ## What you can do
 
 ### Turn an AI feature on or off
@@ -86,6 +108,10 @@ If the change fails, **{{ui:admin.aiFeatures.saveFailedHeading}}** appears with 
 ### Choose where AI runs
 
 Select **{{ui:admin.aiResidency.externalLabel}}** or **{{ui:admin.aiResidency.localLabel}}**, then click **{{ui:admin.aiResidency.save}}**. **{{ui:admin.aiResidency.saved}}** confirms it. The button stays greyed out until the selection differs from what is saved.
+
+### Change an agent oversight switch
+
+Click **{{ui:admin.agentOversight.turnOff}}** or **{{ui:admin.agentOversight.turnOn}}** beside it. The change is saved at once and recorded in the workspace's audit log. Each button changes only its own switch. An API key or an agent cannot change these, only an Owner signed in.
 
 ### Change the engine
 
@@ -102,6 +128,8 @@ Select an engine. A dialog asks you to confirm, and explains what changes: runs 
 | **{{ui:admin.aiResidency.saveFailed}}**, or the reason the server gave | The choice was not saved | Try again |
 | **{{ui:admin.agentEngines.loadFailed}}** | The engine setting did not load | Click **{{ui:common.error.tryAgain}}** |
 | **{{ui:admin.agentEngines.wiringLoadFailed}}** | The checklist did not load | Reload the page |
+| **{{ui:admin.agentOversight.loadFailed}}** | The agent oversight switches did not load | Click **{{ui:common.error.tryAgain}}** |
+| **{{ui:admin.agentOversight.saveFailedHeading}}**, with the reason | A switch did not change | Try again |
 
 ## Related
 

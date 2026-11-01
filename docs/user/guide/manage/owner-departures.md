@@ -8,7 +8,7 @@ The {{ui:agents.orphanPass.title}} page controls what happens to an agent whose 
 
 ## Where to find it
 
-Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choose **{{ui:common.ui.viewsMenu}}** › **{{ui:agents.views.ownerOrphanPass}}**. The entry appears on the agent register's views menu, and only for Owners. The breadcrumb reads **{{ui:agents.orphanPass.crumbAgents}}** › **{{ui:agents.orphanPass.title}}**.
+Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choose **{{ui:common.ui.viewsMenu}}** › **{{ui:agents.views.ownerOrphanPass}}**. The entry appears on the agent register's views menu, and only for Owners. The breadcrumb reads **{{ui:agents.crumbDashboard}}** › **{{ui:agents.orphanPass.crumbAgents}}** › **{{ui:agents.orphanPass.title}}**, and the same **{{ui:common.ui.viewsMenu}}** menu sits in the page header, so you can move to another agent view from here.
 
 ## Who can use it
 
@@ -28,10 +28,18 @@ An owner has left when they no longer hold an active membership in this workspac
 
 **{{ui:agents.orphanPass.passesHeading}}.** {{ui:agents.orphanPass.passesIntro}} Each pass shows:
 
-- when it ran, how it ended, and the mode it ran in;
+- when it ran, how it ended, and the mode it ran in:
+
+  | Status | What it means |
+  | --- | --- |
+  | **{{ui:agents.orphanPass.passStatus.PASSED}}** | The pass checked every active agent |
+  | **{{ui:agents.orphanPass.passStatus.PARTIAL}}** | It checked them, but something it asked for did not finish, such as a service principal it could not disable |
+  | **{{ui:agents.orphanPass.passStatus.NOT_APPLICABLE}}** | It checked nothing, and says why |
+  | **{{ui:agents.orphanPass.passStatus.ERROR}}** | The pass broke before it finished |
+
 - how many agents it found without an owner and, in **{{ui:admin.writeLadder.mode.AUTOMATIC}}**, how many it stopped and how many it could not;
 - when it ran at **{{ui:admin.writeLadder.mode.DISABLED}}**, or found nothing to check, the reason instead;
-- each agent it found, linked to the agent's page, with what was done to it:
+- each agent it found, by name and linked to the agent's page, with what was done to it. An agent that has since left the register is shown by its id:
 
   | Outcome | What it means |
   | --- | --- |
@@ -40,7 +48,23 @@ An owner has left when they no longer hold an active membership in this workspac
   | **{{ui:agents.orphanPass.outcome.SUSPENDED_KILL_ALREADY_IN_FORCE}}** | It was suspended; someone had already stopped it |
   | **{{ui:agents.orphanPass.outcome.FAILED}}** | Something did not complete; open the agent and check it |
 
-  and the signals that showed the owner had left, and what happened to the agent's Entra service principal.
+  and the signals that showed the owner had left:
+
+  | Signal | What it means |
+  | --- | --- |
+  | Membership, with its state | The owner's membership is not active. The state is one of: {{ui:agents.orphanPass.membership.INVITED}}, {{ui:agents.orphanPass.membership.DEACTIVATED}}, {{ui:agents.orphanPass.membership.REMOVED}}, or {{ui:agents.orphanPass.membership.ABSENT}} |
+  | {{ui:agents.orphanPass.signal.HR_TERMINATED}} | The HR feed marks the owner as terminated |
+
+  and, for a pass in **{{ui:admin.writeLadder.mode.DRY_RUN}}** or **{{ui:admin.writeLadder.mode.AUTOMATIC}}**, what happened to the agent's Entra service principal, in a sentence. The ones that need you are:
+
+  | What it says | What to do |
+  | --- | --- |
+  | {{ui:agents.orphanPass.servicePrincipalStatus.LINK_UNCONFIRMED}} | Confirm the link on the agent's page; until then an automatic pass does not disable it |
+  | {{ui:agents.orphanPass.servicePrincipalStatus.NO_PAIRED_ENDPOINT}} | Set up the connection that disables service principals, or disable it in Entra yourself |
+  | {{ui:agents.orphanPass.servicePrincipalStatus.NO_APPROVED_TEMPLATE}} | Approve saved parameters for the disable on that connection |
+  | {{ui:agents.orphanPass.servicePrincipalStatus.PROPOSED}} | Approve or reject the request in the agent proposals queue |
+  | {{ui:agents.orphanPass.servicePrincipalStatus.QUARANTINED}} | Review it in the agent quarantine |
+  | {{ui:agents.orphanPass.servicePrincipalStatus.FAILED}} | Check the principal in Entra; the request may or may not have reached it |
 
 When the HR roster could not be read in full, a warning says so: {{ui:agents.orphanPass.rosterNotRead}}
 
@@ -58,7 +82,15 @@ The modes go **{{ui:admin.writeLadder.mode.DISABLED}}** → **{{ui:admin.writeLa
 | {{ui:admin.writeLadder.mode.DRY_RUN}} | {{ui:agents.orphanPass.confirmBody.DRY_RUN}} |
 | {{ui:admin.writeLadder.mode.AUTOMATIC}} | {{ui:agents.orphanPass.confirmBody.AUTOMATIC}} |
 
-When a move is not allowed yet, such as before the seven days in dry run are up, the button is off and the reason is shown beside it.
+When a move is not allowed yet, the button is off and the reason is shown beside it, in a sentence:
+
+| Reason | What to do |
+| --- | --- |
+| Dry run has lasted only some of its days | Wait. The sentence says how many days are left; dry run must last seven |
+| Dry run has seen too few completed checks | Wait for the nightly pass to complete in dry run |
+| Dry run has no recorded start | Choose **{{ui:admin.writeLadder.mode.DRY_RUN}}** again; that starts its seven days |
+| The mode moves one step at a time | Move to the next mode first |
+| The mode is above the highest this check acts at | Nothing; this version of the check does not act at that mode |
 
 Before moving to **{{ui:admin.writeLadder.mode.AUTOMATIC}}**, compare a week of dry runs with who actually left.
 
