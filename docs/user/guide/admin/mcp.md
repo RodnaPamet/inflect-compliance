@@ -30,7 +30,7 @@ A notice at the top says that the agent register, the proposal queue, activity, 
 
 - the key's name;
 - the first characters of the key, so you can tell which key a system holds, and the name of the agent it acts as;
-- how far the key lets its agent act: **{{ui:admin.mcp.credentialAutonomy}}** with a number, the lowest of the key's own limit, the agent's level and what the agent's risk assessment allows. **{{ui:admin.mcp.credentialUnassessed}}** means the agent has never been risk-assessed, so the key can do nothing;
+- how far the key lets its agent act: **{{ui:admin.apiKeys.autonomyLabel}}** followed by a number, the lowest of the key's own limit, the agent's level and what the agent's risk assessment allows. **{{ui:admin.mcp.credentialUnassessed}}** means the agent has never been risk-assessed, so the key can do nothing;
 - its state: **{{ui:admin.mcp.credentialLive}}**, **{{ui:admin.mcp.credentialRevoked}}** or **{{ui:admin.mcp.credentialExpired}}**.
 
 Keys that act as no agent, such as one for a CI pipeline, are not on this page. They are on [{{ui:admin.apiKeys.pageTitle}}](api-keys.md).

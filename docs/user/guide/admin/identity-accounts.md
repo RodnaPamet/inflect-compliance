@@ -70,7 +70,7 @@ Click **{{ui:admin.identityAccounts.release}}** on the row. A message offers **{
 | --- | --- | --- |
 | **{{ui:admin.identityAccounts.empty}}** | No directory connection has synced yet | Connect and sync a directory on the [{{ui:admin.integrations.title}}](integrations.md) page |
 | **{{ui:admin.identityAccounts.noMatches}}** | No account matches the search or the filter | Clear them |
-| **{{ui:admin.identityAccounts.truncatedTitle}}** | There are more accounts than the page shows | Search for the one you want |
+| A note that only the first accounts are shown | There are more accounts than the page shows | Search for the one you want |
 | **{{ui:admin.identityAccounts.loadError}}** | The accounts did not load | Reload the page |
 | **{{ui:admin.identityAccounts.protectError}}** or **{{ui:admin.identityAccounts.releaseError}}** | The protection did not change. Only an Owner can change it | Ask an Owner |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
