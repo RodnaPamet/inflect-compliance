@@ -38,8 +38,9 @@
  * than re-implementing them, so there is one place they can be wrong.
  */
 import { useCallback, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { isAboveClamp, type IdentityWriteMode } from '@/lib/identity/write-ladder';
+import { isAboveClamp, type IdentityWriteMode, type WriteModeRefusal } from '@/lib/identity/write-ladder';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -64,12 +65,18 @@ interface DirectionState {
     mode: Mode;
     dryRunSince: string | null;
     nextMode: Mode | null;
+    /** The server's English sentence; shown only when no code came with it. */
     blockedReason: string | null;
+    /** The refusal as a code, worded here in the reader's language (#4874). */
+    blocked?: WriteModeRefusal | null;
+    /** Completed passes in the dry-run window, when the direction is in one. */
+    passesInWindow?: number | null;
 }
 
 interface LadderPayload {
     directions: Record<Direction, DirectionState>;
     dryRunMinDays: number;
+    dryRunMinPasses?: number;
     honoured: Record<Direction, { maxMode: Mode; implemented: boolean }>;
 }
 
@@ -124,10 +131,34 @@ export function WriteLadderClient() {
         [apiUrl, mutate, t],
     );
 
+    /** Why the next rung is refused, in words — never the stored mode names. */
+    const refusalText = (state: DirectionState): string | null => {
+        const b = state.blocked;
+        if (!b) return state.blocked === null ? null : state.blockedReason;
+        const mode = (m: Mode) => t(`writeLadder.mode.${m}`);
+        switch (b.code) {
+            case 'NOT_IMPLEMENTED':
+                return t('writeLadder.refusal.NOT_IMPLEMENTED');
+            case 'ABOVE_CLAMP':
+                return t('writeLadder.refusal.ABOVE_CLAMP', { next: mode(b.next), clamp: mode(b.clamp) });
+            case 'MULTI_RUNG':
+                return t('writeLadder.refusal.MULTI_RUNG', { from: mode(b.from), to: mode(b.to) });
+            case 'NO_DRY_RUN_START':
+                return t('writeLadder.refusal.NO_DRY_RUN_START', { mode: mode('DRY_RUN') });
+            case 'TOO_FEW_PASSES':
+                return t('writeLadder.refusal.TOO_FEW_PASSES', { passes: b.passes, required: b.required });
+            case 'DWELL':
+                return t('writeLadder.refusal.DWELL', { days: b.days, required: b.required, left: b.left });
+        }
+    };
+
     const renderDirection = (direction: Direction) => {
         if (!data) return null;
         const state = data.directions[direction];
         const honoured = data.honoured[direction];
+        const passesHref = tenantHref(
+            direction === 'leaver' ? '/admin/identity-leaver-passes' : '/admin/identity-joiner-passes',
+        );
         // Above what the runtime will act on. Settable, and inert.
         const aboveClamp = isAboveClamp(state.mode, honoured.maxMode);
 
@@ -140,8 +171,10 @@ export function WriteLadderClient() {
                 mode={state.mode}
                 dryRunSince={state.dryRunSince}
                 dryRunMinDays={data.dryRunMinDays}
+                dryRunMinPasses={data.dryRunMinPasses}
+                passesInWindow={state.passesInWindow}
                 nextMode={state.nextMode}
-                blockedReason={state.blockedReason}
+                blockedReason={refusalText(state)}
                 // Guarded on `implemented` so the unimplemented case shows
                 // exactly ONE message. The notice below already states it, in
                 // the operator's language, permanently; and `describeRefusal`
@@ -169,9 +202,32 @@ export function WriteLadderClient() {
                                 })}
                             </InlineNotice>
                         )}
+                        {/* WHAT AUTOMATIC STILL NEEDS (#4874). The policy is one
+                            half; the connection is the other, and without it a
+                            pass at Automatic writes nothing. Shown from the rung
+                            below Automatic up, where it is the next question. */}
+                        {honoured.implemented && (state.nextMode === 'AUTOMATIC' || state.mode === 'AUTOMATIC') && (
+                            <InlineNotice variant="info" data-testid={`write-ladder-${direction}-automatic-needs`}>
+                                {t(`writeLadder.automaticNeeds.${direction}`)}{' '}
+                                <Link href={tenantHref('/admin/integrations')} className="font-medium text-content-info hover:underline">
+                                    {t('crumb.integrations')}
+                                </Link>
+                            </InlineNotice>
+                        )}
                     </>
                 }
-            />
+            >
+                {/* Where each rung's effect is seen. */}
+                <p className="text-sm text-content-muted" id={`write-ladder-${direction}-links`}>
+                    <Link href={passesHref} className="font-medium text-content-info hover:underline">
+                        {t(direction === 'leaver' ? 'leaverPasses.title' : 'joinerPasses.title')}
+                    </Link>
+                    {' · '}
+                    <Link href={tenantHref('/admin/identity-write-journal')} className="font-medium text-content-info hover:underline">
+                        {t('identityWriteJournal.title')}
+                    </Link>
+                </p>
+            </LadderRungCard>
         );
     };
 
@@ -180,7 +236,9 @@ export function WriteLadderClient() {
             <BackAffordance />
             <PageBreadcrumbs
                 items={[
-                    { label: t('integrations.title'), href: tenantHref('/admin/integrations') },
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('crumb.integrations'), href: tenantHref('/admin/integrations') },
                     { label: t('writeLadder.breadcrumb') },
                 ]}
             />
@@ -226,7 +284,9 @@ export function WriteLadderClient() {
                     })}
                     description={
                         <>
-                            {t(`writeLadder.confirmBody.${pending.mode}`)}
+                            {pending.mode === 'AUTOMATIC'
+                                ? t(`writeLadder.confirmBodyAutomatic.${pending.direction}`)
+                                : t(`writeLadder.confirmBody.${pending.mode}`)}
                             {saveError && (
                                 // A `span.block`, not an InlineNotice: the
                                 // primitive renders `description` inside a <p>,

@@ -314,3 +314,20 @@ export const DIRECTION_IMPLEMENTED: Readonly<Record<IdentityDirection, boolean>>
     leaver: true,
     joiner: true,
 };
+
+/**
+ * Why a requested transition is refused, as a CODE with its figures (#4874).
+ *
+ * The page used to print `describeRefusal`'s English verbatim under the widen
+ * button — stored mode names, untranslated, written for engineers. The code is
+ * what the page renders, in the reader's language; `describeRefusal` keeps the
+ * sentence for the PUT's error body and the audit trail, built from the same
+ * classification so the two cannot disagree.
+ */
+export type WriteModeRefusal =
+    | { code: 'NOT_IMPLEMENTED' }
+    | { code: 'ABOVE_CLAMP'; next: IdentityWriteMode; clamp: IdentityWriteMode }
+    | { code: 'MULTI_RUNG'; from: IdentityWriteMode; to: IdentityWriteMode }
+    | { code: 'NO_DRY_RUN_START' }
+    | { code: 'TOO_FEW_PASSES'; passes: number; required: number }
+    | { code: 'DWELL'; days: number; required: number; left: number };

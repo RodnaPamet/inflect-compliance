@@ -8183,7 +8183,7 @@
       "confirmTitle": "Widen to {mode}?",
       "dryRunSince": "In dry run since {date}. A direction must sit here {days} days before it can widen.",
       "aboveClamp": "This rung is above what the product will act on today. Passes run at {mode} and refuse anything wider, so widening further changes the policy but not the behaviour.",
-      "notImplemented": "Joiner provisioning is not built yet — no directory provider can create an account. The ladder is therefore locked at Off for this direction, and cannot be widened until the joiner runtime ships.",
+      "notImplemented": "This direction is switched off in this build of Inflect, so it cannot be widened. Narrowing still works.",
       "direction": {
         "leaver": "Leavers",
         "joiner": "Joiners"
@@ -8199,10 +8199,26 @@
       },
       "confirmBody": {
         "DISABLED": "The product will stop acting on this direction entirely.",
-        "DRY_RUN": "The product will decide what it would do and record it, and write nothing to your directory. This starts the observation period.",
-        "AUTOMATIC": "The product will write to your directory without asking. Nothing stands between a terminated worker in the HR feed and a disabled account, except the safety rails. You can narrow this at any time."
+        "DRY_RUN": "The product will decide what it would do and record it, and write nothing to your directory. This starts the observation period."
       },
-      "linkLabel": "Write policy"
+      "linkLabel": "Write policy",
+      "dryRunSinceWithPasses": "In dry run since {date}. A direction must stay here {days} days, with at least {minPasses} completed pass in that time, before it can widen. Completed passes so far: {passes}.",
+      "refusal": {
+        "NOT_IMPLEMENTED": "This direction cannot be widened in this build of Inflect.",
+        "ABOVE_CLAMP": "{next} is above {clamp}, the highest step Inflect acts on for this direction, so it is not offered.",
+        "MULTI_RUNG": "A direction widens one step at a time, so {from} cannot go straight to {to}.",
+        "NO_DRY_RUN_START": "The dry run has no recorded start. Narrow, then choose {mode} again to start it.",
+        "TOO_FEW_PASSES": "The dry run has seen {passes} completed passes and needs at least {required}. A week with no pass is a pass that never ran, not a quiet week: check the passes page.",
+        "DWELL": "The dry run has lasted {days} of {required} days. {left} more to go, so a real leaver or hire can happen and be compared with what HR and IT did."
+      },
+      "automaticNeeds": {
+        "leaver": "Automatic disables accounts only through exactly one enabled directory connection that has been granted offboarding writes and has its directory permission consented. Until then a pass writes nothing.",
+        "joiner": "Automatic creates accounts only through exactly one enabled Microsoft Entra ID connection that has been granted both offboarding writes and account creation, with its directory permissions consented. Until then a pass writes nothing."
+      },
+      "confirmBodyAutomatic": {
+        "leaver": "Once a directory connection allows it, Inflect will disable the directory account of a worker HR reports as terminated, without asking. The safety rails still apply, and you can narrow this at any time.",
+        "joiner": "Once a Microsoft Entra ID connection allows it, Inflect will create a directory account for a worker HR reports as joining, without asking. You can narrow this at any time."
+      }
     },
     "externalWriteLadder": {
       "breadcrumb": "External write policy",

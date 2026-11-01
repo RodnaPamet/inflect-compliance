@@ -49,6 +49,13 @@ export interface LadderRungCardProps {
     mode: IdentityWriteMode;
     dryRunSince: string | null;
     dryRunMinDays: number;
+    /**
+     * The completed passes a dry run needs before it may widen, and how many
+     * the window holds so far (#4874). Given, the dry-run line states both
+     * conditions; the days alone left the pass requirement to a refusal.
+     */
+    dryRunMinPasses?: number;
+    passesInWindow?: number | null;
     nextMode: IdentityWriteMode | null;
     /** The server's sentence for why the next rung is refused, if it is. */
     blockedReason: string | null;
@@ -77,6 +84,8 @@ export function LadderRungCard({
     mode,
     dryRunSince,
     dryRunMinDays,
+    dryRunMinPasses,
+    passesInWindow,
     nextMode,
     blockedReason,
     showBlockedReason = true,
@@ -111,7 +120,14 @@ export function LadderRungCard({
 
                 {dryRunSince && (
                     <p className="text-sm text-content-muted">
-                        {t('writeLadder.dryRunSince', { date: formatDate(dryRunSince), days: dryRunMinDays })}
+                        {dryRunMinPasses !== undefined && typeof passesInWindow === 'number'
+                            ? t('writeLadder.dryRunSinceWithPasses', {
+                                  date: formatDate(dryRunSince),
+                                  days: dryRunMinDays,
+                                  minPasses: dryRunMinPasses,
+                                  passes: passesInWindow,
+                              })
+                            : t('writeLadder.dryRunSince', { date: formatDate(dryRunSince), days: dryRunMinDays })}
                     </p>
                 )}
 

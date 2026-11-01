@@ -60,6 +60,7 @@ jest.mock('@/lib/observability/logger', () => ({
 }));
 
 import {
+    classifyRefusal,
     describeRefusal,
     getIdentityWritePolicy,
     setIdentityWriteMode,
@@ -734,3 +735,41 @@ describe('a widen above the published ceiling is refused', () => {
         ).resolves.toEqual({ mode: 'DRY_RUN', dryRunSince: NOW });
     });
 });
+
+describe('classifyRefusal — the code the page words (#4874)', () => {
+    const dry = (days: number) => ({ mode: 'DRY_RUN' as const, dryRunSince: daysAgo(days) });
+
+    it('is the same verdict describeRefusal words, for every refusal branch', () => {
+        const cases: Array<[Parameters<typeof classifyRefusal>, string]> = [
+            [['leaver', { mode: 'DISABLED', dryRunSince: null }, 'AUTOMATIC', NOW], 'MULTI_RUNG'],
+            [['leaver', { mode: 'DRY_RUN', dryRunSince: null }, 'AUTOMATIC', NOW], 'NO_DRY_RUN_START'],
+            [['leaver', dry(10), 'AUTOMATIC', NOW, 0], 'TOO_FEW_PASSES'],
+            [['leaver', dry(2), 'AUTOMATIC', NOW, 5], 'DWELL'],
+        ];
+        for (const [args, code] of cases) {
+            expect(classifyRefusal(...args)?.code).toBe(code);
+            expect(describeRefusal(...args)).not.toBeNull();
+        }
+    });
+
+    it('carries the figures the page states', () => {
+        expect(classifyRefusal('leaver', dry(2), 'AUTOMATIC', NOW, 5)).toEqual({
+            code: 'DWELL',
+            days: 2,
+            required: DRY_RUN_MIN_DAYS,
+            left: DRY_RUN_MIN_DAYS - 2,
+        });
+        expect(classifyRefusal('leaver', dry(10), 'AUTOMATIC', NOW, 0)).toEqual({
+            code: 'TOO_FEW_PASSES',
+            passes: 0,
+            required: DRY_RUN_MIN_PASSES,
+        });
+    });
+
+    it('allows what describeRefusal allows', () => {
+        expect(classifyRefusal('leaver', dry(10), 'AUTOMATIC', NOW, 3)).toBeNull();
+        expect(describeRefusal('leaver', dry(10), 'AUTOMATIC', NOW, 3)).toBeNull();
+        expect(classifyRefusal('leaver', { mode: 'AUTOMATIC', dryRunSince: null }, 'DISABLED', NOW)).toBeNull();
+    });
+});
+
