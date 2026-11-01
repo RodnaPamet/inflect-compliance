@@ -74,7 +74,9 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDate } from '@inflect/ui/lib/format-date';
-import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+
+import { AgentsViewsMenu, type AgentsViewsMenuProps } from '../AgentsViewsMenu';
 
 /** One signature as `listParameterSets` reports it, over the wire. */
 interface SignatureWire {
@@ -212,18 +214,49 @@ function shortHash(hash: string): string {
     return hash.slice(0, 12);
 }
 
+/** Does this stored open-fields value open any field? A template edit is one where either side does. */
+function opensFields(openFields: unknown): boolean {
+    return Boolean(openFields) && typeof openFields === 'object' && Object.keys(openFields as object).length > 0;
+}
+
+/** `grant_role` and `grantRole` both read "Grant role": the name is the tool's own. */
+function toolInWords(name: string): string {
+    const words = name
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_\-.]+/g, ' ')
+        .trim()
+        .toLowerCase();
+    return words ? words[0].toUpperCase() + words.slice(1) : name;
+}
+
+const APPROVAL_SOURCES = new Set(['BASELINE', 'APPROVED']);
+
 export function ParameterSetsClient({
     connections,
     targetPopulations,
     initialConnectionId,
+    viewerUserId = null,
+    people = {},
+    exactEditNeedsSecondApprover = false,
+    menu,
 }: {
     connections: readonly ConnectionRow[];
     targetPopulations: readonly TargetPopulationOption[];
     /** The connection the operator arrived with, from `?connectionId=`. */
     initialConnectionId: string | null;
+    /** Who is looking, so the proposer is not offered what the server refuses them (#4900). */
+    viewerUserId?: string | null;
+    /** Member names by user id (#4900); anybody else reads "a former member". */
+    people?: Readonly<Record<string, string>>;
+    /** The Owner's switch (#4905): an exact-value edit needs somebody other than its proposer. */
+    exactEditNeedsSecondApprover?: boolean;
+    /** The views menu, in the page header (#4900). */
+    menu?: Omit<AgentsViewsMenuProps, 'current'>;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
+    const tenantHref = useTenantHref();
+    const nameOf = useCallback((id: string) => people[id] ?? t('parameterSets.formerMember'), [people, t]);
 
     const [connectionId, setConnectionId] = useState<string>(
         (initialConnectionId && connections.some((c) => c.id === initialConnectionId)
@@ -265,14 +298,21 @@ export function ParameterSetsClient({
 
     const listPath = '/admin/agents/parameter-sets';
 
-    /** The server's own sentence when it gave one; the fallback otherwise. */
-    const serverMessage = useCallback(async (res: Response, fallback: string): Promise<string> => {
-        const body = (await res.json().catch(() => null)) as
-            | { error?: { message?: string } | string }
-            | null;
-        if (typeof body?.error === 'string') return body.error;
-        return body?.error?.message ?? fallback;
-    }, []);
+    /**
+     * Our sentence first, and the server's reason after it when it gave one
+     * (#4900): a validation error's raw text alone told the operator what the
+     * parser saw, not what failed.
+     */
+    const serverMessage = useCallback(
+        async (res: Response, fallback: string): Promise<string> => {
+            const body = (await res.json().catch(() => null)) as
+                | { error?: { message?: string } | string }
+                | null;
+            const reason = typeof body?.error === 'string' ? body.error : body?.error?.message;
+            return reason ? t('parameterSets.errorWithReason', { message: fallback, reason }) : fallback;
+        },
+        [t],
+    );
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -626,15 +666,22 @@ export function ParameterSetsClient({
     // blank. `value: ''` is what `submitPropose` reads as an explicit null.
     const targetOptions = [
         { value: '', label: t('parameterSets.targetNone') },
-        ...targetPopulations.map((p) => ({ value: p.key, label: `${p.key} — ${p.description}` })),
+        // The description is what an operator chooses by; the key is the server's name for it.
+        ...targetPopulations.map((p) => ({ value: p.key, label: p.description })),
     ];
 
     return (
         <div className="space-y-section">
             <PageHeader
                 back={{ smart: true }}
+                breadcrumbs={[
+                    { label: t('crumbDashboard'), href: tenantHref('/dashboard') },
+                    { label: t('register.breadcrumb'), href: tenantHref('/agents') },
+                    { label: t('parameterSets.title') },
+                ]}
                 title={t('parameterSets.title')}
                 description={t('parameterSets.description')}
+                actions={menu ? <AgentsViewsMenu {...menu} current="parameter-sets" /> : undefined}
             />
 
             {connections.length === 0 ? (
@@ -775,6 +822,16 @@ export function ParameterSetsClient({
                                 const rows = pending ? diffRows(set.parameters, pending.parameters) : [];
                                 const changed = rows.filter((r) => r.state !== 'same');
                                 const error = actionError[set.id];
+                                // A template edit (open fields before or after)
+                                // needs a signature from somebody other than its
+                                // proposer; an exact-value edit needs none, and
+                                // its proposer may approve it unless the Owner's
+                                // switch says otherwise (#4900, #4905).
+                                const templateEdit =
+                                    pending !== null && (opensFields(set.openFields) || opensFields(pending.openFields));
+                                const viewerProposed = pending !== null && viewerUserId !== null && pending.byUserId === viewerUserId;
+                                const proposerMayApprove = !templateEdit && !exactEditNeedsSecondApprover;
+                                const approveBlocked = viewerProposed && !proposerMayApprove;
                                 return (
                                     <li key={set.id}>
                                         <Card
@@ -785,14 +842,16 @@ export function ParameterSetsClient({
                                                 <StatusBadge
                                                     variant={SOURCE_VARIANT[set.approvalSource] ?? 'neutral'}
                                                 >
-                                                    {set.approvalSource}
+                                                    {APPROVAL_SOURCES.has(set.approvalSource)
+                                                        ? t(`parameterSets.source.${set.approvalSource}`)
+                                                        : set.approvalSource}
                                                 </StatusBadge>
                                                 <span className="text-sm font-medium text-content-emphasis">
                                                     {set.label}
                                                 </span>
-                                                <code className="text-xs text-content-muted">
-                                                    {ref?.toolName ?? set.toolName}
-                                                </code>
+                                                <span className="text-xs text-content-muted">
+                                                    {toolInWords(ref?.toolName ?? set.toolName)}
+                                                </span>
                                                 <span className="text-xs tabular-nums text-content-subtle">
                                                     {t('parameterSets.revision', { revision: set.revision })}
                                                 </span>
@@ -806,7 +865,7 @@ export function ParameterSetsClient({
                                             <p className="text-xs text-content-muted">
                                                 {set.approvedByUserId
                                                     ? t('parameterSets.approvedBy', {
-                                                          user: set.approvedByUserId,
+                                                          user: nameOf(set.approvedByUserId),
                                                           date: formatDate(set.approvedAt),
                                                       })
                                                     : t('parameterSets.baselineNoApprover', {
@@ -859,7 +918,7 @@ export function ParameterSetsClient({
                                                     </p>
                                                     <p className="text-xs text-content-muted">
                                                         {t('parameterSets.pendingBy', {
-                                                            user: pending.byUserId,
+                                                            user: nameOf(pending.byUserId),
                                                             date: formatDate(pending.at),
                                                         })}
                                                     </p>
@@ -940,6 +999,17 @@ export function ParameterSetsClient({
                                                         promotion counts only matching ones —
                                                         so "1 of 1" beside no digest is a
                                                         number an operator can be misled by. */}
+                                                    {!templateEdit && (
+                                                        <p
+                                                            className="text-xs text-content-muted"
+                                                            data-testid={`parameter-set-exact-edit-${set.label}`}
+                                                        >
+                                                            {exactEditNeedsSecondApprover
+                                                                ? t('parameterSets.exactEditSecondPerson')
+                                                                : t('parameterSets.exactEditNoSignature')}
+                                                        </p>
+                                                    )}
+                                                    {templateEdit && (
                                                     <div
                                                         className="space-y-tight"
                                                         data-testid={`parameter-set-signatures-${set.label}`}
@@ -968,9 +1038,9 @@ export function ParameterSetsClient({
                                                                         key={`${sig.approverUserId}-${sig.pendingHash}`}
                                                                         className="flex flex-wrap items-baseline gap-tight text-xs text-content-muted"
                                                                     >
-                                                                        <code className="text-content-emphasis">
-                                                                            {sig.approverUserId}
-                                                                        </code>
+                                                                        <span className="text-content-emphasis">
+                                                                            {nameOf(sig.approverUserId)}
+                                                                        </span>
                                                                         <span>{formatDate(sig.createdAt)}</span>
                                                                         {/* LOAD-BEARING, not decoration —
                                                                             `digestLine` carries the whole
@@ -995,15 +1065,28 @@ export function ParameterSetsClient({
                                                             {t('parameterSets.signatureHashNote')}
                                                         </p>
                                                     </div>
+                                                    )}
+
+                                                    {viewerProposed && (templateEdit || approveBlocked) && (
+                                                        <p
+                                                            className="text-xs text-content-muted"
+                                                            data-testid={`parameter-set-proposer-note-${set.label}`}
+                                                        >
+                                                            {t('parameterSets.proposerCannotDecide')}
+                                                        </p>
+                                                    )}
 
                                                     <div className="flex flex-wrap items-center gap-default">
-                                                        <Button
-                                                            variant="secondary"
-                                                            disabled={busy === set.id}
-                                                            onClick={() => void act(set, 'sign')}
-                                                        >
-                                                            {t('parameterSets.sign')}
-                                                        </Button>
+                                                        {templateEdit && (
+                                                            <Button
+                                                                variant="secondary"
+                                                                disabled={busy === set.id || viewerProposed}
+                                                                onClick={() => void act(set, 'sign')}
+                                                                data-testid={`parameter-set-sign-${set.label}`}
+                                                            >
+                                                                {t('parameterSets.sign')}
+                                                            </Button>
+                                                        )}
                                                         {/* APPROVE is the gravity of this
                                                             region — the four-eyes commit the
                                                             whole surface exists to make
@@ -1018,17 +1101,16 @@ export function ParameterSetsClient({
                                                             that ratchet exists to refuse, so
                                                             this page ships with no primary at
                                                             all and the hierarchy is carried by
-                                                            order and by the digest in the
-                                                            label. If a slot is ever freed, THIS
+                                                            order and by the pending fingerprint
+                                                            above it. If a slot is ever freed, THIS
                                                             is the button that should take it. */}
                                                         <Button
                                                             variant="secondary"
-                                                            disabled={busy === set.id}
+                                                            disabled={busy === set.id || approveBlocked}
                                                             onClick={() => void act(set, 'approve')}
+                                                            data-testid={`parameter-set-approve-${set.label}`}
                                                         >
-                                                            {t('parameterSets.approve', {
-                                                                hash: shortHash(pending.hash),
-                                                            })}
+                                                            {t('parameterSets.approve')}
                                                         </Button>
                                                     </div>
                                                 </div>
