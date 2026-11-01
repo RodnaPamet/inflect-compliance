@@ -35,7 +35,7 @@ Controls marked implemented or not applicable are not listed. The figures here a
 
 **Sort.** Click a column heading.
 
-**Load more.** The page loads the first batch of controls. When there are more, the line under the title says **more available** and a **{{ui:org.controls.loadMore}}** button appears below the table; click it to add the next batch.
+**Load more.** The page loads the first batch of controls, and the line under the title counts them. When there are more, it adds **more to load below** and a **{{ui:org.controls.loadMore}}** button appears below the table; click it to add the next batch.
 
 **Open a control.** Click its name to work on it in its workspace.
 

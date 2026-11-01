@@ -8,7 +8,7 @@ The {{ui:org.dashboard.title}} is the landing page of an organization: one dashb
 
 ## Where to find it
 
-An organization groups several workspaces, for example the subsidiaries of a group. If you belong to one, the workspace switcher in the top bar (the pill with the workspace's name) lists it under **Organizations**, above your workspaces. Click the organization to open this page.
+An organization groups several workspaces, for example the subsidiaries of a group. If you belong to one, the workspace switcher in the top bar (the pill with the workspace's name) lists it under **{{ui:common.ui.switcherOrganizations}}**, above your workspaces, with your role in it. Click the organization to open this page.
 
 Inside the organization, the sidebar has its own items. Under {{ui:org.nav.portfolio}}, click **{{ui:org.nav.portfolioOverview}}** to come back here. The same pill in the top bar now shows the organization's name; it lists your organizations and the organization's workspaces, so you can switch back into a workspace.
 
@@ -61,9 +61,9 @@ A workspace's health is worked out from its snapshot:
 
 | Health | When |
 | --- | --- |
-| Red | Coverage below 60%, or 3 or more critical risks, or 10 or more overdue evidence items |
-| Amber | Coverage below 80%, or any critical risk, or any overdue evidence |
-| Green | Coverage of 80% or more, no critical risks and no overdue evidence |
+| {{ui:org.health.RED}} | Coverage below 60%, or 3 or more critical risks, or 10 or more overdue evidence items |
+| {{ui:org.health.AMBER}} | Coverage below 80%, or any critical risk, or any overdue evidence |
+| {{ui:org.health.GREEN}} | Coverage of 80% or more, no critical risks and no overdue evidence |
 
 ## What you can do
 
@@ -81,7 +81,7 @@ Click **{{ui:org.dashboard.editDashboard}}**. You can then:
 
 - drag a widget to move it, or drag its corner to resize it;
 - click **{{ui:org.dashboard.addWidget}}** to add one;
-- click a widget's gear icon to change its title, chart type or settings, or its bin icon to remove it;
+- click a widget's gear icon to change its title, chart type or settings, or its bin icon to remove it. The widget leaves the grid at once, and a message offers **{{ui:org.dashboard.undo}}** for 5 seconds; after that it is removed;
 - click **{{ui:org.dashboard.resetLayout}}** to discard your changes and restore the recommended layout.
 
 Each change is saved as you make it, for everyone in the organization. Click **{{ui:org.dashboard.done}}** when you have finished.
@@ -90,11 +90,15 @@ Each change is saved as you make it, for everyone in the organization. Click **{
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:org.dashboard.onboardingTitle}}** | The organization has no workspaces yet | An owner creates one under [{{ui:org.nav.allTenants}}](workspaces.md) |
-| **{{ui:org.dashboard.emptyTitle}}** | The dashboard has no widgets | An Owner or Admin edits the dashboard and adds some |
+| **{{ui:org.dashboard.onboardingTitle}}** | The organization has no workspaces yet | An owner creates one under [{{ui:org.nav.allTenants}}](workspaces.md). Its figures appear after the next daily snapshot |
+| **{{ui:org.dashboard.emptyTitle}}** | The dashboard has no widgets | An Owner or Admin clicks **{{ui:org.dashboard.editDashboard}}**, then **{{ui:org.dashboard.addWidget}}**, or resets to the recommended layout |
 | **{{ui:org.widgets.notYetRated}}** | Nobody has rated maturity yet | An Owner or Admin rates it |
 | **{{ui:org.widgets.postureEmpty}}** | Nobody has set a threat level yet | An Owner or Admin updates it |
-| A red line above the widgets | A change to the layout was not saved | Try again |
+| **{{ui:org.dashboard.failedSaveLayout}}** | A move or resize was not saved | Try again |
+| **{{ui:org.dashboard.failedDeleteWidget}}** | The organization did not accept the removal, so the widget is back | Try again |
+| **{{ui:org.dashboard.failedResetLayout}}** | The recommended layout was not restored | Try again |
+| **{{ui:org.widgets.historyFailed}}** | The threat-level history did not load | Close the panel and open it again |
+| A sentence under the threat level or maturity form | The level or rating was not saved; the sentence says why | Fix what it names, or ask an Owner or Admin |
 
 ## Related
 

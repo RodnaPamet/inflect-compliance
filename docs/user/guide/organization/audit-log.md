@@ -4,7 +4,7 @@ route: /org/[orgSlug]/audit
 
 # {{ui:org.audit.title}}
 
-The organization's {{ui:org.audit.title}} is the record of what changed at the organization level: who joined or left it, whose role changed, and the Admin access those changes gave or took away in its workspaces. Entries are added in order and chained to one another, so none can be changed or removed afterwards without it showing.
+The organization's {{ui:org.audit.title}} is the record of what happened at the organization level: who joined or left it, whose role changed, the Admin access those changes gave or took away in its workspaces, invitations, deleted workspaces, settings, the threat level, maturity, initiatives and refused requests. Entries are added in order and chained to one another, so none can be changed or removed afterwards without it showing.
 
 It is separate from each workspace's own [{{ui:admin.auditLog}}](../admin/audit-log.md).
 
@@ -18,7 +18,7 @@ Open the organization. In the sidebar, under {{ui:org.nav.manage}}, click **{{ui
 | --- | --- |
 | Open the page and read the log | Owner, Admin |
 
-A Reader who opens the page's address gets an error page instead.
+A Reader who opens the page's address gets **{{ui:org.forbidden.title}}**, saying that owners and admins read the audit log.
 
 ## What it is for
 
@@ -31,23 +31,38 @@ A table, newest entry first, 20 at a time:
 | Column | What it shows |
 | --- | --- |
 | {{ui:org.audit.colTime}} | When it happened |
-| {{ui:org.audit.colAction}} | What happened: **{{ui:org.audit.actionMemberAdded}}**, **{{ui:org.audit.actionMemberRemoved}}**, **{{ui:org.audit.actionRoleChanged}}**, **{{ui:org.audit.actionProvisioned}}** or **{{ui:org.audit.actionDeprovisioned}}** |
+| {{ui:org.audit.colAction}} | What happened, such as **{{ui:org.audit.actionMemberAdded}}**, **{{ui:org.audit.actionRoleChanged}}**, **{{ui:org.audit.actionInviteCreated}}**, **{{ui:org.audit.actionWorkspaceDeleted}}** or **{{ui:org.audit.actionAccessRefused}}**. The full list is below |
 | {{ui:org.audit.colActor}} | Who did it |
 | {{ui:org.audit.colTarget}} | Whom it was done to |
-| {{ui:org.audit.colSummary}} | The detail: the role given, the role before and after, or how many workspaces were affected |
+| {{ui:org.audit.colSummary}} | The detail in words: the role given, the role before and after, how many workspaces were affected, the level set, or what was refused |
 
-The log records more than these five kinds of change, such as invitations, threat-level and maturity updates, initiatives, workspace removals and changes to [{{ui:org.nav.settings}}](settings.md).
+The actions the log records:
+
+| Action | When |
+| --- | --- |
+| **{{ui:org.audit.actionMemberAdded}}**, **{{ui:org.audit.actionMemberRemoved}}**, **{{ui:org.audit.actionRoleChanged}}** | Someone joined or left the organization, or their organization role changed ([{{ui:org.nav.members}}](members.md)) |
+| **{{ui:org.audit.actionProvisioned}}**, **{{ui:org.audit.actionDeprovisioned}}** | Those changes gave or took away Admin access in the workspaces |
+| **{{ui:org.audit.actionInviteCreated}}**, **{{ui:org.audit.actionInviteRedeemed}}**, **{{ui:org.audit.actionInviteRevoked}}** | An invitation was sent, accepted or revoked |
+| **{{ui:org.audit.actionWorkspaceDeleted}}** | A workspace was deleted ([{{ui:org.nav.allTenants}}](workspaces.md)). This entry outlasts the workspace |
+| **{{ui:org.audit.actionAgentSwitchesChanged}}** | The agent features on [{{ui:org.nav.settings}}](settings.md) were turned on or off |
+| **{{ui:org.audit.actionThreatLevelSet}}**, **{{ui:org.audit.actionMaturityRated}}** | The threat level or a maturity rating was set on the [{{ui:org.dashboard.title}}](portfolio-overview.md) |
+| **{{ui:org.audit.actionInitiativeCreated}}**, **{{ui:org.audit.actionInitiativeStatusChanged}}** | A security initiative was created, or its status changed |
+| **{{ui:org.audit.actionAccessRefused}}** | Someone tried something their organization role does not allow |
 
 ## What you can do
 
-Read the log. Click **{{ui:org.audit.loadOlder}}** below the table to see the next 20 older entries.
+**Filter.** Choose an action in **{{ui:org.audit.filterLabel}}** to see only those entries; choose **{{ui:org.audit.allActions}}** to see them all again.
+
+**Load older entries.** Click **{{ui:org.audit.loadOlder}}** below the table to see the next 20 older entries. The filter stays as it is.
 
 ## Empty and error states
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:org.audit.emptyTitle}}** | Nothing has been recorded for the organization yet | Nothing |
-| **{{ui:org.audit.fetchFailed}}** or another red message under the table | Older entries did not load | Click **{{ui:org.audit.loadOlder}}** again |
+| **{{ui:org.audit.emptyFilteredTitle}}** | No entry has the chosen action | Choose **{{ui:org.audit.allActions}}** |
+| **{{ui:org.audit.fetchFailed}}** | The entries did not load | Try again |
+| **{{ui:org.forbidden.title}}** | You are a Reader | Ask an Owner or Admin |
 
 ## Related
 
