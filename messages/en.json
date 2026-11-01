@@ -14327,7 +14327,7 @@
     },
     "settings": {
       "heading": "Settings",
-      "intro": "Settings that apply to every workspace in this organization.",
+      "intro": "Settings for <b>{org}</b> (/org/{slug}). They apply to every workspace in the organization.",
       "agentSwitches": {
         "title": "Agent features",
         "description": "Turn agent features on or off for every workspace in this organization. Each change is recorded in the organization's audit log.",
@@ -14344,7 +14344,18 @@
         "deploymentOnBadge": "On for every workspace",
         "deploymentOffBadge": "Off for every workspace",
         "deploymentOn": "This deployment turns it on for every workspace, so this switch changes nothing today. Your choice applies once the deployment leaves it to organizations.",
-        "deploymentOff": "This deployment turns it off for every workspace, so this switch changes nothing today. Your choice applies once the deployment leaves it to organizations."
+        "deploymentOff": "This deployment turns it off for every workspace, so this switch changes nothing today. Your choice applies once the deployment leaves it to organizations.",
+        "confirmOff": {
+          "agentProfiles": {
+            "title": "Turn off agent profiles?",
+            "body": "Agent profiles stop working in every workspace in {org} ({count, plural, one {# workspace} other {# workspaces}}): the Behaviour tab disappears from every agent, and runs that use a profile are refused. Saved profiles are kept, and come back if you turn this on again."
+          },
+          "toolRunner": {
+            "title": "Turn off the Tool Runner engine?",
+            "body": "The Tool Runner engine stops being available in every workspace in {org} ({count, plural, one {# workspace} other {# workspaces}}). A workspace that chose it runs its agents on the built-in engine instead, and runs that use an agent profile are refused."
+          },
+          "confirm": "Turn off"
+        }
       }
     }
   },

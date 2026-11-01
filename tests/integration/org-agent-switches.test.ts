@@ -200,6 +200,14 @@ describe('the setter, through the real route', () => {
         expect(res.status).toBe(200);
         expect((await res.json()).switches).toMatchObject({ toolRunner: { organization: true }, canManage: false });
     });
+
+    it('names the reach: the organization\'s own live workspaces, and no other\'s (#4850)', async () => {
+        mockGetOrgCtx.mockResolvedValue(ctxAs('reader'));
+        const res = await GET(new NextRequest(url()), args());
+        // T.chose and T.sibling sit under this organization; T.other is
+        // another organization's and T.alone belongs to none.
+        expect((await res.json()).switches.workspaceCount).toBe(2);
+    });
 });
 
 describe('the usecase holds its own gates, whoever calls it', () => {
