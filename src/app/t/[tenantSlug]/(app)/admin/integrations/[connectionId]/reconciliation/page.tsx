@@ -37,6 +37,18 @@
  * "nobody has decided this" and "somebody decided it and the answer expired"
  * need different questions asked of them.
  *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * IN WORDS, AND ALL SIX DECISIONS (#4871)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Candidates are named by the person HR holds (the queue route's `people`),
+ * never by their employee id; each signal and veto is named in words; a
+ * failed read says so rather than "nothing to decide". The Sheet carries the
+ * four decisions the row cannot (someone else, service account, external
+ * person, nobody can say) beside Confirm, for a viewer who may decide. A row
+ * Confirm is sent after an undo window, because the next match treats it as
+ * certain.
+ *
  * @module app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation
  */
 
@@ -44,7 +56,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
+import { formatDate } from '@inflect/ui/lib/format-date';
+import { apiErrorMessage } from '@/lib/api-error';
+import { useToastWithUndo } from '@/components/ui/hooks';
+import { DecisionForm, type DecisionAction } from './DecisionForm';
 import { DataTable, createColumns, useColumnsDropdown } from '@/components/ui/table';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { FilterProvider, createFilterDefs, useFilterContext } from '@/components/ui/filter';
@@ -86,6 +102,23 @@ interface WireRow {
     expiredAt: string | null;
 }
 
+interface WirePerson {
+    name: string;
+    email: string | null;
+}
+
+/** Signal and veto kinds this page words. Others render as themselves. */
+const SIGNAL_KINDS = [
+    'CONFIRMED_ALIAS', 'EMPLOYEE_NUMBER', 'EMAIL_EXACT', 'DIRECTORY_BRIDGE', 'EMAIL_UNTAGGED',
+    'STALE_DIRECTORY_LINK', 'NAME_EXACT', 'NAME_TRANSLIT', 'NAME_INITIAL', 'USERNAME_CONVENTION',
+    'SIMILARITY', 'DEPARTMENT_MATCH',
+] as const;
+const VETO_KINDS = ['EMPLOYEE_NUMBER_CONFLICT', 'EMAIL_DOMAIN_CONFLICT', 'ACCOUNT_POSTDATES_END_DATE'] as const;
+
+function known<T extends string>(list: readonly T[], value: string): value is T {
+    return (list as readonly string[]).includes(value);
+}
+
 interface WireExecution {
     id: string;
     automationKey: string;
@@ -116,7 +149,25 @@ export default function ReconciliationQueuePage() {
 
     const [executionId, setExecutionId] = useState<string | null>(null);
     const [rows, setRows] = useState<WireRow[]>([]);
+    const [people, setPeople] = useState<Record<string, WirePerson>>({});
     const [loading, setLoading] = useState(true);
+    // A failed read is NOT "nothing to decide" (#4871): that sentence is a
+    // claim about the run, and a refused or failed read supports no claim.
+    const [loadError, setLoadError] = useState(false);
+    const [connectionName, setConnectionName] = useState<string | null>(null);
+    const { appPermissions } = useTenantContext();
+    const canDecide = appPermissions?.identity_reconciliation?.confirm === true;
+    const triggerUndoToast = useToastWithUndo();
+
+    /** A candidate as a person: name, then work email; never the id. */
+    const personLabel = useCallback(
+        (employeeId: string) => {
+            const p = people[employeeId];
+            if (!p) return t('unknownPerson');
+            return p.email ? `${p.name} · ${p.email}` : p.name;
+        },
+        [people, t],
+    );
     const [open, setOpen] = useState<WireRow | null>(null);
     const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -165,22 +216,37 @@ export default function ReconciliationQueuePage() {
         const wanted = (key: string) => filterCtx.state[key] ?? [];
         const outcomes = wanted('outcome');
         const reasons = wanted('reason');
+        // The search, over the rows this page holds: the account and its
+        // candidates' names (#4871 — the placeholder existed, the search did not).
+        const q = filterCtx.search.trim().toLowerCase();
         return rows.filter(
             (r) =>
                 (outcomes.length === 0 || outcomes.includes(r.outcome)) &&
-                (reasons.length === 0 || reasons.includes(r.reason)),
+                (reasons.length === 0 || reasons.includes(r.reason)) &&
+                (q === '' ||
+                    r.accountKey.toLowerCase().includes(q) ||
+                    r.candidates.some((c) => (people[c.employeeId]?.name ?? '').toLowerCase().includes(q))),
         );
-    }, [rows, filterCtx.state]);
+    }, [rows, filterCtx.state, filterCtx.search, people]);
 
     // ── Resolve the run, then the queue ─────────────────────────────────────
     const load = useCallback(async () => {
         if (!connectionId) return;
         setLoading(true);
+        setLoadError(false);
         try {
             const execRes = await fetch(apiUrl(`/admin/integrations/${connectionId}/executions`));
-            const execs: WireExecution[] = execRes.ok
-                ? ((await execRes.json()).executions ?? [])
-                : [];
+            if (!execRes.ok) {
+                setLoadError(true);
+                setRows([]);
+                return;
+            }
+            const execBody = (await execRes.json()) as {
+                executions?: WireExecution[];
+                connection?: { name?: string } | null;
+            };
+            setConnectionName(execBody.connection?.name || null);
+            const execs: WireExecution[] = execBody.executions ?? [];
             const run = execs
                 .filter((e) => e.automationKey === RECONCILE_KEY && e.status === 'PASSED')
                 .sort((a, b) => b.executedAt.localeCompare(a.executedAt))[0];
@@ -197,7 +263,17 @@ export default function ReconciliationQueuePage() {
                 + `&connectionId=${encodeURIComponent(connectionId)}`
             );
             const res = await fetch(url);
-            setRows(res.ok ? ((await res.json()).rows ?? []) : []);
+            if (!res.ok) {
+                setLoadError(true);
+                setRows([]);
+                return;
+            }
+            const body = await res.json();
+            setRows(body.rows ?? []);
+            setPeople(body.people ?? {});
+        } catch {
+            setLoadError(true);
+            setRows([]);
         } finally {
             setLoading(false);
         }
@@ -209,7 +285,7 @@ export default function ReconciliationQueuePage() {
 
     // ── Deciding ────────────────────────────────────────────────────────────
     const decide = useCallback(
-        async (accountKey: string, action: Record<string, unknown>) => {
+        async (accountKey: string, action: DecisionAction | { kind: 'DEFER' }) => {
             if (!executionId) return;
             const res = await fetch(apiUrl('/admin/legacy-access/queue/decide'), {
                 method: 'POST',
@@ -224,11 +300,9 @@ export default function ReconciliationQueuePage() {
                 return;
             }
             if (!res.ok) {
+                // The server's sentence, never a bare status (#4871).
                 const body = await res.json().catch(() => null);
-                setNotice({
-                    ok: false,
-                    text: t('decideFailed', { reason: body?.error ?? String(res.status) }),
-                });
+                setNotice({ ok: false, text: apiErrorMessage(body, t('decideFailedGeneric')) });
                 return;
             }
             setNotice({ ok: true, text: t('decided') });
@@ -261,10 +335,7 @@ export default function ReconciliationQueuePage() {
             });
             const body = await res.json().catch(() => null);
             if (!res.ok) {
-                setNotice({
-                    ok: false,
-                    text: t('decideFailed', { reason: body?.error ?? String(res.status) }),
-                });
+                setNotice({ ok: false, text: apiErrorMessage(body, t('decideFailedGeneric')) });
                 return;
             }
             // The per-row counts, not "done". The server reports per row
@@ -280,6 +351,23 @@ export default function ReconciliationQueuePage() {
         },
         [apiUrl, connectionId, executionId, load, t]
     );
+
+    /**
+     * A row Confirm, sent when the undo window closes (#4871). The next match
+     * treats a confirmed link as certain, so a mis-click must be catchable;
+     * Undo inside the window means the POST never fires.
+     */
+    const confirmWithUndo = useCallback((row: WireRow) => {
+        const top = row.candidates[0];
+        if (!top) return;
+        triggerUndoToast({
+            message: t('confirmQueued', { person: personLabel(top.employeeId) }),
+            undoMessage: t('undo'),
+            action: async () => {
+                await decide(row.accountKey, { kind: 'CONFIRM', employeeId: top.employeeId });
+            },
+        });
+    }, [decide, personLabel, t, triggerUndoToast]);
 
     // ── Columns ─────────────────────────────────────────────────────────────
     const { columnVisibility, setColumnVisibility, orderColumns, dropdown: columnsDropdown } =
@@ -319,7 +407,7 @@ export default function ReconciliationQueuePage() {
                             row.original.candidates.length === 0 ? (
                                 <span className="text-content-muted">{t('noCandidates')}</span>
                             ) : (
-                                <span className="font-mono">{row.original.candidates[0].employeeId}</span>
+                                <span>{personLabel(row.original.candidates[0].employeeId)}</span>
                             ),
                     },
                     {
@@ -335,7 +423,7 @@ export default function ReconciliationQueuePage() {
                             row.original.reason === 'EXTERNAL_EXPIRED' ? (
                                 <StatusBadge variant="warning">
                                     {t('reasonEXTERNAL_EXPIRED', {
-                                        date: row.original.expiredAt?.slice(0, 10) ?? '',
+                                        date: row.original.expiredAt ? formatDate(row.original.expiredAt) : '',
                                     })}
                                 </StatusBadge>
                             ) : (
@@ -345,19 +433,16 @@ export default function ReconciliationQueuePage() {
                     {
                         id: 'actions',
                         header: '',
-                        // The decisions live on the ROW, and the Sheet is
-                        // evidence only. Two reasons, and the second is the
-                        // stronger one:
-                        //
-                        //   - a reviewer clearing a queue of forty service
-                        //     accounts should not have to open a drawer forty
-                        //     times to say "not a person";
-                        //   - the repo-wide `primary` button count is a DOWNWARD
-                        //     ratchet at 175, and `modal-action-order` requires a
-                        //     Sheet action block to END with a primary or
-                        //     destructive button. Satisfying both would mean
-                        //     demoting some other feature's primary to make room,
-                        //     which is not this PR's call to make.
+                        // The two one-click decisions live on the ROW: Confirm
+                        // the top candidate, and Defer. The four that need an
+                        // answer (someone else, a service account, an external
+                        // person, nobody can say) live in the Sheet's decision
+                        // form, beside the evidence they are judged on (#4871).
+                        // That form records with a SECONDARY button in the
+                        // Sheet body rather than a footer action block: the
+                        // repo-wide `primary` count is a downward ratchet, and
+                        // `modal-action-order` would require a footer block to
+                        // end with a primary.
                         cell: ({ row }) => (
                             <div className="flex items-center gap-tight">
                                 <Button
@@ -367,35 +452,32 @@ export default function ReconciliationQueuePage() {
                                 >
                                     {t('review')}
                                 </Button>
-                                {row.original.candidates.length > 0 ? (
+                                {canDecide && row.original.candidates.length > 0 ? (
                                     <Button
                                         variant="secondary"
                                         size="sm"
-                                        onClick={() =>
-                                            decide(row.original.accountKey, {
-                                                kind: 'CONFIRM',
-                                                employeeId: row.original.candidates[0].employeeId,
-                                            })
-                                        }
+                                        onClick={() => confirmWithUndo(row.original)}
                                     >
                                         {t('actConfirm')}
                                     </Button>
                                 ) : null}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() =>
-                                        decide(row.original.accountKey, { kind: 'DEFER' })
-                                    }
-                                >
-                                    {t('actDefer')}
-                                </Button>
+                                {canDecide && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() =>
+                                            decide(row.original.accountKey, { kind: 'DEFER' })
+                                        }
+                                    >
+                                        {t('actDefer')}
+                                    </Button>
+                                )}
                             </div>
                         ),
                     },
                 ])
             ),
-        [decide, orderColumns, t]
+        [canDecide, confirmWithUndo, decide, orderColumns, personLabel, t]
     );
 
     return (
@@ -405,9 +487,11 @@ export default function ReconciliationQueuePage() {
                 <BackAffordance />
                 <PageBreadcrumbs
                     items={[
+                        { label: t('crumbDashboard'), href: tenantHref('/dashboard') },
+                        { label: t('crumbAdmin'), href: tenantHref('/admin') },
                         { label: t('crumbIntegrations'), href: tenantHref('/admin/integrations') },
                         {
-                            label: t('crumbConnection'),
+                            label: connectionName ?? t('crumbConnection'),
                             href: tenantHref(`/admin/integrations/${connectionId}`),
                         },
                         { label: t('title') },
@@ -427,7 +511,12 @@ export default function ReconciliationQueuePage() {
             </ListPageShell.Header>
 
             <ListPageShell.Filters>
-                <FilterToolbar filters={queueFilters} actions={columnsDropdown} />
+                <FilterToolbar
+                    filters={queueFilters}
+                    actions={columnsDropdown}
+                    searchId="legacy-queue-search"
+                    searchPlaceholder={t('searchPlaceholder')}
+                />
             </ListPageShell.Filters>
 
             <ListPageShell.Body>
@@ -441,15 +530,23 @@ export default function ReconciliationQueuePage() {
                     columns={columns}
                     getRowId={(r) => r.accountKey}
                     loading={loading}
-                    emptyState={t('empty')}
+                    // A failed read empties the table, so its empty state is
+                    // where the page says so — never "nothing to decide".
+                    emptyState={loadError ? t('loadError') : executionId ? t('empty') : t('emptyNoRun')}
                     columnVisibility={columnVisibility}
                     onColumnVisibilityChange={setColumnVisibility}
-                    batchActions={[
-                        {
-                            label: t('actConfirm'),
-                            onClick: (picked) => void bulkConfirm(picked.map((r) => r.original)),
-                        },
-                    ]}
+                    // Bulk confirm is a decision too: offered only to a viewer
+                    // the decide routes accept (#4871).
+                    batchActions={
+                        canDecide
+                            ? [
+                                  {
+                                      label: t('actConfirm'),
+                                      onClick: (picked) => void bulkConfirm(picked.map((r) => r.original)),
+                                  },
+                              ]
+                            : undefined
+                    }
                 />
             </ListPageShell.Body>
 
@@ -464,13 +561,14 @@ export default function ReconciliationQueuePage() {
                             {open.candidates.map((c) => (
                                 <div key={c.employeeId} className="mb-4 border-b pb-3">
                                     <div className="mb-1 flex items-center justify-between">
-                                        <span className="font-mono text-xs">{c.employeeId}</span>
+                                        <span className="text-sm font-medium text-content-emphasis">{personLabel(c.employeeId)}</span>
                                         <span className="text-xs">{c.score}</span>
                                     </div>
                                     <ul className="text-xs">
                                         {c.signals.map((s, i) => (
                                             <li key={`${s.kind}-${i}`}>
-                                                {s.kind} · {s.score} · {s.evidence ?? ''}
+                                                {known(SIGNAL_KINDS, s.kind) ? t(`signalKind.${s.kind}`) : s.kind} · {s.score}
+                                                {s.evidence ? ` · ${s.evidence}` : ''}
                                             </li>
                                         ))}
                                     </ul>
@@ -480,11 +578,25 @@ export default function ReconciliationQueuePage() {
                                         {c.vetoes.length === 0
                                             ? t('sheetNoVetoes')
                                             : `${t('sheetVetoes')}: ${c.vetoes
-                                                .map((v) => `${v.kind}${v.detail ? ` (${v.detail})` : ''}`)
+                                                .map((v) => {
+                                                    const label = known(VETO_KINDS, v.kind) ? t(`vetoKind.${v.kind}`) : v.kind;
+                                                    return `${label}${v.detail ? ` (${v.detail})` : ''}`;
+                                                })
                                                 .join(', ')}`}
                                     </p>
                                 </div>
                             ))}
+                            {canDecide && (
+                                <DecisionForm
+                                    candidates={open.candidates.map((c) => ({
+                                        employeeId: c.employeeId,
+                                        label: personLabel(c.employeeId),
+                                    }))}
+                                    onDecide={async (action: DecisionAction) => {
+                                        await decide(open.accountKey, action);
+                                    }}
+                                />
+                            )}
                         </Sheet.Body>
                     </>
                 ) : null}

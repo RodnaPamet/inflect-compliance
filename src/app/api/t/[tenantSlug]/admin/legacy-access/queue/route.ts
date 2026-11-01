@@ -17,6 +17,7 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { badRequest } from '@/lib/errors/types';
 import { listReconciliationQueue } from '@/app-layer/usecases/legacy-reviewer-actions';
+import { readQueuePeople } from '@/app-layer/usecases/legacy-queue-people';
 
 export const GET = withApiErrorHandling(
     requirePermission('identity_reconciliation.view', async (req: NextRequest, _routeArgs, ctx) => {
@@ -30,6 +31,8 @@ export const GET = withApiErrorHandling(
         if (!connectionId) throw badRequest('connectionId is required');
 
         const rows = await listReconciliationQueue(ctx, { executionId, connectionId });
-        return NextResponse.json({ rows });
+        // Who each candidate is (#4871): the page never shows the employee id.
+        const people = await readQueuePeople(ctx, rows);
+        return NextResponse.json({ rows, people });
     })
 );
