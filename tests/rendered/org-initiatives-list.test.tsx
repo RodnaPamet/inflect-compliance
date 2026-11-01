@@ -68,7 +68,8 @@ it('creates with the owner, and shows the server\'s reason when refused', async 
 
     render(<InitiativesClient orgSlug="acme" canManage members={members} initiatives={[]} />);
     await user.click(screen.getByRole('button', { name: EN.newInitiative }));
-    await user.type(screen.getByLabelText(new RegExp(EN.titleLabel)), 'Roll out MFA');
+    // The dialog is loaded when first opened.
+    await user.type(await screen.findByLabelText(new RegExp(EN.titleLabel)), 'Roll out MFA');
     await user.click(screen.getByRole('combobox', { name: EN.noOwner }));
     await user.click(await screen.findByRole('option', { name: 'Olivia Owner' }));
     await user.click(screen.getByRole('button', { name: EN.createInitiative }));
@@ -82,12 +83,14 @@ it('creates with the owner, and shows the server\'s reason when refused', async 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/org/acme/initiatives/new-1'));
 });
 
-it('the target date field loads in the dialog, though the picker is loaded lazily', async () => {
+it('the dialog loads when New initiative is clicked, with every field', async () => {
     const user = userEvent.setup();
     render(<InitiativesClient orgSlug="acme" canManage members={members} initiatives={[]} />);
+    // Not part of the page until it is asked for.
+    expect(screen.queryByTestId('org-initiative-create-form')).toBeNull();
     await user.click(screen.getByRole('button', { name: EN.newInitiative }));
-    const form = screen.getByTestId('org-initiative-create-form');
-    // The other fields are there at once; the date picker arrives after.
+    const form = await screen.findByTestId('org-initiative-create-form');
     expect(within(form).getByLabelText(new RegExp(EN.titleLabel))).toBeInTheDocument();
-    expect(await within(form).findByRole('button', { name: EN.targetLabel })).toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: EN.targetLabel })).toBeInTheDocument();
+    expect(within(form).getByRole('combobox', { name: EN.noOwner })).toBeInTheDocument();
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTranslations } from 'next-intl';
@@ -9,17 +10,21 @@ import type { ColumnDef } from '@/components/ui/table';
 import { DataTable, createColumns, TableEmptyState } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
-import { Modal } from '@/components/ui/modal';
 import { Heading } from '@/components/ui/typography';
-import { FormField } from '@/components/ui/form-field';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { LazyDatePicker } from './LazyDatePicker';
-import { parseYMD, toYMD } from '@/components/ui/date-picker/date-utils';
 import { formatDate } from '@inflect/ui/lib/format-date';
-import { apiErrorMessage } from '@/lib/api-error';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
+import type { MemberOption } from './CreateInitiativeModal';
+
+/**
+ * The create dialog, loaded when it is first opened (#4851). Its owner picker,
+ * date picker and form fields came to about 40 KB of First Load JS, on a page
+ * that opens closed, and took the initiative routes past the `root` bundle
+ * budget. The page is otherwise usable at once; the dialog follows its button.
+ */
+const CreateInitiativeModal = dynamic(
+    () => import('./CreateInitiativeModal').then((m) => m.CreateInitiativeModal),
+    { ssr: false },
+);
 
 type Row = {
     id: string;
@@ -47,9 +52,6 @@ const STATUS_LABEL_KEY: Record<string, string> = {
     COMPLETED: 'widgets.statusCompleted',
     CANCELLED: 'widgets.statusCancelled',
 };
-
-/** A person the owner can be: a member of the organization. */
-export type MemberOption = { id: string; label: string };
 
 /**
  * Blocked, or past its target date while still open. The clock is the
@@ -180,129 +182,5 @@ export function InitiativesClient({
                 />
             )}
         </div>
-    );
-}
-
-function CreateInitiativeModal({
-    orgSlug,
-    members,
-    onClose,
-    onCreated,
-}: {
-    orgSlug: string;
-    members: MemberOption[];
-    onClose: () => void;
-    onCreated: (id: string) => void;
-}) {
-    const t = useTranslations('org');
-    const [title, setTitle] = useState('');
-    const [description, setDescription] = useState('');
-    const [ownerUserId, setOwnerUserId] = useState<string>('');
-    const [targetDate, setTargetDate] = useState<string>('');
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    const ownerOptions = useMemo<ComboboxOption[]>(
-        () => members.map((m) => ({ value: m.id, label: m.label })),
-        [members],
-    );
-
-    const save = async () => {
-        if (!title.trim()) {
-            setError(t('initiatives.titleRequired'));
-            return;
-        }
-        setSaving(true);
-        setError(null);
-        try {
-            const res = await fetch(`/api/org/${orgSlug}/initiatives`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title,
-                    description: description || null,
-                    ownerUserId: ownerUserId || null,
-                    targetDate: targetDate || null,
-                }),
-            });
-            if (!res.ok) {
-                // The server's reason when it gives one (#4851), not a fixed
-                // sentence that hides why.
-                const body = await res.json().catch(() => ({}));
-                setError(apiErrorMessage(body, t('initiatives.failedCreate')));
-                return;
-            }
-            const data = await res.json();
-            onCreated(data.initiative.id);
-        } catch {
-            setError(t('initiatives.failedCreate'));
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    return (
-        <Modal showModal setShowModal={(o) => (o ? null : onClose())}>
-            <Modal.Header title={t('initiatives.createModalTitle')} />
-            <Modal.Body>
-                <div className="space-y-default" data-testid="org-initiative-create-form">
-                    <FormField label={t('initiatives.titleLabel')} required>
-                        <Input
-                            id="org-initiative-title"
-                            maxLength={200}
-                            value={title}
-                            placeholder={t('initiatives.titlePlaceholder')}
-                            onChange={(e) => setTitle(e.target.value)}
-                        />
-                    </FormField>
-                    <FormField label={t('initiatives.descriptionLabel')}>
-                        <Textarea
-                            id="org-initiative-description"
-                            rows={3}
-                            maxLength={8000}
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                        />
-                    </FormField>
-                    <FormField label={t('initiatives.ownerLabel')} description={t('initiatives.ownerHint')}>
-                        <Combobox
-                            id="org-initiative-owner"
-                            options={ownerOptions}
-                            selected={ownerOptions.find((o) => o.value === ownerUserId) ?? null}
-                            setSelected={(opt) => setOwnerUserId(opt?.value ?? '')}
-                            placeholder={t('initiatives.noOwner')}
-                            matchTriggerWidth
-                            buttonProps={{ className: 'w-full' }}
-                        />
-                    </FormField>
-                    <FormField label={t('initiatives.targetLabel')} description={t('initiatives.targetHint')}>
-                        <LazyDatePicker
-                            id="org-initiative-target"
-                            className="w-full"
-                            clearable
-                            align="start"
-                            value={parseYMD(targetDate)}
-                            onChange={(next) => setTargetDate(toYMD(next) ?? '')}
-                            aria-label={t('initiatives.targetLabel')}
-                        />
-                    </FormField>
-                    {error && (
-                        <p className="text-sm text-content-error" role="alert" data-testid="org-initiative-create-error">
-                            {error}
-                        </p>
-                    )}
-                </div>
-            </Modal.Body>
-            <Modal.Footer>
-                <Modal.Actions>
-                    <Button variant="ghost" onClick={onClose} disabled={saving}>
-                        {t('common.cancel')}
-                    </Button>
-                    <Button variant="primary" onClick={save} disabled={saving} loading={saving} id="org-initiative-create-submit">
-                        {t('initiatives.createInitiative')}
-                    </Button>
-                </Modal.Actions>
-            </Modal.Footer>
-        </Modal>
     );
 }
