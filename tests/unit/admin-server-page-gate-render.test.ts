@@ -82,7 +82,7 @@ const reads = {
     })),
     listDsarRequests: jest.fn(async () => []),
     getTrustCenter: jest.fn(async () => null),
-    listAgentCredentials: jest.fn(async () => []),
+    listAgentCredentials: jest.fn(async () => ({ credentials: [], truncated: false })),
     getPrivacyPosture: jest.fn(async () => {
         throw new Error('not rendered in this file');
     }),

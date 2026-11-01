@@ -6,6 +6,8 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { listAgentCredentials } from '@/app-layer/usecases/api-keys';
+import { AUTONOMY_REQUIRED_BY_CAPABILITY } from '@/lib/agentic/autonomy-ceiling';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { gateAdminPage } from '../_lib/admin-page-gate';
 
 export const dynamic = 'force-dynamic';
@@ -37,18 +39,51 @@ export const dynamic = 'force-dynamic';
  * panel has nowhere to go yet, and a redirect to a page that does not carry the
  * content is worse than a page that does.
  *
- * The single link out is to the register, because the register is what the word
- * "bound" in this panel refers to. One link is navigation; five were a hub.
+ * Two links out: to the register, which is what the word "bound" in this panel
+ * refers to (and each entry links its own agent), and to API keys, where a key
+ * is revoked — the act this page exists to confirm (#4879).
  *
  * The panel shows the EFFECTIVE autonomy ceiling — `min(key max, agent level)`,
  * computed by the same function the tool funnel uses — rather than the key's own
  * number, because reading the key's number as the answer is the exact
  * misunderstanding the ceiling exists to prevent.
  *
+ * And it shows whether the key can act at all (`agentCredentialStanding`): a
+ * key bound to a suspended or killed agent is STOPPED, not "Live", and a key
+ * that reaches the agent tools with no agent's controls says so (#4879).
+ *
  * Gated here, before the read (`admin.view` + `canAdmin`, which
  * `listAgentCredentials` asserts), so a refused caller gets the forbidden page
  * rather than the read's error. See `../_lib/admin-page-requirements.ts`.
  */
+type Credential = Awaited<ReturnType<typeof listAgentCredentials>>['credentials'][number];
+
+/**
+ * The capability a rung opens, read off the live mapping the tool boundary
+ * uses (`AUTONOMY_REQUIRED_BY_CAPABILITY`), so the word moves when a rung does.
+ * Rungs above orchestrate grant nothing more than orchestrate.
+ */
+type RungWord = 'suggest' | keyof typeof AUTONOMY_REQUIRED_BY_CAPABILITY;
+const RUNGS_HIGHEST_FIRST = (
+    Object.entries(AUTONOMY_REQUIRED_BY_CAPABILITY) as Array<
+        [keyof typeof AUTONOMY_REQUIRED_BY_CAPABILITY, number]
+    >
+).sort((a, b) => b[1] - a[1]);
+
+function rungWord(level: number): RungWord {
+    for (const [capability, rung] of RUNGS_HIGHEST_FIRST) {
+        if (level >= rung) return capability;
+    }
+    return 'suggest';
+}
+
+const BADGE: Record<Credential['standing']['kind'], 'success' | 'error' | 'warning'> = {
+    governed: 'success',
+    ungoverned: 'warning',
+    stopped: 'error',
+    inactive: 'error',
+};
+
 export default async function McpAdminPage({
     params,
 }: {
@@ -59,18 +94,62 @@ export default async function McpAdminPage({
     const { ctx, tenantSlug } = gate;
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
     const t = await getTranslations('admin');
-    const credentials = await listAgentCredentials(ctx);
+    const { credentials, truncated } = await listAgentCredentials(ctx);
 
-    const stateVariant = {
-        live: 'success',
-        revoked: 'error',
-        expired: 'warning',
-    } as const;
-    const stateLabel = {
-        live: t('mcp.credentialLive'),
-        revoked: t('mcp.credentialRevoked'),
-        expired: t('mcp.credentialExpired'),
-    } as const;
+    const badgeLabel = (cred: Credential): string => {
+        switch (cred.standing.kind) {
+            case 'governed':
+                return t('mcp.credentialLive');
+            case 'ungoverned':
+                return t('mcp.credentialUngoverned');
+            case 'stopped':
+                return t('mcp.credentialStopped');
+            case 'inactive':
+                return cred.state === 'expired'
+                    ? t('mcp.credentialExpired')
+                    : t('mcp.credentialRevoked');
+        }
+    };
+    const standingLine = (cred: Credential): string | null => {
+        const { standing } = cred;
+        if (standing.kind === 'stopped') return t(`mcp.stoppedReason.${standing.reason}`);
+        if (standing.kind === 'ungoverned') return t(`mcp.ungovernedReason.${standing.reason}`);
+        return null;
+    };
+    const ceilingLine = (cred: Credential): string | null => {
+        // A key that cannot act has no ceiling worth reading.
+        if (cred.standing.kind !== 'governed' && cred.standing.kind !== 'ungoverned') return null;
+        return t('mcp.credentialAutonomy', {
+            level: cred.effectiveAutonomy,
+            rung: t(`mcp.ceilingRung.${rungWord(cred.effectiveAutonomy)}`),
+        });
+    };
+    const datesLine = (cred: Credential): string => {
+        const parts: string[] = [];
+        if (cred.state === 'revoked' && cred.revokedAt) {
+            parts.push(t('mcp.revokedOn', { date: formatDateTime(cred.revokedAt) }));
+        } else if (cred.state === 'expired' && cred.expiresAt) {
+            parts.push(t('mcp.expiredOn', { date: formatDateTime(cred.expiresAt) }));
+        } else if (cred.expiresAt) {
+            parts.push(t('mcp.expiresOn', { date: formatDateTime(cred.expiresAt) }));
+        }
+        parts.push(
+            cred.lastUsedAt
+                ? t('mcp.lastUsed', { date: formatDateTime(cred.lastUsedAt) })
+                : t('mcp.neverUsed'),
+        );
+        return parts.join(' · ');
+    };
+
+    const apiKeysLink = (
+        <Link
+            id="mcp-api-keys-link"
+            href={tenantHref('/admin/api-keys')}
+            className="font-medium text-content-info hover:underline"
+        >
+            {t('mcp.manageKeys')}
+        </Link>
+    );
 
     return (
         <div className="space-y-section animate-fadeIn">
@@ -85,9 +164,9 @@ export default async function McpAdminPage({
                 description={t('mcp.description')}
             />
 
-            {/* The one link out, and it names where the moved surfaces went.
-                A reader who bookmarked this page as "the agentic hub" is told
-                once, here, rather than left to rediscover the sidebar. */}
+            {/* The link to where the moved surfaces went. A reader who
+                bookmarked this page as "the agentic hub" is told once, here,
+                rather than left to rediscover the sidebar. */}
             <InlineNotice variant="info">
                 {t('mcp.surfacesMoved')}{' '}
                 <Link
@@ -103,64 +182,95 @@ export default async function McpAdminPage({
             <section id="mcp-agent-credentials" className="space-y-default">
                 <div className="space-y-tight">
                     <Heading level={2}>{t('mcp.credentialsTitle')}</Heading>
-                    <p className="text-sm text-content-muted">{t('mcp.credentialsDesc')}</p>
+                    <p className="text-sm text-content-muted">
+                        {t('mcp.credentialsDesc')} {apiKeysLink}
+                    </p>
                 </div>
+
+                {truncated && (
+                    <InlineNotice variant="warning" id="mcp-agent-credentials-truncated">
+                        {t('mcp.truncated', { count: credentials.length })}
+                    </InlineNotice>
+                )}
 
                 {credentials.length === 0 ? (
                     <p
                         id="mcp-agent-credentials-empty"
                         className="rounded-lg border border-border-subtle bg-bg-default p-4 text-sm text-content-muted"
                     >
-                        {t('mcp.credentialsEmpty')}
+                        {t('mcp.credentialsEmpty')} {apiKeysLink}
                     </p>
                 ) : (
                     <ul className="space-y-default">
-                        {credentials.map((cred) => (
-                            <li
-                                key={cred.id}
-                                id={`mcp-agent-credential-${cred.id}`}
-                                className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4 sm:flex-row sm:items-center sm:justify-between"
-                            >
-                                <span className="flex flex-col gap-tight">
-                                    <span className="font-medium text-content-emphasis">
-                                        {cred.name}
+                        {credentials.map((cred) => {
+                            const standing = standingLine(cred);
+                            const ceiling = ceilingLine(cred);
+                            return (
+                                <li
+                                    key={cred.id}
+                                    id={`mcp-agent-credential-${cred.id}`}
+                                    className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                    <span className="flex flex-col gap-tight">
+                                        <span className="font-medium text-content-emphasis">
+                                            {cred.name}
+                                        </span>
+                                        <span className="text-sm text-content-muted">
+                                            {cred.keyPrefix}… ·{' '}
+                                            {cred.agent ? (
+                                                <Link
+                                                    href={tenantHref(`/agents/${cred.agent.id}`)}
+                                                    className="font-medium text-content-info hover:underline"
+                                                >
+                                                    {cred.agent.name}
+                                                </Link>
+                                            ) : (
+                                                t('mcp.credentialNoAgent')
+                                            )}
+                                        </span>
+                                        <span className="text-xs text-content-muted">
+                                            {datesLine(cred)}
+                                        </span>
                                     </span>
-                                    <span className="text-sm text-content-muted">
-                                        {cred.keyPrefix}… ·{' '}
-                                        {cred.agent?.name ?? t('mcp.credentialNoAgent')}
+                                    <span className="flex flex-col items-start gap-tight sm:items-end">
+                                        <StatusBadge
+                                            variant={BADGE[cred.standing.kind]}
+                                            data-state={cred.state}
+                                            data-standing={cred.standing.kind}
+                                        >
+                                            {badgeLabel(cred)}
+                                        </StatusBadge>
+                                        {standing && (
+                                            <span
+                                                className="text-sm text-content-muted"
+                                                data-reason={
+                                                    'reason' in cred.standing
+                                                        ? cred.standing.reason
+                                                        : undefined
+                                                }
+                                            >
+                                                {standing}
+                                            </span>
+                                        )}
+                                        {/*
+                                          * An UNSCORED agent's ceiling is
+                                          * DENY_CEILING (-1) — below rung 0, so
+                                          * the credential reaches nothing. That
+                                          * is a STOP (`UNASSESSED`), so it never
+                                          * reaches this line as a number.
+                                          */}
+                                        {ceiling && (
+                                            <span
+                                                className="text-sm text-content-muted"
+                                                data-autonomy={cred.effectiveAutonomy}
+                                            >
+                                                {ceiling}
+                                            </span>
+                                        )}
                                     </span>
-                                </span>
-                                <span className="flex items-center gap-compact">
-                                    {/*
-                                      * An UNSCORED agent's ceiling is
-                                      * DENY_CEILING (-1) — below rung 0, so the
-                                      * credential reaches nothing. Rendering
-                                      * "Autonomy ceiling -1" would put a magic
-                                      * number in front of an operator whose
-                                      * integration has just stopped working;
-                                      * the word says what the number means and
-                                      * points at the fix.
-                                      */}
-                                    <span
-                                        className="text-sm text-content-muted"
-                                        data-autonomy={cred.effectiveAutonomy}
-                                        data-unscored={cred.unscored ? 'true' : undefined}
-                                    >
-                                        {cred.unscored
-                                            ? t('mcp.credentialUnassessed')
-                                            : t('mcp.credentialAutonomy', {
-                                                  level: cred.effectiveAutonomy,
-                                              })}
-                                    </span>
-                                    <StatusBadge
-                                        variant={stateVariant[cred.state]}
-                                        data-state={cred.state}
-                                    >
-                                        {stateLabel[cred.state]}
-                                    </StatusBadge>
-                                </span>
-                            </li>
-                        ))}
+                                </li>
+                            );
+                        })}
                     </ul>
                 )}
             </section>

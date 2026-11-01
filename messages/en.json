@@ -6346,7 +6346,7 @@
     },
     "mcp": {
       "title": "Agent credentials",
-      "description": "Every API key bound to a registered agent, and how far up the autonomy ladder it can actually drive that agent.",
+      "description": "Every API key that can act for an agent: bound to a registered agent, or allowed to use the agent tools. Each says whether it can act right now, and how far up the autonomy ladder.",
       "proposalsTitle": "Agent Proposals",
       "runsTitle": "Agent Runs",
       "runsDesc": "Observe the orchestrator. Start a workflow, watch its step timeline and cost, resume a paused run after acting on its proposals, or abort a runaway run.",
@@ -6362,17 +6362,49 @@
       "unverifiedTooltip": "Signature invalid or absent — retained + flagged, not linked to the audit trail.",
       "export": "Export",
       "credentialsTitle": "Agent credentials",
-      "credentialsDesc": "Every API key bound to a registered agent, and how far up the autonomy ladder it can actually drive that agent. Revoked and expired credentials stay listed — a revocation you cannot see is one nobody can confirm took effect.",
-      "credentialsEmpty": "No API key is bound to a registered agent yet. Bind one when you create the key in Admin → API keys.",
-      "credentialAutonomy": "Autonomy ceiling {level}",
-      "credentialNoAgent": "No agent",
+      "credentialsDesc": "Every API key bound to a registered agent or allowed to use the agent tools, newest first. Revoked and expired keys stay listed, because a revocation you cannot see is one nobody can confirm took effect. Keys are revoked on the API keys page.",
+      "credentialsEmpty": "No API key is bound to an agent or allowed to use the agent tools yet. Bind one to an agent when you create it.",
+      "credentialAutonomy": "Autonomy ceiling L{level} · {rung}",
+      "credentialNoAgent": "Not bound to an agent",
       "credentialUnassessed": "Unassessed — no authority",
       "credentialLive": "Live",
       "credentialRevoked": "Revoked",
       "credentialExpired": "Expired",
       "quarantineTitle": "Quarantine",
       "quarantineDesc": "What the agentic output guard refused, and the content it was asked to write. A quarantined proposal never reaches the review queue and can never be approved — this is the only surface that shows what was attempted.",
-      "surfacesMoved": "The agent register, the proposal queue, activity, receipts and quarantine now live under Agent in the sidebar."
+      "surfacesMoved": "The agent register, the proposal queue, activity, receipts and quarantine now live under Agent in the sidebar.",
+      "credentialStopped": "Stopped",
+      "credentialUngoverned": "No agent controls",
+      "ceilingRung": {
+        "suggest": "suggests only",
+        "read": "reads",
+        "propose": "proposes",
+        "orchestrate": "orchestrates"
+      },
+      "stoppedReason": {
+        "NOT_REGISTERED": "Not bound to an agent, and this workspace requires one.",
+        "AGENT_REMOVED": "Its agent no longer exists.",
+        "AGENT_DRAFT": "Its agent is a draft and has never been put into service.",
+        "AGENT_SUSPENDED": "Its agent is suspended.",
+        "AGENT_RETIRED": "Its agent is retired.",
+        "KILL_PLATFORM": "Every agent is stopped by the platform operator's kill switch.",
+        "KILL_TENANT": "Every agent in this workspace is stopped by its kill switch.",
+        "KILL_AGENT": "Its agent is stopped by its kill switch.",
+        "UNASSESSED": "Its agent has not been risk-assessed, so the key reaches nothing."
+      },
+      "ungovernedReason": {
+        "NO_AGENT": "Not bound to an agent. It reaches the agent tools with no agent's limits, because this workspace does not require registered agents.",
+        "AGENT_REMOVED": "Its agent no longer exists. It reaches the agent tools with none of that agent's limits, because this workspace does not require registered agents.",
+        "AGENT_DRAFT": "Its agent is a draft. It reaches the agent tools with none of the agent's limits, because this workspace does not require registered agents. The rest of the API refuses it.",
+        "AGENT_RETIRED": "Its agent is retired. It reaches the agent tools with none of the agent's limits, because this workspace does not require registered agents. The rest of the API refuses it."
+      },
+      "revokedOn": "Revoked {date}",
+      "expiredOn": "Expired {date}",
+      "expiresOn": "Expires {date}",
+      "lastUsed": "Last used {date}",
+      "neverUsed": "Never used",
+      "manageKeys": "Manage API keys",
+      "truncated": "Showing the {count} newest credentials. Older ones are on the API keys page."
     },
     "sharepoint": {
       "title": "Microsoft SharePoint",
