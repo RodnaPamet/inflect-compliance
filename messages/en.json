@@ -14259,9 +14259,9 @@
     },
     "risks": {
       "title": "Critical Risks",
-      "subtitle": "{count, plural, one {# critical risk} other {# critical risks}} (score ≥ 15, not closed) across the portfolio",
-      "moreAvailable": " (more available)",
-      "colTenant": "Tenant",
+      "subtitle": "Showing {count, plural, one {# risk} other {# risks}} in its workspace's highest severity band and still open or being mitigated, across every workspace in the organization",
+      "moreAvailable": " — more to load below",
+      "colTenant": "Workspace",
       "colRisk": "Risk",
       "colScore": "Score",
       "colStatus": "Status",
@@ -14270,9 +14270,11 @@
       "statusMitigating": "Mitigating",
       "statusAccepted": "Accepted",
       "emptyTitle": "No critical risks",
-      "emptyDesc": "No risk with inherent score ≥ 15 is currently open across this organization's tenants.",
+      "emptyDesc": "No risk in any of this organization's workspaces is in that workspace's highest severity band and still open or being mitigated.",
       "loadMore": "Load more risks",
-      "failedLoadMore": "Failed to load more — please retry."
+      "failedLoadMore": "Failed to load more — please retry.",
+      "resourceOne": "risk",
+      "resourceMany": "risks"
     },
     "initiatives": {
       "title": "Security initiatives",

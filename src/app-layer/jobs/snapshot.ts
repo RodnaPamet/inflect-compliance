@@ -153,6 +153,7 @@ export async function generateSnapshotForTenant(
             testPlanByStatus,
             testPlansTotal,
             tasksDueSoon7d,
+            risksCritical,
         ] = await Promise.all([
             DashboardRepository.getControlCoverage(db, ctx),
             DashboardRepository.getRiskBySeverity(db, ctx),
@@ -190,6 +191,10 @@ export async function generateSnapshotForTenant(
                     dueAt: { gte: snapshotComputedAt, lte: tasksDueSoonCutoff },
                 },
             }),
+            // Critical = the workspace's own highest severity band (#4846),
+            // not the fixed 15-25 tier `riskBySeverity` uses for the other
+            // three counts. The organization portfolio reads this column.
+            DashboardRepository.countCriticalRisks(db, ctx),
         ]);
 
         const evByStatus = (s: string) =>
@@ -220,7 +225,7 @@ export async function generateSnapshotForTenant(
             risksLow: riskBySeverity.low,
             risksMedium: riskBySeverity.medium,
             risksHigh: riskBySeverity.high,
-            risksCritical: riskBySeverity.critical,
+            risksCritical,
             risksAvgScore: riskAgg._avg.inherentScore,
             risksOverdueReview,
 
