@@ -44,9 +44,9 @@ import {
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { apiErrorMessage } from '@/lib/api-error';
-import { ApiClientError } from '@/lib/api-client';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
+import { extractMutationError } from '@/lib/mutations';
 
 // Status badge classes — keyed off the canonical PolicyStatus enum
 // values. POLICY_STATUS_LABELS in `filter-defs.ts` is the single
@@ -368,9 +368,7 @@ function PoliciesPageInner({
     // table said "No policies match". With `error` set the table shows the
     // error instead of either. The server's reason when it gave one.
     const listError = policiesQuery.error
-        ? policiesQuery.error instanceof ApiClientError && policiesQuery.error.code !== 'UNKNOWN'
-            ? policiesQuery.error.message
-            : tx('list.loadError')
+        ? extractMutationError(policiesQuery.error, tx('list.loadError'))
         : undefined;
 
     // ─── Bulk actions (canonical BulkActionBar — assign + archive) ───

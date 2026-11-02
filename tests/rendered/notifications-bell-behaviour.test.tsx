@@ -259,6 +259,24 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
             const link = screen.getByText('Sign in again');
             expect(link.getAttribute('href')).toBe('/login');
         });
+
+        it('says the list could not be loaded, in a sentence, not with the status code (#4987)', async () => {
+            fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+            render(<NotificationsBell />);
+
+            await act(async () => {
+                await Promise.resolve();
+            });
+
+            const bell = screen.getByTestId('top-chrome-notifications-bell');
+            await act(async () => {
+                bell.click();
+                await Promise.resolve();
+            });
+
+            expect(screen.getByText("Notifications couldn't be loaded.")).toBeTruthy();
+            expect(screen.queryByText(/500/)).toBeNull();
+        });
     });
 
     it('does not render an unread badge when everything is read', async () => {

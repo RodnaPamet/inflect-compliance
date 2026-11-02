@@ -33,6 +33,8 @@ import {
     buildRuleStatusLabels,
 } from '@/app/t/[tenantSlug]/(app)/processes/automation-filter-defs';
 import { useTranslations } from 'next-intl';
+import { apiErrorMessage } from '@/lib/api-error';
+import { extractMutationError } from '@/lib/mutations';
 
 function humanizeEvent(name: string): string {
     return name
@@ -154,7 +156,10 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                 const res = await fetch(apiUrl(CACHE_KEYS.automation.rules.detail(ruleId)), {
                     method: 'DELETE',
                 });
-                if (!res.ok) throw new Error(`Archive failed (${res.status})`);
+                if (!res.ok) {
+                    const refusal: unknown = await res.json().catch(() => null);
+                    throw new Error(apiErrorMessage(refusal, t('rules.archiveFailed')));
+                }
             },
             undoAction: () => {
                 void globalMutate(listKey);
@@ -162,8 +167,9 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
             onCommit: () => {
                 void globalMutate(listKey);
             },
-            onError: () => {
-                toast.error(t('rules.archiveFailed'));
+            onError: (err) => {
+                // The server's reason when it gave one (#4987).
+                toast.error(extractMutationError(err, t('rules.archiveFailed')));
                 void globalMutate(listKey);
             },
         });

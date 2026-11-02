@@ -226,7 +226,7 @@ export default function ControlDetailPage() {
     const loading = pageDataQuery.isLoading;
     const error =
         pageDataQuery.error
-            ? pageDataQuery.error.message || tx('detailPage.errors.controlNotFound')
+            ? extractMutationError(pageDataQuery.error, tx('detailPage.errors.controlNotFound'))
             : '';
     // Stable revalidation handle that mirrors the prior `refetch()`
     // contract — `mutate(undefined)` re-runs the fetcher for this

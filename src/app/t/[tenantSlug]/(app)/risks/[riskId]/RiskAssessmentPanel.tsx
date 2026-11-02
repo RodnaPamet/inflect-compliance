@@ -48,7 +48,7 @@ import {
 } from '../_shared/risk-options';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 import type { ResidualSuggestionPayload } from '@/app-layer/usecases/risk-residual-suggestion';
-import { ApiClientError } from '@/lib/api-client';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { extractMutationError } from '@/lib/mutations';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
@@ -249,15 +249,11 @@ export function RiskAssessmentPanel({
         mutate: reloadSuggestion,
     } = useTenantSWR<ResidualSuggestionPayload>(`/risks/${riskId}/residual-suggestion`);
 
-    // The status-bearing message is preserved: `ApiClientError` carries the
-    // HTTP status, so the copy stays as specific as the hand-rolled version
-    // was. A non-HTTP failure (network, parse) has no status and falls back
-    // to the generic string, which is what the old `catch` produced too.
+    // The server's reason, or the panel's own sentence — never the HTTP
+    // status, which this once put in the copy (#4987).
     const loadError = !suggestionError
         ? null
-        : suggestionError instanceof ApiClientError
-          ? t('assessment.failedLoadStatus', { status: suggestionError.status })
-          : suggestionError.message || t('assessment.failedLoad');
+        : extractMutationError(suggestionError, t('assessment.failedLoadDerivation'));
 
     // RQ3-7 — the KRI breach signal loads independently and stays
     // failure-soft: it hides the nudge rather than blocking the panel.
@@ -285,32 +281,37 @@ export function RiskAssessmentPanel({
      * key, which IS the parent's `useTenantSWR` query — but the callback is
      * the parent's declared contract, and other consumers may rely on it.
      */
-    const putRisk = (failKey: 'failedSaveStatus' | 'failedResidualStatus' | 'failedTreatmentStatus' | 'failedReviewStatus') =>
+    const putRisk = (failKey: 'failedSaveAssessment' | 'failedSaveResidual' | 'failedSaveTreatment' | 'failedSaveReview') =>
         async (body: Record<string, unknown>) => {
             const res = await fetch(apiUrl(`/risks/${riskId}`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error(t(`assessment.${failKey}`, { status: res.status }));
+            if (!res.ok) {
+                // The server's reason when it gave one; this read none, so a
+                // refused save never said why (#4987).
+                const refusal: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(refusal, t(`assessment.${failKey}`)));
+            }
             return res.json();
         };
 
     const inherentMutation = useTenantMutation<unknown, Record<string, unknown>, unknown>({
         key: `/risks/${riskId}`,
-        mutationFn: putRisk('failedSaveStatus'),
+        mutationFn: putRisk('failedSaveAssessment'),
     });
     const residualMutation = useTenantMutation<unknown, Record<string, unknown>, unknown>({
         key: `/risks/${riskId}`,
-        mutationFn: putRisk('failedResidualStatus'),
+        mutationFn: putRisk('failedSaveResidual'),
     });
     const treatmentMutation = useTenantMutation<unknown, Record<string, unknown>, unknown>({
         key: `/risks/${riskId}`,
-        mutationFn: putRisk('failedTreatmentStatus'),
+        mutationFn: putRisk('failedSaveTreatment'),
     });
     const reviewMutation = useTenantMutation<unknown, Record<string, unknown>, unknown>({
         key: `/risks/${riskId}`,
-        mutationFn: putRisk('failedReviewStatus'),
+        mutationFn: putRisk('failedSaveReview'),
     });
 
     const savingInherent = inherentMutation.isMutating;
@@ -351,7 +352,7 @@ export function RiskAssessmentPanel({
             onRiskUpdated();
             await reloadSuggestion();
         } catch (err) {
-            setStepError('inherent', extractMutationError(err, t('assessment.failedSave')));
+            setStepError('inherent', extractMutationError(err, t('assessment.failedSaveAssessment')));
         }
     };
 
@@ -366,7 +367,10 @@ export function RiskAssessmentPanel({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ justification: justification || null }),
             });
-            if (!res.ok) throw new Error(t('assessment.failedAcceptStatus', { status: res.status }));
+            if (!res.ok) {
+                const refusal: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(refusal, t('assessment.failedAcceptSuggestion')));
+            }
             // RQ3-OB-D — "accepting deserves an answer". The success
             // toast carries the SERVER-derived one-liner (composed in
             // acceptResidualSuggestion from the recomputed values), so
@@ -378,7 +382,7 @@ export function RiskAssessmentPanel({
             onRiskUpdated();
             await reloadSuggestion();
         } catch (err) {
-            setStepError('accept', extractMutationError(err, t('assessment.failedAccept')));
+            setStepError('accept', extractMutationError(err, t('assessment.failedAcceptSuggestion')));
         } finally {
             setAccepting(false);
         }
@@ -397,7 +401,7 @@ export function RiskAssessmentPanel({
             onRiskUpdated();
             await reloadSuggestion();
         } catch (err) {
-            setStepError('residual', extractMutationError(err, t('assessment.failedSave')));
+            setStepError('residual', extractMutationError(err, t('assessment.failedSaveResidual')));
         }
     };
 
@@ -410,7 +414,7 @@ export function RiskAssessmentPanel({
             await treatmentMutation.trigger({ treatment: decision || null });
             onRiskUpdated();
         } catch (err) {
-            setStepError('treatment', extractMutationError(err, t('assessment.failedSave')));
+            setStepError('treatment', extractMutationError(err, t('assessment.failedSaveTreatment')));
         }
     };
 
@@ -426,7 +430,7 @@ export function RiskAssessmentPanel({
             toast.success(t('assessment.saveReviewDate'));
             onRiskUpdated();
         } catch (err) {
-            setStepError('review', extractMutationError(err, t('assessment.failedSave')));
+            setStepError('review', extractMutationError(err, t('assessment.failedSaveReview')));
         }
     };
 

@@ -14,6 +14,7 @@ import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { parseCsvRecords } from '@/lib/csv/parse-csv';
 import { cn } from '@inflect/ui/lib/cn';
 import { extractMutationError } from '@/lib/mutations';
+import { apiErrorMessage } from '@/lib/api-error';
 import { riskCanCreate } from '../_shared/bulk-permissions';
 
 type ParsedRow = {
@@ -128,8 +129,11 @@ export default function RiskImportPage() {
                 }),
             });
             if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.error?.message || data.message || `Status ${res.status}`);
+                // The server's reason, or nothing: the card's own headline
+                // already says the import did not run. Never the status code
+                // (#4987).
+                const data: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(data, ''));
             }
             const data = (await res.json()) as {
                 created: number;
@@ -139,7 +143,7 @@ export default function RiskImportPage() {
             setResult({ kind: 'done', created: data.created, skipped: data.skipped, errors: data.errors });
         } catch (err) {
             // #4775 — a refused import is a failure, not "Import Complete — 0 of N".
-            setResult({ kind: 'failed', message: extractMutationError(err) });
+            setResult({ kind: 'failed', message: extractMutationError(err, '') });
         } finally {
             setImporting(false);
         }
@@ -258,7 +262,9 @@ export default function RiskImportPage() {
             {result?.kind === 'failed' && (
                 <div className={cn(cardVariants(), 'space-y-default')} data-testid="import-failed">
                     <p className="text-lg font-semibold text-content-error">{t('importFailed')}</p>
-                    <p className="text-sm text-content-error" role="alert">{result.message}</p>
+                    {result.message && (
+                        <p className="text-sm text-content-error" role="alert">{result.message}</p>
+                    )}
                     <p className="text-sm text-content-muted">{t('importFailedNothingCreated')}</p>
                     <Button variant="secondary" onClick={() => setResult(null)} id="import-back-to-preview">
                         {t('backToPreview')}

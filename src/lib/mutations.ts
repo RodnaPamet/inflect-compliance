@@ -1,3 +1,5 @@
+import { ApiClientError } from '@/lib/api-client';
+
 /**
  * Mutation error helper.
  *
@@ -11,7 +13,16 @@
  * now go through `useTenantMutation`'s `optimisticUpdate` option.
  */
 export function extractMutationError(err: unknown, fallback = 'An error occurred'): string {
-    if (err instanceof Error) return err.message;
+    // #4987 — the server's own sentence, or the caller's. An `ApiClientError`
+    // with no envelope message carries `Request failed with status N` as its
+    // `message`: a status code, in English, which is not for a page.
+    if (err instanceof ApiClientError) return err.reason ?? fallback;
+    // A failed `fetch` rejects with a `TypeError` whose text is the browser's
+    // ("Failed to fetch", "NetworkError when attempting to fetch resource."),
+    // and so is a coding slip's ("Cannot read properties of undefined") —
+    // neither is a sentence for the person using the page.
+    if (err instanceof TypeError) return fallback;
+    if (err instanceof Error) return err.message || fallback;
     if (typeof err === 'string') return err;
     if (err && typeof err === 'object') {
         const obj = err as Record<string, unknown>;

@@ -34,6 +34,8 @@ import {
     type DiffClass,
     type DiffGraphSnapshot,
 } from "@/lib/processes/canvas-diff";
+import { apiErrorMessage } from "@/lib/api-error";
+import { extractMutationError } from "@/lib/mutations";
 
 interface SnapshotResponse {
     id: string;
@@ -80,18 +82,17 @@ export function CanvasDiffOverlay({
                     `/api/t/${tenantSlug}/processes/${mapId}/snapshots/${targetVersion}`,
                 );
                 if (!res.ok) {
-                    throw new Error(
-                        t("loadErrorStatus", { status: res.status }),
-                    );
+                    // The server's reason, or the overlay's own sentence —
+                    // never the status code (#4987).
+                    const refusal: unknown = await res.json().catch(() => null);
+                    throw new Error(apiErrorMessage(refusal, t("loadError")));
                 }
                 const body = (await res.json()) as SnapshotResponse;
                 if (cancelled) return;
                 setSnapshot(body);
             } catch (err) {
                 if (!cancelled) {
-                    setError(
-                        err instanceof Error ? err.message : t("loadError"),
-                    );
+                    setError(extractMutationError(err, t("loadError")));
                 }
             } finally {
                 if (!cancelled) setLoading(false);

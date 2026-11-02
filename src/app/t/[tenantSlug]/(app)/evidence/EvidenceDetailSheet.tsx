@@ -47,6 +47,7 @@ import { ownerLabel } from '@/lib/evidence-owner-label';
 import { formatBytes } from '@/lib/evidence-upload-limits';
 import { mayDownloadEvidenceFile } from '@/lib/evidence-download-access';
 import { apiErrorMessage } from '@/lib/api-error';
+import { extractMutationError } from '@/lib/mutations';
 
 // formatBytes now comes from @/lib/evidence-upload-limits. Its comment used
 // to say it mirrored FileDropzone's local helper — which it did, and a third
@@ -421,9 +422,7 @@ export function EvidenceDetailSheet({
                             role="alert"
                             data-testid="evidence-sheet-error"
                         >
-                            {detailQuery.error instanceof Error
-                                ? detailQuery.error.message
-                                : t('detail.loadFailed')}
+                            {extractMutationError(detailQuery.error, t('detail.loadFailed'))}
                         </div>
                     </Sheet.Body>
                 </>

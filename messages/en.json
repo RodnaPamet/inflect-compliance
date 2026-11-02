@@ -877,7 +877,6 @@
       "statusPlaceholder": "Status",
       "statusActive": "Active",
       "statusRetired": "Retired",
-      "changeStatusFailed": "Failed to change status ({status})",
       "changeStatusFailedGeneric": "Failed to change status",
       "crumbDashboard": "Dashboard",
       "crumbAssets": "Assets",
@@ -988,7 +987,8 @@
       "retentionUntil": "Retention until",
       "deletedToast": "Asset deleted",
       "undo": "Undo",
-      "deleteFailed": "Couldn't delete the asset. Please try again."
+      "deleteFailed": "Couldn't delete the asset. Please try again.",
+      "loadFailed": "The asset couldn't be loaded. Try again."
     },
     "filters": {
       "type": "Type",
@@ -1323,9 +1323,6 @@
       "reviewFair": "Review the FAIR analysis",
       "quantify": "Quantify this risk",
       "residualAccepted": "Residual suggestion accepted",
-      "failedLoad": "Failed to load",
-      "failedSave": "Failed to save",
-      "failedAccept": "Failed to accept",
       "controlsUnlinked": "No controls linked yet.",
       "residualNotDerivable": "No derivable residual — link controls with an effectiveness signal.",
       "step4": "Step 4 — Treat & monitor",
@@ -1346,12 +1343,12 @@
       "statusAutoNote": "Status finalizes automatically when the treatment plan completes.",
       "retry": "Retry",
       "dismiss": "Dismiss",
-      "failedLoadStatus": "Couldn't load the control derivation ({status}).",
-      "failedSaveStatus": "Couldn't save the assessment ({status}).",
-      "failedAcceptStatus": "Couldn't accept the suggestion ({status}).",
-      "failedResidualStatus": "Couldn't save the residual score ({status}).",
-      "failedTreatmentStatus": "Couldn't save the treatment decision ({status}).",
-      "failedReviewStatus": "Couldn't save the review date ({status})."
+      "failedLoadDerivation": "Couldn't load the control derivation. Try again.",
+      "failedSaveAssessment": "Couldn't save the assessment. Try again.",
+      "failedAcceptSuggestion": "Couldn't accept the suggestion. Try again.",
+      "failedSaveResidual": "Couldn't save the residual score. Try again.",
+      "failedSaveTreatment": "Couldn't save the treatment decision. Try again.",
+      "failedSaveReview": "Couldn't save the review date. Try again."
     },
     "searchPlaceholder": "Search risks…",
     "aleTitle": "Annualised loss expectancy",
@@ -1467,7 +1464,6 @@
       "creating": "Creating…",
       "submit": "Create risk",
       "createFailed": "Failed to create risk",
-      "createFailedStatus": "Failed to create risk ({status})",
       "controlsEmpty": "No controls available to link.",
       "controlLinkPartialFail": "{failed} of {total} control links failed to save. The risk was created; you can add the links from its detail page."
     },
@@ -1511,10 +1507,11 @@
       "vulnerability": "Vulnerability",
       "treatmentNotes": "Treatment Notes",
       "created": "Created",
-      "saveFailed": "Failed to save ({status})",
-      "statusChangeFailed": "Failed to change status ({status})",
+      "saveFailed": "The changes were not saved. Try again.",
+      "statusChangeFailed": "The status was not changed. Try again.",
       "treatmentMovedHint": "Treatment planning now lives in the guided assessment.",
-      "goToTreatMonitor": "Treat & monitor"
+      "goToTreatMonitor": "Treat & monitor",
+      "loadFailed": "The risk couldn't be loaded. Try again."
     },
     "edit": {
       "title": "Edit Risk",
@@ -14493,7 +14490,6 @@
       "saving": "Saving…",
       "save": "Save schedule",
       "chooseCadence": "Choose a cadence before saving.",
-      "saveFailed": "Failed to save schedule ({status})",
       "couldNotSave": "Could not save schedule",
       "toneOverdue": "Overdue",
       "toneToday": "Today",
@@ -14653,7 +14649,8 @@
       "unreadAria": "{count} unread notifications",
       "now": "now",
       "sessionExpired": "Your session has expired.",
-      "sessionExpiredAction": "Sign in again"
+      "sessionExpiredAction": "Sign in again",
+      "loadFailed": "Notifications couldn't be loaded."
     },
     "sessionExpired": {
       "body": "Your session has expired. Anything on screen may be out of date.",
@@ -15608,7 +15605,6 @@
       "description": "Comparing the snapshot to the current canvas state",
       "loading": "Loading snapshot…",
       "loadError": "Diff load failed",
-      "loadErrorStatus": "Diff load failed ({status})",
       "close": "Close",
       "noChanges": "No changes between these versions",
       "nodeChanges": "Node changes",
@@ -15642,7 +15638,6 @@
       "title": "Version history",
       "loading": "Loading…",
       "loadError": "Could not load history",
-      "loadErrorStatus": "History load failed ({status})",
       "empty": "No versions yet. Save the canvas to capture the first snapshot.",
       "current": "Current",
       "diff": "Diff",
@@ -15651,7 +15646,6 @@
       "confirmRestore": "Restore to v{version}? The current state will be preserved as part of the history.",
       "restoredToast": "Restored to v{version}.",
       "restoreFailed": "Restore failed",
-      "restoreFailedStatus": "Restore failed ({status})",
       "diffFailed": "Could not compare this version"
     },
     "executions": {

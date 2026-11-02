@@ -271,7 +271,31 @@ describe('handleErrorResponse — error-envelope fallbacks', () => {
         expect(err.code).toBe('UNKNOWN');
         // The server-supplied message must still win over the default.
         expect(err.message).toBe('Unprocessable');
+        expect(err.reason).toBe('Unprocessable');
         expect(err.status).toBe(422);
+    });
+
+    // #4987 — `reason` is the server's sentence and nothing else, so a page
+    // never mistakes the synthesised status line for one.
+    it('leaves `reason` undefined when the server gave no message', async () => {
+        for (const body of [{ message: 'top-level is not the envelope' }, null, { error: { code: 'CONFLICT' } }, { error: { code: '', message: '  ' } }]) {
+            mockFetch.mockResolvedValueOnce({ ok: false, status: 502, json: async () => body });
+            const err = (await apiGet('http://localhost/api/x').catch((e: unknown) => e)) as ApiClientError;
+            expect(err.message).toBe('Request failed with status 502');
+            expect(err.reason).toBeUndefined();
+        }
+    });
+
+    it('leaves `reason` undefined when the body is not JSON', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 504,
+            json: async () => {
+                throw new SyntaxError('Unexpected token <');
+            },
+        });
+        const err = (await apiGet('http://localhost/api/x').catch((e: unknown) => e)) as ApiClientError;
+        expect(err.reason).toBeUndefined();
     });
 
     it('falls back to the status message when the envelope has a code but no message', async () => {
