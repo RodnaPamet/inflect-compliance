@@ -41,7 +41,7 @@ A member's role decides what they can see and do in this workspace. Change it wh
 Deactivating ends a member's access but keeps their record on the page.
 
 1. Click the three-dot menu at the end of the member's row.
-2. Click **{{ui:admin.members.deactivate}}**, then confirm.
+2. Click **{{ui:admin.members.deactivate}}**, then click **{{ui:admin.members.deactivate}}** again in the dialog that names the member.
 
 Their status changes to **DEACTIVATED**. They lose access the next time they open a page or take an action. To let them back in, invite them again. They return with the role you choose in the invite, and with any custom role they had before. That custom role, not the invite's role, then decides what they can do. Check it after they return, and remove it if they should have the invite's role alone.
 
@@ -50,7 +50,7 @@ Their status changes to **DEACTIVATED**. They lose access the next time they ope
 Removing takes the member out of this workspace completely, and their row leaves the list. Use deactivation instead if you want to keep the record.
 
 1. Click the three-dot menu at the end of the member's row.
-2. Click **{{ui:admin.members.remove}}**, then confirm.
+2. Click **{{ui:admin.members.remove}}**, then click **{{ui:admin.members.remove}}** again in the dialog that names the member.
 
 You can remove both active and deactivated members. Their account is not deleted, only their place in this workspace. To bring them back, invite them again.
 

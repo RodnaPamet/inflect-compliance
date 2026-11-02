@@ -69,7 +69,7 @@ See [Publish a policy](../../how-to/policies/publish-a-policy.md).
 
 ### Publish in an emergency
 
-**{{ui:policies.detail.publishWithoutApproval}}** publishes the newest version straight away. You must give a reason, which is recorded in the policy's activity and the workspace's audit log.
+**{{ui:policies.detail.publishWithoutApproval}}** publishes the newest version straight away. Enter the **{{ui:policies.detail.bypassReasonLabel}}**, which is required and is recorded in the policy's activity and the workspace's audit log.
 
 ### Roll back
 

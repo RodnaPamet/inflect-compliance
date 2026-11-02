@@ -73,7 +73,7 @@ On **{{ui:vendors.detail.tabs.links}}**, choose an **{{ui:vendors.detail.entity}
 
 ### Freeze an evidence bundle
 
-On **{{ui:vendors.detail.tabs.bundles}}**, name a bundle and click **{{ui:vendors.detail.createBundle}}**. Add the documents and answers that show the vendor's position, then click **{{ui:vendors.detail.freeze}}**. A frozen bundle cannot change, so it shows an auditor exactly what you relied on at that date.
+On **{{ui:vendors.detail.tabs.bundles}}**, name a bundle and click **{{ui:vendors.detail.createBundle}}**. Add the documents and answers that show the vendor's position, then click **{{ui:vendors.detail.freeze}}**. The **{{ui:vendors.detail.freezeConfirmTitle}}** dialog opens: click **{{ui:vendors.detail.freeze}}** in it. A frozen bundle cannot change, so it shows an auditor exactly what you relied on at that date. If the freeze is refused, a message says why and the bundle stays open.
 
 ### Record subprocessors
 
