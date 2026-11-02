@@ -113,7 +113,7 @@ You cannot set your own line; another Owner sets it. If the member owns an audit
 
 ### Sign a member out of a device
 
-Click the number in the member's {{ui:admin.members.colSessions}} column, or **{{ui:admin.members.viewSessions}}** in the row's menu. Click **{{ui:admin.members.revoke}}** beside the device, then confirm. The device is signed out on its next request, and the entry leaves the list.
+Click the number in the member's {{ui:admin.members.colSessions}} column, or **{{ui:admin.members.viewSessions}}** in the row's menu. Click **{{ui:admin.members.revoke}}** beside the device. The **{{ui:admin.members.revokeSessionConfirmTitle}}** dialog opens: click **{{ui:admin.members.revokeSessionConfirmLabel}}**. The device is signed out on its next request, and the entry leaves the list.
 
 Only an Owner can revoke an Owner's or an AI admin's sessions. Anyone else sees their sessions without a **{{ui:admin.members.revoke}}** button, and the dialog reads {{ui:admin.members.sessionsOwnerOnly}}
 
@@ -125,7 +125,7 @@ When a member has lost their authenticator app, choose **{{ui:admin.members.rese
 
 ### Deactivate or remove members
 
-Choose **{{ui:admin.members.deactivate}}** or **{{ui:admin.members.remove}}** in the row's menu, then confirm. For several members, tick their rows, choose the action from **{{ui:common.table.chooseAction}}**, click **{{ui:common.table.apply}}**, then confirm. Members that cannot be changed are listed in the red message with the reason, and the others go ahead.
+Choose **{{ui:admin.members.deactivate}}** or **{{ui:admin.members.remove}}** in the row's menu. A dialog names the member and says what the action does: click **{{ui:admin.members.deactivate}}** or **{{ui:admin.members.remove}}** in it to go ahead, or **{{ui:common.cancel}}** to leave the member as they are. For several members, tick their rows, choose the action from **{{ui:common.table.chooseAction}}**, click **{{ui:common.table.apply}}**, then confirm. Members that cannot be changed are listed in the red message with the reason, and the others go ahead.
 
 Deactivating keeps the member's row, marked **DEACTIVATED**. Removing takes the row off the page. An Admin is not offered either action on an Owner's or an AI admin's row, and nobody is offered them on their own row. When you deactivate several members at once, the confirmation says they lose access and keep their records.
 

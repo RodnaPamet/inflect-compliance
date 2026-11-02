@@ -58,7 +58,7 @@ On the left, a palette of the kinds of step you can place. In the middle, the ca
 
 Click **{{ui:automation.documentBar.newProcess}}**, give the map a name, and place steps from the palette onto the canvas. Drag between two steps to connect them. Select a step or a connection to edit its label and details in the inspector, including the controls, risks and assets it is linked to. Press **/** on the canvas for a list of every canvas action, such as arranging the map automatically or grouping steps.
 
-Your changes save on their own after a pause, and **{{ui:automation.documentBar.save}}** saves at once. Each save keeps a version you can compare against the current map or restore from the version list. Restoring keeps the history: the restored map becomes a new version.
+Your changes save on their own after a pause, and **{{ui:automation.documentBar.save}}** saves at once. Each save keeps a version you can compare against the current map or restore from the version list. Restoring asks first, in the **{{ui:automation.history.confirmRestoreTitle}}** dialog, and keeps the history: the restored map becomes a new version.
 
 ### Turn a map into an automation workflow
 
