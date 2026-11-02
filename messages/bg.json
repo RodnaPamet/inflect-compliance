@@ -5181,7 +5181,6 @@
       "ssoUrl": "SSO URL",
       "certificate": "X.509 сертификат",
       "nameIdFormat": "NameID формат (по избор)",
-      "nameIdAria": "Относно NameID формата",
       "nameIdTooltip": "Оставете празно, ако вашият IdP издава NameID във формат на имейл (обичайният случай). Заменете само ако вашият IdP използва нестандартен URN — проверете съответствието на SAML атрибутите на IdP.",
       "acsUrl": "ACS URL (вашият callback)",
       "enableSso": "Активиране на SSO",

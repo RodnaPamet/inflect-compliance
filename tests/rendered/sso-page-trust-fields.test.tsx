@@ -8,7 +8,7 @@
  * keeps an Admin from filling in fields the server will not save, and says
  * why. It leaves the rest of the form, and the switches, theirs.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 
 jest.mock('next/navigation', () => ({
@@ -92,5 +92,37 @@ describe('the SSO page and the trust fields', () => {
         expect(await screen.findByText(/unlinks every member from this configuration/)).toBeTruthy();
         expect((document.getElementById('sso-oidc-issuer') as HTMLInputElement).disabled).toBe(false);
         expect(screen.queryByText(/Only an Owner can/)).toBeNull();
+    });
+});
+
+// #4971 — every field on the form is named by its label, on both protocols.
+describe('the SSO form names its fields', () => {
+    const SSO = (require('../../messages/en.json') as { admin: { sso: Record<string, string> } }).admin.sso;
+    const field = (label: string) => screen.getByLabelText(label, { exact: true });
+
+    it('names every OIDC field', async () => {
+        permissions.admin.owner_management = true;
+        serve([]);
+        render(<SsoAdminPage />);
+        await screen.findByText(SSO.providerName);
+        expect(field(SSO.providerName).id).toBe('sso-name');
+        expect(field(SSO.emailDomains).id).toBe('sso-domains');
+        expect(field(SSO.issuerUrl).id).toBe('sso-oidc-issuer');
+        expect(field(SSO.clientId).id).toBe('sso-oidc-client-id');
+        expect(field(SSO.clientSecret).id).toBe('sso-oidc-client-secret');
+        expect(field(SSO.scopes).id).toBe('sso-oidc-scopes');
+    });
+
+    it('names every SAML field, the read-only callback address included', async () => {
+        permissions.admin.owner_management = true;
+        serve([]);
+        render(<SsoAdminPage />);
+        await screen.findByText(SSO.providerName);
+        fireEvent.click(document.getElementById('sso-tab-saml') as HTMLElement);
+        expect((await screen.findByLabelText(SSO.entityId, { exact: true })).id).toBe('sso-saml-entity-id');
+        expect(field(SSO.ssoUrl).id).toBe('sso-saml-sso-url');
+        expect(field(SSO.certificate).id).toBe('sso-saml-certificate');
+        expect(field(SSO.nameIdFormat).id).toBe('sso-saml-nameid');
+        expect(field(SSO.acsUrl).id).toBe('sso-saml-acs-url');
     });
 });

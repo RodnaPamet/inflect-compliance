@@ -12,6 +12,9 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
 import { Shield, ExternalLink, Trash2, Save, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form-field';
+import { Textarea } from '@/components/ui/textarea';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -402,64 +405,56 @@ export default function SsoAdminPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
                     {/* Provider name */}
-                    <div>
-                        <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                            {t('sso.providerName')}
-                        </label>
-                        <input
+                    <FormField label={t('sso.providerName')}>
+                        <Input
                             id="sso-name"
                             value={formName}
                             onChange={(e) => setFormName(e.target.value)}
                             placeholder={tab === 'OIDC' ? t('sso.providerNameOidc') : t('sso.providerNameSaml')}
-                            className="input w-full"
+                            className="w-full"
                         />
-                    </div>
+                    </FormField>
 
                     {/* Email domains */}
-                    <div>
-                        <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                            {t('sso.emailDomains')}
-                        </label>
-                        <input
+                    <FormField label={t('sso.emailDomains')} description={t('sso.commaSeparated')}>
+                        <Input
                             id="sso-domains"
                             disabled={!canChangeTrust}
                             value={formEmailDomains}
                             onChange={(e) => setFormEmailDomains(e.target.value)}
                             placeholder="acme.com, acme.io"
-                            className="input w-full"
+                            className="w-full"
                         />
-                        <span className="text-xs text-content-subtle mt-0.5">{t('sso.commaSeparated')}</span>
-                    </div>
+                    </FormField>
                 </div>
 
                 {/* Protocol-specific fields */}
                 {tab === 'OIDC' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-default mt-4">
-                        <div>
-                            <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.issuerUrl')}</label>
-                            <input
+                        <FormField label={t('sso.issuerUrl')}>
+                            <Input
                                 id="sso-oidc-issuer"
                                 disabled={!canChangeTrust}
                                 value={oidcIssuer}
                                 onChange={(e) => setOidcIssuer(e.target.value)}
                                 placeholder="https://login.example.com"
-                                className="input w-full"
+                                className="w-full"
                             />
-                        </div>
-                        <div>
-                            <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.clientId')}</label>
-                            <input
+                        </FormField>
+                        <FormField label={t('sso.clientId')}>
+                            <Input
                                 id="sso-oidc-client-id"
                                 disabled={!canChangeTrust}
                                 value={oidcClientId}
                                 onChange={(e) => setOidcClientId(e.target.value)}
                                 placeholder="client-id-from-idp"
-                                className="input w-full"
+                                className="w-full"
                             />
-                        </div>
-                        <div>
-                            <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.clientSecret')}</label>
-                            <div className="relative">
+                        </FormField>
+                        {/* The reveal button sits over the field from outside
+                            FormField, which labels its one child: the input. */}
+                        <div className="relative">
+                            <FormField label={t('sso.clientSecret')}>
                                 <input
                                     id="sso-oidc-client-secret"
                                     type={showSecret ? 'text' : 'password'}
@@ -468,90 +463,78 @@ export default function SsoAdminPage() {
                                     placeholder="client-secret"
                                     className="input w-full pr-10"
                                 />
-                                <button
-                                    type="button"
-                                    aria-label={showSecret ? t('sso.hideSecret') : t('sso.showSecret')}
-                                    onClick={() => setShowSecret(!showSecret)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-content-muted hover:text-content-emphasis"
-                                >
-                                    {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </button>
-                            </div>
+                            </FormField>
+                            <button
+                                type="button"
+                                aria-label={showSecret ? t('sso.hideSecret') : t('sso.showSecret')}
+                                onClick={() => setShowSecret(!showSecret)}
+                                className="absolute right-3 bottom-2.5 text-content-muted hover:text-content-emphasis"
+                            >
+                                {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
                         </div>
-                        <div>
-                            <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.scopes')}</label>
-                            <input
+                        <FormField label={t('sso.scopes')}>
+                            <Input
                                 id="sso-oidc-scopes"
                                 value={oidcScopes}
                                 onChange={(e) => setOidcScopes(e.target.value)}
                                 placeholder="openid email profile"
-                                className="input w-full"
+                                className="w-full"
                             />
-                        </div>
+                        </FormField>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-default mt-4">
-                        <div>
-                            <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.entityId')}</label>
-                            <input
+                        <FormField label={t('sso.entityId')}>
+                            <Input
                                 id="sso-saml-entity-id"
                                 disabled={!canChangeTrust}
                                 value={samlEntityId}
                                 onChange={(e) => setSamlEntityId(e.target.value)}
                                 placeholder="https://idp.example.com"
-                                className="input w-full"
+                                className="w-full"
                             />
-                        </div>
-                        <div>
-                            <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.ssoUrl')}</label>
-                            <input
+                        </FormField>
+                        <FormField label={t('sso.ssoUrl')}>
+                            <Input
                                 id="sso-saml-sso-url"
                                 disabled={!canChangeTrust}
                                 value={samlSsoUrl}
                                 onChange={(e) => setSamlSsoUrl(e.target.value)}
                                 placeholder="https://idp.example.com/saml/sso"
-                                className="input w-full"
+                                className="w-full"
                             />
-                        </div>
-                        <div className="md:col-span-2">
-                            <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.certificate')}</label>
-                            <textarea
+                        </FormField>
+                        <FormField label={t('sso.certificate')} className="md:col-span-2">
+                            <Textarea
                                 id="sso-saml-certificate"
                                 disabled={!canChangeTrust}
                                 value={samlCertificate}
                                 onChange={(e) => setSamlCertificate(e.target.value)}
                                 placeholder="MIICzjCCAb..."
                                 rows={3}
-                                className="input w-full font-mono text-xs"
+                                className="w-full font-mono text-xs"
                             />
-                        </div>
-                        <div>
-                            <div className="mb-1 flex items-center gap-1.5">
-                                <label className="text-xs text-content-muted uppercase tracking-wider">{t('sso.nameIdFormat')}</label>
-                                <InfoTooltip
-                                    aria-label={t('sso.nameIdAria')}
-                                    iconClassName="h-3.5 w-3.5"
-                                    content={t('sso.nameIdTooltip')}
-                                />
-                            </div>
-                            <input
+                        </FormField>
+                        <FormField label={t('sso.nameIdFormat')} hint={t('sso.nameIdTooltip')}>
+                            <Input
                                 id="sso-saml-nameid"
                                 value={samlNameIdFormat}
                                 onChange={(e) => setSamlNameIdFormat(e.target.value)}
                                 placeholder="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
-                                className="input w-full text-xs"
+                                className="w-full text-xs"
                             />
-                        </div>
-                        <div>
-                            <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.acsUrl')}</label>
-                            <input
+                        </FormField>
+                        <FormField label={t('sso.acsUrl')}>
+                            <Input
+                                id="sso-saml-acs-url"
                                 readOnly
                                 value={typeof window !== 'undefined'
                                     ? `${window.location.origin}/api/auth/sso/saml/callback`
                                     : '/api/auth/sso/saml/callback'}
-                                className="input w-full text-xs text-content-subtle cursor-not-allowed"
+                                className="w-full text-xs text-content-subtle cursor-not-allowed"
                             />
-                        </div>
+                        </FormField>
                     </div>
                 )}
 
