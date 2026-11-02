@@ -27,7 +27,7 @@ One row per assessment:
 | {{ui:vendors.reviewQueue.colVendor}} | The vendor, linked to the assessment's review page |
 | {{ui:vendors.reviewQueue.colStatus}} | **{{ui:vendors.statusLabel.SENT}}**, **{{ui:vendors.statusLabel.IN_PROGRESS}}**, **{{ui:vendors.statusLabel.SUBMITTED}}**, **{{ui:vendors.statusLabel.REVIEWED}}** or **{{ui:vendors.statusLabel.CLOSED}}** |
 | {{ui:vendors.reviewQueue.colScore}} | The score the vendor's answers earned |
-| {{ui:vendors.reviewQueue.colRisk}} | The risk rating, once one is set |
+| {{ui:vendors.reviewQueue.colRisk}} | The risk rating, once one is set: **{{ui:vendors.criticalityLabel.LOW}}**, **{{ui:vendors.criticalityLabel.MEDIUM}}**, **{{ui:vendors.criticalityLabel.HIGH}}** or **{{ui:vendors.criticalityLabel.CRITICAL}}** |
 | {{ui:vendors.reviewQueue.colSubmitted}} | When the vendor submitted it |
 
 ## What you can do
@@ -39,7 +39,8 @@ Click a vendor to open [the assessment's review](vendor-assessment-review.md).
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:vendors.reviewQueue.emptyTitle}}** | {{ui:vendors.reviewQueue.emptyDesc}} | Nothing to do |
-| {{ui:vendors.reviewQueue.loadErrorNetwork}} | The list did not load | Reload the page |
+| {{ui:vendors.reviewQueue.loadError}} | The list did not load | Reload the page |
+| {{ui:vendors.reviewQueue.loadErrorNetwork}} | The list did not load because the connection failed | Check your connection and reload the page |
 
 ## Related
 
