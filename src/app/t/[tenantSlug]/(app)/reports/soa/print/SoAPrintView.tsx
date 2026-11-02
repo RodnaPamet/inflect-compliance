@@ -3,14 +3,21 @@
 import { useTranslations } from 'next-intl';
 import type { SoAReportDTO, SoAEntryDTO } from '@/lib/dto/soa';
 import { formatDate } from '@inflect/ui/lib/format-date';
+import { Button } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
+import { useTenantContext } from '@/lib/tenant-context-provider';
 
 interface SoAPrintViewProps {
     /** Where to go when there is no history to go back to (fresh tab). */
     backHref: string;
     report: SoAReportDTO;
-    tenantName: string;
 }
+
+/** The `ControlStatus` values `soaView.controlStatus.*` words (#4927). */
+const CONTROL_STATUSES = [
+    'NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IMPLEMENTING', 'IMPLEMENTED', 'NEEDS_REVIEW', 'NOT_APPLICABLE',
+] as const;
+type ControlStatusValue = (typeof CONTROL_STATUSES)[number];
 
 /**
  * Print-optimized SoA view — clean multi-page document with CSS print styles.
@@ -18,19 +25,22 @@ interface SoAPrintViewProps {
  *
  * Print styles are in globals.css (moved there for CSP compliance — no inline <style> tags).
  */
-export function SoAPrintView({ report, tenantName, backHref }: SoAPrintViewProps) {
+export function SoAPrintView({ report, backHref }: SoAPrintViewProps) {
     const t = useTranslations('reports');
+    const { tenantName } = useTenantContext();
     const { summary, entries } = report;
     // Epic 58 — canonical app-wide formatter so the printed SoA's
     // "Generated on" line reads identically to every other date in
     // the product ("16 Apr 2026").
     const generatedDate = formatDate(report.generatedAt);
 
-    // Group entries by section
-    const sections = [...new Set(entries.map(e => e.section || 'Other'))];
+    // Group entries by section. A requirement with no section is grouped
+    // under a translated "Other", not the English word (#4927).
+    const other = t('soaPrint.otherSection');
+    const sections = [...new Set(entries.map(e => e.section || other))];
     const bySection = sections.map(s => ({
         name: s,
-        entries: entries.filter(e => (e.section || 'Other') === s),
+        entries: entries.filter(e => (e.section || other) === s),
     }));
 
     return (
@@ -42,27 +52,24 @@ export function SoAPrintView({ report, tenantName, backHref }: SoAPrintViewProps
                     <p className="text-xs text-content-muted">{t('soaPrint.printHint')}</p>
                 </div>
                 <div className="flex gap-tight">
-                    <button
-                        onClick={() => window.print()}
-                        className="px-4 py-2 bg-bg-info-emphasis text-content-emphasis rounded-lg text-sm font-medium hover:bg-bg-info-emphasis transition-colors"
-                    >
+                    <Button variant="secondary" onClick={() => window.print()} id="soa-print-button">
                         {t('soaPrint.printBtn')}
-                    </button>
+                    </Button>
                     {/* `history.back()` is a NO-OP in the tab this page opens in.
                         The SoA "Print" affordance opens this in a NEW TAB, so the
                         fresh tab has no history to go back to and the button
                         did nothing at all — the one control on an
                         otherwise-chrome-less page. Fall back to the reports hub
                         when there is nowhere to return to. */}
-                    <button
+                    <Button
+                        variant="ghost"
                         onClick={() => {
                             if (window.history.length > 1) window.history.back();
                             else window.location.assign(backHref);
                         }}
-                        className="px-4 py-2 bg-bg-default text-content-default rounded-lg text-sm font-medium hover:bg-bg-muted transition-colors"
                     >
                         {t('soaPrint.back')}
-                    </button>
+                    </Button>
                 </div>
             </div>
 
@@ -158,7 +165,11 @@ function PrintRow({ entry }: { entry: SoAEntryDTO }) {
                     ? (entry.exceptedUntil
                         ? t('soaPrint.exceptedUntil', { date: formatDate(entry.exceptedUntil) })
                         : t('soaPrint.excepted'))
-                    : (entry.implementationStatus?.replace(/_/g, ' ') || '—')}
+                    : entry.implementationStatus
+                        ? (CONTROL_STATUSES as readonly string[]).includes(entry.implementationStatus)
+                            ? t(`soaView.controlStatus.${entry.implementationStatus as ControlStatusValue}`)
+                            : entry.implementationStatus
+                        : '—'}
             </td>
             <td className="border border-border-default px-2 py-1.5 whitespace-pre-line">{controlRefs || '—'}</td>
             <td className="border border-border-default px-2 py-1.5 text-content-muted">{entry.justification || '—'}</td>

@@ -26,6 +26,7 @@ import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { RequirePermission } from '@/components/require-permission';
+import { UpgradeGate } from '@/components/UpgradeGate';
 import { apiErrorMessage } from '@/lib/api-error';
 
 // ─── Types ───
@@ -335,16 +336,24 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
 
                 {/* Print / Save as PDF — opens the chrome-less print view.
                     Forwards the framework so the printed SoA matches the one
-                    on screen (the print page applies the same ISO-only guard). */}
-                <a
-                    href={`/t/${tenantSlug}/reports/soa/print?framework=${encodeURIComponent(report.framework)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buttonVariants({ variant: 'ghost' })}
-                    id="soa-print-link"
-                >
-                    <Printer className="w-3.5 h-3.5" /> {t('soaView.print')}
-                </a>
+                    on screen (the print page applies the same ISO-only guard).
+                    Offered on the print page's own two gates, `reports.export`
+                    and the PDF exports plan feature (#4927): it used to show
+                    to every role, and the page then sent anyone without them
+                    to the Reports hub in a new tab, with no word why. */}
+                <RequirePermission resource="reports" action="export">
+                    <UpgradeGate feature="PDF_EXPORTS">
+                        <a
+                            href={`/t/${tenantSlug}/reports/soa/print?framework=${encodeURIComponent(report.framework)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={buttonVariants({ variant: 'ghost' })}
+                            id="soa-print-link"
+                        >
+                            <Printer className="w-3.5 h-3.5" /> {t('soaView.print')}
+                        </a>
+                    </UpgradeGate>
+                </RequirePermission>
 
                 {/* #4740 — the CSV an auditor asks for, here as well as on the
                     Reports card, behind the same `reports.export` key the

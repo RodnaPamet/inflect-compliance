@@ -42,21 +42,11 @@ export default async function SoAPrintPage({
         redirect(`/t/${tenantSlug}/reports`);
     }
 
-    // Independent fetches — run in parallel
-    const [report, tenant] = await Promise.all([
-        getSoA(ctx, {
-            framework,
-            includeEvidence: true,
-            includeTasks: true,
-            includeTests: true,
-        }),
-        import('@/lib/prisma').then(m =>
-            m.default.tenant.findUnique({
-                where: { id: ctx.tenantId },
-                select: { name: true },
-            })
-        ),
-    ]);
+    // The printed statement shows requirements, applicability, status, mapped
+    // controls and justification — not evidence, tasks or tests — so none of
+    // those is read (#4927). The workspace's name comes from the tenant layout's
+    // context in the view, not from a second read here.
+    const report = await getSoA(ctx, { framework });
 
     // Same ISO-only guard as the interactive SoA page — the print view is a
     // Statement of Applicability, which a non-ISO framework doesn't have.
@@ -67,7 +57,6 @@ export default async function SoAPrintPage({
     return (
         <SoAPrintView
             report={JSON.parse(JSON.stringify(report))}
-            tenantName={tenant?.name || tenantSlug}
             backHref={`/t/${tenantSlug}/reports`}
         />
     );
