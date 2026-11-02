@@ -83,7 +83,7 @@ export default async function InviteResultPage() {
                     </Link>
                 ) : (
                     <p id="invite-result-no-workspace" className="text-sm text-content-muted mb-4">
-                        {t('result.noWorkspaceYet')}
+                        {t('result.noWorkspaceHelp')}
                     </p>
                 )}
                 <form
