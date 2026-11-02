@@ -1142,6 +1142,7 @@ model User {
   evidenceReviews               EvidenceReview[]
   ownedEvidence                 Evidence[]                      @relation("EvidenceOwner")
   ownedBias                     BusinessImpactAnalysis[]        @relation("BiaOwner")
+  reviewedBias                  BusinessImpactAnalysis[]        @relation("BiaReviewer")
   vendorDocExtractionsCreated   VendorDocExtraction[]           @relation("VendorDocExtractionCreator")
   uploadedFiles                 FileRecord[]                    @relation("FileUploader")
   notifications                 Notification[]

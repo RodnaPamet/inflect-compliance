@@ -73,9 +73,12 @@ export const CreateBiaSchema = z.object({
     dependencies: z.array(DependencyInput).optional(),
 });
 
-export const UpdateBiaSchema = CreateBiaSchema.partial().extend({
-    reviewedAt: z.string().datetime().optional().nullable(),
-});
+/**
+ * `reviewedAt` is not here (#4931): a review is its own act,
+ * `markBiaReviewed`, which stamps the server's time and the reviewer. A PUT
+ * that carried a browser-supplied date recorded when, never who.
+ */
+export const UpdateBiaSchema = CreateBiaSchema.partial();
 
 export type CreateBiaInput = z.input<typeof CreateBiaSchema>;
 
@@ -511,6 +514,7 @@ export async function getBia(ctx: RequestContext, id: string) {
             where: { id, tenantId: ctx.tenantId },
             include: {
                 ownerUser: { select: { id: true, name: true, email: true } },
+                reviewedByUser: { select: { id: true, name: true, email: true } },
                 dependencies: true,
                 evidenceLinks: { select: { id: true, controlId: true } },
             },
@@ -650,7 +654,6 @@ export async function updateBia(ctx: RequestContext, id: string, rawInput: z.inp
                 ...(data.impactProfile !== undefined && { impactProfile: data.impactProfile ?? undefined }),
                 ...(data.notes !== undefined && { notes: data.notes ? sanitizePlainText(data.notes) : null }),
                 ...(data.ownerUserId !== undefined && { ownerUserId: data.ownerUserId }),
-                ...(data.reviewedAt !== undefined && { reviewedAt: data.reviewedAt ? new Date(data.reviewedAt) : null }),
             },
         });
         await logEvent(db, ctx, {
@@ -659,6 +662,42 @@ export async function updateBia(ctx: RequestContext, id: string, rawInput: z.inp
             entityId: id,
             details: `Updated BIA: ${bia.name}`,
             detailsJson: { category: 'entity_lifecycle', entityName: 'BusinessImpactAnalysis', operation: 'updated' },
+        });
+        return bia;
+    });
+}
+
+/**
+ * Mark a BIA reviewed (#4931): the time on the server's clock and the reviewer
+ * as the caller, both in one write, so the register records who reviewed it
+ * and when. Each review is an audit row naming the person.
+ */
+export async function markBiaReviewed(ctx: RequestContext, id: string) {
+    assertCanWrite(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const existing = await db.businessImpactAnalysis.findFirst({
+            where: { id, tenantId: ctx.tenantId },
+            select: { id: true, name: true },
+        });
+        if (!existing) throw notFound('BIA not found');
+        const reviewedAt = new Date();
+        const bia = await db.businessImpactAnalysis.update({
+            where: { id },
+            data: { reviewedAt, reviewedByUserId: ctx.userId },
+            select: { id: true, reviewedAt: true, reviewedByUserId: true },
+        });
+        await logEvent(db, ctx, {
+            action: 'BIA_REVIEWED',
+            entityType: 'BusinessImpactAnalysis',
+            entityId: id,
+            details: `Marked BIA reviewed: ${existing.name}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'BusinessImpactAnalysis',
+                operation: 'updated',
+                after: { reviewedAt: reviewedAt.toISOString(), reviewedByUserId: ctx.userId },
+                summary: 'Business impact analysis marked reviewed',
+            },
         });
         return bia;
     });
