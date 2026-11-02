@@ -194,6 +194,9 @@ jest.mock('@/app-layer/repositories/Nis2GapAssessmentRepository', () => ({
         upsertAnswer: (...a: unknown[]) => mockNis2UpsertAnswer(...a),
         // An open run, so the submit reaches the write this file is about.
         lockAssessmentStatusForShare: async () => ({ status: 'IN_PROGRESS' }),
+        // Nothing stored yet: both of the assignment's questions are answered
+        // in the request, so the final submit is complete (#4929).
+        listAnswers: async () => [],
     },
 }));
 
