@@ -541,3 +541,22 @@ describe('the controls offered, by who is asking', () => {
 function byIdOrNull(id: string) {
     return document.getElementById(id);
 }
+
+// #4969 — every field on the connection form is named by its label.
+describe('the connection form names its fields', () => {
+    it('ties the provider, the name and every configuration and secret field to a label', async () => {
+        serve([]);
+        await renderPage();
+        fireEvent.click(document.getElementById('connect-okta-btn') as HTMLElement);
+        const EN = require('../../messages/en.json').admin.integrations;
+        expect(screen.getByLabelText(EN.connectionName, { exact: true }).id).toBe('integration-name-input');
+        expect(document.querySelector('label[for="integration-provider-select"]')).not.toBeNull();
+        const fields = Array.from(document.querySelectorAll<HTMLElement>('[id^="field-"]'));
+        // The provider's configuration and secret fields; none may be unnamed.
+        expect(fields.length).toBeGreaterThan(0);
+        for (const el of fields) {
+            const label = document.querySelector(`label[for="${el.id}"]`);
+            expect(label?.textContent?.trim()).toBeTruthy();
+        }
+    });
+});

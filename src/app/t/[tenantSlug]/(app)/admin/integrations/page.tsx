@@ -22,7 +22,8 @@ import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { RequiredMarker } from '@/components/ui/required-marker';
+import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form-field';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -611,14 +612,44 @@ export default function AdminIntegrationsPage() {
                     </label>
                 );
             case 'number':
-                return <input id={fid} type="text" inputMode="decimal" value={value} onChange={e => setValue(e.target.value)} className="input w-full" placeholder={field.placeholder} />;
+                return <Input id={fid} type="text" inputMode="decimal" value={value} onChange={e => setValue(e.target.value)} className="w-full" placeholder={field.placeholder} />;
             case 'textarea':
                 return <Textarea id={fid} value={value} onChange={e => setValue(e.target.value)} placeholder={field.placeholder} rows={6} className={cn('w-full', isSecret && 'font-mono')} />;
             default:
                 return isSecret
                     ? <input id={fid} type={showSecrets ? 'text' : 'password'} value={value} onChange={e => setValue(e.target.value)} className="input w-full font-mono" placeholder={field.placeholder ?? '••••••••'} autoComplete="off" />
-                    : <input id={fid} type="text" value={value} onChange={e => setValue(e.target.value)} className="input w-full" placeholder={field.placeholder} />;
+                    : <Input id={fid} type="text" value={value} onChange={e => setValue(e.target.value)} className="w-full" placeholder={field.placeholder} />;
         }
+    };
+
+    /**
+     * One configuration or secret field, named by its label through FormField
+     * (#4969). A boolean is its own labelled checkbox, so it stays outside
+     * FormField, which would give the wrapping label the field's id.
+     */
+    const fieldBlock = (field: ConfigFieldInfo, isSecret: boolean) => {
+        if (!selectedProvider) return null;
+        const description = field.description ? fieldText(selectedProvider, field, 'description') : undefined;
+        // P2 — edit mode: blank keeps the stored secret.
+        const keepHint = isSecret && editingId ? t('integrations.leaveBlankHint') : undefined;
+        if (field.type === 'boolean') {
+            return (
+                <div key={field.key}>
+                    {renderField(field, isSecret)}
+                    {description && <p className="text-xs text-content-subtle mt-0.5">{description}</p>}
+                </div>
+            );
+        }
+        return (
+            <FormField
+                key={field.key}
+                label={fieldText(selectedProvider, field, 'label')}
+                required={field.required}
+                description={description || keepHint ? <>{description}{description && keepHint ? ' ' : null}{keepHint}</> : undefined}
+            >
+                {renderField(field, isSecret)}
+            </FormField>
+        );
     };
 
     return (
@@ -965,8 +996,12 @@ export default function AdminIntegrationsPage() {
                         </Heading>
 
                         {/* Provider select */}
-                        <div>
-                            <label className="block text-sm text-content-muted mb-1">{t('integrations.provider')}</label>
+                        {/* FormField names each field by its label (#4969): the raw
+                            labels had no `htmlFor`, so every field was unnamed. */}
+                        <FormField
+                            label={t('integrations.provider')}
+                            description={selectedProvider ? providerText(selectedProvider, 'description') : undefined}
+                        >
                             <Combobox
                                 id="integration-provider-select"
                                 selected={connectableProviders.map(p => ({ value: p.id, label: providerLabel(p.id) })).find(o => o.value === formProvider) ?? null}
@@ -980,23 +1015,19 @@ export default function AdminIntegrationsPage() {
                                 disabled={!!editingId}
                                 matchTriggerWidth
                             />
-                            {selectedProvider && (
-                                <p className="text-xs text-content-subtle mt-1">{providerText(selectedProvider, 'description')}</p>
-                            )}
-                        </div>
+                        </FormField>
 
                         {/* Name */}
-                        <div>
-                            <label className="block text-sm text-content-muted mb-1">{t('integrations.connectionName')}</label>
-                            <input
+                        <FormField label={t('integrations.connectionName')}>
+                            <Input
                                 type="text"
                                 value={formName}
                                 onChange={e => setFormName(e.target.value)}
-                                className="input w-full"
+                                className="w-full"
                                 placeholder={t('integrations.namePlaceholder')}
                                 id="integration-name-input"
                             />
-                        </div>
+                        </FormField>
 
                         {/* P2 — per-provider setup guidance (what it needs + where to get it). */}
                         {selectedProvider?.setupGuide && (
@@ -1009,17 +1040,7 @@ export default function AdminIntegrationsPage() {
                         {selectedProvider && selectedProvider.configSchema.configFields.length > 0 && (
                             <div className="space-y-compact">
                                 <Heading level={3}>{t('integrations.configuration')}</Heading>
-                                {selectedProvider.configSchema.configFields.map(field => (
-                                    <div key={field.key}>
-                                        <label className="block text-xs text-content-muted mb-1">
-                                            {fieldText(selectedProvider, field, 'label')} {field.required && <RequiredMarker />}
-                                        </label>
-                                        {renderField(field, false)}
-                                        {field.description && (
-                                            <p className="text-xs text-content-subtle mt-0.5">{fieldText(selectedProvider, field, 'description')}</p>
-                                        )}
-                                    </div>
-                                ))}
+                                {selectedProvider.configSchema.configFields.map(field => fieldBlock(field, false))}
                             </div>
                         )}
 
@@ -1042,21 +1063,7 @@ export default function AdminIntegrationsPage() {
                                         {t('integrations.secretsNotice')}
                                     </p>
                                 </div>
-                                {selectedProvider.configSchema.secretFields.map(field => (
-                                    <div key={field.key}>
-                                        <label className="block text-xs text-content-muted mb-1">
-                                            {fieldText(selectedProvider, field, 'label')} {field.required && <RequiredMarker />}
-                                        </label>
-                                        {renderField(field, true)}
-                                        {field.description && (
-                                            <p className="text-xs text-content-subtle mt-0.5">{fieldText(selectedProvider, field, 'description')}</p>
-                                        )}
-                                        {/* P2 — edit mode: blank keeps the stored secret. */}
-                                        {editingId && (
-                                            <p className="text-xs text-content-subtle mt-0.5">{t('integrations.leaveBlankHint')}</p>
-                                        )}
-                                    </div>
-                                ))}
+                                {selectedProvider.configSchema.secretFields.map(field => fieldBlock(field, true))}
                             </div>
                         )}
 
