@@ -5589,7 +5589,6 @@
       "sessionSettingsTitle": "Session Settings",
       "sessionSettingsDesc": "Configure session timeout for your organization. Leave blank for the default.",
       "maxSessionAgeLabel": "Maximum Session Age (minutes)",
-      "maxSessionAgeTooltipAria": "About session max age",
       "maxSessionAgeTooltip": "Absolute lifetime of a login session — users must re-authenticate after this many minutes regardless of activity. Leave blank to inherit the platform default.",
       "maxSessionAgePlaceholder": "Default (no limit)",
       "maxSessionAgeHint": "Min: 5 minutes. Max: 30 days (43200 min).",

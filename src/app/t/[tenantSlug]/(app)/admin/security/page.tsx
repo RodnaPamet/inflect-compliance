@@ -347,19 +347,14 @@ export default function AdminSecurityPage() {
                     </p>
                 </div>
 
-                <div>
-                    <div className="mb-1 flex items-center gap-1.5">
-                        {/* Tied to its field (#4972): it had no `htmlFor`, so a
-                            screen reader announced an unnamed number field. */}
-                        <label htmlFor="security-max-session-age" className="block text-sm text-content-default">
-                            {t('security.maxSessionAgeLabel')}
-                        </label>
-                        <InfoTooltip
-                            aria-label={t('security.maxSessionAgeTooltipAria')}
-                            iconClassName="h-3.5 w-3.5"
-                            content={t('security.maxSessionAgeTooltip')}
-                        />
-                    </div>
+                {/* FormField ties the label, the help and the hint to the field
+                    (#4972): the raw label had no `htmlFor`, so a screen reader
+                    announced an unnamed number field. */}
+                <FormField
+                    label={t('security.maxSessionAgeLabel')}
+                    hint={t('security.maxSessionAgeTooltip')}
+                    description={t('security.maxSessionAgeHint')}
+                >
                     <Input
                         id="security-max-session-age"
                         type="number"
@@ -368,15 +363,13 @@ export default function AdminSecurityPage() {
                         placeholder={t('security.maxSessionAgePlaceholder')}
                         value={settings?.sessionMaxAgeMinutes ?? ''}
                         disabled={!settings}
-                        aria-describedby="security-max-session-age-hint"
                         onChange={(e) => {
                             const val = e.target.value ? parseInt(e.target.value, 10) : null;
                             setSettings(s => (s ? { ...s, sessionMaxAgeMinutes: val } : s));
                         }}
                         className="w-full max-w-xs"
                     />
-                    <p id="security-max-session-age-hint" className="text-xs text-content-subtle mt-1">{t('security.maxSessionAgeHint')}</p>
-                </div>
+                </FormField>
             </div>
 
             {/* Save Button */}
