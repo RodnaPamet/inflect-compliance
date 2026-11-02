@@ -9346,7 +9346,10 @@
       "cancel": "Cancel",
       "creating": "Creating…",
       "create": "Create Vendor",
-      "discardConfirm": "Discard vendor? Any details you entered will be lost."
+      "discardConfirm": "Any details you entered will be lost.",
+      "discardTitle": "Discard vendor?",
+      "discardConfirmLabel": "Discard draft",
+      "discardCancelLabel": "Keep editing"
     },
     "form": {
       "name": "Vendor Name",
