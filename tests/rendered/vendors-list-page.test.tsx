@@ -642,3 +642,55 @@ describe('Vendors list — the create form explains a bad Website URL', () => {
         expect(max('vendor-description')).toBe('5000');
     });
 });
+
+// ─── 8. Discarding a typed draft asks in a dialog ───────────────────
+
+/**
+ * Closing the new-vendor form after typing asks in the product's own dialog,
+ * not the browser's `confirm()` (#4964), and the close waits for the answer.
+ */
+describe('Vendors list — the create form asks before discarding what was typed', () => {
+    async function openTypedForm() {
+        await mountAs('EDITOR');
+        const input = await openCreateDialog();
+        await act(async () => {
+            fireEvent.change(input, { target: { value: 'Draft vendor' } });
+        });
+    }
+    const cancelForm = async () => {
+        await act(async () => {
+            fireEvent.click(document.getElementById('new-vendor-cancel-btn') as HTMLElement);
+        });
+    };
+
+    it('keeping the draft leaves the form open with what was typed', async () => {
+        const confirmSpy = jest.spyOn(window, 'confirm');
+        await openTypedForm();
+        await cancelForm();
+        expect((await screen.findAllByText('Discard vendor?')).length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Any details you entered will be lost.').length).toBeGreaterThan(0);
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+        });
+        expect((document.getElementById('vendor-name-input') as HTMLInputElement).value).toBe('Draft vendor');
+        expect(confirmSpy).not.toHaveBeenCalled();
+        confirmSpy.mockRestore();
+    });
+
+    it('discarding closes the form', async () => {
+        await openTypedForm();
+        await cancelForm();
+        await act(async () => {
+            fireEvent.click(await screen.findByRole('button', { name: 'Discard draft' }));
+        });
+        await waitFor(() => expect(document.getElementById('vendor-name-input')).toBeNull());
+    });
+
+    it('an untouched form closes without asking', async () => {
+        await mountAs('EDITOR');
+        await openCreateDialog();
+        await cancelForm();
+        await waitFor(() => expect(document.getElementById('vendor-name-input')).toBeNull());
+        expect(screen.queryByText('Discard vendor?')).toBeNull();
+    });
+});

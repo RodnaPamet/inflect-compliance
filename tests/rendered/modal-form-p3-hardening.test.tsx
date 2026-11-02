@@ -74,7 +74,9 @@ const FLOWS: HardenedFlow[] = [
         hookExport: 'useNewVendorForm',
         modalPath: 'vendors/NewVendorModal.tsx',
         confirmCopy: /Discard vendor\?/,
-        i18nConfirmKey: 'modal.discardConfirm',
+        // Migrated to <ConfirmDialog> (#4964): the question is the title.
+        i18nConfirmKey: 'modal.discardTitle',
+        usesConfirmDialog: true,
     },
     {
         label: 'audits',
