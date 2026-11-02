@@ -59,7 +59,7 @@ const gap = (criticality: string) => ({
     answer: 'PARTIALLY',
     priority: 55,
     priorityTier: 'URGENT',
-    plainText: { en: `Gap ${criticality}`, de: `Lücke ${criticality}` },
+    plainText: { en: `Gap ${criticality}`, de: `Lücke ${criticality}`, ...(criticality === 'CRITICAL' ? { bg: `Пропуск ${criticality}` } : {}) },
 });
 const payload = (gaps: ReturnType<typeof gap>[]) => ({
     readiness: {
@@ -97,11 +97,22 @@ describe('NIS2 readiness page', () => {
     });
 
     it('tells a reader in another language that the questions are in English, and shows them in English', async () => {
-        locale = 'bg';
+        locale = 'de';
         render(<Nis2ReadinessClient tenantSlug="acme" />);
         expect(await screen.findByText('Gap CRITICAL')).toBeInTheDocument();
         expect(screen.queryByText('Lücke CRITICAL')).toBeNull();
         expect(document.getElementById('nis2-readiness-english-note')).toHaveTextContent(R.questionsInEnglish);
+    });
+
+    it('shows a Bulgarian reader the Bulgarian questions where they exist, English where not, and no note (#4929)', async () => {
+        locale = 'bg';
+        readinessReply = () => reply(200, payload([gap('CRITICAL'), gap('HIGH')]));
+        render(<Nis2ReadinessClient tenantSlug="acme" />);
+        expect(await screen.findByText('Пропуск CRITICAL')).toBeInTheDocument();
+        expect(screen.queryByText('Gap CRITICAL')).toBeNull();
+        // A question without a translation falls back to English, not to nothing.
+        expect(screen.getByText('Gap HIGH')).toBeInTheDocument();
+        expect(document.getElementById('nis2-readiness-english-note')).toBeNull();
     });
 
     it('does not offer findings to a role the server refuses, and says who can', async () => {

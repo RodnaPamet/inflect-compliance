@@ -47,6 +47,20 @@ end users (the eventual gap-assessment UI):
 - Provenance fields (`source`, `license`, `attribution`, `importedAt`)
   are added by the sync script.
 
+## Bulgarian translation
+
+The 116 question texts and 15 domain names are also offered in Bulgarian,
+in `src/lib/nis2/gap-assessment-bg.json`. The translation was made by
+Inflect and is a derivative work of the upstream content, published under
+the same CC BY 4.0 licence with the attribution above. It translates the
+wording only: the legal bases and the references to German bodies and
+procedures (the BSI, its registration portal, German company forms) are
+kept as the upstream states them and are not adapted to Bulgarian law.
+The English fixture stays the source of record — a re-sync that changes a
+question's English text does not update its Bulgarian text, and the unit
+test `tests/unit/nis2-gap-bg.test.ts` fails when a question or domain has
+no Bulgarian entry.
+
 ## Re-syncing
 
 This file is a **pinned snapshot**, vendored deliberately so the build is

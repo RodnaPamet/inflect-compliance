@@ -36,7 +36,8 @@ const NIS2_ATTRIBUTION =
     'NIS2 gap-assessment questions © NISD2 contributors (Kardashev Catalyst UG / nisd2.eu), CC BY 4.0';
 const NIS2_SOURCE_URL = 'https://github.com/NISD2/nis2-gap-assessment-schema';
 
-type Bilingual = { en: string; de: string };
+/** Stored English and German; Bulgarian is added on read where translated (#4929). */
+type Bilingual = { en: string; de: string; bg?: string };
 type Gap = {
     questionId: string; domainId: number; criticality: string; consequence: string;
     fineExposure: boolean; timeToFix: string; legalBasis: string; answer: string;
@@ -117,7 +118,7 @@ export function Nis2GapLifecycleClient({
 }) {
     const tx = useTranslations('audits');
     const locale = useLocale();
-    const lang = locale === 'de' ? 'de' : 'en';
+    const lang = locale === 'bg' ? 'bg' : locale === 'de' ? 'de' : 'en';
     // Derived from the SAME registry key the reads use, so a write's URL and
     // the cache entry it refreshes cannot drift apart.
     const base = `/api/t/${tenantSlug}${CACHE_KEYS.audits.nis2Gap()}`;
@@ -240,7 +241,7 @@ export function Nis2GapLifecycleClient({
     const radarState = useMemo(() => {
         const byDomain = data?.latest.score.byDomain ?? [];
         if (byDomain.length === 0) return chartEmpty<RadarAxisDatum[]>();
-        return chartReady<RadarAxisDatum[]>(byDomain.map((d) => ({ key: d.code, label: d.name?.[lang] ?? d.code, value: d.score })));
+        return chartReady<RadarAxisDatum[]>(byDomain.map((d) => ({ key: d.code, label: d.name?.[lang] ?? d.name?.en ?? d.code, value: d.score })));
     }, [data, lang]);
 
     const trend = useMemo(
@@ -268,7 +269,7 @@ export function Nis2GapLifecycleClient({
 
     const gapColumns = useMemo(
         () => createColumns<Gap>([
-            { accessorKey: 'plainText', header: tx('nis2Gap.gapCol'), cell: ({ row }) => <span>{row.original.plainText?.[lang]}</span> },
+            { accessorKey: 'plainText', header: tx('nis2Gap.gapCol'), cell: ({ row }) => <span>{row.original.plainText?.[lang] ?? row.original.plainText?.en}</span> },
             { accessorKey: 'criticality', header: tx('nis2Gap.gapCrit'), cell: ({ row }) => <StatusBadge variant={critVariant(row.original.criticality)} size="sm">{codeLabel(tx, 'crit', row.original.criticality)}</StatusBadge> },
             {
                 id: 'liability', header: tx('nis2Gap.gapLiability'), cell: ({ row }) => (
