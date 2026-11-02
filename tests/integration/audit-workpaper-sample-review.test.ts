@@ -520,6 +520,11 @@ describe('only the assigned third-line reviewer, a person who does not own the a
         expect(detail.viewer).toEqual({ mine: true, answerable: true, refusal: null });
         expect(detail.workpaper.id).toBe(row.workpaperId);
         expect(detail.workpaper.sampledUnitIds).toEqual(['emp_1', 'emp_2']);
+        // The auditor agent by name, so the reviewer reads which agent wrote it (#4930).
+        expect(detail.auditorAgent).toEqual({
+            id: detail.workpaper.auditorAgentId,
+            name: expect.any(String),
+        });
 
         const answer = await recordWorkpaperReview(fx[T1].contexts[assignee], row.id, { outcome: 'CONCURRED' });
         expect(answer).toEqual({ id: row.id, outcome: 'CONCURRED', workpaperStamped: true, findingProposal: null });

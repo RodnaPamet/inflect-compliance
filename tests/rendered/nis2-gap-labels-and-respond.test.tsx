@@ -169,6 +169,9 @@ describe('NIS2 gap lifecycle page — labels, not codes (#4633)', () => {
     });
 });
 
+/** Radio order per question: Yes, Partially, No, Not applicable. */
+const ANSWER_INDEX = { YES: 0, PARTIALLY: 1, NO: 2, NA: 3 } as const;
+
 function respondPayload(status: string, finalized: boolean) {
     return {
         assignment: { id: 'asg-1', assessmentId: 'asm-1', respondentRole: 'CEO', status, questionIds: ['q1'] },
@@ -198,6 +201,59 @@ describe('NIS2 respond page — re-submit until finalised (#4633)', () => {
         for (const word of ['Yes', 'Partially', 'No', 'Not applicable']) expect(getByText(word)).toBeTruthy();
         expect(container.textContent).not.toContain('PARTIALLY');
         expect(container.textContent).toContain('High');
+    });
+
+    it('counts what is answered, and offers Submit only once every question has an answer (#4929)', async () => {
+        const payload = {
+            ...respondPayload('PENDING', false),
+            assignment: { id: 'asg-1', assessmentId: 'asm-1', respondentRole: 'CEO', status: 'PENDING', questionIds: ['q1', 'q2'] },
+            questions: [
+                { id: 'q1', domainId: 1, plainText: { en: 'Is there a risk policy?', de: '' }, legalBasis: 'Art. 21', criticality: 'HIGH' },
+                { id: 'q2', domainId: 1, plainText: { en: 'Is there an incident plan?', de: '' }, legalBasis: 'Art. 23', criticality: 'LOW' },
+            ],
+            answers: [{ questionId: 'q1', answer: 'YES' }],
+        };
+        const posts: unknown[] = [];
+        route = (url, init) => {
+            if (url.endsWith('/submit') && init?.method === 'POST') {
+                posts.push(JSON.parse(String(init.body)));
+                return ok({ written: 1 });
+            }
+            return url.includes('/gap-assignments/asg-1') ? ok(payload) : ok(null);
+        };
+        const { findByText, container, getByTestId, getAllByRole } = render(
+            <Providers role="READER">
+                <RespondClient tenantSlug="acme-corp" assignmentId="asg-1" />
+            </Providers>,
+        );
+        await findByText('Is there an incident plan?');
+        expect(getByTestId('nis2-respond-progress').textContent).toContain('1 of 2 answered.');
+        const submit = container.querySelector('#nis2-respond-submit-btn') as HTMLButtonElement;
+        const save = container.querySelector('#nis2-respond-save-btn') as HTMLButtonElement;
+        expect(submit).toBeDisabled();
+        // Nothing changed yet, so nothing to save.
+        expect(save).toBeDisabled();
+
+        // Answer q2 ("No" on the second question): now complete.
+        const radios = getAllByRole('radio');
+        await act(async () => { fireEvent.click(radios[ANSWER_INDEX.NO + 4]); });
+        expect(getByTestId('nis2-respond-progress').textContent).toContain('2 of 2 answered.');
+        expect(save).not.toBeDisabled();
+        await act(async () => { fireEvent.click(save); });
+        await waitFor(() => expect(posts).toHaveLength(1));
+        expect(posts[0]).toMatchObject({ final: false });
+
+        await act(async () => { fireEvent.click(submit); });
+        await waitFor(() => expect(posts).toHaveLength(2));
+        expect(posts[1]).toMatchObject({ final: true });
+        expect((posts[1] as { answers: unknown[] }).answers).toHaveLength(2);
+    });
+
+    it('tones a critical question apart from a low one (#4929)', async () => {
+        const { findByText, container } = mountRespond('PENDING', false);
+        await findByText('Is there a risk policy?');
+        // HIGH is the warning tone, not the neutral one every level used to share.
+        expect(container.querySelector('[class*="warning"]')).not.toBeNull();
     });
 
     it('stops offering Submit once the run is finalised, and says so', async () => {

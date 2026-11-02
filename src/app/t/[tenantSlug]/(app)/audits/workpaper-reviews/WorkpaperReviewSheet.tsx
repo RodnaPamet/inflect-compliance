@@ -42,7 +42,9 @@ import {
 } from '@/lib/agentic/workpaper-review-codes';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import Link from 'next/link';
+import { useWorkpaperLabels } from './workpaper-labels';
 
 import { WORKPAPER_REVIEWS_ENDPOINT, type ReviewOutcome } from './WorkpaperReviewsClient';
 
@@ -104,6 +106,8 @@ export interface WorkpaperReviewDetailPayload {
      * record before it was stored; `null` when none has been drafted.
      */
     narrative: { text: string; exceptionCodes: string[]; runId: string; createdAt: string } | null;
+    /** The auditor agent that wrote the workpaper, or null when the register no longer holds it. */
+    auditorAgent?: { id: string; name: string } | null;
 }
 
 /** Narrows a Combobox value back to the vocabulary it was built from. */
@@ -124,6 +128,8 @@ export function WorkpaperReviewSheet({
     onAnswered: () => void;
 }) {
     const t = useTranslations('audits');
+    const labels = useWorkpaperLabels();
+    const tenantHref = useTenantHref();
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
     const { data, error, isLoading, mutate } = useTenantSWR<WorkpaperReviewDetailPayload>(
@@ -205,7 +211,7 @@ export function WorkpaperReviewSheet({
                                 <dl className="space-y-tight" data-testid="workpaper-review-facts">
                                     <Field label={t('workpaperReviews.fieldProcedure')}>
                                         {t('workpaperReviews.procedureValue', {
-                                            procedure: wp.procedureId,
+                                            procedure: labels.procedure(wp.procedureId),
                                             version: wp.catalogueVersion,
                                         })}
                                     </Field>
@@ -236,23 +242,26 @@ export function WorkpaperReviewSheet({
                                         {wp.attributesTested.length > 0 ? wp.attributesTested.join(', ') : '—'}
                                     </Field>
                                     <Field label={t('workpaperReviews.fieldParameters')}>
-                                        {wp.parametersJson
-                                            ? Object.entries(wp.parametersJson)
-                                                  .map(([k, v]) => `${k}=${String(v)}`)
-                                                  .join(', ')
-                                            : '—'}
+                                        {labels.parameters(wp.parametersJson)}
                                     </Field>
                                     <Field label={t('workpaperReviews.fieldConclusion')}>
-                                        {t('workpaperReviews.conclusionValue', {
-                                            conclusion: wp.conclusion,
-                                            basis: wp.conclusionBasis,
-                                        })}
+                                        {labels.conclusion(wp.conclusion, wp.conclusionBasis)}
                                     </Field>
                                     <Field label={t('workpaperReviews.fieldEvidence')}>
                                         {wp.evidenceRefs.length > 0 ? wp.evidenceRefs.join(', ') : '—'}
                                     </Field>
                                     <Field label={t('workpaperReviews.fieldAuditor')}>
-                                        <span className="font-mono text-xs">{wp.auditorAgentId}</span>
+                                        {data?.auditorAgent ? (
+                                            <Link
+                                                href={tenantHref(`/agents/${data.auditorAgent.id}`)}
+                                                className="text-content-info hover:underline"
+                                                data-testid="workpaper-review-auditor-link"
+                                            >
+                                                {data.auditorAgent.name}
+                                            </Link>
+                                        ) : (
+                                            t('workpaperReviews.auditorUnknown')
+                                        )}
                                     </Field>
                                     <Field label={t('workpaperReviews.fieldWritten')}>{formatDateTime(wp.createdAt)}</Field>
                                     <Field label={t('workpaperReviews.fieldDrawn')}>
@@ -293,9 +302,9 @@ export function WorkpaperReviewSheet({
                                 </Heading>
                                 <ul className="space-y-tight text-sm" data-testid="workpaper-review-outcomes">
                                     {wp.itemOutcomesJson.slice(0, UNIT_ROW_CAP).map((o) => (
-                                        <li key={o.unitId} className="font-mono text-xs">
-                                            {o.unitId} · {o.outcome}
-                                            {o.code ? ` · ${o.code}` : ''}
+                                        <li key={o.unitId} className="text-xs">
+                                            <span className="font-mono">{o.unitId}</span> · {labels.outcome(o.outcome)}
+                                            {o.code ? ` · ${labels.code(o.code)}` : ''}
                                         </li>
                                     ))}
                                 </ul>
@@ -315,9 +324,14 @@ export function WorkpaperReviewSheet({
                                 ) : (
                                     <ul className="space-y-tight text-sm" data-testid="workpaper-review-exceptions">
                                         {wp.exceptionsJson.slice(0, UNIT_ROW_CAP).map((e, i) => (
-                                            <li key={`${e.unitId ?? 'POPULATION'}-${e.code}-${i}`} className="font-mono text-xs">
-                                                {e.unitId ?? t('workpaperReviews.populationLevel')} · {e.code}
-                                                {e.proposalId ? ` · ${e.proposalId}` : ''}
+                                            <li key={`${e.unitId ?? 'POPULATION'}-${e.code}-${i}`} className="text-xs">
+                                                {e.unitId ? (
+                                                    <span className="font-mono">{e.unitId}</span>
+                                                ) : (
+                                                    t('workpaperReviews.populationLevel')
+                                                )}{' '}
+                                                · {labels.code(e.code)}
+                                                {e.proposalId ? ` · ${t('workpaperReviews.exceptionProposed')}` : ''}
                                             </li>
                                         ))}
                                     </ul>
@@ -422,7 +436,17 @@ export function WorkpaperReviewSheet({
                                         )}
                                         {review.outcome === 'DISSENTED' && (
                                             <Field label={t('workpaperReviews.fieldFindingProposal')}>
-                                                {review.findingProposalId ?? t('workpaperReviews.proposalPending')}
+                                                {review.findingProposalId ? (
+                                                    <Link
+                                                        href={tenantHref('/agents/proposals')}
+                                                        className="text-content-info hover:underline"
+                                                        data-testid="workpaper-review-proposal-link"
+                                                    >
+                                                        {t('workpaperReviews.proposalQueueLink')}
+                                                    </Link>
+                                                ) : (
+                                                    t('workpaperReviews.proposalPending')
+                                                )}
                                             </Field>
                                         )}
                                     </dl>

@@ -124,6 +124,14 @@ describe('a view-key-only reader', () => {
         expect(screen.queryByTestId('agent-amend-action')).toBeNull();
     });
 
+    it('is told why the greyed tabs are closed (#4937)', () => {
+        renderWith(VIEW_ONLY);
+        const notice = screen.getByTestId('agent-tabs-view-only-notice');
+        const DETAIL = (require('../../messages/en.json') as { admin: { agentDetail: Record<string, string> } }).admin
+            .agentDetail;
+        expect(notice).toHaveTextContent(DETAIL.viewOnlyTabs);
+    });
+
     it('Tools opens for a holder of the tool-exposure key without the register key — the grants are theirs', () => {
         renderWith({ ...VIEW_ONLY, canGrantTools: true });
         expect(tab('tools')?.disabled).toBe(false);
@@ -137,6 +145,7 @@ describe('a view-key-only reader', () => {
         );
         expect(disabled).toEqual(['policy']);
         expect(screen.getByTestId('agent-amend-action')).toBeTruthy();
+        expect(screen.queryByTestId('agent-tabs-view-only-notice')).toBeNull();
     });
 });
 

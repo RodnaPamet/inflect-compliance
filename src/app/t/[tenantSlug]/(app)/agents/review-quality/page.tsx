@@ -6,7 +6,8 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity } from '@/lib/permissions';
 import { getTenantCtx } from '@/app-layer/context';
-import { computeAgentReviewQuality } from '@/app-layer/usecases/agent-review-quality';
+import { computeAgentReviewQuality, readReviewQualityNames } from '@/app-layer/usecases/agent-review-quality';
+import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 
 export const dynamic = 'force-dynamic';
@@ -78,6 +79,40 @@ export default async function AgentReviewQualityPage({
     // outstanding pattern is found, so a refused caller must not reach it.
     const report = await computeAgentReviewQuality(ctx);
 
+    // Names, not ids: the page judges how PEOPLE review (#4932).
+    const names = await readReviewQualityNames(ctx, {
+        reviewerUserIds: [
+            ...report.reviewers.map((r) => r.reviewerUserId),
+            ...report.signals.filter((s) => s.scope === 'REVIEWER' && s.subjectId).map((s) => s.subjectId as string),
+        ],
+        agentIds: [
+            ...report.agents.map((a) => a.agentId).filter((id): id is string => !!id),
+            ...report.signals.filter((s) => s.scope === 'AGENT' && s.subjectId).map((s) => s.subjectId as string),
+        ],
+    });
+    const reviewerName = (id: string) => names.reviewers[id] ?? t('reviewQuality.formerMember');
+    const agentLabel = (id: string | null) =>
+        id === null ? t('reviewQuality.unattributed') : (names.agents[id] ?? t('reviewQuality.formerAgent'));
+    const RUNGS = ['SECOND_APPROVER', 'SINGLE_APPROVER', 'AUTO_APPROVAL', 'UNPINNED'] as const;
+    const rungName = (rung: string) =>
+        (RUNGS as readonly string[]).includes(rung)
+            ? t(`reviewQuality.rungName.${rung as (typeof RUNGS)[number]}`)
+            : rung;
+    /** A signal's subject: a reviewer named, an agent named and linked. */
+    const signalSubject = (scope: string, id: string | null) => {
+        if (!id) return null;
+        if (scope === 'AGENT') {
+            return names.agents[id] ? (
+                <Link href={tenantHref(`/agents/${id}`)} className="text-content-info hover:underline">
+                    {names.agents[id]}
+                </Link>
+            ) : (
+                t('reviewQuality.formerAgent')
+            );
+        }
+        return reviewerName(id);
+    };
+
     const pct = (rate: number) => Math.round(rate * 100);
     const secs = (n: number) => Math.round(n * 10) / 10;
 
@@ -104,10 +139,13 @@ export default async function AgentReviewQualityPage({
                 }
             />
 
-            <p className="text-sm text-content-muted">
-                {t('reviewQuality.windowLabel', { days: report.windowDays })} ·{' '}
-                {t('reviewQuality.decided')} {report.decided} · {t('reviewQuality.approved')}{' '}
-                {report.approved} · {t('reviewQuality.rejected')} {report.rejected}
+            <p className="text-sm text-content-muted" data-testid="review-quality-summary">
+                {t('reviewQuality.summaryLine', {
+                    days: report.windowDays,
+                    decided: report.decided,
+                    approved: report.approved,
+                    rejected: report.rejected,
+                })}
             </p>
             <p className="text-xs text-content-subtle">{t('reviewQuality.upperTailNote')}</p>
 
@@ -156,11 +194,11 @@ export default async function AgentReviewQualityPage({
                                             <StatusBadge variant="warning">
                                                 {t(`reviewQuality.signal.${s.code}`)}
                                             </StatusBadge>
-                                            <span className="text-sm text-content-muted">
-                                                {t('reviewQuality.signalSubject', {
-                                                    subject: s.subjectId ?? '—',
-                                                })}
-                                            </span>
+                                            {s.subjectId && (
+                                                <span className="text-sm text-content-muted" data-testid="review-quality-signal-subject">
+                                                    {signalSubject(s.scope, s.subjectId)}
+                                                </span>
+                                            )}
                                         </span>
                                         <span className="text-sm text-content-muted">
                                             {t('reviewQuality.signalMeasure', {
@@ -185,8 +223,8 @@ export default async function AgentReviewQualityPage({
                                     key={r.reviewerUserId}
                                     className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4"
                                 >
-                                    <span className="font-medium text-content-emphasis">
-                                        {r.reviewerUserId}
+                                    <span className="font-medium text-content-emphasis" data-testid="review-quality-reviewer">
+                                        {reviewerName(r.reviewerUserId)}
                                     </span>
                                     <span className="text-sm text-content-muted">
                                         {r.estimates.reported
@@ -226,8 +264,14 @@ export default async function AgentReviewQualityPage({
                                     key={a.agentId ?? 'unattributed'}
                                     className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4"
                                 >
-                                    <span className="font-medium text-content-emphasis">
-                                        {a.agentId ?? '—'}
+                                    <span className="font-medium text-content-emphasis" data-testid="review-quality-agent">
+                                        {a.agentId && names.agents[a.agentId] ? (
+                                            <Link href={tenantHref(`/agents/${a.agentId}`)} className="hover:underline">
+                                                {names.agents[a.agentId]}
+                                            </Link>
+                                        ) : (
+                                            agentLabel(a.agentId)
+                                        )}
                                     </span>
                                     <span className="text-sm text-content-muted">
                                         {a.estimates.reported
@@ -245,7 +289,7 @@ export default async function AgentReviewQualityPage({
                                     <span className="text-sm text-content-muted">
                                         {Object.entries(a.rungCounts)
                                             .map(([rung, count]) =>
-                                                t('reviewQuality.rungLabel', { rung, count }),
+                                                t('reviewQuality.rungLabel', { rung: rungName(rung), count }),
                                             )
                                             .join(' · ')}
                                     </span>

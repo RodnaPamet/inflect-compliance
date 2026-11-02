@@ -264,17 +264,53 @@ describe('submitAssignmentAnswers', () => {
         withDb(d(validAssignment));
         const res = await submitAssignmentAnswers(ctx({ role: 'READER', userId: 'u1' }), 'asg-1', [
             { questionId: 'q1', answer: 'YES' },
+            { questionId: 'q2', answer: 'NO' },
         ]);
-        expect(res.written).toBe(1);
+        expect(res.written).toBe(2);
         expect(assertCanRead).toHaveBeenCalled();
         expect(assertCanWrite).not.toHaveBeenCalled();
     });
 
     it('accepts a re-submit while the run is open', async () => {
+        // q2 is already stored, so changing q1 still leaves every question answered.
+        repo.listAnswers.mockResolvedValueOnce([{ questionId: 'q2' }] as never);
         withDb(d({ ...validAssignment, status: 'SUBMITTED' }));
         await expect(
             submitAssignmentAnswers(ctx(), 'asg-1', [{ questionId: 'q1', answer: 'NO' }]),
-        ).resolves.toEqual({ written: 1 });
+        ).resolves.toEqual({ written: 1, status: 'SUBMITTED', unanswered: 0 });
+    });
+
+    it('refuses a submit with questions unanswered, and writes nothing (#4929)', async () => {
+        const db = d(validAssignment);
+        withDb(db);
+        await expect(
+            submitAssignmentAnswers(ctx(), 'asg-1', [{ questionId: 'q1', answer: 'YES' }]),
+        ).rejects.toMatchObject({ status: 409 });
+        expect(repo.upsertAnswer).not.toHaveBeenCalled();
+        expect(db.nis2GapAssignment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('saves a partial answer set as IN_PROGRESS, not SUBMITTED (#4929)', async () => {
+        const db = d({ ...validAssignment, status: 'PENDING' });
+        withDb(db);
+        const res = await submitAssignmentAnswers(
+            ctx(),
+            'asg-1',
+            [{ questionId: 'q1', answer: 'YES' }],
+            { final: false },
+        );
+        expect(res).toEqual({ written: 1, status: 'IN_PROGRESS', unanswered: 1 });
+        expect(db.nis2GapAssignment.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({ data: { status: 'IN_PROGRESS' } }),
+        );
+    });
+
+    it('counts stored answers towards a submit (#4929)', async () => {
+        repo.listAnswers.mockResolvedValueOnce([{ questionId: 'q1' }, { questionId: 'other-bucket' }] as never);
+        const db = d(validAssignment);
+        withDb(db);
+        const res = await submitAssignmentAnswers(ctx(), 'asg-1', [{ questionId: 'q2', answer: 'NO' }]);
+        expect(res).toEqual({ written: 1, status: 'SUBMITTED', unanswered: 0 });
     });
 
     it.each(['COMPLETED', 'ARCHIVED'])('refuses a submit to a %s run and writes nothing (#4633)', async (status) => {

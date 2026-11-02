@@ -232,9 +232,24 @@ function aiActMeta(): string {
 }
 
 describe('the agent detail header', () => {
-    it('shows a classified tier as the tier', () => {
+    it('shows a classified tier as its label, not the stored code (#4937)', () => {
         renderDetail('HIGH');
-        expect(aiActMeta()).toBe('HIGH');
+        expect(aiActMeta()).toBe(AI_TIER.HIGH);
+    });
+
+    it('words the status and every other fact in the header (#4937)', () => {
+        renderDetail('HIGH');
+        const EN = require('../../messages/en.json') as {
+            agents: { register: { filterEnums: Record<string, Record<string, string>>; reversibility: Record<string, string> } };
+        };
+        const enums = EN.agents.register.filterEnums;
+        expect(screen.getByTestId('agent-status-badge')).toHaveTextContent(enums.status.ACTIVE);
+        const header = document.body.textContent ?? '';
+        expect(header).toContain(enums.accessScope.READ_TENANT_DATA);
+        for (const code of ['READ_TENANT_DATA', 'FIRST_PARTY', 'THIRD_PARTY', 'REVERSIBLE', 'COMPENSABLE', 'TERMINAL']) {
+            expect(header).not.toContain(code);
+        }
+        expect(header).not.toMatch(/\bL[0-9]\b/);
     });
 
     it('shows UNCLASSIFIED exactly as it shows no AI system, never as the enum', () => {

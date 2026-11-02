@@ -30,6 +30,7 @@ import { ApiClientError } from '@/lib/api-client';
 import { apiRefusalMessage } from '@/lib/api-error';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { Breadcrumbs, type BreadcrumbItem } from '@/components/ui/breadcrumbs';
+import { Skeleton } from '@/components/ui/skeleton';
 import { TestPlanScheduleSection } from '@/components/TestPlanScheduleSection';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
@@ -170,19 +171,19 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
     //     different control while the URL still names this one.
     //
     // So the order key is chosen per context, and `hrefFor` below builds the
-    // matching route. The control key falls back to nothing (`listKey: null`)
-    // because the panel fetches by hand rather than through SWR — there is no
-    // cache entry under that key for a fallback to find.
+    // matching route. On a deep link (a fresh tab, a shared address, a
+    // notification) nothing has published either order, so each falls back to
+    // reading its list: the register for "tests", the control's own plans
+    // (GET /controls/{id}/tests/plans, the panel's source) for "control".
+    // That fallback used to be `null` here, which left the control-context
+    // stepper empty until the control page had been visited (#4928).
     const controlScoped = context === 'control';
     const registerPlanIds = useEntityListIds(
         controlScoped ? null : CACHE_KEYS.tests.plans(),
     );
-    const controlPlanIds = useEntityListIds(null, {
-        orderKey:
-            controlScoped && plan?.controlId
-                ? CACHE_KEYS.controls.testPlans(plan.controlId)
-                : null,
-    });
+    const controlPlanIds = useEntityListIds(
+        controlScoped && plan?.controlId ? CACHE_KEYS.controls.testPlans(plan.controlId) : null,
+    );
     const planIds = controlScoped ? controlPlanIds : registerPlanIds;
 
     const [editing, setEditing] = useState(false);
@@ -259,7 +260,14 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
             { label: t('detailPage.breadcrumbDashboard'), href: tenantHref('/dashboard') },
             { label: t('detailPage.breadcrumbControls'), href: tenantHref('/controls') },
             {
-                label: control?.name ?? t('testPlan.crumbControl'),
+                // A skeleton while the control loads, not the word "Control"
+                // posing as its name (#4928); the word stays for screen readers.
+                label: control?.name ?? (
+                    <span data-testid="test-plan-control-crumb-loading">
+                        <Skeleton className="inline-block h-3 w-20 align-middle" />
+                        <span className="sr-only">{t('testPlan.crumbControl')}</span>
+                    </span>
+                ),
                 href: tenantHref(`/controls/${plan.controlId}`),
             },
             { label: plan.name },

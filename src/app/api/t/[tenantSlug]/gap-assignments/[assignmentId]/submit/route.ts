@@ -5,7 +5,11 @@ import { SubmitAssignmentSchema } from '@/app-layer/schemas/gap-assessment-assig
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
-/** POST — submit the caller's bucket answers. Out-of-bucket ids rejected in the usecase. */
+/**
+ * POST — save (`final: false`) or submit the caller's bucket answers.
+ * Out-of-bucket ids, and a submit with questions unanswered, are refused in
+ * the usecase.
+ */
 export const POST = withApiErrorHandling(async (
     req: NextRequest,
     { params: paramsPromise }: { params: Promise<{ tenantSlug: string; assignmentId: string }> },
@@ -13,5 +17,7 @@ export const POST = withApiErrorHandling(async (
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
     const body = SubmitAssignmentSchema.parse(await req.json().catch(() => ({})));
-    return jsonResponse(await submitAssignmentAnswers(ctx, params.assignmentId, body.answers));
+    return jsonResponse(
+        await submitAssignmentAnswers(ctx, params.assignmentId, body.answers, { final: body.final }),
+    );
 });

@@ -502,13 +502,24 @@ export async function getWorkpaperReview(ctx: RequestContext, reviewId: string) 
         const pending = review.outcome === 'PENDING';
         viewer = { mine: true, answerable: pending, refusal: pending ? null : 'ALREADY_REVIEWED' };
     }
-    const { workpaper, narrative } = await runInTenantContext(ctx, async (db) => ({
-        workpaper: await AuditWorkpaperRepository.getById(db, ctx, review.workpaperId),
-        // The auditor agent's narrative of it (#3749), when one is stored.
-        narrative: await narrativeOfWorkpaper(db, ctx, review.workpaperId),
-    }));
+    const { workpaper, narrative, auditorAgent } = await runInTenantContext(ctx, async (db) => {
+        const wp = await AuditWorkpaperRepository.getById(db, ctx, review.workpaperId);
+        return {
+            workpaper: wp,
+            // The auditor agent's narrative of it (#3749), when one is stored.
+            narrative: await narrativeOfWorkpaper(db, ctx, review.workpaperId),
+            // Named, so the reviewer reads which agent wrote it rather than
+            // its id (#4930). Null when the register no longer holds it.
+            auditorAgent: wp
+                ? await db.registeredAgent.findFirst({
+                      where: { id: wp.auditorAgentId, tenantId: ctx.tenantId },
+                      select: { id: true, name: true },
+                  })
+                : null,
+        };
+    });
     if (!workpaper) throw notFound('Workpaper not found');
-    return { review, workpaper, viewer, narrative };
+    return { review, workpaper, viewer, narrative, auditorAgent };
 }
 
 export interface RecordWorkpaperReviewResult {

@@ -20,6 +20,10 @@ import {
     useTenantContext,
 } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/ui/form-field';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { Input } from '@/components/ui/input';
+import { apiErrorMessage } from '@/lib/api-error';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -50,6 +54,8 @@ export function VendorTemplatesIndexClient() {
 
     const [items, setItems] = useState<TemplateRow[] | null>(null);
     const [loading, setLoading] = useState(true);
+    // A failed load is said, never shown as an empty register (#4933).
+    const [loadFailed, setLoadFailed] = useState(false);
 
     const [creating, setCreating] = useState(false);
     const [newKey, setNewKey] = useState('');
@@ -60,9 +66,14 @@ export function VendorTemplatesIndexClient() {
         setLoading(true);
         try {
             const res = await fetch(apiUrl('/vendor-assessment-templates'));
-            if (res.ok) setItems(await res.json());
+            if (res.ok) {
+                setItems(await res.json());
+                setLoadFailed(false);
+            } else {
+                setLoadFailed(true);
+            }
         } catch {
-            // A network failure keeps what is shown, as a non-ok response does.
+            setLoadFailed(true);
         } finally {
             setLoading(false);
         }
@@ -87,12 +98,16 @@ export function VendorTemplatesIndexClient() {
                 body: JSON.stringify({ key: newKey, name: newName }),
             });
             if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                setCreateError(body.error ?? t('vendorTemplates.httpError', { status: res.status }));
+                // `body.error` is the envelope OBJECT `{ code, message }`;
+                // rendered as a child it took the page down (#4933).
+                const body: unknown = await res.json().catch(() => null);
+                setCreateError(apiErrorMessage(body, t('vendorTemplates.createFailed')));
                 return;
             }
             const created = (await res.json()) as { id: string };
             router.push(tenantHref(`/admin/vendor-templates/${created.id}`));
+        } catch {
+            setCreateError(t('vendorTemplates.createFailed'));
         } finally {
             setCreating(false);
         }
@@ -124,36 +139,26 @@ export function VendorTemplatesIndexClient() {
                         {t('vendorTemplates.createHeading')}
                     </Heading>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-compact items-end">
-                        <div>
-                            <label
-                                className="text-xs text-content-muted block mb-1"
-                                htmlFor="new-template-key"
-                            >
-                                {t('vendorTemplates.keyLabel')}
-                            </label>
-                            <input
+                        <FormField
+                            label={t('vendorTemplates.keyLabel')}
+                            hint={t('vendorTemplates.keyHint')}
+                            required
+                        >
+                            <Input
                                 id="new-template-key"
-                                className="input w-full"
                                 value={newKey}
                                 onChange={(e) => setNewKey(e.target.value)}
                                 placeholder={t('vendorTemplates.keyPlaceholder')}
                             />
-                        </div>
-                        <div>
-                            <label
-                                className="text-xs text-content-muted block mb-1"
-                                htmlFor="new-template-name"
-                            >
-                                {t('vendorTemplates.nameLabel')}
-                            </label>
-                            <input
+                        </FormField>
+                        <FormField label={t('vendorTemplates.nameLabel')} required>
+                            <Input
                                 id="new-template-name"
-                                className="input w-full"
                                 value={newName}
                                 onChange={(e) => setNewName(e.target.value)}
                                 placeholder={t('vendorTemplates.namePlaceholder')}
                             />
-                        </div>
+                        </FormField>
                         <div>
                             <Button
                                 variant="primary"
@@ -168,13 +173,13 @@ export function VendorTemplatesIndexClient() {
                         </div>
                     </div>
                     {createError && (
-                        <p
-                            className="text-xs text-content-error mt-2"
-                            role="alert"
+                        <InlineNotice
+                            variant="error"
+                            className="mt-2"
                             data-testid="create-template-error"
                         >
                             {createError}
-                        </p>
+                        </InlineNotice>
                     )}
                 </div>
             )}
@@ -185,6 +190,13 @@ export function VendorTemplatesIndexClient() {
                 </Heading>
                 {loading ? (
                     <SkeletonCard lines={3} />
+                ) : loadFailed && items === null ? (
+                    <InlineNotice variant="error" data-testid="templates-load-error">
+                        <span>{t('vendorTemplates.loadFailed')}</span>{' '}
+                        <Button variant="secondary" size="sm" onClick={() => void refresh()}>
+                            {t('vendorTemplates.retry')}
+                        </Button>
+                    </InlineNotice>
                 ) : items === null || items.length === 0 ? (
                     <EmptyState
                         variant="no-records"
@@ -207,12 +219,20 @@ export function VendorTemplatesIndexClient() {
                                         {row.name}
                                     </div>
                                     <div className="text-xs text-content-subtle">
-                                        {row.key} · v{row.version} ·{' '}
-                                        {t('vendorTemplates.sectionsCount', { count: row._count.sections })} ·{' '}
-                                        {t('vendorTemplates.questionsCount', { count: row._count.questions })}
+                                        {t('vendorTemplates.rowMeta', {
+                                            key: row.key,
+                                            version: row.version,
+                                            sections: row._count.sections,
+                                            questions: row._count.questions,
+                                        })}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-compact">
+                                    {row.isGlobal && (
+                                        <StatusBadge variant="info" size="sm" data-testid={`template-built-in-${row.id}`}>
+                                            {t('vendorTemplates.builtIn')}
+                                        </StatusBadge>
+                                    )}
                                     <StatusBadge variant={row.isPublished ? 'success' : 'warning'} size="sm">
                                         {row.isPublished ? t('vendorTemplates.published') : t('vendorTemplates.draft')}
                                     </StatusBadge>

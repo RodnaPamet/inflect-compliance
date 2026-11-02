@@ -4467,7 +4467,7 @@
     },
     "respond": {
       "loadFailed": "Failed to load your assignment.",
-      "submitFailed": "Failed to submit.",
+      "submitFailed": "Couldn't save your answers. Try again.",
       "submitted": "Your answers were submitted. Thank you — the assessment owner will finalise the run.",
       "title": "Your NIS2 questions",
       "description": "Answer only the questions assigned to you. Your answers feed the shared assessment; the owner finalises it.",
@@ -4476,8 +4476,11 @@
       "finalized": "This assessment has been finalised, so its answers can no longer change.",
       "legalBasis": "Legal basis: {legalBasis}",
       "loadingAria": "Loading your NIS2 questions",
-      "submitZero": "Submit answers",
-      "submitN": "Submit {count} answers"
+      "save": "Save answers",
+      "submit": "Submit",
+      "saved": "Your answers are saved. Come back to finish, then submit.",
+      "progress": "{answered} of {total} answered.",
+      "submitNeedsAll": "Answer every question to submit."
     },
     "auditorsAdmin": {
       "crumb": "Auditor management",
@@ -4596,13 +4599,13 @@
       "accessTitle": "Workpaper reviews are not available",
       "accessMessage": "You do not have permission to view audit workpapers in this workspace.",
       "crumb": "Workpaper reviews",
-      "title": "Auditor workpaper reviews",
-      "count": "{awaiting} awaiting your answer · {total} assigned",
+      "title": "Workpaper reviews",
+      "count": "{awaiting, plural, one {# awaiting your answer} other {# awaiting your answer}} · {total, plural, one {# assigned} other {# assigned}}",
       "searchPlaceholder": "Search workpaper reviews…",
       "about": "The auditor agent’s workpapers are drawn for internal audit, and each is assigned to a third-line member who does not own the auditor agent. Re-perform the workpaper and record whether you concur. Your answer is recorded once.",
       "notEligible": {
         "REVIEWER_NOT_ACTIVE_MEMBER": "Your membership of this workspace is not active, so no sampled workpaper is assigned to you.",
-        "REVIEWER_LINE_NOT_THIRD": "Sampled workpapers are reviewed by internal audit, and your line of defence is not THIRD. An OWNER declares it.",
+        "REVIEWER_LINE_NOT_THIRD": "Sampled workpapers are reviewed by internal audit, the third line of defence, and your membership is not marked as third line. An Owner sets each member's line of defence on the Members page.",
         "UNKNOWN": "You cannot review sampled workpapers."
       },
       "truncated": "Showing your oldest {shown} assigned reviews. More exist and are not shown here.",
@@ -4617,7 +4620,7 @@
       "colConclusion": "Auditor’s conclusion",
       "colDrawn": "Drawn",
       "colAnswer": "Your answer",
-      "conclusionValue": "{conclusion} ({basis})",
+      "conclusionValue": "{conclusion}: {basis}",
       "outcome": {
         "PENDING": "Awaiting your answer",
         "CONCURRED": "Concurred",
@@ -4663,7 +4666,7 @@
       "moreRows": "… and {more} more",
       "sectionExceptions": "Exceptions ({count})",
       "noExceptions": "No exceptions recorded",
-      "populationLevel": "population",
+      "populationLevel": "Whole population",
       "sectionNarrative": "Auditor agent's narrative",
       "narrativeNotice": "Drafted by the auditor agent from this workpaper and checked against it before it was stored: its conclusion and every code it names are the workpaper's own. It is a summary, not a re-performance, so re-perform the workpaper before you answer.",
       "narrativeMeta": "Drafted {at} · run {run}",
@@ -4693,7 +4696,7 @@
         "EVIDENCE_INSUFFICIENT": "The cited evidence does not support the recorded outcomes",
         "CONCLUSION_NOT_SUPPORTED": "The conclusion does not follow from the item outcomes"
       },
-      "countOverview": "{awaiting} awaiting your answer · {total} drawn",
+      "countOverview": "{awaiting, plural, one {# awaiting an answer} other {# awaiting an answer}} · {total, plural, one {# drawn} other {# drawn}}",
       "overview": "You are in internal audit, so you see every assignment in this workspace and its status. You answer only the workpapers assigned to you; the others open read-only.",
       "emptyTitleOverview": "No workpapers drawn yet",
       "emptyDescOverview": "When the daily sweep draws the auditor agent’s workpapers, every assignment appears here.",
@@ -4710,7 +4713,93 @@
       "rateSaved": "The sampling rate is now {percent}%.",
       "rateFailed": "The sampling rate could not be saved.",
       "rateDecrease": "Decrease the sampling rate",
-      "rateIncrease": "Increase the sampling rate"
+      "rateIncrease": "Increase the sampling rate",
+      "auditorLink": "{name}",
+      "auditorUnknown": "An auditor agent no longer in the register",
+      "exceptionProposed": "proposed as a finding",
+      "proposalQueueLink": "Open the proposal queue",
+      "parameterValue": "{name}: {value}",
+      "conclusionLabel": {
+        "PASS": "Pass",
+        "FAIL": "Fail",
+        "INCONCLUSIVE": "Inconclusive"
+      },
+      "basisLabel": {
+        "ALL_SAMPLED_UNITS_PASSED": "every sampled unit passed",
+        "EXCEPTIONS_FOUND": "exceptions were found",
+        "EXCEPTIONS_NOT_ALL_PROPOSED": "exceptions were found, and not all of them were proposed as findings",
+        "ITEM_UNTESTABLE": "a sampled unit could not be tested",
+        "EMPTY_POPULATION": "the population was empty",
+        "PARAMETER_UNSET": "a required parameter was not set",
+        "PERIOD_NOT_SETTLED": "the period had not settled yet",
+        "PERIOD_OPEN": "the period was still open",
+        "POPULATION_TRUNCATED": "the population could not be read in full"
+      },
+      "outcomeLabel": {
+        "PASS": "Pass",
+        "EXCEPTION": "Exception",
+        "UNTESTABLE": "Could not be tested"
+      },
+      "procedureName": {
+        "iam_leaver_timeliness": "Leaver timeliness",
+        "iam_recertification_completeness": "Recertification completeness",
+        "iam_time_bounded_access_expiry": "Time-bounded access expiry",
+        "iam_privileged_access": "Privileged access",
+        "agent_authority_conformance": "Agent authority conformance"
+      },
+      "parameterName": {
+        "leaverWindowHours": "Leaver window (hours)",
+        "remediationWindowDays": "Remediation window (days)",
+        "sampleSize": "Sample size",
+        "settleMarginHours": "Settling margin (hours)"
+      },
+      "unitCode": {
+        "AGENT_NOT_ACTIVE": "The agent was not active",
+        "CAMPAIGN_INCOMPLETE": "The review campaign was not completed",
+        "CAMPAIGN_TRUNCATED": "The review campaign was cut short",
+        "CARD_VERSION_UNRECORDED": "The policy card version was not recorded",
+        "CARD_VERSION_UNRESOLVABLE": "The policy card version could not be found",
+        "CLOSED_AFTER_DUE": "Closed after its due date",
+        "DECISION_READ_TRUNCATED": "The decisions could not be read in full",
+        "DELIVERY_UNCONFIRMED": "Delivery was not confirmed",
+        "END_DATE_REMOVED": "The end date was removed",
+        "END_DATE_UNREADABLE": "The end date could not be read",
+        "EVIDENCE_NOT_GENERATED": "No evidence was generated",
+        "EXPIRY_NOT_OBSERVED": "The expiry was not observed",
+        "GRANT_NOT_OUTLIVED": "The grant had not outlived its window",
+        "GRANT_OUTLIVED_WINDOW": "The grant outlived its window",
+        "GRANT_UNBOUNDED": "The grant has no end date",
+        "HISTORY_READ_TRUNCATED": "The history could not be read in full",
+        "INVOCATION_READ_TRUNCATED": "The tool calls could not be read in full",
+        "INVOCATION_UNRECORDED": "A tool call was not recorded",
+        "LEAVER_ACCOUNT_ACTIVE": "A leaver's account is still active",
+        "LEAVER_ACCOUNT_ACTIVE_UNDATED": "A leaver's account is still active, with no leaving date",
+        "LEAVER_DISABLED_LATE": "A leaver's account was disabled late",
+        "MFA_NOT_REPORTED": "MFA status was not reported",
+        "MFA_SIGNAL_AMBIGUOUS": "MFA status was unclear",
+        "NOT_RECERTIFIED_IN_PERIOD": "Not recertified in the period",
+        "NO_CARD_IN_FORCE": "No policy card was in force",
+        "NO_CONSIDERED_ACCOUNT": "No account to consider",
+        "NO_OBSERVATION_AFTER_CLOSE": "Not observed after the close",
+        "NO_ROSTER_MATCH": "No match in the HR roster",
+        "NO_TOOL_IN_WINDOW": "No tool used in the window",
+        "OUTLIVED_GRANT_NOT_TASKED": "An outlived grant has no follow-up task",
+        "POPULATION_COVERAGE_UNVERIFIED": "The population's coverage is unverified",
+        "PRIVILEGED_HOLDER_DEPARTING": "A privileged holder is leaving",
+        "PRIVILEGED_UNATTRIBUTED": "A privileged account belongs to nobody known",
+        "PRIVILEGED_WITHOUT_MFA": "A privileged account has no MFA",
+        "PRIVILEGE_NOT_RECERTIFIED": "A privilege was not recertified",
+        "REVOCATION_NOT_EXECUTED": "A revocation was not carried out",
+        "REVOKED_ACCESS_STILL_ACTIVE": "Revoked access is still active",
+        "SELF_REVIEW": "Reviewed by the person themselves",
+        "STATUS_HISTORY_UNRECORDED": "The status history was not recorded",
+        "TOOL_NOT_GRANTED": "A tool was used without a grant",
+        "TOOL_NOT_IN_CURRENT_CATALOGUE": "A tool is not in the current catalogue",
+        "TOOL_NOT_ON_CARD": "A tool is not on the policy card",
+        "TOOL_UNEXERCISABLE": "A granted tool cannot be used",
+        "UNIT_NOT_FOUND": "The unit could not be found",
+        "WINDOW_UNDERCOUNTS": "The window undercounts"
+      }
     }
   },
   "findings": {
@@ -4908,33 +4997,34 @@
       }
     },
     "soaPrint": {
-      "printPreview": "SoA Print Preview",
+      "printPreview": "Print preview",
       "printHint": "Use Ctrl+P (or Cmd+P) to print or save as PDF",
       "printBtn": "Print / Save as PDF",
       "back": "Back",
       "organization": "Organization",
       "framework": "Framework",
       "generated": "Generated",
-      "totalControls": "Total Controls",
+      "totalControls": "Total controls",
       "summary": "Summary",
       "applicable": "Applicable",
-      "notApplicable": "Not Applicable",
+      "notApplicable": "Not applicable",
       "unmapped": "Unmapped",
       "implemented": "Implemented",
-      "missingJustification": "Missing Justification",
-      "sectionControls": "{section} Controls",
+      "missingJustification": "Missing justification",
+      "sectionControls": "{section} controls",
       "colCode": "Code",
       "colRequirement": "Requirement",
       "colApplicable": "Applicable",
       "colStatus": "Status",
-      "colControlRefs": "Control References",
+      "colControlRefs": "Control references",
       "colJustification": "Justification",
       "yes": "Yes",
       "no": "No",
       "unmappedVal": "Unmapped",
       "footer": "Generated by Inflect Compliance on {date}. This document is a point-in-time snapshot and should be verified against current controls.",
       "excepted": "Excepted",
-      "exceptedUntil": "Excepted until {date}"
+      "exceptedUntil": "Excepted until {date}",
+      "otherSection": "Other"
     },
     "trustCenter": "Trust Center",
     "catalogSubtitle": "Framework-scoped coverage & readiness, gap analysis, risk and applicability reports.",
@@ -5444,7 +5534,13 @@
       "customRoleAdminMembershipOnly": "Only an Admin member can carry this custom role.",
       "customRoleNeedsAdminMembership": "{customRole} can only be carried by an Admin member. Choose another custom role or none, then change the role.",
       "carriageRefusedKeys": "Only an Admin member can carry a custom role that grants {permissions}.",
-      "carriageRefusedBase": "Only an Admin member can carry a custom role built on {base}."
+      "carriageRefusedBase": "Only an Admin member can carry a custom role built on {base}.",
+      "resetMfa": "Reset MFA",
+      "resetMfaTitle": "Reset this member's MFA?",
+      "resetMfaBody": "{email} will set up an authenticator app again the next time they sign in to this workspace. They'll get an email saying you did this.",
+      "mfaResetToast": "MFA reset for {email}.",
+      "mfaResetNothing": "{email} hasn't set up MFA, so there was nothing to reset.",
+      "mfaResetFailed": "Couldn't reset the MFA."
     },
     "security": {
       "crumbSelf": "Security & MFA",
@@ -5695,7 +5791,7 @@
         "provenance": "Provenance",
         "modelRef": "Model reference",
         "owner": "Accountable owner",
-        "ownerMovesByTransfer": "Ownership moves only by a two-step transfer: another holder of the tenant lifecycle permission proposes it, and the person it names accepts it.",
+        "ownerMovesByTransfer": "Ownership moves only by a two-step transfer: an Owner or AI admin proposes it, and the person it names accepts it.",
         "vendor": "Supplier",
         "vendorNone": "No supplier — first party",
         "save": "Save {count} change(s)",
@@ -6364,7 +6460,9 @@
           "EXPIRED": "Expired",
           "PENDING": "Open"
         }
-      }
+      },
+      "autonomyLevel": "Level {level}",
+      "viewOnlyTabs": "You can read this agent's Overview and Runs. The other tabs need the agent register permission, which Owners, Admins and AI admins have."
     },
     "mcp": {
       "title": "Agent credentials",
@@ -7848,15 +7946,18 @@
       "creating": "Creating…",
       "createDraft": "Create draft",
       "keyNameRequired": "Key and name are required.",
-      "httpError": "HTTP {status}",
       "allTemplates": "All templates ({count})",
       "emptyTitle": "No templates yet",
       "emptyDesc": "Use the form above to create your first vendor questionnaire template.",
-      "sectionsCount": "{count} section(s)",
-      "questionsCount": "{count} question(s)",
       "published": "Published",
       "draft": "Draft",
-      "updated": "Updated {date}"
+      "updated": "Updated {date}",
+      "createFailed": "Couldn't create the template. Try again.",
+      "loadFailed": "Couldn't load the templates.",
+      "retry": "Try again",
+      "keyHint": "A short identifier for the template, such as soc2-vendor. It stays the same across versions.",
+      "builtIn": "Built in",
+      "rowMeta": "Key {key} · Version {version} · {sections, plural, one {# section} other {# sections}} · {questions, plural, one {# question} other {# questions}}"
     },
     "templateBuilder": {
       "loadError": "Failed to load template ({status})",
@@ -7890,16 +7991,16 @@
       "questionsEmpty": "No questions yet — drag here or add one below."
     },
     "assessmentReview": {
-      "loadError": "Failed to load ({status})",
+      "loadError": "Couldn't load this assessment. Try again.",
       "loadErrorNetwork": "Couldn't load this assessment. Check your connection and try again.",
-      "saveError": "Save failed ({status})",
-      "closeError": "Close failed ({status})",
+      "saveError": "Couldn't save the review. Try again.",
+      "closeError": "Couldn't close the assessment. Try again.",
       "notFound": "Assessment not found",
       "autoRiskCreated": "A register Risk was auto-created from this high-risk assessment.",
-      "autoRiskView": "View risk →",
+      "autoRiskView": "View risk",
       "submitted": "Submitted {date}",
       "awaitingTitle": "Awaiting external respondent.",
-      "awaitingDesc": "The vendor hasn't submitted yet. Review controls unlock once the assessment moves to SUBMITTED.",
+      "awaitingDesc": "The vendor hasn't submitted yet. You can review the answers once they do.",
       "mode": "Mode",
       "score": "Score",
       "autoSum": "Auto sum",
@@ -7923,7 +8024,22 @@
       "closedOn": "Closed {date}",
       "closedNoDate": "Closed",
       "finalRatingColon": "Final rating:",
-      "noAnswer": "no answer"
+      "noAnswer": "no answer",
+      "templateVersion": "Template version {version}",
+      "weight": "Weight {weight}",
+      "overrideAria": "Override points for: {question}",
+      "notesAria": "Notes for: {question}",
+      "modeLabel": {
+        "SIMPLE_SUM": "Simple sum",
+        "WEIGHTED_AVERAGE": "Weighted average",
+        "PASS_FAIL_THRESHOLD": "Pass mark"
+      },
+      "verdictLabel": {
+        "PASS": "Pass",
+        "FAIL": "Fail"
+      },
+      "closeConfirmTitle": "Close this assessment?",
+      "closeConfirmBody": "Closing is final. The answers, score and rating can't change after it."
     },
     "nav": {
       "members": "Members & Roles",
@@ -7942,8 +8058,8 @@
       "trustCenter": "Trust Center",
       "riskMatrix": "Risk Matrix",
       "riskAppetite": "Risk Appetite",
-      "vendorTemplates": "Assessment Templates",
-      "vendorReviews": "Assessment Reviews",
+      "vendorTemplates": "Assessment templates",
+      "vendorReviews": "Assessment reviews",
       "notifications": "Notifications",
       "aiFeatures": "AI features",
       "modules": "Modules",
@@ -8540,15 +8656,10 @@
     "reviewQuality": {
       "title": "Review quality",
       "pageDesc": "Whether approvals on the agent-proposal queue mean anything. Every number here is read from columns the queue already keeps — nothing new is recorded about anybody.",
-      "windowLabel": "Last {days} days",
-      "decided": "Decided",
-      "approved": "Approved",
-      "rejected": "Rejected",
       "truncated": "Only the most recent {max} decisions were read, so every figure below is over that suffix rather than the whole window.",
       "empty": "No proposal has been decided in this window, so there is nothing to measure. That is an answer, not a gap.",
       "signalsTitle": "Outstanding patterns",
       "signalsNone": "No pattern crossed its threshold in this window.",
-      "signalSubject": "Subject {subject}",
       "signalMeasure": "observed {observed} against a threshold of {threshold}, over {sample} decisions",
       "reviewersTitle": "Reviewers",
       "agentsTitle": "Agents",
@@ -8556,8 +8667,8 @@
       "estimateRefused": "Rate and median not reported: {observed} of {required} decisions needed.",
       "estimateReported": "Approves {rate}% of {decided} decided · median {median}s · fastest tenth {p10}s",
       "burstCount": "{count} bulk-approval bursts",
-      "rungLabel": "{rung} × {count}",
-      "secondApprover": "{count} decided under a card declaring SECOND_APPROVER — the queue records one approver per proposal, so the declaration is not evidenced.",
+      "rungLabel": "{rung}: {count}",
+      "secondApprover": "{count, plural, one {# decided} other {# decided}} under a policy card that asks for a second approver. The queue records one approver per proposal, so the second approval is not evidenced.",
       "upperTailNote": "Only the fast end of the distribution is reported. Time-to-decision is queue latency plus review time, so a short one bounds how long anybody looked; a long one measures backlog and says nothing about care.",
       "signal": {
         "BULK_APPROVAL_BURST": "Bulk approval burst",
@@ -8569,6 +8680,16 @@
       "unobservableTitle": "What this report cannot tell you",
       "unobservable": {
         "DIFF_EXPANSION": "Whether a reviewer actually looked at the proposed content before approving it. The queue renders every payload in full with nothing to expand, and nothing records that a proposal was read — only that it was decided. No number here is a stand-in for that: a fast decision is reported as a fast decision, not as an unread one."
+      },
+      "summaryLine": "Last {days} days · {decided, plural, one {# decided} other {# decided}} · {approved} approved · {rejected} rejected",
+      "formerMember": "A former member",
+      "formerAgent": "An agent no longer in the register",
+      "unattributed": "Not attributed to an agent",
+      "rungName": {
+        "SECOND_APPROVER": "Second approver required",
+        "SINGLE_APPROVER": "One approver",
+        "AUTO_APPROVAL": "Approved automatically",
+        "UNPINNED": "No policy card pinned"
       }
     },
     "agentRegisterLink": "Agent register",
@@ -8826,6 +8947,15 @@
           "description": "Lets them read the proposals the output guard refused, including the content that was attempted."
         }
       }
+    },
+    "vendorAnswerType": {
+      "YES_NO": "Yes or no",
+      "SINGLE_SELECT": "Single choice",
+      "MULTI_SELECT": "Multiple choice",
+      "TEXT": "Text",
+      "NUMBER": "Number",
+      "SCALE": "Scale",
+      "FILE_UPLOAD": "File upload"
     }
   },
   "riskManager": {
@@ -9147,7 +9277,7 @@
       "colScore": "Score",
       "colRisk": "Risk rating",
       "colSubmitted": "Submitted",
-      "loadError": "Failed to load the review queue (status {status}).",
+      "loadError": "Couldn't load the review queue. Try again.",
       "loadErrorNetwork": "Couldn't load the review queue. Check your connection and try again.",
       "resourceSingular": "assessment",
       "resourcePlural": "assessments",
@@ -13779,18 +13909,18 @@
     "linkCveFailed": "Could not link CVE"
   },
   "mfa": {
-    "invalidCodeFormat": "Please enter a valid 6-digit code",
+    "invalidCodeFormat": "Enter the 6-digit code from your authenticator app.",
     "tooManyAttempts": "Too many failed attempts. Please wait a moment and try again.",
     "invalidCode": "Invalid code. Please check your authenticator app and try again.",
     "verifyFailed": "Verification failed. Please try again.",
-    "enrollRequiredTitle": "MFA Enrollment Required",
-    "enrollRequiredBody": "Your organization requires multi-factor authentication. Please set up MFA to continue.",
-    "setUpMfa": "Set Up MFA",
-    "verifyTitle": "Verify Your Identity",
+    "enrollRequiredTitle": "Set up multi-factor authentication",
+    "enrollRequiredBody": "This workspace requires multi-factor authentication. Set up an authenticator app to continue.",
+    "setUpMfa": "Set up MFA",
+    "verifyTitle": "Verify it's you",
     "verifyBody": "Enter the 6-digit code from your authenticator app to continue.",
-    "verifying": "Verifying...",
+    "verifying": "Verifying…",
     "continueBtn": "Continue",
-    "cantAccess": "Can't access your authenticator? Contact your organization administrator.",
+    "cantAccess": "Can't use your authenticator? Ask an Owner or Admin of this workspace to reset your MFA, then sign in again to set it up. Only an Owner can reset an Owner's MFA.",
     "loadFailed": "Failed to load MFA status",
     "startFailed": "Failed to start enrollment",
     "enrollFailed": "Enrollment failed",
@@ -13823,7 +13953,12 @@
     "verifyEnable": "Verify & Enable",
     "cancelEnrollment": "Cancel enrollment",
     "removeConfirmTitle": "Remove multi-factor authentication?",
-    "removeConfirmDesc": "Your account will be less secure. You can re-enroll at any time."
+    "removeConfirmDesc": "Your account will be less secure. You can re-enroll at any time.",
+    "codeLabel": "Authentication code",
+    "lockedOut": "Too many attempts. Try again in {seconds, plural, one {# second} other {# seconds}}.",
+    "switchAccount": "Sign in with a different account",
+    "checking": "Checking your MFA status",
+    "checkFailed": "We couldn't check whether you have set up MFA. If you have, enter your code below. If you haven't, <link>set it up first</link>."
   },
   "richtext": {
     "placeholder": "Write your policy here…",
@@ -14595,7 +14730,9 @@
     "result": {
       "title": "Invitation not accepted",
       "signedInAs": "You are signed in as <b>{email}</b>.",
-      "toWorkspaces": "Go to your workspaces"
+      "toWorkspaces": "Go to your workspaces",
+      "noWorkspaceHelp": "You don't belong to any workspace yet. Once your admin sends you a new invitation, follow the link in it.",
+      "switchAccount": "Sign in with a different account"
     }
   },
   "roles": {

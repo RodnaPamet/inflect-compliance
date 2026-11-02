@@ -29,6 +29,11 @@ import {
 } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { SkeletonDetailPage } from '@/components/ui/skeleton';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -102,12 +107,16 @@ interface ReviewView {
     closedAt: string | null;
 }
 
-const RATING_OPTIONS: ComboboxOption[] = [
-    { value: 'LOW', label: 'LOW' },
-    { value: 'MEDIUM', label: 'MEDIUM' },
-    { value: 'HIGH', label: 'HIGH' },
-    { value: 'CRITICAL', label: 'CRITICAL' },
-];
+const RATINGS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+type Rating = (typeof RATINGS)[number];
+const isRating = (v: string | null | undefined): v is Rating =>
+    !!v && (RATINGS as readonly string[]).includes(v);
+
+const SCORING_MODES = ['SIMPLE_SUM', 'WEIGHTED_AVERAGE', 'PASS_FAIL_THRESHOLD'] as const;
+type ScoringModeKey = (typeof SCORING_MODES)[number];
+
+const ANSWER_TYPES = ['YES_NO', 'SINGLE_SELECT', 'MULTI_SELECT', 'TEXT', 'NUMBER', 'SCALE', 'FILE_UPLOAD'] as const;
+type AnswerTypeKey = (typeof ANSWER_TYPES)[number];
 
 export function VendorAssessmentReviewClient({
     assessmentId,
@@ -134,6 +143,28 @@ export function VendorAssessmentReviewClient({
     >({});
     const [finalRating, setFinalRating] = useState<string | null>(null);
     const [reviewerNotes, setReviewerNotes] = useState('');
+    // Closing is final, so it is confirmed first (#4936).
+    const [confirmingClose, setConfirmingClose] = useState(false);
+
+    // Every code the page shows is worded: a rating, the scoring mode, the
+    // verdict and each answer type (#4936). An unknown value shows as stored.
+    const ratingLabel = useCallback(
+        (rating: string | null | undefined) =>
+            rating == null ? '—' : isRating(rating) ? tv(`criticalityLabel.${rating}`) : rating,
+        [tv],
+    );
+    const ratingOptions = useMemo<ComboboxOption[]>(
+        () => RATINGS.map((r) => ({ value: r, label: tv(`criticalityLabel.${r}`) })),
+        [tv],
+    );
+    const modeLabel = (mode: string) =>
+        (SCORING_MODES as readonly string[]).includes(mode)
+            ? t(`assessmentReview.modeLabel.${mode as ScoringModeKey}`)
+            : mode;
+    const answerTypeLabel = (type: string) =>
+        (ANSWER_TYPES as readonly string[]).includes(type)
+            ? t(`vendorAnswerType.${type as AnswerTypeKey}`)
+            : type;
 
     const refresh = useCallback(async () => {
         setLoading(true);
@@ -142,7 +173,7 @@ export function VendorAssessmentReviewClient({
                 apiUrl(`/vendor-assessment-reviews/${assessmentId}`),
             );
             if (!res.ok) {
-                setError(t('assessmentReview.loadError', { status: res.status }));
+                setError(t('assessmentReview.loadError'));
                 return;
             }
             const data = (await res.json()) as ReviewView;
@@ -243,7 +274,7 @@ export function VendorAssessmentReviewClient({
             );
             if (!res.ok) {
                 const b = await res.json().catch(() => ({}));
-                setError(apiErrorMessage(b, t('assessmentReview.saveError', { status: res.status })));
+                setError(apiErrorMessage(b, t('assessmentReview.saveError')));
                 return;
             }
             // PR-S — surface the auto-created register Risk (HIGH/CRITICAL) to the
@@ -259,6 +290,7 @@ export function VendorAssessmentReviewClient({
     async function closeOut() {
         if (!view || !closable) return;
         setSaving(true);
+        setError(null);
         try {
             const res = await fetch(
                 apiUrl(`/vendor-assessment-reviews/${assessmentId}/close`),
@@ -270,7 +302,7 @@ export function VendorAssessmentReviewClient({
             );
             if (!res.ok) {
                 const b = await res.json().catch(() => ({}));
-                setError(apiErrorMessage(b, t('assessmentReview.closeError', { status: res.status })));
+                setError(apiErrorMessage(b, t('assessmentReview.closeError')));
                 return;
             }
             await refresh();
@@ -294,6 +326,15 @@ export function VendorAssessmentReviewClient({
             <BackAffordance />
             {/* Header */}
             <div>
+                <PageBreadcrumbs
+                    items={[
+                        { label: tv('reviewQueue.crumbDashboard'), href: tenantHref('/dashboard') },
+                        { label: tv('reviewQueue.crumbAdmin'), href: tenantHref('/admin') },
+                        { label: tv('reviewQueue.title'), href: tenantHref('/admin/vendor-assessment-reviews') },
+                        { label: view.vendor.name },
+                    ]}
+                    className="mb-1"
+                />
                 <div className="flex items-start justify-between mt-1">
                     <div>
                         <p className="text-xs text-content-subtle">
@@ -303,9 +344,7 @@ export function VendorAssessmentReviewClient({
                             {view.template.name}
                         </Heading>
                         <div className="flex items-center gap-tight mt-1 text-xs text-content-subtle">
-                            <span>{view.template.key}</span>
-                            <span>·</span>
-                            <span>v{view.template.version}</span>
+                            <span>{t('assessmentReview.templateVersion', { version: view.template.version })}</span>
                             <span>·</span>
                             <StatusBadge variant={VENDOR_ASSESSMENT_VARIANT[view.status] ?? 'neutral'} size="sm" data-testid="review-status-badge">
                                 {tv(vendorAssessmentStatusLabelKey(view.status))}
@@ -324,13 +363,9 @@ export function VendorAssessmentReviewClient({
             </div>
 
             {error && (
-                <p
-                    className="text-xs text-content-error"
-                    role="alert"
-                    data-testid="review-error"
-                >
+                <InlineNotice variant="error" data-testid="review-error">
                     {error}
-                </p>
+                </InlineNotice>
             )}
 
             {/* PR-S — the review auto-created a register Risk (HIGH/CRITICAL):
@@ -374,7 +409,7 @@ export function VendorAssessmentReviewClient({
                 >
                     <Stat
                         label={t('assessmentReview.mode')}
-                        value={view.scoring.mode.replace(/_/g, ' ')}
+                        value={modeLabel(view.scoring.mode)}
                     />
                     <Stat label={t('assessmentReview.score')} value={fmtNum(view.scoring.score)} />
                     <Stat
@@ -388,7 +423,7 @@ export function VendorAssessmentReviewClient({
                     {view.scoring.verdict ? (
                         <Stat
                             label={t('assessmentReview.verdict')}
-                            value={view.scoring.verdict}
+                            value={t(`assessmentReview.verdictLabel.${view.scoring.verdict}`)}
                             tone={
                                 view.scoring.verdict === 'PASS'
                                     ? 'success'
@@ -398,7 +433,7 @@ export function VendorAssessmentReviewClient({
                     ) : (
                         <Stat
                             label={t('assessmentReview.suggestedRating')}
-                            value={view.scoring.suggestedRating ?? '—'}
+                            value={ratingLabel(view.scoring.suggestedRating)}
                         />
                     )}
                 </div>
@@ -436,14 +471,14 @@ export function VendorAssessmentReviewClient({
                                             </p>
                                             <p className="text-xs text-content-subtle mt-1">
                                                 <StatusBadge variant="info" size="sm">
-                                                    {q.answerType}
+                                                    {answerTypeLabel(q.answerType)}
                                                 </StatusBadge>{' '}
                                                 {q.required && (
                                                     <StatusBadge variant="warning" size="sm">
                                                         {t('assessmentReview.required')}
                                                     </StatusBadge>
                                                 )}{' '}
-                                                <span>w={q.weight}</span>
+                                                <span>{t('assessmentReview.weight', { weight: q.weight })}</span>
                                             </p>
                                         </div>
                                         <div
@@ -467,10 +502,11 @@ export function VendorAssessmentReviewClient({
                                                 )}
                                             </p>
                                             {editable ? (
-                                                <input
-                                                    className="input w-full mt-1"
+                                                <Input
+                                                    className="mt-1"
                                                     type="text"
                                                     inputMode="decimal"
+                                                    aria-label={t('assessmentReview.overrideAria', { question: q.prompt })}
                                                     placeholder={t('assessmentReview.overridePlaceholder')}
                                                     value={
                                                         ov.points === null
@@ -512,9 +548,9 @@ export function VendorAssessmentReviewClient({
                                                 {t('assessmentReview.notes')}
                                             </p>
                                             {editable ? (
-                                                <textarea
-                                                    className="input w-full"
+                                                <Textarea
                                                     rows={2}
+                                                    aria-label={t('assessmentReview.notesAria', { question: q.prompt })}
                                                     value={ov.notes ?? ''}
                                                     onChange={(e) =>
                                                         setOverrides(
@@ -547,10 +583,10 @@ export function VendorAssessmentReviewClient({
             {/* AI pre-fill — propose cited answers from a vendor document; a
                 human approves before anything is scored (propose-not-commit).
                 Gated to reviewers who can act on the assessment. */}
-            {permissions.canAdmin &&
-                (view.status === 'SUBMITTED' ||
-                    view.status === 'REVIEWED' ||
-                    view.status === 'CLOSED') && (
+            {/* Only while the answers can still change: a reviewed or closed
+                assessment's answers are the scored record, and the server
+                refuses an approval onto one (#4936). */}
+            {permissions.canAdmin && view.status === 'SUBMITTED' && (
                     <AssessmentPrefillPanel
                         vendorId={view.vendor.id}
                         assessmentId={view.assessmentId}
@@ -566,25 +602,25 @@ export function VendorAssessmentReviewClient({
                 >
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-compact">
                         <div>
-                            <label className="text-xs text-content-muted block mb-1">
+                            <label className="text-xs text-content-muted block mb-1" id="final-rating-label">
                                 {t('assessmentReview.finalRating')}
                             </label>
                             {editable ? (
                                 <Combobox
                                     hideSearch
                                     selected={
-                                        RATING_OPTIONS.find(
+                                        ratingOptions.find(
                                             (o) => o.value === finalRating,
                                         ) ?? null
                                     }
                                     setSelected={(opt) => {
                                         setFinalRating(opt?.value ?? null);
                                     }}
-                                    options={RATING_OPTIONS}
+                                    options={ratingOptions}
                                     matchTriggerWidth
                                     placeholder={
                                         view.scoring.suggestedRating
-                                            ? t('assessmentReview.suggestedPlaceholder', { rating: view.scoring.suggestedRating })
+                                            ? t('assessmentReview.suggestedPlaceholder', { rating: ratingLabel(view.scoring.suggestedRating) })
                                             : t('assessmentReview.chooseRating')
                                     }
                                 />
@@ -593,17 +629,17 @@ export function VendorAssessmentReviewClient({
                                     className="text-sm text-content-emphasis"
                                     data-testid="final-rating-readonly"
                                 >
-                                    {finalRating ?? '—'}
+                                    {ratingLabel(finalRating)}
                                 </p>
                             )}
                         </div>
                         <div>
-                            <label className="text-xs text-content-muted block mb-1">
+                            <label className="text-xs text-content-muted block mb-1" htmlFor="assessment-reviewer-notes">
                                 {t('assessmentReview.reviewerNotes')}
                             </label>
                             {editable ? (
-                                <textarea
-                                    className="input w-full"
+                                <Textarea
+                                    id="assessment-reviewer-notes"
                                     rows={3}
                                     value={reviewerNotes}
                                     onChange={(e) =>
@@ -635,7 +671,7 @@ export function VendorAssessmentReviewClient({
                             <Button
                                 variant="secondary"
                                 size="sm"
-                                onClick={closeOut}
+                                onClick={() => setConfirmingClose(true)}
                                 disabled={saving}
                                 loading={saving}
                                 id="close-assessment-btn"
@@ -657,10 +693,24 @@ export function VendorAssessmentReviewClient({
                         : t('assessmentReview.closedNoDate')}
                     . {t('assessmentReview.finalRatingColon')}{' '}
                     <strong className="text-content-emphasis">
-                        {view.riskRating ?? '—'}
+                        {ratingLabel(view.riskRating)}
                     </strong>
                 </div>
             )}
+
+            <ConfirmDialog
+                showModal={confirmingClose}
+                setShowModal={setConfirmingClose}
+                tone="warning"
+                title={t('assessmentReview.closeConfirmTitle')}
+                description={t('assessmentReview.closeConfirmBody')}
+                confirmLabel={t('assessmentReview.closeAssessment')}
+                onConfirm={async () => {
+                    setConfirmingClose(false);
+                    await closeOut();
+                }}
+                onCancel={() => setConfirmingClose(false)}
+            />
         </div>
     );
 }

@@ -145,7 +145,7 @@ export async function dispatchAssignments(
             const assigneeChanged = !existing || existing.assigneeUserId !== assigneeUserId;
             if (assigneeUserId && assigneeChanged) {
                 await createTask(ctx, {
-                    title: `Answer NIS2 gap assessment — ${role} (${questionIds.length} questions)`,
+                    title: `Answer the NIS2 gap assessment questions for ${respondentLabel(role)} (${questionCount(questionIds.length)})`,
                     type: 'CONTROL_GAP',
                     source: 'AUDIT',
                     assigneeUserId,
@@ -164,7 +164,7 @@ export async function dispatchAssignments(
                         userId: assigneeUserId,
                         type: 'GENERAL',
                         title: 'NIS2 gap assessment assigned',
-                        message: `You have ${questionIds.length} NIS2 questions to answer (${role}).`,
+                        message: `You have ${questionCount(questionIds.length)} to answer in the NIS2 gap assessment, for ${respondentLabel(role)}.`,
                         linkUrl: tenantPageLink(tenantSlug, `/audits/nis2-gap/respond/${assignment.id}`),
                         dedupeKey: `NIS2_GAP_ASSIGNMENT:${assignment.id}:${assigneeUserId}`,
                     },
@@ -238,10 +238,31 @@ export async function getAssignmentForRespondent(ctx: RequestContext, assignment
 const isFinalizedRun = isFinalizedNis2Run;
 
 /**
+ * The respondent group in words, for the task and notification an assignee
+ * receives (#4929). They are stored text with no recipient locale to render
+ * in, so they are English; the codes stay in the task's metadata.
+ */
+const RESPONDENT_LABEL: Record<string, string> = {
+    CEO: 'leadership',
+    IT: 'IT',
+    HR: 'HR',
+    PROCUREMENT: 'procurement',
+    ANYONE: 'anyone in the organisation',
+};
+const respondentLabel = (role: string) => RESPONDENT_LABEL[role] ?? role;
+const questionCount = (n: number) => (n === 1 ? '1 question' : `${n} questions`);
+
+/**
  * Write ONLY answers whose ids are in this assignment's bucket into the parent
  * answer table; REJECT any id outside the bucket (authorization at the data
- * layer). Sets the assignment SUBMITTED. Concurrent submits of disjoint buckets
- * are safe — each answer is its own row.
+ * layer). Concurrent submits of disjoint buckets are safe — each answer is its
+ * own row.
+ *
+ * SAVE OR SUBMIT (#4929): a save (`final: false`) writes what is there and
+ * moves a PENDING assignment to IN_PROGRESS. A submit (the default) needs
+ * every question in the bucket answered, stored or in this request, and sets
+ * the assignment SUBMITTED; otherwise it is refused (409) and writes nothing.
+ * It used to mark three answers of twelve as a submitted assignment.
  *
  * WHO: the assignee, whatever their role, or an Owner or Admin (#4633 owner
  * decision, 2026-10-30). The assignment IS the grant: an admin chose this
@@ -257,7 +278,11 @@ export async function submitAssignmentAnswers(
     ctx: RequestContext,
     assignmentId: string,
     answers: Array<{ questionId: string; answer: string; note?: string | null }>,
-): Promise<{ written: number }> {
+    opts: { final?: boolean } = {},
+): Promise<{ written: number; status: 'IN_PROGRESS' | 'SUBMITTED'; unanswered: number }> {
+    // A submit claims the assignment is done, so it must be (#4929): every
+    // question in the bucket answered. A save writes what there is.
+    const final = opts.final ?? true;
     assertCanRead(ctx);
     // Validate the answer enum up front.
     for (const a of answers) {
@@ -287,6 +312,19 @@ export async function submitAssignmentAnswers(
             }
         }
 
+        const answered = new Set(
+            ((await Nis2GapAssessmentRepository.listAnswers(db, ctx, assignment.assessmentId)) ?? [])
+                .map((r) => r.questionId)
+                .filter((id) => bucket.has(id)),
+        );
+        for (const a of answers) answered.add(a.questionId);
+        const unanswered = bucket.size - answered.size;
+        if (final && unanswered > 0) {
+            throw conflict(
+                `${unanswered} of ${bucket.size} questions in this assignment are not answered yet. Answer them all to submit, or save your answers and come back.`,
+            );
+        }
+
         let written = 0;
         for (const a of answers) {
             // Epic D.2 — `note` is an encrypted free-text column. Encryption is
@@ -306,19 +344,29 @@ export async function submitAssignmentAnswers(
             written += 1;
         }
 
+        // A save moves a PENDING assignment on to IN_PROGRESS and leaves a
+        // SUBMITTED one SUBMITTED: its answers can only have been changed, not
+        // removed, so it is still complete.
+        const status: 'IN_PROGRESS' | 'SUBMITTED' =
+            final || assignment.status === 'SUBMITTED' ? 'SUBMITTED' : 'IN_PROGRESS';
         await db.nis2GapAssignment.updateMany({
             where: { id: assignmentId, tenantId: ctx.tenantId },
-            data: { status: 'SUBMITTED', submittedAt: new Date() },
+            data: final ? { status: 'SUBMITTED', submittedAt: new Date() } : { status },
         });
 
         await logEvent(db, ctx, {
-            action: 'NIS2_ASSIGNMENT_SUBMITTED',
+            action: final ? 'NIS2_ASSIGNMENT_SUBMITTED' : 'NIS2_ASSIGNMENT_SAVED',
             entityType: 'Nis2GapAssignment',
             entityId: assignmentId,
-            detailsJson: { category: 'custom', event: 'nis2_assignment_submitted', written },
+            detailsJson: {
+                category: 'custom',
+                event: final ? 'nis2_assignment_submitted' : 'nis2_assignment_saved',
+                written,
+                unanswered,
+            },
         });
 
-        return { written };
+        return { written, status, unanswered };
     });
 }
 

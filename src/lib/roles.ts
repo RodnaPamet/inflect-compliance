@@ -172,6 +172,20 @@ export function ownerManagedMembershipEndMessage(role: string, verb: 'deactivate
  */
 export const OWNER_MANAGED_SESSION_REVOKE_REFUSAL = 'REVOKING_OWNER_MANAGED_SESSIONS_IS_OWNER_TIER' as const;
 
+/**
+ * The named reason resetting another person's MFA is refused with when that
+ * person holds an OWNER-managed role and the caller lacks
+ * `admin.owner_management` (#4926; owner decision, 2026-11-02). Taking away an
+ * Owner's second factor is a targeted act on an Owner, so it follows the
+ * deactivation rule.
+ */
+export const OWNER_MANAGED_MFA_RESET_REFUSAL = 'RESETTING_OWNER_MANAGED_MFA_IS_OWNER_TIER' as const;
+
+/** The refusal for resetting an owner-managed member's MFA without the key. */
+export function ownerManagedMfaResetMessage(role: string): string {
+    return `Only an OWNER can reset an ${role}'s MFA.`;
+}
+
 /** The refusal for revoking an owner-managed member's sessions without the key. */
 export function ownerManagedSessionRevokeMessage(role: string): string {
     return `Only an OWNER can revoke an ${role}'s sessions.`;
