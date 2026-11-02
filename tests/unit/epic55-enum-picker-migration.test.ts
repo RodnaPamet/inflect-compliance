@@ -322,13 +322,18 @@ describe('Epic 55 Prompt 6 — drift sentinels', () => {
         }
     });
 
-    it('none of the four migrated surfaces uses RadioGroup', () => {
+    it('none of the migrated enum pickers uses RadioGroup', () => {
         // vendors/new was the one RadioGroup (status, Active / Onboarding)
         // until #4462 took status off the create form; the others stay on
         // <Combobox>.
         expect(VENDORS_NEW_SRC).not.toMatch(/<RadioGroup\b/);
         expect(TASK_NEW_SRC).not.toMatch(/<RadioGroup\b/);
-        expect(CONTROL_MODAL_SRC).not.toMatch(/<RadioGroup\b/);
         expect(RISK_MODAL_SRC).not.toMatch(/<RadioGroup\b/);
+        // The control form's ONE RadioGroup is its Applicable / Not
+        // applicable choice (#4967), which was two raw radios and is not one
+        // of the migrated pickers; category and frequency stay on <Combobox>.
+        const groups = CONTROL_MODAL_SRC.match(/<RadioGroup\b[^>]*>/g) ?? [];
+        expect(groups).toHaveLength(1);
+        expect(groups[0]).toContain('aria-labelledby="applicability-legend"');
     });
 });

@@ -47,6 +47,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { CONTROL_CATEGORY_THEMES } from '@/lib/controls/control-categories';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { FormField } from '@/components/ui/form-field';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { InfoTooltip } from '@/components/ui/tooltip';
@@ -529,7 +530,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                                 )}
                             />
                         </FormField>
-                        <div role="group" aria-labelledby="applicability-legend">
+                        <div>
                             <div className="mb-1 flex items-center gap-1.5">
                                 <span
                                     id="applicability-legend"
@@ -543,24 +544,39 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                                     content={t('new.applicabilityTooltip')}
                                 />
                             </div>
-                            <div className="flex gap-default">
-                                <label className="flex items-center gap-tight text-sm text-content-default">
-                                    <input
-                                        type="radio"
-                                        value="APPLICABLE"
-                                        {...register('applicability')}
-                                    />
-                                    {t('new.applicable')}
-                                </label>
-                                <label className="flex items-center gap-tight text-sm text-content-default">
-                                    <input
-                                        type="radio"
-                                        value="NOT_APPLICABLE"
-                                        {...register('applicability')}
-                                    />
-                                    {t('new.notApplicable')}
-                                </label>
-                            </div>
+                            {/* The shared RadioGroup (#4967), named by the label
+                                above: Radix gives it arrow-key movement, the
+                                product's focus ring and its disabled state. Each
+                                label wraps its item, which names it. */}
+                            <Controller
+                                control={control}
+                                name="applicability"
+                                render={({ field }) => (
+                                    <RadioGroup
+                                        aria-labelledby="applicability-legend"
+                                        value={field.value}
+                                        onValueChange={(v) => field.onChange(v)}
+                                        className="flex gap-default"
+                                    >
+                                        <label className="flex items-center gap-tight text-sm text-content-default">
+                                            <RadioGroupItem
+                                                id="new-control-applicable"
+                                                value="APPLICABLE"
+                                                size="sm"
+                                            />
+                                            {t('new.applicable')}
+                                        </label>
+                                        <label className="flex items-center gap-tight text-sm text-content-default">
+                                            <RadioGroupItem
+                                                id="new-control-not-applicable"
+                                                value="NOT_APPLICABLE"
+                                                size="sm"
+                                            />
+                                            {t('new.notApplicable')}
+                                        </label>
+                                    </RadioGroup>
+                                )}
+                            />
                             {applicability === 'NOT_APPLICABLE' && (
                                 <FormField
                                     label=""
