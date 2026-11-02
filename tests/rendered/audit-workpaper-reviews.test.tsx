@@ -42,6 +42,8 @@ jest.mock('next-intl', () => {
                     v = (v as string).replace(new RegExp('\\{' + p + '\\}', 'g'), String(val));
             return v as string;
         };
+        // `t.has`, as next-intl gives: the page words a code only when a label exists.
+        Object.assign(t, { has: (key: string) => typeof walk(walk(en, ns), key) === 'string' });
         cache.set(ns, t);
         return t;
     };
@@ -174,6 +176,7 @@ function detail(
             createdAt: '2026-10-02T06:17:00.000Z',
         },
         narrative: null,
+        auditorAgent: { id: 'agent-auditor', name: 'Access auditor' },
     };
 }
 
@@ -233,7 +236,11 @@ describe('the queue is the reviewer’s own', () => {
             ],
         });
         render(<WorkpaperReviewsClient tenantSlug="acme" />);
-        expect(await screen.findByTestId('workpaper-review-row-rev-1')).toHaveTextContent('iam.leaver_timeliness');
+        // The procedure's name, not its id (#4930).
+        expect(await screen.findByTestId('workpaper-review-row-rev-1')).toHaveTextContent(
+            copy('procedureName.iam_leaver_timeliness'),
+        );
+        expect(screen.getByTestId('workpaper-review-row-rev-1')).not.toHaveTextContent('iam.leaver_timeliness');
         expect(screen.getByTestId('workpaper-reviews-table')).toHaveTextContent('2026-09');
         expect(screen.getByText(copy('outcome.PENDING'))).toBeInTheDocument();
         expect(screen.getByText(copy('outcome.DISSENTED'))).toBeInTheDocument();
@@ -269,8 +276,28 @@ describe('the sheet shows the record and takes the answer as codes', () => {
         const sheet = await openRow();
         expect(within(sheet).getByTestId('workpaper-review-facts')).toHaveTextContent('Employee rows with status TERMINATED');
         expect(within(sheet).getByTestId('workpaper-review-facts')).toHaveTextContent('iam.leaver_timeliness@2026-09');
-        expect(within(sheet).getByTestId('workpaper-review-outcomes')).toHaveTextContent('emp_2 · EXCEPTION · ACCOUNT_ACTIVE_AFTER_WINDOW');
-        expect(within(sheet).getByTestId('workpaper-review-exceptions')).toHaveTextContent('prop-9');
+        // Each outcome worded (#4930); a code with no label yet shows as itself.
+        expect(within(sheet).getByTestId('workpaper-review-outcomes')).toHaveTextContent(
+            `emp_2 · ${copy('outcomeLabel.EXCEPTION')} · ACCOUNT_ACTIVE_AFTER_WINDOW`,
+        );
+        // An exception's proposal is said, not printed as its id.
+        const exceptions = within(sheet).getByTestId('workpaper-review-exceptions');
+        expect(exceptions).toHaveTextContent(copy('exceptionProposed'));
+        expect(exceptions).not.toHaveTextContent('prop-9');
+    });
+
+    it('names and links the auditor agent, and words the procedure and conclusion (#4930)', async () => {
+        render(<WorkpaperReviewsClient tenantSlug="acme" />);
+        const sheet = await openRow();
+        const link = within(sheet).getByTestId('workpaper-review-auditor-link');
+        expect(link).toHaveTextContent('Access auditor');
+        expect(link).toHaveAttribute('href', '/t/acme/agents/agent-auditor');
+        const facts = within(sheet).getByTestId('workpaper-review-facts');
+        expect(facts).toHaveTextContent(copy('procedureName.iam_leaver_timeliness'));
+        expect(facts).toHaveTextContent(copy('conclusionLabel.FAIL'));
+        expect(facts).toHaveTextContent(copy('basisLabel.EXCEPTIONS_FOUND'));
+        expect(facts).not.toHaveTextContent('EXCEPTIONS_FOUND');
+        expect(facts).not.toHaveTextContent('agent-auditor');
     });
 
     it('shows the auditor agent’s narrative beside the record, labelled as a summary to re-perform (#3749)', async () => {
@@ -380,7 +407,9 @@ describe('the sheet shows the record and takes the answer as codes', () => {
         expect(within(sheet).queryByRole('radio')).not.toBeInTheDocument();
         const recorded = within(sheet).getByTestId('workpaper-review-recorded');
         expect(recorded).toHaveTextContent(copy('codes.CONCLUSION_NOT_SUPPORTED'));
-        expect(recorded).toHaveTextContent('prop-42');
+        // The finding proposal is a way to it, not its id (#4930).
+        expect(within(recorded).getByTestId('workpaper-review-proposal-link')).toHaveAttribute('href', '/t/acme/agents/proposals');
+        expect(recorded).not.toHaveTextContent('prop-42');
     });
 });
 
