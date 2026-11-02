@@ -14617,6 +14617,7 @@
   },
   "noTenant": {
     "title": "No access yet",
+    "titleOtherWorkspace": "You don't have access to this workspace",
     "signedInAs": "You are signed in as <b>{email}</b>.",
     "helpText": "You do not have access to any workspace yet. Ask your admin to invite you, then follow the link in the invitation email.",
     "signOut": "Sign out",

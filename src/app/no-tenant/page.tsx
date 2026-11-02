@@ -1,9 +1,12 @@
 /**
- * /no-tenant — Landing page for authenticated users with no active membership.
+ * /no-tenant — where a signed-in person lands when they cannot reach the
+ * workspace they asked for, or any workspace at all.
  *
- * PR 4 will wire Next.js middleware to redirect here when the JWT has no
- * `tenantId` (i.e. the user signed up / signed in but has not yet accepted
- * any invite). For now this page is reachable directly.
+ * The edge middleware redirects here when the session holds no membership,
+ * and when the URL's workspace is not one of the session's memberships
+ * (`checkTenantAccess`). The redirect does not carry the slug the person
+ * asked for, and the page does not echo one: a slug from a link is text
+ * anybody can choose, and this page must not repeat it as if it were ours.
  *
  * The page is purely informational — it tells the user what to do next
  * and provides a sign-out button so they can switch accounts.
@@ -21,6 +24,7 @@
 import { auth, signOut } from '@/auth';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
+import { AppIcon } from '@/components/icons/AppIcon';
 import { Heading } from '@/components/ui/typography';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -42,6 +46,9 @@ export default async function NoTenantPage() {
               session.user.entraGateDeniedTenantIds,
           )
         : { workspaces: [], organizations: [], deactivatedWorkspaces: [], entraRefusedWorkspaces: [] };
+    // A person with workspaces reached one that is not theirs: "No access
+    // yet" would read as if they could reach nothing (#4923).
+    const title = workspaces.length > 0 ? t('titleOtherWorkspace') : t('title');
     const help =
         workspaces.length > 0
             ? t('otherWorkspaceText')
@@ -56,9 +63,9 @@ export default async function NoTenantPage() {
     return (
         <main className="min-h-screen bg-bg-page flex items-center justify-center p-4">
             <Card elevation="floating" className="max-w-md w-full text-center">
-                <div className="text-4xl mb-4">&#x1F512;</div>
+                <AppIcon name="lock" size={40} className="mx-auto mb-4 text-content-muted" />
                 <Heading level={1} className="mb-2">
-                    {t('title')}
+                    {title}
                 </Heading>
                 <p className="text-content-muted mb-2">
                     {t.rich('signedInAs', {
