@@ -26,6 +26,7 @@
 
 import * as React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { SWRConfig } from 'swr';
 
 jest.mock('sonner', () => ({
     Toaster: () => null,
@@ -49,7 +50,15 @@ jest.mock('next-intl', () => {
     const makeT = (ns: string) => {
         const t = (key: string, params?: Record<string, unknown>) => {
             const val = lookup(ns, key);
-            const str = typeof val === 'string' ? val : key;
+            let str = typeof val === 'string' ? val : key;
+            // ICU plurals, as next-intl resolves them: `{n, plural, one {…} other {…}}`.
+            str = str.replace(
+                /\{(\w+), plural, one \{([^{}]*)\} other \{([^{}]*)\}\}/g,
+                (_m, n: string, one: string, other: string) => {
+                    const v = Number(params?.[n]);
+                    return (v === 1 ? one : other).replace(/#/g, String(v));
+                },
+            );
             return params
                 ? str.replace(/\{(\w+)\}/g, (m, n) =>
                     Object.prototype.hasOwnProperty.call(params, n) ? String(params[n]) : m)
@@ -552,5 +561,179 @@ describe('the New audit form asks before discarding what was typed', () => {
             fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
         });
         await waitFor(() => expect(document.querySelector('#audit-title-input')).toBeNull());
+    });
+});
+
+// ─── #4962: the list counter, the pane's context, findings and races ───────
+
+describe('the audit hub (#4962)', () => {
+    const EN = jest.requireActual('../../messages/en.json') as {
+        audits: { newModal: { cycleNotFound: string } };
+    };
+
+    /** Answer the cycle and framework reads, falling back to the shared mock. */
+    function withCatalogues() {
+        const base = fetchMock.getMockImplementation() as (u: string, i?: RequestInit) => Promise<Response>;
+        fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+            const u = String(url);
+            if (u.includes('/audits/cycles')) {
+                return Promise.resolve({ ok: true, json: async () => [{ id: 'cyc-1', name: 'FY26 certification', frameworkKey: 'ISO27001', status: 'PLANNING' }] } as Response);
+            }
+            if (/\/frameworks(\?|$)/.test(u)) {
+                return Promise.resolve({ ok: true, json: async () => [{ key: 'ISO27001', name: 'ISO/IEC 27001' }] } as Response);
+            }
+            return base(url, init);
+        });
+    }
+
+    /** Serve these rows as the list the hub refetches. */
+    function listing(rows: unknown[]) {
+        const base = fetchMock.getMockImplementation() as (u: string, i?: RequestInit) => Promise<Response>;
+        fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+            const u = String(url);
+            if (!init?.method && /\/audits(\?|$)/.test(u)) {
+                return Promise.resolve({ ok: true, json: async () => ({ rows, truncated: false }) } as Response);
+            }
+            return base(url, init);
+        });
+    }
+
+    it('counts findings as a plural, not "1 findings"', async () => {
+        listing([
+            { ...LIST_ROW, _count: { checklist: 2, findings: 1 } },
+            { ...LIST_ROW, id: 'audit-2', title: 'Q4 audit', _count: { checklist: 1, findings: 3 } },
+        ]);
+        render(
+            <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+            <TenantProvider value={TENANT_CTX}>
+                <AuditsClient
+                    initialAudits={[
+                        { ...LIST_ROW, _count: { checklist: 2, findings: 1 } },
+                        { ...LIST_ROW, id: 'audit-2', title: 'Q4 audit', _count: { checklist: 1, findings: 3 } },
+                    ]}
+                    tenantSlug="acme"
+                    hasNis2={false}
+                    canWrite
+                    translations={TRANSLATIONS}
+                />
+            </TenantProvider>
+            </SWRConfig>,
+        );
+        await flush();
+        expect(screen.getByText(/2 items · 1 finding$/)).toBeInTheDocument();
+        expect(screen.getByText(/1 item · 3 findings$/)).toBeInTheDocument();
+    });
+
+    it('shows the audit’s framework, cycle and date in the pane', async () => {
+        withCatalogues();
+        detail.frameworkKey = 'ISO27001';
+        detail.auditCycleId = 'cyc-1';
+        detail.schedule = '2026-12-01';
+        // Its own cache, so the cycle list is read afresh rather than taken
+        // from an earlier test's empty answer.
+        render(
+            <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+                <TenantProvider value={TENANT_CTX}>
+                    <AuditsClient initialAudits={[LIST_ROW]} tenantSlug="acme" hasNis2={false} canWrite translations={TRANSLATIONS} />
+                </TenantProvider>
+            </SWRConfig>,
+        );
+        await flush();
+        await act(async () => {
+            fireEvent.click(screen.getAllByText('Q3 internal audit')[0]);
+        });
+        await flush();
+        const context = await waitFor(() => {
+            const el = document.getElementById('audit-context');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        await waitFor(() => expect(context).toHaveTextContent('ISO/IEC 27001'));
+        expect(context).toHaveTextContent('FY26 certification');
+        expect(context).toHaveTextContent(/2026|Dec/);
+    });
+
+    it('links each finding to the register, coloured as the register colours it', async () => {
+        detail.findings = [{ id: 'f-1', title: 'Access reviews skipped', severity: 'HIGH', status: 'OPEN' }];
+        await openAudit();
+        const link = document.getElementById('audit-finding-link-f-1') as HTMLAnchorElement;
+        expect(link).not.toBeNull();
+        expect(link.getAttribute('href')).toBe('/t/acme/findings?finding=f-1');
+        const badge = within(link.parentElement as HTMLElement).getByText(/high/i);
+        expect(badge.className).toMatch(/error/);
+    });
+
+    it('a slow answer for the first audit does not replace the second one chosen', async () => {
+        let releaseFirst: (r: Response) => void = () => undefined;
+        const second = { ...freshDetail(), id: 'audit-2', title: 'Q4 audit' };
+        listing([LIST_ROW, { ...LIST_ROW, id: 'audit-2', title: 'Q4 audit' }]);
+        const Fresh = ({ children }: { children: React.ReactNode }) => (
+            <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig>
+        );
+        const base = fetchMock.getMockImplementation() as (u: string, i?: RequestInit) => Promise<Response>;
+        fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+            const u = String(url);
+            if (/\/audits\/audit-1$/.test(u)) return new Promise<Response>((res) => { releaseFirst = res; });
+            if (/\/audits\/audit-2$/.test(u)) return Promise.resolve({ ok: true, json: async () => second } as Response);
+            return base(url, init);
+        });
+        render(
+            <Fresh>
+            <TenantProvider value={TENANT_CTX}>
+                <AuditsClient
+                    initialAudits={[LIST_ROW, { ...LIST_ROW, id: 'audit-2', title: 'Q4 audit' }]}
+                    tenantSlug="acme"
+                    hasNis2={false}
+                    canWrite
+                    translations={TRANSLATIONS}
+                />
+            </TenantProvider>
+            </Fresh>,
+        );
+        await flush();
+        await act(async () => {
+            fireEvent.click(screen.getByText('Q3 internal audit'));
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByText('Q4 audit'));
+        });
+        await flush();
+        await act(async () => {
+            releaseFirst({ ok: true, json: async () => freshDetail() } as Response);
+        });
+        await flush();
+        expect(screen.getByRole('heading', { level: 2, name: 'Q4 audit' })).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { level: 2, name: 'Q3 internal audit' })).toBeNull();
+    });
+
+    it('a cycle that no longer exists is said in words, not as its code', async () => {
+        const base = fetchMock.getMockImplementation() as (u: string, i?: RequestInit) => Promise<Response>;
+        fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+            init?.method === 'POST'
+                ? Promise.resolve({
+                      ok: false,
+                      status: 400,
+                      json: async () => ({ error: { code: 'BAD_REQUEST', message: 'INVALID_AUDIT_CYCLE' } }),
+                  } as Response)
+                : base(url, init),
+        );
+        await openAudit();
+        await act(async () => {
+            fireEvent.click(document.querySelector('#new-audit-btn')!);
+        });
+        await flush();
+        await act(async () => {
+            fireEvent.change(document.querySelector('#audit-title-input')!, { target: { value: 'Draft audit' } });
+        });
+        await act(async () => {
+            fireEvent.click(document.querySelector('#create-audit-btn')!);
+        });
+        const error = await waitFor(() => {
+            const el = document.getElementById('new-audit-error');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        expect(error).toHaveTextContent(EN.audits.newModal.cycleNotFound);
+        expect(error).not.toHaveTextContent('INVALID_AUDIT_CYCLE');
     });
 });

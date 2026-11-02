@@ -3830,8 +3830,9 @@
       "red": "Below 50 — at risk"
     },
     "list": {
-      "itemsCount": "{count} items",
-      "resultFor": "Result for {prompt}"
+      "itemsCount": "{count, plural, one {# item} other {# items}}",
+      "resultFor": "Result for {prompt}",
+      "findingsCount": "{count, plural, one {# finding} other {# findings}}"
     },
     "newModal": {
       "description": "Plan a new internal audit. Its checklist is generated from the chosen framework's requirements, or from your controls if you choose none. You record a result against each item; the items themselves are fixed once the audit is created.",
@@ -3844,7 +3845,8 @@
       "noFramework": "No framework",
       "cycle": "Audit cycle",
       "noCycle": "Standalone (no cycle)",
-      "createFailed": "Failed to create audit"
+      "createFailed": "Failed to create audit",
+      "cycleNotFound": "That audit cycle no longer exists. Choose another cycle, or none."
     },
     "editModal": {
       "trigger": "Edit",

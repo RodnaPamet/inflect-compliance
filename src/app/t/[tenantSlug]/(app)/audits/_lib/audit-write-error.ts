@@ -54,5 +54,7 @@ export function auditWriteFailureMessage(
     t?: (key: string) => string,
 ): string {
     if (err instanceof AuditWriteError && err.readOnlyReason && t) return t(READ_ONLY_MESSAGE_KEY[err.readOnlyReason]);
+    // A cycle that no longer exists comes back as the bare code (#4962).
+    if (err instanceof AuditWriteError && err.reason === 'INVALID_AUDIT_CYCLE' && t) return t('newModal.cycleNotFound');
     return err instanceof AuditWriteError && err.reason ? err.reason : fallback;
 }
