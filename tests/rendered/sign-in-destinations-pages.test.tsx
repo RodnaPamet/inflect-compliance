@@ -171,6 +171,13 @@ describe('/no-tenant', () => {
         expect(screen.getByRole('link', { name: en.noTenant.goToWorkspaces })).toHaveAttribute('href', '/tenants');
     });
 
+    it('does not tell a member of other workspaces they have no access yet (#4923)', async () => {
+        activeRows.mockResolvedValue([workspace('acme', 'Acme')]);
+        render(await NoTenantPage());
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(en.noTenant.titleOtherWorkspace);
+        expect(screen.queryByText(en.noTenant.title)).toBeNull();
+    });
+
     it('names a workspace the Entra group gate refused, rather than offering it (#4869)', async () => {
         authMock.mockResolvedValue({
             user: { id: 'u-1', email: 'ana@example.com', entraGateDeniedTenantIds: ['t-acme'] },
@@ -184,7 +191,14 @@ describe('/no-tenant', () => {
 
     it('keeps the invitation advice for a person with nothing at all', async () => {
         render(await NoTenantPage());
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(en.noTenant.title);
         expect(screen.getByText(en.noTenant.helpText)).toBeInTheDocument();
         expect(screen.queryByRole('navigation')).toBeNull();
+    });
+
+    it('draws its lock with the icon set, not an emoji', async () => {
+        const { container } = render(await NoTenantPage());
+        expect(container.textContent).not.toContain('\u{1F512}');
+        expect(container.querySelector('svg')).not.toBeNull();
     });
 });
