@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
-import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
+import { oversightReadsFor, readAgentOversightSettings } from '@/app-layer/usecases/agent-oversight-settings';
 import { listAgentProposals } from '@/app-layer/usecases/agent-proposals';
 import { buildProposalDiffs } from '@/app-layer/usecases/agent-proposal-diff';
 import {
@@ -76,6 +76,11 @@ export default async function AgentProposalsPage({
     // on the server, so the server render and the hydrated page agree.
     const now = new Date();
 
+    // Whether the composer of a request may approve it is the tenant's switch
+    // (#4905); while it is on, the composer's Approve can only be refused, so
+    // it is not offered (#4970).
+    const oversight = await readAgentOversightSettings(ctx);
+
     const rows: ProposalRow[] = proposals.map((p) => ({
         id: p.id,
         kind: p.kind,
@@ -96,6 +101,8 @@ export default async function AgentProposalsPage({
         // approvals says so after a reload as well as after the click.
         approvalsRecorded: annotations.get(p.id)?.approvalsRecorded ?? 0,
         signedByViewer: annotations.get(p.id)?.signedByViewer ?? false,
+        composedByViewer:
+            oversight.composeNeedsSecondApprover && p.composedByUserId !== null && p.composedByUserId === ctx.userId,
         // WHICH STEP OF WHICH RUN produced this. `listAgentProposals` has no
         // `select`, so both columns were already arriving here and were simply
         // dropped on the floor — the projection was the only thing between the
