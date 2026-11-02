@@ -25,6 +25,7 @@ import { AsidePanel } from "@/components/ui/aside-panel";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
 import { useToast } from "@/components/ui/hooks";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatDateTime } from "@inflect/ui/lib/format-date";
 import { apiErrorMessage } from "@/lib/api-error";
 import { extractMutationError } from "@/lib/mutations";
@@ -73,16 +74,14 @@ export function CanvasHistorySidebar({
         null,
     );
 
+    // The version waiting for the confirm dialog (#4989). The restore used
+    // the browser's own `confirm()`, unlike every other confirmation.
+    const [confirmingVersion, setConfirmingVersion] = useState<number | null>(
+        null,
+    );
+
     const handleRestore = async (targetVersion: number) => {
         if (!mapId || currentVersion == null) return;
-        if (
-            typeof window !== "undefined" &&
-            !window.confirm(
-                t("confirmRestore", { version: targetVersion }),
-            )
-        ) {
-            return;
-        }
         setRestoringVersion(targetVersion);
         try {
             const res = await fetch(
@@ -231,7 +230,7 @@ export function CanvasHistorySidebar({
                                                 variant="secondary"
                                                 size="xs"
                                                 onClick={() =>
-                                                    void handleRestore(r.version)
+                                                    setConfirmingVersion(r.version)
                                                 }
                                                 disabled={
                                                     restoringVersion !== null ||
@@ -252,6 +251,26 @@ export function CanvasHistorySidebar({
                     </ul>
                 )}
             </div>
+            {/* Mounted only while a restore waits: the panel renders on the
+                canvas, where a closed dialog's router hook has no business. */}
+            {confirmingVersion !== null && (
+            <ConfirmDialog
+                showModal
+                setShowModal={(open) => {
+                    if (!open) setConfirmingVersion(null);
+                }}
+                tone="warning"
+                title={t("confirmRestoreTitle", { version: confirmingVersion })}
+                description={t("confirmRestoreBody")}
+                confirmLabel={t("restore")}
+                onConfirm={async () => {
+                    const version = confirmingVersion;
+                    setConfirmingVersion(null);
+                    await handleRestore(version);
+                }}
+                onCancel={() => setConfirmingVersion(null)}
+            />
+            )}
         </AsidePanel>
     );
 }

@@ -509,14 +509,23 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
         if (res.ok) { void fetchBundleDetail(bundleId); void fetchBundles(); }
     }, [apiUrl, params.vendorId, fetchBundleDetail, fetchBundles]);
 
+    // Freeze waits for the confirm dialog (#4989); it used the browser's own
+    // `confirm()`. A refused freeze says why — it used to say nothing.
+    const [freezingBundleId, setFreezingBundleId] = useState<string | null>(null);
     const freezeBundle = useCallback(async (bundleId: string) => {
-        if (!confirm(tx('detail.freezeConfirm'))) return;
-        const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles/${bundleId}?action=freeze`), { method: 'POST' });
-        if (res.ok) {
-            void fetchBundles();
-            if (expandedBundleId === bundleId) void fetchBundleDetail(bundleId);
+        try {
+            const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles/${bundleId}?action=freeze`), { method: 'POST' });
+            if (res.ok) {
+                void fetchBundles();
+                if (expandedBundleId === bundleId) void fetchBundleDetail(bundleId);
+                return;
+            }
+            const err: unknown = await res.json().catch(() => null);
+            toast.error(apiErrorMessage(err, tx('detail.freezeFailed')));
+        } catch {
+            toast.error(tx('detail.freezeFailed'));
         }
-    }, [apiUrl, params.vendorId, tx, fetchBundles, fetchBundleDetail, expandedBundleId]);
+    }, [apiUrl, params.vendorId, tx, toast, fetchBundles, fetchBundleDetail, expandedBundleId]);
 
     const fetchSubs = useCallback(async () => {
         try {
@@ -1572,7 +1581,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                         size="xs"
                                         id={`freeze-bundle-${b.id}`}
                                         disabled={itemCount === 0}
-                                        onClick={() => freezeBundle(b.id)}
+                                        onClick={() => setFreezingBundleId(b.id)}
                                     >{tx('detail.freeze')}</Button>
                                 )}
                             </div>
@@ -1785,6 +1794,22 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                     setSendLink(null);
                     setSendLinkExpiresAt(null);
                 }}
+            />
+                    <ConfirmDialog
+                showModal={freezingBundleId !== null}
+                setShowModal={(open) => {
+                    if (!open) setFreezingBundleId(null);
+                }}
+                tone="warning"
+                title={tx('detail.freezeConfirmTitle')}
+                description={tx('detail.freezeConfirmBody')}
+                confirmLabel={tx('detail.freeze')}
+                onConfirm={async () => {
+                    const id = freezingBundleId;
+                    setFreezingBundleId(null);
+                    if (id) await freezeBundle(id);
+                }}
+                onCancel={() => setFreezingBundleId(null)}
             />
 </EntityDetailLayout>
     );

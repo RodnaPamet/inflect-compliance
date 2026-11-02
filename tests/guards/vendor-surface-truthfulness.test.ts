@@ -229,7 +229,9 @@ describe('7 — the one-time link is not destroyed by an unguarded click', () =>
 
     it('dismissing opens a confirm rather than clearing immediately', () => {
         expect(src).toMatch(/setConfirmDismissLink\(true\)/);
-        expect(src).toMatch(/<ConfirmDialog/);
+        // The dismiss dialog by its own state: the page has more than one
+        // ConfirmDialog since the bundle freeze moved to one (#4989).
+        expect(src).toMatch(/showModal=\{confirmDismissLink\}/);
         expect(src).toMatch(/detail\.dismissLink\.title/);
     });
 

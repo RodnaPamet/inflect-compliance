@@ -5516,11 +5516,9 @@
       "copyInviteLink": "Copy invite link",
       "roleChangeFailed": "Role change failed",
       "roleUpdated": "Role updated successfully",
-      "deactivateConfirm": "Deactivate {email}? They will lose access to this tenant.",
       "deactivationFailed": "Deactivation failed",
       "deactivatedToast": "{email} has been deactivated",
       "failedLoadSessions": "Failed to load sessions",
-      "revokeSessionConfirm": "Revoke this session? The user will be signed out from this device on their next request.",
       "revocationFailed": "Revocation failed",
       "sessionRevoked": "Session revoked",
       "resourceMembers": "members",
@@ -5528,7 +5526,6 @@
       "resourceInvites": "invites",
       "resourceInvite": "invite",
       "remove": "Remove",
-      "removeConfirm": "Remove {email} from this workspace? This permanently detaches them — use Deactivate instead to keep the record.",
       "removalFailed": "Failed to remove member",
       "removedToast": "Removed {email}",
       "bulkDeactivatedToast": "Deactivated {count} members",
@@ -5557,7 +5554,14 @@
       "resetMfaBody": "{email} will set up an authenticator app again the next time they sign in to this workspace. They'll get an email saying you did this.",
       "mfaResetToast": "MFA reset for {email}.",
       "mfaResetNothing": "{email} hasn't set up MFA, so there was nothing to reset.",
-      "mfaResetFailed": "Couldn't reset the MFA."
+      "mfaResetFailed": "Couldn't reset the MFA.",
+      "deactivateConfirmTitle": "Deactivate {email}?",
+      "deactivateConfirmBody": "They lose access to this workspace. Their record is kept, and you can reactivate them later.",
+      "removeConfirmTitle": "Remove {email}?",
+      "removeConfirmBody": "This permanently takes them out of this workspace. To keep their record, deactivate them instead.",
+      "revokeSessionConfirmTitle": "Revoke this session?",
+      "revokeSessionConfirmBody": "The member is signed out on this device at their next request.",
+      "revokeSessionConfirmLabel": "Revoke session"
     },
     "security": {
       "crumbSelf": "Security & MFA",
@@ -9487,7 +9491,6 @@
       "createBundle": "Create Bundle",
       "bundleItems": "{count} items",
       "frozen": "Frozen",
-      "freezeConfirm": "Freeze this bundle? Items become immutable.",
       "freeze": "Freeze",
       "bundleCreatedBy": "Created by {name} on {date}",
       "bundlesEmptyTitle": "No evidence bundles",
@@ -9567,7 +9570,10 @@
         "SEND_RESPONDENT_EMAIL_INVALID": "Give a valid email address for the respondent.",
         "SEND_TEMPLATE_DRAFT": "That questionnaire template is a draft. Publish it before sending it.",
         "SEND_ALREADY_IN_FLIGHT": "This respondent already has this questionnaire waiting for an answer. Resend that invite instead of sending another."
-      }
+      },
+      "freezeConfirmTitle": "Freeze this bundle?",
+      "freezeConfirmBody": "Its items can no longer be added, removed or changed.",
+      "freezeFailed": "The bundle was not frozen. Try again."
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",
@@ -15650,10 +15656,11 @@
       "diff": "Diff",
       "restore": "Restore",
       "restoring": "Restoring…",
-      "confirmRestore": "Restore to v{version}? The current state will be preserved as part of the history.",
       "restoredToast": "Restored to v{version}.",
       "restoreFailed": "Restore failed",
-      "diffFailed": "Could not compare this version"
+      "diffFailed": "Could not compare this version",
+      "confirmRestoreTitle": "Restore version {version}?",
+      "confirmRestoreBody": "The canvas goes back to that version. The current state is kept in the history."
     },
     "executions": {
       "recent": "Recent executions",
