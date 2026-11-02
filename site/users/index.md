@@ -1,5 +1,10 @@
 ---
 title: Inflect Compliance Help
+# The site name alone in the tab: Starlight appends it to every page's
+# title, which on this page is the site name already.
+head:
+  - tag: title
+    content: Inflect Compliance Help
 description: How to use Inflect Compliance — a guide to every page, step-by-step how-tos and answers to common questions.
 ---
 

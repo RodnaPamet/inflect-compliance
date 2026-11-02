@@ -90,7 +90,7 @@ Click **{{ui:assets.addAsset}}**. A dialog opens with these fields:
 - **{{ui:assets.form.identityHeading}}**: {{ui:assets.form.cpe}}, {{ui:assets.form.vendor}}, {{ui:assets.form.product}} and {{ui:assets.form.version}}. Without them, new vulnerabilities cannot be matched to the asset.
 - **{{ui:assets.form.externalRef}}**, **{{ui:assets.form.retention}}**, a **{{ui:assets.form.retentionUntil}}** date, **{{ui:assets.form.dependencies}}** and **{{ui:assets.form.businessProcesses}}**. The notes are free text and link nothing.
 
-Click **{{ui:assets.createAsset}}**. The dialog closes and the new asset's page opens. If you close the dialog after typing, it asks **{{ui:assets.modal.discardConfirm}}**
+Click **{{ui:assets.createAsset}}**. The dialog closes and the new asset's page opens. If you close the dialog after typing, it asks **{{ui:assets.modal.discardTitle}}** Click **{{ui:assets.modal.discardCancelLabel}}** to go back to what you typed, or **{{ui:assets.modal.discardConfirmLabel}}** to close it.
 
 To edit, retire or delete a single asset, open its page.
 

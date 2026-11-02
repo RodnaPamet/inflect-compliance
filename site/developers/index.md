@@ -1,5 +1,10 @@
 ---
 title: Inflect Compliance for developers
+# The site name alone in the tab: Starlight appends it to every page's
+# title, which on this page is the site name already.
+head:
+  - tag: title
+    content: Inflect Compliance for developers
 description: Architecture, security, integration and contributor documentation for Inflect Compliance.
 editUrl: https://github.com/RodnaPamet/inflect-compliance/edit/main/site/developers/index.md
 ---

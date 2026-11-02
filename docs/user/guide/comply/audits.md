@@ -66,9 +66,9 @@ Below them, **{{ui:audits.hub.startTitle}}** sets out six numbered steps. Steps 
 - Its scope, when one was written.
 - Its **{{ui:audits.auditors}}**, when any were entered.
 - **{{ui:audits.checklist}}**, with the number of items. Each item shows its text and a badge with its result, {{ui:audits.notTested}}, {{ui:audits.pass}} or {{ui:audits.fail}}. Owners, Admins and Editors also get a result list beside each item. An item's note, when it has one, is shown under its text.
-- **{{ui:audits.findingsTab}}**, with the number of findings and, for Owners, Admins and Editors, the **{{ui:audits.findingModal.trigger}}** button. Each finding shows its title and its severity, such as **{{ui:audits.findingModal.severityOptions.HIGH}}**.
+- **{{ui:audits.findingsTab}}**, with the number of findings and, for Owners, Admins and Editors, the **{{ui:audits.findingModal.trigger}}** button. Each finding shows its title, which opens it in the [{{ui:findings.title}}](findings.md), and its severity, such as **{{ui:audits.findingModal.severityOptions.HIGH}}**, in the register's colours.
 
-The panel does not show the audit's framework, cycle, date, departments or criteria. The **{{ui:audits.editModal.trigger}}** form shows all of them.
+Under its scope, the panel names the audit's **{{ui:audits.newModal.framework}}**, its **{{ui:audits.newModal.cycle}}** and its **{{ui:audits.editModal.labelSchedule}}**, when it has them. Its departments and criteria are in the **{{ui:audits.editModal.trigger}}** form.
 
 ## What you can do
 
@@ -129,7 +129,7 @@ Click **{{ui:audits.findingModal.trigger}}** in the audit's findings. The **{{ui
 | --- | --- | --- |
 | **{{ui:audits.hub.emptyTitle}}** | The workspace has no audits, or none in the chosen cycle. For Readers, Auditors and AI admins the message adds **{{ui:audits.hub.emptyDescReadOnly}}** | Owners, Admins and Editors click **{{ui:audits.newAudit}}** in the message. Others ask one of them |
 | **{{ui:audits.detail.loadError}}** | The audit did not open | Click it in the list again |
-| **Audit cycle not found or belongs to a different tenant** | The chosen cycle no longer exists | Choose another cycle, or {{ui:audits.newModal.noCycle}} |
+| **{{ui:audits.newModal.cycleNotFound}}** | The chosen cycle no longer exists | Choose another cycle, or {{ui:audits.newModal.noCycle}} |
 | **{{ui:audits.newModal.createFailed}}** | The audit was not created | Try again |
 | **{{ui:audits.detail.statusError}}**, or the reason the server gave | The status did not change, and the old one is shown again | Follow the reason given, then try again |
 | **{{ui:audits.detail.checklistError}}**, or the reason the server gave | The result was not saved | Follow the reason given, or reload the page and try again |
