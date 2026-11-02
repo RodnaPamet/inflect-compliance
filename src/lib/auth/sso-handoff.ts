@@ -32,6 +32,7 @@ import {
     SSO_COMPLETE_PATH,
     SSO_HANDOFF_COOKIE,
     SSO_HANDOFF_COOKIE_PATH,
+    type SsoHandoffRefusal,
 } from '@/lib/auth/sso-session';
 
 export const SSO_HANDOFF_TTL_SECONDS = 60;
@@ -67,32 +68,49 @@ export async function issueSsoHandoff(handoff: SsoHandoff): Promise<string> {
     return raw;
 }
 
+/** What became of a redemption: the hand-off, or why there is none. */
+export type SsoHandoffOutcome = { handoff: SsoHandoff } | { refused: SsoHandoffRefusal };
+
+/**
+ * Redeem a hand-off, saying why when it cannot be redeemed (#4924). Single
+ * use: of two concurrent redemptions, only the one whose delete removes the
+ * row gets the hand-off; the other is `USED`.
+ */
+export async function redeemSsoHandoffOutcome(
+    raw: string | null | undefined,
+): Promise<SsoHandoffOutcome> {
+    if (!raw) return { refused: 'MISSING' };
+    const token = hashHandoff(raw);
+    const row = await prisma.verificationToken.findUnique({ where: { token } });
+    if (!row || !row.identifier.startsWith(IDENTIFIER_PREFIX)) return { refused: 'USED' };
+    const now = new Date();
+    if (row.expires <= now) return { refused: 'EXPIRED' };
+
+    const claimed = await prisma.verificationToken.deleteMany({
+        where: { token, identifier: row.identifier, expires: { gt: now } },
+    });
+    if (claimed.count !== 1) return { refused: 'USED' };
+
+    const [tenantId, userId, ...rest] = row.identifier.slice(IDENTIFIER_PREFIX.length).split(':');
+    if (!tenantId || !userId || rest.length > 0) return { refused: 'USED' };
+    return { handoff: { tenantId, userId } };
+}
+
 /**
  * Redeem a hand-off. Resolves `null` for a missing, unknown, expired or
- * already-redeemed token. Single use: of two concurrent redemptions, only the
- * one whose delete removes the row gets the hand-off.
+ * already-redeemed token; `redeemSsoHandoffOutcome` says which.
  */
 export async function redeemSsoHandoff(
     raw: string | null | undefined,
 ): Promise<SsoHandoff | null> {
-    if (!raw) return null;
-    const token = hashHandoff(raw);
-    const row = await prisma.verificationToken.findUnique({ where: { token } });
-    if (!row || !row.identifier.startsWith(IDENTIFIER_PREFIX)) return null;
-
-    const claimed = await prisma.verificationToken.deleteMany({
-        where: { token, identifier: row.identifier, expires: { gt: new Date() } },
-    });
-    if (claimed.count !== 1) return null;
-
-    const [tenantId, userId, ...rest] = row.identifier.slice(IDENTIFIER_PREFIX.length).split(':');
-    if (!tenantId || !userId || rest.length > 0) return null;
-    return { tenantId, userId };
+    const outcome = await redeemSsoHandoffOutcome(raw);
+    return 'handoff' in outcome ? outcome.handoff : null;
 }
 
 /**
  * The SSO callback's response: send the browser to the completion page with
- * the hand-off in its cookie. `returnTo` must already be a sanitised path.
+ * the hand-off in its cookie. `returnTo` must already be a sanitised path;
+ * `workspaceSlug` is the slug of the tenant whose identity provider answered.
  *
  * 303, not the default 307: the SAML callback receives a POST, and a 307 would
  * have the browser POST the identity provider's form to the completion page.
@@ -101,9 +119,13 @@ export function ssoHandoffResponse(
     baseUrl: string,
     returnTo: string,
     rawHandoff: string,
+    workspaceSlug: string,
 ): NextResponse {
     const completeUrl = new URL(SSO_COMPLETE_PATH, baseUrl);
     completeUrl.searchParams.set('next', returnTo);
+    // So a failed completion can send the person back to this workspace's
+    // sign-in (`/login?sso=`) rather than to a blank one (#4924).
+    completeUrl.searchParams.set('sso', workspaceSlug);
     const res = NextResponse.redirect(completeUrl, 303);
     res.cookies.set(SSO_HANDOFF_COOKIE, rawHandoff, {
         httpOnly: true,

@@ -47,7 +47,7 @@ import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { hashForLookup } from '@/lib/security/encryption';
 import { graphHeaders } from '@/lib/http/graph-headers';
-import { SSO_HANDOFF_COOKIE, SSO_HANDOFF_PROVIDER_ID } from '@/lib/auth/sso-session';
+import { SSO_HANDOFF_COOKIE, SSO_HANDOFF_PROVIDER_ID, ssoHandoffRefusalCode } from '@/lib/auth/sso-session';
 import type { SignInMethod } from '@/lib/auth/sso-enforcement';
 import {
     pendingAfterMembershipRefresh,
@@ -495,9 +495,13 @@ const providers: NextAuthOptions['providers'] = [
         name: 'Single sign-on',
         credentials: {},
         async authorize() {
-            const { redeemSsoHandoff } = await import('@/lib/auth/sso-handoff');
-            const handoff = await redeemSsoHandoff(await readSsoHandoffCookie());
-            if (!handoff) return null;
+            const { redeemSsoHandoffOutcome } = await import('@/lib/auth/sso-handoff');
+            const outcome = await redeemSsoHandoffOutcome(await readSsoHandoffCookie());
+            // Thrown, not `null`: NextAuth hands a thrown message to `signIn`,
+            // so the completion page can say why (#4924). It names only what
+            // became of this browser's own hand-off.
+            if ('refused' in outcome) throw new Error(ssoHandoffRefusalCode(outcome.refused));
+            const handoff = outcome.handoff;
             // Re-read at redemption: the membership may have been ended in the
             // seconds since the callback checked it.
             const membership = await prisma.tenantMembership.findUnique({

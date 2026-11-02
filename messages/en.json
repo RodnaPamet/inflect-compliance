@@ -362,7 +362,12 @@
     "ssoComplete": {
       "title": "Single sign-on",
       "inProgress": "Finishing signing you in…",
-      "backToSignIn": "Back to sign in"
+      "backToSignIn": "Back to sign in",
+      "refused": {
+        "MISSING": "Your browser didn't keep the sign-in. Allow cookies for this site, finish signing in in the browser you started in, and try again.",
+        "EXPIRED": "The sign-in took too long to finish and has expired. Sign in again.",
+        "USED": "This sign-in has already been used, perhaps in another tab or by refreshing the page. If you're signed in in another tab, carry on there. Otherwise, sign in again."
+      }
     },
     "sso": {
       "continue": "Continue with single sign-on",

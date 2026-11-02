@@ -221,7 +221,7 @@ export async function GET(req: NextRequest) {
         ? sanitizeRedirectPath(state.returnTo)
         : `/t/${tenant.slug}/dashboard`;
     const handoff = await issueSsoHandoff({ userId: linkedUserId, tenantId: tenant.id });
-    const res = ssoHandoffResponse(baseUrl, returnTo, handoff);
+    const res = ssoHandoffResponse(baseUrl, returnTo, handoff, tenant.slug);
     clearSsoFlow(res, 'oidc');
     return res;
 }
