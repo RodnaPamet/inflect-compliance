@@ -63,7 +63,7 @@ The reason is saved on the control, so it applies wherever the control is mapped
 
 ### Print or export it
 
-Click **{{ui:reports.soaView.print}}**. A plain version opens in a new tab, ready to print or save as a PDF. **{{ui:reports.exportCsv}}**, beside it, downloads the statement as a CSV file; it is offered to the roles that can export reports: Owner, Admin, Editor and Auditor.
+Click **{{ui:reports.soaView.print}}**. A plain version opens in a new tab, ready to print or save as a PDF. **{{ui:reports.exportCsv}}**, beside it, downloads the statement as a CSV file. Both are offered to the roles that can export reports: Owner, Admin, Editor and Auditor. **{{ui:reports.soaView.print}}** also needs a plan with PDF exports: on a plan without them it is shown locked, with a link to upgrade.
 
 ## What happens next
 

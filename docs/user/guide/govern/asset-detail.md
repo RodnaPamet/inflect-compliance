@@ -55,7 +55,7 @@ Choose **{{ui:assets.detail.statusActive}}** or **{{ui:assets.detail.statusRetir
 
 ### Edit the asset
 
-Click the pencil at the top of the overview. You can change every field, including the product identity and the confidentiality, integrity and availability ratings.
+Click the pencil at the top of the overview. You can change every field, including the product identity and the confidentiality, integrity and availability ratings. Closing the form with unsaved changes asks **{{ui:assets.modal.editDiscardTitle}}**: **{{ui:assets.modal.editDiscardConfirmLabel}}** closes it, **{{ui:assets.modal.editDiscardCancelLabel}}** returns to the form.
 
 ### Work through its vulnerabilities
 

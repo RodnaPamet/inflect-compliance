@@ -26,7 +26,7 @@ Move an existing register into Inflect without typing every risk in by hand.
 
 **The preview.** How many risks the file holds, and the first 20 rows: title, category, **{{ui:riskManager.colLikelihoodImpact}}** and owner. A likelihood or impact outside your risk matrix is flagged, and that row is imported at the default value instead. Rows with no title are left out, and a line says how many.
 
-**The result.** How many risks were created, how many rows were skipped because a risk with the same title already exists, and any rows that failed, each with its row number, title and reason. If the import was refused as a whole, the card says **{{ui:riskManager.importFailed}}** with the reason; nothing was created, and **{{ui:riskManager.backToPreview}}** returns to your file.
+**The result.** How many risks were created, how many rows were skipped because a risk with the same title already exists, and any rows that failed, each with its row number, title and reason. If the import was refused as a whole, the card says **{{ui:riskManager.importFailed}}**, with the reason when the server gives one; nothing was created, and **{{ui:riskManager.backToPreview}}** returns to your file.
 
 ## What you can do
 

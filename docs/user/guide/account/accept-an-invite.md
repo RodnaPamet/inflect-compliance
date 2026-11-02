@@ -23,15 +23,20 @@ Join a workspace a colleague has invited you to. An invitation lasts seven days 
 **{{ui:invite.invitedTitle}}**, the name of the workspace, the role you are invited with, and the date the invitation expires. Below that, one button:
 
 - **{{ui:invite.acceptInvitation}}**, when you are signed in with the invited email address.
-- **{{ui:invite.signInToAccept}}**, otherwise.
-
-If you are signed in with a different address, a line under the button names the address you are signed in with and asks you to sign in with the right one.
+- **{{ui:invite.switchAccount}}**, when you are signed in with a different address. A line under it names the address you are signed in with.
+- **{{ui:invite.signInToAccept}}**, when you are not signed in.
 
 ## What you can do
 
 ### Accept while signed in
 
 Click **{{ui:invite.acceptInvitation}}**. You are taken straight into the workspace's dashboard.
+
+### Switch to the invited account
+
+Click **{{ui:invite.switchAccount}}**. You are signed out and returned to this invitation, which now offers **{{ui:invite.signInToAccept}}**. Use it to sign in with the address the invitation was sent to.
+
+Do not sign in again with the account you were using: the invitation would be used up on the address check, and you would need a new one.
 
 ### Sign in to accept
 
@@ -58,7 +63,7 @@ If you sign in with Google or Microsoft using the invited email address, any inv
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:invite.notAvailableTitle}}** | {{ui:invite.notAvailableBody}} | Ask the workspace's administrator to send a new invitation |
-| A line naming the address you are signed in with | You are signed in with a different email address from the one invited | Sign out, then sign in with the invited address |
+| {{ui:invite.switchAccount}}, and a line naming the address you are signed in with | You are signed in with a different email address from the one invited | Click **{{ui:invite.switchAccount}}**, then sign in with the invited address |
 | {{ui:invite.refused.INVITE_EXPIRED}} | The invitation is more than seven days old | Ask the workspace's administrator to send a new invitation |
 | {{ui:invite.refused.INVITE_REVOKED}} | An administrator withdrew it | Ask for a new invitation |
 | {{ui:invite.refused.INVITE_ALREADY_REDEEMED}} | Somebody already used this link | Ask for a new invitation if it was not you |

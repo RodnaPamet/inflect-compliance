@@ -16,7 +16,7 @@ Anyone who is signed in. If you are not signed in, you are sent to sign in.
 
 ## What you see
 
-The heading, the email address you are signed in with, and one explanation:
+The heading, the email address you are signed in with, and one explanation. When you belong to other workspaces, the heading reads **{{ui:noTenant.titleOtherWorkspace}}** instead.
 
 | What it says | What it means |
 | --- | --- |
