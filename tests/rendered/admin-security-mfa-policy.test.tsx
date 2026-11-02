@@ -165,3 +165,28 @@ describe('admin Security & MFA page', () => {
         expect(disabled).not.toHaveTextContent(/cannot enroll/i);
     });
 });
+
+// #4972 — both settings are named, so a screen reader announces what they set.
+describe('admin Security & MFA page — the settings are named', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    it('the MFA policy is a named radio group on the stored policy', async () => {
+        mount();
+        await loaded();
+        const group = screen.getByRole('radiogroup', { name: SECURITY.mfaPolicyTitle });
+        expect(within(group).getAllByRole('radio')).toHaveLength(3);
+        expect(within(group).getByRole('radio', { name: /Optional/ })).toBeChecked();
+    });
+
+    it('the maximum session age field is named by its label, and a typed value is saved', async () => {
+        mount({ 'PUT /security/mfa/policy': () => ok({ mfaPolicy: 'OPTIONAL', sessionMaxAgeMinutes: 480 }) });
+        const save = await loaded();
+        const field = screen.getByRole('spinbutton', { name: SECURITY.maxSessionAgeLabel });
+        fireEvent.change(field, { target: { value: '480' } });
+        fireEvent.click(save);
+        await waitFor(() => {
+            const put = (global.fetch as jest.Mock).mock.calls.find(([, init]) => init?.method === 'PUT');
+            expect(JSON.parse(put?.[1]?.body as string)).toEqual({ mfaPolicy: 'OPTIONAL', sessionMaxAgeMinutes: 480 });
+        });
+    });
+});
