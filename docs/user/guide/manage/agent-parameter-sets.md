@@ -53,7 +53,7 @@ Below that, a change that needs a signature shows the signatures collected so fa
 
 1. Under **{{ui:agents.parameterSets.toolLabel}}**, choose the tool. Only tools the server currently offers are listed.
 2. Give it a **{{ui:agents.parameterSets.labelLabel}}**. This is the name an agent or a request uses to pick it.
-3. Under **{{ui:agents.parameterSets.parametersLabel}}**, write the arguments as a JSON object of argument names and values, such as `{"role": "reader"}`. The page checks that it is valid JSON, not that the tool accepts these arguments.
+3. Under **{{ui:agents.parameterSets.parametersLabel}}**, write the arguments as a JSON object of argument names and values, such as `{"role": "reader"}`. Below the box, the page lists the arguments the tool takes and which are required.
 4. Click **{{ui:agents.parameterSets.create}}**.
 
 A first save takes exact values only. To leave a field open or set a target, save the exact values first, then propose the change.
@@ -65,6 +65,8 @@ A first save takes exact values only. To leave a field open or set a target, sav
 3. Under **{{ui:agents.parameterSets.openFieldsLabel}}**, write the open fields the set should have after the change, as JSON. Write the whole intended set, not just what changes; leave it empty to remove them all. Each field has a kind: `regex` (a pattern), `enum` (a list of values), `integer` (a whole-number range), `length` (a text length) or `target` (a subject from the target population).
 4. Choose a **{{ui:agents.parameterSets.targetLabel}}** from the list, which describes each in words, or **{{ui:agents.parameterSets.targetNone}}**.
 5. Click **{{ui:agents.parameterSets.proposeSubmit}}**.
+
+Before anything is saved, a baseline and a proposal are both checked against the arguments the tool says it accepts, and each argument that does not fit is named. A field you leave open is filled by the agent within its bound, so it is not reported as missing. When the tool's argument list could not be read, nothing is checked here; the tool itself still refuses arguments it does not accept when an agent calls it.
 
 ### Sign and approve a change
 
@@ -84,6 +86,7 @@ A signature counts only for the change it was given on. If the proposal is repla
 | {{ui:agents.parameterSets.noToolsDesc}} | The server lists no tools | Check the server's own configuration |
 | {{ui:agents.parameterSets.invalidJson}} | What you typed is not JSON | Fix the text and try again |
 | {{ui:agents.parameterSets.notAnObject}} | The arguments are a list or a single value | Wrap them in `{ }` with a name for each |
+| {{ui:agents.parameterSets.argCheck.heading}}, with a line per argument | The arguments don't fit what the tool says it accepts: a required one is missing, a name it does not take, a value of the wrong kind, or one outside its allowed values or range. Nothing was saved | Fix each argument named, and try again |
 | {{ui:agents.parameterSets.signError}} or {{ui:agents.parameterSets.approveError}}, with what the server said | The signature or approval was refused | Read the reason; reload if the change moved |
 
 ## Related
