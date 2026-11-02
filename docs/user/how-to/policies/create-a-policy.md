@@ -54,7 +54,7 @@ The {{ui:policies.detail.tabCurrent}} tab shows the newest version until the pol
 | **{{ui:policies.createPolicy}}** stays greyed out | The policy has no title yet | Type a title |
 | {{ui:policies.new.titleEmpty}} | The title holds only spaces | Type a real title |
 | {{ui:policies.new.templatesEmpty}} | Your workspace has no policy templates | Choose **{{ui:policies.new.modeNew}}** and write the policy yourself |
-| {{ui:policies.new.discard}} | You are closing the dialog with details filled in | Cancel to keep editing, or confirm to throw the details away |
+| **{{ui:policies.new.discardTitle}}** | You are closing the dialog with details filled in | Click **{{ui:policies.new.discardCancelLabel}}** to go back to what you typed, or **{{ui:policies.new.discardConfirmLabel}}** to close it |
 | A red message at the top of the dialog after you click **{{ui:policies.createPolicy}}** | Inflect did not create the policy. The message says why | Fix what the message names, then try again |
 | A red message in the suggested-controls dialog, such as {{ui:policies.templates.linkFailed}} | The policy was created, but the controls were not linked | Try the link button again, or click **{{ui:policies.templates.skip}}** and link the controls later from the **{{ui:policies.detail.tabTraceability}}** tab |
 | The policy page reads {{ui:policies.detail.versionEmpty}} | The policy has no content yet | Add a version, as described under "Write or change the content" above |

@@ -397,6 +397,19 @@ describe('a role that can write edits the finding in its panel', () => {
         expect(await screen.findByTestId('finding-edit-error')).toHaveTextContent(REFUSAL);
         expect(mockToast.success).not.toHaveBeenCalled();
     });
+
+    // #4968 — with no reason, a sentence, never the HTTP status.
+    it('falls back to a sentence without the status code when the server gives none', async () => {
+        handler = detailHandler((_url, init) => (init?.method === 'PUT' ? { status: 500, body: null } : undefined));
+        await openEdit();
+        fireEvent.change(document.getElementById('finding-edit-title')!, { target: { value: 'Changed' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: F.detail.save }));
+        });
+        const alert = await screen.findByTestId('finding-edit-error');
+        expect(alert).toHaveTextContent(F.detail.saveFailedGeneric);
+        expect(alert).not.toHaveTextContent('500');
+    });
 });
 
 // ─── The status filter ────────────────────────────────────────────────
