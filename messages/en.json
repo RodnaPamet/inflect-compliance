@@ -11719,7 +11719,14 @@
         "confirmCancel": "Go back"
       },
       "fromRun": "From an agent run",
-      "fromRunStep": "From step {seq} of an agent run"
+      "fromRunStep": "From step {seq} of an agent run",
+      "composedByYou": "You composed this request, so somebody else approves it. Reject withdraws it.",
+      "refused": {
+        "composer": "You composed this request, so somebody else approves it.",
+        "ownDissent": "You raised this finding proposal by dissenting from a sampled workpaper. Somebody else decides it.",
+        "unknownDissent": "This proposal names a workpaper review this workspace does not hold, so nobody can decide it.",
+        "expired": "This proposal's review window has closed, so it can no longer be approved or rejected. It is kept as the record that nobody decided it in time."
+      }
     },
     "runs": {
       "accessTitle": "Agent runs access required",

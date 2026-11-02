@@ -25,6 +25,18 @@ jest.mock('@/app-layer/usecases/agent-proposal-queue', () => ({
     ...jest.requireActual('@/app-layer/usecases/agent-proposal-queue'),
     annotateProposalQueue: (...a: unknown[]) => annotateProposalQueue(...a),
 }));
+// Whether a composer may approve their own request (#4905, #4970).
+const composeNeedsSecondApprover = { value: true };
+jest.mock('@/app-layer/usecases/agent-oversight-settings', () => ({
+    ...jest.requireActual('@/app-layer/usecases/agent-oversight-settings'),
+    readAgentOversightSettings: async () => ({
+        composeNeedsSecondApprover: composeNeedsSecondApprover.value,
+        exactParameterEditNeedsSecondApprover: false,
+        auditorReadsAiDecisionLog: false,
+        auditorReadsAgentReceipts: false,
+        auditorReadsAgentQuarantine: false,
+    }),
+}));
 jest.mock('next-intl/server', () => ({ getTranslations: async () => (k: string) => k }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/proposals/AgentProposalsClient', () => ({
     AgentProposalsClient: () => null,
@@ -129,5 +141,26 @@ describe('the proposals page', () => {
         });
         // The raw payload is still never forwarded.
         expect(initialProposals[0]).not.toHaveProperty('payloadJson');
+    });
+
+    // #4970 — the composer is told, rather than offered an Approve that the
+    // server refuses, and only while the workspace's switch is on.
+    it('marks a request the viewer composed, while a second approver is required', async () => {
+        listAgentProposals.mockResolvedValue([
+            stored('mine', { composedByUserId: 'user-1' }),
+            stored('theirs', { composedByUserId: 'someone-else' }),
+            stored('agent', { composedByUserId: null }),
+        ]);
+        composeNeedsSecondApprover.value = true;
+        let { initialProposals } = await renderPage();
+        expect(initialProposals.map((r) => [r.id, r.composedByViewer])).toEqual([
+            ['mine', true],
+            ['theirs', false],
+            ['agent', false],
+        ]);
+        composeNeedsSecondApprover.value = false;
+        ({ initialProposals } = await renderPage());
+        expect(initialProposals.every((r) => r.composedByViewer === false)).toBe(true);
+        composeNeedsSecondApprover.value = true;
     });
 });

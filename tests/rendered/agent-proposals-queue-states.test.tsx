@@ -355,3 +355,41 @@ describe('a bulk reject names the cause of each skip', () => {
         expect(message).not.toContain(en('proposals.bulk.skipped.ownDissent'));
     });
 });
+
+// ─── #4970: the composer, and refusals in the reader's language ─────────────
+
+describe('a request the viewer composed', () => {
+    const P = (require('../../messages/en.json') as { agents: { proposals: Record<string, unknown> } }).agents
+        .proposals as { composedByYou: string; refused: Record<string, string> };
+
+    it('offers no Approve, says why, and keeps Reject', () => {
+        renderQueue([{ ...row(), composedByViewer: true }]);
+        expect(screen.queryByTestId('proposal-approve-p1')).toBeNull();
+        expect(screen.getByTestId('proposal-composed-by-you-p1')).toHaveTextContent(P.composedByYou);
+        expect(screen.getByRole('button', { name: /reject/i })).toBeInTheDocument();
+    });
+
+    it('a proposal somebody else composed still offers Approve', () => {
+        renderQueue([{ ...row(), composedByViewer: false }]);
+        expect(screen.getByTestId('proposal-approve-p1')).toBeInTheDocument();
+        expect(screen.queryByTestId('proposal-composed-by-you-p1')).toBeNull();
+    });
+
+    it.each([
+        ['COMPOSER_MAY_NOT_APPROVE', 'composer'],
+        ['DISSENT_AUTHOR_MAY_NOT_DECIDE', 'ownDissent'],
+        ['agent_proposal_expired', 'expired'],
+    ])('a %s refusal is said in the page’s words, not the server’s', async (reason, key) => {
+        mockFetch({
+            ok: false,
+            body: { error: { code: 'FORBIDDEN', message: 'Server English sentence.', details: { reason } } },
+        });
+        renderQueue([row()]);
+        await act(async () => {
+            screen.getByTestId('proposal-approve-p1').click();
+        });
+        const error = screen.getByTestId('proposal-action-error');
+        expect(error).toHaveTextContent(P.refused[key]);
+        expect(error.textContent).not.toContain('Server English sentence.');
+    });
+});

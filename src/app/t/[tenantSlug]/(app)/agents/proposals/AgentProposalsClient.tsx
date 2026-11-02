@@ -130,6 +130,12 @@ export interface ProposalRow {
      * (four eyes: a second approval is somebody else's), so it is not offered.
      */
     signedByViewer: boolean;
+    /**
+     * The viewer composed this request and the workspace requires somebody
+     * else to approve composed requests (#4905). Their Approve can only be
+     * refused, so it is not offered; Reject, which withdraws it, still is.
+     */
+    composedByViewer?: boolean;
 }
 
 /**
@@ -185,6 +191,25 @@ function decisionBadgeFor(
         return { variant: 'info', key: 'proposals.awaitingSecond', testid: 'proposal-awaiting-second-badge' };
     }
     return null;
+}
+
+/**
+ * The refusals of a single approve or reject this page words itself, keyed by
+ * `error.details.reason` (#4970). Anything else, the four-eyes refusals
+ * included, is shown as the server wrote it: those keep WHICH rule refused out
+ * of the response by design, so the server's sentence is the only one that
+ * says it.
+ */
+const REFUSAL_KEY: Readonly<Record<string, 'composer' | 'ownDissent' | 'unknownDissent' | 'expired'>> = {
+    COMPOSER_MAY_NOT_APPROVE: 'composer',
+    DISSENT_AUTHOR_MAY_NOT_DECIDE: 'ownDissent',
+    DISSENT_AUTHOR_UNKNOWN: 'unknownDissent',
+    agent_proposal_expired: 'expired',
+};
+
+function refusalKey(body: unknown): 'composer' | 'ownDissent' | 'unknownDissent' | 'expired' | null {
+    const reason = (body as { error?: { details?: { reason?: unknown } } } | null)?.error?.details?.reason;
+    return typeof reason === 'string' ? (REFUSAL_KEY[reason] ?? null) : null;
 }
 
 /** The sentence each bulk-reject skip reason is reported with. */
@@ -407,10 +432,12 @@ export function AgentProposalsClient({
                 ),
             });
             if (!res.ok) {
-                // The server's sentence, not a code: a four-eyes or a closed-
-                // window refusal says why and what to do, in `error.message`.
+                // A refusal the page knows is said in the reader's language
+                // (#4970); any other keeps the server's sentence, then the
+                // action's own fallback.
                 const body = await res.json().catch(() => null);
-                throw new Error(apiErrorMessage(body, fallback));
+                const known = refusalKey(body);
+                throw new Error(known ? t(`proposals.refused.${known}`) : apiErrorMessage(body, fallback));
             }
 
             // TWO SUCCESS SHAPES, AND THEY MEAN OPPOSITE THINGS.
@@ -818,6 +845,13 @@ export function AgentProposalsClient({
                                             className="text-xs text-content-subtle"
                                         >
                                             {t('proposals.window.closed')}
+                                        </span>
+                                    ) : p.composedByViewer ? (
+                                        <span
+                                            data-testid={`proposal-composed-by-you-${p.id}`}
+                                            className="text-xs text-content-subtle"
+                                        >
+                                            {t('proposals.composedByYou')}
                                         </span>
                                     ) : p.signedByViewer ? (
                                         // This viewer's signature is in. Their
