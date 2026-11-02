@@ -17,7 +17,7 @@ import type { PrismaClient } from '@prisma/client';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
-import { createBia, listBias, linkBiaToControl, getControlBiaSurface } from '@/app-layer/usecases/business-impact-analysis';
+import { createBia, listBias, linkBiaToControl, getControlBiaSurface, markBiaReviewed, updateBia, getBia } from '@/app-layer/usecases/business-impact-analysis';
 import { createControl } from '@/app-layer/usecases/control';
 
 jest.setTimeout(30_000);
@@ -93,6 +93,23 @@ describeFn('business impact analysis (integration)', () => {
         expect(critical.recovery!.rank).toBe(1); // recovers first
         expect(low.recovery!.rank).toBeGreaterThan(critical.recovery!.rank);
         expect(critical.recovery!.rationale).toMatch(/CRITICAL/);
+    });
+
+    it('marks a BIA reviewed with the server’s time and the caller as reviewer (#4931)', async () => {
+        const bia = await createBia(ctx, { name: 'Payroll run', criticality: 'HIGH', mtpdHours: 48 });
+        const before = Date.now();
+        const reviewed = await markBiaReviewed(ctx, bia.id);
+        expect(reviewed.reviewedByUserId).toBe(ctx.userId);
+        expect(reviewed.reviewedAt!.getTime()).toBeGreaterThanOrEqual(before - 1000);
+
+        const detail = await getBia(ctx, bia.id);
+        expect(detail.reviewedByUser?.id).toBe(ctx.userId);
+
+        // The PUT no longer carries a review date: one sent is not stored.
+        await updateBia(ctx, bia.id, { reviewedAt: '2001-01-01T00:00:00.000Z' } as never);
+        const after = await prisma.businessImpactAnalysis.findUniqueOrThrow({ where: { id: bia.id } });
+        expect(after.reviewedAt!.toISOString()).toBe(reviewed.reviewedAt!.toISOString());
+        expect(after.reviewedByUserId).toBe(ctx.userId);
     });
 
     it('a continuity control shows the linked BIA as continuity evidence (case 4a)', async () => {

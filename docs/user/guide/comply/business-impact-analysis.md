@@ -26,9 +26,9 @@ For other roles the page is read-only. With custom roles, changes also need your
 | Fact | What it shows |
 | --- | --- |
 | {{ui:audits.biaDetail.metaCriticality}} | {{ui:audits.bia.crit.CRITICAL}}, {{ui:audits.bia.crit.HIGH}}, {{ui:audits.bia.crit.MEDIUM}} or {{ui:audits.bia.crit.LOW}} |
-| {{ui:audits.biaDetail.metaRecovery}} | Its place in the register's recovery order, such as #2; 1 recovers first |
+| {{ui:audits.biaDetail.metaRecovery}} | Its place in the register's recovery order, such as Priority 2; priority 1 recovers first |
 | {{ui:audits.biaDetail.metaOwner}} | The person responsible, when one is set |
-| {{ui:audits.biaDetail.metaReviewed}} | When it was last reviewed, or **{{ui:audits.biaDetail.neverReviewed}}** |
+| {{ui:audits.biaDetail.metaReviewed}} | When it was last reviewed and by whom, or **{{ui:audits.biaDetail.neverReviewed}}**. A review recorded before reviewers were kept says the reviewer was not recorded |
 
 **{{ui:audits.biaDetail.secRecoveryObjectives}}.** Three figures, in hours:
 
@@ -40,7 +40,7 @@ For other roles the page is read-only. With custom roles, changes also need your
 
 **{{ui:audits.biaDetail.secRecoveryPriority}}.** Where it falls in the recovery order, and why.
 
-**{{ui:audits.biaDetail.secImpact}}.** How bad a disruption gets over time: one row per point in time (**{{ui:audits.biaDetail.impactAt}}**, in hours), each rating the **{{ui:audits.biaDetail.impactFinancial}}**, **{{ui:audits.biaDetail.impactOperational}}**, **{{ui:audits.biaDetail.impactReputational}}** and **{{ui:audits.biaDetail.impactLegal}}** impact.
+**{{ui:audits.biaDetail.secImpact}}.** How bad a disruption gets over time: one row per point in time (**{{ui:audits.biaDetail.impactAtHours}}** the disruption starts), each rating the **{{ui:audits.biaDetail.impactFinancial}}**, **{{ui:audits.biaDetail.impactOperational}}**, **{{ui:audits.biaDetail.impactReputational}}** and **{{ui:audits.biaDetail.impactLegal}}** impact.
 
 **{{ui:audits.biaDetail.secDependencies}}.** What the process needs in order to run: other processes, assets, vendors or risks, each linked to its page. One that has been deleted since reads **{{ui:audits.biaDetail.depMissing}}**.
 
@@ -56,7 +56,7 @@ Owners, Admins and Editors:
 
 ### Mark it reviewed
 
-Click **{{ui:audits.biaDetail.markReviewed}}**. The review date becomes today, and the message **{{ui:audits.biaDetail.reviewedToast}}** confirms it.
+Click **{{ui:audits.biaDetail.markReviewed}}**. The review is recorded as today's, under your name, and the message **{{ui:audits.biaDetail.reviewedToast}}** confirms it. The date cannot be typed in: a review is recorded when it is made.
 
 ### Edit it
 
@@ -64,7 +64,7 @@ Click **{{ui:audits.biaDetail.edit}}**. In **{{ui:audits.biaDetail.editTitle}}**
 
 ### Describe the impact over time
 
-Under **{{ui:audits.biaDetail.secImpact}}**, click **{{ui:audits.biaDetail.impactAddPoint}}** for each point in time, enter the hours and a figure for each kind of impact, and click **{{ui:audits.biaDetail.saveImpact}}**.
+Under **{{ui:audits.biaDetail.secImpact}}**, click **{{ui:audits.biaDetail.impactAddPoint}}** for each point in time, enter the hours and a figure for each kind of impact, and click **{{ui:audits.biaDetail.saveImpact}}**. Use the same scale in every analysis, for example 0 for no impact to 5 for severe, so they can be compared. A value that is not a number is highlighted and nothing is saved until it is corrected.
 
 ### Add or remove a dependency
 

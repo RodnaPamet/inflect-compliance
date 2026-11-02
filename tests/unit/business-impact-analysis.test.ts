@@ -194,16 +194,16 @@ describe('updateBia', () => {
         withDb(d(null));
         await expect(updateBia(ctx(), 'x', { name: 'y' })).rejects.toThrow(/not found/i);
     });
-    it('applies the provided fields (name/criticality/reviewedAt set)', async () => {
+    it('applies the provided fields (name/criticality set)', async () => {
         const db = d({ id: 'b1' });
         withDb(db);
-        await updateBia(ctx(), 'b1', { name: 'New', criticality: 'CRITICAL', reviewedAt: '2026-01-01T00:00:00.000Z' });
+        await updateBia(ctx(), 'b1', { name: 'New', criticality: 'CRITICAL' });
         expect(db.businessImpactAnalysis.update).toHaveBeenCalled();
     });
-    it('handles a null reviewedAt and null notes', async () => {
+    it('handles null notes', async () => {
         const db = d({ id: 'b1' });
         withDb(db);
-        await updateBia(ctx(), 'b1', { reviewedAt: null, notes: null });
+        await updateBia(ctx(), 'b1', { notes: null });
         expect(db.businessImpactAnalysis.update).toHaveBeenCalled();
     });
 });

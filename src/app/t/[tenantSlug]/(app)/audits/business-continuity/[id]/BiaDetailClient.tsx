@@ -14,6 +14,7 @@ import { Heading } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -62,6 +63,8 @@ export interface BiaDetail {
     impactProfile: ImpactPoint[] | null;
     notes: string | null;
     reviewedAt: string | null;
+    /** Who marked it reviewed (#4931); null before the reviewer was recorded. */
+    reviewedByUser?: { id: string; name: string | null; email: string } | null;
     processNode: { id: string; label: string; processMapId: string } | null;
     ownerUser: { id: string; name: string | null; email: string } | null;
     dependencies: ResolvedDependency[];
@@ -144,12 +147,17 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
         return res.ok;
     };
 
+    // The review is its own act (#4931): the server stamps its own time and
+    // the caller as reviewer. The browser's clock is no longer the record.
     const markReviewed = async () => {
         setBusy(true);
         try {
-            if (await putBia({ reviewedAt: new Date().toISOString() })) {
+            const res = await fetch(`${biaBase}/review`, { method: 'POST' });
+            if (res.ok) {
                 toast.success(tx('biaDetail.reviewedToast'));
                 router.refresh();
+            } else {
+                toast.error(await refusalMessage(res, tx('biaDetail.saveFailed')));
             }
         } finally { setBusy(false); }
     };
@@ -198,13 +206,22 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
     const metaItems: MetaItem[] = [
         { kind: 'status', label: tx('biaDetail.metaCriticality'), value: critLabels[bia.criticality] ?? bia.criticality, variant: CRITICALITY_VARIANT[bia.criticality] ?? 'neutral' },
     ];
-    if (bia.recovery) metaItems.push({ kind: 'status', label: tx('biaDetail.metaRecovery'), value: `#${bia.recovery.rank}`, variant: 'info' });
+    if (bia.recovery) metaItems.push({ kind: 'status', label: tx('biaDetail.metaRecovery'), value: tx('biaDetail.recoveryRank', { rank: bia.recovery.rank }), variant: 'info' });
     if (bia.ownerUser) metaItems.push({ kind: 'text', label: tx('biaDetail.metaOwner'), value: bia.ownerUser.name ?? bia.ownerUser.email });
     // BIA-lifecycle — surface the review state so "overdue" reflects reality
     // (reviewedAt was never set, so every BIA read as permanently overdue).
     metaItems.push(
         bia.reviewedAt
-            ? { kind: 'text', label: tx('biaDetail.metaReviewed'), value: formatDate(bia.reviewedAt) }
+            ? {
+                  kind: 'text',
+                  label: tx('biaDetail.metaReviewed'),
+                  value: bia.reviewedByUser
+                      ? tx('biaDetail.reviewedBy', {
+                            date: formatDate(bia.reviewedAt),
+                            name: bia.reviewedByUser.name ?? bia.reviewedByUser.email,
+                        })
+                      : tx('biaDetail.reviewedNoReviewer', { date: formatDate(bia.reviewedAt) }),
+              }
             : { kind: 'status', label: tx('biaDetail.metaReviewed'), value: tx('biaDetail.neverReviewed'), variant: 'warning' },
     );
 
@@ -300,14 +317,14 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                                         )}
                                     </span>
                                     {canWrite && (
-                                    <button
-                                        type="button"
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
                                         onClick={() => removeDependency(d)}
-                                        className="text-content-muted hover:text-content-error"
-                                        aria-label={tx('biaDetail.depRemove')}
+                                        aria-label={tx('biaDetail.depRemoveAria', { name: d.targetName ?? depTypeLabel(d.dependsOnType) })}
                                     >
                                         {tx('biaDetail.depRemove')}
-                                    </button>
+                                    </Button>
                                     )}
                                 </li>
                             ))}
@@ -320,7 +337,7 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                             excludeIds={bia.dependencies.map((d) => d.dependsOnId)}
                             onAdd={addDependency}
                         />
-                        {depError && <p className="text-sm text-content-error">{depError}</p>}
+                        {depError && <InlineNotice variant="error">{depError}</InlineNotice>}
                     </div>
                     )}
                 </Section>
@@ -445,15 +462,51 @@ function ImpactProfileEditor({
     /** Shows the profile without the means to change it. */
     readOnly: boolean;
 }) {
-    const [rows, setRows] = useState<ImpactPoint[]>(initial);
+    // The cells are edited as TEXT and parsed only on save (#4931): parsing on
+    // every keystroke turned "abc" into NaN, which JSON stores as null, and a
+    // bad hours cell into 0 — both saved without a word.
+    type Draft = Record<keyof ImpactPoint, string>;
+    const toDraft = (p: ImpactPoint): Draft => ({
+        atHours: String(p.atHours ?? ''),
+        financial: p.financial != null ? String(p.financial) : '',
+        operational: p.operational != null ? String(p.operational) : '',
+        reputational: p.reputational != null ? String(p.reputational) : '',
+        legal: p.legal != null ? String(p.legal) : '',
+    });
+    const [rows, setRows] = useState<Draft[]>(() => initial.map(toDraft));
     const [saving, setSaving] = useState(false);
-    const dirty = JSON.stringify(rows) !== JSON.stringify(initial);
+    const [invalid, setInvalid] = useState(false);
+    const dirty = JSON.stringify(rows) !== JSON.stringify(initial.map(toDraft));
 
-    const num = (v: string): number | undefined => (v.trim() === '' ? undefined : Number(v));
-    const setCell = (i: number, key: keyof ImpactPoint, value: string) =>
-        setRows((cur) => cur.map((r, idx) => (idx === i ? { ...r, [key]: key === 'atHours' ? (num(value) ?? 0) : num(value) } : r)));
-    const addRow = () => setRows((cur) => [...cur, { atHours: 0 }]);
+    /** A cell's number, or `undefined` when blank, or `null` when not a number. */
+    const parse = (v: string): number | undefined | null => {
+        if (v.trim() === '') return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) && n >= 0 ? n : null;
+    };
+    const setCell = (i: number, key: keyof ImpactPoint, value: string) => {
+        setInvalid(false);
+        setRows((cur) => cur.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)));
+    };
+    const addRow = () => setRows((cur) => [...cur, toDraft({ atHours: 0 })]);
     const removeRow = (i: number) => setRows((cur) => cur.filter((_, idx) => idx !== i));
+    const cellInvalid = (v: string) => parse(v) === null;
+    const save = async () => {
+        const parsed: ImpactPoint[] = [];
+        for (const r of rows) {
+            const at = parse(r.atHours);
+            const dims = (['financial', 'operational', 'reputational', 'legal'] as const).map((k) => [k, parse(r[k])] as const);
+            if (at == null || dims.some(([, v]) => v === null)) {
+                setInvalid(true);
+                return;
+            }
+            const point: ImpactPoint = { atHours: at };
+            for (const [k, v] of dims) if (v !== undefined && v !== null) point[k] = v;
+            parsed.push(point);
+        }
+        setSaving(true);
+        try { await onSave(parsed); } finally { setSaving(false); }
+    };
 
     const DIMS: Array<[keyof ImpactPoint, string]> = [
         ['financial', tx('biaDetail.impactFinancial')],
@@ -464,31 +517,35 @@ function ImpactProfileEditor({
 
     return (
         <div className="space-y-default">
+            <p className="text-xs text-content-muted" data-testid="bia-impact-scale">{tx('biaDetail.impactScaleHint')}</p>
             {rows.length === 0 ? (
                 <p className="text-sm text-content-subtle" data-testid="bia-impact-empty">{tx('biaDetail.impactEmpty')}</p>
             ) : (
                 <div className="grid grid-cols-6 gap-x-3 gap-y-1 text-sm" data-testid="bia-impact-editor">
-                    <div className="font-medium text-content-subtle">{tx('biaDetail.impactAt')}</div>
+                    <div className="font-medium text-content-subtle">{tx('biaDetail.impactAtHours')}</div>
                     {DIMS.map(([k, label]) => <div key={k} className="font-medium text-content-subtle">{label}</div>)}
                     <div />
                     {rows.map((p, i) => (
                         <div key={i} className="contents">
-                            <Input className="h-8 py-0" type="text" inputMode="numeric" readOnly={readOnly} value={String(p.atHours ?? '')} onChange={(e) => setCell(i, 'atHours', e.target.value)} aria-label={tx('biaDetail.impactAt')} />
-                            {DIMS.map(([k]) => (
-                                <Input key={k} className="h-8 py-0" type="text" inputMode="numeric" readOnly={readOnly} value={p[k] != null ? String(p[k]) : ''} onChange={(e) => setCell(i, k, e.target.value)} />
+                            <Input className="h-8 py-0" type="text" inputMode="decimal" readOnly={readOnly} value={p.atHours} invalid={cellInvalid(p.atHours) || (invalid && p.atHours.trim() === '')} onChange={(e) => setCell(i, 'atHours', e.target.value)} aria-label={tx('biaDetail.impactAtAria', { row: i + 1 })} />
+                            {DIMS.map(([k, label]) => (
+                                <Input key={k} className="h-8 py-0" type="text" inputMode="decimal" readOnly={readOnly} value={p[k]} invalid={cellInvalid(p[k])} onChange={(e) => setCell(i, k, e.target.value)} aria-label={tx('biaDetail.impactCellAria', { dimension: label, row: i + 1 })} />
                             ))}
                             {readOnly ? <div /> : (
-                            <button type="button" onClick={() => removeRow(i)} className="text-content-muted hover:text-content-error text-xs" aria-label={tx('biaDetail.depRemove')}>{tx('biaDetail.depRemove')}</button>
+                            <Button variant="ghost" size="sm" onClick={() => removeRow(i)} aria-label={tx('biaDetail.impactRemoveAria', { row: i + 1 })}>{tx('biaDetail.depRemove')}</Button>
                             )}
                         </div>
                     ))}
                 </div>
             )}
+            {invalid && (
+                <InlineNotice variant="error" data-testid="bia-impact-invalid">{tx('biaDetail.impactInvalid')}</InlineNotice>
+            )}
             {!readOnly && (
             <div className="flex gap-tight">
                 <Button variant="ghost" size="sm" onClick={addRow} id="bia-impact-add-row">{tx('biaDetail.impactAddPoint')}</Button>
                 {dirty && (
-                    <Button variant="secondary" size="sm" disabled={saving} id="bia-impact-save" onClick={async () => { setSaving(true); try { await onSave(rows); } finally { setSaving(false); } }}>
+                    <Button variant="secondary" size="sm" disabled={saving} id="bia-impact-save" onClick={() => { void save(); }}>
                         {saving ? tx('biaDetail.saving') : tx('biaDetail.saveImpact')}
                     </Button>
                 )}
