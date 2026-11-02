@@ -179,11 +179,16 @@ export function SharePointCard() {
                     const res = await fetch(apiUrl(`/admin/integrations/sharepoint?connectionId=${conn.id}`), {
                         method: 'DELETE',
                     });
-                    if (!res.ok && res.status !== 404) throw new Error(`Disconnect failed (${res.status})`);
+                    if (!res.ok && res.status !== 404) {
+                        // The server's reason, not `Disconnect failed (<status>)`,
+                        // which the handler below threw away (#4969).
+                        const data: unknown = await res.json().catch(() => null);
+                        throw new Error(apiErrorMessage(data, t('sharepoint.disconnectFailed')));
+                    }
                 },
                 undoAction: () => load(),
-                onError: () => {
-                    setError(t('sharepoint.disconnectFailed'));
+                onError: (err) => {
+                    setError(err instanceof Error && err.message ? err.message : t('sharepoint.disconnectFailed'));
                     void load();
                 },
             });

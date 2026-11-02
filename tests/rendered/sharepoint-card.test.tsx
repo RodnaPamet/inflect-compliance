@@ -71,6 +71,18 @@ jest.mock('@/lib/tenant-context-provider', () => {
     };
 });
 
+// The undo window commits at once, so a test does not wait out its five seconds.
+jest.mock('@/components/ui/hooks', () => {
+    const actual = jest.requireActual('@/components/ui/hooks');
+    return {
+        ...actual,
+        useToastWithUndo: () => (input: { action: () => Promise<unknown>; onError?: (e: unknown) => void }) => {
+            void input.action().catch((e) => input.onError?.(e));
+            return 'toast';
+        },
+    };
+});
+
 import { SharePointCard } from '@/app/t/[tenantSlug]/(app)/admin/integrations/SharePointCard';
 
 const sp = (over: Record<string, unknown> = {}) => ({
@@ -211,5 +223,31 @@ describe('the controls offered, by who is asking', () => {
         for (const name of ['Test', 'Sites', 'Disconnect']) {
             expect({ name, offered: within(row).queryAllByRole('button', { name }).length }).toEqual({ name, offered: 0 });
         }
+    });
+});
+
+// #4969 — a refused disconnect says why, instead of the generic sentence.
+describe('disconnecting', () => {
+    it("a refused disconnect shows the server's reason", async () => {
+        serve([sp()], {
+            'DELETE /admin/integrations/sharepoint?connectionId=sp-1': () =>
+                refusal('A retention hold keeps this connection'),
+        });
+        render(<SharePointCard />);
+        const row = await screen.findByTestId('sp-connection-sp-1');
+        fireEvent.click(within(row).getByRole('button', { name: 'Disconnect' }));
+        expect(await screen.findByText('A retention hold keeps this connection')).toBeInTheDocument();
+    });
+
+    it('with no reason, the page sentence and no status code', async () => {
+        const EN = require('../../messages/en.json');
+        serve([sp()], {
+            'DELETE /admin/integrations/sharepoint?connectionId=sp-1': () => ({ status: 500, body: null }),
+        });
+        render(<SharePointCard />);
+        const row = await screen.findByTestId('sp-connection-sp-1');
+        fireEvent.click(within(row).getByRole('button', { name: 'Disconnect' }));
+        expect(await screen.findByText(EN.admin.sharepoint.disconnectFailed)).toBeInTheDocument();
+        expect(screen.queryByText(/Disconnect failed \(/)).toBeNull();
     });
 });
