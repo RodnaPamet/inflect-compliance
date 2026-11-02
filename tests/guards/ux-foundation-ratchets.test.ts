@@ -136,7 +136,13 @@ describe('Epic 64 — window.confirm() ceiling', () => {
     // 2026-10-30 — −1 (14): `NewAuditModal`'s unsaved-changes guard moved to
     // <ConfirmDialog> (#4531). The close is deferred until the choice resolves:
     // the close request opens the dialog and Discard closes the form.
-    const CONFIRM_CALL_CEILING = 14;
+    //
+    // 2026-11-02 — 0 (#4989). The ceiling had drifted to ten above the real
+    // count as round 17 moved the other unsaved-changes guards to
+    // <ConfirmDialog>. The last four — members Deactivate, Remove and session
+    // revoke, and the vendor bundle freeze — moved too. Zero is the number now:
+    // a new native confirm under the tenant app is a regression.
+    const CONFIRM_CALL_CEILING = 0;
 
     it(`has at most ${CONFIRM_CALL_CEILING} native-confirm call sites under the tenant app`, () => {
         const offenders: string[] = [];

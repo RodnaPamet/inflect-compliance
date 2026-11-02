@@ -591,7 +591,11 @@ describe('the audit hub (#4962)', () => {
         const base = fetchMock.getMockImplementation() as (u: string, i?: RequestInit) => Promise<Response>;
         fetchMock.mockImplementation((url: string, init?: RequestInit) => {
             const u = String(url);
-            if (!init?.method && /\/audits(\?|$)/.test(u)) {
+            // The hub's fetcher sends an explicit GET: a test that served only
+            // method-less requests let the refetched list fall through to the
+            // one-row default, so the second audit vanished whenever the
+            // refetch landed before the click that names it.
+            if ((!init?.method || init.method === 'GET') && /\/audits(\?|$)/.test(u)) {
                 return Promise.resolve({ ok: true, json: async () => ({ rows, truncated: false }) } as Response);
             }
             return base(url, init);
