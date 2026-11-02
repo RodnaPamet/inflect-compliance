@@ -7843,15 +7843,18 @@
       "creating": "Създаване…",
       "createDraft": "Създай чернова",
       "keyNameRequired": "Ключ и име са задължителни.",
-      "httpError": "HTTP {status}",
       "allTemplates": "Всички шаблони ({count})",
       "emptyTitle": "Все още няма шаблони",
       "emptyDesc": "Използвайте формата по-горе, за да създадете първия си шаблон на въпросник за доставчик.",
-      "sectionsCount": "{count} секция(и)",
-      "questionsCount": "{count} въпрос(а)",
       "published": "Публикуван",
       "draft": "Чернова",
-      "updated": "Обновен {date}"
+      "updated": "Обновен {date}",
+      "createFailed": "Шаблонът не можа да бъде създаден. Опитайте отново.",
+      "loadFailed": "Шаблоните не можаха да се заредят.",
+      "retry": "Опитайте отново",
+      "keyHint": "Кратък идентификатор на шаблона, например soc2-vendor. Остава същият във всички версии.",
+      "builtIn": "Вграден",
+      "rowMeta": "Ключ {key} · Версия {version} · {sections, plural, one {# секция} other {# секции}} · {questions, plural, one {# въпрос} other {# въпроса}}"
     },
     "templateBuilder": {
       "loadError": "Неуспешно зареждане на шаблона ({status})",
