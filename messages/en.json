@@ -5695,7 +5695,7 @@
         "provenance": "Provenance",
         "modelRef": "Model reference",
         "owner": "Accountable owner",
-        "ownerMovesByTransfer": "Ownership moves only by a two-step transfer: another holder of the tenant lifecycle permission proposes it, and the person it names accepts it.",
+        "ownerMovesByTransfer": "Ownership moves only by a two-step transfer: an Owner or AI admin proposes it, and the person it names accepts it.",
         "vendor": "Supplier",
         "vendorNone": "No supplier — first party",
         "save": "Save {count} change(s)",
@@ -6364,7 +6364,9 @@
           "EXPIRED": "Expired",
           "PENDING": "Open"
         }
-      }
+      },
+      "autonomyLevel": "Level {level}",
+      "viewOnlyTabs": "You can read this agent's Overview and Runs. The other tabs need the agent register permission, which Owners, Admins and AI admins have."
     },
     "mcp": {
       "title": "Agent credentials",
