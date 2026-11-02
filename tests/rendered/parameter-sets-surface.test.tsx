@@ -906,3 +906,119 @@ describe('words, not codes (#4900)', () => {
         expect(card).toHaveTextContent('Revision 1');
     });
 });
+
+describe('arguments are checked against the tool\'s own schema before saving (#4900)', () => {
+    const SCHEMA = {
+        type: 'object',
+        properties: {
+            host: { type: 'string' },
+            limit: { type: 'integer', minimum: 1 },
+            q: { type: 'string' },
+        },
+        required: ['host', 'limit', 'q'],
+        additionalProperties: false,
+    };
+    function withSchema() {
+        catalogue = {
+            ok: true,
+            body: {
+                tools: [
+                    { toolName: TOOL, advertisedName: 'update_user', liveSchema: JSON.stringify(SCHEMA, null, 2) },
+                ],
+            },
+        };
+    }
+
+    async function fillBaseline(user: ReturnType<typeof userEvent.setup>, json: string) {
+        await user.click(document.getElementById('parameter-sets-tool') as HTMLElement);
+        await user.click(await screen.findByText('update_user'));
+        fireEvent.change(document.getElementById('parameter-sets-label') as HTMLElement, {
+            target: { value: 'Nightly roster push' },
+        });
+        fireEvent.change(document.getElementById('parameter-sets-parameters') as HTMLElement, {
+            target: { value: json },
+        });
+    }
+
+    it('names each wrong argument and sends nothing, then saves once they are right', async () => {
+        withSchema();
+        const user = userEvent.setup();
+        mount();
+        await screen.findByTestId('parameter-set-create');
+        await fillBaseline(user, '{"host":"a.test","limt":5,"q":"x"}');
+
+        fireEvent.click(screen.getByRole('button', { name: /Save baseline/ }));
+        const problems = await screen.findByTestId('parameter-set-create-problems');
+        expect(problems).toHaveTextContent(/don’t match what the tool accepts/);
+        expect(problems).toHaveTextContent('limit: the tool needs this argument, and it is missing.');
+        expect(problems).toHaveTextContent('limt: the tool takes no argument with this name.');
+        expect(calls.some((c) => c.method === 'POST')).toBe(false);
+
+        fireEvent.change(document.getElementById('parameter-sets-parameters') as HTMLElement, {
+            target: { value: '{"host":"a.test","limit":"5","q":"x"}' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: /Save baseline/ }));
+        expect(await screen.findByTestId('parameter-set-create-problems')).toHaveTextContent(
+            'limit: should be a whole number.',
+        );
+        expect(calls.some((c) => c.method === 'POST')).toBe(false);
+
+        fireEvent.change(document.getElementById('parameter-sets-parameters') as HTMLElement, {
+            target: { value: '{"host":"a.test","limit":5,"q":"x"}' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: /Save baseline/ }));
+        await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+        expect(screen.queryByTestId('parameter-set-create-problems')).not.toBeInTheDocument();
+    });
+
+    it('tells the person which arguments the chosen tool takes', async () => {
+        withSchema();
+        const user = userEvent.setup();
+        mount();
+        await screen.findByTestId('parameter-set-create');
+        await user.click(document.getElementById('parameter-sets-tool') as HTMLElement);
+        await user.click(await screen.findByText('update_user'));
+        const hint = await screen.findByTestId('parameter-sets-declared-arguments');
+        expect(hint).toHaveTextContent(/This tool takes:/);
+        expect(hint).toHaveTextContent('host (text), required');
+        expect(hint).toHaveTextContent('limit (a whole number), required');
+    });
+
+    it('in a proposal, a field left OPEN is filled by the agent, so it is not missing', async () => {
+        withSchema();
+        listBody = [baseline({ parameters: { host: 'a.test', limit: 10, q: 'x' } })];
+        mount();
+        await screen.findByTestId('parameter-set-Nightly roster push');
+
+        fireEvent.click(screen.getByRole('button', { name: /Propose a change/ }));
+        const form = screen.getByTestId('parameter-set-propose-Nightly roster push');
+        fireEvent.change(within(form).getByRole('textbox', { name: /Arguments as JSON/ }), {
+            target: { value: '{"host":"b.test","limit":10}' },
+        });
+
+        // q is neither given nor open: the check names it, and nothing is sent.
+        fireEvent.click(within(form).getByRole('button', { name: /^Propose$/ }));
+        expect(
+            await screen.findByTestId('parameter-set-propose-problems-Nightly roster push'),
+        ).toHaveTextContent('q: the tool needs this argument, and it is missing.');
+        expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+
+        // Opened, the agent fills it within the bound, so the edit is sent.
+        fireEvent.change(within(form).getByRole('textbox', { name: /Open fields/ }), {
+            target: { value: '{"q":{"kind":"regex","pattern":"^[a-z]{1,10}$"}}' },
+        });
+        fireEvent.click(within(form).getByRole('button', { name: /^Propose$/ }));
+        await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
+    });
+
+    it('checks nothing when the catalogue sends no schema — the server still decides', async () => {
+        const user = userEvent.setup();
+        mount();
+        await screen.findByTestId('parameter-set-create');
+        await fillBaseline(user, '{"anything":1}');
+        fireEvent.click(screen.getByRole('button', { name: /Save baseline/ }));
+        await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+        expect(screen.queryByTestId('parameter-set-create-problems')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('parameter-sets-declared-arguments')).not.toBeInTheDocument();
+    });
+});

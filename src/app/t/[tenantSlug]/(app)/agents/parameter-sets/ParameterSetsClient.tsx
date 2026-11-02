@@ -52,12 +52,18 @@
  * a body has to be an object before it can be sent at all.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 
 // Both leaf modules with no server imports, so a client may hold them —
 // `ExternalWriteLadderClient` records the same reasoning for the ladder's
 // constants. The TYPE import is erased entirely.
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
+import {
+    checkToolArguments,
+    declaredArguments,
+    parseToolSchema,
+    type ArgumentProblem,
+} from '@/lib/agentic/tool-argument-check';
 import type { ValueConstraintKind } from '@/lib/integrations/parameter-constraints';
 
 import { Button } from '@/components/ui/button';
@@ -231,6 +237,77 @@ function toolInWords(name: string): string {
 
 const APPROVAL_SOURCES = new Set(['BASELINE', 'APPROVED']);
 
+/** One tool from the catalogue: its names, and the argument schema it advertises. */
+interface CatalogueTool {
+    toolName: string;
+    advertisedName: string;
+    /** The live `inputSchema`, as the JSON text the catalogue sends. */
+    liveSchema?: string;
+}
+
+/** The JSON Schema type names this page has words for; any other is shown as written. */
+const TYPE_WORDS = new Set(['string', 'number', 'integer', 'boolean', 'object', 'array', 'null']);
+
+/** "text or empty", in the reader's language. */
+function useTypeWords(): (types: readonly string[]) => string {
+    const t = useTranslations('agents');
+    const locale = useLocale();
+    return (types) => {
+        const words = types.map((type) =>
+            TYPE_WORDS.has(type) ? t(`parameterSets.argCheck.type.${type}`) : type,
+        );
+        return new Intl.ListFormat(locale, { type: 'disjunction' }).format(words);
+    };
+}
+
+/**
+ * What the pre-check found, one sentence per argument, so the person fixes the
+ * JSON before saving rather than after an agent's call fails at the server.
+ */
+function ArgumentProblems({ problems, testId }: { problems: readonly ArgumentProblem[]; testId: string }) {
+    const t = useTranslations('agents');
+    const typeWords = useTypeWords();
+    if (problems.length === 0) return null;
+    return (
+        <InlineNotice variant="error" data-testid={testId}>
+            <p>{t('parameterSets.argCheck.heading')}</p>
+            <ul className="mt-tight list-disc space-y-tight pl-5">
+                {problems.map((p) => (
+                    <li key={`${p.kind}:${p.path}`}>
+                        {t(`parameterSets.argCheck.problem.${p.kind}`, {
+                            path: p.path,
+                            expected: p.expected ?? '',
+                            types: typeWords(p.types ?? []),
+                        })}
+                    </li>
+                ))}
+            </ul>
+        </InlineNotice>
+    );
+}
+
+/** "This tool takes: role (text), required, and limit (a whole number)." Nothing when the schema names none. */
+function DeclaredArgumentsHint({ schemaText, testId }: { schemaText: string | undefined; testId: string }) {
+    const t = useTranslations('agents');
+    const locale = useLocale();
+    const typeWords = useTypeWords();
+    const declared = declaredArguments(parseToolSchema(schemaText));
+    if (declared.length === 0) return null;
+    const items = declared.map((a) => {
+        const item = a.types
+            ? t('parameterSets.argCheck.itemTyped', { name: a.name, type: typeWords(a.types) })
+            : a.name;
+        return a.required ? t('parameterSets.argCheck.itemRequired', { item }) : item;
+    });
+    return (
+        <p className="text-xs text-content-muted" data-testid={testId}>
+            {t('parameterSets.argCheck.declared', {
+                list: new Intl.ListFormat(locale, { type: 'unit' }).format(items),
+            })}
+        </p>
+    );
+}
+
 export function ParameterSetsClient({
     connections,
     targetPopulations,
@@ -277,26 +354,38 @@ export function ParameterSetsClient({
      * simply never applies, which reads to an operator as the feature not
      * working.
      */
-    const [tools, setTools] = useState<Array<{ toolName: string; advertisedName: string }> | null>(
-        null,
-    );
+    const [tools, setTools] = useState<CatalogueTool[] | null>(null);
     const [catalogueError, setCatalogueError] = useState<string | null>(null);
 
     const [newToolName, setNewToolName] = useState('');
     const [newLabel, setNewLabel] = useState('');
     const [newParameters, setNewParameters] = useState('{}');
     const [createError, setCreateError] = useState<string | null>(null);
+    /** What the pre-check found wrong with the baseline's arguments (#4900 finding 5). */
+    const [createProblems, setCreateProblems] = useState<ArgumentProblem[]>([]);
 
     const [proposingId, setProposingId] = useState<string | null>(null);
     const [proposeParameters, setProposeParameters] = useState('{}');
     const [proposeOpenFields, setProposeOpenFields] = useState('');
     const [proposeTarget, setProposeTarget] = useState('');
+    /** The same, for the one propose form open at a time. */
+    const [proposeProblems, setProposeProblems] = useState<ArgumentProblem[]>([]);
 
     const [busy, setBusy] = useState<string | null>(null);
     /** The server's sentence for the last act on one set, keyed by set id. */
     const [actionError, setActionError] = useState<Record<string, string>>({});
 
     const listPath = '/admin/agents/parameter-sets';
+
+    /**
+     * The argument schema the catalogue sent for a tool, parsed, or null when
+     * the catalogue is not loaded, failed, or does not list the tool. Null
+     * checks nothing: the external server still validates every call.
+     */
+    const schemaFor = useCallback(
+        (toolName: string) => parseToolSchema(tools?.find((x) => x.toolName === toolName)?.liveSchema),
+        [tools],
+    );
 
     /**
      * Our sentence first, and the server's reason after it when it gave one
@@ -353,9 +442,7 @@ export function ParameterSetsClient({
                 setCatalogueError(await serverMessage(res, t('parameterSets.catalogueError')));
                 return;
             }
-            const body = (await res.json()) as {
-                tools?: Array<{ toolName: string; advertisedName: string }>;
-            };
+            const body = (await res.json()) as { tools?: CatalogueTool[] };
             setTools(body.tools ?? []);
         } catch {
             setCatalogueError(t('parameterSets.catalogueError'));
@@ -407,6 +494,10 @@ export function ParameterSetsClient({
             setCreateError(t('parameterSets.notAnObject'));
             return;
         }
+        // A baseline opens no field, so every argument it names is checked.
+        const problems = checkToolArguments(parameters, schemaFor(newToolName));
+        setCreateProblems(problems);
+        if (problems.length > 0) return;
         setBusy('create');
         try {
             const res = await fetch(apiUrl(listPath), {
@@ -430,6 +521,7 @@ export function ParameterSetsClient({
 
     const openPropose = (set: ParameterSetWire) => {
         clearError(set.id);
+        setProposeProblems([]);
         setProposingId(set.id);
         // Prefilled with what is IN FORCE, so an edit starts from the reviewed
         // state. The three fields are the WHOLE intended state after the edit —
@@ -470,6 +562,15 @@ export function ParameterSetsClient({
                 return;
             }
         }
+        // An open field is filled by the agent within its approved bound, so it
+        // is neither missing nor checked here.
+        const problems = checkToolArguments(
+            parameters,
+            schemaFor(set.toolName),
+            isRecord(openFields) ? Object.keys(openFields) : [],
+        );
+        setProposeProblems(problems);
+        if (problems.length > 0) return;
         setBusy(set.id);
         try {
             const res = await fetch(apiUrl(listPath), {
@@ -783,7 +884,12 @@ export function ParameterSetsClient({
                                 onChange={(e) => setNewParameters(e.target.value)}
                             />
                         </FormField>
+                        <DeclaredArgumentsHint
+                            schemaText={tools?.find((x) => x.toolName === newToolName)?.liveSchema}
+                            testId="parameter-sets-declared-arguments"
+                        />
 
+                        <ArgumentProblems problems={createProblems} testId="parameter-set-create-problems" />
                         {createError && (
                             <InlineNotice variant="error" data-testid="parameter-set-create-error">
                                 {createError}
@@ -1148,6 +1254,13 @@ export function ParameterSetsClient({
                                                             }
                                                         />
                                                     </FormField>
+                                                    <DeclaredArgumentsHint
+                                                        schemaText={
+                                                            tools?.find((x) => x.toolName === set.toolName)
+                                                                ?.liveSchema
+                                                        }
+                                                        testId={`parameter-set-declared-arguments-${set.label}`}
+                                                    />
                                                     <FormField
                                                         label={t('parameterSets.openFieldsLabel')}
                                                         description={t('parameterSets.openFieldsHelp')}
@@ -1204,6 +1317,10 @@ export function ParameterSetsClient({
                                                             )?.bound ?? ''}
                                                         </p>
                                                     )}
+                                                    <ArgumentProblems
+                                                        problems={proposeProblems}
+                                                        testId={`parameter-set-propose-problems-${set.label}`}
+                                                    />
                                                     <div className="flex flex-wrap items-center gap-default">
                                                         <Button
                                                             variant="secondary"

@@ -11959,7 +11959,38 @@
       },
       "exactEditSecondPerson": "This change sets exact values only, so it needs no signature. Somebody other than its proposer approves it.",
       "exactEditNoSignature": "This change sets exact values only, so it needs no signature and can be approved straight away.",
-      "proposerCannotDecide": "You proposed this change, so somebody else signs and approves it."
+      "proposerCannotDecide": "You proposed this change, so somebody else signs and approves it.",
+      "argCheck": {
+        "heading": "These arguments don’t match what the tool accepts. Fix them, then try again:",
+        "declared": "This tool takes: {list}.",
+        "itemTyped": "{name} ({type})",
+        "itemRequired": "{item}, required",
+        "type": {
+          "string": "text",
+          "number": "a number",
+          "integer": "a whole number",
+          "boolean": "true or false",
+          "object": "an object",
+          "array": "a list",
+          "null": "empty"
+        },
+        "problem": {
+          "MISSING": "{path}: the tool needs this argument, and it is missing.",
+          "UNKNOWN": "{path}: the tool takes no argument with this name.",
+          "TYPE": "{path}: should be {types}.",
+          "ENUM": "{path}: must be one of {expected}.",
+          "CONST": "{path}: must be {expected}.",
+          "TOO_SHORT": "{path}: must be at least {expected} characters long.",
+          "TOO_LONG": "{path}: must be at most {expected} characters long.",
+          "PATTERN": "{path}: does not match the pattern the tool requires ({expected}).",
+          "TOO_SMALL": "{path}: must be at least {expected}.",
+          "TOO_SMALL_EXCLUSIVE": "{path}: must be more than {expected}.",
+          "TOO_LARGE": "{path}: must be at most {expected}.",
+          "TOO_LARGE_EXCLUSIVE": "{path}: must be less than {expected}.",
+          "TOO_FEW_ITEMS": "{path}: needs at least {expected} items.",
+          "TOO_MANY_ITEMS": "{path}: can have at most {expected} items."
+        }
+      }
     },
     "compose": {
       "breadcrumb": "Compose",
