@@ -7893,16 +7893,16 @@
       "questionsEmpty": "No questions yet — drag here or add one below."
     },
     "assessmentReview": {
-      "loadError": "Failed to load ({status})",
+      "loadError": "Couldn't load this assessment. Try again.",
       "loadErrorNetwork": "Couldn't load this assessment. Check your connection and try again.",
-      "saveError": "Save failed ({status})",
-      "closeError": "Close failed ({status})",
+      "saveError": "Couldn't save the review. Try again.",
+      "closeError": "Couldn't close the assessment. Try again.",
       "notFound": "Assessment not found",
       "autoRiskCreated": "A register Risk was auto-created from this high-risk assessment.",
-      "autoRiskView": "View risk →",
+      "autoRiskView": "View risk",
       "submitted": "Submitted {date}",
       "awaitingTitle": "Awaiting external respondent.",
-      "awaitingDesc": "The vendor hasn't submitted yet. Review controls unlock once the assessment moves to SUBMITTED.",
+      "awaitingDesc": "The vendor hasn't submitted yet. You can review the answers once they do.",
       "mode": "Mode",
       "score": "Score",
       "autoSum": "Auto sum",
@@ -7926,7 +7926,22 @@
       "closedOn": "Closed {date}",
       "closedNoDate": "Closed",
       "finalRatingColon": "Final rating:",
-      "noAnswer": "no answer"
+      "noAnswer": "no answer",
+      "templateVersion": "Template version {version}",
+      "weight": "Weight {weight}",
+      "overrideAria": "Override points for: {question}",
+      "notesAria": "Notes for: {question}",
+      "modeLabel": {
+        "SIMPLE_SUM": "Simple sum",
+        "WEIGHTED_AVERAGE": "Weighted average",
+        "PASS_FAIL_THRESHOLD": "Pass mark"
+      },
+      "verdictLabel": {
+        "PASS": "Pass",
+        "FAIL": "Fail"
+      },
+      "closeConfirmTitle": "Close this assessment?",
+      "closeConfirmBody": "Closing is final. The answers, score and rating can't change after it."
     },
     "nav": {
       "members": "Members & Roles",
@@ -8829,6 +8844,15 @@
           "description": "Lets them read the proposals the output guard refused, including the content that was attempted."
         }
       }
+    },
+    "vendorAnswerType": {
+      "YES_NO": "Yes or no",
+      "SINGLE_SELECT": "Single choice",
+      "MULTI_SELECT": "Multiple choice",
+      "TEXT": "Text",
+      "NUMBER": "Number",
+      "SCALE": "Scale",
+      "FILE_UPLOAD": "File upload"
     }
   },
   "riskManager": {

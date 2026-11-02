@@ -77,6 +77,7 @@ describeFn('vendor-doc extraction (integration)', () => {
     let documentId: string;
     let assessmentId: string;
     let questionId: string;
+    let legacyTemplateId: string;
     // G-3 (template-version) fixtures.
     let g3AssessmentId: string;
     let g3QuestionId: string;
@@ -98,6 +99,7 @@ describeFn('vendor-doc extraction (integration)', () => {
             })
         ).id;
         const template = await prisma.questionnaireTemplate.create({ data: { key: `tpl-${suffix}`, name: 'Security' } });
+        legacyTemplateId = template.id;
         questionId = (
             await prisma.questionnaireQuestion.create({
                 data: { templateId: template.id, section: 'Security', prompt: 'Do you enforce access control?', answerType: 'YES_NO' },
@@ -202,6 +204,36 @@ describeFn('vendor-doc extraction (integration)', () => {
         expect(updatedProposal!.status).toBe('ACCEPTED');
         expect(updatedProposal!.createdAnswerId).toBe(answerId);
     });
+
+    it.each(['REVIEWED', 'CLOSED'] as const)(
+        'refuses to approve a proposal onto a %s assessment, leaving its answers alone (#4936)',
+        async (status) => {
+            const frozenId = (
+                await prisma.vendorAssessment.create({
+                    data: { tenantId, vendorId, templateId: legacyTemplateId, requestedByUserId: userId, status },
+                })
+            ).id;
+            const extraction = await prisma.vendorDocExtraction.create({
+                data: { tenantId, vendorId, documentId, assessmentId: frozenId, status: 'EXTRACTED', createdByUserId: userId },
+            });
+            const proposal = await prisma.vendorAnswerProposal.create({
+                data: {
+                    tenantId,
+                    extractionId: extraction.id,
+                    assessmentId: frozenId,
+                    questionId,
+                    proposedAnswerJson: { value: 'YES' },
+                    confidence: 'high',
+                    sourceCitation: 'SOC 2 CC6.1',
+                    status: 'PENDING',
+                },
+            });
+
+            await expect(approveProposal(ctx, proposal.id)).rejects.toMatchObject({ status: 409 });
+            expect(await prisma.vendorAssessmentAnswer.count({ where: { tenantId, assessmentId: frozenId } })).toBe(0);
+            expect((await prisma.vendorAnswerProposal.findFirst({ where: { id: proposal.id } }))!.status).toBe('PENDING');
+        },
+    );
 
     it('rejecting a proposal writes no answer', async () => {
         const extraction = await prisma.vendorDocExtraction.create({
