@@ -365,6 +365,28 @@ describe('test-plan stepper — the /tests register entry path', () => {
     });
 });
 
+describe('test-plan breadcrumb — the control-scoped entry path', () => {
+    it('shows a skeleton, not the word "Control", while the control loads (#4928)', async () => {
+        const base = fetchMock.getMockImplementation()!;
+        fetchMock.mockImplementation((url: string) =>
+            /\/controls\/ctl-1$/.test(String(url)) ? new Promise(() => {}) : base(url),
+        );
+        const Wrapper = makeWrapper();
+        const view = await renderPlanDetail(Wrapper, 'plan-z', 'control');
+        expect(view.container.querySelector('#test-plan-title')?.textContent).toBe('Zeta restore drill');
+        expect(view.container.querySelector('[data-testid="test-plan-control-crumb-loading"]')).not.toBeNull();
+    });
+
+    it('names the control once it has loaded', async () => {
+        const Wrapper = makeWrapper();
+        const view = await renderPlanDetail(Wrapper, 'plan-z', 'control');
+        await waitFor(() => {
+            expect(view.container.querySelector('[data-testid="test-plan-control-crumb-loading"]')).toBeNull();
+        });
+        expect(view.container.textContent).toContain('Control ctl-1');
+    });
+});
+
 describe('test-plan stepper — the control-scoped entry path', () => {
     it('walks only THAT control’s plans, under the control-scoped href', async () => {
         const Wrapper = makeWrapper();
@@ -389,17 +411,20 @@ describe('test-plan stepper — the control-scoped entry path', () => {
         expect(routerMock.replace).not.toHaveBeenCalledWith('/t/acme/tests/plans/plan-m');
     });
 
-    it('shows no arrows, and reads no plan list, on a control-scoped deep link', async () => {
+    it('on a control-scoped deep link, reads THAT control’s plans and walks them (#4928)', async () => {
         const Wrapper = makeWrapper();
+        // Nothing published — straight to the detail route, as from a fresh
+        // tab, a shared address or a notification.
         const view = await renderPlanDetail(Wrapper, 'plan-z', 'control');
-        // Positive anchor: the page rendered — this is not a "nothing mounted"
-        // pass — and it fetched the plan itself.
         expect(view.container.querySelector('#test-plan-title')?.textContent).toBe('Zeta restore drill');
-        expect(requested.some((u) => u.endsWith('/tests/plans/plan-z'))).toBe(true);
-        expect(view.container.querySelector('[data-testid="entity-prev-next-nav"]')).toBeNull();
-        // The control key has a null `listKey`, and the register key must not
-        // leak in through the other branch.
-        expect(requested.some((u) => u.endsWith('/tests/plans'))).toBe(false);
-        expect(requested.some((u) => u.endsWith('/controls/ctl-1/tests/plans'))).toBe(false);
+        await waitFor(() => {
+            expect(view.container.querySelector('[data-testid="entity-prev-next-nav"]')).not.toBeNull();
+        });
+        // The control's own list, never the tenant-wide register.
+        expect(requested.some((u) => u.endsWith('/controls/ctl-1/tests/plans'))).toBe(true);
+        expect(requested.some((u) => /\/tests\/plans$/.test(u) && !/\/controls\//.test(u))).toBe(false);
+        const { next } = navButtons(view.container);
+        act(() => { fireEvent.click(next!); });
+        expect(routerMock.replace).toHaveBeenCalledWith('/t/acme/controls/ctl-1/tests/plan-a');
     });
 });
