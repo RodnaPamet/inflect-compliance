@@ -41,9 +41,16 @@ jest.mock('@/components/ui/tooltip', () => ({
 }));
 
 let canExport = true;
-jest.mock('@/lib/tenant-context-provider', () => ({
-    usePermissions: () => ({ reports: { view: true, export: canExport } }),
-}));
+let plan: string | undefined;
+jest.mock('@/lib/tenant-context-provider', () => {
+    const href = (path: string) => `/t/acme${path}`;
+    return {
+        usePermissions: () => ({ reports: { view: true, export: canExport } }),
+        // Read by <UpgradeGate> around Print: no plan is self-hosted, all features.
+        useTenantContext: () => ({ plan }),
+        useTenantHref: () => href,
+    };
+});
 
 import { SoAClient } from '@/app/t/[tenantSlug]/(app)/reports/soa/SoAClient';
 import type { SoAReportDTO } from '@/lib/dto/soa';
@@ -89,6 +96,7 @@ const reply = (status: number, body: unknown) => ({ ok: status < 400, status, js
 
 beforeEach(() => {
     canExport = true;
+    plan = undefined;
     Object.values(toast).forEach((f) => f.mockReset());
     refresh.mockReset();
     global.fetch = jest.fn(async () => reply(200, {})) as unknown as typeof fetch;
@@ -113,11 +121,23 @@ describe('Statement of Applicability page', () => {
         );
     });
 
-    it('offers the CSV only to a role the export route admits', () => {
+    it('offers the CSV and Print only to a role the export routes admit (#4927)', () => {
         canExport = false;
         renderPage();
         expect(document.getElementById('soa-export-csv')).toBeNull();
-        expect(document.getElementById('soa-print-link')).not.toBeNull();
+        expect(document.getElementById('soa-print-link')).toBeNull();
+    });
+
+    it('locks Print behind the plan when PDF exports are not in it, and says which plan (#4927)', () => {
+        plan = 'FREE';
+        renderPage();
+        // Shown but inert, beside a link to billing naming the plan it needs,
+        // rather than a link the print page would bounce.
+        const print = document.getElementById('soa-print-link')!;
+        expect(print.closest('.pointer-events-none')).not.toBeNull();
+        expect(document.querySelector('a[href="/t/acme/admin/billing"]')).not.toBeNull();
+        // The CSV is not a PDF export, so it stays usable.
+        expect(document.getElementById('soa-export-csv')!.closest('.pointer-events-none')).toBeNull();
     });
 
     it('words the control status and its applicability', async () => {
