@@ -33,6 +33,8 @@ import {
     vendorAssessmentStatusLabelKey,
 } from '@/app-layer/domain/entity-status-mapping';
 
+const RISK_RATINGS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+
 interface ReviewableRow {
     id: string;
     vendorId: string;
@@ -59,7 +61,7 @@ export function VendorAssessmentReviewsQueueClient() {
         try {
             const res = await fetch(apiUrl('/vendor-assessment-reviews'));
             if (!res.ok) {
-                setError(t('reviewQueue.loadError', { status: res.status }));
+                setError(t('reviewQueue.loadError'));
                 return;
             }
             setRows((await res.json()) as ReviewableRow[]);
@@ -69,6 +71,16 @@ export function VendorAssessmentReviewsQueueClient() {
             setLoading(false);
         }
     }, [apiUrl, t]);
+
+    // The rating is a `VendorCriticality`; an unknown value is shown as
+    // stored rather than dropped.
+    const riskRatingLabel = useCallback(
+        (rating: string) =>
+            (RISK_RATINGS as readonly string[]).includes(rating)
+                ? t(`criticalityLabel.${rating as (typeof RISK_RATINGS)[number]}`)
+                : rating,
+        [t],
+    );
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -127,7 +139,9 @@ export function VendorAssessmentReviewsQueueClient() {
                     accessorFn: (r) => r.riskRating ?? '',
                     cell: ({ row }) => (
                         <span className="text-content-muted">
-                            {row.original.riskRating ?? '—'}
+                            {row.original.riskRating
+                                ? riskRatingLabel(row.original.riskRating)
+                                : '—'}
                         </span>
                     ),
                 },
@@ -144,7 +158,7 @@ export function VendorAssessmentReviewsQueueClient() {
                     ),
                 },
             ]),
-        [t, tenantHref],
+        [t, tenantHref, riskRatingLabel],
     );
 
     return (
