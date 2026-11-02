@@ -39,7 +39,7 @@ The score is not the NIS2 control coverage shown on an audit cycle's readiness p
 
 **{{ui:frameworks.readiness.domainBreakdown}}.** Each of the assessment's domains with its **{{ui:frameworks.readiness.colScore}}** and how many of its questions are **{{ui:frameworks.readiness.colAnswered}}**, weakest first. Above the table, the domains to start with.
 
-The questions and domain names come from the assessment's source dataset, in English. In another language, the page says so: {{ui:frameworks.readiness.questionsInEnglish}}
+The questions and domain names come from the assessment's source dataset. This page shows them in Bulgarian when that is your language, and in English otherwise; in any language other than English or Bulgarian, the page says so: {{ui:frameworks.readiness.questionsInEnglish}}
 
 **{{ui:frameworks.readiness.prioritizedGaps}}.** One row per gap, most urgent first, with the **{{ui:frameworks.readiness.colGap}}**, its **{{ui:frameworks.readiness.colCriticality}}**, your **{{ui:frameworks.readiness.colAnswer}}**, its **{{ui:frameworks.readiness.colPriority}}**, the **{{ui:frameworks.readiness.colEffort}}** to fix it and its **{{ui:frameworks.readiness.colLegalBasis}}** in the directive. A gap's priority weighs how critical it is, what failing it costs, whether it carries a fine and how quickly it can be fixed.
 

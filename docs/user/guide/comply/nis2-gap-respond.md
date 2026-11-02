@@ -26,7 +26,7 @@ Anyone else who opens the link sees **{{ui:audits.respond.loadFailed}}** or the 
 The questions, grouped by domain. Each one shows:
 
 - how critical it is: **{{ui:audits.nis2Gap.crit.CRITICAL}}**, **{{ui:audits.nis2Gap.crit.HIGH}}**, **{{ui:audits.nis2Gap.crit.MEDIUM}}** or **{{ui:audits.nis2Gap.crit.LOW}}**;
-- the question, in English (or German where your language is German);
+- the question, in Bulgarian or German when that is your language, and in English otherwise;
 - its legal basis in the NIS2 Directive;
 - four answers to choose from: **{{ui:audits.nis2Gap.answer.YES}}**, **{{ui:audits.nis2Gap.answer.PARTIALLY}}**, **{{ui:audits.nis2Gap.answer.NO}}** or **{{ui:audits.nis2Gap.answer.NA}}**.
 
