@@ -13,10 +13,11 @@
  * on success the modal closes and the parent's `onSaved` callback
  * applies the updated row to the detail-page state.
  */
-import { useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import type { AssetDetail } from '@/lib/dto/asset.types';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Modal } from '@/components/ui/modal';
 import { useTenantContext } from '@/lib/tenant-context-provider';
 import {
@@ -51,23 +52,30 @@ export function EditAssetModal({
         },
     });
 
-    // P3 — unsaved-changes guard. See NewPolicyModal for the pattern.
+    // P3 — unsaved-changes guard, as the task and audit forms ask it (#4963).
+    //
+    // It used to be `window.confirm`: the browser's own dialog, whose buttons
+    // are in the browser's language rather than the workspace's. It is now the
+    // platform <ConfirmDialog>. That dialog is async, so the close request is
+    // PARKED in `pendingClose` until the user answers.
+    const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+    const pendingClose = useRef<SetStateAction<boolean> | null>(null);
+
     const guardedSetOpen = useCallback<Dispatch<SetStateAction<boolean>>>(
         (next) => {
             const wantClose =
                 typeof next === 'function' ? !next(true) : next === false;
             if (wantClose) {
                 if (form.submitting) return;
-                if (
-                    form.isDirty &&
-                    !window.confirm(t('modal.editDiscardConfirm'))
-                ) {
+                if (form.isDirty) {
+                    pendingClose.current = next;
+                    setConfirmDiscardOpen(true);
                     return;
                 }
             }
             setOpen(next);
         },
-        [form.submitting, form.isDirty, setOpen, t],
+        [form.submitting, form.isDirty, setOpen],
     );
     const close = () => guardedSetOpen(false);
 
@@ -128,6 +136,26 @@ export function EditAssetModal({
                     </Button>
                 </Modal.Actions>
             </Modal.Form>
+            {/* `warning`, not `danger`: unsaved input is recoverable by
+                retyping, and "Discard" is the verb for unsaved state. */}
+            <ConfirmDialog
+                showModal={confirmDiscardOpen}
+                setShowModal={setConfirmDiscardOpen}
+                tone="warning"
+                title={t('modal.editDiscardTitle')}
+                description={t('modal.editDiscardConfirm')}
+                confirmLabel={t('modal.editDiscardConfirmLabel')}
+                cancelLabel={t('modal.editDiscardCancelLabel')}
+                onConfirm={() => {
+                    const next = pendingClose.current ?? false;
+                    pendingClose.current = null;
+                    setOpen(next);
+                }}
+                onCancel={() => {
+                    // Keep the form open with what was typed.
+                    pendingClose.current = null;
+                }}
+            />
         </Modal>
     );
 }
