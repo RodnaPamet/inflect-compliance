@@ -236,8 +236,18 @@ const BUDGETS_KB: Record<string, number> = {
         Main had 0.2 KB left in both buckets, so the bump could not pass
         either. The new budgets are measured + ~4, the convention. `controls`
         and `root` are not raised: they still pass, with 1.3 and 0.2 KB left.
+
+        ─── `dashboard` RAISED 2026-11-02 FOR THE NEW-CONTROL RADIO GROUP (#4967, owner decision) ───
+
+        CI measured controls/dashboard/page at 625 KB against 622 on #4979,
+        whose only client change is the new-control form's Applicable / Not
+        applicable choice moving from two native radios to the shared
+        RadioGroup (`@radix-ui/react-radio-group`, about 3 KB gzipped). The
+        dashboard route loads that form. The owner chose the shared control
+        over the budget on 2026-11-02. The new budget is the measured route
+        plus ~1, leaving the same headroom main had.
     */
-    'dashboard': 622,
+    'dashboard': 626,
     // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
     // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
     // 653.2. The growth is in the task form and edit panel that the risk

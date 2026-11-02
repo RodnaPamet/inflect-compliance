@@ -546,7 +546,8 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                             </div>
                             {/* The shared RadioGroup (#4967), named by the label
                                 above: Radix gives it arrow-key movement, the
-                                product's focus ring and its disabled state. */}
+                                product's focus ring and its disabled state. Each
+                                label wraps its item, which names it. */}
                             <Controller
                                 control={control}
                                 name="applicability"
@@ -557,10 +558,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                                         onValueChange={(v) => field.onChange(v)}
                                         className="flex gap-default"
                                     >
-                                        <label
-                                            htmlFor="new-control-applicable"
-                                            className="flex items-center gap-tight text-sm text-content-default"
-                                        >
+                                        <label className="flex items-center gap-tight text-sm text-content-default">
                                             <RadioGroupItem
                                                 id="new-control-applicable"
                                                 value="APPLICABLE"
@@ -568,10 +566,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                                             />
                                             {t('new.applicable')}
                                         </label>
-                                        <label
-                                            htmlFor="new-control-not-applicable"
-                                            className="flex items-center gap-tight text-sm text-content-default"
-                                        >
+                                        <label className="flex items-center gap-tight text-sm text-content-default">
                                             <RadioGroupItem
                                                 id="new-control-not-applicable"
                                                 value="NOT_APPLICABLE"
