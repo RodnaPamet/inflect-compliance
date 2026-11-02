@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, conflict, notFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { createFinding } from './finding';
@@ -258,6 +258,19 @@ export async function approveProposal(
         if (!proposal.assessmentId || !proposal.questionId) {
             throw badRequest('UNMAPPED_PROPOSAL', 'Proposal is not mapped to an assessment question');
         }
+        // A reviewed or closed assessment's answers are what its review
+        // scored. Writing one now would change a recorded result under the
+        // reviewer's rating (#4936).
+        const assessment = await db.vendorAssessment.findFirst({
+            where: { id: proposal.assessmentId, tenantId: ctx.tenantId },
+            select: { status: true },
+        });
+        if (!assessment) throw notFound('Assessment not found');
+        if (ANSWERS_FROZEN_STATUSES.has(assessment.status)) {
+            throw conflict(
+                'This assessment has already been reviewed, so its answers can no longer change. Proposed answers cannot be approved onto it.',
+            );
+        }
         const answer = await db.vendorAssessmentAnswer.upsert({
             where: { assessmentId_questionId: { assessmentId: proposal.assessmentId, questionId: proposal.questionId } },
             create: {
@@ -286,6 +299,9 @@ export async function approveProposal(
         return { answerId: answer.id };
     });
 }
+
+/** Statuses after which an assessment's answers are the reviewed record. */
+const ANSWERS_FROZEN_STATUSES: ReadonlySet<string> = new Set(['REVIEWED', 'CLOSED']);
 
 /** Reject a proposal — no answer is written. */
 export async function rejectProposal(ctx: RequestContext, proposalId: string) {
