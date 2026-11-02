@@ -36,7 +36,7 @@ At the foot of the page, the questions' source and licence.
 
 ### Answer, save and submit
 
-1. Choose an answer for each question. The line at the top counts them, such as {{ui:audits.respond.progress}}
+1. Choose an answer for each question. The line at the top counts them, such as "3 of 12 answered."
 2. Click **{{ui:audits.respond.save}}** at any time to keep what you have answered. The assignment shows as in progress, and the message **{{ui:audits.respond.saved}}** confirms it. Come back later to finish.
 3. When every question has an answer, click **{{ui:audits.respond.submit}}**. Until then it is greyed out, with the note {{ui:audits.respond.submitNeedsAll}}
 4. The message **{{ui:audits.respond.submitted}}** confirms it.
