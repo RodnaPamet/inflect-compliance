@@ -2967,10 +2967,6 @@
       "downloadFile": "Download file",
       "bulkFailed": "Bulk action failed",
       "reviewFailed": "Review action failed",
-      "archiveFailedStatus": "Failed to archive evidence ({status})",
-      "unarchiveFailedStatus": "Failed to unarchive evidence ({status})",
-      "archiveFailedNet": "Failed to archive evidence",
-      "unarchiveFailedNet": "Failed to unarchive evidence",
       "entityLabel": "evidence",
       "triageExpiring": "Expiring",
       "reReview": "Re-review",
@@ -2979,7 +2975,9 @@
       "createTextNote": "Text note",
       "createLink": "Link / URL",
       "createBulkImport": "Bulk ZIP import",
-      "freshnessScopeNotice": "Showing {shown} of {total} matching this tenant-wide — the rest are beyond the loaded page."
+      "freshnessScopeNotice": "Showing {shown} of {total} matching this tenant-wide — the rest are beyond the loaded page.",
+      "archiveFailed": "Failed to archive evidence",
+      "unarchiveFailed": "Failed to unarchive evidence"
     },
     "reject": {
       "title": "Reject evidence",
@@ -3069,7 +3067,7 @@
     "edit": {
       "title": "Edit evidence",
       "description": "Update the details of this evidence record.",
-      "discardConfirm": "Discard changes? Any edits you made will be lost.",
+      "discardConfirm": "Any edits you made will be lost.",
       "titleLabel": "Title",
       "descriptionLabel": "Description",
       "addressLabel": "Address",
@@ -3104,7 +3102,10 @@
       "replacedKeepEditing": "File replaced. Your other changes are not saved yet.",
       "tagsLabel": "Tags",
       "tagsDesc": "Comma-separated. A second way to organise evidence beside folders.",
-      "tagsPlaceholder": "soc2, access-control, q3"
+      "tagsPlaceholder": "soc2, access-control, q3",
+      "discardTitle": "Discard changes?",
+      "discardConfirmLabel": "Discard changes",
+      "discardCancelLabel": "Keep editing"
     },
     "upload": {
       "title": "Upload evidence",
