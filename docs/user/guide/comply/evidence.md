@@ -99,6 +99,7 @@ Choose **{{ui:evidence.list.createBulkImport}}**. In **{{ui:evidence.bulkImport.
 
 Click **{{ui:evidence.list.editEvidence}}** on a row, or the pencil in the details panel. The **{{ui:evidence.edit.title}}** form holds **{{ui:evidence.edit.titleLabel}}**, a note's **{{ui:evidence.edit.descriptionLabel}}** or a link's **{{ui:evidence.edit.addressLabel}}** (a file has neither), **{{ui:evidence.edit.tagsLabel}}** separated by commas, **{{ui:evidence.edit.ownerLabel}}**, **{{ui:evidence.edit.categoryLabel}}**, **{{ui:evidence.edit.controlsLabel}}**, **{{ui:evidence.edit.folderLabel}}** and **{{ui:evidence.edit.retentionLabel}}**. Click **{{ui:evidence.edit.save}}**.
 
+- Closing the form with unsaved changes asks **{{ui:evidence.edit.discardTitle}}**: **{{ui:evidence.edit.discardConfirmLabel}}** closes it, **{{ui:evidence.edit.discardCancelLabel}}** returns to the form.
 - Empty the description box to clear a note. A link's address cannot be cleared: **{{ui:evidence.edit.linkNeedsUrl}}** appears and the save button is greyed out. Clear the retention date to remove it.
 - For a file, choose a new file under **{{ui:evidence.edit.replaceFileLabel}}**. It uploads at once. If you changed nothing else, the form closes; otherwise it stays open and reads **{{ui:evidence.edit.replacedKeepEditing}}**, so click **{{ui:evidence.edit.save}}** to keep the rest. The record keeps its controls, retention and review history, and the earlier file stays under {{ui:evidence.detail.versionsLabel}}.
 

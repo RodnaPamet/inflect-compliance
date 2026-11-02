@@ -24,6 +24,8 @@ Choose which workspace to work in. Each workspace is a separate organisation's c
 
 If you also belong to an organization, the workspaces are listed under **{{ui:tenants.workspacesHeading}}**, and your organizations follow under **{{ui:tenants.organizationsHeading}}**. If you belong to no workspace, only the organizations are listed, under **{{ui:tenants.chooseOrganization}}**.
 
+A workspace whose Microsoft Entra ID rules did not admit this sign-in is left out, as the [{{ui:noTenant.title}}](no-access.md) page explains.
+
 **{{ui:tenants.signOut}}** is at the bottom.
 
 ## What you can do

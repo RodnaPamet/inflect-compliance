@@ -112,7 +112,7 @@ Click the bin icon on its row. It leaves the list at once, and a message offers 
 | **{{ui:admin.entra.mappings.errExists}}** | That group is already mapped | Remove the old mapping first |
 | **{{ui:admin.entra.mappings.errInvalidGuid}}** | The group ID is not in the right form | Copy it again from the Entra admin center |
 | A reason from the server, such as that only an Owner can map a group to AI admin | The mapping was not added | Act on the reason |
-| **{{ui:admin.entra.mappings.errRemove}}** | The mapping was not removed, and is back in the list | Try again |
+| **{{ui:admin.entra.mappings.errRemove}}**, or the reason it was refused | The mapping was not removed, and is back in the list | Follow the reason if one is given, then try again |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
 
 ## Related

@@ -88,7 +88,7 @@ Click a policy's title to open it. For roles that can tick rows, a single click 
 
 Click **{{ui:policies.list.addBtn}}**. The **{{ui:policies.new.titleBlank}}** dialog opens on **{{ui:policies.new.modeNew}}**; an older templates link opens it on **{{ui:policies.new.modeFromTemplate}}** instead. In **{{ui:policies.new.startWith}}**, keep **{{ui:policies.new.modeNew}}** for a blank policy, or choose **{{ui:policies.new.modeFromTemplate}}** and click a template under **{{ui:policies.new.chooseTemplate}}**.
 
-Fill in **{{ui:policies.new.fieldTitle}}**, which is required, and if you like **{{ui:policies.new.fieldDescription}}** and **{{ui:policies.new.fieldCategory}}**. A blank policy can also take its first text under **{{ui:policies.new.fieldContent}}**. Click **{{ui:policies.createPolicy}}**. The policy's page opens.
+Fill in **{{ui:policies.new.fieldTitle}}**, which is required, and if you like **{{ui:policies.new.fieldDescription}}** and **{{ui:policies.new.fieldCategory}}**. A blank policy can also take its first text under **{{ui:policies.new.fieldContent}}**. Click **{{ui:policies.createPolicy}}**. The policy's page opens. Closing the dialog with something filled in asks **{{ui:policies.new.discardTitle}}**: **{{ui:policies.new.discardConfirmLabel}}** closes it, **{{ui:policies.new.discardCancelLabel}}** returns to the form.
 
 If the template is mapped to framework requirements your workspace already has controls for, a dialog first suggests linking the policy to them. Tick the controls the policy supports and click the link button, or click **{{ui:policies.templates.skip}}**. [Create a policy](../../how-to/policies/create-a-policy.md) walks through each field.
 
