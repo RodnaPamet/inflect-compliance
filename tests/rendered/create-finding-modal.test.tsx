@@ -138,7 +138,8 @@ describe('CreateFindingModal', () => {
         expect(alert).not.toHaveTextContent('[object Object]');
     });
 
-    it('falls back to the status line when the server gives no reason', async () => {
+    // #4968 — the fallback is a sentence, never the HTTP status.
+    it('falls back to a sentence, without the status code, when the server gives no reason', async () => {
         global.fetch = jest.fn((_url: string, init?: RequestInit) =>
             Promise.resolve(
                 init?.method === 'POST'
@@ -155,9 +156,29 @@ describe('CreateFindingModal', () => {
         const submit = document.getElementById('submit-finding') as HTMLButtonElement;
         await waitFor(() => expect(submit).not.toBeDisabled());
         fireEvent.click(submit);
-        expect(await screen.findByTestId('create-finding-error')).toHaveTextContent(
-            'Failed to create finding (500)',
-        );
+        const alert = await screen.findByTestId('create-finding-error');
+        expect(alert).toHaveTextContent('Failed to create finding');
+        expect(alert).not.toHaveTextContent('500');
+    });
+
+    // #4968 — the risk picker uses the shared Checkbox, named by its label.
+    it('each risk is a labelled checkbox that toggles', async () => {
+        global.fetch = jest.fn((url: string) =>
+            Promise.resolve({
+                ok: true,
+                json: () =>
+                    Promise.resolve(
+                        String(url).includes('/risks')
+                            ? { rows: [{ id: 'r-1', key: 'RISK-1', title: 'Ransomware' }], truncated: false }
+                            : [],
+                    ),
+            }),
+        ) as unknown as typeof fetch;
+        renderModal();
+        const box = await screen.findByRole('checkbox', { name: /Ransomware/ });
+        expect(box).toHaveAttribute('aria-checked', 'false');
+        fireEvent.click(screen.getByText('Ransomware'));
+        await waitFor(() => expect(box).toHaveAttribute('aria-checked', 'true'));
     });
 
     // Regression lock — the controls lookup must unwrap the backfill-capped

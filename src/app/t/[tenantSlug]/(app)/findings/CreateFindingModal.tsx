@@ -29,6 +29,7 @@ import { useSWRConfig } from 'swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Modal } from '@/components/ui/modal';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
@@ -236,11 +237,10 @@ export function CreateFindingModal({
                 // The error envelope is `{ error: { code, message } }`, so
                 // `data.error` is an OBJECT; handing it to `new Error()` showed
                 // every refusal as "[object Object]". Read the server's reason
-                // through the shared helper, falling back to the status line.
+                // through the shared helper, falling back to a sentence. Never
+                // the HTTP status: "(500)" tells a reader nothing (#4968).
                 const data = await res.json().catch(() => null);
-                throw new Error(
-                    apiErrorMessage(data, tx('create.createFailed', { status: res.status })),
-                );
+                throw new Error(apiErrorMessage(data, tx('create.createFailedGeneric')));
             }
             const finding = await res.json();
             void swrMutate(`/api/t/${tenantSlug}${CACHE_KEYS.findings.list()}`);
@@ -454,13 +454,15 @@ export function CreateFindingModal({
                                             filteredRisks.map((r) => (
                                                 <label
                                                     key={r.id}
+                                                    htmlFor={`finding-risk-opt-${r.id}`}
                                                     className="flex cursor-pointer items-center gap-tight rounded px-1 py-1 text-sm text-content-default hover:bg-bg-muted"
                                                 >
-                                                    <input
-                                                        type="checkbox"
+                                                    {/* The shared Checkbox (#4968), for its focus
+                                                        ring and disabled state; the label names it. */}
+                                                    <Checkbox
+                                                        id={`finding-risk-opt-${r.id}`}
                                                         checked={selectedRiskIds.has(r.id)}
-                                                        onChange={() => toggleRisk(r.id)}
-                                                        className="accent-brand-emphasis"
+                                                        onCheckedChange={() => toggleRisk(r.id)}
                                                         data-testid={`finding-risk-opt-${r.id}`}
                                                     />
                                                     <span className="w-16 shrink-0 text-xs text-content-muted">

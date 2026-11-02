@@ -4904,7 +4904,6 @@
       "cancel": "Cancel",
       "creating": "Creating…",
       "submit": "Create finding",
-      "createFailed": "Failed to create finding ({status})",
       "createFailedGeneric": "Failed to create finding",
       "risksToLinkEmpty": "No risks to link."
     },
@@ -4937,7 +4936,6 @@
       "save": "Save changes",
       "saving": "Saving…",
       "saved": "Finding saved.",
-      "saveFailed": "Failed to save finding ({status})",
       "saveFailedGeneric": "Failed to save finding"
     }
   },
