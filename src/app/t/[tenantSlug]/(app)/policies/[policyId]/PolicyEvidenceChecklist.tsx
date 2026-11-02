@@ -146,6 +146,7 @@ export function PolicyEvidenceChecklist({ policyId, items, canWrite, onChanged }
                         value={newLabel}
                         onChange={(e) => setNewLabel(e.target.value)}
                         placeholder={t('evidence.addPlaceholder')}
+                        aria-label={t('evidence.addLabel')}
                         data-testid="policy-evidence-add-input"
                     />
                     <Button variant="secondary" size="sm" onClick={addItem} disabled={!newLabel.trim() || adding} id="policy-evidence-add-btn">

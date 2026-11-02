@@ -48,6 +48,7 @@ import {
     resolveBackground,
     safeFilename,
 } from '@/lib/processes/canvas-export-shared';
+import { refusalReason } from '@/lib/api-error';
 
 export interface TldrawCanvasExportOptions {
     /** The live editor. Its CURRENT PAGE is what gets exported. */
@@ -235,7 +236,7 @@ export async function exportTldrawCanvasAsPdf(
             body: JSON.stringify({ pngDataUrl }),
         },
     );
-    if (!res.ok) throw new Error(`PDF export failed (${res.status})`);
+    if (!res.ok) throw new Error(await refusalReason(res));
 
     const blobUrl = URL.createObjectURL(await res.blob());
     try {
@@ -270,7 +271,7 @@ export async function attachTldrawCanvasToEvidence(
         method: 'POST',
         body: form,
     });
-    if (!res.ok) throw new Error(`Evidence upload failed (${res.status})`);
+    if (!res.ok) throw new Error(await refusalReason(res));
 
     // The route has answered with both shapes over its life; accepting either
     // is the xyflow behaviour and not worth diverging from here.

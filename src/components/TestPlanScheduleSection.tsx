@@ -35,6 +35,7 @@ import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { apiErrorMessage } from '@/lib/api-error';
+import { extractMutationError } from '@/lib/mutations';
 
 // ─── Cadence catalog ───────────────────────────────────────────────
 //
@@ -199,23 +200,16 @@ export function TestPlanScheduleSection({
                 try {
                     parsed = JSON.parse(txt);
                 } catch { /* keep as text */ }
-                // `txt` stays the second choice: this route can answer with a
-                // non-JSON body, and the raw text is more use than a generic
-                // sentence. `||` rather than the previous `??` because an
-                // EMPTY body is not an answer -- `??` passed `''` through and
-                // rendered a blank error, which reads as a broken page.
-                setError(
-                    apiErrorMessage(parsed, txt || t('saveFailed', { status: res.status })),
-                );
+                // The server's reason, or the section's own sentence (#4987).
+                // Not the raw body: a body that is not our JSON envelope is a
+                // gateway's or a proxy's page — HTML, or a status line — and
+                // not a sentence for the person saving. Never the status code.
+                setError(apiErrorMessage(parsed, t('couldNotSave')));
                 return;
             }
             onSaved?.();
         } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : t('couldNotSave'),
-            );
+            setError(extractMutationError(err, t('couldNotSave')));
         } finally {
             setSaving(false);
         }

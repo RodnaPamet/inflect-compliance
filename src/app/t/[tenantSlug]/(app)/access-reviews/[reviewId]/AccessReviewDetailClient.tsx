@@ -824,6 +824,7 @@ export function AccessReviewDetailClient({
                             <select
                                 className="input"
                                 defaultValue=""
+                                aria-label={t('colDecision')}
                                 data-testid={`connected-decision-select-${d.id}`}
                                 onChange={(e) => {
                                     const v = e.target.value as DecisionType | '';

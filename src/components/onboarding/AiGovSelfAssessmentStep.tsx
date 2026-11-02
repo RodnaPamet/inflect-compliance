@@ -423,6 +423,7 @@ function NoteField({
             className="w-full rounded-md border border-border-subtle bg-bg-default p-2 text-sm"
             rows={2}
             placeholder={t('aiGov.notePlaceholder')}
+            aria-label={t('aiGov.noteLabel')}
             value={val}
             disabled={saving}
             onChange={(e) => setVal(e.target.value)}

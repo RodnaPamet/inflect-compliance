@@ -45,6 +45,7 @@ import { Heading } from '@/components/ui/typography';
 import { InheritedTestPlansPanel } from '@/components/InheritedTestPlansPanel';
 import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
 import { extractMutationError } from '@/lib/mutations';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 
 const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
@@ -175,7 +176,7 @@ export default function RiskDetailPage() {
     const risk = riskQuery.data ?? null;
     const loading = riskQuery.isLoading;
     const loadError = riskQuery.error
-        ? (riskQuery.error instanceof Error ? riskQuery.error.message : String(riskQuery.error))
+        ? extractMutationError(riskQuery.error, t('detail.loadFailed'))
         : null;
     // Mutation-error channel; load errors come from SWR above.
     const [error, setError] = useState<string | null>(null);
@@ -288,8 +289,11 @@ export default function RiskDetailPage() {
                 body: JSON.stringify(payload),
             });
             if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.message || t('detail.saveFailed', { status: res.status }));
+                // The API's reason is under `error.message`; `data.message`
+                // was never set, so every refusal read as the fallback —
+                // which also carried the status code (#4987).
+                const data: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(data, t('detail.saveFailed')));
             }
             return res.json();
         },
@@ -306,10 +310,8 @@ export default function RiskDetailPage() {
                 body: JSON.stringify({ status }),
             });
             if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(
-                    data.message || t('detail.statusChangeFailed', { status: res.status }),
-                );
+                const data: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(data, t('detail.statusChangeFailed')));
             }
             return res.json();
         },
@@ -325,7 +327,7 @@ export default function RiskDetailPage() {
             await saveMutation.trigger();
             setEditing(false);
         } catch (err) {
-            setError(extractMutationError(err));
+            setError(extractMutationError(err, t('detail.saveFailed')));
         }
     };
 
@@ -334,7 +336,7 @@ export default function RiskDetailPage() {
         try {
             await statusMutation.trigger(newStatus);
         } catch (err) {
-            setError(extractMutationError(err));
+            setError(extractMutationError(err, t('detail.statusChangeFailed')));
         }
     };
 

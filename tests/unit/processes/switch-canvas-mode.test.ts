@@ -4,8 +4,9 @@
  * Three thin fetch wrappers behind the process-map document bar. Each
  * has exactly two outcomes (ok / !ok), so the tests pin the request
  * shape (method, headers, body, URL) AND the thrown-message contract
- * on failure — the message carries the status code operators read in
- * a toast.
+ * on failure: the message is the server's own reason, or empty for the
+ * caller to replace with its translated sentence. It never carries the
+ * status code (#4987) — the person reading the toast is not an operator.
  */
 import {
     patchCanvasMode,
@@ -21,7 +22,8 @@ beforeEach(() => {
 });
 
 const ok = () => ({ ok: true, status: 200 });
-const fail = (status: number) => ({ ok: false, status });
+const fail = (status: number, body: unknown = {}) => ({ ok: false, status, json: async () => body });
+const refusal = (message: string) => ({ error: { code: 'CONFLICT', message } });
 
 describe('patchCanvasMode', () => {
     it('PATCHes the canvasMode as JSON to the tenant-scoped map URL', async () => {
@@ -45,11 +47,18 @@ describe('patchCanvasMode', () => {
         });
     });
 
-    it('throws with the status code when the response is not ok', async () => {
-        fetchMock.mockResolvedValueOnce(fail(409));
+    it("throws the server's reason when the response is not ok", async () => {
+        fetchMock.mockResolvedValueOnce(fail(409, refusal('The map changed since you opened it')));
         await expect(
             patchCanvasMode('acme', 'map-1', 'AUTOMATION'),
-        ).rejects.toThrow('Mode switch failed (409)');
+        ).rejects.toThrow('The map changed since you opened it');
+    });
+
+    it('throws an EMPTY message, never the status code, when the server gave no reason', async () => {
+        fetchMock.mockResolvedValueOnce(fail(409));
+        const err = await patchCanvasMode('acme', 'map-1', 'AUTOMATION').catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(Error);
+        expect((err as Error).message).toBe('');
     });
 });
 
@@ -68,11 +77,23 @@ describe('patchProcessStatus', () => {
         },
     );
 
-    it('throws with the status code when the response is not ok', async () => {
-        fetchMock.mockResolvedValueOnce(fail(500));
+    it("throws the server's reason when the response is not ok", async () => {
+        fetchMock.mockResolvedValueOnce(fail(400, refusal('An archived map cannot be activated')));
         await expect(
             patchProcessStatus('acme', 'map-9', 'ARCHIVED'),
-        ).rejects.toThrow('Status change failed (500)');
+        ).rejects.toThrow('An archived map cannot be activated');
+    });
+
+    it('throws an EMPTY message when the body is not JSON', async () => {
+        fetchMock.mockResolvedValueOnce({
+            ok: false,
+            status: 502,
+            json: async () => {
+                throw new SyntaxError('Unexpected token <');
+            },
+        });
+        const err = await patchProcessStatus('acme', 'map-9', 'ARCHIVED').catch((e: unknown) => e);
+        expect((err as Error).message).toBe('');
     });
 });
 
@@ -88,10 +109,10 @@ describe('deleteProcessMap', () => {
         expect(init.body).toBeUndefined();
     });
 
-    it('throws with the status code when the response is not ok', async () => {
-        fetchMock.mockResolvedValueOnce(fail(403));
+    it("throws the server's reason when the response is not ok", async () => {
+        fetchMock.mockResolvedValueOnce(fail(403, refusal('Only an admin can delete a map')));
         await expect(deleteProcessMap('acme', 'map-3')).rejects.toThrow(
-            'Delete failed (403)',
+            'Only an admin can delete a map',
         );
     });
 });

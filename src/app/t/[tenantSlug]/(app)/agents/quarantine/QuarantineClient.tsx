@@ -76,6 +76,7 @@ import { CopyText } from '@/components/ui/copy-text';
 import { ShieldSlash } from '@inflect/ui/components/ui/icons/nucleo';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { extractMutationError } from '@/lib/mutations';
 
 /**
  * One quarantined proposal, exactly as
@@ -375,10 +376,10 @@ function QuarantineInner({
         [],
     );
 
+    // The server's reason, or the page's own sentence — never the
+    // synthesised status line (#4987).
     const loadError = query.error
-        ? query.error instanceof Error
-            ? query.error.message
-            : t('quarantine.loadFailed')
+        ? extractMutationError(query.error, t('quarantine.loadFailed'))
         : undefined;
 
     return (

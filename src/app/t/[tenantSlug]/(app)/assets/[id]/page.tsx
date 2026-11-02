@@ -45,6 +45,7 @@ import { Heading } from '@/components/ui/typography';
 import { InheritedTestPlansPanel } from '@/components/InheritedTestPlansPanel';
 import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
 import { apiErrorMessage } from '@/lib/api-error';
+import { extractMutationError } from '@/lib/mutations';
 
 const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
     loading: () => <SkeletonCard lines={3} />,
@@ -161,7 +162,7 @@ export default function AssetDetailPage() {
     const asset = assetQuery.data ?? null;
     const loading = assetQuery.isLoading;
     const loadError = assetQuery.error
-        ? (assetQuery.error instanceof Error ? assetQuery.error.message : String(assetQuery.error))
+        ? extractMutationError(assetQuery.error, t('detail.loadFailed'))
         : '';
     // Mutation-error channel (status change etc.); load errors come from SWR above.
     const [error, setError] = useState('');
@@ -443,11 +444,11 @@ export default function AssetDetailPage() {
                 // The API's refusal is `{ error: { message } }`; reading a
                 // top-level `message` dropped the server's reason every time.
                 const data: unknown = await res.json().catch(() => ({}));
-                throw new Error(apiErrorMessage(data, t('detail.changeStatusFailed', { status: res.status })));
+                throw new Error(apiErrorMessage(data, t('detail.changeStatusFailedGeneric')));
             }
             await assetQuery.mutate();
         } catch (err) {
-            setError(err instanceof Error ? err.message : t('detail.changeStatusFailedGeneric'));
+            setError(extractMutationError(err, t('detail.changeStatusFailedGeneric')));
         } finally {
             setChangingStatus(false);
         }

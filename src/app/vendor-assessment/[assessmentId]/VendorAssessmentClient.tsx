@@ -422,8 +422,12 @@ function QuestionField({
 }) {
     const t = useTranslations('external.vendorAssessment');
     const tCommon = useTranslations('common');
+    // The question names its field (#4991): the free-text, number and
+    // file-note answers point at this label with `aria-labelledby`, as a
+    // label with no `htmlFor` names nothing on its own.
+    const labelId = `q-${question.id}-label`;
     const baseLabel = (
-        <label className="block text-sm font-medium text-content-emphasis mb-1">
+        <label id={labelId} className="block text-sm font-medium text-content-emphasis mb-1">
             {question.prompt}
             {question.required && <RequiredMarker />}
         </label>
@@ -460,6 +464,7 @@ function QuestionField({
                 <div data-testid={`q-${question.id}`}>
                     {baseLabel}
                     <textarea
+                        aria-labelledby={labelId}
                         value={typeof value === 'string' ? value : ''}
                         onChange={(e) => onChange(e.target.value)}
                         rows={4}
@@ -473,6 +478,7 @@ function QuestionField({
                 <div data-testid={`q-${question.id}`}>
                     {baseLabel}
                     <input
+                        aria-labelledby={labelId}
                         type="text"
                         inputMode="decimal"
                         pattern="-?[0-9]*\.?[0-9]*"
@@ -589,6 +595,7 @@ function QuestionField({
                         {t('fileUploadHint')}
                     </p>
                     <textarea
+                        aria-labelledby={labelId}
                         value={typeof value === 'string' ? value : ''}
                         onChange={(e) => onChange(e.target.value)}
                         rows={2}

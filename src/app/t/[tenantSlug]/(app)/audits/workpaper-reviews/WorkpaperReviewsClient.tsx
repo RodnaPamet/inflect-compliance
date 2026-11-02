@@ -48,6 +48,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 
 import { WorkpaperReviewSampleRate } from './WorkpaperReviewSampleRate';
 import { WorkpaperReviewSheet } from './WorkpaperReviewSheet';
+import { extractMutationError } from '@/lib/mutations';
 
 /** The tenant-relative endpoint. One data path — the page has no SSR twin. */
 export const WORKPAPER_REVIEWS_ENDPOINT = '/audits/workpaper-reviews';
@@ -227,10 +228,10 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
     const getRowId = useCallback((r: WorkpaperReviewRow) => r.id, []);
     const onRowClick = useCallback((row: { original: WorkpaperReviewRow }) => setOpenId(row.original.id), []);
 
+    // The server's reason, or the page's own sentence — never the
+    // synthesised status line (#4987).
     const loadError = query.error
-        ? query.error instanceof Error
-            ? query.error.message
-            : t('workpaperReviews.loadFailed')
+        ? extractMutationError(query.error, t('workpaperReviews.loadFailed'))
         : undefined;
 
     return (

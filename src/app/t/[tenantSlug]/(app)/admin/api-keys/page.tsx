@@ -30,6 +30,7 @@ import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { cn } from '@inflect/ui/lib/cn';
+import { FormField } from '@/components/ui/form-field';
 
 // ─── Types ───
 
@@ -773,14 +774,13 @@ export default function ApiKeysPage() {
                 <div className={cn(cardVariants(), 'border border-[var(--brand-default)]/30 space-y-default')} id="create-key-form">
                     <Heading level={3}>{t('apiKeys.createTitle')}</Heading>
 
-                    <div>
-                        <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('apiKeys.nameLabel')}</label>
+                    <FormField label={t('apiKeys.nameLabel')}>
                         <input
                             type="text" value={createName} onChange={(e) => setCreateName(e.target.value)}
                             placeholder={t('apiKeys.namePlaceholder')}
                             className="input w-full" maxLength={100} id="key-name-input"
                         />
-                    </div>
+                    </FormField>
 
                     <div>
                         <div className="mb-1 flex items-center gap-1.5">

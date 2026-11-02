@@ -15,9 +15,9 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cardVariants } from '@/components/ui/card';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
-import { ApiClientError } from '@/lib/api-client';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { cn } from '@inflect/ui/lib/cn';
+import { extractMutationError } from '@/lib/mutations';
 
 // CC BY 4.0 attribution — carries everywhere derived NIS2 content renders.
 const NIS2_ATTRIBUTION =
@@ -69,19 +69,17 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
     const assignmentQuery = useTenantSWR<Payload>(assignmentKey);
     const data = assignmentQuery.data ?? null;
     const loading = assignmentQuery.isLoading;
-    // Only an envelope-derived message is shown; anything else falls back to the
+    // Only the server's own sentence is shown; anything else falls back to the
     // localized string. `handleErrorResponse` synthesises
-    // `Request failed with status NNN` when the body carries no `{ error: … }`
-    // (a gateway 502, a non-JSON body) and leaves `code` at `UNKNOWN` — and that
-    // synthetic string is truthy, so a bare `error.message || fallback` would
-    // put untranslated English on screen where the old code showed
-    // `respond.loadFailed`. The server's own message stays preferred when there
-    // IS one, because it names the actual problem ("not your assignment").
+    // `Request failed with status NNN` when the body carries no envelope
+    // message (a gateway 502, a non-JSON body, a code with no message), and
+    // that synthetic string is truthy, so a bare `error.message || fallback`
+    // would put untranslated English on screen. The server's own message stays
+    // preferred when there IS one, because it names the actual problem ("not
+    // your assignment"). `extractMutationError` reads `reason` for that (#4987)
+    // — a `code !== 'UNKNOWN'` test let a code-only envelope through.
     const loadError = assignmentQuery.error
-        ? (assignmentQuery.error instanceof ApiClientError &&
-           assignmentQuery.error.code !== 'UNKNOWN'
-              ? assignmentQuery.error.message
-              : tx('respond.loadFailed'))
+        ? extractMutationError(assignmentQuery.error, tx('respond.loadFailed'))
         : null;
 
     // The saved answers are the baseline; `edits` holds ONLY what the user has

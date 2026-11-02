@@ -166,7 +166,8 @@ export function NotificationsBell() {
     const [open, setOpen] = useState(false);
     const [items, setItems] = useState<NotificationRow[] | null>(null);
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    // A flag, not text (#4987): the sentence is the page's, translated.
+    const [error, setError] = useState(false);
     // Distinct from `error`: this one is terminal and gets its own copy with a
     // way out, because "reload the page" is the only thing that helps.
     const [sessionExpired, setSessionExpired] = useState(false);
@@ -189,7 +190,7 @@ export function NotificationsBell() {
         if (authFailedRef.current) return;
 
         setLoading(true);
-        setError(null);
+        setError(false);
         try {
             const res = await fetch(notificationsUrl, {
                 credentials: 'same-origin',
@@ -231,14 +232,13 @@ export function NotificationsBell() {
             }
 
             if (!res.ok) {
-                throw new Error(`Failed to load notifications (${res.status})`);
+                setError(true);
+                return;
             }
             const body = (await res.json()) as NotificationRow[];
             setItems(body);
-        } catch (e) {
-            setError(
-                e instanceof Error ? e.message : 'Failed to load notifications',
-            );
+        } catch {
+            setError(true);
         } finally {
             setLoading(false);
         }
@@ -506,7 +506,7 @@ export function NotificationsBell() {
                             </div>
                         ) : error ? (
                             <div className="px-2.5 py-6 text-center text-xs text-content-error">
-                                {error}
+                                {t('loadFailed')}
                             </div>
                         ) : !hasItems ? (
                             <div className="py-4">

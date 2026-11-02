@@ -143,7 +143,7 @@ The SharePoint connection is managed on its card only, and is not listed in {{ui
 | A red sync summary that names a reason | The directory or HR system refused the read, for example because a credential expired | Fix the settings or secrets with **{{ui:admin.integrations.editConnection}}**, then sync again |
 | **{{ui:admin.integrations.health.blockedNoActiveAdmin}}** | No active Owner or Admin is left to run syncs | Invite or reactivate one |
 | **{{ui:admin.integrations.health.blockedNoAdminWithUpload}}** | No Owner or Admin may upload evidence | Give one of them that permission |
-| **{{ui:admin.sharepoint.consentError}}** or **{{ui:admin.sharepoint.disconnectFailed}}** | The SharePoint action did not go through | Try again |
+| **{{ui:admin.sharepoint.consentError}}** or **{{ui:admin.sharepoint.disconnectFailed}}**, or the reason a disconnect was refused | The SharePoint action did not go through | Follow the reason if one is given, then try again |
 | **{{ui:admin.integrations.saveFailed}}**, **{{ui:admin.integrations.networkError}}**, **{{ui:admin.integrations.authorizeFailed}}** or **{{ui:admin.integrations.internalEnableFailed}}** | The action did not go through | Reload the page and try again |
 
 ## Related

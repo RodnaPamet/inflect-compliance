@@ -13,6 +13,7 @@
  */
 import { buildTemplateGraph, type ProcessMapTemplate } from '@/components/processes/process-map-templates';
 import type { ProcessMapSummary } from '@/lib/processes/process-map-summary';
+import { refusalReason } from '@/lib/api-error';
 
 export async function createMapFromTemplate(
     tenantSlug: string,
@@ -23,7 +24,7 @@ export async function createMapFromTemplate(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: template.defaultName, canvasMode: 'DOCUMENT' }),
     });
-    if (!createRes.ok) throw new Error(`Create failed (${createRes.status})`);
+    if (!createRes.ok) throw new Error(await refusalReason(createRes));
     const newMap = await createRes.json();
 
     const saveRes = await fetch(`/api/t/${tenantSlug}/processes/${newMap.id}`, {
@@ -31,7 +32,7 @@ export async function createMapFromTemplate(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildTemplateGraph(template)),
     });
-    if (!saveRes.ok) throw new Error(`Template save failed (${saveRes.status})`);
+    if (!saveRes.ok) throw new Error(await refusalReason(saveRes));
     const filled = await saveRes.json();
 
     return {

@@ -395,7 +395,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                                 placeholder={t('trace.selectRisk')}
                                 matchTriggerWidth
                             />
-                            <input type="text" className="input w-full text-sm" placeholder={t('trace.rationaleOptional')} value={addRationale} onChange={e => setAddRationale(e.target.value)} />
+                            <input type="text" className="input w-full text-sm" placeholder={t('trace.rationaleOptional')} aria-label={t('trace.rationaleOptional')} value={addRationale} onChange={e => setAddRationale(e.target.value)} />
                             <Button variant="primary" size="xs" disabled={!addId || linking} onClick={() => handleLink('risk')} id="confirm-risk-link">
                                 {linking ? t('trace.linking') : t('trace.link')}
                             </Button>
@@ -467,7 +467,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                                     matchTriggerWidth
                                 />
                             )}
-                            <input type="text" className="input w-full text-sm" placeholder={t('trace.rationaleOptional')} value={addRationale} onChange={e => setAddRationale(e.target.value)} />
+                            <input type="text" className="input w-full text-sm" placeholder={t('trace.rationaleOptional')} aria-label={t('trace.rationaleOptional')} value={addRationale} onChange={e => setAddRationale(e.target.value)} />
                             <Button variant="primary" size="xs" disabled={!addId || linking} onClick={() => handleLink('control')} id="confirm-control-link">
                                 {linking ? t('trace.linking') : t('trace.link')}
                             </Button>
@@ -539,7 +539,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                                     matchTriggerWidth
                                 />
                             )}
-                            <input type="text" className="input w-full text-sm" placeholder={t('trace.rationaleOptional')} value={addRationale} onChange={e => setAddRationale(e.target.value)} />
+                            <input type="text" className="input w-full text-sm" placeholder={t('trace.rationaleOptional')} aria-label={t('trace.rationaleOptional')} value={addRationale} onChange={e => setAddRationale(e.target.value)} />
                             <Button variant="primary" size="xs" disabled={!addId || linking} onClick={() => handleLink('asset')} id="confirm-asset-link">
                                 {linking ? t('trace.linking') : t('trace.link')}
                             </Button>

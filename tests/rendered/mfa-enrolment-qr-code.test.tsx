@@ -100,6 +100,11 @@ describe('personal MFA page — enrolment QR code', () => {
             expect.objectContaining({ method: 'POST' }),
         );
 
+        // The code field is named, not only shown a "000000" placeholder (#4991).
+        expect(screen.getByRole('textbox', { name: 'Authentication code' })).toBe(
+            document.getElementById('mfa-code-input'),
+        );
+
         const src = img.getAttribute('src') ?? '';
         expect(src.startsWith('data:image/png;base64,')).toBe(true);
         // The image encodes exactly this URI…

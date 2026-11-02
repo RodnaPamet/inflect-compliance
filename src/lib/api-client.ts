@@ -26,6 +26,17 @@ export class ApiClientError extends Error {
     public readonly status: number;
     public readonly details?: unknown;
     public readonly requestId?: string;
+    /**
+     * The server's own sentence, from the envelope's `error.message` — and
+     * `undefined` when the response carried none (#4987).
+     *
+     * `message` is not that: with no envelope message it is the synthesised
+     * `Request failed with status N`, which is right for a log line and wrong
+     * on a page — a status code means nothing to the person reading it, and
+     * the sentence is English whatever the language. A page shows `reason`
+     * or its own translated fallback; `extractMutationError` does that.
+     */
+    public readonly reason?: string;
 
     constructor(
         message: string,
@@ -33,6 +44,7 @@ export class ApiClientError extends Error {
         status: number,
         details?: unknown,
         requestId?: string,
+        reason?: string,
     ) {
         super(message);
         this.name = 'ApiClientError';
@@ -40,6 +52,7 @@ export class ApiClientError extends Error {
         this.status = status;
         this.details = details;
         this.requestId = requestId;
+        this.reason = reason;
     }
 }
 
@@ -65,6 +78,7 @@ async function handleErrorResponse(res: Response): Promise<never> {
     let message = `Request failed with status ${res.status}`;
     let details: unknown;
     let requestId: string | undefined;
+    let reason: string | undefined;
 
     try {
         const body: unknown = await res.json();
@@ -90,7 +104,8 @@ async function handleErrorResponse(res: Response): Promise<never> {
             const text = (value: unknown): string | undefined =>
                 typeof value === 'string' && value.trim() !== '' ? value : undefined;
             code = text(fields.code) ?? code;
-            message = text(fields.message) ?? message;
+            reason = text(fields.message);
+            message = reason ?? message;
             requestId = text(fields.requestId);
             // `details` is unconstrained by the contract (Zod issues, for
             // instance), so it passes through as `unknown` and stays the
@@ -115,7 +130,7 @@ async function handleErrorResponse(res: Response): Promise<never> {
     // correctly signed-in user, and signing them out would be a regression.
     noteUnauthorized(res.status, res.url);
 
-    throw new ApiClientError(message, code, res.status, details, requestId);
+    throw new ApiClientError(message, code, res.status, details, requestId, reason);
 }
 
 /**

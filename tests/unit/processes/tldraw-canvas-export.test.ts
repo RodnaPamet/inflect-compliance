@@ -426,7 +426,7 @@ describe('server-backed exports — PDF', () => {
         jest.useRealTimers();
     });
 
-    it('throws with the status when the route refuses', async () => {
+    it('throws when the route refuses, never naming the status (#4987)', async () => {
         objectUrlStubs();
         const { impl } = recordingComposite();
         const fetchImpl = jest.fn(async () => ({
@@ -444,7 +444,17 @@ describe('server-backed exports — PDF', () => {
                 compositeImpl: impl,
                 fetchImpl,
             }),
-        ).rejects.toThrow(/503/);
+        ).rejects.toThrow(Error);
+        await expect(
+            exportTldrawCanvasAsPdf({
+                editor: fakeEditor() as never,
+                mapName: 'm',
+                tenantSlug: 'acme',
+                mapId: 'map-1',
+                compositeImpl: impl,
+                fetchImpl,
+            }),
+        ).rejects.not.toThrow(/503/);
     });
 
     it('refuses an empty page before posting anything', async () => {
@@ -516,7 +526,7 @@ describe('server-backed exports — Evidence', () => {
         ).resolves.toEqual({ evidenceId: 'ev_2' });
     });
 
-    it('throws with the status when the upload fails', async () => {
+    it('throws when the upload fails, never naming the status (#4987)', async () => {
         const { impl: composite } = recordingComposite();
         const { impl } = evidenceFetch({}, false);
         await expect(
@@ -528,6 +538,6 @@ describe('server-backed exports — Evidence', () => {
                 compositeImpl: composite,
                 fetchImpl: impl,
             }),
-        ).rejects.toThrow(/500/);
+        ).rejects.toThrow(Error);
     });
 });

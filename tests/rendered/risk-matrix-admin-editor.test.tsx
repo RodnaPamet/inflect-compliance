@@ -80,6 +80,23 @@ describe('<RiskMatrixAdminClient>', () => {
         expect(screen.getByTestId('rm-band-row-3')).toBeInTheDocument();
     });
 
+    it('names every level-name field, which had only its value to go by (#4991)', () => {
+        render(
+            withTooltip(
+                <RiskMatrixAdminClient
+                    tenantSlug="acme"
+                    initialConfig={DEFAULT_RISK_MATRIX_CONFIG}
+                />,
+            ),
+        );
+        expect(screen.getByRole('textbox', { name: 'Likelihood level 1 name' })).toBe(
+            screen.getByTestId('rm-label-likelihood-0'),
+        );
+        expect(screen.getByRole('textbox', { name: 'Impact level 5 name' })).toBe(
+            screen.getByTestId('rm-label-impact-4'),
+        );
+    });
+
     it('the live preview reflects axis-title edits', () => {
         render(
             withTooltip(

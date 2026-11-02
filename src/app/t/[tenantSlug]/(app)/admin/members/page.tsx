@@ -54,6 +54,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { apiErrorMessage } from '@/lib/api-error';
+import { FormField } from '@/components/ui/form-field';
 
 // ─── Types ───
 
@@ -1300,10 +1301,7 @@ export default function MembersAdminPage() {
                 <div className={cn(cardVariants(), 'border border-[var(--brand-default)]/30')} id="invite-form">
                     <Heading level={3} className="mb-4">{t('members.inviteFormTitle')}</Heading>
                     <div className="flex gap-compact items-end flex-wrap">
-                        <div className="flex-1 min-w-[200px]">
-                            <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                                {t('members.emailLabel')}
-                            </label>
+                        <FormField label={t('members.emailLabel')} className="flex-1 min-w-[200px]">
                             <input
                                 id="invite-email-input"
                                 type="email"
@@ -1313,7 +1311,7 @@ export default function MembersAdminPage() {
                                 className="input w-full"
                                 autoFocus
                             />
-                        </div>
+                        </FormField>
                         <div className="w-full sm:w-40">
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
                                 {t('members.roleLabel')}

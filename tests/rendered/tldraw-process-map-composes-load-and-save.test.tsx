@@ -221,7 +221,10 @@ describe('a failed load must not look like an empty map', () => {
 
         await waitFor(() => expect(screen.getByTestId('tldraw-map-error')).toBeInTheDocument());
         expect(screen.queryByTestId('canvas-stub')).not.toBeInTheDocument();
-        expect(screen.getByTestId('tldraw-map-error').textContent).toContain('500');
+        // The canvas's own sentence, never the status code (#4987).
+        const text = screen.getByTestId('tldraw-map-error').textContent ?? '';
+        expect(text).toContain('Could not load this map');
+        expect(text).not.toContain('500');
     });
 
     it('and sends no version, so nothing can be written against a guess', async () => {

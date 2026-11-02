@@ -45,6 +45,7 @@ import type { GraphRows } from '@/components/processes/tldraw/serializer';
 import type { SavedProcessMap } from '@/lib/processes/tldraw-save';
 import type { CanvasAutosaveApi } from '@/lib/processes/use-canvas-autosave';
 import { useTldrawCanvasAutosave } from '@/lib/processes/use-tldraw-canvas-autosave';
+import { apiErrorMessage } from '@/lib/api-error';
 
 export interface TldrawProcessMapProps {
     tenantSlug: string;
@@ -219,6 +220,9 @@ export function TldrawProcessMap({
     }, [onSaved]);
 
     const doFetch = fetchImpl ?? globalThis.fetch;
+    // The sentence, not `t`: a string is equal across renders by value, so
+    // depending on it re-runs the load only when the language changes.
+    const failLoad = t('failLoad');
 
     useEffect(() => {
         // No synchronous clearing here: `current` is derived from the tag, so
@@ -230,7 +234,12 @@ export function TldrawProcessMap({
         void (async () => {
             try {
                 const res = await doFetch(`/api/t/${tenantSlug}/processes/${mapId}`);
-                if (!res.ok) throw new Error(`Load failed (${res.status})`);
+                if (!res.ok) {
+                    // The server's reason, or the canvas's own sentence —
+                    // never the status code (#4987).
+                    const refusal: unknown = await res.json().catch(() => null);
+                    throw new Error(apiErrorMessage(refusal, failLoad));
+                }
                 const data = (await res.json()) as LoadedMap;
                 if (cancelled) return;
                 setLoaded({ mapId, rows: toRows(data), version: data.version });
@@ -239,7 +248,8 @@ export function TldrawProcessMap({
                 // Surfaced in the component, not only toasted: a map that
                 // failed to load must not render as an empty canvas, which the
                 // user would then edit and save OVER the real one.
-                setError(e instanceof Error ? e.message : 'Load failed');
+                // A network failure's text is the browser's, not ours.
+                setError(e instanceof Error && !(e instanceof TypeError) && e.message ? e.message : failLoad);
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -247,7 +257,7 @@ export function TldrawProcessMap({
         return () => {
             cancelled = true;
         };
-    }, [tenantSlug, mapId, doFetch]);
+    }, [tenantSlug, mapId, doFetch, failLoad]);
 
     const handleSaved = useCallback((saved: SavedProcessMap) => {
         // THE line that keeps concurrency working across more than one save.

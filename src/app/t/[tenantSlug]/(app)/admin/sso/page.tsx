@@ -27,6 +27,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { IdentityCrossLinks } from '@/components/admin/IdentityCrossLinks';
 import { cn } from '@inflect/ui/lib/cn';
+import { extractMutationError } from '@/lib/mutations';
 
 interface SsoProvider {
     id: string;
@@ -119,7 +120,7 @@ export default function SsoAdminPage() {
             setProviders(data);
             setLoadError(null);
         } catch (err) {
-            setLoadError({ message: err instanceof Error ? err.message : '' });
+            setLoadError({ message: extractMutationError(err, '') });
         } finally {
             setLoading(false);
         }

@@ -178,10 +178,21 @@ describe('any other failure REJECTS', () => {
         // made every failure look like a success, so the bar rendered "Saved"
         // over unsaved work and the error state was unreachable.
         const onSaved = jest.fn();
-        await expect(
-            saveTldrawCanvas(input({ fetchImpl: responder(status), onSaved })),
-        ).rejects.toThrow(new RegExp(`Save failed \\(${status}\\)`));
+        const err = await saveTldrawCanvas(input({ fetchImpl: responder(status), onSaved })).catch(
+            (e: unknown) => e,
+        );
+        expect(err).toBeInstanceOf(Error);
+        // No reason came back, so the message is empty for the caller to
+        // replace with its own sentence — never the status code (#4987).
+        expect((err as Error).message).toBe('');
         expect(onSaved).not.toHaveBeenCalled();
+    });
+
+    it("carries the server's reason when it gave one", async () => {
+        const body = { error: { code: 'BAD_REQUEST', message: 'A node needs a label' } };
+        await expect(saveTldrawCanvas(input({ fetchImpl: responder(400, body) }))).rejects.toThrow(
+            'A node needs a label',
+        );
     });
 
     it('a network throw propagates untouched', async () => {
