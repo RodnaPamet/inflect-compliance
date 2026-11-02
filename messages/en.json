@@ -5531,7 +5531,13 @@
       "customRoleAdminMembershipOnly": "Only an Admin member can carry this custom role.",
       "customRoleNeedsAdminMembership": "{customRole} can only be carried by an Admin member. Choose another custom role or none, then change the role.",
       "carriageRefusedKeys": "Only an Admin member can carry a custom role that grants {permissions}.",
-      "carriageRefusedBase": "Only an Admin member can carry a custom role built on {base}."
+      "carriageRefusedBase": "Only an Admin member can carry a custom role built on {base}.",
+      "resetMfa": "Reset MFA",
+      "resetMfaTitle": "Reset this member's MFA?",
+      "resetMfaBody": "{email} will set up an authenticator app again the next time they sign in to this workspace. They'll get an email saying you did this.",
+      "mfaResetToast": "MFA reset for {email}.",
+      "mfaResetNothing": "{email} hasn't set up MFA, so there was nothing to reset.",
+      "mfaResetFailed": "Couldn't reset the MFA."
     },
     "security": {
       "crumbSelf": "Security & MFA",
@@ -13900,18 +13906,18 @@
     "linkCveFailed": "Could not link CVE"
   },
   "mfa": {
-    "invalidCodeFormat": "Please enter a valid 6-digit code",
+    "invalidCodeFormat": "Enter the 6-digit code from your authenticator app.",
     "tooManyAttempts": "Too many failed attempts. Please wait a moment and try again.",
     "invalidCode": "Invalid code. Please check your authenticator app and try again.",
     "verifyFailed": "Verification failed. Please try again.",
-    "enrollRequiredTitle": "MFA Enrollment Required",
-    "enrollRequiredBody": "Your organization requires multi-factor authentication. Please set up MFA to continue.",
-    "setUpMfa": "Set Up MFA",
-    "verifyTitle": "Verify Your Identity",
+    "enrollRequiredTitle": "Set up multi-factor authentication",
+    "enrollRequiredBody": "This workspace requires multi-factor authentication. Set up an authenticator app to continue.",
+    "setUpMfa": "Set up MFA",
+    "verifyTitle": "Verify it's you",
     "verifyBody": "Enter the 6-digit code from your authenticator app to continue.",
-    "verifying": "Verifying...",
+    "verifying": "Verifying…",
     "continueBtn": "Continue",
-    "cantAccess": "Can't access your authenticator? Contact your organization administrator.",
+    "cantAccess": "Can't use your authenticator? Ask an Owner or Admin of this workspace to reset your MFA, then sign in again to set it up. Only an Owner can reset an Owner's MFA.",
     "loadFailed": "Failed to load MFA status",
     "startFailed": "Failed to start enrollment",
     "enrollFailed": "Enrollment failed",
@@ -13944,7 +13950,12 @@
     "verifyEnable": "Verify & Enable",
     "cancelEnrollment": "Cancel enrollment",
     "removeConfirmTitle": "Remove multi-factor authentication?",
-    "removeConfirmDesc": "Your account will be less secure. You can re-enroll at any time."
+    "removeConfirmDesc": "Your account will be less secure. You can re-enroll at any time.",
+    "codeLabel": "Authentication code",
+    "lockedOut": "Too many attempts. Try again in {seconds, plural, one {# second} other {# seconds}}.",
+    "switchAccount": "Sign in with a different account",
+    "checking": "Checking your MFA status",
+    "checkFailed": "We couldn't check whether you have set up MFA. If you have, enter your code below. If you haven't, <link>set it up first</link>."
   },
   "richtext": {
     "placeholder": "Write your policy here…",

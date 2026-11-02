@@ -23,6 +23,12 @@ import {
     verifyTotpCode,
 } from '@/lib/security/totp-crypto';
 import { badRequest, forbidden, internal } from '@/lib/errors/types';
+import { sendEmail } from '@/lib/mailer';
+import {
+    isOwnerManagedRole,
+    OWNER_MANAGED_MFA_RESET_REFUSAL,
+    ownerManagedMfaResetMessage,
+} from '@/lib/roles';
 import { env } from '@/env';
 import { recordMfaEnrolled } from '@/lib/observability/business-metrics';
 
@@ -237,6 +243,22 @@ export async function removeMfaEnrollment(
         throw forbidden('Only admins can remove other users\' MFA enrollment');
     }
 
+    // Resetting an OWNER's or an AI_ADMIN's second factor takes an Owner
+    // (#4926; owner decision, 2026-11-02), as deactivating one does. Read on
+    // the membership in THIS tenant, whatever its status.
+    if (effectiveUserId !== ctx.userId) {
+        const target = await prisma.tenantMembership.findUnique({
+            where: { tenantId_userId: { tenantId: ctx.tenantId, userId: effectiveUserId } },
+            select: { role: true },
+        });
+        if (target && isOwnerManagedRole(target.role) && !ctx.appPermissions.admin.owner_management) {
+            await auditMfaRemovalDenied(ctx, effectiveUserId);
+            throw forbidden(ownerManagedMfaResetMessage(target.role), {
+                reason: OWNER_MANAGED_MFA_RESET_REFUSAL,
+            });
+        }
+    }
+
     const result = await prisma.userMfaEnrollment.deleteMany({
         where: {
             userId: effectiveUserId,
@@ -263,12 +285,46 @@ export async function removeMfaEnrollment(
                 byAdmin ? 'mfa_removed_by_admin' : 'mfa_removed',
             ),
         });
+        // The person is told when somebody else took their second factor
+        // away (#4926): a reset they did not ask for is worth knowing about.
+        if (byAdmin) await notifyMfaReset(ctx, effectiveUserId);
     }
 
     return { removed: result.count > 0 };
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
+
+/**
+ * Email a member whose MFA an admin reset (#4926). Best-effort: the reset has
+ * happened and is audited, so a mail failure is logged, never thrown.
+ */
+async function notifyMfaReset(ctx: RequestContext, targetUserId: string): Promise<void> {
+    try {
+        const [target, actor, tenant] = await Promise.all([
+            prisma.user.findUnique({ where: { id: targetUserId }, select: { email: true } }),
+            prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true, email: true } }),
+            prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { name: true } }),
+        ]);
+        if (!target?.email) return;
+        const workspace = tenant?.name ?? 'your workspace';
+        const by = actor?.name?.trim() || actor?.email || 'An administrator';
+        await sendEmail({
+            to: target.email,
+            subject: `Your MFA was reset in ${workspace}`,
+            text:
+                `${by} reset your multi-factor authentication in ${workspace}.\n\n` +
+                'The next time you sign in to this workspace, you will set up an authenticator app again.\n\n' +
+                'If you did not ask for this, tell an Owner of the workspace straight away.',
+        });
+    } catch (err) {
+        logger.error('failed to send the MFA reset notice', {
+            component: 'mfa-enrollment',
+            tenantId: ctx.tenantId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
 
 /**
  * The `detailsJson` of an MFA enrolment change. `access` is the category an
