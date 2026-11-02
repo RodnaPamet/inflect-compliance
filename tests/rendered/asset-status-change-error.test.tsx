@@ -167,8 +167,9 @@ describe('Asset page — a refused status change says why', () => {
         installFetch({ status: 502, body: {} });
         mount();
         await retire();
-        const fallback = A.detail.changeStatusFailed.replace(/\{status[^}]*\}/, '502');
-        expect(await screen.findByText(fallback)).toBeInTheDocument();
+        // The page's own sentence, and no status code (#4987).
+        expect(await screen.findByText(A.detail.changeStatusFailedGeneric)).toBeInTheDocument();
+        expect(screen.queryByText(/502/)).toBeNull();
     });
 });
 

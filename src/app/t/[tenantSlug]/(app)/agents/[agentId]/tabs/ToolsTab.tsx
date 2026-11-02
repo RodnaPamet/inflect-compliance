@@ -403,7 +403,9 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                 // The server's own sentence is therefore the body: a second 400
                 // added later says what it is instead of being relabelled as
                 // retirement under an authored headline.
-                const refusal = error instanceof ApiClientError ? error.message : '';
+                // `reason`, not `message`: with no envelope message the latter is the
+                // synthesised status line, not the server's sentence (#4987).
+                const refusal = error instanceof ApiClientError ? (error.reason ?? '') : '';
                 return (
                     <InlineNotice variant="warning" title={t('agentDetail.tools.refusedTitle')}>
                         {refusal || t('agentDetail.tools.retiredBody')}

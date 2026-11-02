@@ -22,6 +22,7 @@ import { ENTRA_MAPPABLE_ROLES } from '@/app-layer/schemas/entra-group-mapping.sc
 import { usePermissions } from '@/lib/tenant-context-provider';
 import { isOwnerManagedRole } from '@/lib/roles';
 import { apiErrorMessage, validationIssueFields } from '@/lib/api-error';
+import { extractMutationError } from '@/lib/mutations';
 
 interface GroupMapping {
     id: string;
@@ -138,12 +139,14 @@ export function GroupMappingsSection({ apiUrl }: { apiUrl: (path: string) => str
                     // fetch only rejects on network error — surface HTTP failures
                     // so onError fires and the optimistic removal is rolled back.
                     if (!res.ok && res.status !== 404) {
-                        throw new Error(`Delete failed (${res.status})`);
+                        const refusal: unknown = await res.json().catch(() => null);
+                        throw new Error(apiErrorMessage(refusal, t('entra.mappings.errRemove')));
                     }
                 },
                 undoAction: () => load(),
-                onError: () => {
-                    setError(t('entra.mappings.errRemove'));
+                onError: (err) => {
+                    // The server's reason when it gave one (#4987).
+                    setError(extractMutationError(err, t('entra.mappings.errRemove')));
                     void load();
                 },
             });

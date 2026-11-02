@@ -19,6 +19,7 @@ import Link from "next/link";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
+import { apiErrorMessage } from "@/lib/api-error";
 
 type EntityType = "risk" | "asset";
 
@@ -63,7 +64,10 @@ export function ProcessNodeReverseLookupModal({
                     `/api/t/${tenantSlug}/${resource}/${entityId}/process-maps`,
                 );
                 if (!res.ok) {
-                    throw new Error(`Lookup failed (${res.status})`);
+                    // The server's reason, or the panel's own sentence — never
+                    // the status code (#4987).
+                    const refusal: unknown = await res.json().catch(() => null);
+                    throw new Error(apiErrorMessage(refusal, t("couldNotLoad")));
                 }
                 const body = (await res.json()) as { maps?: NodeMapRef[] };
                 if (cancelled) return;

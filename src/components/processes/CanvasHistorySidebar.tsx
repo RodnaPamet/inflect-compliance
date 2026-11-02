@@ -26,6 +26,8 @@ import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
 import { useToast } from "@/components/ui/hooks";
 import { formatDateTime } from "@inflect/ui/lib/format-date";
+import { apiErrorMessage } from "@/lib/api-error";
+import { extractMutationError } from "@/lib/mutations";
 
 interface SnapshotRow {
     id: string;
@@ -92,16 +94,15 @@ export function CanvasHistorySidebar({
                 },
             );
             if (!res.ok) {
-                throw new Error(
-                    t("restoreFailedStatus", { status: res.status }),
-                );
+                // The server's reason (a version conflict says which), or
+                // the panel's own sentence — never the status code (#4987).
+                const refusal: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(refusal, t("restoreFailed")));
             }
             toast.success(t("restoredToast", { version: targetVersion }));
             onRestored?.();
         } catch (err) {
-            toast.error(
-                err instanceof Error ? err.message : t("restoreFailed"),
-            );
+            toast.error(extractMutationError(err, t("restoreFailed")));
         } finally {
             setRestoringVersion(null);
         }
@@ -124,9 +125,8 @@ export function CanvasHistorySidebar({
                     `/api/t/${tenantSlug}/processes/${mapId}/snapshots`,
                 );
                 if (!res.ok) {
-                    throw new Error(
-                        t("loadErrorStatus", { status: res.status }),
-                    );
+                    const refusal: unknown = await res.json().catch(() => null);
+                    throw new Error(apiErrorMessage(refusal, t("loadError")));
                 }
                 const body = (await res.json()) as {
                     snapshots?: SnapshotRow[];
@@ -135,11 +135,7 @@ export function CanvasHistorySidebar({
                 setRows(body.snapshots ?? []);
             } catch (err) {
                 if (!cancelled) {
-                    setError(
-                        err instanceof Error
-                            ? err.message
-                            : t("loadError"),
-                    );
+                    setError(extractMutationError(err, t("loadError")));
                 }
             } finally {
                 if (!cancelled) setLoading(false);

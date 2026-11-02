@@ -43,6 +43,7 @@ import { textLinkVariants } from '@/components/ui/typography';
 import { useToast } from '@/components/ui/hooks';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { Pen2 } from '@inflect/ui/components/ui/icons/nucleo';
+import { extractMutationError } from '@/lib/mutations';
 
 const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
 const TYPES = ['NONCONFORMITY', 'OBSERVATION', 'OPPORTUNITY'] as const;
@@ -177,9 +178,7 @@ export function FindingDetailSheet({ findingId, onClose, canWrite, tenantSlug, o
                             role="alert"
                             data-testid="finding-sheet-error"
                         >
-                            {detailQuery.error instanceof Error && detailQuery.error.message
-                                ? detailQuery.error.message
-                                : t('detail.loadFailed')}
+                            {extractMutationError(detailQuery.error, t('detail.loadFailed'))}
                         </div>
                     </Sheet.Body>
                 </>

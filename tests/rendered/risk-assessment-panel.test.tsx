@@ -122,12 +122,20 @@ const BASE_RISK: AssessmentRisk = {
 
 let fetchMock: jest.Mock;
 
-function mockFetchRoutes(over: { suggestion?: unknown; kriBreaches?: unknown[] } = {}) {
+type Reply = { status: number; body: unknown };
+
+function mockFetchRoutes(
+    over: { suggestion?: unknown; kriBreaches?: unknown[]; put?: Reply; acceptPost?: Reply } = {},
+) {
     fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
         if (url.includes('/risk-matrix-config')) {
             return { ok: true, json: async () => MATRIX };
         }
         if (url.includes('/residual-suggestion')) {
+            if (init?.method === 'POST' && over.acceptPost) {
+                const r = over.acceptPost;
+                return { ok: false, status: r.status, json: async () => r.body };
+            }
             if (init?.method === 'POST') {
                 // RQ3-OB-D — the accept response carries the
                 // server-derived toast one-liner.
@@ -151,6 +159,10 @@ function mockFetchRoutes(over: { suggestion?: unknown; kriBreaches?: unknown[] }
         // P1 — Step 4 mounts the treatment-plan card, which lists plans.
         if (url.includes('/treatment-plans')) {
             return { ok: true, json: async () => ({ rows: [] }) };
+        }
+        if (init?.method === 'PUT' && over.put) {
+            const r = over.put;
+            return { ok: r.status < 400, status: r.status, json: async () => r.body };
         }
         if (init?.method === 'PUT') {
             return { ok: true, json: async () => ({ success: true }) };
@@ -275,6 +287,40 @@ describe('RiskAssessmentPanel — residual flow', () => {
         await renderPanel({ canWrite: false });
         expect(screen.queryByText('Accept suggestion')).toBeNull();
         expect(screen.queryByText('Assess residual manually')).toBeNull();
+    });
+});
+
+describe('RiskAssessmentPanel — a refused write says why (#4987)', () => {
+    async function saveResidual() {
+        await renderPanel();
+        fireEvent.click(screen.getByText('Assess residual manually'));
+        fireEvent.change(screen.getByPlaceholderText(/Why this residual differs/), {
+            target: { value: 'transferred via cyber insurance' },
+        });
+        fireEvent.click(screen.getByText('Save residual'));
+    }
+
+    it("shows the server's reason for a refused save", async () => {
+        mockFetchRoutes({
+            put: { status: 400, body: { error: { code: 'BAD_REQUEST', message: 'Residual cannot exceed inherent' } } },
+        });
+        await saveResidual();
+        expect(await screen.findByText('Residual cannot exceed inherent')).toBeInTheDocument();
+    });
+
+    it('falls back to the step sentence, without the status code, when no reason came back', async () => {
+        mockFetchRoutes({ put: { status: 502, body: {} } });
+        await saveResidual();
+        expect(await screen.findByText("Couldn't save the residual score. Try again.")).toBeInTheDocument();
+        expect(screen.queryByText(/502/)).toBeNull();
+    });
+
+    it('a refused accept says so in a sentence, without the status code', async () => {
+        mockFetchRoutes({ acceptPost: { status: 500, body: {} } });
+        await renderPanel();
+        fireEvent.click(screen.getByText('Accept suggestion'));
+        expect(await screen.findByText("Couldn't accept the suggestion. Try again.")).toBeInTheDocument();
+        expect(screen.queryByText(/500/)).toBeNull();
     });
 });
 
