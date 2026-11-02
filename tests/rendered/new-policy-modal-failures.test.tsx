@@ -236,3 +236,59 @@ describe('the create path speaks the user\'s language', () => {
         expect(error).not.toHaveTextContent('Failed to create policy');
     });
 });
+
+/**
+ * Closing the form after typing asks in the product's own dialog, not the
+ * browser's `confirm()` (#4965), and the close waits for the answer.
+ */
+describe('closing a typed draft asks first', () => {
+    function renderWith(setOpen: jest.Mock) {
+        render(
+            <TooltipProvider>
+                <NewPolicyModal open setOpen={setOpen} />
+            </TooltipProvider>,
+        );
+        fireEvent.change(document.getElementById('policy-title-input')!, { target: { value: 'Draft policy' } });
+        fireEvent.click(document.getElementById('new-policy-cancel-btn')!);
+    }
+
+    it('keeping the draft leaves the form open with what was typed', async () => {
+        const confirmSpy = jest.spyOn(window, 'confirm');
+        const setOpen = jest.fn();
+        renderWith(setOpen);
+        expect((await screen.findAllByText(EN.new.discardTitle)).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(EN.new.discardConfirm).length).toBeGreaterThan(0);
+        fireEvent.click(screen.getByRole('button', { name: EN.new.discardCancelLabel }));
+        await waitFor(() => expect(screen.queryByText(EN.new.discardTitle)).toBeNull());
+        expect(setOpen).not.toHaveBeenCalled();
+        expect((document.getElementById('policy-title-input') as HTMLInputElement).value).toBe('Draft policy');
+        expect(confirmSpy).not.toHaveBeenCalled();
+        confirmSpy.mockRestore();
+    });
+
+    it('discarding closes the form', async () => {
+        const setOpen = jest.fn();
+        renderWith(setOpen);
+        fireEvent.click(await screen.findByRole('button', { name: EN.new.discardConfirmLabel }));
+        await waitFor(() => expect(setOpen).toHaveBeenCalledWith(false));
+    });
+
+    it('asks in the reader\'s language', async () => {
+        mockLocale.current = 'bg';
+        renderWith(jest.fn());
+        expect((await screen.findAllByText(BG.new.discardTitle)).length).toBeGreaterThan(0);
+        expect(screen.getByRole('button', { name: BG.new.discardConfirmLabel })).toBeInTheDocument();
+    });
+
+    it('an untouched form closes without asking', () => {
+        const setOpen = jest.fn();
+        render(
+            <TooltipProvider>
+                <NewPolicyModal open setOpen={setOpen} />
+            </TooltipProvider>,
+        );
+        fireEvent.click(document.getElementById('new-policy-cancel-btn')!);
+        expect(setOpen).toHaveBeenCalledWith(false);
+        expect(screen.queryByText(EN.new.discardTitle)).toBeNull();
+    });
+});

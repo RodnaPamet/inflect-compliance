@@ -3446,7 +3446,6 @@
       "descTemplate": "Изберете шаблон, за да започнете с предварително написано съдържание.",
       "startWith": "Започнете с",
       "modePlaceholder": "Нова",
-      "discard": "Да се отхвърли ли политиката? Всички въведени данни ще бъдат загубени.",
       "cancel": "Отказ",
       "creating": "Създаване…",
       "chooseTemplate": "Изберете шаблон",
@@ -3475,7 +3474,11 @@
       "categoryPlaceholder": "Изберете категория…",
       "categorySearch": "Търсене на категории…",
       "fieldContent": "Начално съдържание (Markdown)",
-      "contentPlaceholder": "# Съдържание на политиката\n\nНапишете политиката тук на Markdown..."
+      "contentPlaceholder": "# Съдържание на политиката\n\nНапишете политиката тук на Markdown...",
+      "discardTitle": "Да се откаже ли политиката?",
+      "discardConfirm": "Въведените данни ще бъдат загубени.",
+      "discardConfirmLabel": "Откажи черновата",
+      "discardCancelLabel": "Продължи редактирането"
     },
     "ack": {
       "yourStatusTitle": "Вашето потвърждение",

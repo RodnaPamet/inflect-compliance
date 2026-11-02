@@ -12,12 +12,13 @@
  * `/policies?create=1`; the list page (PoliciesClient) reads the flag
  * on mount and opens this modal.
  */
-import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { apiErrorMessage } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Modal } from '@/components/ui/modal';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
@@ -97,22 +98,28 @@ export function NewPolicyModal({
     // X, Escape, outside click) routes through `guardedSetOpen` —
     // Radix's `onOpenChange` (wired via `setShowModal`) fires the same
     // setter, so the warning catches all of them uniformly.
+    //
+    // It asks through <ConfirmDialog>, as the task and audit forms do
+    // (#4965), not `window.confirm`, whose buttons are in the browser's
+    // language. That dialog is async, so the close request is PARKED in
+    // `pendingClose` until the user answers.
+    const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+    const pendingClose = useRef<SetStateAction<boolean> | null>(null);
     const guardedSetOpen = useCallback<Dispatch<SetStateAction<boolean>>>(
         (next) => {
             const wantClose =
                 typeof next === 'function' ? !next(true) : next === false;
             if (wantClose) {
                 if (form.submitting) return;
-                if (
-                    form.isDirty &&
-                    !window.confirm(t('new.discard'))
-                ) {
+                if (form.isDirty) {
+                    pendingClose.current = next;
+                    setConfirmDiscardOpen(true);
                     return;
                 }
             }
             setOpen(next);
         },
-        [form.submitting, form.isDirty, setOpen, t],
+        [form.submitting, form.isDirty, setOpen],
     );
     const close = () => guardedSetOpen(false);
 
@@ -197,6 +204,26 @@ export function NewPolicyModal({
                     </Button>
                 </Modal.Actions>
             </Modal.Form>
+            {/* `warning`, not `danger`: an unsaved draft is recoverable by
+                retyping, and "Discard draft" is the verb for unsaved state. */}
+            <ConfirmDialog
+                showModal={confirmDiscardOpen}
+                setShowModal={setConfirmDiscardOpen}
+                tone="warning"
+                title={t('new.discardTitle')}
+                description={t('new.discardConfirm')}
+                confirmLabel={t('new.discardConfirmLabel')}
+                cancelLabel={t('new.discardCancelLabel')}
+                onConfirm={() => {
+                    const next = pendingClose.current ?? false;
+                    pendingClose.current = null;
+                    setOpen(next);
+                }}
+                onCancel={() => {
+                    // Keep the form open with the draft intact.
+                    pendingClose.current = null;
+                }}
+            />
         </Modal>
         {suggest && (
             <TemplateControlSuggestModal
