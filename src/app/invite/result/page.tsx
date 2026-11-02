@@ -15,16 +15,23 @@
  *
  * With no session it sends the person to sign in; with no cookie (expired,
  * or reached directly) to their workspaces.
+ *
+ * A refusal offers the way on that exists (#4925): their workspaces only when
+ * they have some — a person who signed in only to accept this invitation has
+ * none, and the picker would leave them on "No access yet" — and always a
+ * sign-out, since the commonest refusal is signing in with the wrong account.
  */
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { auth } from '@/auth';
+import { auth, signOut } from '@/auth';
 import { inviteSignInOutcome } from '@/app-layer/usecases/tenant-invites';
 import { AppIcon } from '@/components/icons/AppIcon';
+import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { Heading } from '@/components/ui/typography';
+import { readSignInDestinations } from '@/lib/auth/sign-in-destinations';
 
 export default async function InviteResultPage() {
     const session = await auth();
@@ -40,6 +47,12 @@ export default async function InviteResultPage() {
     if (outcome.kind === 'PENDING') redirect(`/invite/${encodeURIComponent(token)}`);
 
     const t = await getTranslations('invite');
+    const { workspaces, organizations } = await readSignInDestinations(
+        userId,
+        session.user.ssoTenantId,
+        session.user.entraGateDeniedTenantIds,
+    );
+    const hasSomewhereToGo = workspaces.length > 0 || organizations.length > 0;
 
     return (
         <main className="min-h-screen bg-bg-default flex items-center justify-center p-4">
@@ -60,13 +73,29 @@ export default async function InviteResultPage() {
                         b: (chunks) => <span className="font-medium">{chunks}</span>,
                     })}
                 </p>
-                <Link
-                    href="/tenants"
-                    id="invite-result-workspaces"
-                    className={buttonVariants({ variant: 'secondary', className: 'w-full' })}
+                {hasSomewhereToGo ? (
+                    <Link
+                        href="/tenants"
+                        id="invite-result-workspaces"
+                        className={buttonVariants({ variant: 'secondary', className: 'w-full mb-3' })}
+                    >
+                        {t('result.toWorkspaces')}
+                    </Link>
+                ) : (
+                    <p id="invite-result-no-workspace" className="text-sm text-content-muted mb-4">
+                        {t('result.noWorkspaceYet')}
+                    </p>
+                )}
+                <form
+                    action={async () => {
+                        'use server';
+                        await signOut({ redirectTo: '/login' });
+                    }}
                 >
-                    {t('result.toWorkspaces')}
-                </Link>
+                    <Button id="invite-result-switch-account" type="submit" variant="secondary" className="w-full">
+                        {t('result.switchAccount')}
+                    </Button>
+                </form>
             </div>
         </main>
     );

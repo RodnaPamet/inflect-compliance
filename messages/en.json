@@ -14591,7 +14591,9 @@
     "result": {
       "title": "Invitation not accepted",
       "signedInAs": "You are signed in as <b>{email}</b>.",
-      "toWorkspaces": "Go to your workspaces"
+      "toWorkspaces": "Go to your workspaces",
+      "noWorkspaceYet": "You don't belong to any workspace yet. Once your admin sends you a new invitation, follow the link in it.",
+      "switchAccount": "Sign in with a different account"
     }
   },
   "roles": {

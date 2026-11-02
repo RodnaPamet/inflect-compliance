@@ -34,7 +34,12 @@ jest.mock('next/headers', () => ({
 }));
 
 const authMock = jest.fn();
-jest.mock('@/auth', () => ({ auth: (...a: unknown[]) => authMock(...a) }));
+jest.mock('@/auth', () => ({ auth: (...a: unknown[]) => authMock(...a), signOut: jest.fn() }));
+
+const destinationsMock = jest.fn();
+jest.mock('@/lib/auth/sign-in-destinations', () => ({
+    readSignInDestinations: (...a: unknown[]) => destinationsMock(...a),
+}));
 
 const outcomeMock = jest.fn();
 jest.mock('@/app-layer/usecases/tenant-invites', () => ({
@@ -58,6 +63,12 @@ beforeEach(() => {
     outcomeMock.mockReset();
     cookieValue.current = 'tok-abc';
     authMock.mockResolvedValue({ user: { id: 'u-1', email: 'someone@example.com' } });
+    destinationsMock.mockReset().mockResolvedValue({
+        workspaces: [{ slug: 'beta', name: 'Beta', role: 'EDITOR' }],
+        organizations: [],
+        deactivatedWorkspaces: [],
+        entraRefusedWorkspaces: [],
+    });
 });
 
 describe('/invite/result', () => {
@@ -78,6 +89,29 @@ describe('/invite/result', () => {
             userId: 'u-1',
             userEmail: 'someone@example.com',
         });
+    });
+
+    it('offers no workspaces to a person who has none, and says what to wait for (#4925)', async () => {
+        outcomeMock.mockResolvedValue({ kind: 'REFUSED', reason: 'INVITE_EXPIRED', tenantName: 'Acme' });
+        destinationsMock.mockResolvedValue({
+            workspaces: [],
+            organizations: [],
+            deactivatedWorkspaces: [],
+            entraRefusedWorkspaces: [],
+        });
+
+        render(await InviteResultPage());
+
+        expect(screen.queryByRole('link', { name: 'Go to your workspaces' })).toBeNull();
+        expect(screen.getByText(/You don't belong to any workspace yet/)).toBeInTheDocument();
+    });
+
+    it('offers a different account on every refusal (#4925)', async () => {
+        outcomeMock.mockResolvedValue({ kind: 'REFUSED', reason: 'INVITE_EMAIL_MISMATCH', tenantName: 'Acme' });
+
+        render(await InviteResultPage());
+
+        expect(screen.getByRole('button', { name: 'Sign in with a different account' })).toBeInTheDocument();
     });
 
     it('goes straight into the workspace when the invite was accepted', async () => {
