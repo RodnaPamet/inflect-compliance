@@ -84,7 +84,7 @@ Click **{{ui:vendors.createButton}}**. The **{{ui:vendors.modal.title}}** dialog
 - **{{ui:vendors.form.nextReviewDate}}** and **{{ui:vendors.form.contractRenewalDate}}**, each today or later.
 - **{{ui:vendors.form.isSubprocessor}}**, a tick box.
 
-Click **{{ui:vendors.modal.create}}**. It stays greyed out until the name is filled in and the website, if you typed one, is a full address. A website that is not a full address is marked under the field: {{ui:vendors.form.websiteUrlInvalid}} Each field stops at the length the server accepts. When the vendor is created, the dialog closes and the vendor's page opens. If you close the dialog after typing, it asks **{{ui:vendors.modal.discardConfirm}}**
+Click **{{ui:vendors.modal.create}}**. It stays greyed out until the name is filled in and the website, if you typed one, is a full address. A website that is not a full address is marked under the field: {{ui:vendors.form.websiteUrlInvalid}} Each field stops at the length the server accepts. When the vendor is created, the dialog closes and the vendor's page opens. If you close the dialog after typing, it asks **{{ui:vendors.modal.discardTitle}}** Click **{{ui:vendors.modal.discardCancelLabel}}** to go back to what you typed, or **{{ui:vendors.modal.discardConfirmLabel}}** to close it.
 
 The dialog has no owner field. Assign one on the vendor's page, or in bulk from the table.
 

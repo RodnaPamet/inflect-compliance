@@ -435,7 +435,7 @@ function FindingEditForm({
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => null);
-                setError(apiErrorMessage(body, t('detail.saveFailed', { status: res.status })));
+                setError(apiErrorMessage(body, t('detail.saveFailedGeneric')));
                 setSaving(false);
                 return;
             }

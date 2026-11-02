@@ -190,3 +190,76 @@ describe('Asset page — stored codes read as words (#4693)', () => {
         expect(screen.getByText(A.formOptions.residency.EU)).toBeInTheDocument();
     });
 });
+
+// ─── A refused vulnerability change says why (#4963) ────────────────
+
+const VULN = {
+    id: 'av-1',
+    status: 'OPEN',
+    matchedVia: 'CPE',
+    remediationDueAt: null,
+    note: null,
+    ownerUserId: null,
+    cve: { id: 'CVE-2026-0001', cvssScore: 8.1, cvssSeverity: 'HIGH', summary: 'Heap overflow' },
+    ownerUser: null,
+};
+
+/** The asset, one vulnerability on it, and the PATCH answering `patch`. */
+function installVulnFetch(patch: { status: number; body: unknown }) {
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), 'https://test.local');
+        let status = 200;
+        let body: unknown = { rows: [] };
+        if (url.pathname === '/api/t/acme/vulnerabilities/av-1' && init?.method === 'PATCH') {
+            status = patch.status;
+            body = patch.body;
+        } else if (url.pathname === '/api/t/acme/vulnerabilities') body = { rows: [VULN] };
+        else if (url.pathname === '/api/t/acme/assets/as-bravo') body = ASSET;
+        else if (url.pathname.includes('/members')) body = [];
+        return {
+            ok: status >= 200 && status < 300,
+            status,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: async () => body,
+            text: async () => JSON.stringify(body),
+        } as unknown as Response;
+    }) as unknown as typeof fetch;
+}
+
+async function markMitigated() {
+    const sp = jest.requireMock('next/navigation').__searchParams as URLSearchParams;
+    sp.set('tab', 'vulnerabilities');
+    mount();
+    await screen.findByText('CVE-2026-0001');
+    const picker = screen.getByRole('combobox', { name: A.detail.vuln.status });
+    await act(async () => {
+        fireEvent.click(picker);
+    });
+    const option = await screen.findByRole('option', { name: en.vulnerabilities.filterEnums.status.MITIGATED });
+    await act(async () => {
+        fireEvent.click(option);
+    });
+}
+
+describe('Asset page — a refused vulnerability change says why', () => {
+    afterEach(() => {
+        (jest.requireMock('next/navigation').__searchParams as URLSearchParams).delete('tab');
+    });
+
+    it("shows the server's reason, not the generic sentence", async () => {
+        installVulnFetch({
+            status: 403,
+            body: { error: { code: 'FORBIDDEN', message: 'Only the owner may close this vulnerability', requestId: 'r1' } },
+        });
+        await markMitigated();
+        expect(await screen.findByText('Only the owner may close this vulnerability')).toBeInTheDocument();
+        expect(screen.queryByText(A.detail.vuln.updateFailed)).toBeNull();
+    });
+
+    it('falls back to the page sentence when no reason came back, never a status code', async () => {
+        installVulnFetch({ status: 502, body: {} });
+        await markMitigated();
+        expect(await screen.findByText(A.detail.vuln.updateFailed)).toBeInTheDocument();
+        expect(screen.queryByText(/HTTP 502/)).toBeNull();
+    });
+});

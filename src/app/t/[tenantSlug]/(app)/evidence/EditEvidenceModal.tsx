@@ -33,6 +33,7 @@ import { useTranslations } from 'next-intl';
 import { isEvidenceContentEditable } from '@/lib/evidence-content';
 import { apiErrorMessage } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
@@ -358,22 +359,27 @@ export function EditEvidenceModal({
 
     const busy = submitting || replacing;
 
+    // Unsaved-changes guard, as the task and audit forms ask it (#4966). It
+    // used to be `window.confirm`, the browser's dialog, whose buttons are in
+    // the browser's language. <ConfirmDialog> is async, so the close request
+    // is PARKED in `pendingClose` until the user answers.
+    const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+    const pendingClose = useRef<SetStateAction<boolean> | null>(null);
     const guardedSetOpen = useCallback<Dispatch<SetStateAction<boolean>>>(
         (next) => {
             const wantClose =
                 typeof next === 'function' ? !next(true) : next === false;
             if (wantClose) {
                 if (busy) return;
-                if (
-                    isDirty &&
-                    !window.confirm(t('edit.discardConfirm'))
-                ) {
+                if (isDirty) {
+                    pendingClose.current = next;
+                    setConfirmDiscardOpen(true);
                     return;
                 }
             }
             setOpen(next);
         },
-        [busy, isDirty, setOpen, t],
+        [busy, isDirty, setOpen],
     );
     const close = () => guardedSetOpen(false);
 
@@ -632,6 +638,26 @@ export function EditEvidenceModal({
                     </Button>
                 </Modal.Actions>
             </Modal.Form>
+            {/* `warning`, not `danger`: unsaved edits are recoverable by
+                retyping, and "Discard" is the verb for unsaved state. */}
+            <ConfirmDialog
+                showModal={confirmDiscardOpen}
+                setShowModal={setConfirmDiscardOpen}
+                tone="warning"
+                title={t('edit.discardTitle')}
+                description={t('edit.discardConfirm')}
+                confirmLabel={t('edit.discardConfirmLabel')}
+                cancelLabel={t('edit.discardCancelLabel')}
+                onConfirm={() => {
+                    const next = pendingClose.current ?? false;
+                    pendingClose.current = null;
+                    setOpen(next);
+                }}
+                onCancel={() => {
+                    // Keep the form open with the edits intact.
+                    pendingClose.current = null;
+                }}
+            />
         </Modal>
     );
 }
