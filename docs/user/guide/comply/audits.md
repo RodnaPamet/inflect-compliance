@@ -8,7 +8,7 @@ The {{ui:audits.title}} page is where audits start. It lists the workspace's fie
 
 ## Where to find it
 
-Open **{{ui:nav.audits}}** under **{{ui:nav.comply}}** in the sidebar. The breadcrumb reads **{{ui:audits.crumb.dashboard}}** › **{{ui:audits.title}}**. A cycle's page opens it filtered to that cycle from **{{ui:audits.cycleDetail.viewInHub}}**.
+Open **{{ui:nav.audits}}** under **{{ui:nav.comply}}** in the sidebar. The breadcrumb reads **{{ui:audits.crumb.dashboard}}** › **{{ui:audits.title}}**. A cycle's page opens it filtered to that cycle from **{{ui:audits.cycleDetail.viewInHub}}**. A finding's source in the [{{ui:findings.title}}](findings.md), and an audit's entry in the [{{ui:calendar.title}}](calendar.md), open this page with that audit already open beside the list.
 
 ## Who can use it
 

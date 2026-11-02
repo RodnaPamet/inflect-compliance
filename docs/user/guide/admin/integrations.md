@@ -20,7 +20,7 @@ The SSO, SCIM and Entra pages link here too. The strip under their titles, **{{u
 | Connect, edit, test, sync and disable a connection | Owner, Admin |
 | Connect SharePoint, choose its sites, test it and disconnect it | Owner, Admin |
 | Turn on the internal checks | Owner, Admin |
-| Open **{{ui:admin.leaverPasses.linkLabel}}** and **{{ui:admin.writeLadder.linkLabel}}** from this page | Owner |
+| Open **{{ui:admin.leaverPasses.linkLabel}}**, **{{ui:admin.joinerPasses.linkLabel}}** and **{{ui:admin.writeLadder.linkLabel}}** from this page | Owner |
 
 Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. An Admin whose membership carries a custom role can do only what that custom role allows. If it cannot manage the workspace's settings, the page still opens, but it shows the refusal in place of the connections, and no catalogue.
 
@@ -46,7 +46,7 @@ A connection lets Inflect collect from another system without anyone copying dat
 
 - **{{ui:admin.integrations.enableInternal}}**, while any of the three internal checks is off.
 - **{{ui:admin.identityAccounts.linkLabel}}**, the accounts the directory syncs have read.
-- **{{ui:admin.leaverPasses.linkLabel}}** and **{{ui:admin.writeLadder.linkLabel}}**, for Owners only.
+- **{{ui:admin.leaverPasses.linkLabel}}**, **{{ui:admin.joinerPasses.linkLabel}}** and **{{ui:admin.writeLadder.linkLabel}}**, for Owners only.
 - **{{ui:admin.integrations.addButton}}**, which opens an empty form.
 
 | Column | What it shows |
@@ -152,3 +152,4 @@ The SharePoint connection is managed on its card only, and is not listed in {{ui
 - [{{ui:admin.members.title}}](members.md), for the Owners and Admins that scheduled syncs run as.
 - [{{ui:personnel.title}}](personnel.md), the roster an HR connection fills.
 - [{{ui:admin.notifications.title}}](notifications.md), which sends the emails some syncs raise.
+- [{{ui:admin.leaverPasses.title}}](identity-leaver-passes.md), [{{ui:admin.joinerPasses.title}}](identity-joiner-passes.md) and [{{ui:admin.writeLadder.title}}](identity-write-policy.md), the Owner-only pages the directory buttons open.
