@@ -330,6 +330,7 @@ export function EvidenceUploadSection({
                         type="url"
                         className="input w-full"
                         placeholder={t('urlPlaceholder')}
+                        aria-label={t('linkUrlLabel')}
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
                         data-testid="evidence-link-url"
@@ -338,6 +339,7 @@ export function EvidenceUploadSection({
                         type="text"
                         className="input w-full"
                         placeholder={t('noteOptional')}
+                        aria-label={t('noteOptional')}
                         value={note}
                         onChange={(e) => setNote(e.target.value)}
                     />

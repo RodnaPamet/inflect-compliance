@@ -3665,7 +3665,8 @@
       "archiveConfirmLabel": "Archive policy",
       "restoreFromArchive": "Restore",
       "restoring": "Restoring…",
-      "unarchivedToast": "Policy restored from archive as a draft."
+      "unarchivedToast": "Policy restored from archive as a draft.",
+      "bypassReasonLabel": "Reason"
     },
     "evidence": {
       "title": "Evidence to Retain",
@@ -3674,7 +3675,8 @@
       "linkPlaceholder": "Link evidence…",
       "add": "Add item",
       "addPlaceholder": "Add an evidence-to-retain item…",
-      "note": "Suggested from the policy template — link each item to the evidence that proves the policy operates."
+      "note": "Suggested from the policy template — link each item to the evidence that proves the policy operates.",
+      "addLabel": "New evidence item"
     },
     "sharepoint": {
       "linkFailed": "Link failed.",
@@ -7846,7 +7848,8 @@
         "lastBandEnd": "The last band must end at score {expected}, the highest score; it ends at {got}.",
         "likelihoodLabelCount": "Give each of the {expected} likelihood levels a name; there are {got}.",
         "impactLabelCount": "Give each of the {expected} impact levels a name; there are {got}."
-      }
+      },
+      "levelNameAria": "{axis} level {level} name"
     },
     "trustCenter": {
       "title": "Trust Center",
@@ -9983,7 +9986,8 @@
         "TEMPLATE_NOT_FOUND": "A chosen template is no longer in the catalogue. Reload the page.",
         "NO_TEMPLATE_CHOSEN": "Choose at least one template to install.",
         "TOO_MANY_TEMPLATES": "Install at most 100 templates at a time."
-      }
+      },
+      "selectTemplateAria": "Select {code} {title}"
     },
     "loadingAria": "Loading frameworks",
     "readiness": {
@@ -14335,7 +14339,8 @@
       "linking": "Linking…",
       "failedLink": "Failed to link evidence",
       "downloadTitle": "Download {name}",
-      "openTitle": "Open {name}"
+      "openTitle": "Open {name}",
+      "linkUrlLabel": "Link URL"
     },
     "attachedEvidence": {
       "removed": "Evidence removed",
@@ -15019,7 +15024,9 @@
       "postureEmpty": "No posture set yet.",
       "historyEmpty": "No history yet.",
       "recentActivityEmpty": "no recent activity",
-      "historyFailed": "The history did not load. Close this panel and open it again."
+      "historyFailed": "The history did not load. Close this panel and open it again.",
+      "headlineLabel": "Headline",
+      "contextLabel": "Context"
     },
     "tenants": {
       "title": "Workspaces",
@@ -16114,7 +16121,8 @@
         "rag": "RAG",
         "agentic": "Agentic",
         "both": "RAG + Agentic"
-      }
+      },
+      "noteLabel": "Note on this answer"
     },
     "sovereignty": {
       "intro": "Six sovereignty dimensions — jurisdiction, residency, identity, exit-readiness, regulatory alignment and sovereign AI. Score each question from none (0) to leading (4); weak dimensions surface a suggested risk + control you can approve at the end. Nothing is saved until you create it.",
@@ -16198,7 +16206,8 @@
       "finalisedTitle": "This assessment is complete",
       "finalisedBody": "Its answers are kept as they were when it was completed. To change them, start a new run of the assessment.",
       "openGapPage": "Open the NIS2 gap assessment",
-      "continue": "Continue"
+      "continue": "Continue",
+      "noteLabel": "Note on this answer"
     }
   },
   "external": {

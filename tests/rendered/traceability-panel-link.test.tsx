@@ -136,6 +136,9 @@ describe("TraceabilityPanel — link form regressions", () => {
         await user.click(screen.getByRole("button", { name: "Link Risk" }));
         await user.click(screen.getByRole("button", { name: "Link Control" }));
 
+        // Each form's rationale field has a name, not just a placeholder (#4991).
+        expect(screen.getAllByRole("textbox", { name: "Rationale (optional)" })).toHaveLength(2);
+
         // Wait for the available-controls fetch to populate so the
         // combobox has options to render.
         await waitFor(() => {

@@ -57,6 +57,7 @@ import {
 import { buildPolicyStatusLabels } from '../filter-defs';
 import { PolicySharePointSection } from './PolicySharePointSection';
 import { PolicyEvidenceChecklist } from './PolicyEvidenceChecklist';
+import { FormField } from '@/components/ui/form-field';
 
 // Lazy-load loading states rendered via next-intl (module-scope dynamic()
 // loading fns can't call the hook directly, so they route through a component).
@@ -1219,20 +1220,17 @@ export default function PolicyDetailPage() {
 
                     {/* External link input */}
                     {contentMode === 'EXTERNAL_LINK' && (
-                        <div>
-                            <label className="input-label">{t('detail.externalUrlLabel')}</label>
+                        <FormField label={t('detail.externalUrlLabel')} description={t('detail.externalUrlHint')}>
                             <input type="url" className="input w-full" value={externalUrl}
                                 onChange={e => setExternalUrl(e.target.value)}
                                 placeholder="https://docs.google.com/..." id="external-url-input" />
-                            <p className="text-xs text-content-subtle mt-1">{t('detail.externalUrlHint')}</p>
-                        </div>
+                        </FormField>
                     )}
 
-                    <div>
-                        <label className="input-label">{t('detail.changeSummaryLabel')}</label>
+                    <FormField label={t('detail.changeSummaryLabel')}>
                         <input className="input w-full" value={changeSummary} onChange={e => setChangeSummary(e.target.value)}
                             placeholder={t('detail.changeSummaryPlaceholder')} id="change-summary-input" />
-                    </div>
+                    </FormField>
 
                     {/* Say what saving will do BEFORE it happens. Editing a live
                         policy used to withdraw it silently — the editor gave no
@@ -1345,14 +1343,16 @@ export default function PolicyDetailPage() {
                         <div className="space-y-default">
                             {/* Names the version it publishes — the newest one. */}
                             <p className="text-sm text-content-muted" data-testid="policy-bypass-body">{t('detail.bypassBody', { n: newest?.versionNumber ?? '' })}</p>
-                            <textarea
-                                className="input"
-                                rows={3}
-                                value={bypassReason}
-                                onChange={(e) => setBypassReason(e.target.value)}
-                                placeholder={t('detail.bypassReasonPlaceholder')}
-                                data-testid="policy-bypass-reason"
-                            />
+                            <FormField label={t('detail.bypassReasonLabel')} required>
+                                <textarea
+                                    className="input"
+                                    rows={3}
+                                    value={bypassReason}
+                                    onChange={(e) => setBypassReason(e.target.value)}
+                                    placeholder={t('detail.bypassReasonPlaceholder')}
+                                    data-testid="policy-bypass-reason"
+                                />
+                            </FormField>
                         </div>
                     </Modal.Body>
                     <Modal.Footer>
