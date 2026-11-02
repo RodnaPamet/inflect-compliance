@@ -30,8 +30,11 @@ jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+// A marker rather than a real sanitiser: the assertions below show that each
+// user-written string passed through `sanitizePlainText`, which has its own
+// tests for what it strips.
 jest.mock('@/lib/security/sanitize', () => ({
-    sanitizePlainText: jest.fn((s: string) => s.replace(/<[^>]*>/g, '').trim()),
+    sanitizePlainText: jest.fn((s: string) => `[clean]${s.trim()}`),
 }));
 
 import { Prisma } from '@prisma/client';
@@ -84,11 +87,11 @@ describe('updateSection', () => {
         });
         mockTx.vendorAssessmentTemplateSection.update.mockResolvedValueOnce({ id: 's-1', title: 'New' });
 
-        await updateSection(makeCtx(), 't-1', 's-1', { title: ' <b>New</b> ' });
+        await updateSection(makeCtx(), 't-1', 's-1', { title: ' New ' });
 
         expect(mockTx.vendorAssessmentTemplateSection.update).toHaveBeenCalledWith({
             where: { id: 's-1' },
-            data: { title: 'New' },
+            data: { title: '[clean]New' },
         });
         expect(logEvent).toHaveBeenCalledWith(
             mockTx,
@@ -175,7 +178,7 @@ describe('updateQuestion', () => {
         await updateQuestion(makeCtx(), 't-1', 'q-1', {
             answerType: 'SINGLE_SELECT',
             optionsJson: [
-                { label: '<i>Yearly</i>', value: 'yearly', points: 0 },
+                { label: 'Yearly', value: 'yearly', points: 0 },
                 { label: 'Never', value: 'never', points: 3 },
             ],
             scaleConfigJson: { min: 1, max: 5 },
@@ -186,8 +189,8 @@ describe('updateQuestion', () => {
             data: {
                 answerType: 'SINGLE_SELECT',
                 optionsJson: [
-                    { label: 'Yearly', value: 'yearly', points: 0 },
-                    { label: 'Never', value: 'never', points: 3 },
+                    { label: '[clean]Yearly', value: 'yearly', points: 0 },
+                    { label: '[clean]Never', value: 'never', points: 3 },
                 ],
                 scaleConfigJson: Prisma.DbNull,
             },
