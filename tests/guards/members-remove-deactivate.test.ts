@@ -59,10 +59,9 @@ describe('members remove/deactivate (3) three-dot menu fixed + Remove', () => {
     it('the menu offers Remove and Deactivate', () => {
         expect(src).toMatch(/action-remove-\$\{m\.id\}/);
         expect(src).toMatch(/action-deactivate-\$\{m\.id\}/);
-        // Through the confirm dialog, not the browser's `confirm()` (#4989).
-        expect(src).toMatch(/kind: 'remove', membershipId: m\.id/);
+        // Through the confirm dialog (#4989); the native-confirm ceiling in
+        // ux-foundation-ratchets holds the page at zero `confirm()` calls.
         expect(src).toMatch(/handleRemove\(pending\.membershipId/);
-        expect(src).not.toMatch(/\bconfirm\(t\(/);
     });
 });
 

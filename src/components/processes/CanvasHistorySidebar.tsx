@@ -255,6 +255,9 @@ export function CanvasHistorySidebar({
                     </ul>
                 )}
             </div>
+            {/* Mounted only while a restore waits: the panel renders on the
+                canvas, where a closed dialog's router hook has no business. */}
+            {confirmingVersion !== null && (
             <ConfirmDialog
                 showModal={confirmingVersion !== null}
                 setShowModal={(open) => {
@@ -275,6 +278,7 @@ export function CanvasHistorySidebar({
                 }}
                 onCancel={() => setConfirmingVersion(null)}
             />
+            )}
         </AsidePanel>
     );
 }
