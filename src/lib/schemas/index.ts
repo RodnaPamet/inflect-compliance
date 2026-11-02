@@ -1234,6 +1234,56 @@ export const AddVendorAssessmentTemplateQuestionSchema = z.object({
     sortOrder: z.number().int().nonnegative().optional(),
 }).strip();
 
+/// #4934 — edit a section of a DRAFT template. Every field is optional;
+/// an absent field keeps its stored value. The usecase refuses a published
+/// template, as it does for every other edit.
+export const UpdateVendorAssessmentTemplateSectionSchema = z.object({
+    title: z.string().min(1).max(500).optional(),
+    description: z.string().max(10000).nullable().optional(),
+    weight: z.number().nonnegative().nullable().optional(),
+}).strip();
+
+/// #4934 — edit a question of a DRAFT template. The same fields as the add
+/// schema, every one optional and none defaulted, so an absent field keeps
+/// its stored value. The per-answerType check runs over the MERGED question
+/// at the usecase, so changing the type to a choice question without
+/// options is refused there, by name.
+export const UpdateVendorAssessmentTemplateQuestionSchema = z.object({
+    prompt: z.string().min(1).max(5000).optional(),
+    answerType: z
+        .enum([
+            'YES_NO',
+            'SINGLE_SELECT',
+            'MULTI_SELECT',
+            'TEXT',
+            'NUMBER',
+            'SCALE',
+            'FILE_UPLOAD',
+        ])
+        .optional(),
+    required: z.boolean().optional(),
+    weight: z.number().nonnegative().optional(),
+    optionsJson: z
+        .array(
+            z.object({
+                label: z.string().min(1).max(500),
+                value: z.string().min(1).max(500),
+                points: z.number().optional(),
+            }),
+        )
+        .max(50)
+        .nullable()
+        .optional(),
+    scaleConfigJson: z
+        .object({
+            min: z.number().int(),
+            max: z.number().int(),
+            labels: z.array(z.string().max(120)).max(10).optional(),
+        })
+        .nullable()
+        .optional(),
+}).strip();
+
 export const ReorderVendorAssessmentTemplateSchema = z.object({
     sections: z.array(
         z.object({
