@@ -4462,7 +4462,7 @@
     },
     "respond": {
       "loadFailed": "Failed to load your assignment.",
-      "submitFailed": "Failed to submit.",
+      "submitFailed": "Couldn't save your answers. Try again.",
       "submitted": "Your answers were submitted. Thank you — the assessment owner will finalise the run.",
       "title": "Your NIS2 questions",
       "description": "Answer only the questions assigned to you. Your answers feed the shared assessment; the owner finalises it.",
@@ -4471,8 +4471,11 @@
       "finalized": "This assessment has been finalised, so its answers can no longer change.",
       "legalBasis": "Legal basis: {legalBasis}",
       "loadingAria": "Loading your NIS2 questions",
-      "submitZero": "Submit answers",
-      "submitN": "Submit {count} answers"
+      "save": "Save answers",
+      "submit": "Submit",
+      "saved": "Your answers are saved. Come back to finish, then submit.",
+      "progress": "{answered} of {total} answered.",
+      "submitNeedsAll": "Answer every question to submit."
     },
     "auditorsAdmin": {
       "crumb": "Auditor management",
