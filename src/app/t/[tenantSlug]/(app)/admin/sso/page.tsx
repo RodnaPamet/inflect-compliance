@@ -13,6 +13,7 @@ import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-con
 import { Shield, ExternalLink, Trash2, Save, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { InfoTooltip } from '@/components/ui/tooltip';
@@ -404,10 +405,7 @@ export default function SsoAdminPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
                     {/* Provider name */}
-                    <div>
-                        <label htmlFor="sso-name" className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                            {t('sso.providerName')}
-                        </label>
+                    <FormField label={t('sso.providerName')}>
                         <Input
                             id="sso-name"
                             value={formName}
@@ -415,13 +413,10 @@ export default function SsoAdminPage() {
                             placeholder={tab === 'OIDC' ? t('sso.providerNameOidc') : t('sso.providerNameSaml')}
                             className="w-full"
                         />
-                    </div>
+                    </FormField>
 
                     {/* Email domains */}
-                    <div>
-                        <label htmlFor="sso-domains" className="text-xs text-content-muted uppercase tracking-wider mb-1 block">
-                            {t('sso.emailDomains')}
-                        </label>
+                    <FormField label={t('sso.emailDomains')} description={t('sso.commaSeparated')}>
                         <Input
                             id="sso-domains"
                             disabled={!canChangeTrust}
@@ -430,15 +425,13 @@ export default function SsoAdminPage() {
                             placeholder="acme.com, acme.io"
                             className="w-full"
                         />
-                        <span className="text-xs text-content-subtle mt-0.5">{t('sso.commaSeparated')}</span>
-                    </div>
+                    </FormField>
                 </div>
 
                 {/* Protocol-specific fields */}
                 {tab === 'OIDC' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-default mt-4">
-                        <div>
-                            <label htmlFor="sso-oidc-issuer" className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.issuerUrl')}</label>
+                        <FormField label={t('sso.issuerUrl')}>
                             <Input
                                 id="sso-oidc-issuer"
                                 disabled={!canChangeTrust}
@@ -447,9 +440,8 @@ export default function SsoAdminPage() {
                                 placeholder="https://login.example.com"
                                 className="w-full"
                             />
-                        </div>
-                        <div>
-                            <label htmlFor="sso-oidc-client-id" className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.clientId')}</label>
+                        </FormField>
+                        <FormField label={t('sso.clientId')}>
                             <Input
                                 id="sso-oidc-client-id"
                                 disabled={!canChangeTrust}
@@ -458,10 +450,11 @@ export default function SsoAdminPage() {
                                 placeholder="client-id-from-idp"
                                 className="w-full"
                             />
-                        </div>
-                        <div>
-                            <label htmlFor="sso-oidc-client-secret" className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.clientSecret')}</label>
-                            <div className="relative">
+                        </FormField>
+                        {/* The reveal button sits over the field from outside
+                            FormField, which labels its one child: the input. */}
+                        <div className="relative">
+                            <FormField label={t('sso.clientSecret')}>
                                 <input
                                     id="sso-oidc-client-secret"
                                     type={showSecret ? 'text' : 'password'}
@@ -470,18 +463,17 @@ export default function SsoAdminPage() {
                                     placeholder="client-secret"
                                     className="input w-full pr-10"
                                 />
-                                <button
-                                    type="button"
-                                    aria-label={showSecret ? t('sso.hideSecret') : t('sso.showSecret')}
-                                    onClick={() => setShowSecret(!showSecret)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-content-muted hover:text-content-emphasis"
-                                >
-                                    {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </button>
-                            </div>
+                            </FormField>
+                            <button
+                                type="button"
+                                aria-label={showSecret ? t('sso.hideSecret') : t('sso.showSecret')}
+                                onClick={() => setShowSecret(!showSecret)}
+                                className="absolute right-3 bottom-2.5 text-content-muted hover:text-content-emphasis"
+                            >
+                                {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
                         </div>
-                        <div>
-                            <label htmlFor="sso-oidc-scopes" className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.scopes')}</label>
+                        <FormField label={t('sso.scopes')}>
                             <Input
                                 id="sso-oidc-scopes"
                                 value={oidcScopes}
@@ -489,12 +481,11 @@ export default function SsoAdminPage() {
                                 placeholder="openid email profile"
                                 className="w-full"
                             />
-                        </div>
+                        </FormField>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-default mt-4">
-                        <div>
-                            <label htmlFor="sso-saml-entity-id" className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.entityId')}</label>
+                        <FormField label={t('sso.entityId')}>
                             <Input
                                 id="sso-saml-entity-id"
                                 disabled={!canChangeTrust}
@@ -503,9 +494,8 @@ export default function SsoAdminPage() {
                                 placeholder="https://idp.example.com"
                                 className="w-full"
                             />
-                        </div>
-                        <div>
-                            <label htmlFor="sso-saml-sso-url" className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.ssoUrl')}</label>
+                        </FormField>
+                        <FormField label={t('sso.ssoUrl')}>
                             <Input
                                 id="sso-saml-sso-url"
                                 disabled={!canChangeTrust}
@@ -514,9 +504,8 @@ export default function SsoAdminPage() {
                                 placeholder="https://idp.example.com/saml/sso"
                                 className="w-full"
                             />
-                        </div>
-                        <div className="md:col-span-2">
-                            <label htmlFor="sso-saml-certificate" className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.certificate')}</label>
+                        </FormField>
+                        <FormField label={t('sso.certificate')} className="md:col-span-2">
                             <Textarea
                                 id="sso-saml-certificate"
                                 disabled={!canChangeTrust}
@@ -526,16 +515,8 @@ export default function SsoAdminPage() {
                                 rows={3}
                                 className="w-full font-mono text-xs"
                             />
-                        </div>
-                        <div>
-                            <div className="mb-1 flex items-center gap-1.5">
-                                <label htmlFor="sso-saml-nameid" className="text-xs text-content-muted uppercase tracking-wider">{t('sso.nameIdFormat')}</label>
-                                <InfoTooltip
-                                    aria-label={t('sso.nameIdAria')}
-                                    iconClassName="h-3.5 w-3.5"
-                                    content={t('sso.nameIdTooltip')}
-                                />
-                            </div>
+                        </FormField>
+                        <FormField label={t('sso.nameIdFormat')} hint={t('sso.nameIdTooltip')}>
                             <Input
                                 id="sso-saml-nameid"
                                 value={samlNameIdFormat}
@@ -543,9 +524,8 @@ export default function SsoAdminPage() {
                                 placeholder="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
                                 className="w-full text-xs"
                             />
-                        </div>
-                        <div>
-                            <label htmlFor="sso-saml-acs-url" className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.acsUrl')}</label>
+                        </FormField>
+                        <FormField label={t('sso.acsUrl')}>
                             <Input
                                 id="sso-saml-acs-url"
                                 readOnly
@@ -554,7 +534,7 @@ export default function SsoAdminPage() {
                                     : '/api/auth/sso/saml/callback'}
                                 className="w-full text-xs text-content-subtle cursor-not-allowed"
                             />
-                        </div>
+                        </FormField>
                     </div>
                 )}
 

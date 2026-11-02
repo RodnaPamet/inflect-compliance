@@ -5181,7 +5181,6 @@
       "ssoUrl": "SSO URL",
       "certificate": "X.509 Certificate",
       "nameIdFormat": "NameID Format (optional)",
-      "nameIdAria": "About NameID format",
       "nameIdTooltip": "Leave empty if your IdP issues email-format NameIDs (the common case). Override only if your IdP uses a non-standard URN — check the IdP's SAML attribute mapping.",
       "acsUrl": "ACS URL (your callback)",
       "enableSso": "Enable SSO",
