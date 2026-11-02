@@ -24,6 +24,7 @@ import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/ui/form-field";
 import { InlineNotice } from "@/components/ui/inline-notice";
+import { extractMutationError } from "@/lib/mutations";
 
 export interface CanvasMapDeleteControlProps {
     /** Name of the active map — the value the user must type to confirm. */
@@ -60,9 +61,8 @@ export function CanvasMapDeleteControl({
             await onDelete();
             close();
         } catch (err) {
-            setDeleteError(
-                err instanceof Error ? err.message : t("deleteFailed"),
-            );
+            // The server's reason, or the dialog's own sentence (#4987).
+            setDeleteError(extractMutationError(err, t("deleteFailed")));
             setDeleting(false);
         }
     };

@@ -466,3 +466,55 @@ describe('creating a map in either canvas mode', () => {
         expect(onActiveIdChange).toHaveBeenCalledWith('map-2');
     });
 });
+
+describe('a failure says what failed, in a sentence (#4987)', () => {
+    // These were English literals, and the throws behind them put the HTTP
+    // status in the message ("Create failed (500)"). The bar now shows the
+    // server's reason, or its own translated sentence when there was none.
+    const refused = (status: number, body: unknown) =>
+        jest.fn(async () => ({ ok: false, status, json: async () => body })) as unknown as typeof fetch;
+
+    it('a refused create with no reason reads the bar sentence, not the status', async () => {
+        const { hook } = setup({ fetchImpl: refused(500, {}) });
+        await act(async () => {
+            await hook.result.current.handlers.handleNew();
+        });
+        expect(hook.result.current.doc.error).toBe('Could not create the map');
+    });
+
+    it("a refused create with a reason shows the server's reason", async () => {
+        const { hook } = setup({
+            fetchImpl: refused(403, { error: { code: 'FORBIDDEN', message: 'Only an editor can create maps' } }),
+        });
+        await act(async () => {
+            await hook.result.current.handlers.handleNew();
+        });
+        expect(hook.result.current.doc.error).toBe('Only an editor can create maps');
+    });
+
+    it('a refused duplicate with no reason reads the bar sentence', async () => {
+        const { hook } = setup({ fetchImpl: refused(502, null) });
+        await act(async () => {
+            await hook.result.current.handlers.handleDuplicate();
+        });
+        expect(hook.result.current.doc.error).toBe('Could not duplicate this map');
+    });
+
+    it('a save that rejects with no reason reads the bar sentence', async () => {
+        saveTldrawCanvas.mockRejectedValueOnce(new Error(''));
+        const { hook } = setup();
+        await act(async () => {
+            await hook.result.current.handlers.handleSave();
+        });
+        expect(hook.result.current.doc.error).toBe('Could not save the canvas');
+    });
+
+    it("a failed fetch's browser text is replaced too", async () => {
+        patchCanvasMode.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+        const { hook } = setup();
+        await act(async () => {
+            await hook.result.current.handlers.onSwitchMode();
+        });
+        expect(hook.result.current.doc.error).toBe('Could not switch canvas mode');
+    });
+});

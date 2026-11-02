@@ -45,6 +45,7 @@
 import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
 import type { EditorCanvas } from '@/components/processes/tldraw/editor-canvas';
 import { surfaceVersionConflict } from '@/lib/processes/version-conflict-toast';
+import { refusalReason } from '@/lib/api-error';
 
 /** What the server returns from a successful save. */
 export interface SavedProcessMap {
@@ -136,7 +137,9 @@ export async function saveTldrawCanvas({
     // for something the toast owns.
     if (await surfaceVersionConflict(res, toast, onConflict)) return;
 
-    if (!res.ok) throw new Error(`Save failed (${res.status})`);
+    // The server's sentence, or an empty message for the caller's own —
+    // never the status code (#4987).
+    if (!res.ok) throw new Error(await refusalReason(res));
 
     onSaved((await res.json()) as SavedProcessMap);
 }

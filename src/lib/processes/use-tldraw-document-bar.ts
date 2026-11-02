@@ -32,6 +32,7 @@
  * mirrored into state.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import type { Editor } from 'tldraw';
 
 import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
@@ -44,6 +45,8 @@ import {
     type CanvasMode,
 } from '@/lib/processes/switch-canvas-mode';
 import { saveTldrawCanvas, type SavedProcessMap } from '@/lib/processes/tldraw-save';
+import { refusalReason } from '@/lib/api-error';
+import { extractMutationError } from '@/lib/mutations';
 
 /**
  * The snap preference's storage key.
@@ -132,6 +135,18 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
 
     const doFetch = fetchImpl ?? globalThis.fetch;
 
+    // The bar's own sentences, for a failure the server gave no reason for
+    // (#4987). These were English literals, and the throws they backed put
+    // the HTTP status in the message. Strings, not `t`, in the callbacks'
+    // dependencies: a string is equal across renders by value.
+    const t = useTranslations('automation.canvas');
+    const failSave = t('failSave');
+    const failRename = t('failRename');
+    const failCreate = t('failCreate');
+    const failDuplicate = t('failDuplicate');
+    const failModeSwitch = t('failModeSwitch');
+    const failStatusChange = t('failStatusChange');
+
     // Mirror the active map's name into the editable field when the selection
     // changes or a rename lands from elsewhere.
     useEffect(() => {
@@ -197,11 +212,11 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
         try {
             await saveNow();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Save failed');
+            setError(extractMutationError(e, failSave));
         } finally {
             setSaving(false);
         }
-    }, [saveNow]);
+    }, [saveNow, failSave]);
 
     const handleRenameCommit = useCallback(async () => {
         if (!activeProcess) return;
@@ -222,11 +237,11 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
                 ),
             );
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Rename failed');
+            setError(extractMutationError(e, failRename));
         } finally {
             setSaving(false);
         }
-    }, [activeProcess, editedName, saveNow, processes, onProcessesChange]);
+    }, [activeProcess, editedName, saveNow, processes, onProcessesChange, failRename]);
 
     /**
      * Create a map, in either canvas mode (#3116).
@@ -265,7 +280,7 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, canvasMode: mode }),
             });
-            if (!res.ok) throw new Error(`Create failed (${res.status})`);
+            if (!res.ok) throw new Error(await refusalReason(res));
             const data = (await res.json()) as P;
             /*
                 `canvasMode` is filled in from the request when the response
@@ -279,11 +294,11 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
             onProcessesChange([...processes, { ...data, canvasMode: data.canvasMode ?? mode }]);
             onActiveIdChange(data.id);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Create failed');
+            setError(extractMutationError(e, failCreate));
         } finally {
             setCreating(false);
         }
-    }, [tenantSlug, processes, doFetch, onProcessesChange, onActiveIdChange]);
+    }, [tenantSlug, processes, doFetch, onProcessesChange, onActiveIdChange, failCreate]);
 
     const handleDuplicate = useCallback(async () => {
         if (!activeProcess || !editor) return;
@@ -298,7 +313,7 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
                     canvasMode: activeProcess.canvasMode ?? 'DOCUMENT',
                 }),
             });
-            if (!res.ok) throw new Error(`Duplicate failed (${res.status})`);
+            if (!res.ok) throw new Error(await refusalReason(res));
             const created = (await res.json()) as P;
 
             // Seed the copy with the CURRENT canvas, and note there is no
@@ -320,13 +335,13 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
             onProcessesChange([...processes, created]);
             onActiveIdChange(created.id);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Duplicate failed');
+            setError(extractMutationError(e, failDuplicate));
         } finally {
             setDuplicating(false);
         }
     }, [
         activeProcess, editor, tenantSlug, processes, doFetch, toast, onConflict,
-        onProcessesChange, onActiveIdChange, fetchImpl,
+        onProcessesChange, onActiveIdChange, fetchImpl, failDuplicate,
     ]);
 
     const onSwitchMode = useCallback(async () => {
@@ -341,9 +356,9 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
                 ),
             );
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Mode switch failed');
+            setError(extractMutationError(e, failModeSwitch));
         }
-    }, [activeProcess, tenantSlug, processes, onProcessesChange]);
+    }, [activeProcess, tenantSlug, processes, onProcessesChange, failModeSwitch]);
 
     const onChangeStatus = useCallback(
         async (status: string) => {
@@ -360,10 +375,10 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
                     ),
                 );
             } catch (e) {
-                setError(e instanceof Error ? e.message : 'Status change failed');
+                setError(extractMutationError(e, failStatusChange));
             }
         },
-        [activeProcess, tenantSlug, processes, onProcessesChange],
+        [activeProcess, tenantSlug, processes, onProcessesChange, failStatusChange],
     );
 
     const onDelete = useCallback(async () => {

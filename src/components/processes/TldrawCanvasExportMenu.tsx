@@ -40,6 +40,7 @@ import {
     exportTldrawCanvasAsPng,
     exportTldrawCanvasAsSvg,
 } from '@/lib/processes/tldraw-canvas-export';
+import { extractMutationError } from '@/lib/mutations';
 
 export type TldrawExportKind = 'png' | 'svg' | 'pdf' | 'evidence' | 'clipboard';
 
@@ -113,7 +114,9 @@ export function TldrawCanvasExportMenu({
                 // The empty-canvas refusal surfaces here too, and its message
                 // is already human-readable — so it is shown rather than
                 // replaced with the generic fallback.
-                toast.error(err instanceof Error ? err.message : t('exportFailed'));
+                // A refusal with no reason from the server throws an empty message,
+                // and a failed fetch the browser's text: both read the fallback.
+                toast.error(extractMutationError(err, t('exportFailed')));
             } finally {
                 setBusy(false);
             }

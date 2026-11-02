@@ -94,3 +94,25 @@ export function apiRefusalMessage(body: unknown, fallback: string): string {
     if (issues.length > 0) return issues.join('; ');
     return apiErrorMessage(body, fallback);
 }
+
+/**
+ * The server's own sentence for a refused `fetch`, or `''` when it gave none
+ * (#4987) — a non-JSON body, an empty one, an envelope with no message.
+ *
+ * For helpers that throw on a refusal but have no translations of their own:
+ * `throw new Error(await refusalReason(res))`. The caller then shows the
+ * message, or its own translated sentence when the message is empty —
+ * `extractMutationError(err, t(…))` does exactly that. Never put the status
+ * code in the message instead: it means nothing to the person reading it.
+ */
+export async function refusalReason(res: Response): Promise<string> {
+    // `try`, not `.catch`: a response stand-in with no `json` throws before
+    // there is a promise to catch, and a refusal must never fail to refuse.
+    let body: unknown = null;
+    try {
+        body = await res.json();
+    } catch {
+        body = null;
+    }
+    return apiErrorMessage(body, '');
+}
