@@ -333,6 +333,7 @@ export default function UserMfaPage() {
                                 inputMode="numeric"
                                 maxLength={6}
                                 placeholder="000000"
+                                aria-label={t('codeLabel')}
                                 value={code}
                                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                                 className="input text-center text-lg font-mono tracking-[0.3em] w-full sm:w-40"

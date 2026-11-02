@@ -330,6 +330,7 @@ export default function TemplateLibraryPage() {
                                     <input
                                         type="checkbox"
                                         checked={isSelected}
+                                        aria-label={tx('templates.selectTemplateAria', { code: t.code, title: t.title })}
                                         onChange={() => toggleSelect(t.code)}
                                         className="mt-1 accent-[var(--brand-default)]"
                                     />

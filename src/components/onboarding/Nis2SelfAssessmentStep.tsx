@@ -310,6 +310,7 @@ export function Nis2SelfAssessmentStep({
                                                 </RadioGroup>
                                                 <NoteField
                                                     addLabel={tn('addNote')}
+                                                    label={tn('noteLabel')}
                                                     placeholder={tn('notePlaceholder')}
                                                     initial={answers[q.id]?.note ?? ''}
                                                     saving={savingId === q.id}
@@ -386,6 +387,7 @@ export function Nis2SelfAssessmentStep({
 /** Collapsed-by-default optional note for one answer; saves on blur. */
 function NoteField({
     addLabel,
+    label,
     placeholder,
     initial,
     saving,
@@ -393,6 +395,8 @@ function NoteField({
     disabled,
 }: {
     addLabel: string;
+    /** The field's accessible name; the placeholder is not one. */
+    label: string;
     placeholder: string;
     initial: string;
     saving: boolean;
@@ -418,6 +422,7 @@ function NoteField({
             className="w-full rounded-md border border-border-subtle bg-bg-default p-2 text-sm"
             rows={2}
             placeholder={placeholder}
+            aria-label={label}
             value={val}
             disabled={saving}
             onChange={(e) => setVal(e.target.value)}

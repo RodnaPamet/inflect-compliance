@@ -20,6 +20,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { FormField } from '@/components/ui/form-field';
 
 interface TestPlan {
     id: string;
@@ -156,8 +157,7 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
 
             {showForm && (
                 <div className={cn(cardVariants({ density: 'compact' }), 'space-y-compact animate-fadeIn')}>
-                    <div>
-                        <label className="text-xs text-content-muted block mb-1">{t('planNameLabel')}</label>
+                    <FormField label={t('planNameLabel')}>
                         <input
                             className="input w-full"
                             value={name}
@@ -165,16 +165,15 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
                             placeholder={t('planNamePlaceholder')}
                             id="test-plan-name-input"
                         />
-                    </div>
+                    </FormField>
                     <div className="grid grid-cols-2 gap-compact">
-                        <div>
-                            <label className="text-xs text-content-muted block mb-1">{t('frequency')}</label>
+                        <FormField label={t('frequency')}>
                             <select className="input w-full" value={frequency} onChange={e => setFrequency(e.target.value)} id="test-plan-frequency-select">
                                 {Object.entries(FREQ_LABELS).map(([v, l]) => (
                                     <option key={v} value={v}>{l}</option>
                                 ))}
                             </select>
-                        </div>
+                        </FormField>
                         {/* PR-Q — the MANUAL/AUTOMATED method select was removed here
                             too: createTestPlan never mapped it to an automationType
                             or a schedule, so it was inert. Plans create MANUAL;

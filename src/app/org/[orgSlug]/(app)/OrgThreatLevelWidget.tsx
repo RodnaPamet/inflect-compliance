@@ -221,6 +221,7 @@ function UpdateThreatModal({
                     <input
                         className="w-full rounded-md border border-border-subtle bg-bg-default p-2 text-sm"
                         placeholder={t('widgets.headlinePlaceholder')}
+                        aria-label={t('widgets.headlineLabel')}
                         maxLength={280}
                         value={summary}
                         onChange={(e) => setSummary(e.target.value)}
@@ -229,6 +230,7 @@ function UpdateThreatModal({
                         className="w-full rounded-md border border-border-subtle bg-bg-default p-2 text-sm"
                         rows={3}
                         placeholder={t('widgets.contextPlaceholder')}
+                        aria-label={t('widgets.contextLabel')}
                         maxLength={4000}
                         value={detail}
                         onChange={(e) => setDetail(e.target.value)}

@@ -479,6 +479,7 @@ export function RiskMatrixAdminClient({
                                                         e.target.value,
                                                     )
                                                 }
+                                                aria-label={t('riskMatrix.levelNameAria', { axis: t('riskMatrix.likelihood'), level: idx + 1 })}
                                                 data-testid={`rm-label-likelihood-${idx}`}
                                             />
                                         ),
@@ -504,6 +505,7 @@ export function RiskMatrixAdminClient({
                                                         e.target.value,
                                                     )
                                                 }
+                                                aria-label={t('riskMatrix.levelNameAria', { axis: t('riskMatrix.impact'), level: idx + 1 })}
                                                 data-testid={`rm-label-impact-${idx}`}
                                             />
                                         ),
