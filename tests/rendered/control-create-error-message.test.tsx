@@ -165,3 +165,26 @@ describe('new control — plan limit reached', () => {
         expect(banner).not.toHaveTextContent('control(s)');
     });
 });
+
+// #4967 — the applicability choice is the shared RadioGroup, named by its label.
+describe('new control — applicability', () => {
+    const EN = require('../../messages/en.json').controls.new;
+
+    it('is a named radio group, starting on Applicable', () => {
+        render(withSWR(<NewControlModal open setOpen={() => {}} tenantSlug="acme" />));
+        const group = screen.getByRole('radiogroup', { name: EN.applicability });
+        expect(group).toBeInTheDocument();
+        expect(screen.getByRole('radio', { name: EN.applicable })).toHaveAttribute('aria-checked', 'true');
+        expect(screen.getByRole('radio', { name: EN.notApplicable })).toHaveAttribute('aria-checked', 'false');
+        expect(document.getElementById('control-justification-input')).toBeNull();
+    });
+
+    it('choosing Not applicable asks for the justification', async () => {
+        render(withSWR(<NewControlModal open setOpen={() => {}} tenantSlug="acme" />));
+        fireEvent.click(screen.getByText(EN.notApplicable));
+        await waitFor(() =>
+            expect(screen.getByRole('radio', { name: EN.notApplicable })).toHaveAttribute('aria-checked', 'true'),
+        );
+        expect(document.getElementById('control-justification-input')).not.toBeNull();
+    });
+});
