@@ -22,7 +22,7 @@ Open **{{ui:nav.assets}}** under **{{ui:nav.govern}}** in the sidebar. The bread
 
 Every role can tick rows, but only Owners, Admins and Editors get the selection bar's actions, and only Owners and Admins get **{{ui:assets.bulk.delete}}**.
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given, and the page offers only the actions those permissions allow.
+If your workspace uses custom roles, an action needs two things: a custom role based on a role that can take it, as in the table, and the matching permission in the custom role. The **{{ui:admin.resourceLabels.assets}}** permissions are **{{ui:admin.roles.actions.create}}** for creating and importing and **{{ui:admin.roles.actions.edit}}** for the bulk changes. Deleting, restoring and purging need the workspace admin permission. The page offers only the actions your role can take.
 
 ## What it is for
 

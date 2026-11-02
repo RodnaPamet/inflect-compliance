@@ -8,7 +8,7 @@ The {{ui:evidence.title}} holds the workspace's evidence: the files, text notes 
 
 ## Where to find it
 
-Click **{{ui:nav.evidence}}** under {{ui:nav.comply}} in the sidebar. The breadcrumb reads **{{ui:evidence.list.crumbDashboard}}** › **{{ui:evidence.title}}**. Links from other pages, such as a control's {{ui:controls.detailPage.tabEvidence}} tab or the calendar, open this page with one record's details already showing.
+Click **{{ui:nav.evidence}}** under {{ui:nav.comply}} in the sidebar. The breadcrumb reads **{{ui:evidence.list.crumbDashboard}}** › **{{ui:evidence.title}}**. Links from other pages, such as a control's {{ui:controls.detailPage.tabEvidence}} tab or the calendar, open this page with one record's details already showing. The dashboard's quick-add link for evidence opens this page with the menu for adding evidence already open, for roles that can add evidence.
 
 ## Who can use it
 
@@ -28,7 +28,7 @@ Readers, Auditors and AI admins see no **{{ui:evidence.addEvidence}}** button an
 
 Whatever your role, nobody can approve or reject evidence they submitted for review; another Owner or Admin must do it. Only {{ui:evidence.statusLabels.SUBMITTED}} evidence can be approved or rejected, and a rejection needs a reason. Nobody can download archived evidence, so archived evidence shows no download button.
 
-If your workspace uses custom roles, the page shows the add, edit, archive, submit and bulk buttons only when both the built-in role your custom role is based on and the evidence permissions the custom role was given allow them. Linking evidence to a control, or unlinking it, also needs permission to edit controls, wherever you do it. Without that permission, the details panel shows no control picker and no cross, the forms that add evidence have no control field, and the edit form shows the linked controls but does not let you change them. A custom role that cannot view controls can still open this page, but the {{ui:evidence.filters.controlId}} filter and the control pickers offer no controls.
+If your workspace uses custom roles, the page shows the add, edit, archive, submit and bulk buttons only when both the built-in role your custom role is based on and the evidence permissions the custom role was given allow them. Linking evidence to a control, or unlinking it, also needs permission to edit controls, wherever you do it. Without that permission, the details panel shows no control picker and no cross, the forms that add evidence have no control field, and the edit form shows the linked controls but does not let you change them. A custom role that cannot view controls can still open this page, but the {{ui:evidence.filters.controlId}} filter and the control pickers offer no controls. In the details panel, the **{{ui:panels.linkedTasks.task}}** button needs the **{{ui:admin.resourceLabels.tasks}}** permission **{{ui:admin.roles.actions.create}}**.
 
 ## What it is for
 
@@ -72,7 +72,7 @@ The {{ui:evidence.colHeaders.actions}} column holds **{{ui:evidence.list.editEvi
 - **{{ui:evidence.detail.usedByLabel}}**, counting the controls, risks and assets it supports, and its **{{ui:evidence.detail.tagsLabel}}**.
 - **{{ui:evidence.detail.fileMetaTitle}}**: the file's name, size and type, its **{{ui:evidence.detail.fileHash}}** fingerprint with a copy button, and its retention and expiry dates. For a file, **{{ui:evidence.detail.versionsLabel}}** follows, with a download button for each earlier version when you may download the file.
 - **{{ui:evidence.detail.reviewHistoryTitle}}**: each submission, approval and rejection, who made it, when, and any reason given.
-- The tasks linked to the evidence. Roles that can add evidence also get a **{{ui:panels.linkedTasks.task}}** button to raise one.
+- The tasks linked to the evidence. Roles that can create tasks also get a **{{ui:panels.linkedTasks.task}}** button to raise one.
 
 The footer holds the edit button and the review buttons that apply.
 

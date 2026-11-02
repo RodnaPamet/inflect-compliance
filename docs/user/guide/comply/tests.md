@@ -20,11 +20,11 @@ Open **{{ui:nav.tests}}** under **{{ui:nav.comply}}** in the sidebar. The breadc
 | Delete several plans at once | Owner, Admin |
 | Start a run with **{{ui:controlTests.due.runNow}}** or **{{ui:controlTests.due.runPlanning}}** | Owner, Admin, Editor |
 
-**{{ui:controlTests.due.runNow}}** and **{{ui:controlTests.due.runPlanning}}** appear only for Owners, Admins and Editors. The **{{ui:controlTests.unified.testPlanNoun}}** button and the row tick boxes appear for every role, but only the roles above can use them: for anyone else the change is refused with a general error message. Bulk delete is likewise offered to Editors, and refused after the five-second undo window.
+The page offers each action only to those who can use it. The **{{ui:controlTests.unified.testPlanNoun}}** button and the row tick boxes appear only for Owners, Admins and Editors. **{{ui:controlTests.due.runNow}}** and **{{ui:controlTests.due.runPlanning}}** appear only for the same roles. In the selection bar, the delete action appears only for Owners and Admins. When a change is refused, the message says why.
 
 Some plans run an audit procedure for the workspace's auditor agent. Only the person who owns that agent can pause, archive or delete such a plan.
 
-If your workspace uses custom roles, the server checks your custom role's own permissions for test plans. The buttons the page shows still follow the built-in role your custom role is based on.
+If your workspace uses custom roles, your custom role's own permissions decide. Its **{{ui:admin.resourceLabels.tests}}** permissions are **{{ui:admin.roles.actions.create}}** for the button and the tick boxes, and **{{ui:admin.roles.actions.execute}}** for starting a run. Deleting several plans needs the workspace admin permission.
 
 ## What it is for
 

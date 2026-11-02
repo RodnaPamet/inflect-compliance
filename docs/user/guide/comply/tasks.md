@@ -22,7 +22,9 @@ Open **{{ui:nav.tasks}}** under **{{ui:nav.comply}}** in the sidebar. The breadc
 | See deleted tasks and restore them | Owner, Admin |
 | Close a task that has a reviewer | Only that reviewer, and only if their role can edit tasks |
 
-Every role can tick rows, but only roles that can edit tasks get actions in the selection bar. For the other roles the quick view is read-only. If your workspace uses custom roles, what you can do depends on the permissions your role was given.
+Every role can tick rows, but only roles that can edit tasks get actions in the selection bar. For the other roles the quick view is read-only.
+
+If your workspace uses custom roles, an action needs two things: a custom role based on a role that can take it, as in the table, and the matching permission in the custom role. The **{{ui:admin.resourceLabels.tasks}}** permissions are **{{ui:admin.roles.actions.create}}** for the **{{ui:tasks.list.addBtn}}** button, **{{ui:admin.roles.actions.edit}}** for editing and status changes, and **{{ui:admin.roles.actions.assign}}** for assigning. Attaching evidence needs the **{{ui:admin.resourceLabels.evidence}}** permission **{{ui:admin.roles.actions.upload}}**, and deleting in bulk needs the workspace admin permission. A custom role based on Reader gets none of these, whatever permissions it holds.
 
 Only a member whose role can edit tasks can be named a task's reviewer, because signing a task off is a status change. An older task can still name a reviewer who cannot sign it off, for example one whose role has since changed. The task's own page says so beside the reviewer, and such a task can only be canceled, or given another reviewer there.
 

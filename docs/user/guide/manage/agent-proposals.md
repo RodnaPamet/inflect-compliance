@@ -28,6 +28,7 @@ Some rules hold whatever your role:
 
 - **Whoever raised a dissent does not decide it.** When a member of internal audit disagrees with a sampled auditor workpaper, their dissent queues a finding proposal here. That person may not approve or reject it; somebody else must.
 - **Two approvers means two different people.** Some proposals need a second approver, because of the agent's policy card, its risk tier or how freely it acts. You cannot sign the same proposal twice, and the agent's accountable owner cannot be one of the two.
+- **Whoever composed a request does not approve it.** A request you wrote on the compose page is approved by somebody else, while the workspace's setting **{{ui:admin.agentOversight.setting.composeNeedsSecondApprover.name}}** is on, which it is unless an Owner turned it off on [{{ui:admin.aiFeatures.heading}}](../admin/ai-features.md). You can still reject your own request, which withdraws it.
 - **Only a person decides.** A proposal cannot be approved with an API key.
 - **A proposal has a review window.** Seven days from when it was proposed, or fourteen when the agent's policy card asks for a second approver. After that it can be neither approved nor rejected.
 
@@ -92,6 +93,7 @@ Tick their boxes. A bar shows how many are selected. Click **{{ui:agents.proposa
 | **You have already approved this proposal. A second approval has to come from a different person.** | Your approval is already recorded | Ask another Owner or Admin to approve it |
 | A message that the proposal needs two independent approvers and you are the registered owner of the agent | You own the agent, so you cannot be one of the two | Ask two other Owners or Admins to approve it |
 | **You raised this finding proposal by dissenting from a sampled workpaper. Somebody else decides it.** | The proposal came from your own dissent | Ask somebody else to decide it |
+| **You composed this request, so somebody else approves it.** | You wrote the request on the compose page | Ask another Owner or Admin to approve it, or reject it to withdraw it |
 | **The record changed since this diff was reviewed - re-review before approving** | The record the update would change was edited after the page loaded | Reload the page and read the changes again |
 | **Proposal is no longer pending**, or a message that it is already decided | Somebody else decided it first | Reload the page |
 | **{{ui:agents.proposals.approveFailed}}**, **{{ui:agents.proposals.rejectFailed}}** or **{{ui:agents.proposals.bulk.failed}}** | The action did not go through | Try again |
