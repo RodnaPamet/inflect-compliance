@@ -54,7 +54,7 @@
  * @module usecases/vendor-assessment-template
  */
 import type { RequestContext } from '../types';
-import type { AnswerType } from '@prisma/client';
+import { Prisma, type AnswerType } from '@prisma/client';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -116,20 +116,37 @@ function canonicaliseKey(raw: string): string {
         .slice(0, 120);
 }
 
+const CHOICE_TYPES: ReadonlySet<AnswerType> = new Set<AnswerType>([
+    'SINGLE_SELECT',
+    'MULTI_SELECT',
+]);
+
 /**
  * Per-answerType cross-field validation. Throws badRequest with a
- * type-specific message — the schema layer just shape-checks.
+ * sentence the builder can show as it is (#4934) — the schema layer just
+ * shape-checks. Runs over the question as it will be STORED, so an edit
+ * that changes only the type is judged with the options it keeps.
  */
-function validateQuestionConfig(input: AddQuestionInput): void {
-    if (
-        (input.answerType === 'SINGLE_SELECT' ||
-            input.answerType === 'MULTI_SELECT') &&
-        (!input.optionsJson ||
-            (Array.isArray(input.optionsJson) && input.optionsJson.length === 0))
-    ) {
-        throw badRequest(
-            `${input.answerType} questions require a non-empty optionsJson array.`,
-        );
+function validateQuestionConfig(input: {
+    answerType: AnswerType;
+    optionsJson?: unknown;
+    scaleConfigJson?: unknown;
+}): void {
+    if (CHOICE_TYPES.has(input.answerType)) {
+        const options = Array.isArray(input.optionsJson) ? input.optionsJson : [];
+        if (options.length === 0) {
+            throw badRequest(
+                'A single-choice or multiple-choice question needs at least one option.',
+            );
+        }
+        const values = new Set<string>();
+        for (const o of options as Array<{ value?: unknown }>) {
+            const v = typeof o?.value === 'string' ? o.value : '';
+            if (values.has(v)) {
+                throw badRequest('Two options of this question are the same. Give each option its own wording.');
+            }
+            values.add(v);
+        }
     }
     if (input.answerType === 'SCALE') {
         const cfg = input.scaleConfigJson as
@@ -142,15 +159,46 @@ function validateQuestionConfig(input: AddQuestionInput): void {
             typeof cfg.max !== 'number'
         ) {
             throw badRequest(
-                'SCALE questions require scaleConfigJson with numeric min and max.',
+                'A scale question needs a lowest and a highest value.',
             );
         }
         if ((cfg.min as number) >= (cfg.max as number)) {
             throw badRequest(
-                'SCALE questions require min < max.',
+                'The lowest value of a scale must be below its highest value.',
             );
         }
     }
+}
+
+/**
+ * The options and scale a question of this type STORES (#4934): a choice
+ * question keeps its options and no scale, a scale question its scale and
+ * no options, and any other type neither — so changing a question from a
+ * choice to "Yes or no" does not leave options behind that nothing shows.
+ * Option labels and scale end labels are vendor-facing text, sanitised as
+ * the prompt is. `undefined` leaves the column untouched on an update.
+ */
+function storedConfigFor(
+    answerType: AnswerType,
+    optionsJson: unknown,
+    scaleConfigJson: unknown,
+): { optionsJson: unknown; scaleConfigJson: unknown } {
+    const options = CHOICE_TYPES.has(answerType) && Array.isArray(optionsJson)
+        ? (optionsJson as Array<{ label: string; value: string; points?: number }>).map((o) => ({
+              label: sanitizePlainText(o.label),
+              value: o.value,
+              ...(typeof o.points === 'number' ? { points: o.points } : {}),
+          }))
+        : null;
+    const cfg = scaleConfigJson as { min: number; max: number; labels?: string[] } | null | undefined;
+    const scale = answerType === 'SCALE' && cfg
+        ? {
+              min: cfg.min,
+              max: cfg.max,
+              ...(cfg.labels ? { labels: cfg.labels.map((l) => sanitizePlainText(l)) } : {}),
+          }
+        : null;
+    return { optionsJson: options, scaleConfigJson: scale };
 }
 
 // ─── 1. createTemplate ─────────────────────────────────────────────
@@ -292,6 +340,11 @@ export async function addQuestion(
                 ? input.sortOrder
                 : await nextQuestionSortOrder(db, sectionId, ctx.tenantId);
 
+        const stored = storedConfigFor(
+            input.answerType,
+            input.optionsJson,
+            input.scaleConfigJson,
+        );
         const question = await db.vendorAssessmentTemplateQuestion.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -302,14 +355,8 @@ export async function addQuestion(
                 answerType: input.answerType,
                 required: input.required ?? true,
                 weight: input.weight ?? 1,
-                optionsJson:
-                    input.optionsJson === undefined
-                        ? undefined
-                        : (input.optionsJson as never),
-                scaleConfigJson:
-                    input.scaleConfigJson === undefined
-                        ? undefined
-                        : (input.scaleConfigJson as never),
+                optionsJson: (stored.optionsJson ?? Prisma.DbNull) as never,
+                scaleConfigJson: (stored.scaleConfigJson ?? Prisma.DbNull) as never,
                 riskPointsJson:
                     input.riskPointsJson === undefined
                         ? undefined
@@ -337,6 +384,240 @@ export async function addQuestion(
         });
 
         return question;
+    });
+}
+
+// ─── 3a. Edit and remove in a draft (#4934) ───────────────────────
+//
+// A draft's sections and questions can be changed and removed; a published
+// template's cannot (assertEditable, the same clone-first contract as every
+// other edit). Each verb reads its row by (id, tenant, template) together,
+// so a section or question id from another template in the URL is a 404
+// rather than an edit of that template. A draft has never been sent — the
+// send refuses an unpublished template — so no assessment answers point at
+// what is removed.
+
+export interface UpdateSectionInput {
+    title?: string;
+    description?: string | null;
+    weight?: number | null;
+}
+
+export async function updateSection(
+    ctx: RequestContext,
+    templateId: string,
+    sectionId: string,
+    input: UpdateSectionInput,
+) {
+    assertCanManageVendorAssessmentTemplates(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const section = await db.vendorAssessmentTemplateSection.findFirst({
+            where: { id: sectionId, templateId, tenantId: ctx.tenantId },
+            select: {
+                id: true,
+                title: true,
+                template: { select: { isPublished: true, name: true } },
+            },
+        });
+        if (!section) throw notFound('Section not found');
+        assertEditable(section.template);
+
+        const data: { title?: string; description?: string | null; weight?: number | null } = {};
+        if (input.title !== undefined) data.title = sanitizePlainText(input.title);
+        if (input.description !== undefined) {
+            data.description = input.description ? sanitizePlainText(input.description) : null;
+        }
+        if (input.weight !== undefined) data.weight = input.weight;
+
+        const updated = await db.vendorAssessmentTemplateSection.update({
+            where: { id: section.id },
+            data,
+        });
+
+        await logEvent(db, ctx, {
+            action: 'VENDOR_ASSESSMENT_TEMPLATE_SECTION_UPDATED',
+            entityType: 'VendorAssessmentTemplateSection',
+            entityId: section.id,
+            details: `Updated section "${updated.title}" of template ${templateId}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'VendorAssessmentTemplateSection',
+                operation: 'updated',
+                after: { templateId, fields: Object.keys(data) },
+                summary: `Section of vendor questionnaire template updated`,
+            },
+        });
+
+        return updated;
+    });
+}
+
+export async function deleteSection(
+    ctx: RequestContext,
+    templateId: string,
+    sectionId: string,
+) {
+    assertCanManageVendorAssessmentTemplates(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const section = await db.vendorAssessmentTemplateSection.findFirst({
+            where: { id: sectionId, templateId, tenantId: ctx.tenantId },
+            select: {
+                id: true,
+                title: true,
+                template: { select: { isPublished: true, name: true } },
+                _count: { select: { questions: true } },
+            },
+        });
+        if (!section) throw notFound('Section not found');
+        assertEditable(section.template);
+
+        // The section's questions go with it (ON DELETE CASCADE).
+        await db.vendorAssessmentTemplateSection.delete({ where: { id: section.id } });
+
+        await logEvent(db, ctx, {
+            action: 'VENDOR_ASSESSMENT_TEMPLATE_SECTION_DELETED',
+            entityType: 'VendorAssessmentTemplateSection',
+            entityId: section.id,
+            details: `Removed section "${section.title}" and its ${section._count.questions} question(s) from template ${templateId}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'VendorAssessmentTemplateSection',
+                operation: 'deleted',
+                before: {
+                    templateId,
+                    title: section.title,
+                    questionCount: section._count.questions,
+                },
+                summary: `Section removed from vendor questionnaire template`,
+            },
+        });
+
+        return { id: section.id, questionsRemoved: section._count.questions };
+    });
+}
+
+export interface UpdateQuestionInput {
+    prompt?: string;
+    answerType?: AnswerType;
+    required?: boolean;
+    weight?: number;
+    optionsJson?: unknown;
+    scaleConfigJson?: unknown;
+}
+
+export async function updateQuestion(
+    ctx: RequestContext,
+    templateId: string,
+    questionId: string,
+    input: UpdateQuestionInput,
+) {
+    assertCanManageVendorAssessmentTemplates(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const question = await db.vendorAssessmentTemplateQuestion.findFirst({
+            where: { id: questionId, templateId, tenantId: ctx.tenantId },
+            select: {
+                id: true,
+                answerType: true,
+                optionsJson: true,
+                scaleConfigJson: true,
+                template: { select: { isPublished: true, name: true } },
+            },
+        });
+        if (!question) throw notFound('Question not found');
+        assertEditable(question.template);
+
+        // Judge the question as it will be stored: an absent field keeps
+        // its stored value.
+        const answerType = input.answerType ?? question.answerType;
+        const optionsJson = input.optionsJson !== undefined ? input.optionsJson : question.optionsJson;
+        const scaleConfigJson =
+            input.scaleConfigJson !== undefined ? input.scaleConfigJson : question.scaleConfigJson;
+        validateQuestionConfig({ answerType, optionsJson, scaleConfigJson });
+        const stored = storedConfigFor(answerType, optionsJson, scaleConfigJson);
+
+        const data: Prisma.VendorAssessmentTemplateQuestionUpdateInput = {
+            answerType,
+            optionsJson: (stored.optionsJson ?? Prisma.DbNull) as never,
+            scaleConfigJson: (stored.scaleConfigJson ?? Prisma.DbNull) as never,
+        };
+        if (input.prompt !== undefined) data.prompt = sanitizePlainText(input.prompt);
+        if (input.required !== undefined) data.required = input.required;
+        if (input.weight !== undefined) data.weight = input.weight;
+
+        const updated = await db.vendorAssessmentTemplateQuestion.update({
+            where: { id: question.id },
+            data,
+        });
+
+        await logEvent(db, ctx, {
+            action: 'VENDOR_ASSESSMENT_TEMPLATE_QUESTION_UPDATED',
+            entityType: 'VendorAssessmentTemplateQuestion',
+            entityId: question.id,
+            details: `Updated ${answerType} question of template ${templateId}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'VendorAssessmentTemplateQuestion',
+                operation: 'updated',
+                before: { answerType: question.answerType },
+                after: {
+                    templateId,
+                    answerType,
+                    fields: Object.keys(input).filter(
+                        (k) => (input as Record<string, unknown>)[k] !== undefined,
+                    ),
+                },
+                summary: `Question of vendor questionnaire template updated`,
+            },
+        });
+
+        return updated;
+    });
+}
+
+export async function deleteQuestion(
+    ctx: RequestContext,
+    templateId: string,
+    questionId: string,
+) {
+    assertCanManageVendorAssessmentTemplates(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const question = await db.vendorAssessmentTemplateQuestion.findFirst({
+            where: { id: questionId, templateId, tenantId: ctx.tenantId },
+            select: {
+                id: true,
+                sectionId: true,
+                answerType: true,
+                template: { select: { isPublished: true, name: true } },
+            },
+        });
+        if (!question) throw notFound('Question not found');
+        assertEditable(question.template);
+
+        await db.vendorAssessmentTemplateQuestion.delete({ where: { id: question.id } });
+
+        await logEvent(db, ctx, {
+            action: 'VENDOR_ASSESSMENT_TEMPLATE_QUESTION_DELETED',
+            entityType: 'VendorAssessmentTemplateQuestion',
+            entityId: question.id,
+            details: `Removed ${question.answerType} question from template ${templateId}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'VendorAssessmentTemplateQuestion',
+                operation: 'deleted',
+                before: {
+                    templateId,
+                    sectionId: question.sectionId,
+                    answerType: question.answerType,
+                },
+                summary: `Question removed from vendor questionnaire template`,
+            },
+        });
+
+        return { id: question.id };
     });
 }
 
@@ -496,8 +777,8 @@ export async function cloneTemplate(
 function assertEditable(template: { isPublished: boolean; name: string }) {
     if (template.isPublished) {
         throw badRequest(
-            `Template "${template.name}" is published and cannot be edited. ` +
-                `Clone it (mode=SAME_KEY_NEW_VERSION) to create a draft revision.`,
+            `"${template.name}" is published and can no longer be changed. ` +
+                `Make a new draft from it to edit it.`,
         );
     }
 }

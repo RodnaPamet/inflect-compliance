@@ -235,6 +235,14 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Trust-center document removal (documents on request)',
         handlers: ['removeDocument'],
     },
+    {
+        // #4934 — removing a question or a section from a DRAFT vendor
+        // questionnaire. A removed section takes its questions with it; the
+        // DELETE is sent when the window closes, and Undo puts it back.
+        file: 'src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx',
+        name: 'Vendor template question and section removal (template builder)',
+        handlers: ['removeQuestion', 'removeSection'],
+    },
 ];
 
 function loadFile(file: string): string {

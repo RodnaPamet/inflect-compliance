@@ -1917,6 +1917,14 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'above, and one of the three routes #2197 exists to close.',
     },
     {
+        path: new RegExp(`^${T}\\/business-continuity\\/[^/]+\\/review$`),
+        methods: ['POST'],
+        permission: 'continuity.edit',
+        note:
+            'Marking a BIA reviewed (#4931) — the server stamps the time and ' +
+            'the reviewer, so it is a write on the register like its siblings.',
+    },
+    {
         path: new RegExp(`^${T}\\/business-continuity\\/[^/]+\\/link-control$`),
         methods: ['POST'],
         permission: 'continuity.edit',
