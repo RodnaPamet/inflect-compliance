@@ -111,11 +111,11 @@ describe('BIA analysis page — writes follow the server (#4632)', () => {
             <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite={false} /></Wrapper>,
         );
         for (const id of WRITE_CONTROL_IDS) expect(container.querySelector(id)).toBeNull();
-        expect(queryByRole('button', { name: 'Remove' })).toBeNull();
+        expect(queryByRole('button', { name: /^Remove/ })).toBeNull();
         expect(queryByText('Link control')).toBeNull();
         expect(queryByRole('button', { name: 'Add' })).toBeNull();
         // The impact profile is still shown, not editable.
-        expect((getByLabelText('At') as HTMLInputElement).readOnly).toBe(true);
+        expect((getByLabelText('Hours after the disruption, point 1') as HTMLInputElement).readOnly).toBe(true);
     });
 
     it('with continuity.edit every write is offered', () => {
@@ -123,8 +123,8 @@ describe('BIA analysis page — writes follow the server (#4632)', () => {
             <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite /></Wrapper>,
         );
         for (const id of WRITE_CONTROL_IDS) expect(container.querySelector(id)).not.toBeNull();
-        expect(getAllByRole('button', { name: 'Remove' }).length).toBeGreaterThan(0);
-        expect((getByLabelText('At') as HTMLInputElement).readOnly).toBe(false);
+        expect(getAllByRole('button', { name: /^Remove/ }).length).toBeGreaterThan(0);
+        expect((getByLabelText('Hours after the disruption, point 1') as HTMLInputElement).readOnly).toBe(false);
     });
 
     it('shows the criticality label, not the stored code', () => {
@@ -139,13 +139,54 @@ describe('BIA analysis page — writes follow the server (#4632)', () => {
         const { container } = render(
             <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite /></Wrapper>,
         );
-        fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
-            init?.method === 'PUT'
-                ? { ok: false, status: 400, json: async () => ({ error: { code: 'VALIDATION', message: 'Review date is in the future.' } }) }
+        fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+            init?.method === 'POST' && String(url).endsWith('/review')
+                ? { ok: false, status: 403, json: async () => ({ error: { code: 'FORBIDDEN', message: 'You cannot review this analysis.' } }) }
                 : { ok: true, status: 200, json: async () => ({ options: [] }) });
         await act(async () => { fireEvent.click(container.querySelector('#bia-mark-reviewed-btn') as Element); });
         await waitFor(() => expect(toastError).toHaveBeenCalled());
-        expect(toastError.mock.calls[0][0]).toBe('Review date is in the future.');
+        expect(toastError.mock.calls[0][0]).toBe('You cannot review this analysis.');
+    });
+
+    it('marks reviewed through the review act, sending no date of its own (#4931)', async () => {
+        const { container } = render(
+            <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite /></Wrapper>,
+        );
+        await act(async () => { fireEvent.click(container.querySelector('#bia-mark-reviewed-btn') as Element); });
+        const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/business-continuity/bia-1/review'));
+        expect(call).toBeDefined();
+        expect(call![1]).toMatchObject({ method: 'POST' });
+        expect(call![1].body).toBeUndefined();
+        expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+    });
+
+    it('says who reviewed it, and says so when the reviewer was not recorded (#4931)', () => {
+        const reviewed = { ...DETAIL, reviewedAt: '2026-10-01T00:00:00.000Z', reviewedByUser: { id: 'u-1', name: 'Ana Petrova', email: 'ana@example.com' } } as BiaDetail;
+        const { getByTestId, unmount } = render(
+            <Wrapper><BiaDetailClient bia={reviewed} tenantSlug="acme" canWrite={false} /></Wrapper>,
+        );
+        expect(getByTestId('entity-detail-header').textContent).toContain('by Ana Petrova');
+        unmount();
+        const legacy = { ...DETAIL, reviewedAt: '2026-10-01T00:00:00.000Z', reviewedByUser: null } as BiaDetail;
+        const view = render(<Wrapper><BiaDetailClient bia={legacy} tenantSlug="acme" canWrite={false} /></Wrapper>);
+        expect(view.getByTestId('entity-detail-header').textContent).toContain('reviewer not recorded');
+    });
+
+    it('refuses to save an impact value that is not a number, rather than storing it empty (#4931)', async () => {
+        const { container, getByLabelText, getByTestId } = render(
+            <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite /></Wrapper>,
+        );
+        fireEvent.change(getByLabelText('Financial impact, point 1'), { target: { value: 'abc' } });
+        await act(async () => { fireEvent.click(container.querySelector('#bia-impact-save') as Element); });
+        expect(getByTestId('bia-impact-invalid')).toBeInTheDocument();
+        expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+    });
+
+    it('states the scale the impact profile is scored on (#4931)', () => {
+        const { getByTestId } = render(
+            <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite /></Wrapper>,
+        );
+        expect(getByTestId('bia-impact-scale').textContent).toMatch(/0 \(no impact\) to 5 \(severe\)/);
     });
 });
 

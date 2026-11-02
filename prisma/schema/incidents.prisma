@@ -189,13 +189,19 @@ model BusinessImpactAnalysis {
   /// on write (Epic D).
   notes         String?
   ownerUserId   String?
+  /// Set by the review act (`markBiaReviewed`), with `reviewedByUserId`, on
+  /// the server's clock (#4931).
   reviewedAt    DateTime?
+  /// Who marked the BIA reviewed. Null on a row reviewed before #4931, and on
+  /// one never reviewed.
+  reviewedByUserId String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   tenant        Tenant                @relation(fields: [tenantId], references: [id])
   processMap    ProcessMap?           @relation(fields: [processMapId, tenantId], references: [id, tenantId])
   ownerUser     User?                 @relation("BiaOwner", fields: [ownerUserId], references: [id])
+  reviewedByUser User?                @relation("BiaReviewer", fields: [reviewedByUserId], references: [id])
   dependencies  BiaDependency[]
   /// BIA-as-evidence: the continuity control (NIS2 Art.21(2)(c)) links
   /// this BIA via a ControlEvidenceLink (kind BIA).
@@ -204,6 +210,7 @@ model BusinessImpactAnalysis {
   @@index([tenantId, criticality])
   @@index([tenantId, processMapId, processNodeKey])
   @@index([tenantId, ownerUserId])
+  @@index([tenantId, reviewedByUserId])
 
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres

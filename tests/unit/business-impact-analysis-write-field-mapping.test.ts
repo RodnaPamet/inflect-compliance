@@ -259,7 +259,7 @@ describe('updateBia — patch semantics', () => {
         } as any);
     }
 
-    it('writes exactly the keys the patch supplied, sanitised, with reviewedAt parsed to a Date', async () => {
+    it('writes exactly the keys the patch supplied, sanitised', async () => {
         const db = updateDb();
         const profile = [{ atHours: 24, reputational: 5 }];
 
@@ -273,7 +273,6 @@ describe('updateBia — patch semantics', () => {
             impactProfile: profile,
             notes: '<script>alert(1)</script>Runbook 7',
             ownerUserId: 'u-owner',
-            reviewedAt: '2026-03-01T09:00:00.000Z',
         });
 
         expect(db.businessImpactAnalysis.update.mock.calls[0][0]).toStrictEqual({
@@ -291,8 +290,22 @@ describe('updateBia — patch semantics', () => {
                 impactProfile: profile,
                 notes: 'Runbook 7',
                 ownerUserId: 'u-owner',
-                reviewedAt: new Date('2026-03-01T09:00:00.000Z'),
             },
+        });
+    });
+
+    it('never writes a review stamp from an edit (#4931): marking reviewed is its own act', async () => {
+        const db = updateDb();
+
+        await updateBia(ctx, 'bia-1', {
+            name: 'Payroll',
+            reviewedAt: '2026-03-01T09:00:00.000Z',
+            reviewedByUserId: 'u-someone',
+        } as never);
+
+        expect(db.businessImpactAnalysis.update.mock.calls[0][0]).toStrictEqual({
+            where: { id: 'bia-1' },
+            data: { name: 'Payroll' },
         });
     });
 
@@ -320,7 +333,6 @@ describe('updateBia — patch semantics', () => {
             impactProfile: null,
             notes: null,
             ownerUserId: null,
-            reviewedAt: null,
         });
 
         expect(db.businessImpactAnalysis.update.mock.calls[0][0]).toStrictEqual({
@@ -335,7 +347,6 @@ describe('updateBia — patch semantics', () => {
                 impactProfile: undefined,
                 notes: null,
                 ownerUserId: null,
-                reviewedAt: null,
             },
         });
         // A null processNodeId detaches — there is nothing to validate.
