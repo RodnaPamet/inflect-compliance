@@ -188,3 +188,47 @@ describe('EditEvidenceModal — partial save reporting', () => {
         ).toBe(false);
     });
 });
+
+/**
+ * Closing the form with unsaved edits asks in the product's own dialog, not
+ * the browser's `confirm()` (#4966), and the close waits for the answer.
+ */
+describe('EditEvidenceModal — closing with unsaved edits asks first', () => {
+    function editThenCancel(setOpen: jest.Mock) {
+        fetchMock.mockResolvedValue(ok);
+        render(
+            <EditEvidenceModal
+                open
+                setOpen={setOpen}
+                tenantSlug="acme"
+                controls={[]}
+                canEditControlLinks
+                initial={BASE}
+            />,
+        );
+        const title = document.getElementById('edit-evidence-title-input') as HTMLInputElement;
+        fireEvent.change(title, { target: { value: 'Q1 access review (final)' } });
+        fireEvent.click(screen.getByRole('button', { name: 'edit.cancel' }));
+        return title;
+    }
+
+    it('keeping the edits leaves the form open with them', async () => {
+        const confirmSpy = jest.spyOn(window, 'confirm');
+        const setOpen = jest.fn();
+        const title = editThenCancel(setOpen);
+        expect((await screen.findAllByText('edit.discardTitle')).length).toBeGreaterThan(0);
+        fireEvent.click(screen.getByRole('button', { name: 'edit.discardCancelLabel' }));
+        await waitFor(() => expect(screen.queryByText('edit.discardTitle')).toBeNull());
+        expect(setOpen).not.toHaveBeenCalled();
+        expect(title.value).toBe('Q1 access review (final)');
+        expect(confirmSpy).not.toHaveBeenCalled();
+        confirmSpy.mockRestore();
+    });
+
+    it('discarding closes the form', async () => {
+        const setOpen = jest.fn();
+        editThenCancel(setOpen);
+        fireEvent.click(await screen.findByRole('button', { name: 'edit.discardConfirmLabel' }));
+        await waitFor(() => expect(setOpen).toHaveBeenCalledWith(false));
+    });
+});
