@@ -339,3 +339,52 @@ async function alertOnSignals(
 
     return true;
 }
+
+/** Display names for the people and agents a report names (#4932). */
+export interface ReviewQualityNames {
+    /** Member user id → their name, or their email when they have none. */
+    reviewers: Record<string, string>;
+    /** Registered agent id → its name. */
+    agents: Record<string, string>;
+}
+
+/**
+ * The names behind the ids a report carries, so the page that judges how
+ * people review names them rather than printing user and agent ids (#4932).
+ *
+ * Reads only the ids asked for, in this tenant. An id with no row (a member
+ * since removed, an agent since deleted) is simply absent, and the page falls
+ * back to a sentence saying so rather than the id.
+ */
+export async function readReviewQualityNames(
+    ctx: RequestContext,
+    ids: { reviewerUserIds: readonly string[]; agentIds: readonly string[] },
+): Promise<ReviewQualityNames> {
+    assertCanRead(ctx);
+    const userIds = [...new Set(ids.reviewerUserIds)];
+    const agentIds = [...new Set(ids.agentIds)];
+    return runInTenantContext(ctx, async (db) => {
+        const [members, agents] = await Promise.all([
+            userIds.length === 0
+                ? []
+                : db.tenantMembership.findMany({
+                      where: { tenantId: ctx.tenantId, userId: { in: userIds } },
+                      select: { userId: true, user: { select: { name: true, email: true } } },
+                      take: userIds.length,
+                  }),
+            agentIds.length === 0
+                ? []
+                : db.registeredAgent.findMany({
+                      where: { tenantId: ctx.tenantId, id: { in: agentIds } },
+                      select: { id: true, name: true },
+                      take: agentIds.length,
+                  }),
+        ]);
+        return {
+            reviewers: Object.fromEntries(
+                members.map((m) => [m.userId, m.user.name?.trim() || m.user.email || m.userId]),
+            ),
+            agents: Object.fromEntries(agents.map((a) => [a.id, a.name])),
+        };
+    });
+}
