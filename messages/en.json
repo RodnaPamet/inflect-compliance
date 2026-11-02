@@ -7848,15 +7848,18 @@
       "creating": "Creating…",
       "createDraft": "Create draft",
       "keyNameRequired": "Key and name are required.",
-      "httpError": "HTTP {status}",
       "allTemplates": "All templates ({count})",
       "emptyTitle": "No templates yet",
       "emptyDesc": "Use the form above to create your first vendor questionnaire template.",
-      "sectionsCount": "{count} section(s)",
-      "questionsCount": "{count} question(s)",
       "published": "Published",
       "draft": "Draft",
-      "updated": "Updated {date}"
+      "updated": "Updated {date}",
+      "createFailed": "Couldn't create the template. Try again.",
+      "loadFailed": "Couldn't load the templates.",
+      "retry": "Try again",
+      "keyHint": "A short identifier for the template, such as soc2-vendor. It stays the same across versions.",
+      "builtIn": "Built in",
+      "rowMeta": "Key {key} · Version {version} · {sections, plural, one {# section} other {# sections}} · {questions, plural, one {# question} other {# questions}}"
     },
     "templateBuilder": {
       "loadError": "Failed to load template ({status})",
