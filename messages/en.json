@@ -848,13 +848,19 @@
     },
     "modal": {
       "newDescription": "Register an information asset to track inside risk + control coverage.",
-      "discardConfirm": "Discard asset? Any details you entered will be lost.",
+      "discardConfirm": "Any details you entered will be lost.",
       "creating": "Creating…",
       "editTitle": "Edit asset",
       "editDescription": "Update the asset's metadata.",
-      "editDiscardConfirm": "Discard changes? Any edits you made will be lost.",
+      "editDiscardConfirm": "Any edits you made will be lost.",
       "saving": "Saving…",
-      "save": "Save"
+      "save": "Save",
+      "discardTitle": "Discard asset?",
+      "discardConfirmLabel": "Discard draft",
+      "discardCancelLabel": "Keep editing",
+      "editDiscardTitle": "Discard changes?",
+      "editDiscardConfirmLabel": "Discard changes",
+      "editDiscardCancelLabel": "Keep editing"
     },
     "cancel": "Cancel",
     "loadingAria": "Loading assets",

@@ -259,8 +259,10 @@ export default function AssetDetailPage() {
             const endpoint = kind === 'risk' ? 'convert-to-risk' : 'convert-to-finding';
             const res = await fetch(apiUrl(`/vulnerabilities/${id}/${endpoint}`), { method: 'POST' });
             if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.message || t('detail.vuln.convertFailed'));
+                // `{ error: { message } }` is the API's refusal shape; reading
+                // a top-level `message` dropped the reason every time.
+                const data: unknown = await res.json().catch(() => ({}));
+                throw new Error(apiErrorMessage(data, t('detail.vuln.convertFailed')));
             }
             // Refresh both feeds so the converted row reflects its new state
             // (a converted vuln/finding no longer shows the convert affordance).
@@ -294,11 +296,16 @@ export default function AssetDetailPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) {
+                // The refusal's own reason (#4963): a status the role cannot
+                // set, or a row another person changed, says why.
+                const data: unknown = await res.json().catch(() => ({}));
+                throw new Error(apiErrorMessage(data, t('detail.vuln.updateFailed')));
+            }
             void vulnQuery.mutate();
-        } catch {
+        } catch (err) {
             setVulnOverrides((p) => { const n = { ...p }; delete n[id]; return n; });
-            setError(t('detail.vuln.updateFailed'));
+            setError(err instanceof Error && err.message ? err.message : t('detail.vuln.updateFailed'));
             router.refresh();
         }
     };
@@ -310,11 +317,14 @@ export default function AssetDetailPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status }),
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) {
+                const data: unknown = await res.json().catch(() => ({}));
+                throw new Error(apiErrorMessage(data, t('detail.vuln.updateFailed')));
+            }
             void scannerQuery.mutate();
-        } catch {
+        } catch (err) {
             setScannerOverrides((p) => { const n = { ...p }; delete n[id]; return n; });
-            setError(t('detail.vuln.updateFailed'));
+            setError(err instanceof Error && err.message ? err.message : t('detail.vuln.updateFailed'));
             router.refresh();
         }
     };

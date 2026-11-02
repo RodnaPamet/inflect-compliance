@@ -93,7 +93,9 @@ const FLOWS: HardenedFlow[] = [
         hookExport: 'useEditAssetForm',
         modalPath: 'assets/EditAssetModal.tsx',
         confirmCopy: /Discard changes\?/,
-        i18nConfirmKey: 'modal.editDiscardConfirm',
+        // Migrated to <ConfirmDialog> (#4963): the question is the title.
+        i18nConfirmKey: 'modal.editDiscardTitle',
+        usesConfirmDialog: true,
     },
 ];
 
