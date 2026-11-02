@@ -32,8 +32,9 @@ import {
 } from '@/lib/roles';
 import {
     Users, UserPlus, ChevronDown, Shield, XCircle,
-    MoreVertical, UserMinus, Mail, Monitor, Trash2,
+    MoreVertical, UserMinus, Mail, Monitor, Trash2, KeyRound,
 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
@@ -249,6 +250,8 @@ export default function MembersAdminPage() {
 
     // Action menu
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    // The member whose MFA is about to be reset (#4926), awaiting confirmation.
+    const [resettingMfa, setResettingMfa] = useState<Member | null>(null);
 
     // Bulk selection + top action row (deactivate / remove).
     const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
@@ -516,6 +519,33 @@ export default function MembersAdminPage() {
         }
     }
 
+    // Reset another member's MFA (#4926): removes their authenticator so their
+    // next sign-in enrols again. The server refuses an Owner's or AI admin's
+    // without the Owner key, and emails the person.
+    async function handleResetMfa(m: Member) {
+        setError(null);
+        setSuccess(null);
+        try {
+            const res = await fetch(apiUrl('/security/mfa/enroll'), {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetUserId: m.userId }),
+            });
+            if (res.status === 404) {
+                setSuccess(t('members.mfaResetNothing', { email: m.user.email }));
+                return;
+            }
+            if (!res.ok) {
+                const err = await res.json().catch(() => null);
+                setError(apiErrorMessage(err, t('members.mfaResetFailed')));
+                return;
+            }
+            setSuccess(t('members.mfaResetToast', { email: m.user.email }));
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
     async function handleRemove(membershipId: string, email: string) {
         if (!confirm(t('members.removeConfirm', { email }))) return;
         setError(null);
@@ -707,6 +737,11 @@ export default function MembersAdminPage() {
     // OWNER deactivates one (owner decision, 2026-10-25). One's own are one's own.
     const mayRevokeSessionsOf = (m: Member) =>
         canManageOwnerRoles || !isOwnerManagedRole(m.role) || m.userId === viewerUserId;
+
+    // The same rule for resetting another member's MFA (#4926). One's own MFA
+    // is managed on one's own security page, not here.
+    const mayResetMfaOf = (m: Member) =>
+        m.userId !== viewerUserId && (canManageOwnerRoles || !isOwnerManagedRole(m.role));
 
     // ─── Filter (R14-PR7 — search retired; full list shown) ───
     const filteredMembers = members;
@@ -1046,6 +1081,18 @@ export default function MembersAdminPage() {
                                                 >
                                                     {t('members.viewSessions')}
                                                 </Popover.Item>
+                                                {mayResetMfaOf(m) && (
+                                                    <Popover.Item
+                                                        icon={<KeyRound className="w-3.5 h-3.5" />}
+                                                        onClick={() => {
+                                                            setOpenMenuId(null);
+                                                            setResettingMfa(m);
+                                                        }}
+                                                        id={`action-reset-mfa-${m.id}`}
+                                                    >
+                                                        {t('members.resetMfa')}
+                                                    </Popover.Item>
+                                                )}
                                                 {mayEndMembership && (
                                                     <Popover.Item
                                                         icon={<UserMinus className="w-3.5 h-3.5" />}
@@ -1459,6 +1506,25 @@ export default function MembersAdminPage() {
                     )}
                 </Modal.Body>
             </Modal>
+
+            <ConfirmDialog
+                showModal={resettingMfa !== null}
+                setShowModal={(open) => {
+                    if (!open) setResettingMfa(null);
+                }}
+                tone="warning"
+                title={t('members.resetMfaTitle')}
+                description={
+                    resettingMfa ? t('members.resetMfaBody', { email: resettingMfa.user.email }) : undefined
+                }
+                confirmLabel={t('members.resetMfa')}
+                onConfirm={async () => {
+                    const m = resettingMfa;
+                    setResettingMfa(null);
+                    if (m) await handleResetMfa(m);
+                }}
+                onCancel={() => setResettingMfa(null)}
+            />
         </div>
     );
 }

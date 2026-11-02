@@ -21,12 +21,25 @@ jest.mock('@/lib/tenant-context-provider', () => {
 
 jest.mock('next-intl', () => {
     const en = require('../../messages/en.json');
-    const make = (ns: string) => (key: string) => {
-        const v = ns.split('.').concat(key.split('.')).reduce(
-            (o: unknown, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
-            en,
-        );
-        return typeof v === 'string' ? v : key;
+    const make = (ns: string) => {
+        const t = (key: string) => {
+            const v = ns.split('.').concat(key.split('.')).reduce(
+                (o: unknown, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
+                en,
+            );
+            return typeof v === 'string' ? v : key;
+        };
+        // `<tag>text</tag>` is rendered through the caller's function for it.
+        t.rich = (key: string, tags: Record<string, (chunks: string) => unknown> = {}) =>
+            t(key)
+                .split(/(<\w+>[^<]*<\/\w+>)/)
+                .map((part, i) => {
+                    const m = /^<(\w+)>([^<]*)<\/\w+>$/.exec(part);
+                    if (!m || !tags[m[1]]) return part;
+                    const node = tags[m[1]](m[2]);
+                    return React.isValidElement(node) ? React.cloneElement(node, { key: i }) : node;
+                });
+        return t;
     };
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };
 });
@@ -85,5 +98,46 @@ describe('MFA challenge page — after the code', () => {
         await waitFor(() => expect(calls).toContain('POST /api/t/acme/security/mfa/challenge/verify'));
         expect(calls).not.toContain('GET /api/auth/session');
         expect(window.location.hash).toBe('');
+    });
+});
+
+describe('MFA challenge page — the server decides the lockout (#4926)', () => {
+    it("shows the server's wait on a 429, not a count kept in the page", async () => {
+        global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.endsWith('/security/mfa/enroll')) {
+                return { ok: true, status: 200, json: async () => ({ isVerified: true }) } as unknown as Response;
+            }
+            return {
+                ok: false,
+                status: 429,
+                json: async () => ({ success: false, error: 'Too many verification attempts.', retryAfterMs: 30_000 }),
+            } as unknown as Response;
+        }) as unknown as typeof fetch;
+        render(<MfaChallengePage />);
+        await submitCode();
+        expect(await screen.findByTestId('mfa-challenge-error')).toHaveTextContent('Too many attempts');
+    });
+
+    it('says so when the enrolment check fails, and points to the setup page', async () => {
+        global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+            if (String(input).endsWith('/security/mfa/enroll')) {
+                return { ok: false, status: 500, json: async () => ({}) } as unknown as Response;
+            }
+            return { ok: true, status: 200, json: async () => ({ success: false }) } as unknown as Response;
+        }) as unknown as typeof fetch;
+        render(<MfaChallengePage />);
+        const notice = await screen.findByTestId('mfa-check-failed');
+        expect(notice).toHaveTextContent("We couldn't check whether you have set up MFA");
+        expect(notice.querySelector('a')?.getAttribute('href')).toBe('/t/acme/security/mfa');
+        // The challenge is still offered: an enrolled person can go on.
+        expect(screen.getByLabelText('Authentication code')).toBeInTheDocument();
+    });
+
+    it('labels the code box, and offers another account', async () => {
+        installFetch(false);
+        render(<MfaChallengePage />);
+        expect(await screen.findByLabelText('Authentication code')).toBeInTheDocument();
+        expect(document.getElementById('mfa-switch-account')).not.toBeNull();
     });
 });

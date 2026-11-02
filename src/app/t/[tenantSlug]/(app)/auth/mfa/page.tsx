@@ -8,12 +8,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
+import { signOut } from 'next-auth/react';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { ShieldCheck, KeyRound, AlertTriangle } from 'lucide-react';
 import { Heading } from '@/components/ui/typography';
 import { Card } from '@/components/ui/card';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { SkeletonCard } from '@/components/ui/skeleton';
 import { refreshSessionCookie } from '@/lib/auth/refresh-session-cookie';
 
 /**
@@ -36,20 +41,28 @@ export default function MfaChallengePage() {
     const [code, setCode] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
-    const [attempts, setAttempts] = useState(0);
 
-    // Check if user has MFA enrolled
+    // Check if user has MFA enrolled. Nothing is drawn until it answers, so
+    // the challenge never flashes up for somebody who must enrol (#4926). If
+    // the check itself fails, the challenge is the safer page to show: an
+    // enrolled person can still continue, and the server decides either way.
+    // The page says the check failed, so somebody who has not enrolled is
+    // told where to go rather than left facing a code they do not have.
     const [enrolled, setEnrolled] = useState<boolean | null>(null);
+    const [checkFailed, setCheckFailed] = useState(false);
     const checkEnrollment = useCallback(async () => {
         try {
             const res = await fetch(apiUrl('/security/mfa/enroll'));
             if (res.ok) {
                 const data = await res.json();
                 setEnrolled(data.isVerified);
+                return;
             }
         } catch {
-            // Fail silently
+            // fall through to the challenge
         }
+        setCheckFailed(true);
+        setEnrolled(true);
     }, [apiUrl]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -70,6 +83,15 @@ export default function MfaChallengePage() {
             });
             const data = await res.json();
 
+            // The lockout is the SERVER's (#4926): it answers 429 with the
+            // wait, whatever a counter in this page would have said.
+            if (res.status === 429) {
+                setCode('');
+                const seconds = Math.max(1, Math.ceil(Number(data?.retryAfterMs ?? 0) / 1000));
+                setError(t('lockedOut', { seconds }));
+                return;
+            }
+
             if (data.success) {
                 // MFA challenge complete. Rewrite the session cookie first:
                 // the edge gate reads `mfaPending` from it, and nothing else
@@ -77,9 +99,8 @@ export default function MfaChallengePage() {
                 await refreshSessionCookie();
                 window.location.href = next;
             } else {
-                setAttempts(a => a + 1);
                 setCode('');
-                setError(attempts >= 4 ? t('tooManyAttempts') : t('invalidCode'));
+                setError(t('invalidCode'));
             }
         } catch {
             setError(t('verifyFailed'));
@@ -93,6 +114,28 @@ export default function MfaChallengePage() {
             void handleVerify();
         }
     };
+
+    const switchAccount = (
+        <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-center"
+            onClick={() => { void signOut({ callbackUrl: '/login' }); }}
+            id="mfa-switch-account"
+        >
+            {t('switchAccount')}
+        </Button>
+    );
+
+    if (enrolled === null) {
+        return (
+            <div className="min-h-[60vh] flex items-center justify-center">
+                <div className="max-w-md w-full" role="status" aria-label={t('checking')}>
+                    <SkeletonCard lines={3} />
+                </div>
+            </div>
+        );
+    }
 
     // If not enrolled, show enrollment redirect
     if (enrolled === false) {
@@ -116,6 +159,7 @@ export default function MfaChallengePage() {
                         <KeyRound className="w-4 h-4" />
                         {t('setUpMfa')}
                     </a>
+                    {switchAccount}
                 </Card>
             </div>
         );
@@ -137,26 +181,40 @@ export default function MfaChallengePage() {
                     </p>
                 </div>
 
+                {checkFailed && (
+                    <InlineNotice variant="warning" data-testid="mfa-check-failed">
+                        {t.rich('checkFailed', {
+                            link: (chunks) => (
+                                <a href={tenantHref('/security/mfa')} className="underline">
+                                    {chunks}
+                                </a>
+                            ),
+                        })}
+                    </InlineNotice>
+                )}
+
                 {error && (
-                    <div className="p-3 rounded-lg border border-border-error bg-bg-error text-sm text-content-error text-center">
+                    <InlineNotice variant="error" data-testid="mfa-challenge-error">
                         {error}
-                    </div>
+                    </InlineNotice>
                 )}
 
                 <div className="flex flex-col items-center gap-default">
-                    <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        placeholder="000000"
-                        value={code}
-                        onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        onKeyDown={handleKeyDown}
-                        className="input text-center text-2xl font-mono tracking-[0.4em] w-full sm:w-48 py-3"
-                        id="mfa-challenge-input"
-                        autoFocus
-                        autoComplete="one-time-code"
-                    />
+                    <FormField label={t('codeLabel')} className="w-full sm:w-48">
+                        <Input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={6}
+                            placeholder="000000"
+                            value={code}
+                            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            onKeyDown={handleKeyDown}
+                            className="text-center text-2xl font-mono tracking-[0.4em] py-3"
+                            id="mfa-challenge-input"
+                            autoFocus
+                            autoComplete="one-time-code"
+                        />
+                    </FormField>
 
                     <Button
                         variant="primary"
@@ -172,6 +230,7 @@ export default function MfaChallengePage() {
                 <p className="text-xs text-content-subtle text-center">
                     {t('cantAccess')}
                 </p>
+                {switchAccount}
             </Card>
         </div>
     );

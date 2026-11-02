@@ -19,7 +19,9 @@
 
 jest.mock('@/lib/prisma', () => ({
     prisma: {
-        user: { findUniqueOrThrow: jest.fn() },
+        user: { findUniqueOrThrow: jest.fn(), findUnique: jest.fn() },
+        tenant: { findUnique: jest.fn() },
+        tenantMembership: { findUnique: jest.fn() },
         userMfaEnrollment: {
             findUnique: jest.fn(),
             upsert: jest.fn(),
@@ -36,6 +38,9 @@ jest.mock('@/lib/security/totp-crypto', () => ({
     decryptTotpSecret: jest.fn(),
     verifyTotpCode: jest.fn(),
 }));
+
+const mockSendEmail = jest.fn();
+jest.mock('@/lib/mailer', () => ({ sendEmail: (...a: unknown[]) => mockSendEmail(...a) }));
 
 const mockAppendAuditEntry = jest.fn();
 const mockAuth = jest.fn<Promise<unknown>, []>();
@@ -101,6 +106,12 @@ beforeEach(() => {
     mockEnrollUpsert.mockResolvedValue({ id: 'enr-1' } as never);
     mockEnrollUpdate.mockResolvedValue({ id: 'enr-1' } as never);
     mockEnrollDelete.mockResolvedValue({ count: 1 } as never);
+    mockSendEmail.mockReset().mockResolvedValue({ sent: true });
+    (prisma.tenantMembership.findUnique as jest.Mock).mockResolvedValue({ role: 'EDITOR' });
+    (prisma.user.findUnique as jest.Mock).mockImplementation(async ({ where }: { where: { id: string } }) =>
+        where.id === 'admin-u' ? { name: 'Ada Admin', email: 'ada@example.com' } : { email: 'victim@example.com' },
+    );
+    (prisma.tenant.findUnique as jest.Mock).mockResolvedValue({ name: 'Acme Bank' });
 });
 
 const userCtx = makeRequestContext('EDITOR', { userId: 'u1', tenantId: 't1' });
@@ -348,6 +359,48 @@ describe('removeMfaEnrollment', () => {
 });
 
 // ─── #4646: the enrolment changes are recorded ─────────────────────────
+
+describe('resetting an Owner-managed member’s MFA takes an Owner (#4926)', () => {
+    beforeEach(() => mockAuth.mockResolvedValue({ user: { id: 'admin-u', mfaPending: false } }));
+    const ownerCtx = makeRequestContext('OWNER', { userId: 'owner-u', tenantId: 't1' });
+
+    it.each(['OWNER', 'AI_ADMIN'])('refuses an ADMIN resetting an %s, writing nothing and recording the refusal', async (role) => {
+        (prisma.tenantMembership.findUnique as jest.Mock).mockResolvedValue({ role });
+        await expect(removeMfaEnrollment(adminCtx, 'victim-id')).rejects.toMatchObject({
+            status: 403,
+            details: { reason: 'RESETTING_OWNER_MANAGED_MFA_IS_OWNER_TIER' },
+        });
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+        expect(mockAppendAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: 'AUTHZ_DENIED' }));
+        expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it('lets an OWNER reset another Owner’s MFA', async () => {
+        (prisma.tenantMembership.findUnique as jest.Mock).mockResolvedValue({ role: 'OWNER' });
+        await expect(removeMfaEnrollment(ownerCtx, 'victim-id')).resolves.toEqual({ removed: true });
+        expect(mockEnrollDelete).toHaveBeenCalled();
+    });
+
+    it('emails the person when somebody else resets their MFA, naming who and where', async () => {
+        await removeMfaEnrollment(adminCtx, 'victim-id');
+        expect(mockSendEmail).toHaveBeenCalledTimes(1);
+        const msg = mockSendEmail.mock.calls[0][0] as { to: string; subject: string; text: string };
+        expect(msg.to).toBe('victim@example.com');
+        expect(msg.subject).toContain('Acme Bank');
+        expect(msg.text).toContain('Ada Admin');
+    });
+
+    it('sends nothing when a person removes their own MFA', async () => {
+        mockAuth.mockResolvedValue({ user: { id: 'u1', mfaPending: false } });
+        await removeMfaEnrollment(userCtx);
+        expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it('keeps the reset when the email fails', async () => {
+        mockSendEmail.mockRejectedValue(new Error('smtp down'));
+        await expect(removeMfaEnrollment(adminCtx, 'victim-id')).resolves.toEqual({ removed: true });
+    });
+});
 
 describe('MFA enrolment changes are in the audit trail (#4646)', () => {
     const rows = () => mockAppendAuditEntry.mock.calls.map(([e]) => e as Record<string, unknown>);
