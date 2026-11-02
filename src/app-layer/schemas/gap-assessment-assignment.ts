@@ -25,6 +25,13 @@ export const SubmitAssignmentSchema = z.object({
             }),
         )
         .max(200),
+    /**
+     * `true` (the default, the old behaviour) submits: every question in the
+     * bucket must then hold an answer, stored or in this request, and the
+     * assignment becomes SUBMITTED. `false` saves: the answers are written and a
+     * PENDING assignment becomes IN_PROGRESS (#4929).
+     */
+    final: z.boolean().optional().default(true),
 });
 
 export const FinalizeAssessmentSchema = z.object({

@@ -1,13 +1,14 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { StatusBadge } from '@/components/ui/status-badge';
+import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { SkeletonCard } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { BackAffordance } from '@/components/nav/BackAffordance';
@@ -35,6 +36,15 @@ type Assignment = { id: string; assessmentId: string; respondentRole: string; st
 // change. The submit refuses that state too (409); the page stops offering it.
 type Payload = { assignment: Assignment; questions: Question[]; domains: Domain[]; answers: Array<{ questionId: string; answer: string }>; finalized: boolean };
 type AnswerInput = { questionId: string; answer: string };
+type SubmitInput = { answers: AnswerInput[]; final: boolean };
+
+/** A question's criticality, toned so CRITICAL and LOW do not look alike (#4929). */
+const CRITICALITY_VARIANT: Record<string, StatusBadgeVariant> = {
+    CRITICAL: 'error',
+    HIGH: 'warning',
+    MEDIUM: 'info',
+    LOW: 'neutral',
+};
 
 export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string; assignmentId: string }) {
     const tx = useTranslations('audits');
@@ -80,12 +90,25 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
     // wipe half-finished answers every time the respondent tabbed away and back
     // — the old code got away with it only because it fetched exactly once.
     const [edits, setEdits] = useState<Record<string, string>>({});
-    const answers = useMemo(() => {
-        const saved: Record<string, string> = Object.fromEntries(
-            (data?.answers ?? []).map((a) => [a.questionId, a.answer]),
-        );
-        return { ...saved, ...edits };
-    }, [data, edits]);
+    const saved = useMemo<Record<string, string>>(
+        () => Object.fromEntries((data?.answers ?? []).map((a) => [a.questionId, a.answer])),
+        [data],
+    );
+    const answers = useMemo(() => ({ ...saved, ...edits }), [saved, edits]);
+    // Answers chosen here and not yet saved (#4929): leaving would lose them.
+    const unsaved = useMemo(
+        () => Object.entries(edits).some(([q, a]) => saved[q] !== a),
+        [edits, saved],
+    );
+    useEffect(() => {
+        if (!unsaved) return;
+        const warn = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', warn);
+        return () => window.removeEventListener('beforeunload', warn);
+    }, [unsaved]);
 
     const [notice, setNotice] = useState<string | null>(null);
     const [submitError, setSubmitError] = useState<string | null>(null);
@@ -113,7 +136,7 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
         [assessmentId],
     );
 
-    const submitMutation = useTenantMutation<Payload, AnswerInput[], { written: number } | null>({
+    const submitMutation = useTenantMutation<Payload, SubmitInput, { written: number } | null>({
         key: assignmentKey,
         // NO optimistic update, deliberately. The status flip to SUBMITTED is
         // derivable — the usecase sets it unconditionally on success — but
@@ -129,7 +152,7 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
             const res = await fetch(apiUrl(`${assignmentKey}/submit`), {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ answers: payload }),
+                body: JSON.stringify(payload),
             });
             if (!res.ok) {
                 const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -141,17 +164,20 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
     });
     const saving = submitMutation.isMutating;
 
-    const handleSubmit = useCallback(async () => {
+    // Save writes what there is and keeps the assignment in progress; Submit
+    // is offered only once every question has an answer (#4929).
+    const send = useCallback(async (final: boolean) => {
         setSubmitError(null);
         setNotice(null);
         try {
             // The hook revalidates `assignmentKey` on success, which is what the
             // explicit `await load()` used to do — minus the full-page spinner,
             // since `keepPreviousData` holds the answered list on screen.
-            await submitMutation.trigger(
-                Object.entries(answers).map(([questionId, answer]) => ({ questionId, answer })),
-            );
-            setNotice(tx('respond.submitted'));
+            await submitMutation.trigger({
+                answers: Object.entries(answers).map(([questionId, answer]) => ({ questionId, answer })),
+                final,
+            });
+            setNotice(tx(final ? 'respond.submitted' : 'respond.saved'));
         } catch (e) {
             setSubmitError(e instanceof Error ? e.message : tx('respond.submitFailed'));
         }
@@ -160,7 +186,9 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
     // One line, two sources, same slot as before: a submit failure is the
     // freshest thing the user did, so it wins over a stale load error.
     const error = submitError ?? loadError;
-    const answeredCount = Object.keys(answers).length;
+    const total = data?.assignment.questionIds.length ?? 0;
+    const answeredCount = (data?.assignment.questionIds ?? []).filter((id) => answers[id] !== undefined).length;
+    const complete = total > 0 && answeredCount === total;
 
     return (
         <div className="space-y-section animate-fadeIn">
@@ -179,23 +207,43 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
                 // change, and the server takes them until then (#4633).
                 actions={
                     data && !data.finalized ? (
-                        <Button variant="primary" onClick={handleSubmit} disabled={saving || answeredCount === 0} id="nis2-respond-submit-btn">
-                            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                            {answeredCount > 0 ? tx('respond.submitN', { count: answeredCount }) : tx('respond.submitZero')}
-                        </Button>
+                        <>
+                            <Button
+                                variant="secondary"
+                                onClick={() => { void send(false); }}
+                                disabled={saving || !unsaved}
+                                id="nis2-respond-save-btn"
+                            >
+                                {tx('respond.save')}
+                            </Button>
+                            <Button
+                                variant="primary"
+                                onClick={() => { void send(true); }}
+                                disabled={saving || !complete}
+                                id="nis2-respond-submit-btn"
+                            >
+                                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                {tx('respond.submit')}
+                            </Button>
+                        </>
                     ) : undefined
                 }
             />
 
             {notice && <InlineNotice variant="success">{notice}</InlineNotice>}
-            {error && <p className="text-sm text-content-error">{error}</p>}
+            {error && <InlineNotice variant="error" data-testid="nis2-respond-error">{error}</InlineNotice>}
 
             {loading ? (
-                <div className="flex items-center gap-tight p-6 text-content-muted text-sm">
-                    <Loader2 className="w-4 h-4 animate-spin" /> {tx('respond.loading')}
+                <div role="status" aria-label={tx('respond.loading')} className="space-y-default">
+                    <SkeletonCard lines={3} />
+                    <SkeletonCard lines={3} />
                 </div>
             ) : !data ? null : (
                 <>
+                    <p className="text-sm text-content-muted" data-testid="nis2-respond-progress">
+                        {tx('respond.progress', { answered: answeredCount, total })}
+                        {!data.finalized && !complete && total > 0 ? ` ${tx('respond.submitNeedsAll')}` : ''}
+                    </p>
                     {data.finalized ? (
                         <InlineNotice variant="info">{tx('respond.finalized')}</InlineNotice>
                     ) : data.assignment.status === 'SUBMITTED' ? (
@@ -210,7 +258,7 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
                                     {(byDomain.get(d.id) ?? []).map((q) => (
                                         <li key={q.id} className={cn(cardVariants({ density: 'compact' }), 'space-y-tight')}>
                                             <div className="flex items-start gap-tight flex-wrap">
-                                                <StatusBadge variant="neutral" size="sm">{tx.has(`nis2Gap.crit.${q.criticality}`) ? tx(`nis2Gap.crit.${q.criticality}`) : q.criticality}</StatusBadge>
+                                                <StatusBadge variant={CRITICALITY_VARIANT[q.criticality] ?? 'neutral'} size="sm">{tx.has(`nis2Gap.crit.${q.criticality}`) ? tx(`nis2Gap.crit.${q.criticality}`) : q.criticality}</StatusBadge>
                                                 <span className="text-sm font-medium text-content-emphasis">{q.plainText?.[lang] ?? q.id}</span>
                                             </div>
                                             <p className="text-xs text-content-muted">{tx('respond.legalBasis', { legalBasis: q.legalBasis })}</p>
