@@ -52,7 +52,7 @@ Use the page to measure your NIS2 position, find the gaps that carry fines or pe
 
 | Column | What it shows |
 | --- | --- |
-| {{ui:audits.nis2Gap.gapCol}} | The question, in plain words. Questions are written in English and German, so the English text shows in other languages |
+| {{ui:audits.nis2Gap.gapCol}} | The question, in plain words. Questions come in English, German and Bulgarian, so the English text shows in other languages |
 | {{ui:audits.nis2Gap.gapCrit}} | How critical the gap is: {{ui:audits.nis2Gap.crit.CRITICAL}}, {{ui:audits.nis2Gap.crit.HIGH}}, {{ui:audits.nis2Gap.crit.MEDIUM}} or {{ui:audits.nis2Gap.crit.LOW}} |
 | {{ui:audits.nis2Gap.gapLiability}} | **{{ui:audits.nis2Gap.personalLiability}}** when management can be held personally liable, **{{ui:audits.nis2Gap.fineExposure}}** when it carries a fine, or another consequence, such as {{ui:audits.nis2Gap.consequence.AUDIT_FINDING}} |
 | {{ui:audits.nis2Gap.gapAnswer}} | The answer given, such as {{ui:audits.nis2Gap.answer.NO}} or {{ui:audits.nis2Gap.answer.PARTIALLY}} |

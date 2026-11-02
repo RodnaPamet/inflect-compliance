@@ -8,7 +8,7 @@ When an Owner or Admin hands you part of a [{{ui:audits.nav.nis2Gap}}](nis2-gap.
 
 ## Where to find it
 
-Open the link in the notification **NIS2 gap assessment assigned**, or in the task you were given, which appears in your [{{ui:nav.tasks}}](tasks.md). The breadcrumb reads **{{ui:audits.crumb.dashboard}}** › **{{ui:audits.crumb.audits}}** › **{{ui:audits.nav.nis2Gap}}** › **{{ui:audits.crumb.respond}}**.
+Open the link in the notification or the task you were given, which names the group the questions are for, such as procurement. The task appears in your [{{ui:nav.tasks}}](tasks.md). The breadcrumb reads **{{ui:audits.crumb.dashboard}}** › **{{ui:audits.crumb.audits}}** › **{{ui:audits.nav.nis2Gap}}** › **{{ui:audits.crumb.respond}}**.
 
 ## Who can use it
 
@@ -26,7 +26,7 @@ Anyone else who opens the link sees **{{ui:audits.respond.loadFailed}}** or the 
 The questions, grouped by domain. Each one shows:
 
 - how critical it is: **{{ui:audits.nis2Gap.crit.CRITICAL}}**, **{{ui:audits.nis2Gap.crit.HIGH}}**, **{{ui:audits.nis2Gap.crit.MEDIUM}}** or **{{ui:audits.nis2Gap.crit.LOW}}**;
-- the question, in English (or German where your language is German);
+- the question, in Bulgarian or German when that is your language, and in English otherwise;
 - its legal basis in the NIS2 Directive;
 - four answers to choose from: **{{ui:audits.nis2Gap.answer.YES}}**, **{{ui:audits.nis2Gap.answer.PARTIALLY}}**, **{{ui:audits.nis2Gap.answer.NO}}** or **{{ui:audits.nis2Gap.answer.NA}}**.
 
@@ -34,13 +34,14 @@ At the foot of the page, the questions' source and licence.
 
 ## What you can do
 
-### Answer and submit
+### Answer, save and submit
 
-1. Choose an answer for each question.
-2. Click the submit button at the top. It counts your answers, such as **Submit 12 answers**.
-3. The message **{{ui:audits.respond.submitted}}** confirms it.
+1. Choose an answer for each question. The line at the top counts them, such as "3 of 12 answered."
+2. Click **{{ui:audits.respond.save}}** at any time to keep what you have answered. The assignment shows as in progress, and the message **{{ui:audits.respond.saved}}** confirms it. Come back later to finish.
+3. When every question has an answer, click **{{ui:audits.respond.submit}}**. Until then it is greyed out, with the note {{ui:audits.respond.submitNeedsAll}}
+4. The message **{{ui:audits.respond.submitted}}** confirms it.
 
-Your answers are saved only when you submit. If you leave the page first, they are lost.
+If you try to leave the page with answers you have not saved, your browser asks first.
 
 ### Change your answers
 
@@ -50,7 +51,6 @@ After you submit, the page says **{{ui:audits.respond.alreadySubmitted}}** Chang
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| {{ui:audits.respond.loading}} | Your questions are loading | Wait |
 | **{{ui:audits.respond.loadFailed}}**, or a reason | Your questions did not load, for example because the assignment belongs to someone else | Open the link from your own notification or task |
 | **{{ui:audits.respond.submitFailed}}**, or a reason | Your answers were not saved, for example because the assessment was finalised while you were answering | Follow the reason given |
 | {{ui:audits.respond.finalized}} | The owner has finalised the assessment | Nothing; your answers are part of it |

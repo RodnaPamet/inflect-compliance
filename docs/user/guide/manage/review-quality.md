@@ -24,7 +24,7 @@ Everyone else sees **{{ui:agents.reviewQuality.accessTitle}}** instead of the pa
 
 **{{ui:admin.reviewQuality.unobservableTitle}}.** Shown first, on purpose: {{ui:admin.reviewQuality.unobservable.DIFF_EXPANSION}}
 
-**{{ui:admin.reviewQuality.signalsTitle}}.** Each pattern that crossed its threshold, with what was observed, the threshold and how many decisions it rests on:
+**{{ui:admin.reviewQuality.signalsTitle}}.** Each pattern that crossed its threshold, with who or which agent it is about, what was observed, the threshold and how many decisions it rests on. An agent is named and linked to its page; a reviewer is named. A member or agent removed since is said to be removed:
 
 | Pattern | What it means |
 | --- | --- |
@@ -32,15 +32,15 @@ Everyone else sees **{{ui:agents.reviewQuality.accessTitle}}** instead of the pa
 | {{ui:admin.reviewQuality.signal.IMPLAUSIBLY_FAST_DECISION}} | A decision came faster than anyone could read the proposal |
 | {{ui:admin.reviewQuality.signal.FAST_MEDIAN_REVIEW}} | A reviewer's typical decision is quicker than the reading floor |
 | {{ui:admin.reviewQuality.signal.NEVER_REJECTED}} | A reviewer approved everything they decided |
-| {{ui:admin.reviewQuality.signal.SECOND_APPROVER_UNRECORDED}} | An agent's policy card declares a second approver, but the queue records one per proposal |
+| {{ui:admin.reviewQuality.signal.SECOND_APPROVER_UNRECORDED}} | An agent's policy card asks for a second approver, but the queue records one per proposal |
 
-**{{ui:admin.reviewQuality.reviewersTitle}}.** For each person who decided proposals: how often they approve, how many they decided, their median time to decide and the fastest tenth, their single fastest decision, and how many bulk-approval bursts they made. With too few decisions, the rate and median are withheld and the line says how many more are needed.
+**{{ui:admin.reviewQuality.reviewersTitle}}.** For each person who decided proposals, by name: how often they approve, how many they decided, their median time to decide and the fastest tenth, their single fastest decision, and how many bulk-approval bursts they made. With too few decisions, the rate and median are withheld and the line says how many more are needed.
 
-**{{ui:admin.reviewQuality.agentsTitle}}.** The same figures for each agent's proposals, with how many were decided at each autonomy rung.
+**{{ui:admin.reviewQuality.agentsTitle}}.** The same figures for each agent's proposals, with the agent's name linked to its page, and how many were decided under each kind of policy card, such as **{{ui:admin.reviewQuality.rungName.SECOND_APPROVER}}** or **{{ui:admin.reviewQuality.rungName.SINGLE_APPROVER}}**.
 
 ## What you can do
 
-Read it, and act elsewhere: talk to a reviewer whose decisions are implausibly fast, or tighten an agent's policy card. A fast decision is reported as fast, never as unread; the page cannot tell whether anyone looked.
+Read it, and act elsewhere: talk to a reviewer whose decisions are implausibly fast, or tighten an agent's policy card from the agent's page. The agent proposals queue lists only proposals still waiting, so it cannot show a reviewer's past decisions. A fast decision is reported as fast, never as unread; the page cannot tell whether anyone looked.
 
 ## Empty and error states
 

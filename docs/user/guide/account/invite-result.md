@@ -29,7 +29,10 @@ The heading **{{ui:invite.result.title}}**, the reason, and the email address yo
 
 ## What you can do
 
-Click **{{ui:invite.result.toWorkspaces}}** to see the workspaces you already belong to. To join the workspace you were invited to, ask its admin for a new invitation, sent to the address you sign in with.
+- Click **{{ui:invite.result.toWorkspaces}}** to see the workspaces you already belong to. If you belong to none, the page says **{{ui:invite.result.noWorkspaceHelp}}** instead.
+- Click **{{ui:invite.result.switchAccount}}** to sign out and sign in again, for example with the address the invitation was sent to.
+
+To join the workspace you were invited to, ask its admin for a new invitation, sent to the address you sign in with.
 
 ## Related
 

@@ -23,6 +23,8 @@ Click **{{ui:nav.admin}}**, the gear icon at the bottom of the sidebar. The {{ui
 | Deactivate or remove an Owner or an AI admin | Owner |
 | See a member's sessions and sign them out of a device | Owner, Admin |
 | Sign an Owner or an AI admin out of a device | Owner |
+| Reset another member's MFA | Owner, Admin |
+| Reset an Owner's or an AI admin's MFA | Owner |
 | Set a member's line of defence | Owner, on every row except their own |
 
 Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. An Admin whose membership carries a custom role can do only what that custom role allows, which may not include this page.
@@ -63,6 +65,7 @@ The three-dot menu at the end of a row lists only the actions you can apply to t
 
 - **{{ui:admin.members.changeRole}}** opens the role editor in the row, the same as clicking the role. Active members only.
 - **{{ui:admin.members.viewSessions}}** opens the member's sessions. Active members only.
+- **{{ui:admin.members.resetMfa}}** removes the member's authenticator, so they set one up again at their next sign-in. Active members only, never your own row, and on an Owner's or an AI admin's row only for an Owner.
 - **{{ui:admin.members.deactivate}}** ends the member's access and keeps their row. Active members only.
 - **{{ui:admin.members.remove}}** takes the member out of the workspace. Active and deactivated members.
 
@@ -115,6 +118,10 @@ Click the number in the member's {{ui:admin.members.colSessions}} column, or **{
 Only an Owner can revoke an Owner's or an AI admin's sessions. Anyone else sees their sessions without a **{{ui:admin.members.revoke}}** button, and the dialog reads {{ui:admin.members.sessionsOwnerOnly}}
 
 Revoking a session does not stop the member signing in again. To end their access, deactivate them.
+
+### Reset a member's MFA
+
+When a member has lost their authenticator app, choose **{{ui:admin.members.resetMfa}}** in their row's menu and confirm **{{ui:admin.members.resetMfaTitle}}** The member gets an email saying you reset it, and the next time they sign in to the workspace they set up an authenticator app again. If they had not set one up, the page says there was nothing to reset. You reset your own MFA on your [{{ui:mfa.pageTitle}}](../account/mfa.md) page, not here.
 
 ### Deactivate or remove members
 

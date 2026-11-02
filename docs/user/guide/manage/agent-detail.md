@@ -22,11 +22,11 @@ Open [{{ui:nav.agents}}](agents.md) under **{{ui:nav.manage}}** in the sidebar a
 | Create a key for it under **{{ui:admin.agentDetail.connect.action}}** | Owner, Admin |
 | Propose or accept a new owner | Owner, AI admin |
 
-Tabs a role cannot open are greyed out. Everyone else sees **{{ui:admin.agentDetail.forbiddenTitle}}** instead of the page.
+Tabs a role cannot open are greyed out, and an Auditor sees a note once saying why: {{ui:admin.agentDetail.viewOnlyTabs}} Everyone else sees **{{ui:admin.agentDetail.forbiddenTitle}}** instead of the page.
 
 ## What you see
 
-**The header.** The agent's name and status (draft, active, suspended or retired), **{{ui:admin.agentDetail.interactive.badge}}** when it answers questions on Ask, and six facts: **{{ui:admin.agentDetail.metaAutonomy}}** (L0 to L4, how far it may act on its own), **{{ui:admin.agentDetail.metaAccess}}**, **{{ui:admin.agentDetail.metaReversibility}}**, **{{ui:admin.agentDetail.metaProvenance}}**, **{{ui:admin.agentDetail.metaTier}}** (or **{{ui:admin.agentDetail.unscored}}**) and **{{ui:admin.agentDetail.metaAiAct}}** (or **{{ui:admin.agentDetail.unclassified}}**).
+**The header.** The agent's name and status (draft, active, suspended or retired), **{{ui:admin.agentDetail.interactive.badge}}** when it answers questions on Ask, and six facts: **{{ui:admin.agentDetail.metaAutonomy}}** (Level 0 to Level 4, how far it may act on its own), **{{ui:admin.agentDetail.metaAccess}}**, **{{ui:admin.agentDetail.metaReversibility}}**, **{{ui:admin.agentDetail.metaProvenance}}**, **{{ui:admin.agentDetail.metaTier}}** (or **{{ui:admin.agentDetail.unscored}}**) and **{{ui:admin.agentDetail.metaAiAct}}** (or **{{ui:admin.agentDetail.unclassified}}**), each in words, such as "Reads tenant data" or "Compensable".
 
 When the agent, or every agent in the workspace, is stopped, a banner across the page says so, when and why: **{{ui:admin.agentDetail.kill.bannerAgentTitle}}** or **{{ui:admin.agentDetail.kill.bannerTenantTitle}}**.
 
@@ -48,7 +48,7 @@ When the agent, or every agent in the workspace, is stopped, a banner across the
 
 ### Change its settings
 
-Click **{{ui:admin.agentDetail.amend.action}}**. Change its name, description, autonomy level, data access, reversibility, provenance, model reference or supplier, and save. {{ui:admin.agentDetail.amend.loweringAlwaysAllowed}} The owner is not changed here (see below).
+Click **{{ui:admin.agentDetail.amend.action}}**. Change its name, description, autonomy level, data access, reversibility, provenance, model reference or supplier, and save. {{ui:admin.agentDetail.amend.loweringAlwaysAllowed}} The owner is not changed here: {{ui:admin.agentDetail.amend.ownerMovesByTransfer}}
 
 ### Assess its risk
 

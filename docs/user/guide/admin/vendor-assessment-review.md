@@ -8,7 +8,7 @@ An assessment's review page is where you read a vendor's answers to a questionna
 
 ## Where to find it
 
-On the [{{ui:vendors.reviewQueue.title}}](vendor-assessment-reviews.md) page, click the vendor. A vendor's own page also links to its assessments. The page has a back link.
+On the [{{ui:vendors.reviewQueue.title}}](vendor-assessment-reviews.md) page, click the vendor. A vendor's own page also links to its assessments. The breadcrumb reads **{{ui:vendors.reviewQueue.crumbDashboard}}** › **{{ui:vendors.reviewQueue.crumbAdmin}}** › **{{ui:vendors.reviewQueue.title}}** › the vendor's name.
 
 ## Who can use it
 
@@ -25,13 +25,13 @@ Everyone else is refused the page.
 
 **While the vendor is still answering**, **{{ui:vendors.statusLabel.SENT}}** or **{{ui:vendors.statusLabel.IN_PROGRESS}}**: **{{ui:admin.assessmentReview.awaitingTitle}}** The review controls open once the vendor submits.
 
-**The scoring.** **{{ui:admin.assessmentReview.mode}}** (how the score is worked out), **{{ui:admin.assessmentReview.score}}**, **{{ui:admin.assessmentReview.autoSum}}** (the points the answers earned on their own), **{{ui:admin.assessmentReview.effectiveSum}}** (after your adjustments), and, where the scoring gives them, a **{{ui:admin.assessmentReview.verdict}}** and a **{{ui:admin.assessmentReview.suggestedRating}}**.
+**The scoring.** **{{ui:admin.assessmentReview.mode}}** (how the score is worked out: **{{ui:admin.assessmentReview.modeLabel.SIMPLE_SUM}}**, **{{ui:admin.assessmentReview.modeLabel.WEIGHTED_AVERAGE}}** or **{{ui:admin.assessmentReview.modeLabel.PASS_FAIL_THRESHOLD}}**), **{{ui:admin.assessmentReview.score}}**, **{{ui:admin.assessmentReview.autoSum}}** (the points the answers earned on their own), **{{ui:admin.assessmentReview.effectiveSum}}** (after your adjustments), and, where the scoring gives them, a **{{ui:admin.assessmentReview.verdict}}** (**{{ui:admin.assessmentReview.verdictLabel.PASS}}** or **{{ui:admin.assessmentReview.verdictLabel.FAIL}}**) and a **{{ui:admin.assessmentReview.suggestedRating}}**.
 
 When the answers are high-risk enough, a risk is created in the register for you: {{ui:admin.assessmentReview.autoRiskCreated}} **{{ui:admin.assessmentReview.autoRiskView}}** opens it.
 
-**The answers**, section by section. Each question shows whether it was **{{ui:admin.assessmentReview.required}}**, the **{{ui:admin.assessmentReview.submittedAnswer}}** (or **{{ui:admin.assessmentReview.noAnswer}}**), and the points it earned (**{{ui:admin.assessmentReview.auto}}**). While you review, each also has a box to override the points and **{{ui:admin.assessmentReview.notes}}**.
+**The answers**, section by section. Each question shows its answer type, such as **{{ui:admin.vendorAnswerType.YES_NO}}**, whether it was **{{ui:admin.assessmentReview.required}}**, the **{{ui:admin.assessmentReview.submittedAnswer}}** (or **{{ui:admin.assessmentReview.noAnswer}}**), and the points it earned (**{{ui:admin.assessmentReview.auto}}**). While you review, each also has a box to override the points and **{{ui:admin.assessmentReview.notes}}**.
 
-**{{ui:vendors.prefill.heading}}.** {{ui:vendors.prefill.description}}
+**{{ui:vendors.prefill.heading}}**, while the assessment is **{{ui:vendors.statusLabel.SUBMITTED}}**. {{ui:vendors.prefill.description}}
 
 ## What you can do
 
@@ -46,7 +46,7 @@ When the assessment is **{{ui:vendors.statusLabel.SUBMITTED}}**:
 
 ### Pre-fill answers from a document
 
-When the vendor has given you a SOC 2, ISO or penetration-test report:
+While the assessment is **{{ui:vendors.statusLabel.SUBMITTED}}**, and the vendor has given you a SOC 2, ISO or penetration-test report:
 
 1. Under **{{ui:vendors.prefill.heading}}**, choose the **{{ui:vendors.prefill.document}}** and click **{{ui:vendors.prefill.prefillBtn}}**.
 2. Each proposed answer appears with where in the document it came from and how confident the reading is. A report whose period has ended is flagged **{{ui:vendors.prefill.periodExpired}}**.
@@ -54,7 +54,9 @@ When the vendor has given you a SOC 2, ISO or penetration-test report:
 
 ### Close the assessment
 
-When it is **{{ui:vendors.statusLabel.REVIEWED}}**, click **{{ui:admin.assessmentReview.closeAssessment}}**. The page then shows when it was closed and the final rating.
+When it is **{{ui:vendors.statusLabel.REVIEWED}}**, click **{{ui:admin.assessmentReview.closeAssessment}}** and confirm **{{ui:admin.assessmentReview.closeConfirmTitle}}** {{ui:admin.assessmentReview.closeConfirmBody}} The page then shows when it was closed and the final rating.
+
+Once an assessment is reviewed, its answers are the scored record: pre-filled answers can no longer be approved onto it.
 
 ## Empty and error states
 
@@ -62,7 +64,7 @@ When it is **{{ui:vendors.statusLabel.REVIEWED}}**, click **{{ui:admin.assessmen
 | --- | --- | --- |
 | {{ui:admin.assessmentReview.notFound}} | The assessment does not exist in this workspace | Open it from the queue |
 | {{ui:admin.assessmentReview.loadErrorNetwork}} | The assessment did not load | Reload the page |
-| An error that saving or closing failed | The review or the close did not go through | Read the reason, and try again |
+| An error that saving failed, or {{ui:admin.assessmentReview.closeError}} | The review or the close did not go through | Read the reason, and try again |
 | {{ui:vendors.prefill.proposalsFromDocMsg}} | The document gave no answers to propose | Answer from the document yourself, or choose another |
 | {{ui:vendors.prefill.proposalsFailedMsg}} | The document could not be read | Try again, or review without it |
 

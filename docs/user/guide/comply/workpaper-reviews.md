@@ -38,9 +38,9 @@ The table:
 
 | Column | What it shows |
 | --- | --- |
-| {{ui:audits.workpaperReviews.colProcedure}} | The audit procedure the auditor agent ran |
+| {{ui:audits.workpaperReviews.colProcedure}} | The audit procedure the auditor agent ran, by name |
 | {{ui:audits.workpaperReviews.colPeriod}} | The period the workpaper covers |
-| {{ui:audits.workpaperReviews.colConclusion}} | What the agent concluded, and on what basis |
+| {{ui:audits.workpaperReviews.colConclusion}} | What the agent concluded, and on what basis, in words such as {{ui:audits.workpaperReviews.conclusionLabel.PASS}} |
 | {{ui:audits.workpaperReviews.colAssignee}} | Internal audit only: who must answer it, **{{ui:audits.workpaperReviews.assigneeYou}}**, or **{{ui:audits.workpaperReviews.assigneeNobody}}** |
 | {{ui:audits.workpaperReviews.colDrawn}} | When it was drawn for review |
 | {{ui:audits.workpaperReviews.colAnswer}} | Where it stands (see below) |
@@ -52,7 +52,7 @@ The answer column shows **{{ui:audits.workpaperReviews.outcome.PENDING}}**, **{{
 ### Review a workpaper
 
 1. Click a row. **{{ui:audits.workpaperReviews.sheetTitle}}** opens at the side.
-2. Read **{{ui:audits.workpaperReviews.sectionRecord}}**: the procedure and its catalogue version, the period, the population and its definition, the sample and how it was drawn, the attributes tested, the parameters, the conclusion, the evidence, and when it was written and drawn. Below it, the outcome of each sampled unit and each exception.
+2. Read **{{ui:audits.workpaperReviews.sectionRecord}}**: the auditor agent that wrote it (linked to its page), the procedure and its catalogue version, the period, the population and its definition, the sample and how it was drawn, the attributes tested, the parameters, the conclusion, the evidence, and when it was written and drawn. Below it, the outcome of each sampled unit and each exception, in words. An exception links to the finding proposal it raised.
 3. If the agent wrote one, **{{ui:audits.workpaperReviews.sectionNarrative}}** summarises the workpaper. {{ui:audits.workpaperReviews.narrativeNotice}}
 4. Re-perform the work, then under **{{ui:audits.workpaperReviews.sectionAnswer}}** choose an answer:
 
