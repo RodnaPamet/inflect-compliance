@@ -37,6 +37,8 @@ import {
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { isAuditReadOnly } from '@/lib/audit-lifecycle';
+import { formatDate } from '@inflect/ui/lib/format-date';
+import type { StatusBadgeVariant } from '@/components/ui/status-badge';
 import { auditWriteErrorFrom, auditWriteFailureMessage } from './_lib/audit-write-error';
 
 // listAudits → AuditRepository.list (auditListSelect). The lighter LIST row
@@ -127,6 +129,18 @@ interface AuditDetail {
 }
 
 /**
+ * A finding's severity tone, the same as the findings register's (#4962): the
+ * pane drew HIGH amber and MEDIUM blue where the register draws them red and
+ * amber, so one finding looked different on the two pages.
+ */
+const FINDING_SEVERITY_VARIANT: Record<string, StatusBadgeVariant> = {
+    LOW: 'info',
+    MEDIUM: 'warning',
+    HIGH: 'error',
+    CRITICAL: 'error',
+};
+
+/**
  * Client island for audits — handles master/detail, create form, checklist interactions.
  * Data is pre-fetched server-side and passed via props.
  */
@@ -174,6 +188,15 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     const cyclesQuery = useTenantSWR<CycleRow[]>(CACHE_KEYS.audits.cycles());
     const cycles = cyclesQuery.data ?? [];
     const selectedCycle = cycleId ? cycles.find((c) => c.id === cycleId) ?? null : null;
+    // The open audit's own cycle and framework, by name (#4962).
+    const selectedAuditCycle = selected?.auditCycleId
+        ? cycles.find((c) => c.id === selected.auditCycleId) ?? null
+        : null;
+    const frameworksQuery = useTenantSWR<Array<{ key: string; name: string }>>(
+        selected?.frameworkKey ? CACHE_KEYS.frameworks.list() : null,
+    );
+    const frameworkName = (key: string) =>
+        (Array.isArray(frameworksQuery.data) ? frameworksQuery.data.find((f) => f.key === key)?.name : undefined) ?? key;
     const cycleOptions = useMemo<ComboboxOption[]>(
         () => [
             { value: '', label: tx('hub.cyclePickerAll') },
@@ -188,16 +211,24 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     // #4 — a 500 envelope is not an audit. Guard on res.ok so a failed
     // detail fetch surfaces an error instead of blanking the pane with an
     // undefined title + empty checklist.
+    // The latest audit asked for. Two quick clicks race: whichever response
+    // arrives last used to win, so a slow first audit could replace the second
+    // one the user chose (#4962). Only the latest request may fill the pane.
+    const latestLoad = useRef(0);
     const loadAudit = async (id: string) => {
+        const seq = ++latestLoad.current;
         try {
             const res = await fetch(apiUrl(`/audits/${id}`));
+            if (seq !== latestLoad.current) return;
             if (!res.ok) {
                 toast.error(tx('detail.loadError'));
                 return;
             }
-            setSelected(await res.json());
+            const audit = (await res.json()) as AuditDetail;
+            if (seq !== latestLoad.current) return;
+            setSelected(audit);
         } catch {
-            toast.error(tx('detail.loadError'));
+            if (seq === latestLoad.current) toast.error(tx('detail.loadError'));
         }
     };
 
@@ -546,7 +577,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                     <span className="font-medium text-sm">{a.title}</span>
                                     <StatusBadge variant={AUDIT_STATUS_VARIANT[a.status] ?? DEFAULT_STATUS_VARIANT}>{statusLabel(a.status)}</StatusBadge>
                                 </div>
-                                <p className="text-xs text-content-subtle mt-1">{tx('list.itemsCount', { count: a._count?.checklist || 0 })} · {a._count?.findings || 0} {t.findingsTab.toLowerCase()}</p>
+                                <p className="text-xs text-content-subtle mt-1">{tx('list.itemsCount', { count: a._count?.checklist || 0 })} · {tx('list.findingsCount', { count: a._count?.findings || 0 })}</p>
                             </button>
                         ))
                     )}
@@ -588,6 +619,31 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 </InlineNotice>
                             )}
                             {selected.auditScope && <p className="text-sm text-content-muted">{selected.auditScope}</p>}
+                            {/* What the audit is against and when (#4962). Only the
+                                edit form showed these, and roles that cannot edit
+                                never saw them. */}
+                            {(selected.frameworkKey || selectedAuditCycle || selected.schedule) && (
+                                <dl className="grid grid-cols-[auto_1fr] gap-x-compact gap-y-1 text-sm" id="audit-context">
+                                    {selected.frameworkKey && (
+                                        <>
+                                            <dt className="text-content-muted">{tx('newModal.framework')}</dt>
+                                            <dd className="text-content-default">{frameworkName(selected.frameworkKey)}</dd>
+                                        </>
+                                    )}
+                                    {selectedAuditCycle && (
+                                        <>
+                                            <dt className="text-content-muted">{tx('newModal.cycle')}</dt>
+                                            <dd className="text-content-default">{selectedAuditCycle.name}</dd>
+                                        </>
+                                    )}
+                                    {selected.schedule && (
+                                        <>
+                                            <dt className="text-content-muted">{tx('editModal.labelSchedule')}</dt>
+                                            <dd className="text-content-default">{formatDate(selected.schedule)}</dd>
+                                        </>
+                                    )}
+                                </dl>
+                            )}
                             {selected.auditors && (
                                 <dl className="flex flex-wrap gap-x-compact text-sm" id="audit-auditors">
                                     <dt className="text-content-muted">{t.auditors}</dt>
@@ -648,9 +704,17 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 {selected.findings?.length > 0 && selected.findings.map((f) => (
                                     <div key={f.id} className="p-3 border border-border-default/50 rounded-lg mb-2">
                                         <div className="flex items-center justify-between">
-                                            <span className="text-sm font-medium">{f.title}</span>
+                                            {/* Opens the finding in the register (#4962),
+                                                which links back here by its source. */}
+                                            <Link
+                                                href={`/t/${tenantSlug}/findings?finding=${f.id}`}
+                                                className="text-sm font-medium text-content-default underline-offset-2 hover:underline"
+                                                id={`audit-finding-link-${f.id}`}
+                                            >
+                                                {f.title}
+                                            </Link>
                                             {/* The severity's label, not the stored enum value. */}
-                                            <StatusBadge variant={f.severity === 'CRITICAL' ? 'error' : f.severity === 'HIGH' ? 'warning' : 'info'}>
+                                            <StatusBadge variant={FINDING_SEVERITY_VARIANT[f.severity] ?? 'info'}>
                                                 {tx.has(`findingModal.severityOptions.${f.severity}`) ? tx(`findingModal.severityOptions.${f.severity}`) : f.severity}
                                             </StatusBadge>
                                         </div>

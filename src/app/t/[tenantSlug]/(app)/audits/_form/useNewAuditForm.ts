@@ -139,8 +139,13 @@ export function useNewAuditForm({
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
+                const message: unknown = err.error?.message;
+                // A cycle that no longer exists is refused with the bare code
+                // `INVALID_AUDIT_CYCLE`, which the reader used to see (#4962).
                 throw new Error(
-                    err.error?.message || t('newModal.createFailed'),
+                    message === 'INVALID_AUDIT_CYCLE'
+                        ? t('newModal.cycleNotFound')
+                        : (typeof message === 'string' && message) || t('newModal.createFailed'),
                 );
             }
             return res.json();
@@ -170,7 +175,10 @@ export function useNewAuditForm({
         error: zod.error,
         canSubmit: zod.canSubmit,
         submit: async () => {
-            await zod.submit();
+            // A refusal is already in `error`, which the dialog shows. The
+            // rethrow reached only the dialog's `void form.submit()`, as an
+            // unhandled rejection (the vendor form's fix, #4962).
+            await zod.submit().catch(() => undefined);
         },
         isDirty: zod.isDirty,
     };
