@@ -38,6 +38,41 @@ export const SSO_HANDOFF_COOKIE_PATH = `/api/auth/callback/${SSO_HANDOFF_PROVIDE
 export const SSO_COMPLETE_PATH = '/login/sso-complete';
 
 /**
+ * Why a hand-off could not be redeemed (#4924). Each asks something different
+ * of the person, so the completion page says which:
+ *   - `MISSING`: the browser sent no hand-off (cookies blocked, or finished in
+ *     another browser than the one that started);
+ *   - `EXPIRED`: it outlived its 60 seconds;
+ *   - `USED`: no such hand-off — already redeemed (a second tab, a refresh),
+ *     or never issued. A redeemed row is deleted, so the two look alike.
+ */
+export const SSO_HANDOFF_REFUSALS = ['MISSING', 'EXPIRED', 'USED'] as const;
+export type SsoHandoffRefusal = (typeof SSO_HANDOFF_REFUSALS)[number];
+
+const SSO_HANDOFF_REFUSAL_PREFIX = 'sso_handoff_';
+
+/** The error the hand-off provider throws, which NextAuth hands to `signIn`. */
+export function ssoHandoffRefusalCode(reason: SsoHandoffRefusal): string {
+    return `${SSO_HANDOFF_REFUSAL_PREFIX}${reason}`;
+}
+
+/** The refusal named by a `signIn` error, or `null` for any other failure. */
+export function parseSsoHandoffRefusal(error: string | null | undefined): SsoHandoffRefusal | null {
+    if (!error?.startsWith(SSO_HANDOFF_REFUSAL_PREFIX)) return null;
+    const reason = error.slice(SSO_HANDOFF_REFUSAL_PREFIX.length);
+    return (SSO_HANDOFF_REFUSALS as readonly string[]).includes(reason)
+        ? (reason as SsoHandoffRefusal)
+        : null;
+}
+
+/** A workspace slug as `/login?sso=` takes it, or `null`. */
+export function ssoWorkspaceParam(value: unknown): string | null {
+    return typeof value === 'string' && value.length <= 100 && /^[a-z0-9][a-z0-9-]*$/.test(value)
+        ? value
+        : null;
+}
+
+/**
  * True when a session opened by single sign-on is used on a tenant other than
  * the one whose identity provider opened it.
  *

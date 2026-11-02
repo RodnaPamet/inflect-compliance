@@ -274,6 +274,30 @@ async function redeemThroughNextAuth(
     return session ? cookieValue(session) : null;
 }
 
+/**
+ * The `error` NextAuth hands `signIn` when the hand-off opens no session —
+ * what the completion page reads to say why (#4924).
+ */
+async function redemptionError(handoffCookie: string | null): Promise<string | null> {
+    const csrfReq = new NextRequest(`${ORIGIN}/api/auth/csrf`);
+    currentRequest = csrfReq;
+    const csrfRes = await nextAuthGet(csrfReq, { params: Promise.resolve({ nextauth: ['csrf'] }) });
+    const { csrfToken } = await csrfRes.json();
+    const csrfCookie = setCookie(csrfRes, 'next-auth.csrf-token')!.split(';')[0];
+
+    const cookies = [csrfCookie];
+    if (handoffCookie) cookies.push(`inflect_sso_handoff=${handoffCookie}`);
+    const req = new NextRequest(`${ORIGIN}/api/auth/callback/sso-handoff`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookies.join('; ') },
+        body: new URLSearchParams({ csrfToken, json: 'true', callbackUrl: `${ORIGIN}/t/beta/dashboard` }).toString(),
+    });
+    currentRequest = req;
+    const res = await nextAuthPost(req, { params: Promise.resolve({ nextauth: ['callback', 'sso-handoff'] }) });
+    const { url } = (await res.json()) as { url: string };
+    return new URL(url).searchParams.get('error');
+}
+
 /** Where the real middleware sends a page request carrying this session (null = let through). */
 async function gateFor(sessionCookie: string, path: string): Promise<string | null> {
     const res = await middleware(new NextRequest(`${ORIGIN}${path}`, { headers: { cookie: `${SESSION_COOKIE}=${sessionCookie}` } }));
@@ -405,6 +429,8 @@ describe('the SSO callbacks hand off to NextAuth', () => {
         const location = new URL(res.headers.get('location')!);
         expect(location.pathname).toBe('/login/sso-complete');
         expect(location.searchParams.get('next')).toBe('/t/beta/dashboard');
+        // The workspace, so a failed completion can go back to its sign-in (#4924).
+        expect(location.searchParams.get('sso')).toBe('beta');
 
         const handoff = setCookie(res, 'inflect_sso_handoff');
         expect(handoff).toBeDefined();
@@ -499,6 +525,30 @@ describe('a hand-off is good once, from its cookie, for a live membership', () =
         const handoff = await handoffFromCallback();
         db.tokens[0].expires = new Date(Date.now() - 1000);
         expect(await redeemThroughNextAuth(handoff)).toBeNull();
+    });
+});
+
+describe('a hand-off that opens nothing says why (#4924)', () => {
+    it('names a hand-off already redeemed', async () => {
+        const handoff = await handoffFromCallback();
+        expect(await redeemThroughNextAuth(handoff)).not.toBeNull();
+        expect(await redemptionError(handoff)).toBe('sso_handoff_USED');
+    });
+
+    it('names a hand-off that never arrived', async () => {
+        expect(await redemptionError(null)).toBe('sso_handoff_MISSING');
+    });
+
+    it('names an expired hand-off', async () => {
+        const handoff = await handoffFromCallback();
+        db.tokens[0].expires = new Date(Date.now() - 1000);
+        expect(await redemptionError(handoff)).toBe('sso_handoff_EXPIRED');
+    });
+
+    it('keeps any other refusal generic: a membership ended after the callback is not a hand-off fault', async () => {
+        const handoff = await handoffFromCallback();
+        db.memberships[1].status = 'DEACTIVATED';
+        expect(await redemptionError(handoff)).toBe('CredentialsSignin');
     });
 });
 

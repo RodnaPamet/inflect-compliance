@@ -41,7 +41,7 @@ describe('SSO completion page', () => {
         // `next` is a hash so the navigation stays inside jsdom.
         render(
             <React.StrictMode>
-                <SsoComplete next="#signed-in" />
+                <SsoComplete next="#signed-in" workspace={null} />
             </React.StrictMode>,
         );
 
@@ -52,10 +52,29 @@ describe('SSO completion page', () => {
 
     it('says so, and offers the way back, when the hand-off does not redeem', async () => {
         signInMock.mockResolvedValue({ ok: true, error: 'CredentialsSignin', status: 401, url: null });
-        render(<SsoComplete next="#signed-in" />);
+        render(<SsoComplete next="#signed-in" workspace={null} />);
 
         expect(await screen.findByText(en.login.errors.ssoIncomplete)).toBeInTheDocument();
         expect(document.getElementById('sso-complete-back-to-login')).toHaveAttribute('href', '/login');
         expect(window.location.hash).toBe('');
+    });
+
+    it.each(['MISSING', 'EXPIRED', 'USED'] as const)(
+        'says why a %s hand-off did not redeem (#4924)',
+        async (reason) => {
+            signInMock.mockResolvedValue({ ok: false, error: `sso_handoff_${reason}`, status: 401, url: null });
+            render(<SsoComplete next="#signed-in" workspace={null} />);
+
+            expect(await screen.findByText(en.login.ssoComplete.refused[reason])).toBeInTheDocument();
+            expect(screen.queryByText(en.login.errors.ssoIncomplete)).toBeNull();
+        },
+    );
+
+    it('goes back to the workspace the person signed in to (#4924)', async () => {
+        signInMock.mockResolvedValue({ ok: false, error: 'sso_handoff_EXPIRED', status: 401, url: null });
+        render(<SsoComplete next="#signed-in" workspace="acme-bank" />);
+
+        await screen.findByText(en.login.ssoComplete.refused.EXPIRED);
+        expect(document.getElementById('sso-complete-back-to-login')).toHaveAttribute('href', '/login?sso=acme-bank');
     });
 });
