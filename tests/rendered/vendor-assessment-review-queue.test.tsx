@@ -20,10 +20,13 @@ jest.mock('next-intl', () => {
     };
 });
 
-jest.mock('@/lib/tenant-context-provider', () => ({
-    useTenantHref: () => (path: string) => `/t/acme${path}`,
-    useTenantApiUrl: () => (path: string) => `/api/t/acme${path}`,
-}));
+// Stable, as the real provider's are: a new function each render would
+// re-run the page's load effect forever.
+jest.mock('@/lib/tenant-context-provider', () => {
+    const href = (path: string) => `/t/acme${path}`;
+    const apiUrl = (path: string) => `/api/t/acme${path}`;
+    return { useTenantHref: () => href, useTenantApiUrl: () => apiUrl };
+});
 jest.mock('@/lib/nav/use-guarded-push', () => ({ useGuardedPush: () => jest.fn() }));
 jest.mock('next/navigation', () => ({
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() }),
@@ -66,10 +69,9 @@ describe('vendor assessment review queue', () => {
             json: async () => [row('a', 'CRITICAL'), row('b', 'LOW')],
         }) as unknown as typeof fetch;
         render(<VendorAssessmentReviewsQueueClient />);
-        await waitFor(() =>
-            expect(screen.getAllByText(EN.vendors.criticalityLabel.CRITICAL).length).toBeGreaterThan(0),
-        );
-        expect(screen.getAllByText(EN.vendors.criticalityLabel.LOW).length).toBeGreaterThan(0);
+        expect(await screen.findByText(EN.vendors.criticalityLabel.CRITICAL)).toBeInTheDocument();
+        expect(screen.getByText(EN.vendors.criticalityLabel.LOW)).toBeInTheDocument();
+        expect(global.fetch).toHaveBeenCalledTimes(1);
         expect(screen.queryByText('CRITICAL')).toBeNull();
     });
 
