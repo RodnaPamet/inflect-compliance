@@ -25,7 +25,7 @@
 # the bytes CI scanned. Dependabot proposes the digest's updates.
 
 # ─── Stage 1: the four packages, from the image's own lockfile ───
-FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS deps
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS deps
 WORKDIR /app
 COPY packages/agent-harness-scanner/container/package.json packages/agent-harness-scanner/container/package-lock.json ./
 # `npm ci`: exactly the lockfile's tree, or a failure. No install script runs:
@@ -34,7 +34,7 @@ COPY packages/agent-harness-scanner/container/package.json packages/agent-harnes
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 # ─── Stage 2: the runtime ───
-FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS runtime
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS runtime
 
 # No package manager at run time: the scanner installs nothing, and npm's own
 # bundled dependencies are the image's largest source of Trivy findings.
