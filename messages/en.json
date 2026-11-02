@@ -3446,7 +3446,6 @@
       "descTemplate": "Select a template to start with pre-written content.",
       "startWith": "Start with",
       "modePlaceholder": "New",
-      "discard": "Discard policy? Any details you entered will be lost.",
       "cancel": "Cancel",
       "creating": "Creating…",
       "chooseTemplate": "Choose a Template",
@@ -3475,7 +3474,11 @@
       "categoryPlaceholder": "Select category…",
       "categorySearch": "Search categories…",
       "fieldContent": "Initial Content (Markdown)",
-      "contentPlaceholder": "# Policy Content\n\nWrite your policy here in Markdown..."
+      "contentPlaceholder": "# Policy Content\n\nWrite your policy here in Markdown...",
+      "discardTitle": "Discard policy?",
+      "discardConfirm": "Any details you entered will be lost.",
+      "discardConfirmLabel": "Discard draft",
+      "discardCancelLabel": "Keep editing"
     },
     "ack": {
       "yourStatusTitle": "Your acknowledgement",
