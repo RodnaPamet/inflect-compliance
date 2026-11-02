@@ -259,22 +259,18 @@ export function CanvasHistorySidebar({
                 canvas, where a closed dialog's router hook has no business. */}
             {confirmingVersion !== null && (
             <ConfirmDialog
-                showModal={confirmingVersion !== null}
+                showModal
                 setShowModal={(open) => {
                     if (!open) setConfirmingVersion(null);
                 }}
                 tone="warning"
-                title={
-                    confirmingVersion !== null
-                        ? t("confirmRestoreTitle", { version: confirmingVersion })
-                        : ""
-                }
+                title={t("confirmRestoreTitle", { version: confirmingVersion })}
                 description={t("confirmRestoreBody")}
                 confirmLabel={t("restore")}
                 onConfirm={async () => {
                     const version = confirmingVersion;
                     setConfirmingVersion(null);
-                    if (version !== null) await handleRestore(version);
+                    await handleRestore(version);
                 }}
                 onCancel={() => setConfirmingVersion(null)}
             />
