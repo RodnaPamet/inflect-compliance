@@ -59,7 +59,10 @@ describe('members remove/deactivate (3) three-dot menu fixed + Remove', () => {
     it('the menu offers Remove and Deactivate', () => {
         expect(src).toMatch(/action-remove-\$\{m\.id\}/);
         expect(src).toMatch(/action-deactivate-\$\{m\.id\}/);
-        expect(src).toMatch(/handleRemove\(m\.id/);
+        // Through the confirm dialog, not the browser's `confirm()` (#4989).
+        expect(src).toMatch(/kind: 'remove', membershipId: m\.id/);
+        expect(src).toMatch(/handleRemove\(pending\.membershipId/);
+        expect(src).not.toMatch(/\bconfirm\(t\(/);
     });
 });
 
@@ -69,7 +72,8 @@ describe('members remove/deactivate i18n parity', () => {
     it('new member keys exist in both locales', () => {
         for (const l of [en, bg]) {
             expect(l.admin.members.remove).toBeTruthy();
-            expect(l.admin.members.removeConfirm).toBeTruthy();
+            expect(l.admin.members.removeConfirmTitle).toBeTruthy();
+            expect(l.admin.members.removeConfirmBody).toBeTruthy();
             expect(l.admin.members.removalFailed).toBeTruthy();
             expect(l.admin.members.bulkRemovedToast).toBeTruthy();
             expect(l.admin.members.bulkDeactivatedToast).toBeTruthy();

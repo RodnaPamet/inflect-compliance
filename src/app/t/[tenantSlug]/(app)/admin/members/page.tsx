@@ -252,6 +252,13 @@ export default function MembersAdminPage() {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     // The member whose MFA is about to be reset (#4926), awaiting confirmation.
     const [resettingMfa, setResettingMfa] = useState<Member | null>(null);
+    // Deactivate / Remove wait here for the confirm dialog (#4989). They used
+    // the browser's own `confirm()`, unlike every other confirmation here.
+    const [endingMembership, setEndingMembership] = useState<{
+        kind: 'deactivate' | 'remove';
+        membershipId: string;
+        email: string;
+    } | null>(null);
 
     // Bulk selection + top action row (deactivate / remove).
     const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
@@ -495,7 +502,6 @@ export default function MembersAdminPage() {
     }
 
     async function handleDeactivate(membershipId: string, email: string) {
-        if (!confirm(t('members.deactivateConfirm', { email }))) return;
         setError(null);
         setSuccess(null);
         setOpenMenuId(null);
@@ -547,7 +553,6 @@ export default function MembersAdminPage() {
     }
 
     async function handleRemove(membershipId: string, email: string) {
-        if (!confirm(t('members.removeConfirm', { email }))) return;
         setError(null);
         setSuccess(null);
         setOpenMenuId(null);
@@ -708,9 +713,12 @@ export default function MembersAdminPage() {
         setMemberSessions([]);
     }, []);
 
+    // The session waiting for the confirm dialog (#4989); the revoke used the
+    // browser's own `confirm()`.
+    const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
+
     const handleRevokeSession = useCallback(async (sessionId: string) => {
         if (!sessionsModalUser) return;
-        if (!confirm(t('members.revokeSessionConfirm'))) return;
         setRevokingSessionId(sessionId);
         try {
             const res = await fetch(apiUrl('/admin/sessions'), {
@@ -1097,7 +1105,10 @@ export default function MembersAdminPage() {
                                                     <Popover.Item
                                                         icon={<UserMinus className="w-3.5 h-3.5" />}
                                                         destructive
-                                                        onClick={() => handleDeactivate(m.id, m.user.email)}
+                                                        onClick={() => {
+                                                            setOpenMenuId(null);
+                                                            setEndingMembership({ kind: 'deactivate', membershipId: m.id, email: m.user.email });
+                                                        }}
                                                         id={`action-deactivate-${m.id}`}
                                                     >
                                                         {t('members.deactivate')}
@@ -1109,7 +1120,10 @@ export default function MembersAdminPage() {
                                             <Popover.Item
                                                 icon={<Trash2 className="w-3.5 h-3.5" />}
                                                 destructive
-                                                onClick={() => handleRemove(m.id, m.user.email)}
+                                                onClick={() => {
+                                                    setOpenMenuId(null);
+                                                    setEndingMembership({ kind: 'remove', membershipId: m.id, email: m.user.email });
+                                                }}
                                                 id={`action-remove-${m.id}`}
                                             >
                                                 {t('members.remove')}
@@ -1492,7 +1506,7 @@ export default function MembersAdminPage() {
                                         <Button
                                             variant="secondary"
                                             size="xs"
-                                            onClick={() => handleRevokeSession(s.sessionId)}
+                                            onClick={() => setConfirmingSessionId(s.sessionId)}
                                             disabled={revokingSessionId === s.sessionId}
                                             id={`revoke-session-${s.sessionId}`}
                                         >
@@ -1524,6 +1538,57 @@ export default function MembersAdminPage() {
                     if (m) await handleResetMfa(m);
                 }}
                 onCancel={() => setResettingMfa(null)}
+            />
+
+            <ConfirmDialog
+                showModal={confirmingSessionId !== null}
+                setShowModal={(open) => {
+                    if (!open) setConfirmingSessionId(null);
+                }}
+                tone="danger"
+                title={t('members.revokeSessionConfirmTitle')}
+                description={t('members.revokeSessionConfirmBody')}
+                confirmLabel={t('members.revokeSessionConfirmLabel')}
+                onConfirm={async () => {
+                    const id = confirmingSessionId;
+                    setConfirmingSessionId(null);
+                    if (id) await handleRevokeSession(id);
+                }}
+                onCancel={() => setConfirmingSessionId(null)}
+            />
+
+            <ConfirmDialog
+                showModal={endingMembership?.kind === 'deactivate'}
+                setShowModal={(open) => {
+                    if (!open) setEndingMembership(null);
+                }}
+                tone="warning"
+                title={endingMembership ? t('members.deactivateConfirmTitle', { email: endingMembership.email }) : ''}
+                description={t('members.deactivateConfirmBody')}
+                confirmLabel={t('members.deactivate')}
+                onConfirm={async () => {
+                    const pending = endingMembership;
+                    setEndingMembership(null);
+                    if (pending) await handleDeactivate(pending.membershipId, pending.email);
+                }}
+                onCancel={() => setEndingMembership(null)}
+            />
+
+            <ConfirmDialog
+                showModal={endingMembership?.kind === 'remove'}
+                setShowModal={(open) => {
+                    if (!open) setEndingMembership(null);
+                }}
+                tone="danger"
+                title={endingMembership ? t('members.removeConfirmTitle', { email: endingMembership.email }) : ''}
+                description={t('members.removeConfirmBody')}
+                confirmLabel={t('members.remove')}
+                onConfirm={async () => {
+                    const pending = endingMembership;
+                    setEndingMembership(null);
+                    if (pending) await handleRemove(pending.membershipId, pending.email);
+                }}
+                onCancel={() => setEndingMembership(null)}
             />
         </div>
     );

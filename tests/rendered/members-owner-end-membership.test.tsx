@@ -179,3 +179,49 @@ describe('members page — a row with no actions has no menu', () => {
         expect(items).toEqual(['remove']);
     });
 });
+
+describe("members page — ending a membership asks in the app's dialog (#4989)", () => {
+    const writes = () =>
+        (global.fetch as jest.Mock).mock.calls.filter(([, init]) => {
+            const method = (init as RequestInit | undefined)?.method;
+            return method === 'DELETE' || method === 'POST';
+        });
+
+    it('Remove opens a confirm dialog, sends nothing until confirmed, then removes', async () => {
+        const confirmSpy = jest.spyOn(window, 'confirm');
+        renderAs('ADMIN');
+        expect(await menuItems('m-editor')).toContain('remove');
+        fireEvent.click(byId('action-remove-m-editor')!);
+
+        const dialog = await waitFor(() => {
+            const el = document.querySelector('[role="dialog"], [role="alertdialog"]');
+            if (!el?.textContent?.includes('Remove m-editor@example.com?')) throw new Error('no dialog yet');
+            return el as HTMLElement;
+        });
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(writes()).toHaveLength(0);
+
+        const confirm = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Remove');
+        fireEvent.click(confirm!);
+        await waitFor(() => expect(writes()).toHaveLength(1));
+        expect(String(writes()[0][0])).toContain('/admin/members/m-editor');
+        expect((writes()[0][1] as RequestInit).method).toBe('DELETE');
+        confirmSpy.mockRestore();
+    });
+
+    it('Deactivate asks first too, and Cancel sends nothing', async () => {
+        renderAs('ADMIN');
+        expect(await menuItems('m-editor')).toContain('deactivate');
+        fireEvent.click(byId('action-deactivate-m-editor')!);
+
+        const dialog = await waitFor(() => {
+            const el = document.querySelector('[role="dialog"], [role="alertdialog"]');
+            if (!el?.textContent?.includes('Deactivate m-editor@example.com?')) throw new Error('no dialog yet');
+            return el as HTMLElement;
+        });
+        const cancel = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Cancel');
+        fireEvent.click(cancel!);
+        await new Promise((r) => setTimeout(r, 50));
+        expect(writes()).toHaveLength(0);
+    });
+});
