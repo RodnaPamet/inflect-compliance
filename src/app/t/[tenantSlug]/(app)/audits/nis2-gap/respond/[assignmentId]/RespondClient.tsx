@@ -25,7 +25,8 @@ const NIS2_ATTRIBUTION =
 const NIS2_SOURCE_URL = 'https://github.com/NISD2/nis2-gap-assessment-schema';
 const ANSWERS = ['YES', 'PARTIALLY', 'NO', 'NA'] as const;
 
-type Bilingual = { en: string; de: string };
+/** Stored English and German; Bulgarian is added on read where translated (#4929). */
+type Bilingual = { en: string; de: string; bg?: string };
 type Question = { id: string; domainId: number; plainText: Bilingual; legalBasis: string; criticality: string };
 type Domain = { id: number; code: string; name: Bilingual };
 // `assessmentId` is on the row the API already returns — declared here because
@@ -49,7 +50,7 @@ const CRITICALITY_VARIANT: Record<string, StatusBadgeVariant> = {
 export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string; assignmentId: string }) {
     const tx = useTranslations('audits');
     const locale = useLocale();
-    const lang = locale === 'de' ? 'de' : 'en';
+    const lang = locale === 'bg' ? 'bg' : locale === 'de' ? 'de' : 'en';
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
 
     // ─── Read ───
@@ -253,13 +254,13 @@ export function RespondClient({ tenantSlug, assignmentId }: { tenantSlug: string
                         .filter((d) => (byDomain.get(d.id) ?? []).length > 0)
                         .map((d) => (
                             <div key={d.id} className="space-y-default">
-                                <Heading level={3}>{d.name?.[lang] ?? d.code}</Heading>
+                                <Heading level={3}>{d.name?.[lang] ?? d.name?.en ?? d.code}</Heading>
                                 <ul className="space-y-tight">
                                     {(byDomain.get(d.id) ?? []).map((q) => (
                                         <li key={q.id} className={cn(cardVariants({ density: 'compact' }), 'space-y-tight')}>
                                             <div className="flex items-start gap-tight flex-wrap">
                                                 <StatusBadge variant={CRITICALITY_VARIANT[q.criticality] ?? 'neutral'} size="sm">{tx.has(`nis2Gap.crit.${q.criticality}`) ? tx(`nis2Gap.crit.${q.criticality}`) : q.criticality}</StatusBadge>
-                                                <span className="text-sm font-medium text-content-emphasis">{q.plainText?.[lang] ?? q.id}</span>
+                                                <span className="text-sm font-medium text-content-emphasis">{q.plainText?.[lang] ?? q.plainText?.en ?? q.id}</span>
                                             </div>
                                             <p className="text-xs text-content-muted">{tx('respond.legalBasis', { legalBasis: q.legalBasis })}</p>
                                             <RadioGroup
