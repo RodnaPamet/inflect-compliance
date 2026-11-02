@@ -34,6 +34,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useWorkpaperLabels } from './workpaper-labels';
 
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
@@ -130,6 +131,7 @@ function outcomeBadge(row: WorkpaperReviewRow, t: ReturnType<typeof useTranslati
 
 function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
     const t = useTranslations('audits');
+    const labels = useWorkpaperLabels();
     const { search } = useFilters();
     const [openId, setOpenId] = useState<string | null>(null);
 
@@ -145,10 +147,12 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
         () =>
             needle
                 ? allRows.filter((r) =>
-                      `${r.workpaper.procedureId} ${r.workpaper.periodLabel}`.toLowerCase().includes(needle),
+                      `${r.workpaper.procedureId} ${labels.procedure(r.workpaper.procedureId)} ${r.workpaper.periodLabel}`
+                          .toLowerCase()
+                          .includes(needle),
                   )
                 : allRows,
-        [allRows, needle],
+        [allRows, needle, labels],
     );
     const awaiting = allRows.filter((r) => r.mine && r.outcome === 'PENDING' && r.answerable).length;
 
@@ -160,8 +164,8 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
                     header: t('workpaperReviews.colProcedure'),
                     accessorFn: (r) => r.workpaper.procedureId,
                     cell: ({ row }) => (
-                        <span className="font-mono text-content-default" data-testid={`workpaper-review-row-${row.original.id}`}>
-                            {row.original.workpaper.procedureId}
+                        <span className="text-content-default" data-testid={`workpaper-review-row-${row.original.id}`}>
+                            {labels.procedure(row.original.workpaper.procedureId)}
                         </span>
                     ),
                 },
@@ -177,10 +181,7 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
                     accessorFn: (r) => r.workpaper.conclusion,
                     cell: ({ row }) => (
                         <span className="text-content-muted">
-                            {t('workpaperReviews.conclusionValue', {
-                                conclusion: row.original.workpaper.conclusion,
-                                basis: row.original.workpaper.conclusionBasis,
-                            })}
+                            {labels.conclusion(row.original.workpaper.conclusion, row.original.workpaper.conclusionBasis)}
                         </span>
                     ),
                 },
@@ -220,7 +221,7 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
                     cell: ({ row }) => outcomeBadge(row.original, t),
                 },
             ]),
-        [t, overview],
+        [t, overview, labels],
     );
 
     const getRowId = useCallback((r: WorkpaperReviewRow) => r.id, []);
