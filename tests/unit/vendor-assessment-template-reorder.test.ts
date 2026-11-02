@@ -4,7 +4,7 @@
  * Pins:
  *   • permission gate (canWrite)
  *   • notFound when template is not in tenant
- *   • publish-guard rejects with "Clone it" message
+ *   • publish-guard rejects with the "Make a new draft" message
  *   • reorder updates section + question rows scoped to (id, tenantId, templateId)
  *   • cross-section move rewrites sectionId on the question
  *   • getTemplateTree returns the full include
@@ -91,7 +91,7 @@ describe('reorderTemplate — guards', () => {
         });
         await expect(
             reorderTemplate(makeCtx(), 't-1', { sections: [] }),
-        ).rejects.toThrow(/Clone it/i);
+        ).rejects.toThrow(/Make a new draft/i);
     });
 });
 

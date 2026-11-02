@@ -183,7 +183,7 @@ describe('addSection', () => {
         });
         await expect(
             addSection(makeCtx(), 't-1', { title: 'X' }),
-        ).rejects.toThrow(/Clone it/i);
+        ).rejects.toThrow(/Make a new draft/i);
     });
 
     test('auto-assigns sortOrder = max(siblings)+1 when omitted', async () => {
@@ -241,7 +241,7 @@ describe('addQuestion — per-answerType validation', () => {
                 prompt: 'Pick',
                 answerType: 'SINGLE_SELECT',
             }),
-        ).rejects.toThrow(/optionsJson/i);
+        ).rejects.toThrow(/at least one option/i);
     });
 
     test('MULTI_SELECT with empty optionsJson is rejected', async () => {
@@ -251,7 +251,7 @@ describe('addQuestion — per-answerType validation', () => {
                 answerType: 'MULTI_SELECT',
                 optionsJson: [],
             }),
-        ).rejects.toThrow(/non-empty optionsJson/i);
+        ).rejects.toThrow(/at least one option/i);
     });
 
     test('SCALE without scaleConfigJson is rejected', async () => {
@@ -260,7 +260,7 @@ describe('addQuestion — per-answerType validation', () => {
                 prompt: 'Rate',
                 answerType: 'SCALE',
             }),
-        ).rejects.toThrow(/scaleConfigJson/i);
+        ).rejects.toThrow(/lowest and a highest value/i);
     });
 
     test('SCALE with min >= max is rejected', async () => {
@@ -270,7 +270,7 @@ describe('addQuestion — per-answerType validation', () => {
                 answerType: 'SCALE',
                 scaleConfigJson: { min: 5, max: 5 },
             }),
-        ).rejects.toThrow(/min < max/);
+        ).rejects.toThrow(/lowest value of a scale must be below/i);
     });
 
     test('FILE_UPLOAD requires no extra config', async () => {
@@ -339,7 +339,7 @@ describe('addQuestion — happy path', () => {
                 prompt: 'Encrypt?',
                 answerType: 'YES_NO',
             }),
-        ).rejects.toThrow(/Clone it/i);
+        ).rejects.toThrow(/Make a new draft/i);
     });
 });
 
