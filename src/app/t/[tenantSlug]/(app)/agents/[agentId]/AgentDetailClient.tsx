@@ -21,6 +21,7 @@ import { AgentAmendModal } from './AgentAmendModal';
 import { ConnectAgentSheet } from './ConnectAgentSheet';
 import { InteractiveAgentAction } from './InteractiveAgentAction';
 import { Button } from '@/components/ui/button';
+import { InlineNotice } from '@/components/ui/inline-notice';
 
 export interface AgentSummary {
     id: string;
@@ -145,6 +146,25 @@ const TAB_KEYS = [
 ] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
+/**
+ * The stored codes the header shows, each with its label (#4937). An unknown
+ * value is shown as stored rather than dropped.
+ */
+const AGENT_STATUSES = ['DRAFT', 'ACTIVE', 'SUSPENDED', 'RETIRED'] as const;
+const ACCESS_SCOPES = ['NONE', 'READ_METADATA', 'READ_TENANT_DATA', 'WRITE_TENANT_DATA', 'EXTERNAL_EGRESS'] as const;
+const REVERSIBILITIES = ['REVERSIBLE', 'COMPENSABLE', 'TERMINAL'] as const;
+const PROVENANCES = ['FIRST_PARTY', 'THIRD_PARTY'] as const;
+const AGENT_RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
+const AI_ACT_TIERS = ['PROHIBITED', 'HIGH', 'LIMITED', 'MINIMAL'] as const;
+
+function labelled<T extends string>(
+    known: readonly T[],
+    value: string,
+    label: (v: T) => string,
+): string {
+    return (known as readonly string[]).includes(value) ? label(value as T) : value;
+}
+
 /** SUSPENDED and RETIRED are the states an operator is looking FOR. */
 function statusVariant(status: string): StatusBadgeVariant {
     if (status === 'ACTIVE') return 'success';
@@ -181,6 +201,7 @@ export function AgentDetailClient({
     // — this page's own ~90 keys — deliberately stayed put, so the page reads
     // both. See the note on the breadcrumb trail below.
     const tAgents = useTranslations('agents');
+    const tRisks = useTranslations('risks');
     const [tab, setTab] = useState<TabKey>('overview');
     const [refreshToken, setRefreshToken] = useState(0);
     const [amending, setAmending] = useState(false);
@@ -192,21 +213,39 @@ export function AgentDetailClient({
     const refresh = useCallback(() => setRefreshToken((n) => n + 1), []);
 
     const meta: MetaItem[] = [
-        { label: t('agentDetail.metaAutonomy'), value: `L${agent.autonomyLevel}` },
-        { label: t('agentDetail.metaAccess'), value: agent.dataAccessScope },
-        { label: t('agentDetail.metaReversibility'), value: agent.reversibility },
-        { label: t('agentDetail.metaProvenance'), value: agent.provenance },
+        {
+            label: t('agentDetail.metaAutonomy'),
+            value: t('agentDetail.autonomyLevel', { level: agent.autonomyLevel }),
+        },
+        {
+            label: t('agentDetail.metaAccess'),
+            value: labelled(ACCESS_SCOPES, agent.dataAccessScope, (v) =>
+                tAgents(`register.filterEnums.accessScope.${v}`),
+            ),
+        },
+        {
+            label: t('agentDetail.metaReversibility'),
+            value: labelled(REVERSIBILITIES, agent.reversibility, (v) => tAgents(`register.reversibility.${v}`)),
+        },
+        {
+            label: t('agentDetail.metaProvenance'),
+            value: labelled(PROVENANCES, agent.provenance, (v) => t(`agentDetail.overview.provenanceValue.${v}`)),
+        },
         {
             label: t('agentDetail.metaTier'),
             // An unscored agent says so. A dash would read as "no risk".
-            value: agent.riskTier ?? t('agentDetail.unscored'),
+            value: agent.riskTier
+                ? labelled(AGENT_RISK_TIERS, agent.riskTier, (v) => tAgents(`register.filterEnums.riskTier.${v}`))
+                : t('agentDetail.unscored'),
         },
         {
             label: t('agentDetail.metaAiAct'),
             // A provisional UNCLASSIFIED entry reads as no classification.
             value:
                 agent.aiActRiskTier && agent.aiActRiskTier !== 'UNCLASSIFIED'
-                    ? agent.aiActRiskTier
+                    ? labelled(AI_ACT_TIERS, agent.aiActRiskTier, (v) =>
+                          tRisks(`aiSystems.filterEnums.riskTier.${v}`),
+                      )
                     : t('agentDetail.unclassified'),
         },
     ];
@@ -233,7 +272,9 @@ export function AgentDetailClient({
             title={
                 <span className="flex items-center gap-default">
                     {agent.name}
-                    <StatusBadge variant={statusVariant(agent.status)}>{agent.status}</StatusBadge>
+                    <StatusBadge variant={statusVariant(agent.status)} data-testid="agent-status-badge">
+                        {labelled(AGENT_STATUSES, agent.status, (v) => tAgents(`register.filterEnums.status.${v}`))}
+                    </StatusBadge>
                     {/* Shown to every reader of the page: which agent answers
                         the workspace's questions is not a register secret. */}
                     {agent.isInteractiveAgent && (
@@ -350,6 +391,13 @@ export function AgentDetailClient({
                 canKill={perms.canKill}
                 refreshToken={refreshToken}
             />
+            {/* A reader who holds the inventory view alone finds most tabs
+                greyed; say why, once, rather than leave them guessing (#4937). */}
+            {!perms.canReadRegistry && (
+                <InlineNotice variant="info" data-testid="agent-tabs-view-only-notice">
+                    {t('agentDetail.viewOnlyTabs')}
+                </InlineNotice>
+            )}
             {tab === 'overview' && (
                 <>
                     <OverviewTab
