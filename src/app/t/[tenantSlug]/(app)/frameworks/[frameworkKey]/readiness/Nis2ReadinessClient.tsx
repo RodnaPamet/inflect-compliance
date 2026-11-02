@@ -39,9 +39,9 @@ type Gap = {
     answer: GapAnswer;
     priority: number;
     priorityTier: PriorityTier;
-    plainText: { en: string; de: string };
+    plainText: { en: string; de: string; bg?: string };
 };
-type DomainScore = { domainId: number; code: string; name: { en: string; de: string }; score: number; answered: number; total: number };
+type DomainScore = { domainId: number; code: string; name: { en: string; de: string; bg?: string }; score: number; answered: number; total: number };
 type Snapshot = { score: number; gapCount: number; computedAt: string };
 type Payload = {
     readiness: {
@@ -52,7 +52,7 @@ type Payload = {
         questionTotal: number;
     };
     snapshots: Snapshot[];
-    focusAreas: Array<{ domainId: number; code: string; name: { en: string; de: string }; score: number }>;
+    focusAreas: Array<{ domainId: number; code: string; name: { en: string; de: string; bg?: string }; score: number }>;
 };
 
 function critVariant(c: Criticality): 'error' | 'warning' | 'info' | 'neutral' {
@@ -66,11 +66,12 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
     const locale = useLocale();
     const t = useTranslations('frameworks');
     // #4733 — the question bank is the upstream dataset's, in English and
-    // German; the product ships English and Bulgarian. The questions and
-    // domain names are shown in English, and a reader in another language is
-    // told so once, rather than reading a page that silently mixes the two.
-    const lang = 'en' as const;
-    const questionsInEnglish = locale !== 'en';
+    // German; the product ships English and Bulgarian. Since #4929 the
+    // questions and domain names carry a Bulgarian translation, so a Bulgarian
+    // reader reads them in Bulgarian. A reader in any other language reads
+    // English and is told so once.
+    const lang = locale === 'bg' ? ('bg' as const) : ('en' as const);
+    const questionsInEnglish = locale !== 'en' && locale !== 'bg';
     // `materializeNis2Gaps` asks `assertCanWrite`: a role the server refuses
     // is not offered the button (#4733), and is told why.
     const canWrite = useTenantContext().permissions.canWrite;
@@ -134,7 +135,7 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
     const domainColumns = useMemo(
         () => createColumns<DomainScore>([
             { accessorKey: 'code', header: t('readiness.colDomain'), cell: ({ row }) => <span className="font-medium">{row.original.code}</span> },
-            { accessorKey: 'name', header: t('readiness.colName'), cell: ({ row }) => <span>{row.original.name?.[lang]}</span> },
+            { accessorKey: 'name', header: t('readiness.colName'), cell: ({ row }) => <span>{row.original.name?.[lang] ?? row.original.name?.en}</span> },
             { accessorKey: 'score', header: t('readiness.colScore'), cell: ({ row }) => <span className="tabular-nums">{row.original.score}</span> },
             { id: 'answered', header: t('readiness.colAnswered'), cell: ({ row }) => <span className="tabular-nums text-content-muted">{row.original.answered}/{row.original.total}</span> },
         ]),
@@ -143,7 +144,7 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
 
     const gapColumns = useMemo(
         () => createColumns<Gap>([
-            { accessorKey: 'plainText', header: t('readiness.colGap'), cell: ({ row }) => <span>{row.original.plainText?.[lang]}</span> },
+            { accessorKey: 'plainText', header: t('readiness.colGap'), cell: ({ row }) => <span>{row.original.plainText?.[lang] ?? row.original.plainText?.en}</span> },
             { accessorKey: 'criticality', header: t('readiness.colCriticality'), cell: ({ row }) => <StatusBadge variant={critVariant(row.original.criticality)} size="sm">{t(`readiness.criticality.${row.original.criticality}`)}</StatusBadge> },
             { accessorKey: 'answer', header: t('readiness.colAnswer'), cell: ({ row }) => <span className="text-content-muted">{t(`readiness.answer.${row.original.answer}`)}</span> },
             { accessorKey: 'priority', header: t('readiness.colPriority'), cell: ({ row }) => <StatusBadge variant={row.original.priorityTier === 'URGENT' ? 'error' : row.original.priorityTier === 'HIGH' ? 'warning' : 'neutral'} size="sm">{t(`readiness.priorityTier.${row.original.priorityTier}`)}</StatusBadge> },

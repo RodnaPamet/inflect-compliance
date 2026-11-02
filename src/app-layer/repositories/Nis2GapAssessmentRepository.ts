@@ -16,6 +16,7 @@
  * wired yet. Those are deliberate follow-ups.
  */
 import { PrismaTx } from '@/lib/db-context';
+import { withBulgarianDomain, withBulgarianQuestion } from '@/lib/nis2/gap-assessment-bg';
 import { RequestContext } from '../types';
 
 // Tight SELECT for the question list — every field a future UI renders.
@@ -37,29 +38,38 @@ const questionSelect = {
 export class Nis2GapAssessmentRepository {
     // ─── Reference (global) ───────────────────────────────────────────
 
-    /** All 15 gap-assessment domains, ordered by their natural day/id. */
+    /**
+     * All 15 gap-assessment domains, ordered by their natural day/id. Each
+     * name carries `bg` beside the stored `en`/`de` (#4929).
+     */
     static async listDomains(db: PrismaTx) {
-        return db.nis2GapDomain.findMany({
+        const rows = await db.nis2GapDomain.findMany({
             orderBy: [{ day: 'asc' }, { id: 'asc' }],
             take: 50,
         });
+        return rows.map(withBulgarianDomain);
     }
 
-    /** The full question set (optionally filtered to one domain). */
+    /**
+     * The full question set (optionally filtered to one domain). Each plain
+     * text carries `bg` beside the stored `en`/`de` (#4929).
+     */
     static async listQuestions(
         db: PrismaTx,
         options: { domainId?: number } = {},
     ) {
-        return db.nis2GapQuestion.findMany({
+        const rows = await db.nis2GapQuestion.findMany({
             where: options.domainId !== undefined ? { domainId: options.domainId } : {},
             orderBy: [{ day: 'asc' }, { id: 'asc' }],
             select: questionSelect,
             take: 500,
         });
+        return rows.map(withBulgarianQuestion);
     }
 
     static async getQuestionById(db: PrismaTx, id: string) {
-        return db.nis2GapQuestion.findUnique({ where: { id }, select: questionSelect });
+        const row = await db.nis2GapQuestion.findUnique({ where: { id }, select: questionSelect });
+        return row ? withBulgarianQuestion(row) : null;
     }
 
     // ─── Tenant-scoped ────────────────────────────────────────────────
