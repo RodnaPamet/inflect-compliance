@@ -1,14 +1,16 @@
-'use client';
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
-import { useTenantHref } from '@/lib/tenant-context-provider';
+import { redirect } from 'next/navigation';
 
-/** Legacy redirect: /issues/new → /tasks/new */
-export default function NewIssueRedirect() {
-    const t = useTranslations('issues');
-    const router = useRouter();
-    const tenantHref = useTenantHref();
-    useEffect(() => { router.replace(tenantHref('/tasks/new')); }, [router, tenantHref]);
-    return <div className="p-12 text-center text-content-subtle animate-pulse">{t('redirecting')}</div>;
+/**
+ * Legacy redirect: /issues/new → /tasks/new.
+ *
+ * Server-side `redirect()` (instant 307), like `/issues` and
+ * `/issues/[issueId]` beside it: no client shell, no loading flash.
+ */
+export default async function NewIssueRedirect({
+    params,
+}: {
+    params: Promise<{ tenantSlug: string }>;
+}) {
+    const { tenantSlug } = await params;
+    redirect(`/t/${tenantSlug}/tasks/new`);
 }
