@@ -24,6 +24,8 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { UserCombobox, type Member } from '@/components/ui/user-combobox';
 import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 type MfaPolicy = 'DISABLED' | 'OPTIONAL' | 'REQUIRED';
 
@@ -282,24 +284,33 @@ export default function AdminSecurityPage() {
                     </p>
                 </div>
 
-                <div className="space-y-compact">
+                {/* The shared RadioGroup (#4972): arrow keys move between the
+                    three policies, and it carries the product's focus ring
+                    and disabled state. Each card is the label of its item. */}
+                <RadioGroup
+                    aria-label={t('security.mfaPolicyTitle')}
+                    value={settings?.mfaPolicy ?? ''}
+                    disabled={!settings}
+                    onValueChange={(v) =>
+                        setSettings(s => (s ? { ...s, mfaPolicy: v as MfaPolicy } : s))
+                    }
+                    className="space-y-compact"
+                >
                     {POLICY_VALUES.map((value) => (
                         <label
                             key={value}
+                            htmlFor={`mfa-policy-${value}`}
                             className={`flex items-start gap-compact p-4 rounded-lg border cursor-pointer transition-all ${
                                 settings?.mfaPolicy === value
                                     ? 'border-[var(--brand-default)]/60 bg-[var(--brand-subtle)]'
                                     : 'border-border-default hover:border-border-emphasis'
                             }`}
                         >
-                            <input
-                                type="radio"
-                                name="mfaPolicy"
+                            <RadioGroupItem
+                                id={`mfa-policy-${value}`}
                                 value={value}
-                                checked={settings?.mfaPolicy === value}
-                                disabled={!settings}
-                                onChange={() => setSettings(s => (s ? { ...s, mfaPolicy: value } : s))}
-                                className="mt-1 accent-[var(--brand-default)]"
+                                size="sm"
+                                className="mt-1"
                             />
                             <div>
                                 <span className={`text-sm font-medium ${
@@ -314,7 +325,7 @@ export default function AdminSecurityPage() {
                             </div>
                         </label>
                     ))}
-                </div>
+                </RadioGroup>
 
                 {settings?.mfaPolicy === 'REQUIRED' && (
                     <InlineNotice variant="warning" title={t('security.beforeRequiredTitle')}>
@@ -336,16 +347,16 @@ export default function AdminSecurityPage() {
                     </p>
                 </div>
 
-                <div>
-                    <div className="mb-1 flex items-center gap-1.5">
-                        <label className="block text-sm text-content-default">{t('security.maxSessionAgeLabel')}</label>
-                        <InfoTooltip
-                            aria-label={t('security.maxSessionAgeTooltipAria')}
-                            iconClassName="h-3.5 w-3.5"
-                            content={t('security.maxSessionAgeTooltip')}
-                        />
-                    </div>
-                    <input
+                {/* FormField ties the label, the help and the hint to the field
+                    (#4972): the raw label had no `htmlFor`, so a screen reader
+                    announced an unnamed number field. */}
+                <FormField
+                    label={t('security.maxSessionAgeLabel')}
+                    hint={t('security.maxSessionAgeTooltip')}
+                    description={t('security.maxSessionAgeHint')}
+                >
+                    <Input
+                        id="security-max-session-age"
                         type="number"
                         min={5}
                         max={43200}
@@ -356,10 +367,9 @@ export default function AdminSecurityPage() {
                             const val = e.target.value ? parseInt(e.target.value, 10) : null;
                             setSettings(s => (s ? { ...s, sessionMaxAgeMinutes: val } : s));
                         }}
-                        className="input w-full max-w-xs"
+                        className="w-full max-w-xs"
                     />
-                    <p className="text-xs text-content-subtle mt-1">{t('security.maxSessionAgeHint')}</p>
-                </div>
+                </FormField>
             </div>
 
             {/* Save Button */}
