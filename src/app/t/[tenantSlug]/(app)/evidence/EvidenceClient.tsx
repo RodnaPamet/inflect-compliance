@@ -711,31 +711,23 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     // appear to "do nothing". Any failure now rolls back + alerts.
     const setArchived = async (id: string, isArchived: boolean) => {
         const verb = isArchived ? 'archive' : 'unarchive';
+        const failed = isArchived ? tx('list.archiveFailed') : tx('list.unarchiveFailed');
         await optimisticSetArchived(id, isArchived);
         try {
             const res = await fetch(apiUrl(`/evidence/${id}/${verb}`), {
                 method: 'POST',
             });
             if (!res.ok) {
+                // The server's reason, or the page's sentence. Never the HTTP
+                // status: "(500)" tells a reader nothing (#4966).
                 const err = await res.json().catch(() => null);
-                throw new Error(
-                    err?.error?.message ||
-                        (isArchived
-                            ? tx('list.archiveFailedStatus', { status: res.status })
-                            : tx('list.unarchiveFailedStatus', { status: res.status })),
-                );
+                throw new Error(apiErrorMessage(err, failed));
             }
             await invalidateEvidence();
         } catch (e) {
             await invalidateEvidence(); // roll back to server truth
             // EP-4 — surface via the platform toast (was a raw `alert`).
-            toast.error(
-                e instanceof Error
-                    ? e.message
-                    : isArchived
-                      ? tx('list.archiveFailedNet')
-                      : tx('list.unarchiveFailedNet'),
-            );
+            toast.error(e instanceof Error && e.message ? e.message : failed);
         }
     };
 
