@@ -97,6 +97,7 @@ import { classifyTldrawStoreDiff } from '@/lib/processes/canvas-changes-tldraw';
 
 import { PALETTE_DRAG_MIME, type PaletteDropPayload } from './ProcessPalette';
 import { installArrowToEdgeConversion } from './tldraw/arrow-to-edge';
+import { frameVisibleContent } from './tldraw/frame-content';
 import {
     createProcessNode,
     installUniqueProcessKeys,
@@ -538,6 +539,20 @@ export function TldrawProcessCanvas({
         recompute();
         return editor.store.listen(recompute);
     }, [drillGroupId, scopeAtom, endpointsAtom, collapsedAtom, editorReady]);
+
+    /**
+     * Frame the map when it opens, and on entering or leaving a group.
+     *
+     * AFTER the scope effect above, which this depends on: framing reads which
+     * shapes are hidden, and the scope atom it sets is what hides them. Effects
+     * run in declaration order, so the scope for this drill level is already
+     * in place. See `frame-content.ts` for why the camera needs setting at all.
+     */
+    useEffect(() => {
+        const editor = editorRef.current;
+        if (!editor || !editorReady) return;
+        frameVisibleContent(editor);
+    }, [drillGroupId, editorReady]);
 
     /**
      * Double-click a GROUP node to go inside it.
