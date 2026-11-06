@@ -431,7 +431,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                                                             value={webhookHeaders.join(', ')}
                                                         />
                                                     )}
-                                                    {asStr(actionConfig.secretRef) && (
+                                                    {detail.webhookSecretSet === true && (
                                                         <ConfigRow
                                                             label={t('ruleDetail.signingSecret')}
                                                             value={t('ruleDetail.secretSet')}

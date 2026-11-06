@@ -96,7 +96,10 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
         },
     },
     {
-        name: 'WEBHOOK with headers + HMAC secretRef (PR2 superset)',
+        // The signing key is no longer part of the config: the server stores it
+        // encrypted and returns only `webhookSecretSet`. See the describe
+        // block on the signing key below.
+        name: 'WEBHOOK with headers and a stored signing key (PR2 superset)',
         detail: {
             name: 'Signed webhook',
             description: null,
@@ -107,8 +110,8 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
                 url: 'https://siem.example.com/hook',
                 method: 'POST',
                 headers: { 'X-Api-Key': 'abc123', 'X-Source': 'inflect' },
-                secretRef: 'WEBHOOK_HMAC',
             },
+            webhookSecretSet: true,
             slaWindowMinutes: null,
             slaBreachActionType: null,
             slaBreachConfigJson: null,
@@ -240,6 +243,54 @@ describe('rule-builder edit round-trip (save with no changes is a no-op)', () =>
         expect(payload.nextRuleId).toBe(detail.nextRuleId);
         expect(payload.nextRuleDelay).toBe(detail.nextRuleDelay);
         expect(payload.elseRuleId).toBe(detail.elseRuleId);
+        // A no-op edit says nothing about the signing key, so the stored one
+        // is kept.
+        expect('webhookSecret' in payload).toBe(false);
+    });
+});
+
+describe('the WEBHOOK signing key is write-only in the builder', () => {
+    const signed: RuleDetail = {
+        name: 'Signed webhook',
+        description: null,
+        triggerEvent: 'INCIDENT_CREATED',
+        actionType: 'WEBHOOK',
+        triggerFilterJson: null,
+        actionConfigJson: { url: 'https://siem.example.com/hook', method: 'POST' },
+        slaWindowMinutes: null,
+        slaBreachActionType: null,
+        slaBreachConfigJson: null,
+        scheduleConfigJson: null,
+        nextRuleId: null,
+        nextRuleDelay: null,
+        elseRuleId: null,
+        webhookSecretSet: true,
+    };
+
+    it('an edit starts with the key field empty and knows one is stored', () => {
+        const state = detailToBuilderState(signed);
+        expect(state.webhook.secret).toBe('');
+        expect(state.webhook.secretSet).toBe(true);
+    });
+
+    it('a typed key is sent BESIDE the config, never inside it', () => {
+        const state = detailToBuilderState(signed);
+        state.webhook.secret = '  new-key  '; // pragma: allowlist secret -- test fixture, not a key
+        const payload = buildRulePayload(state);
+        expect(payload.webhookSecret).toBe('new-key');
+        expect(JSON.stringify(payload.actionConfig)).not.toContain('new-key');
+    });
+
+    it('Remove sends null, which clears the stored key', () => {
+        const state = detailToBuilderState(signed);
+        state.webhook.clearSecret = true;
+        expect(buildRulePayload(state).webhookSecret).toBeNull();
+    });
+
+    it('a rule that is not a WEBHOOK sends no key at all', () => {
+        const state = detailToBuilderState({ ...signed, actionType: 'NOTIFY_USER', actionConfigJson: { userIds: ['u1'], message: 'x' } });
+        state.webhook.secret = 'typed-then-switched'; // pragma: allowlist secret -- test fixture, not a key
+        expect('webhookSecret' in buildRulePayload(state)).toBe(false);
     });
 });
 

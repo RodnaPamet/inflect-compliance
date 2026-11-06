@@ -45,8 +45,20 @@ const WebhookConfig = z.object({
     url: z.string().url(),
     method: z.enum(['POST', 'PUT', 'PATCH']).optional(),
     headers: z.record(z.string(), z.string()).optional(),
+    /**
+     * @deprecated Still ACCEPTED, so an existing API caller keeps working, but
+     * never stored here: the usecase moves it to the encrypted column (see
+     * `webhook-secret.ts`). Send the top-level `webhookSecret` instead.
+     */
     secretRef: z.string().optional(),
 });
+
+/**
+ * A WEBHOOK rule's HMAC signing key, kept in the encrypted
+ * `webhookSecretEncrypted` column and never returned by any read. `null`
+ * removes it; absent leaves it as it is.
+ */
+const WebhookSecret = z.string().trim().min(1).max(512).nullable().optional();
 
 // VR-7 — invoke a sub-flow group's entry rule.
 const InvokeSubflowConfig = z.object({
@@ -166,6 +178,7 @@ export const CreateAutomationRuleSchema = z
         triggerFilter: TriggerFilter,
         actionType: z.nativeEnum(AutomationActionType),
         actionConfig: z.record(z.string(), z.unknown()),
+        webhookSecret: WebhookSecret,
         status: z.nativeEnum(AutomationRuleStatus).optional(),
         priority: z.number().int().min(0).max(1000).optional(),
         ...SlaFields,
@@ -190,6 +203,7 @@ export const UpdateAutomationRuleSchema = z
         triggerFilter: TriggerFilter,
         actionType: z.nativeEnum(AutomationActionType).optional(),
         actionConfig: z.record(z.string(), z.unknown()).optional(),
+        webhookSecret: WebhookSecret,
         status: z.nativeEnum(AutomationRuleStatus).optional(),
         priority: z.number().int().min(0).max(1000).optional(),
         ...SlaFields,

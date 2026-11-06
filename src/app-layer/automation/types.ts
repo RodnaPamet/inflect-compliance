@@ -187,6 +187,12 @@ export interface CreateAutomationRuleInput extends AutomationRuleSlaInput {
         | Partial<InvokeAgentActionConfig>;
     status?: AutomationRuleStatus;
     priority?: number;
+    /**
+     * A WEBHOOK rule's HMAC signing key, stored in the ENCRYPTED
+     * `webhookSecretEncrypted` column. `null` or absent stores none. See
+     * `webhook-secret.ts` for why it is not part of `actionConfig`.
+     */
+    webhookSecret?: string | null;
 }
 
 export interface UpdateAutomationRuleInput extends AutomationRuleSlaInput {
@@ -202,6 +208,8 @@ export interface UpdateAutomationRuleInput extends AutomationRuleSlaInput {
         | WebhookActionConfig;
     status?: AutomationRuleStatus;
     priority?: number;
+    /** A string sets the signing key, `null` removes it, absent leaves it. */
+    webhookSecret?: string | null;
 }
 
 export interface AutomationRuleListFilters {

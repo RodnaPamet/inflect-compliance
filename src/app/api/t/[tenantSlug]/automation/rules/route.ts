@@ -50,6 +50,7 @@ export const POST = withApiErrorHandling(
                 actionType: body.actionType,
                 // Validated against actionType by the schema's superRefine.
                 actionConfig: body.actionConfig as never,
+                webhookSecret: body.webhookSecret,
                 status: body.status,
                 priority: body.priority,
                 slaWindowMinutes: body.slaWindowMinutes,
