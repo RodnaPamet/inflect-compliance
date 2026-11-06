@@ -112,6 +112,8 @@ export class AutomationRuleRepository {
                         : Prisma.JsonNull,
                 actionType: input.actionType,
                 actionConfigJson: input.actionConfig as unknown as Prisma.InputJsonValue,
+                // Encrypted at rest by the Epic B extension.
+                webhookSecretEncrypted: input.webhookSecret ?? null,
                 status: input.status ?? 'DRAFT',
                 priority: input.priority ?? 0,
                 slaWindowMinutes: input.slaWindowMinutes ?? null,
@@ -159,6 +161,7 @@ export class AutomationRuleRepository {
             data.actionConfigJson =
                 input.actionConfig as unknown as Prisma.InputJsonValue;
         }
+        if (input.webhookSecret !== undefined) data.webhookSecretEncrypted = input.webhookSecret;
         if (input.status !== undefined) data.status = input.status;
         if (input.priority !== undefined) data.priority = input.priority;
         if (input.slaWindowMinutes !== undefined) data.slaWindowMinutes = input.slaWindowMinutes;

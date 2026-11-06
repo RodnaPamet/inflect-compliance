@@ -71,6 +71,7 @@ export const PUT = withApiErrorHandling(
             triggerFilter: body.triggerFilter,
             actionType: body.actionType,
             actionConfig: body.actionConfig as never,
+            webhookSecret: body.webhookSecret,
             status: body.status,
             priority: body.priority,
             slaWindowMinutes: body.slaWindowMinutes,

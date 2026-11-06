@@ -181,9 +181,20 @@ interface BuilderState {
         linkEntityIdField: string;
     };
     status: { entityType: string; field: string; toStatus: string };
-    // PR2 — headers (one `Name: value` per line) + HMAC secretRef; both
-    // honored by the executor's webhook action.
-    webhook: { url: string; method: string; headersText: string; secretRef: string };
+    // PR2 — headers (one `Name: value` per line) + the HMAC signing key.
+    //
+    // The key is WRITE-ONLY here. The server keeps it in an encrypted column
+    // and never returns it, so an edit starts with `secret` empty and
+    // `secretSet` telling the form one exists. Leaving `secret` empty keeps
+    // the stored key; `clearSecret` removes it.
+    webhook: {
+        url: string;
+        method: string;
+        headersText: string;
+        secret: string;
+        secretSet: boolean;
+        clearSecret: boolean;
+    };
     /** PR2 — INVOKE_SUBFLOW target group (a ProcessNode.nodeKey). */
     subflow: { targetGroupId: string };
     /**
@@ -223,7 +234,7 @@ const EMPTY: BuilderState = {
     notify: { userIds: [], message: '', linkUrl: '' },
     task: { title: '', severity: '', priority: '', assigneeUserId: '', linkEntityType: '', linkEntityIdField: '' },
     status: { entityType: 'Risk', field: 'status', toStatus: '' },
-    webhook: { url: '', method: 'POST', headersText: '', secretRef: '' },
+    webhook: { url: '', method: 'POST', headersText: '', secret: '', secretSet: false, clearSecret: false },
     subflow: { targetGroupId: '' },
     agent: { agentId: '', workflowKey: '', inputMappingText: '' },
     slaWindowMinutes: '',
@@ -258,6 +269,8 @@ export interface RuleDetail {
     nextRuleId: string | null;
     nextRuleDelay: number | null;
     elseRuleId: string | null;
+    /** A WEBHOOK signing key is stored. The key itself is never sent. */
+    webhookSecretSet?: boolean;
 }
 
 /** Reverse of `buildRulePayload` — repopulates BuilderState so editing then
@@ -308,7 +321,9 @@ export function detailToBuilderState(d: RuleDetail): BuilderState {
                       headersText: stringifyHeaders(
                           ac.headers as Record<string, string> | undefined,
                       ),
-                      secretRef: str(ac.secretRef),
+                      secret: '',
+                      secretSet: d.webhookSecretSet === true,
+                      clearSecret: false,
                   }
                 : { ...EMPTY.webhook },
         subflow:
@@ -395,7 +410,6 @@ function buildActionConfig(form: BuilderState): Record<string, unknown> {
                 url: form.webhook.url.trim(),
                 method: form.webhook.method,
                 ...(Object.keys(headers).length ? { headers } : {}),
-                ...(form.webhook.secretRef.trim() ? { secretRef: form.webhook.secretRef.trim() } : {}),
             };
         }
         case 'INVOKE_SUBFLOW':
@@ -436,6 +450,14 @@ function buildTriggerFilter(form: BuilderState): RawFilter | null {
  * edit round-trip is unit-testable: `buildRulePayload(detailToBuilderState(d))`
  * must reproduce `d`'s config (editing + saving with no changes is a no-op).
  */
+function webhookSecretField(form: BuilderState): { webhookSecret?: string | null } {
+    if (form.actionType !== 'WEBHOOK') return {};
+    const typed = form.webhook.secret.trim();
+    if (typed) return { webhookSecret: typed };
+    if (form.webhook.clearSecret) return { webhookSecret: null };
+    return {};
+}
+
 export function buildRulePayload(form: BuilderState) {
     return {
         name: form.name.trim(),
@@ -447,6 +469,10 @@ export function buildRulePayload(form: BuilderState) {
         triggerFilter: buildTriggerFilter(form),
         actionType: form.actionType,
         actionConfig: buildActionConfig(form),
+        // The signing key travels BESIDE the config, never in it: a new key
+        // when one was typed, `null` to remove the stored one, absent to keep
+        // it. Not a WEBHOOK rule: absent, and the server drops any key.
+        ...webhookSecretField(form),
         slaWindowMinutes: form.slaWindowMinutes ? Number(form.slaWindowMinutes) : null,
         // Breach action is only meaningful with a watchdog window set; only
         // NOTIFY_USER is wired server-side.
@@ -1193,7 +1219,7 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                         />
                                     </FormField>
                                     {/* PR2 — custom headers (one `Name: value` per line)
-                                        + HMAC secret ref, both honored by the executor. */}
+                                        + HMAC signing key, both honored by the executor. */}
                                     <FormField label={t('webhookHeaders')} description={t('webhookHeadersHint')}>
                                         <Textarea
                                             rows={3}
@@ -1204,15 +1230,51 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                             placeholder={t('webhookHeadersPlaceholder')}
                                         />
                                     </FormField>
-                                    <FormField label={t('webhookSecretRef')} description={t('webhookSecretRefHint')}>
+                                    <FormField
+                                        label={t('webhookSecret')}
+                                        description={
+                                            form.webhook.secretSet && !form.webhook.clearSecret
+                                                ? t('webhookSecretSetHint')
+                                                : t('webhookSecretHint')
+                                        }
+                                    >
                                         <Input
-                                            value={form.webhook.secretRef}
+                                            type="password"
+                                            autoComplete="new-password"
+                                            value={form.webhook.secret}
+                                            disabled={form.webhook.clearSecret}
                                             onChange={(e) =>
-                                                patch({ webhook: { ...form.webhook, secretRef: e.target.value } })
+                                                patch({ webhook: { ...form.webhook, secret: e.target.value } })
                                             }
-                                            placeholder={t('webhookSecretRefPlaceholder')}
+                                            placeholder={
+                                                form.webhook.secretSet
+                                                    ? t('webhookSecretSetPlaceholder')
+                                                    : t('webhookSecretPlaceholder')
+                                            }
+                                            data-testid="rule-webhook-secret"
                                         />
                                     </FormField>
+                                    {form.webhook.secretSet && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() =>
+                                                patch({
+                                                    webhook: {
+                                                        ...form.webhook,
+                                                        secret: '',
+                                                        clearSecret: !form.webhook.clearSecret,
+                                                    },
+                                                })
+                                            }
+                                            data-testid="rule-webhook-secret-remove"
+                                        >
+                                            {form.webhook.clearSecret
+                                                ? t('webhookSecretKeep')
+                                                : t('webhookSecretRemove')}
+                                        </Button>
+                                    )}
                                 </>
                             )}
                             {form.actionType === 'INVOKE_AGENT' && (

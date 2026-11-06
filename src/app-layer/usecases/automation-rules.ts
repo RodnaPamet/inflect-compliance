@@ -28,6 +28,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { ACTION_CONFIG_BY_TYPE } from '../schemas/automation.schemas';
 import { recordAutomationRuleCreated } from '@/lib/observability/business-metrics';
+import { resolveWebhookSecretWrite, toPublicRule } from '../automation/webhook-secret';
 
 /**
  * Pure cycle check (Epic 7): walking the chain from `nextRuleId` via
@@ -135,8 +136,10 @@ export async function listAutomationRules(
     filters: AutomationRuleListFilters = {},
 ) {
     assertCanReadAutomation(ctx);
-    return runInTenantContext(ctx, (db) =>
-        AutomationRuleRepository.list(db, ctx, filters),
+    // `toPublicRule` on every rule that leaves this module: the row carries
+    // the decrypted webhook signing key (see `webhook-secret.ts`).
+    return runInTenantContext(ctx, async (db) =>
+        (await AutomationRuleRepository.list(db, ctx, filters)).map(toPublicRule),
     );
 }
 
@@ -145,7 +148,7 @@ export async function getAutomationRule(ctx: RequestContext, id: string) {
     return runInTenantContext(ctx, async (db) => {
         const rule = await AutomationRuleRepository.getById(db, ctx, id);
         if (!rule) throw notFound('Automation rule not found');
-        return rule;
+        return toPublicRule(rule);
     });
 }
 
@@ -155,8 +158,16 @@ export async function createAutomationRule(
 ) {
     assertCanManageAutomation(ctx);
     const created = await runInTenantContext(ctx, async (db) => {
+        // The signing key goes to the encrypted column, never into the config.
+        const secretWrite = resolveWebhookSecretWrite({
+            effectiveActionType: input.actionType,
+            incomingConfig: input.actionConfig,
+            requestedSecret: input.webhookSecret,
+        });
         const rule = await AutomationRuleRepository.create(db, ctx, {
             ...input,
+            actionConfig: secretWrite.config as CreateAutomationRuleInput['actionConfig'],
+            webhookSecret: secretWrite.secret ?? null,
             name: sanitizePlainText(input.name),
             description: sanitizeOptional(input.description),
         });
@@ -164,14 +175,23 @@ export async function createAutomationRule(
             action: 'AUTOMATION_RULE_CREATED',
             entityType: 'AutomationRule',
             entityId: rule.id,
+            // `category` is REQUIRED by `AuditDetailsJsonSchema`. Without it
+            // `logEvent` threw "Invalid detailsJson structure" and every rule
+            // create, edit, toggle and archive failed with a 400.
             detailsJson: {
-                name: rule.name,
-                triggerEvent: rule.triggerEvent,
-                actionType: rule.actionType,
-                status: rule.status,
+                category: 'entity_lifecycle',
+                entityName: rule.name,
+                operation: 'created',
+                after: {
+                    triggerEvent: rule.triggerEvent,
+                    actionType: rule.actionType,
+                    status: rule.status,
+                    // Whether a key was set, never the key.
+                    webhookSecretSet: Boolean(rule.webhookSecretEncrypted),
+                },
             },
         });
-        return rule;
+        return toPublicRule(rule);
     });
     recordAutomationRuleCreated();
     return created;
@@ -205,9 +225,20 @@ export async function updateAutomationRule(
         // STORED actionType requires reading the row, which Zod cannot do. So
         // it lives here, where both halves are available — the incoming value
         // when supplied, the persisted one otherwise.
-        if (input.actionType !== undefined || input.actionConfig !== undefined) {
+        let secretWrite: ReturnType<typeof resolveWebhookSecretWrite> | null = null;
+        if (
+            input.actionType !== undefined ||
+            input.actionConfig !== undefined ||
+            input.webhookSecret !== undefined
+        ) {
             const existing = await AutomationRuleRepository.getById(db, ctx, id);
             if (!existing) throw notFound('Automation rule not found');
+            secretWrite = resolveWebhookSecretWrite({
+                effectiveActionType: input.actionType ?? existing.actionType,
+                incomingConfig: input.actionConfig,
+                requestedSecret: input.webhookSecret,
+                existing,
+            });
             const effectiveType = input.actionType ?? existing.actionType;
             const effectiveConfig =
                 input.actionConfig ?? (existing.actionConfigJson as unknown);
@@ -225,6 +256,14 @@ export async function updateAutomationRule(
         }
         const rule = await AutomationRuleRepository.update(db, ctx, id, {
             ...input,
+            ...(secretWrite
+                ? {
+                      ...(input.actionConfig !== undefined
+                          ? { actionConfig: secretWrite.config as UpdateAutomationRuleInput['actionConfig'] }
+                          : {}),
+                      webhookSecret: secretWrite.secret,
+                  }
+                : {}),
             ...(input.name !== undefined ? { name: sanitizePlainText(input.name) } : {}),
             ...(input.description !== undefined
                 ? { description: sanitizeOptional(input.description) }
@@ -235,9 +274,22 @@ export async function updateAutomationRule(
             action: 'AUTOMATION_RULE_UPDATED',
             entityType: 'AutomationRule',
             entityId: rule.id,
-            detailsJson: { name: rule.name, status: rule.status },
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: rule.name,
+                operation: 'updated',
+                changedFields: Object.keys(input).filter(
+                    (k) => (input as Record<string, unknown>)[k] !== undefined,
+                ),
+                after: {
+                    status: rule.status,
+                    // Whether the key changed, never the key.
+                    ...(secretWrite?.secret === null ? { webhookSecret: 'removed' } : {}),
+                    ...(typeof secretWrite?.secret === 'string' ? { webhookSecret: 'set' } : {}),
+                },
+            },
         });
-        return rule;
+        return toPublicRule(rule);
     });
 }
 
@@ -256,9 +308,13 @@ export async function toggleAutomationRule(
             action: status === 'ENABLED' ? 'AUTOMATION_RULE_ENABLED' : 'AUTOMATION_RULE_DISABLED',
             entityType: 'AutomationRule',
             entityId: rule.id,
-            detailsJson: { name: rule.name, status },
+            detailsJson: {
+                category: 'status_change',
+                entityName: rule.name,
+                toStatus: status,
+            },
         });
-        return rule;
+        return toPublicRule(rule);
     });
 }
 
@@ -272,8 +328,12 @@ export async function archiveAutomationRule(ctx: RequestContext, id: string) {
             action: 'AUTOMATION_RULE_ARCHIVED',
             entityType: 'AutomationRule',
             entityId: id,
-            detailsJson: { name: existing.name },
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: existing.name,
+                operation: 'archived',
+            },
         });
-        return rule;
+        return rule ? toPublicRule(rule) : rule;
     });
 }

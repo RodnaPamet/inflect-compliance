@@ -85,7 +85,9 @@ describe('automation-rules usecase — delegation + audit', () => {
         const ctx = makeRequestContext('ADMIN');
         const out = await listAutomationRules(ctx, { status: 'ENABLED' } as any);
         expect(repo.list).toHaveBeenCalledWith(mockDb, ctx, { status: 'ENABLED' });
-        expect(out).toEqual([{ id: 'r1' }]);
+        // Every rule leaves through `toPublicRule`, which says whether a
+        // signing key is stored without carrying it.
+        expect(out).toEqual([{ id: 'r1', webhookSecretSet: false }]);
     });
 
     it('createAutomationRule sanitises name + description and audits', async () => {
@@ -181,5 +183,36 @@ describe('automation-rules usecase — delegation + audit', () => {
             ctx,
             expect.objectContaining({ action: 'AUTOMATION_RULE_ARCHIVED', entityId: 'r3' }),
         );
+    });
+});
+
+describe('every audit row this usecase writes is one logEvent accepts', () => {
+    // `logEvent` validates `detailsJson` against `AuditDetailsJsonSchema`,
+    // which REQUIRES `category`. None of these four sent one, so each threw
+    // "Invalid detailsJson structure" against a real database, and every rule
+    // create, edit, toggle and archive failed with a 400. This file mocks
+    // `logEvent`, which is how it went unseen: so validate what it was handed.
+    it('create, update, toggle and archive all pass the real schema', async () => {
+        const { validateAuditDetailsJson } = jest.requireActual(
+            '@/app-layer/schemas/json-columns.schemas',
+        ) as typeof import('@/app-layer/schemas/json-columns.schemas');
+        const ctx = makeRequestContext('ADMIN');
+        const row = { id: 'r9', name: 'R', triggerEvent: 'RISK_CREATED', actionType: 'NOTIFY_USER', status: 'DRAFT' };
+        repo.create.mockResolvedValue(row as any);
+        repo.getById.mockResolvedValue(row as any);
+        repo.update.mockResolvedValue(row as any);
+        repo.toggle.mockResolvedValue({ ...row, status: 'ENABLED' } as any);
+        repo.archive.mockResolvedValue(row as any);
+
+        await createAutomationRule(ctx, baseInput as any);
+        await updateAutomationRule(ctx, 'r9', { priority: 5 } as any);
+        await toggleAutomationRule(ctx, 'r9', 'ENABLED');
+        await archiveAutomationRule(ctx, 'r9');
+
+        const payloads = (logEvent as jest.Mock).mock.calls.map((c) => c[2].detailsJson);
+        expect(payloads).toHaveLength(4);
+        for (const details of payloads) {
+            expect(() => validateAuditDetailsJson(details)).not.toThrow();
+        }
     });
 });
