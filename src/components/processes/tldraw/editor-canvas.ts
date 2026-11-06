@@ -37,6 +37,7 @@ import {
     type FreeformRecord,
     type GraphRows,
 } from './serializer';
+import { PROCESS_NODE_SHAPE_TYPE } from './process-node-shape';
 
 /** What a save needs: the rows, and the freeform layer that rides beside them. */
 export interface EditorCanvas {
@@ -94,7 +95,23 @@ export function serializeEditorCanvas(editor: Editor): EditorCanvas {
     // `dirtySince` check exists for exactly that race, and handing it a moving
     // target would undo the care taken there.
     const records: CanvasRecord[] = [
-        ...shapes.map((s) => ({ ...s })),
+        ...shapes.map((s) => {
+            /*
+                A STEP IS SAVED AT ITS PAGE POSITION.
+
+                tldraw stores a child's x/y relative to its parent, so a step
+                dropped inside a frame carries coordinates measured from the
+                frame's corner. The row has no parent shape to measure from:
+                it is loaded back onto the page, where frame-relative numbers
+                put it somewhere else entirely. Freeform shapes keep their own
+                coordinates, because they are restored with their parent.
+            */
+            if (s.type !== PROCESS_NODE_SHAPE_TYPE || String(s.parentId).startsWith('page:')) {
+                return { ...s };
+            }
+            const point = editor.getShapePageTransform(s.id).point();
+            return { ...s, x: point.x, y: point.y };
+        }),
         ...bindings.map((b) => ({ ...b })),
     ];
 

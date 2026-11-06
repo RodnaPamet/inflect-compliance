@@ -25,7 +25,8 @@
  * ── Two commands are OPTIONAL, because one host cannot do them ───────
  *
  * `newAutomation` and `newFromTemplate` are optional actions, and a command is
- * emitted only when its action is supplied. The tldraw workspace supplies
+ * emitted only when its action is supplied. (So are `group` and `ungroup`,
+ * which the tldraw workspace omits: see their declarations.) The tldraw workspace supplies
  * neither: `useTldrawDocumentBar`'s `handleNew` takes no argument and hardcodes
  * `canvasMode: 'DOCUMENT'`, and `ProcessTemplateModal` is not mounted there.
  *
@@ -74,8 +75,13 @@ export interface CanvasCommandActions {
     newFromTemplate?: () => void;
     arrange: (direction: CommandLayoutDirection, scope: CommandLayoutScope) => void;
     arrangeForce: (scope: CommandLayoutScope) => void;
-    group: () => void;
-    ungroup: () => void;
+    /**
+     * Omit on a host with no group verb. The tldraw canvas omits both: a tldraw
+     * group could not be saved around steps that are stored as rows, and the
+     * map's own Group step is the container a user drills into.
+     */
+    group?: () => void;
+    ungroup?: () => void;
     align: (edge: CommandAlignEdge) => void;
     distribute: (axis: 'horizontal' | 'vertical') => void;
     deleteSelection: () => void;
@@ -224,20 +230,24 @@ export function buildCanvasCommandGroups(
     });
 
     const selection: CanvasCommand[] = [
-        {
-            id: 'group',
-            label: t('cmdGroupLabel'),
-            description: t('cmdGroupDesc'),
-            disabled: ctx.selectionCount < 2 || ctx.busy,
-            onSelect: actions.group,
-        },
-        {
-            id: 'ungroup',
-            label: t('cmdUngroupLabel'),
-            description: t('cmdUngroupDesc'),
-            disabled: ctx.selectionCount < 1 || ctx.busy,
-            onSelect: actions.ungroup,
-        },
+        ...(actions.group
+            ? [{
+                id: 'group',
+                label: t('cmdGroupLabel'),
+                description: t('cmdGroupDesc'),
+                disabled: ctx.selectionCount < 2 || ctx.busy,
+                onSelect: actions.group,
+            }]
+            : []),
+        ...(actions.ungroup
+            ? [{
+                id: 'ungroup',
+                label: t('cmdUngroupLabel'),
+                description: t('cmdUngroupDesc'),
+                disabled: ctx.selectionCount < 1 || ctx.busy,
+                onSelect: actions.ungroup,
+            }]
+            : []),
         align('align-left', 'cmdAlignLeftLabel', 'left'),
         align('align-center-x', 'cmdAlignCenterXLabel', 'center-horizontal'),
         align('align-right', 'cmdAlignRightLabel', 'right'),

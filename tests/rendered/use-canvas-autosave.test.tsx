@@ -290,6 +290,111 @@ describe("useCanvasAutosave", () => {
         });
         expect(save).toHaveBeenCalledTimes(1);
     });
+
+    // ─── flush: the manual Save, through the same queue ─────────────
+    describe("flush", () => {
+        it("saves at once, cancels the pending debounce, and reports ok", async () => {
+            jest.useFakeTimers();
+            const save = jest.fn().mockResolvedValue(undefined);
+            const { view } = setup({ save });
+            act(() => view.result.current.markDirty());
+
+            let result: Awaited<ReturnType<CanvasAutosaveApi["flush"]>> | undefined;
+            await act(async () => {
+                result = await view.result.current.flush();
+            });
+            expect(result).toEqual({ ok: true, error: null });
+            expect(save).toHaveBeenCalledTimes(1);
+            expect(view.result.current.status).toBe("saved");
+
+            // The debounce the edit armed must not fire a second save.
+            await act(async () => {
+                jest.advanceTimersByTime(DELAY * 2);
+                await Promise.resolve();
+            });
+            expect(save).toHaveBeenCalledTimes(1);
+        });
+
+        it("saves even with nothing dirty — a rename is a save of an unchanged graph", async () => {
+            const save = jest.fn().mockResolvedValue(undefined);
+            const { view } = setup({ save });
+            await act(async () => {
+                await view.result.current.flush();
+            });
+            expect(save).toHaveBeenCalledTimes(1);
+        });
+
+        it("WAITS for a save already in flight, then saves again — never two at once", async () => {
+            // The defect this exists for: the bar's Save PUT on its own beside
+            // an in-flight autosave, both carrying the same version, and the
+            // second came back 409.
+            jest.useFakeTimers();
+            let release!: () => void;
+            let concurrent = 0;
+            let maxConcurrent = 0;
+            const save = jest.fn(async () => {
+                concurrent += 1;
+                maxConcurrent = Math.max(maxConcurrent, concurrent);
+                if (save.mock.calls.length === 1) {
+                    await new Promise<void>((r) => {
+                        release = r;
+                    });
+                }
+                concurrent -= 1;
+            });
+            const { view } = setup({ save });
+            act(() => view.result.current.markDirty());
+            await act(async () => {
+                jest.advanceTimersByTime(DELAY);
+                await Promise.resolve();
+            });
+            expect(save).toHaveBeenCalledTimes(1);
+
+            let flushed: Promise<unknown> | undefined;
+            act(() => {
+                flushed = view.result.current.flush();
+            });
+            await act(async () => {
+                await Promise.resolve();
+            });
+            // Still the one: the flush is waiting, not racing.
+            expect(save).toHaveBeenCalledTimes(1);
+
+            await act(async () => {
+                release();
+                await flushed;
+            });
+            expect(save).toHaveBeenCalledTimes(2);
+            expect(maxConcurrent).toBe(1);
+        });
+
+        it("reports a failure with its message and what was thrown", async () => {
+            const boom = new Error("Only an editor can change this map");
+            const save = jest.fn().mockRejectedValue(boom);
+            const { view } = setup({ save });
+            let result: Awaited<ReturnType<CanvasAutosaveApi["flush"]>> | undefined;
+            await act(async () => {
+                result = await view.result.current.flush();
+            });
+            expect(result).toEqual({
+                ok: false,
+                error: "Only an editor can change this map",
+                cause: boom,
+            });
+            expect(view.result.current.status).toBe("error");
+        });
+
+        it("does not save while disabled", async () => {
+            const save = jest.fn().mockResolvedValue(undefined);
+            const { view } = setup({ save, enabled: false });
+            let result: Awaited<ReturnType<CanvasAutosaveApi["flush"]>> | undefined;
+            await act(async () => {
+                result = await view.result.current.flush();
+            });
+            expect(save).not.toHaveBeenCalled();
+            expect(result?.ok).toBe(false);
+        });
+    });
 });
 
 // Keep the API type referenced so an unused-import lint never strips it.

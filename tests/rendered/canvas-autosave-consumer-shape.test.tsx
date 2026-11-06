@@ -223,10 +223,18 @@ describe('the tldraw host consumes the hook the way the harness does', () => {
             `use-canvas-autosave`'s `saveRef` rather than re-solving this, so
             what is asserted is that it still takes the honest dependency list
             that makes relying on it correct.
+
+            The VERSION is the one exception, and deliberately: the manual save
+            waits for an in-flight autosave and then saves before React has
+            rendered the version that save returned, so the save reads it from
+            `versionRef`, written when a save lands and kept in step with the
+            prop by an effect. `tldraw-canvas-autosave` holds the behaviour.
         */
         expect(autosave).toMatch(
-            /\}, \[editor, mapId, tenantSlug, expectedVersion, toast, onConflict, onSaved\]\)/,
+            /\}, \[editor, mapId, tenantSlug, toast, onConflict, onSaved\]\)/,
         );
+        expect(autosave).toMatch(/versionRef\.current = saved\.version/);
+        expect(autosave).toMatch(/versionRef\.current = expectedVersion/);
         // And that it did not grow a second `latest` ref of its own, which the
         // module records as the first version's mistake.
         expect(autosave).not.toMatch(/latestRef|saveRef\s*=/);

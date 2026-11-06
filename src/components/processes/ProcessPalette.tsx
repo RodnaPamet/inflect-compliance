@@ -30,6 +30,17 @@
  * The seven taxonomy kinds plus group (R30) all carry an icon by
  * design. The hover label is the accessible name for screen
  * readers via `aria-label`; the visible icon is purely decorative.
+ *
+ * ═══ CLICK TO ADD, AS WELL AS DRAG ═══
+ *
+ * Each item is a real `<button>`. A click (or Enter / Space on a
+ * focused item) calls `onAdd`, and the canvas places the step in
+ * the middle of the view. Drag stayed the only way in for a long
+ * time, and it was the wrong only way: HTML5 drag never fires on a
+ * touch screen, a keyboard cannot drag at all, and when the drop
+ * handler broke (tldraw swallowed the event) the items did nothing
+ * whatever the user tried. An item that takes no `onAdd` still
+ * drags, so a host without a canvas to place into loses nothing.
  */
 
 import type { DragEvent } from "react";
@@ -62,6 +73,15 @@ export interface PaletteDropPayload {
     label: string;
 }
 
+export interface ProcessPaletteProps {
+    /**
+     * Add a step of this kind to the canvas, placed by the host. Called
+     * for a click or a key press on an item; a drag goes through the
+     * canvas's own drop handler instead.
+     */
+    onAdd?: (kind: ProcessNodeKind, label: string) => void;
+}
+
 /**
  * Category display order in the rail. The vertical column reads
  * top-to-bottom: build the flow → layer the context → wrap a
@@ -74,18 +94,48 @@ const CATEGORY_ORDER: readonly NodeCategory[] = [
     "note",
 ];
 
-export function ProcessPalette() {
+function onDragStart(
+    event: DragEvent<HTMLButtonElement>,
+    kind: ProcessNodeKind,
+    label: string,
+) {
+    const payload: PaletteDropPayload = { kind, label };
+    event.dataTransfer.setData(PALETTE_DRAG_MIME, JSON.stringify(payload));
+    event.dataTransfer.effectAllowed = "move";
+}
+
+function PaletteItem({
+    kind,
+    onAdd,
+}: {
+    kind: ProcessNodeKind;
+    onAdd: ProcessPaletteProps["onAdd"];
+}) {
+    const t = useTranslations("automation.palette");
+    const meta = NODE_TAXONOMY[kind];
+    const Icon = meta.icon;
+    return (
+        <button
+            type="button"
+            draggable
+            onDragStart={(e) => onDragStart(e, kind, meta.label)}
+            onClick={() => onAdd?.(kind, meta.label)}
+            data-palette-item={kind}
+            data-process-palette-item="true"
+            title={meta.label}
+            aria-label={t(onAdd ? "clickToAdd" : "dragToAdd", {
+                label: meta.label.toLowerCase(),
+            })}
+            className="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-[8px] border border-canvas-border bg-canvas-node-muted text-content-default transition-colors hover:border-border-emphasis hover:bg-canvas-node hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-emphasis active:cursor-grabbing"
+        >
+            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+    );
+}
+
+export function ProcessPalette({ onAdd }: ProcessPaletteProps = {}) {
     const t = useTranslations("automation.palette");
     const isAutomation = useIsAutomationMode();
-    const onDragStart = (
-        event: DragEvent<HTMLDivElement>,
-        kind: ProcessNodeKind,
-        label: string,
-    ) => {
-        const payload: PaletteDropPayload = { kind, label };
-        event.dataTransfer.setData(PALETTE_DRAG_MIME, JSON.stringify(payload));
-        event.dataTransfer.effectAllowed = "move";
-    };
 
     // Group the taxonomy by semantic category. The ORDER inside a
     // category mirrors NODE_TAXONOMY_ORDER so the rail reads the
@@ -129,33 +179,9 @@ export function ProcessPalette() {
                                 aria-hidden="true"
                             />
                         )}
-                        {kindsInCategory.map((kind) => {
-                            const meta = NODE_TAXONOMY[kind];
-                            const Icon = meta.icon;
-                            return (
-                                <div
-                                    key={kind}
-                                    role="button"
-                                    tabIndex={0}
-                                    draggable
-                                    onDragStart={(e) =>
-                                        onDragStart(e, kind, meta.label)
-                                    }
-                                    data-palette-item={kind}
-                                    data-process-palette-item="true"
-                                    title={meta.label}
-                                    aria-label={t("dragToAdd", {
-                                        label: meta.label.toLowerCase(),
-                                    })}
-                                    className="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-[8px] border border-canvas-border bg-canvas-node-muted text-content-default transition-colors hover:border-border-emphasis hover:bg-canvas-node hover:text-content-emphasis active:cursor-grabbing"
-                                >
-                                    <Icon
-                                        className="h-3.5 w-3.5"
-                                        aria-hidden="true"
-                                    />
-                                </div>
-                            );
-                        })}
+                        {kindsInCategory.map((kind) => (
+                            <PaletteItem key={kind} kind={kind} onAdd={onAdd} />
+                        ))}
                     </div>
                 );
             })}
@@ -169,28 +195,9 @@ export function ProcessPalette() {
                         className="my-1 block h-px w-6 bg-canvas-border"
                         aria-hidden="true"
                     />
-                    {AUTOMATION_NODE_ORDER.map((kind) => {
-                        const meta = NODE_TAXONOMY[kind];
-                        const Icon = meta.icon;
-                        return (
-                            <div
-                                key={kind}
-                                role="button"
-                                tabIndex={0}
-                                draggable
-                                onDragStart={(e) => onDragStart(e, kind, meta.label)}
-                                data-palette-item={kind}
-                                data-process-palette-item="true"
-                                title={meta.label}
-                                aria-label={t("dragToAdd", {
-                                    label: meta.label.toLowerCase(),
-                                })}
-                                className="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-[8px] border border-canvas-border bg-canvas-node-muted text-content-default transition-colors hover:border-border-emphasis hover:bg-canvas-node hover:text-content-emphasis active:cursor-grabbing"
-                            >
-                                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                            </div>
-                        );
-                    })}
+                    {AUTOMATION_NODE_ORDER.map((kind) => (
+                        <PaletteItem key={kind} kind={kind} onAdd={onAdd} />
+                    ))}
                 </div>
             )}
         </aside>

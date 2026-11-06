@@ -71,13 +71,37 @@ import { useTranslations } from 'next-intl';
 
 import { useMediaQuery } from '@inflect/ui/components/ui/hooks/use-media-query';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { atom, type Atom, type Editor, type TLBindingId, Tldraw, type TLShape, type TLShapeId } from 'tldraw';
+import {
+    atom,
+    type Atom,
+    ArrowToolbarItem,
+    DefaultToolbar,
+    DrawToolbarItem,
+    type Editor,
+    EraserToolbarItem,
+    FrameToolbarItem,
+    HandToolbarItem,
+    NoteToolbarItem,
+    SelectToolbarItem,
+    TextToolbarItem,
+    type TLBindingId,
+    type TLComponents,
+    Tldraw,
+    type TLShape,
+    type TLShapeId,
+    type TLUiOverrides,
+} from 'tldraw';
 
 import { batchIsSubstantive } from '@/lib/processes/canvas-changes';
 import { classifyTldrawStoreDiff } from '@/lib/processes/canvas-changes-tldraw';
 
 import { PALETTE_DRAG_MIME, type PaletteDropPayload } from './ProcessPalette';
 import { installArrowToEdgeConversion } from './tldraw/arrow-to-edge';
+import {
+    createProcessNode,
+    installUniqueProcessKeys,
+    mintNodeKey,
+} from './tldraw/create-process-node';
 import {
     edgeEndpointIndex,
     collapsedHiddenKeys,
@@ -94,11 +118,8 @@ import {
     automationChipKey,
 } from './tldraw/process-edge-shape';
 import {
-    PROCESS_NODE_DEFAULT_H,
-    PROCESS_NODE_DEFAULT_W,
     PROCESS_NODE_FALLBACK_KIND,
     PROCESS_NODE_SHAPE_TYPE,
-    shapeIdForNodeKey,
 } from './tldraw/process-node-shape';
 // Engine-free (zero xyflow references), unlike `ProcessTypedNode` where the
 // step constant lives.
@@ -116,6 +137,122 @@ import {
 // no connectors between them.
 const SHAPE_UTILS = [ProcessNodeShapeUtil, ProcessEdgeShapeUtil];
 const BINDING_UTILS = [ProcessEdgeBindingUtil];
+
+/**
+ * tldraw's own interface, cut to what a process map can keep.
+ *
+ * Everything below is something the default UI offered that this canvas could
+ * not honour, and each removal says why:
+ *
+ *   • ONE PAGE (`maxPages: 1`). A save serialises the current page only, so a
+ *     second page, or "Move to page", put shapes somewhere no save reached.
+ *     Single-page mode hides the page menu and those menu items.
+ *   • NO MEDIA OR EMBEDS. An uploaded image or video lives in an asset record
+ *     the save does not carry, so it was gone after a reload. The upload tool,
+ *     "Insert media", "Insert embed" and dropping or pasting image and video
+ *     files are all off.
+ *   • NO tldraw GROUPS. Ctrl+G nests shapes inside a group shape. The map has
+ *     its own Group step (a container you drill into), and a tldraw group could
+ *     not be restored around steps that are saved as rows.
+ *   • A FOCUSED TOOLBAR. Select, hand, arrow (which draws the connection
+ *     between two steps), text, note, draw, eraser and frame. The laser pointer
+ *     is transient, and the dozen decorative geometric shapes looked like steps
+ *     without being steps: no coverage, no connections, no inspector. The
+ *     removed tools are deleted from `tools`, so their keyboard shortcuts go too.
+ *
+ * Module scope, like the util arrays: a new object each render would be a new
+ * editor option on every pass.
+ */
+const TLDRAW_OPTIONS = { maxPages: 1 } as const;
+const NO_FILE_TYPES: readonly string[] = [];
+const KEPT_TOOLS = new Set([
+    'select',
+    'hand',
+    'arrow',
+    'text',
+    'note',
+    'draw',
+    'eraser',
+    'frame',
+]);
+const REMOVED_ACTIONS = ['insert-media', 'insert-embed', 'group', 'ungroup'];
+const TLDRAW_OVERRIDES: TLUiOverrides = {
+    tools(_editor, tools) {
+        for (const id of Object.keys(tools)) {
+            if (!KEPT_TOOLS.has(id)) delete tools[id];
+        }
+        return tools;
+    },
+    actions(_editor, actions) {
+        for (const id of REMOVED_ACTIONS) delete actions[id];
+        return actions;
+    },
+};
+function ProcessToolbar() {
+    return (
+        <DefaultToolbar>
+            <SelectToolbarItem />
+            <HandToolbarItem />
+            <ArrowToolbarItem />
+            <TextToolbarItem />
+            <NoteToolbarItem />
+            <DrawToolbarItem />
+            <EraserToolbarItem />
+            <FrameToolbarItem />
+        </DefaultToolbar>
+    );
+}
+const TLDRAW_COMPONENTS: TLComponents = { Toolbar: ProcessToolbar };
+
+/**
+ * The freeform layer, restored into the editor.
+ *
+ * Notes, text, drawings, frames and unconnected arrows are saved to
+ * `ProcessMap.freeformJson` as the tldraw records they were. Nothing put them
+ * back: the load read the rows only, so every one of them vanished on the next
+ * reload, and the next save then wrote the empty layer over the stored one.
+ *
+ * Shapes go in parents-first (a note inside a frame needs its frame), then
+ * bindings. A record that tldraw refuses is skipped rather than allowed to take
+ * the whole map down; what it cannot validate it could not have shown either.
+ * A shape whose parent is a page is moved to this editor's page, so a map saved
+ * from a session with a different page id still lands on the canvas.
+ */
+function restoreFreeform(editor: Editor, freeform: FreeformRecord[]): void {
+    if (freeform.length === 0) return;
+    const pageId = editor.getCurrentPageId();
+    const shapes = freeform.filter((r) => r.typeName === 'shape');
+    const bindings = freeform.filter((r) => r.typeName === 'binding');
+    const placed = new Set<string>();
+    let pending = shapes.map((r) => {
+        const parentId = typeof r.parentId === 'string' ? r.parentId : pageId;
+        return { ...r, parentId: parentId.startsWith('page:') ? pageId : parentId };
+    });
+    const tryCreate = (r: (typeof pending)[number]) => {
+        try {
+            editor.createShapes([r as unknown as Parameters<Editor['createShapes']>[0][number]]);
+            placed.add(r.id);
+        } catch {
+            // Unrestorable record; see the docblock.
+        }
+    };
+    // Parents first: each pass places what its parent allows, until nothing moves.
+    for (let pass = 0; pending.length > 0 && pass < 20; pass++) {
+        const ready = pending.filter((r) => r.parentId === pageId || placed.has(r.parentId));
+        if (ready.length === 0) break;
+        ready.forEach(tryCreate);
+        pending = pending.filter((r) => !ready.includes(r));
+    }
+    // A shape whose parent never arrived keeps its place on the page.
+    pending.forEach((r) => tryCreate({ ...r, parentId: pageId }));
+    for (const b of bindings) {
+        try {
+            editor.createBindings([b as unknown as Parameters<Editor['createBindings']>[0][number]]);
+        } catch {
+            // A binding to a shape that was not restored.
+        }
+    }
+}
 
 export interface TldrawProcessCanvasProps {
     /** The map's rows, exactly as the repository returns them. */
@@ -181,19 +318,8 @@ export interface TldrawProcessCanvasProps {
     onEditorReady?: (editor: Editor) => void;
 }
 
-/**
- * A fresh `nodeKey` for a node created by dropping one.
- *
- * The xyflow handler uses `node-${Date.now()}`, and two drops inside one
- * millisecond would then share a key. That is unlikely by hand and certain
- * under a test that drops twice — and a duplicate `nodeKey` is not cosmetic:
- * the row is keyed on it, so the save would collapse two nodes into one.
- *
- * The random suffix is not for unguessability, only for distinctness.
- */
-export function mintNodeKey(): string {
-    return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+// Lives with the node-creation helper now; re-exported for existing importers.
+export { mintNodeKey };
 
 /** `shape:…` — the prefix `createShapeId` stamps, which the serializer already used. */
 function asShapeId(id: string): TLShapeId {
@@ -228,6 +354,9 @@ export function TldrawProcessCanvas({
     const onDirtyRef = useRef(onDirty);
     const onEdgeRefusedRef = useRef(onEdgeRefused);
     const onEnterGroupRef = useRef(onEnterGroup);
+    // Read by the drop handler: a step dropped while drilled into a group
+    // belongs to that group, or the scope filter hides it at once.
+    const drillGroupIdRef = useRef(drillGroupId);
     /**
      * Mount signal, because `editorRef` alone cannot drive an effect.
      *
@@ -325,6 +454,7 @@ export function TldrawProcessCanvas({
         [],
     );
     const disposeArrowConversion = useRef<(() => void) | null>(null);
+    const disposeUniqueKeys = useRef<(() => void) | null>(null);
     useEffect(() => {
         onDirtyRef.current = onDirty;
     }, [onDirty]);
@@ -334,6 +464,9 @@ export function TldrawProcessCanvas({
     useEffect(() => {
         onEnterGroupRef.current = onEnterGroup;
     }, [onEnterGroup]);
+    useEffect(() => {
+        drillGroupIdRef.current = drillGroupId;
+    }, [drillGroupId]);
     /*
         `chipTextFor` through a ref for the reason stated on `onDirtyRef`:
         `handleMount` runs once per editor and installs the arrow converter for
@@ -352,6 +485,8 @@ export function TldrawProcessCanvas({
     useEffect(() => () => {
         disposeArrowConversion.current?.();
         disposeArrowConversion.current = null;
+        disposeUniqueKeys.current?.();
+        disposeUniqueKeys.current = null;
     }, []);
     const editorRef = useRef<Editor | null>(null);
     /**
@@ -520,6 +655,9 @@ export function TldrawProcessCanvas({
                 if (lines.length > 0) editor.createShapes(lines);
             }
 
+            // The freeform layer, after the steps it may be bound to.
+            restoreFreeform(editor, graph.freeform);
+
             /**
              * An arrow drawn between two process nodes IS an edge.
              *
@@ -536,6 +674,9 @@ export function TldrawProcessCanvas({
              * and persisted as annotation.
              */
             if (!readOnly) {
+                // A duplicated or pasted step gets its own key; see the module.
+                disposeUniqueKeys.current?.();
+                disposeUniqueKeys.current = installUniqueProcessKeys(editor);
                 disposeArrowConversion.current?.();
                 disposeArrowConversion.current = installArrowToEdgeConversion(editor, {
                     onRefuse: (refusals) => onEdgeRefusedRef.current?.(refusals),
@@ -611,6 +752,7 @@ export function TldrawProcessCanvas({
      * and do nothing, which is indistinguishable from a broken handler.
      */
     const onDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+        if (!event.dataTransfer.types.includes(PALETTE_DRAG_MIME)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
     }, []);
@@ -628,7 +770,16 @@ export function TldrawProcessCanvas({
      */
     const onDrop = useCallback(
         (event: DragEvent<HTMLDivElement>) => {
+            const raw = event.dataTransfer.getData(PALETTE_DRAG_MIME);
+            // Not a palette item: a file or a link, which is tldraw's to handle.
+            if (!raw) return;
             event.preventDefault();
+            // THE FIX for "palette items cannot be used". tldraw's canvas
+            // handles every drop itself and calls `stopPropagation`, so this
+            // handler, registered on the wrapper in the BUBBLE phase, never
+            // ran in a browser. It is registered for the CAPTURE phase now,
+            // and stops the event so tldraw does not also act on it.
+            event.stopPropagation();
             const editor = editorRef.current;
             // BELT-AND-BRACES, and measured as such: removing this guard still
             // creates nothing, because `updateInstanceState({ isReadonly })`
@@ -638,9 +789,6 @@ export function TldrawProcessCanvas({
             // not what delivers the property, and the test asserts the OUTCOME
             // rather than this line.
             if (!editor || readOnly) return;
-
-            const raw = event.dataTransfer.getData(PALETTE_DRAG_MIME);
-            if (!raw) return;
 
             let kind: string = PROCESS_NODE_FALLBACK_KIND;
             let label = raw;
@@ -660,7 +808,6 @@ export function TldrawProcessCanvas({
             }
 
             const point = editor.screenToPage({ x: event.clientX, y: event.clientY });
-            const nodeKey = mintNodeKey();
 
             // NO explicit history mark. The xyflow handler had to be fixed to
             // call `history.push`, because dropping a node and pressing undo
@@ -669,24 +816,14 @@ export function TldrawProcessCanvas({
             // undoable, because tldraw records store operations itself. Keeping
             // it would have been a line whose comment claimed it was load-
             // bearing when a mutation proved it was not.
-            editor.createShapes([
-                {
-                    id: asShapeId(shapeIdForNodeKey(nodeKey)),
-                    type: PROCESS_NODE_SHAPE_TYPE,
-                    x: point.x,
-                    y: point.y,
-                    props: {
-                        w: PROCESS_NODE_DEFAULT_W,
-                        h: PROCESS_NODE_DEFAULT_H,
-                        nodeKey,
-                        nodeType: kind,
-                        label,
-                        subtitle: null,
-                        parentNodeKey: null,
-                        dataJson: null,
-                    },
-                },
-            ]);
+            const id = createProcessNode(editor, {
+                kind,
+                label,
+                point,
+                parentNodeKey: drillGroupIdRef.current,
+            });
+            // Selected, so the inspector opens on the step just placed.
+            editor.select(id);
         },
         [readOnly],
     );
@@ -717,14 +854,19 @@ export function TldrawProcessCanvas({
             data-tldraw-process-canvas="true"
             data-process-canvas="true"
             data-mobile-layout={isMobile ? 'true' : undefined}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
+            onDragOverCapture={onDragOver}
+            onDropCapture={onDrop}
         >
             <Tldraw
                 shapeUtils={SHAPE_UTILS}
                 bindingUtils={BINDING_UTILS}
                 getShapeVisibility={getShapeVisibility}
                 onMount={handleMount}
+                options={TLDRAW_OPTIONS}
+                overrides={TLDRAW_OVERRIDES}
+                components={TLDRAW_COMPONENTS}
+                acceptedImageMimeTypes={NO_FILE_TYPES}
+                acceptedVideoMimeTypes={NO_FILE_TYPES}
             />
         </div>
     );

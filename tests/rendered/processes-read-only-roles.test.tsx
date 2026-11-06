@@ -75,7 +75,9 @@ function barProps(canEdit: boolean, canDelete: boolean): CanvasDocumentBarProps 
     };
 }
 
-const WRITE_LABELS = ['New process', 'Duplicate', 'Undo', 'Redo', 'Save'];
+// No Undo or Redo: the bar no longer carries them (tldraw draws its own, and
+// the command palette offers both).
+const WRITE_LABELS = ['New process', 'Duplicate', 'Save'];
 
 describe('Processes map bar — writes follow the server (#4640)', () => {
     it('a Reader is offered no write, and the name cannot be typed into', () => {

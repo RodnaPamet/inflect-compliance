@@ -31,6 +31,13 @@
  * braces alone hold, and the tests could not tell which was doing the work.
  * Deleted rather than kept with a comment claiming it mattered.
  *
+ * The manual save brought a case that layer does NOT cover, and the version
+ * ref below is for that case alone. The bar's Save waits for an autosave
+ * already on the wire and then saves again at once, before React has rendered
+ * the version the first save returned. `saveRef` still holds the callback from
+ * the previous render, so a version captured in it would be the spent one. The
+ * save reads the version from a ref the previous save wrote when it landed.
+ *
  * ═══ WHY `enabled` IS COMPUTED HERE — AND THAT IT IS BELT, NOT BRACES ═══
  *
  * The editor arrives asynchronously (tldraw's `onMount`), and a map can be
@@ -54,7 +61,7 @@
  * save that then did nothing, and `status` would read `pending` over a canvas
  * that was never going to write.
  */
-import { useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Editor } from 'tldraw';
 
 import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
@@ -66,6 +73,7 @@ import {
 import {
     useCanvasAutosave,
     type CanvasAutosaveApi,
+    type FlushResult,
 } from '@/lib/processes/use-canvas-autosave';
 
 export interface UseTldrawCanvasAutosaveOptions {
@@ -86,6 +94,24 @@ export interface UseTldrawCanvasAutosaveOptions {
     delayMs?: number;
 }
 
+/** A manual save's outcome. */
+export interface ManualSaveResult extends FlushResult {
+    /**
+     * True only when the server accepted the save. A 409 resolves without
+     * throwing (the reload toast owns it), so `ok` alone cannot say whether a
+     * rename landed.
+     */
+    saved: boolean;
+}
+
+export interface TldrawCanvasAutosaveApi extends CanvasAutosaveApi {
+    /**
+     * Save now, through the autosave queue — the bar's Save button and the
+     * rename. `name` renames the map in the same PUT.
+     */
+    saveNow: (opts?: { name?: string }) => Promise<ManualSaveResult>;
+}
+
 export function useTldrawCanvasAutosave({
     editor,
     tenantSlug,
@@ -96,7 +122,27 @@ export function useTldrawCanvasAutosave({
     onSaved,
     enabled = true,
     delayMs,
-}: UseTldrawCanvasAutosaveOptions): CanvasAutosaveApi {
+}: UseTldrawCanvasAutosaveOptions): TldrawCanvasAutosaveApi {
+    /*
+        The version, read through a ref that a save updates THE MOMENT it lands.
+
+        A manual save waits for an autosave already in flight and then saves
+        again. The prop that carries the new version only arrives with the next
+        render, which has not happened when that wait resolves — so the second
+        save would send the version the first had just spent, and the server
+        would refuse it as a conflict with nobody. Updating the ref inside the
+        save closes that window. The effect keeps it in step with the prop for
+        everything else: a load, and the `undefined` a conflict sets.
+    */
+    const versionRef = useRef(expectedVersion);
+    useEffect(() => {
+        versionRef.current = expectedVersion;
+    }, [expectedVersion]);
+    // The rename a manual save carries; taken (and cleared) by the save itself.
+    const pendingNameRef = useRef<string | undefined>(undefined);
+    // Whether the last save reached `onSaved` — see `ManualSaveResult.saved`.
+    const landedRef = useRef(false);
+
     const save = useCallback(async () => {
         // Narrowing, not a guard against being called while disabled — the
         // `enabled` computation below is what stops that, and this is what
@@ -104,24 +150,48 @@ export function useTldrawCanvasAutosave({
         // unmounts is unaffected either way: it read these values when it
         // started.
         if (!editor || !mapId) return;
+        const name = pendingNameRef.current;
+        pendingNameRef.current = undefined;
+        landedRef.current = false;
+        const version = versionRef.current;
 
         await saveTldrawCanvas({
             tenantSlug,
             mapId,
-            expectedVersion,
+            ...(version !== undefined ? { expectedVersion: version } : {}),
+            ...(name !== undefined ? { name } : {}),
             // Serialised HERE, when the debounce fires — not at render. The
             // payload has to be the canvas as it is at save time, not as it
             // was when the edit that started the timer landed.
             canvas: serializeEditorCanvas(editor),
             toast,
             onConflict,
-            onSaved,
+            onSaved: (saved) => {
+                versionRef.current = saved.version;
+                landedRef.current = true;
+                onSaved(saved);
+            },
         });
-    }, [editor, mapId, tenantSlug, expectedVersion, toast, onConflict, onSaved]);
+    }, [editor, mapId, tenantSlug, toast, onConflict, onSaved]);
 
-    return useCanvasAutosave({
+    const autosave = useCanvasAutosave({
         enabled: enabled && Boolean(editor) && Boolean(mapId),
         save,
         ...(delayMs !== undefined ? { delayMs } : {}),
     });
+
+    const { flush } = autosave;
+    const saveNow = useCallback(
+        async (opts?: { name?: string }): Promise<ManualSaveResult> => {
+            pendingNameRef.current = opts?.name;
+            const result = await flush();
+            // A refused or skipped save must not leave the rename to ride
+            // along on the next autosave the user did not ask to rename.
+            pendingNameRef.current = undefined;
+            return { ...result, saved: result.ok && landedRef.current };
+        },
+        [flush],
+    );
+
+    return useMemo(() => ({ ...autosave, saveNow }), [autosave, saveNow]);
 }

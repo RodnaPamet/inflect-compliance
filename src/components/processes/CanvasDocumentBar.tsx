@@ -13,9 +13,13 @@
  * Shape:
  *
  *   [breadcrumb] [process selector] [name input] [New] [Duplicate]
- *                                              [Undo] [Redo] [Snap]
  *                                              [error] [autosave]
  *                                              [version] [Save]
+ *
+ * No Undo, Redo or Snap here. The canvas is tldraw, which draws its
+ * own undo and redo and keeps snapping in its preferences, and the
+ * command palette offers all three. Two sets of the same buttons
+ * an inch apart was clutter, not choice.
  *
  * Every testid the R26-PR-E / R28 / R31 ratchets pin is preserved
  * verbatim — the visual shape is byte-identical to the pre-R32
@@ -24,7 +28,8 @@
  *
  *   • doc          — document identity + the list of processes
  *   • busy         — the four-flag loading map
- *   • editorState  — snap toggle + autosave status + history flags
+ *   • editorState  — autosave status (and the snap and history flags
+ *                    the command palette reads; the bar no longer does)
  *   • handlers     — every callback wired into a button
  *   • tenantSlug   — passed directly for the breadcrumb link
  *
@@ -168,7 +173,7 @@ export function CanvasDocumentBar({
         [activeProcess, statusOptions],
     );
     const { saving, loading, creating, duplicating } = busy;
-    const { snapEnabled, autosaveStatus, autosaveError, canUndo, canRedo } = editorState;
+    const { autosaveStatus, autosaveError } = editorState;
     const {
         onActiveIdChange,
         setEditedName,
@@ -176,9 +181,6 @@ export function CanvasDocumentBar({
         handleNew,
         handleDuplicate,
         handleRenameCommit,
-        handleUndo,
-        handleRedo,
-        setSnapEnabled,
         onSwitchMode,
         onChangeStatus,
         onDelete,
@@ -191,7 +193,7 @@ export function CanvasDocumentBar({
         // description block; this strip carries the editor's own
         // identity inline (Figma-style).
         <div
-            className="flex items-center gap-default border-b border-canvas-border px-default py-2.5"
+            className="flex flex-wrap items-center gap-x-default gap-y-2 border-b border-canvas-border px-default py-2.5"
             data-persisted-canvas-toolbar="true"
             data-canvas-document-bar="true"
         >
@@ -321,7 +323,11 @@ export function CanvasDocumentBar({
                     />
                 </div>
             )}
-            <div className="ml-auto flex items-center gap-default">
+            {/* `flex-wrap` on both rows, and THAT is the Save fix: with
+                every control on one unwrapping line, a narrow window
+                pushed the end of this cluster — the Save button — past
+                the edge of the page, where nothing showed it existed. */}
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-x-default gap-y-2">
                 {activeId && canEdit && (
                     <Button
                         size="sm"
@@ -359,51 +365,6 @@ export function CanvasDocumentBar({
                     >
                         {isRunMode ? t("live") : t("design")}
                     </Button>
-                )}
-                {/* R28 — undo / redo. Pure icon buttons live in the
-                    toolbar's right-side cluster so the keyboard-bind
-                    discovery (Cmd+Z / Cmd+Shift+Z) is mirrored
-                    visually. Disabled states drop out via the
-                    history hook's flags. */}
-                {activeId && canEdit && (
-                    <>
-                        <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={handleUndo}
-                            disabled={!canUndo || saving || loading}
-                            aria-label={t("undo")}
-                            title={t("undoTitle")}
-                            data-testid="canvas-undo-btn"
-                        >
-                            {t("undo")}
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={handleRedo}
-                            disabled={!canRedo || saving || loading}
-                            aria-label={t("redo")}
-                            title={t("redoTitle")}
-                            data-testid="canvas-redo-btn"
-                        >
-                            {t("redo")}
-                        </Button>
-                        {/* Snap-to-grid toggle. Persists per tenant
-                            in localStorage; reads as a soft pill so
-                            it stays calm next to the action buttons. */}
-                        <button
-                            type="button"
-                            onClick={() => setSnapEnabled((v) => !v)}
-                            className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-[11px] font-medium text-content-muted hover:border-border-emphasis hover:text-content-emphasis aria-pressed:border-border-emphasis aria-pressed:bg-canvas-node aria-pressed:text-content-emphasis"
-                            aria-pressed={snapEnabled}
-                            aria-label={t("snapToGrid")}
-                            title={t("snapToGrid")}
-                            data-testid="canvas-snap-toggle"
-                        >
-                            {t("snap")}
-                        </button>
-                    </>
                 )}
                 {error && (
                     <span

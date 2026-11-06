@@ -233,3 +233,84 @@ describe('it still reports the truth to the state machine', () => {
         expect(view.result.current.error).toBeNull();
     });
 });
+
+describe('the manual save (`saveNow`) goes through the same queue', () => {
+    const bodyOf = (m: jest.Mock, i: number) =>
+        JSON.parse(String((m.mock.calls[i]![1] as RequestInit).body)) as Record<string, unknown>;
+
+    it('a save that waits for an in-flight autosave sends the version THAT save returned', async () => {
+        // The race the bar's own PUT used to lose. The autosave is on the wire
+        // carrying 4 and comes back with 5; the manual save queued behind it
+        // must send 5 — and must do so BEFORE any re-render has fed 5 back as
+        // a prop, which is exactly when it runs.
+        jest.useFakeTimers();
+        let releaseFirst!: () => void;
+        const fetchMock = jest
+            .fn()
+            .mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        releaseFirst = () =>
+                            resolve({ status: 200, ok: true, json: async () => OK_BODY });
+                    }),
+            )
+            .mockResolvedValue({
+                status: 200,
+                ok: true,
+                json: async () => ({ ...OK_BODY, version: 6 }),
+            });
+        const { view } = setup({}, fetchMock);
+
+        act(() => view.result.current.markDirty());
+        await act(async () => {
+            jest.advanceTimersByTime(DELAY);
+            await Promise.resolve();
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        let manual: Promise<unknown> | undefined;
+        act(() => {
+            manual = view.result.current.saveNow();
+        });
+        // Waiting, not racing.
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            releaseFirst();
+            await manual;
+        });
+        expect(versionsSent(fetchMock)).toEqual([4, 5]);
+    });
+
+    it('carries a rename, and the NEXT autosave does not', async () => {
+        jest.useFakeTimers();
+        const fetchMock = responder(200);
+        const { view } = setup({}, fetchMock);
+
+        let result: unknown;
+        await act(async () => {
+            result = await view.result.current.saveNow({ name: 'Quarterly close' });
+        });
+        expect(result).toEqual({ ok: true, error: null, saved: true });
+        expect(bodyOf(fetchMock, 0).name).toBe('Quarterly close');
+
+        act(() => view.result.current.markDirty());
+        await flush();
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(Object.keys(bodyOf(fetchMock, 1))).not.toContain('name');
+    });
+
+    it('reports a 409 as not saved, though nothing threw', async () => {
+        // `ok` is the state machine's; `saved` is the server's. A rename keyed
+        // on `ok` would rename the map in the list while the server kept the
+        // old name.
+        jest.useFakeTimers();
+        const fetchMock = responder(409, { error: { details: { currentVersion: 9 } } });
+        const { view } = setup({}, fetchMock);
+        let result: unknown;
+        await act(async () => {
+            result = await view.result.current.saveNow({ name: 'Renamed' });
+        });
+        expect(result).toEqual({ ok: true, error: null, saved: false });
+    });
+});

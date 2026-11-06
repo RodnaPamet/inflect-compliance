@@ -41,10 +41,13 @@ import type { Editor } from 'tldraw';
 import { useToast } from '@/components/ui/hooks';
 import { TldrawProcessCanvas } from '@/components/processes/TldrawProcessCanvas';
 import type { EdgeRefusal } from '@/components/processes/tldraw/edge-validation';
-import type { GraphRows } from '@/components/processes/tldraw/serializer';
+import type { FreeformRecord, GraphRows } from '@/components/processes/tldraw/serializer';
 import type { SavedProcessMap } from '@/lib/processes/tldraw-save';
 import type { CanvasAutosaveApi } from '@/lib/processes/use-canvas-autosave';
-import { useTldrawCanvasAutosave } from '@/lib/processes/use-tldraw-canvas-autosave';
+import {
+    useTldrawCanvasAutosave,
+    type TldrawCanvasAutosaveApi,
+} from '@/lib/processes/use-tldraw-canvas-autosave';
 import { apiErrorMessage } from '@/lib/api-error';
 
 export interface TldrawProcessMapProps {
@@ -95,6 +98,14 @@ export interface TldrawProcessMapProps {
         autosaveStatus: CanvasAutosaveApi['status'];
         autosaveError: string | null;
     }) => void;
+    /**
+     * Hands the owner this map's manual save, or `null` while there is none.
+     *
+     * The bar's Save button and the rename go through it, so they share the
+     * autosave's queue and version token rather than racing it with a PUT of
+     * their own. See `useCanvasAutosave`'s `flush`.
+     */
+    onSaveNowChange?: (saveNow: TldrawCanvasAutosaveApi['saveNow'] | null) => void;
     /** Seam for tests. Defaults to the global `fetch`. */
     fetchImpl?: typeof fetch;
 }
@@ -110,6 +121,26 @@ interface LoadedMap {
             dataJson?: GraphRows['edges'][number]['dataJson'];
         }
     >;
+    /**
+     * The freeform layer: notes, text, drawings, frames. Saved with every PUT,
+     * and read back here so a reload shows it. Not an array when nothing was
+     * ever saved (null) or when the column holds something this canvas did not
+     * write.
+     */
+    freeformJson?: unknown;
+}
+
+/** The stored freeform layer, or nothing when the column is not one. */
+function toFreeform(value: unknown): FreeformRecord[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter(
+        (r): r is FreeformRecord =>
+            typeof r === 'object' &&
+            r !== null &&
+            typeof (r as { id?: unknown }).id === 'string' &&
+            typeof (r as { type?: unknown }).type === 'string' &&
+            typeof (r as { typeName?: unknown }).typeName === 'string',
+    );
 }
 
 /**
@@ -182,6 +213,7 @@ export function TldrawProcessMap({
     onStateChange,
     drillGroupId = null,
     onEnterGroup,
+    onSaveNowChange,
 }: TldrawProcessMapProps) {
     const toast = useToast();
     const t = useTranslations('automation.canvas');
@@ -198,6 +230,7 @@ export function TldrawProcessMap({
     const [loaded, setLoaded] = useState<{
         mapId: string;
         rows: GraphRows;
+        freeform: FreeformRecord[];
         version: number | undefined;
     } | null>(null);
     const [loading, setLoading] = useState(false);
@@ -242,7 +275,12 @@ export function TldrawProcessMap({
                 }
                 const data = (await res.json()) as LoadedMap;
                 if (cancelled) return;
-                setLoaded({ mapId, rows: toRows(data), version: data.version });
+                setLoaded({
+                    mapId,
+                    rows: toRows(data),
+                    freeform: toFreeform(data.freeformJson),
+                    version: data.version,
+                });
             } catch (e) {
                 if (cancelled) return;
                 // Surfaced in the component, not only toasted: a map that
@@ -321,9 +359,20 @@ export function TldrawProcessMap({
         reportRef.current?.({
             version: current?.version,
             autosaveStatus: autosave.status,
-            autosaveError: null,
+            autosaveError: autosave.error,
         });
-    }, [current?.version, autosave.status]);
+    }, [current?.version, autosave.status, autosave.error]);
+
+    const saveNowReportRef = useRef(onSaveNowChange);
+    useEffect(() => {
+        saveNowReportRef.current = onSaveNowChange;
+    }, [onSaveNowChange]);
+    const { saveNow } = autosave;
+    const canSave = Boolean(editor) && Boolean(current) && !readOnly;
+    useEffect(() => {
+        saveNowReportRef.current?.(canSave ? saveNow : null);
+        return () => saveNowReportRef.current?.(null);
+    }, [canSave, saveNow]);
 
     if (!mapId) {
         return <div data-testid="tldraw-map-empty" />;
@@ -343,6 +392,7 @@ export function TldrawProcessMap({
         <div data-testid="tldraw-map" className="h-full w-full">
             <TldrawProcessCanvas
                 rows={current.rows}
+                freeform={current.freeform}
                 readOnly={readOnly}
                 drillGroupId={drillGroupId}
                 onEnterGroup={onEnterGroup}

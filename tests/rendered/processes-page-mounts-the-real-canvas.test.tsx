@@ -213,5 +213,5 @@ it('the workspace mounts a live editor showing the map, with its chrome', async 
     //    palette, the document bar and the inspector — which is the exact
     //    defect class `visual-editor-reachability` exists for.
     expect(container.querySelector('[data-process-palette]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="canvas-undo-btn"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="save-process-btn"]')).not.toBeNull();
 }, MOUNT_BUDGET_MS);
