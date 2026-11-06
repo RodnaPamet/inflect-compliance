@@ -30,25 +30,23 @@ import type { AutomationActionType } from '@prisma/client';
 import { assertCanManageAutomation } from '../automation/policies';
 import { assertNoChainCycle } from '../usecases/automation-rules';
 import { logEvent } from '../events/audit';
+import { UNSET_TRIGGER_EVENT } from '../automation/rule-readiness';
+import { sanitizePlainText } from '@/lib/security/sanitize';
+import { RULE_OWNING_KINDS } from './canvas-rule-link';
 
-/**
- * THE NODE KINDS THAT OWN A RULE (#3541).
- *
- * A SET, not a constant, and the set is the fix. This was
- * `const ACTION_KIND = 'action'` in two queries and one filter, so when #3471
- * added `agent` as a fifth automation kind — palette entry, taxonomy metadata,
- * canvas renderer — the bridge did not learn about it. An operator could drag
- * an Agent node on, save, and the node owned nothing: no stub rule, no
- * `dataJson.ruleId`, nothing for the inspector to open. It rendered, which is
- * what made it look finished.
- *
- * `trigger`, `condition` and `slaGate` are deliberately absent and stay
- * absent. They FEED a rule rather than owning one — the inspector edits the
- * owning rule directly (VR-4) — which is the model this file's header
- * describes, and widening the set to them would create a rule per trigger node
- * and break that model rather than extend it.
- */
-export const RULE_OWNING_KINDS: ReadonlySet<string> = new Set(['action', 'agent']);
+/** Rule names are capped at 200 by the rule schema. */
+const MAX_RULE_NAME = 200;
+
+/** A new step's rule is named after the step; the key only when it has no label. */
+export function stubRuleName(node: { nodeKey: string; label: string }): string {
+    const label = sanitizePlainText(node.label ?? '').trim();
+    const name = label || `Canvas rule · ${node.nodeKey}`;
+    return name.slice(0, MAX_RULE_NAME);
+}
+
+// Re-exported: the set lives in a leaf module so the rules usecase can read a
+// rule's canvas step without importing this file, which imports that usecase.
+export { RULE_OWNING_KINDS };
 
 /**
  * The stub a NEW rule-owning node gets, by kind.
@@ -93,6 +91,74 @@ interface GraphEdge {
 export interface SyncResult {
     rulesCreated: number;
     chainsLinked: number;
+    /**
+     * The rule every rule-owning step is linked to after the sync, by
+     * `nodeKey`. The save returns it so the open canvas learns a NEW step's
+     * rule at once, rather than on the next reload.
+     */
+    ruleIdByNodeKey: Record<string, string>;
+}
+
+/**
+ * The display-only fields `hydrateCanvasFromRules` merges into a step's
+ * `dataJson` on load. They describe the rule as it was when the map was read,
+ * so a save must not store them on the node: they are the rule's facts, and a
+ * copy on the node goes stale the moment the rule changes.
+ */
+export const HYDRATED_DISPLAY_KEYS = ['ruleStatus', 'executionCount', 'ruleSubtitle'] as const;
+
+interface SavedNodeLike {
+    nodeKey: string;
+    nodeType: string;
+    dataJson?: unknown;
+}
+
+/**
+ * Prepare a canvas save's nodes before the graph is replaced.
+ *
+ * ═══ WHY THE RULE LINK IS CARRIED FORWARD ═══
+ *
+ * `replaceGraph` writes each node's `dataJson` exactly as the browser sent it.
+ * The sync that creates a NEW step's rule writes `ruleId` onto the stored node
+ * AFTER that, so the open canvas never had it — and the next save, autosave
+ * included, sent the step without one, overwrote the stored link, and the sync
+ * created ANOTHER draft rule. One step, one save, one more "Canvas rule" on the
+ * Rules tab, for as long as the map stayed open.
+ *
+ * So a rule-owning step that arrives without a `ruleId` keeps the one stored
+ * for its `nodeKey`. Only the stored value for the SAME key is ever used, so
+ * this cannot attach a step to a rule it was not already linked to; a step
+ * that arrives WITH a `ruleId` is left to the sync, which verifies it.
+ */
+export async function prepareCanvasNodesForSave<T extends SavedNodeLike>(
+    db: PrismaTx,
+    ctx: RequestContext,
+    processMapId: string,
+    nodes: T[],
+): Promise<T[]> {
+    const stored = await db.processNode.findMany({
+        where: { processMapId, tenantId: ctx.tenantId, nodeType: { in: [...RULE_OWNING_KINDS] } },
+        select: { nodeKey: true, dataJson: true },
+    });
+    const storedRuleId = new Map<string, string>();
+    for (const n of stored) {
+        const id = ruleIdOf(n as GraphNode);
+        if (id) storedRuleId.set(n.nodeKey, id);
+    }
+    return nodes.map((n) => {
+        const data =
+            n.dataJson && typeof n.dataJson === 'object' && !Array.isArray(n.dataJson)
+                ? { ...(n.dataJson as Record<string, unknown>) }
+                : null;
+        if (data) for (const k of HYDRATED_DISPLAY_KEYS) delete data[k];
+        if (!RULE_OWNING_KINDS.has(n.nodeType)) {
+            return data ? { ...n, dataJson: data } : n;
+        }
+        const carried = storedRuleId.get(n.nodeKey);
+        const hasOwn = data && typeof data.ruleId === 'string';
+        if (hasOwn || !carried) return data ? { ...n, dataJson: data } : n;
+        return { ...n, dataJson: { ...(data ?? {}), ruleId: carried } };
+    });
 }
 
 function ruleIdOf(node: GraphNode): string | null {
@@ -178,8 +244,12 @@ export async function syncCanvasToRules(
         // net rather than a silent default.
         const stub = STUB_BY_KIND[node.nodeType] ?? STUB_BY_KIND.action;
         const rule = await AutomationRuleRepository.create(db, ctx, {
-            name: `Canvas rule · ${node.nodeKey}`,
-            triggerEvent: 'RISK_CREATED',
+            // Named after the step, so the Rules tab says which step it is.
+            name: stubRuleName(node),
+            // UNSET, not a real event: a placeholder like `RISK_CREATED` read
+            // as a choice somebody made, and an enabled stub would have fired
+            // on it. Readiness refuses to enable a rule until it is chosen.
+            triggerEvent: UNSET_TRIGGER_EVENT,
             actionType: stub.actionType,
             actionConfig: stub.actionConfig,
             status: 'DRAFT',
@@ -253,7 +323,7 @@ export async function syncCanvasToRules(
         });
     }
 
-    return { rulesCreated, chainsLinked };
+    return { rulesCreated, chainsLinked, ruleIdByNodeKey: Object.fromEntries(ruleByNodeKey) };
 }
 
 export interface HydratedNode extends GraphNode {

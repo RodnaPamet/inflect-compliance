@@ -271,6 +271,10 @@ export interface RuleDetail {
     elseRuleId: string | null;
     /** A WEBHOOK signing key is stored. The key itself is never sent. */
     webhookSecretSet?: boolean;
+    /** What the rule still needs before it can be enabled; from the server. */
+    readiness?: Array<'TRIGGER_NOT_SET' | 'SCHEDULE_NOT_SET' | 'ACTION_INCOMPLETE'>;
+    /** The canvas step that owns the rule, or null for a Rules-tab rule. */
+    canvas?: { mapId: string; mapName: string; nodeKey: string; stepLabel: string } | null;
 }
 
 /** Reverse of `buildRulePayload` — repopulates BuilderState so editing then

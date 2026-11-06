@@ -62,6 +62,7 @@ import {
     useNodeAgentRun,
     awaitsAHuman,
 } from '@/lib/processes/canvas-execution-overlay';
+import { useStepRuleStatus } from '@/lib/processes/canvas-rule-status';
 // WHO HAS OPENED WHICH CHECKPOINT (#3472). Read unconditionally and safe
 // without a provider — `canReview` is false and `open` is a no-op — which is
 // the same design property the execution overlay states for itself and the
@@ -371,6 +372,9 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
         the map is keyed by the rule ids of INVOKE_AGENT rules only.
     */
     const agentRun = useNodeAgentRun(ruleId);
+    // The rule this step owns: draft, enabled, needs setup, and its runs.
+    // Empty on a document map and for steps that own no rule.
+    const ruleStatus = useStepRuleStatus(ruleId);
     const runAwaitsAHuman = awaitsAHuman(agentRun);
     /*
         THE INLINE REVIEW AFFORDANCE (#3472).
@@ -447,6 +451,22 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
             {shape.props.subtitle ? (
                 <span className="truncate text-xs text-content-muted">
                     {shape.props.subtitle}
+                </span>
+            ) : null}
+            {ruleStatus ? (
+                <span
+                    className={[
+                        'truncate text-xs',
+                        ruleStatus.tone === 'success'
+                            ? 'text-content-success'
+                            : ruleStatus.tone === 'warning'
+                              ? 'text-content-warning'
+                              : 'text-content-subtle',
+                    ].join(' ')}
+                    data-testid={`process-node-rule-${shape.props.nodeKey || shape.id}`}
+                    data-rule-status={ruleStatus.status}
+                >
+                    {ruleStatus.text}
                 </span>
             ) : null}
             {/* WHAT THE AGENT IS DOING (#3472).

@@ -13,6 +13,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import {
     syncCanvasToRules,
     hydrateCanvasFromRules,
+    prepareCanvasNodesForSave,
 } from '../services/canvas-rule-sync';
 import type {
     CreateProcessMapInput,
@@ -86,11 +87,14 @@ export async function saveProcessMap(
     assertCanWrite(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // Keep each step's rule link, and drop display-only rule fields; see
+        // `prepareCanvasNodesForSave` for the duplicate-rule bug this closes.
+        const nodes = await prepareCanvasNodesForSave(db, ctx, id, input.nodes);
         const map = await ProcessMapRepository.replaceGraph(db, ctx, id, {
             name: input.name,
             description: input.description ?? undefined,
             status: input.status,
-            nodes: input.nodes,
+            nodes,
             edges: input.edges,
             // #2960 — forwarded UNDEFINED-PRESERVING. The schema makes this
             // optional, and a client that omits it must leave the stored
@@ -112,8 +116,9 @@ export async function saveProcessMap(
             where: { id, tenantId: ctx.tenantId },
             select: { canvasMode: true },
         });
+        let ruleIdByNodeKey: Record<string, string> = {};
         if (meta?.canvasMode === 'AUTOMATION') {
-            await syncCanvasToRules(db, ctx, id);
+            ({ ruleIdByNodeKey } = await syncCanvasToRules(db, ctx, id));
         }
 
         await logEvent(db, ctx, {
@@ -136,7 +141,21 @@ export async function saveProcessMap(
             },
         });
 
-        return map;
+        // The rule each step is now linked to, so the canvas that saved can
+        // show a new step's rule without a reload (and send it next time).
+        if (Object.keys(ruleIdByNodeKey).length === 0) return map;
+        return {
+            ...map,
+            nodes: map.nodes.map((n) => {
+                const ruleId = ruleIdByNodeKey[n.nodeKey];
+                if (!ruleId) return n;
+                const data =
+                    n.dataJson && typeof n.dataJson === 'object' && !Array.isArray(n.dataJson)
+                        ? (n.dataJson as Record<string, unknown>)
+                        : {};
+                return { ...n, dataJson: { ...data, ruleId } };
+            }),
+        };
     });
 }
 

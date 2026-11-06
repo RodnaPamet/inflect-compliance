@@ -304,6 +304,11 @@ export interface TldrawProcessCanvasProps {
      */
     drillGroupId?: string | null;
     /**
+     * A step to select and bring into view once the map is loaded: the Rules
+     * tab's "Open on canvas" names the step that owns a rule.
+     */
+    focusNodeKey?: string | null;
+    /**
      * The user double-clicked a GROUP node and wants to go inside it.
      *
      * Fired only for `nodeType === 'group'`: double-clicking a step is how
@@ -346,6 +351,7 @@ export function TldrawProcessCanvas({
     drillGroupId = null,
     onEnterGroup,
     onEditorReady,
+    focusNodeKey = null,
 }: TldrawProcessCanvasProps) {
     // Held in a ref so `handleMount` keeps a stable identity. `onMount` runs
     // once per editor, so a callback whose identity changed on every parent
@@ -538,6 +544,32 @@ export function TldrawProcessCanvas({
         recompute();
         return editor.store.listen(recompute);
     }, [drillGroupId, scopeAtom, endpointsAtom, collapsedAtom, editorReady]);
+
+    /**
+     * Select the step a link named (`?step=`), and bring it into view.
+     *
+     * Once per key: after that the step is the user's to deselect. Declared
+     * after the effects that set the drill scope and frame the map, so it has
+     * the last word on the camera.
+     */
+    const focusedKeyRef = useRef<string | null>(null);
+    useEffect(() => {
+        const editor = editorRef.current;
+        if (!editor || !editorReady || !focusNodeKey) return;
+        if (focusedKeyRef.current === focusNodeKey) return;
+        const shape = editor
+            .getCurrentPageShapes()
+            .find(
+                (s) =>
+                    s.type === PROCESS_NODE_SHAPE_TYPE &&
+                    (s.props as { nodeKey?: unknown }).nodeKey === focusNodeKey,
+            );
+        if (!shape) return;
+        focusedKeyRef.current = focusNodeKey;
+        editor.select(shape.id);
+        const bounds = editor.getShapePageBounds(shape.id);
+        if (bounds) editor.zoomToBounds(bounds, { targetZoom: 1 });
+    }, [focusNodeKey, editorReady]);
 
     /**
      * Double-click a GROUP node to go inside it.

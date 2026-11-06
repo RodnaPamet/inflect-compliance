@@ -3,27 +3,57 @@
 /**
  * Automation inspector panel (Visual Rule Editor VR-4).
  *
- * Inline rule configuration when an automation node is selected — the Rule
- * Builder's per-step forms, without leaving the canvas. Branches on node kind
- * (trigger / condition / action / slaGate); edits auto-save to the linked
- * AutomationRule (the node's `dataJson.ruleId`, written by the VR-3 sync).
+ * What a selected step on an automation canvas configures, edited in place.
+ * The panel edits the RULE (logic lives on `AutomationRule`, per the VR-3
+ * invariant); it never writes logic back onto the step.
  *
- * The panel edits the RULE (logic lives on AutomationRule, per the VR-3
- * invariant); it never writes logic back onto the node.
+ * ═══ WHICH RULE ═══
+ *
+ * An Action or Agent step OWNS a rule (`dataJson.ruleId`, written by the
+ * canvas sync when the map is saved). A Trigger, Condition or SLA step owns
+ * none: it configures the rule of each Action or Agent step it leads to, and
+ * the caller resolves those with `canvas-rule-wiring.ts`. So a Trigger's event
+ * picker sets `triggerEvent` on every rule it feeds, and an SLA step's window
+ * sets `slaWindowMinutes`.
+ *
+ * Before this, the panel took ONE `ruleId`, which only owning steps have, so a
+ * Trigger or Condition step could only say it was not synced: the steps that
+ * describe a rule could not describe it.
+ *
+ * ═══ WHAT IS EDITED HERE, AND WHAT OPENS THE RULE BUILDER ═══
+ *
+ * The rule's event, name, enabled state and SLA window are single fields and
+ * are edited here. An action's settings and a condition's filter are forms with
+ * required fields and their own validation, which the rule builder already
+ * has; the panel opens it for that rule rather than keeping a second copy.
+ *
+ * Enabling an incomplete rule is refused by the server, which also says what
+ * is missing (`readiness`); the panel lists it, so the reason is on the step.
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useSWRConfig } from 'swr';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { eventOptionsByDomain } from '@/lib/automation/event-labels';
 import { useToast } from '@/components/ui/hooks';
+import { apiErrorMessage } from '@/lib/api-error';
+import { RuleBuilderModal } from './RuleBuilderModal';
+import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
 
-type AutomationKind = 'trigger' | 'condition' | 'action' | 'slaGate';
+export type AutomationKind = 'trigger' | 'condition' | 'action' | 'slaGate' | 'agent';
+
+/** The kinds that own a rule; the rest configure the rule they lead to. */
+const OWNING: ReadonlySet<AutomationKind> = new Set(['action', 'agent']);
+
+type ReadinessProblem = 'TRIGGER_NOT_SET' | 'SCHEDULE_NOT_SET' | 'ACTION_INCOMPLETE';
 
 interface Rule {
     id: string;
@@ -35,6 +65,8 @@ interface Rule {
     actionConfigJson: unknown;
     status: string;
     slaWindowMinutes: number | null;
+    /** What the rule still lacks before it can run; from the server. */
+    readiness?: ReadinessProblem[];
 }
 
 /** Surface-namespace resolver (`useTranslations('automation.autoInspector')`). */
@@ -59,49 +91,84 @@ const TRIGGER_OPTIONS: ComboboxOption[] = eventOptionsByDomain().flatMap((g) =>
     g.events.map((ev) => ({ value: ev.name, label: ev.label })),
 );
 
+export interface AutomationInspectorPanelProps {
+    kind: AutomationKind;
+    /**
+     * The rules this step configures: its own for an Action or Agent step, or
+     * the rules of the steps it leads to for a Trigger, Condition or SLA step.
+     */
+    ruleIds: string[];
+    /**
+     * Action or Agent steps this step leads to that have no rule yet, because
+     * the map has not been saved since they were added.
+     */
+    unsavedOwners?: number;
+    tenantSlug: string;
+}
+
 export function AutomationInspectorPanel({
     kind,
-    ruleId,
-}: {
-    kind: AutomationKind;
-    ruleId: string | null;
-}) {
+    ruleIds,
+    unsavedOwners = 0,
+    tenantSlug,
+}: AutomationInspectorPanelProps) {
     const t = useTranslations('automation.autoInspector');
     const toast = useToast();
     const actionLabels = useMemo(() => buildActionLabels(t), [t]);
     const apiUrl = useTenantApiUrl();
+    const { mutate: globalMutate } = useSWRConfig();
+    const owning = OWNING.has(kind);
+    const primaryId = ruleIds[0] ?? null;
+
     const { data: rule, mutate } = useTenantSWR<Rule>(
-        ruleId ? CACHE_KEYS.automation.rules.detail(ruleId) : null,
+        primaryId ? CACHE_KEYS.automation.rules.detail(primaryId) : null,
     );
+    // The names of every rule a feeding step configures, and the row the
+    // builder opens with.
+    const { data: rulesList } = useTenantSWR<AutomationRuleRow[]>(
+        ruleIds.length > 0 ? CACHE_KEYS.automation.rules.list() : null,
+    );
+    const rowsById = useMemo(
+        () => new Map((rulesList ?? []).map((r) => [r.id, r])),
+        [rulesList],
+    );
+
     const [name, setName] = useState('');
     const [sla, setSla] = useState('');
-
+    const [builderRule, setBuilderRule] = useState<AutomationRuleRow | null>(null);
     useEffect(() => {
         setName(rule?.name ?? '');
         setSla(rule?.slaWindowMinutes != null ? String(rule.slaWindowMinutes) : '');
     }, [rule?.id, rule?.name, rule?.slaWindowMinutes]);
 
-    // Auto-save via PUT (UpdateAutomationRuleSchema accepts each field
-    // optionally; its action-config superRefine only fires when actionType
-    // AND actionConfig are sent together, so single-field edits are valid).
-    async function patchRule(patch: Record<string, unknown>) {
-        if (!ruleId || !rule) return;
-        const res = await fetch(apiUrl(CACHE_KEYS.automation.rules.detail(ruleId)), {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(patch),
-        });
-        // Every edit on this panel went through here fire-and-forget. A 403 (no
-        // automation.manage grant) or a 400 from the action-config validator
-        // looked exactly like a save: the control moved, then `mutate()`
-        // refetched and silently snapped it back to the stored value. The user
-        // saw their own edit undo itself with no explanation.
-        if (!res.ok) {
-            toast.error(t('saveFailed'));
-            await mutate();
-            return;
+    /** Refresh what shows these rules: this panel, the list, the steps' status. */
+    async function refresh(ids: string[]) {
+        await Promise.all([
+            mutate(),
+            globalMutate(apiUrl(CACHE_KEYS.automation.rules.list())),
+            ...ids.map((id) => globalMutate(apiUrl(CACHE_KEYS.automation.rules.detail(id)))),
+        ]);
+    }
+
+    /**
+     * Apply one change to the given rules. A refusal shows the server's own
+     * sentence: enabling an incomplete rule says what is missing, and a generic
+     * "not saved" hid that.
+     */
+    async function patchRules(ids: string[], patch: Record<string, unknown>) {
+        for (const id of ids) {
+            const res = await fetch(apiUrl(CACHE_KEYS.automation.rules.detail(id)), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(patch),
+            });
+            if (!res.ok) {
+                const refusal: unknown = await res.json().catch(() => null);
+                toast.error(apiErrorMessage(refusal, t('saveFailed')));
+                break;
+            }
         }
-        await mutate();
+        await refresh(ids);
     }
 
     const triggerSelected = useMemo(
@@ -112,44 +179,84 @@ export function AutomationInspectorPanel({
         ? (actionLabels[rule.actionType] ?? rule.actionType)
         : null;
 
-    if (!ruleId) {
+    if (ruleIds.length === 0) {
+        const hint = owning
+            ? t('unsyncedHint')
+            : unsavedOwners > 0
+              ? t('saveToConnect')
+              : t('connectHint');
         return (
             <p className="text-sm text-content-muted" data-testid="automation-inspector-unsynced">
-                {t('unsyncedHint')}
+                {hint}
             </p>
         );
     }
 
+    const openBuilder = (id: string) => {
+        const row = rowsById.get(id);
+        if (row) setBuilderRule(row);
+    };
+    const readiness = rule?.readiness ?? [];
+
     return (
         <div className="space-y-default" data-testid="automation-inspector">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-default">
                 <span className="text-[11px] uppercase tracking-wide text-content-subtle">
                     {t(`kindRule.${kind}`)}
                 </span>
-                <label className="flex items-center gap-tight text-xs text-content-muted">
-                    {rule?.status === 'ENABLED' ? t('enabled') : t('disabled')}
-                    <Switch
-                        checked={rule?.status === 'ENABLED'}
-                        onCheckedChange={(c) => patchRule({ status: c ? 'ENABLED' : 'DISABLED' })}
-                        aria-label={t('toggleEnabledAria')}
-                    />
-                </label>
+                {owning && (
+                    <label className="flex items-center gap-tight text-xs text-content-muted">
+                        {rule?.status === 'ENABLED' ? t('enabled') : t('disabled')}
+                        <Switch
+                            checked={rule?.status === 'ENABLED'}
+                            onCheckedChange={(c) =>
+                                patchRules(ruleIds, { status: c ? 'ENABLED' : 'DISABLED' })
+                            }
+                            aria-label={t('toggleEnabledAria')}
+                        />
+                    </label>
+                )}
             </div>
 
-            <FormField label={t('ruleName')}>
-                <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    onBlur={() => name.trim() && name !== rule?.name && patchRule({ name: name.trim() })}
-                />
-            </FormField>
+            {/* A feeding step says which rules it sets, by name. */}
+            {!owning && (
+                <div className="space-y-tight" data-testid="automation-inspector-fed-rules">
+                    <p className="text-xs text-content-muted">
+                        {t('configures', { count: ruleIds.length })}
+                    </p>
+                    <ul className="space-y-tight">
+                        {ruleIds.map((id) => (
+                            <li key={id} className="truncate text-sm text-content-emphasis">
+                                {rowsById.get(id)?.name ?? id}
+                            </li>
+                        ))}
+                    </ul>
+                    {unsavedOwners > 0 && (
+                        <p className="text-xs text-content-subtle">{t('saveToConnect')}</p>
+                    )}
+                </div>
+            )}
+
+            {owning && (
+                <FormField label={t('ruleName')}>
+                    <Input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        onBlur={() =>
+                            name.trim() &&
+                            name !== rule?.name &&
+                            patchRules(ruleIds, { name: name.trim() })
+                        }
+                    />
+                </FormField>
+            )}
 
             {kind === 'trigger' && (
                 <FormField label={t('triggerEvent')}>
                     <Combobox
                         options={TRIGGER_OPTIONS}
                         selected={triggerSelected}
-                        setSelected={(o) => o && patchRule({ triggerEvent: o.value })}
+                        setSelected={(o) => o && patchRules(ruleIds, { triggerEvent: o.value })}
                         placeholder={t('selectEvent')}
                         forceDropdown
                         matchTriggerWidth
@@ -157,32 +264,52 @@ export function AutomationInspectorPanel({
                 </FormField>
             )}
 
-            {/* Read-only by design, not by omission.
-                Every action config carries at least one REQUIRED field
-                (`title`, `url`, a non-empty `userIds`, `targetGroupId`), so
-                there is no valid default this panel could substitute when the
-                type changes — and the server validates the incoming type
-                against the STORED config, so a bare type flip is rejected.
-                Offering a picker that can only ever fail is worse than naming
-                where the edit belongs, which is what the condition branch
-                below already does for filters. */}
-            {kind === 'action' && (
-                <FormField label={t('actionType')} description={t('actionTypeHint')}>
-                    <p
-                        className="text-sm text-content-emphasis"
-                        data-testid="automation-inspector-action-type"
-                    >
-                        {actionLabel ?? t('actionUnknown')}
-                    </p>
+            {owning && (
+                <FormField label={t('actionType')}>
+                    <div className="flex items-center justify-between gap-default">
+                        <p
+                            className="text-sm text-content-emphasis"
+                            data-testid="automation-inspector-action-type"
+                        >
+                            {actionLabel ?? t('actionUnknown')}
+                        </p>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => openBuilder(ruleIds[0]!)}
+                            disabled={!rowsById.has(ruleIds[0]!)}
+                            data-testid="automation-inspector-edit-action"
+                        >
+                            {t('editAction')}
+                        </Button>
+                    </div>
                 </FormField>
             )}
 
             {kind === 'condition' && (
-                <p className="text-xs text-content-subtle">
-                    {t('conditionFilter', {
-                        state: rule?.triggerFilterJson ? t('configured') : t('matchesAll'),
-                    })}
-                </p>
+                <div className="space-y-tight">
+                    <p className="text-xs text-content-subtle">
+                        {t('conditionFilter', {
+                            state: rule?.triggerFilterJson ? t('configured') : t('matchesAll'),
+                        })}
+                    </p>
+                    {ruleIds.map((id) => (
+                        <Button
+                            key={id}
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => openBuilder(id)}
+                            disabled={!rowsById.has(id)}
+                            data-testid="automation-inspector-edit-conditions"
+                        >
+                            {ruleIds.length > 1
+                                ? t('editConditionsOf', { name: rowsById.get(id)?.name ?? id })
+                                : t('editConditions')}
+                        </Button>
+                    ))}
+                </div>
             )}
 
             {kind === 'slaGate' && (
@@ -193,11 +320,40 @@ export function AutomationInspectorPanel({
                         value={sla}
                         onChange={(e) => setSla(e.target.value)}
                         onBlur={() =>
-                            patchRule({ slaWindowMinutes: sla ? Number(sla) : null })
+                            patchRules(ruleIds, { slaWindowMinutes: sla ? Number(sla) : null })
                         }
                         placeholder={t('slaPlaceholder')}
                     />
                 </FormField>
+            )}
+
+            {/* What the rule still needs before it can be enabled. The server
+                refuses to enable it until this list is empty. */}
+            {owning && readiness.length > 0 && (
+                <div data-testid="automation-inspector-readiness">
+                    <InlineNotice variant="warning" title={t('notReadyTitle')}>
+                        <ul className="list-disc pl-4 text-sm">
+                            {readiness.map((p) => (
+                                <li key={p}>{t(`readiness.${p}`)}</li>
+                            ))}
+                        </ul>
+                    </InlineNotice>
+                </div>
+            )}
+
+            {builderRule && (
+                <RuleBuilderModal
+                    tenantSlug={tenantSlug}
+                    open={builderRule !== null}
+                    setOpen={(next) => {
+                        const open = typeof next === 'function' ? next(true) : next;
+                        if (!open) {
+                            setBuilderRule(null);
+                            void refresh(ruleIds);
+                        }
+                    }}
+                    editRule={builderRule}
+                />
             )}
         </div>
     );

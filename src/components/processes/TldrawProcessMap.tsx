@@ -40,6 +40,7 @@ import type { Editor } from 'tldraw';
 
 import { useToast } from '@/components/ui/hooks';
 import { TldrawProcessCanvas } from '@/components/processes/TldrawProcessCanvas';
+import { applySavedRuleIds } from '@/components/processes/tldraw/apply-saved-rule-ids';
 import type { EdgeRefusal } from '@/components/processes/tldraw/edge-validation';
 import type { FreeformRecord, GraphRows } from '@/components/processes/tldraw/serializer';
 import type { SavedProcessMap } from '@/lib/processes/tldraw-save';
@@ -106,6 +107,8 @@ export interface TldrawProcessMapProps {
      * their own. See `useCanvasAutosave`'s `flush`.
      */
     onSaveNowChange?: (saveNow: TldrawCanvasAutosaveApi['saveNow'] | null) => void;
+    /** A step to select once the map is loaded. */
+    focusStepKey?: string | null;
     /** Seam for tests. Defaults to the global `fetch`. */
     fetchImpl?: typeof fetch;
 }
@@ -214,6 +217,7 @@ export function TldrawProcessMap({
     drillGroupId = null,
     onEnterGroup,
     onSaveNowChange,
+    focusStepKey = null,
 }: TldrawProcessMapProps) {
     const toast = useToast();
     const t = useTranslations('automation.canvas');
@@ -297,7 +301,15 @@ export function TldrawProcessMap({
         };
     }, [tenantSlug, mapId, doFetch, failLoad]);
 
+    // The editor, for applying what a save returns; a ref because the save
+    // callback is memoised once and the editor arrives after it.
+    const editorRef = useRef<Editor | null>(null);
+    useEffect(() => {
+        editorRef.current = editor;
+    }, [editor]);
     const handleSaved = useCallback((saved: SavedProcessMap) => {
+        // A new Action or Agent step's rule, created by this save.
+        if (editorRef.current) applySavedRuleIds(editorRef.current, saved.nodes ?? []);
         // THE line that keeps concurrency working across more than one save.
         setLoaded((prev) => (prev ? { ...prev, version: saved.version } : prev));
         onSavedRef.current?.(saved);
@@ -395,6 +407,7 @@ export function TldrawProcessMap({
                 freeform={current.freeform}
                 readOnly={readOnly}
                 drillGroupId={drillGroupId}
+                focusNodeKey={focusStepKey}
                 onEnterGroup={onEnterGroup}
                 onEditorReady={(e) => {
                     setEditor(e);

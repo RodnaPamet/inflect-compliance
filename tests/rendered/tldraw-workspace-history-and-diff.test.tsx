@@ -451,9 +451,17 @@ describe('the inert size control is not offered on this host', () => {
  * would put a 3s poll on all of them.
  */
 describe('the live-execution poll is gated on Run Mode', () => {
+    // The OVERLAY's calls: it always passes a refresh interval. The step-status
+    // provider also reads with a null key on a document map, with no options,
+    // and is not what this block is about.
     const overlayCalls = () =>
         swrCalls.filter(
-            (c) => c.key === null || c.key === CACHE_KEYS.automation.executions.live(),
+            (c) =>
+                c.key === CACHE_KEYS.automation.executions.live() ||
+                (c.key === null &&
+                    typeof c.opts === 'object' &&
+                    c.opts !== null &&
+                    'refreshInterval' in (c.opts as object)),
         );
 
     beforeEach(() => {
