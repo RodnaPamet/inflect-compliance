@@ -65,11 +65,24 @@ Your changes save on their own after a pause, and **{{ui:automation.documentBar.
 
 ### Turn a map into an automation workflow
 
-Use the mode button to convert the map. Its steps become triggers, conditions and actions, each linked to an automation rule, and the inspector shows the rule's settings for the selected step. The rule appears on **{{ui:processes.tabRules}}**.
+Use the mode button to convert the map. The palette then offers automation steps: Trigger, Condition, Action, Agent and SLA gate.
+
+A rule is built from a chain of steps, read along the connections:
+
+- **Each Action or Agent step is one rule.** Saving the map creates it as a draft, named after the step, and it appears on **{{ui:processes.tabRules}}**. Select the step to rename the rule, switch it on or off, and open **{{ui:automation.autoInspector.editAction}}**, which edits what it does in the rule builder.
+- **A Trigger step sets the event** of each Action or Agent step it leads to. Connect it to the step, select it, and pick the event.
+- **A Condition step sets the filter** of the rule it leads to. Select it and use **{{ui:automation.autoInspector.editConditions}}**.
+- **An SLA gate sets the time limit** of the rule it leads to.
+
+A step that leads to nothing says so: connect it to an Action or Agent step first.
+
+Each Action or Agent step shows its rule's state and how many times it has run: **{{ui:automation.stepRuleStatus.draft}}**, **{{ui:automation.stepRuleStatus.draftNeedsSetup}}**, **{{ui:automation.stepRuleStatus.enabled}}** or **{{ui:automation.stepRuleStatus.disabled}}**.
+
+A rule cannot be switched on until it has a trigger event and a complete action. Until then, the step's panel and the rule's details list what is missing.
 
 ### Manage rules
 
-On **{{ui:processes.tabRules}}**, Owners and Admins create a rule with **{{ui:processes.rules.addRule}}**, or start from one of the **{{ui:processes.rules.templates}}**. In a rule's details they can switch it on or off, change its priority, edit it, or archive it. A change the server refuses is undone on screen and the reason is shown. An archived rule leaves the list. Archiving gives you a few seconds to undo it.
+On **{{ui:processes.tabRules}}**, Owners and Admins create a rule with **{{ui:processes.rules.addRule}}**, or start from one of the **{{ui:processes.rules.templates}}**. In a rule's details they can switch it on or off, change its priority, edit it, or archive it. A rule made on a canvas shows its map and step, with **{{ui:processes.ruleDetail.openOnCanvas}}**, which opens the map with that step selected. A change the server refuses is undone on screen and the reason is shown. An archived rule leaves the list. Archiving gives you a few seconds to undo it.
 
 ### Handle a run that needs a person
 

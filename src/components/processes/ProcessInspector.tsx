@@ -100,7 +100,7 @@ import { useIsAutomationMode } from "@/lib/processes/canvas-mode-context";
 // fail there; `src/app-layer/schemas/` is backend-first but not client-free
 // (CLAUDE.md names 13 `use client` files that import values from it).
 import { MAX_GRAPH_TEXT_LENGTH } from "@/app-layer/schemas/process-map";
-import { AutomationInspectorPanel } from "./AutomationInspectorPanel";
+import { AutomationInspectorPanel, type AutomationKind } from "./AutomationInspectorPanel";
 import {
     DEFAULT_NODE_SIZE,
     isProcessNodeSize,
@@ -259,16 +259,24 @@ export function ProcessInspector({
     // VR-4 — when an automation node is selected on an AUTOMATION canvas, the
     // inspector renders the inline rule editor instead of the document panels.
     if (isAutomation && isAutomationNodeKind(data?.kind)) {
-        const ruleId =
+        // An Action or Agent step configures its OWN rule; a Trigger,
+        // Condition or SLA step configures the rules of the steps it leads to,
+        // which the canvas resolves into `fedRules` (`canvas-rule-wiring.ts`).
+        const own =
             data && typeof (data as { ruleId?: unknown }).ruleId === "string"
                 ? ((data as { ruleId?: string }).ruleId as string)
                 : null;
+        const fed = (data as { fedRules?: { ruleIds?: string[]; unsavedOwners?: number } })
+            .fedRules;
+        const ruleIds = fed ? (fed.ruleIds ?? []) : own ? [own] : [];
         return (
             <AsidePanel title={t("ruleTitle")} surfaceKey="processes-inspector">
                 <div className="flex flex-col gap-default p-default">
                     <AutomationInspectorPanel
-                        kind={data!.kind as "trigger" | "condition" | "action" | "slaGate"}
-                        ruleId={ruleId}
+                        kind={data!.kind as AutomationKind}
+                        ruleIds={ruleIds}
+                        unsavedOwners={fed?.unsavedOwners ?? 0}
+                        tenantSlug={tenantSlug ?? ""}
                     />
                 </div>
             </AsidePanel>

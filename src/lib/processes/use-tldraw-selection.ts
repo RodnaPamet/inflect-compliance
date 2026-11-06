@@ -55,6 +55,13 @@ import {
 } from '@/components/processes/tldraw/process-edge-shape';
 import { PROCESS_NODE_SHAPE_TYPE } from '@/components/processes/tldraw/process-node-shape';
 import {
+    FEEDING_KINDS,
+    fedRuleIds,
+    ruleIdOfDataJson,
+    type WiringEdge,
+    type WiringNode,
+} from '@/lib/processes/canvas-rule-wiring';
+import {
     resolveSelection,
     toSelectedEdge,
     toSelectedNode,
@@ -106,7 +113,7 @@ export function useTldrawSelection(editor: Editor | null) {
                       // contract the inspector and the row both speak.
                       toSelectedNode({
                           id: String(nodeShape.props?.nodeKey ?? ''),
-                          data: nodeShape.props,
+                          data: inspectorDataFor(editor, nodeShape),
                       })
                     : null,
             );
@@ -290,4 +297,61 @@ function findEdgeBinding(editor: Editor, edgeKey: string | null): ProcessEdgeBin
                 (r as unknown as ProcessEdgeBinding).props.edgeKey === edgeKey,
         );
     return (match as unknown as ProcessEdgeBinding) ?? null;
+}
+
+/**
+ * A step's props, in the shape the inspector reads.
+ *
+ * The inspector was written against the xyflow canvas, whose node data had
+ * the kind at `data.kind` and its links at the top level. A tldraw step keeps
+ * the kind in `nodeType` and its links inside `dataJson`, and this adapter
+ * passed the props through as they were. So `data.kind` was always undefined
+ * on the tldraw canvas: the automation rule panel never appeared, and neither
+ * did the per-kind pickers that link a Risk step to a risk or an Asset step to
+ * an asset. The props are still all here; the inspector's names are added.
+ *
+ * For a Trigger, Condition or SLA step, `fedRules` says which rules it
+ * configures: see `canvas-rule-wiring.ts`.
+ */
+function inspectorDataFor(editor: Editor, shape: SelectedShape): Record<string, unknown> {
+    const props = shape.props ?? {};
+    const dataJson =
+        props.dataJson && typeof props.dataJson === 'object' && !Array.isArray(props.dataJson)
+            ? (props.dataJson as Record<string, unknown>)
+            : null;
+    const nodeType = typeof props.nodeType === 'string' ? props.nodeType : '';
+    const data: Record<string, unknown> = {
+        ...props,
+        kind: nodeType,
+        ruleId: ruleIdOfDataJson(dataJson),
+        ...(dataJson && 'linkedEntityId' in dataJson ? { linkedEntityId: dataJson.linkedEntityId } : {}),
+    };
+    if (FEEDING_KINDS.has(nodeType)) {
+        data.fedRules = fedRuleIds(String(props.nodeKey ?? ''), wiringNodes(editor), wiringEdges(editor));
+    }
+    return data;
+}
+
+function wiringNodes(editor: Editor): WiringNode[] {
+    return (editor.getCurrentPageShapes() as unknown as SelectedShape[])
+        .filter((s) => s.type === PROCESS_NODE_SHAPE_TYPE)
+        .map((s) => ({
+            nodeKey: String(s.props?.nodeKey ?? ''),
+            nodeType: String(s.props?.nodeType ?? ''),
+            ruleId: ruleIdOfDataJson(s.props?.dataJson),
+        }));
+}
+
+function wiringEdges(editor: Editor): WiringEdge[] {
+    return editor.store
+        .allRecords()
+        .filter(
+            (r) =>
+                r.typeName === 'binding' &&
+                (r as { type?: string }).type === PROCESS_EDGE_BINDING_TYPE,
+        )
+        .map((r) => {
+            const props = (r as unknown as ProcessEdgeBinding).props;
+            return { sourceKey: props.sourceKey, targetKey: props.targetKey };
+        });
 }

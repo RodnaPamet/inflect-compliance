@@ -23,7 +23,7 @@ import { useToastWithUndo, useToast } from '@/components/ui/hooks';
 import { useSWRConfig } from 'swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantContext } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ExecutionsPanel } from '@/components/processes/ExecutionsPanel';
 import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
@@ -33,8 +33,13 @@ import {
     buildRuleStatusLabels,
 } from '@/app/t/[tenantSlug]/(app)/processes/automation-filter-defs';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { apiErrorMessage } from '@/lib/api-error';
 import { extractMutationError } from '@/lib/mutations';
+
+/** `UNSET_TRIGGER_EVENT` in `rule-readiness.ts`: a canvas rule nobody has given a trigger. */
+const UNSET_TRIGGER = 'UNSET';
 
 function humanizeEvent(name: string): string {
     return name
@@ -78,6 +83,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
     // the raw `ENABLED` — one click apart, two vocabularies.
     const RULE_STATUS_LABELS = buildRuleStatusLabels((k) => t(k as Parameters<typeof t>[0]));
     const apiUrl = useTenantApiUrl();
+    const { tenantSlug } = useTenantContext();
     const triggerUndoToast = useToastWithUndo();
     const toast = useToast();
     const { mutate: globalMutate } = useSWRConfig();
@@ -197,8 +203,13 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
     const isEnabled = live?.status === 'ENABLED';
 
     const triggerSummary = useMemo(
-        () => (rule ? humanizeEvent(rule.triggerEvent) : ''),
-        [rule],
+        () =>
+            rule
+                ? rule.triggerEvent === UNSET_TRIGGER
+                    ? t('rules.triggerNotSet')
+                    : humanizeEvent(rule.triggerEvent)
+                : '',
+        [rule, t],
     );
 
     const actionConfig = (detail?.actionConfigJson ?? {}) as Record<string, unknown>;
@@ -288,6 +299,46 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                                     </p>
                                 </div>
                             </Card>
+
+                            {/* The canvas step that owns this rule. */}
+                            {detail?.canvas && (
+                                <Card>
+                                    <div
+                                        className="flex items-center justify-between gap-default"
+                                        data-testid="rule-detail-canvas"
+                                    >
+                                        <div className="min-w-0 space-y-tight">
+                                            <p className="text-[11px] uppercase tracking-wide text-content-subtle">
+                                                {t('ruleDetail.onCanvas')}
+                                            </p>
+                                            <p className="truncate text-sm text-content-emphasis">
+                                                {detail.canvas.mapName} · {detail.canvas.stepLabel}
+                                            </p>
+                                        </div>
+                                        <Link
+                                            href={`/t/${tenantSlug}/processes?activeId=${encodeURIComponent(detail.canvas.mapId)}&step=${encodeURIComponent(detail.canvas.nodeKey)}`}
+                                            onClick={() => onOpenChange(false)}
+                                            className="shrink-0 text-sm font-medium text-content-info hover:underline"
+                                            data-testid="rule-detail-open-on-canvas"
+                                        >
+                                            {t('ruleDetail.openOnCanvas')}
+                                        </Link>
+                                    </div>
+                                </Card>
+                            )}
+
+                            {/* What it still needs; enabling is refused until it has it. */}
+                            {(detail?.readiness?.length ?? 0) > 0 && live.status !== 'ENABLED' && (
+                                <div data-testid="rule-detail-readiness">
+                                    <InlineNotice variant="warning" title={t('ruleDetail.notReadyTitle')}>
+                                        <ul className="list-disc pl-4 text-sm">
+                                            {detail!.readiness!.map((p) => (
+                                                <li key={p}>{t(`ruleDetail.readiness.${p}`)}</li>
+                                            ))}
+                                        </ul>
+                                    </InlineNotice>
+                                </div>
+                            )}
 
                             {/* Full read-only configuration */}
                             {detail && (

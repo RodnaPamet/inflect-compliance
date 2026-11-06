@@ -78,6 +78,8 @@ import { buildCanvasCommandGroups } from '@/lib/processes/canvas-command-groups'
 import { useTldrawCanvasCounts } from '@/lib/processes/use-tldraw-canvas-counts';
 import { CanvasOverlayProvider } from '@/lib/processes/canvas-execution-overlay';
 import { RunModeProvider, useRunMode } from '@/lib/processes/run-mode-context';
+import { CanvasRuleStatusProvider } from '@/lib/processes/canvas-rule-status';
+import { useIsAutomationMode } from '@/lib/processes/canvas-mode-context';
 import { CheckpointReviewProvider } from '@/lib/processes/canvas-checkpoint-review';
 import { CheckpointReviewPanel } from '@/components/processes/CheckpointReviewPanel';
 import type { AutosaveStatus } from '@/lib/processes/use-canvas-autosave';
@@ -168,6 +170,8 @@ export interface TldrawProcessWorkspaceProps {
     canEdit: boolean;
     /** May the viewer delete a map? The server takes the Admin tier. */
     canDelete: boolean;
+    /** A step to select once the map loads: the Rules tab's "Open on canvas". */
+    focusStepKey?: string | null;
 }
 
 export function TldrawProcessWorkspace(props: TldrawProcessWorkspaceProps) {
@@ -225,7 +229,14 @@ export function TldrawProcessWorkspace(props: TldrawProcessWorkspaceProps) {
  */
 function OverlayBridge({ children }: { children: React.ReactNode }) {
     const { isRunMode } = useRunMode();
-    return <CanvasOverlayProvider enabled={isRunMode}>{children}</CanvasOverlayProvider>;
+    // Each Action/Agent step's rule status, on an automation map. Fetched in
+    // either mode, design or run: it is what the rule IS, not what it is doing.
+    const isAutomation = useIsAutomationMode();
+    return (
+        <CanvasOverlayProvider enabled={isRunMode}>
+            <CanvasRuleStatusProvider enabled={isAutomation}>{children}</CanvasRuleStatusProvider>
+        </CanvasOverlayProvider>
+    );
 }
 
 function Inner({
@@ -236,6 +247,7 @@ function Inner({
     onProcessesChange,
     canEdit,
     canDelete,
+    focusStepKey = null,
 }: TldrawProcessWorkspaceProps) {
     const toast = useToast();
     const [editor, setEditor] = useState<Editor | null>(null);
@@ -579,6 +591,7 @@ function Inner({
                         onEditorReady={setEditor}
                         onStateChange={handleState}
                         onSaveNowChange={handleSaveNowChange}
+                        focusStepKey={focusStepKey}
                         onSaved={handleSaved}
                         readOnly={!canEdit}
                     />

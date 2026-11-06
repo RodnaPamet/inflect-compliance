@@ -184,6 +184,7 @@ describe('syncCanvasToRules — authorization', () => {
         await expect(syncCanvasToRules(db, editorCtx, 'map-1')).resolves.toEqual({
             rulesCreated: 0,
             chainsLinked: 0,
+            ruleIdByNodeKey: {},
         });
         expect(assertManage).not.toHaveBeenCalled();
     });

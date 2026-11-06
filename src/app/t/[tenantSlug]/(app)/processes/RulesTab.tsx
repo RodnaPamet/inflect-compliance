@@ -132,7 +132,9 @@ function RulesTabInner({ tenantSlug, canManage }: { tenantSlug: string; canManag
                     header: t('rules.colTrigger'),
                     cell: ({ row }) => (
                         <span className="text-sm text-content-default">
-                            {humanizeEvent(row.original.triggerEvent)}
+                            {row.original.triggerEvent === 'UNSET'
+                                ? t('rules.triggerNotSet')
+                                : humanizeEvent(row.original.triggerEvent)}
                         </span>
                     ),
                 },

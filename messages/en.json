@@ -10546,7 +10546,8 @@
       "edit": "Edit",
       "emptyDescReadOnly": "Automation rules fire actions when domain events occur. Owners and Admins create them.",
       "updateFailed": "Could not update this rule.",
-      "sheetDescription": "Automation rule detail"
+      "sheetDescription": "Automation rule detail",
+      "triggerNotSet": "Not set"
     },
     "analytics": {
       "emptyTitle": "No automation rules yet",
@@ -10667,7 +10668,15 @@
       "elseRule": "Else rule",
       "agentId": "Agent",
       "agentWorkflow": "Workflow",
-      "agentInputMapping": "Input mapping"
+      "agentInputMapping": "Input mapping",
+      "onCanvas": "On canvas",
+      "openOnCanvas": "Open on canvas",
+      "notReadyTitle": "Before this rule can be enabled:",
+      "readiness": {
+        "TRIGGER_NOT_SET": "Choose the event that triggers it.",
+        "SCHEDULE_NOT_SET": "Set its schedule.",
+        "ACTION_INCOMPLETE": "Complete its action settings."
+      }
     }
   },
   "issues": {
@@ -15594,12 +15603,13 @@
       "actionCreateTask": "Create task",
       "actionUpdateStatus": "Update status",
       "actionWebhook": "Webhook",
-      "unsyncedHint": "Save the canvas to link this node to a rule, then configure it here.",
+      "unsyncedHint": "Save the map to create this step's rule, then configure it here.",
       "kindRule": {
         "trigger": "trigger rule",
         "condition": "condition rule",
         "action": "action rule",
-        "slaGate": "SLA gate rule"
+        "slaGate": "SLA gate rule",
+        "agent": "agent rule"
       },
       "enabled": "Enabled",
       "disabled": "Disabled",
@@ -15618,7 +15628,19 @@
       "actionUnknown": "Unknown action",
       "actionTypeHint": "Change the action in the rule builder — a new action needs a new configuration.",
       "saveFailed": "That change was not saved.",
-      "actionInvokeAgent": "Invoke agent"
+      "actionInvokeAgent": "Invoke agent",
+      "connectHint": "Connect this step to an Action or Agent step. It then sets that step's rule.",
+      "saveToConnect": "Save the map to create the rule of the step this leads to.",
+      "configures": "Sets the rule of each step it leads to:",
+      "editAction": "Edit action",
+      "editConditions": "Edit conditions",
+      "editConditionsOf": "Edit conditions of {name}",
+      "notReadyTitle": "Before this rule can be enabled:",
+      "readiness": {
+        "TRIGGER_NOT_SET": "Choose its trigger event: connect a Trigger step and pick the event.",
+        "SCHEDULE_NOT_SET": "Set its schedule in the rule builder.",
+        "ACTION_INCOMPLETE": "Complete its action: use Edit action."
+      }
     },
     "diff": {
       "title": "Diff v{x} vs v{y}",
@@ -15911,6 +15933,13 @@
       "nothingToReplay": "Nothing to replay — this rule has no prior execution to re-fire.",
       "notReplayable": "Not replayable — an update-status rule targets a specific entity, and a replay cannot re-target the original one, so nothing would change.",
       "fireFailed": "The rule could not be fired."
+    },
+    "stepRuleStatus": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "draft": "Draft",
+      "draftNeedsSetup": "Draft · needs setup",
+      "runs": "{count, plural, one {# run} other {# runs}}"
     }
   },
   "commandPalette": {

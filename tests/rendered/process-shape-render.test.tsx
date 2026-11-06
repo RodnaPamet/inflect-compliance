@@ -612,3 +612,58 @@ describe('an agent node shows its latest run', () => {
         });
     });
 });
+
+describe("an Action or Agent step shows its rule's status", () => {
+    // Nothing on the canvas said whether a step's rule was a draft, enabled,
+    // or still missing what it needs, so the canvas and the Rules tab could
+    // disagree without anyone seeing.
+    const { CanvasRuleStatusProvider } =
+        require('@/lib/processes/canvas-rule-status') as typeof import('@/lib/processes/canvas-rule-status');
+
+    beforeEach(() => {
+        // Key-aware, as SWR is: a null key fetches nothing.
+        useTenantSWR.mockImplementation((key: string | null) => ({
+            data: key
+                ? [
+                      { id: 'r-on', status: 'ENABLED', executionCount: 12, readiness: [] },
+                      { id: 'r-stub', status: 'DRAFT', executionCount: 0, readiness: ['TRIGGER_NOT_SET'] },
+                  ]
+                : undefined,
+        }));
+    });
+
+    const renderStep = (ruleId: string | null, enabled = true) =>
+        render(
+            <CanvasRuleStatusProvider enabled={enabled}>
+                {util.component(shapeOf('action' as Kind, { dataJson: ruleId ? { ruleId } : null }))}
+            </CanvasRuleStatusProvider>,
+        );
+
+    it('an enabled rule says so, with its run count', () => {
+        renderStep('r-on');
+        const line = screen.getByTestId('process-node-rule-action-1');
+        expect(line.getAttribute('data-rule-status')).toBe('ENABLED');
+        // The run count's plural form is ICU, which this suite's translation
+        // stub does not expand; the status is what is asserted.
+        expect(line.textContent).toMatch(/^Enabled · /);
+    });
+
+    it('a draft that is missing something says it needs setup', () => {
+        renderStep('r-stub');
+        const line = screen.getByTestId('process-node-rule-action-1');
+        expect(line.textContent).toMatch(/^Draft · needs setup · /);
+        expect(line.className).toContain('text-content-warning');
+    });
+
+    it('a step with no rule shows nothing', () => {
+        renderStep(null);
+        expect(screen.queryByTestId('process-node-rule-action-1')).toBeNull();
+    });
+
+    it('a document map fetches nothing and shows nothing', () => {
+        useTenantSWR.mockClear();
+        renderStep('r-on', false);
+        expect(screen.queryByTestId('process-node-rule-action-1')).toBeNull();
+        expect(useTenantSWR).toHaveBeenCalledWith(null);
+    });
+});

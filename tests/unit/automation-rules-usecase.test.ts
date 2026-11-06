@@ -54,6 +54,13 @@ const repo = AutomationRuleRepository as jest.Mocked<typeof AutomationRuleReposi
 
 beforeEach(() => jest.clearAllMocks());
 
+/** A rule that has everything it needs to be enabled. */
+const COMPLETE = {
+    triggerEvent: 'RISK_CREATED',
+    actionType: 'NOTIFY_USER',
+    actionConfigJson: { userIds: ['u1'], message: 'hi' },
+};
+
 const baseInput = {
     name: 'My rule',
     triggerEvent: 'RISK_CREATED',
@@ -87,7 +94,10 @@ describe('automation-rules usecase — delegation + audit', () => {
         expect(repo.list).toHaveBeenCalledWith(mockDb, ctx, { status: 'ENABLED' });
         // Every rule leaves through `toPublicRule`, which says whether a
         // signing key is stored without carrying it.
-        expect(out).toEqual([{ id: 'r1', webhookSecretSet: false }]);
+        // …and what it still lacks before it can run (`rule-readiness.ts`).
+        expect(out).toEqual([
+            { id: 'r1', webhookSecretSet: false, readiness: ['TRIGGER_NOT_SET', 'ACTION_INCOMPLETE'] },
+        ]);
     });
 
     it('createAutomationRule sanitises name + description and audits', async () => {
@@ -144,7 +154,7 @@ describe('automation-rules usecase — delegation + audit', () => {
     });
 
     it('toggleAutomationRule enables a rule and audits ENABLED', async () => {
-        repo.toggle.mockResolvedValue({ id: 'r4', name: 'Tog', status: 'ENABLED' } as any);
+        repo.toggle.mockResolvedValue({ ...COMPLETE, id: 'r4', name: 'Tog', status: 'ENABLED' } as any);
         const ctx = makeRequestContext('ADMIN');
         await toggleAutomationRule(ctx, 'r4', 'ENABLED');
         expect(repo.toggle).toHaveBeenCalledWith(mockDb, ctx, 'r4', 'ENABLED');
@@ -197,7 +207,7 @@ describe('every audit row this usecase writes is one logEvent accepts', () => {
             '@/app-layer/schemas/json-columns.schemas',
         ) as typeof import('@/app-layer/schemas/json-columns.schemas');
         const ctx = makeRequestContext('ADMIN');
-        const row = { id: 'r9', name: 'R', triggerEvent: 'RISK_CREATED', actionType: 'NOTIFY_USER', status: 'DRAFT' };
+        const row = { ...COMPLETE, id: 'r9', name: 'R', status: 'DRAFT' };
         repo.create.mockResolvedValue(row as any);
         repo.getById.mockResolvedValue(row as any);
         repo.update.mockResolvedValue(row as any);
@@ -214,5 +224,41 @@ describe('every audit row this usecase writes is one logEvent accepts', () => {
         for (const details of payloads) {
             expect(() => validateAuditDetailsJson(details)).not.toThrow();
         }
+    });
+});
+
+describe('a rule is enabled only when it is complete', () => {
+    // A canvas step's rule starts as a stub with no trigger and an empty
+    // action. Enabling it like that used to succeed.
+    it('enabling a rule with no trigger and an empty action is refused, saying what is missing', async () => {
+        const ctx = makeRequestContext('ADMIN');
+        repo.toggle.mockResolvedValue({
+            id: 'stub', name: 'Notify', status: 'ENABLED',
+            triggerEvent: 'UNSET', actionType: 'NOTIFY_USER', actionConfigJson: { userIds: [], message: '' },
+        } as any);
+        await expect(toggleAutomationRule(ctx, 'stub', 'ENABLED')).rejects.toThrow(
+            /choose the event that triggers it, and complete its action settings/,
+        );
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('disabling an incomplete rule is never refused', async () => {
+        const ctx = makeRequestContext('ADMIN');
+        repo.toggle.mockResolvedValue({
+            id: 'stub', name: 'Notify', status: 'DISABLED',
+            triggerEvent: 'UNSET', actionType: 'NOTIFY_USER', actionConfigJson: {},
+        } as any);
+        await expect(toggleAutomationRule(ctx, 'stub', 'DISABLED')).resolves.toMatchObject({
+            readiness: ['TRIGGER_NOT_SET', 'ACTION_INCOMPLETE'],
+        });
+    });
+
+    it('an edit that leaves an enabled rule complete goes through', async () => {
+        const ctx = makeRequestContext('ADMIN');
+        repo.getById.mockResolvedValue({ ...COMPLETE, id: 'r', status: 'ENABLED' } as any);
+        repo.update.mockResolvedValue({ ...COMPLETE, id: 'r', name: 'R', status: 'ENABLED', triggerEvent: 'TASK_CREATED' } as any);
+        await expect(updateAutomationRule(ctx, 'r', { triggerEvent: 'TASK_CREATED' } as any)).resolves.toMatchObject({
+            readiness: [],
+        });
     });
 });

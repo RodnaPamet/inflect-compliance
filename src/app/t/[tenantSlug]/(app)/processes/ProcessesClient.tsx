@@ -113,6 +113,7 @@ export function ProcessesClient({
     // asset detail link here). Honour the param when it names a map the tenant
     // can see; otherwise fall back to the first map.
     const searchParams = useSearchParams();
+    const [tab, setTab] = useState<"canvas" | "rules" | "analytics" | "monitor">("canvas");
     const requestedId = searchParams.get("activeId");
     const [activeId, setActiveId] = useState<string | null>(
         requestedId && initialProcesses.some((p) => p.id === requestedId)
@@ -124,9 +125,15 @@ export function ProcessesClient({
     // not a fresh mount, so the initializer above wouldn't fire. Read the live
     // param (not just the once-run initializer) and follow it when it names a
     // visible map.
+    // `?step=<nodeKey>`: the Rules tab's "Open on canvas" names the step that
+    // owns a rule, and the canvas selects it once the map is loaded.
+    const requestedStep = searchParams.get("step");
     useEffect(() => {
         if (requestedId && processes.some((p) => p.id === requestedId)) {
             setActiveId(requestedId);
+            // The link is followed from the Rules tab, which is a tab on this
+            // same page: without this the URL changed and the view did not.
+            setTab("canvas");
         }
     }, [requestedId, processes]);
 
@@ -137,7 +144,6 @@ export function ProcessesClient({
     // reserves the pill primitive out of app pages. Epic 9 extends this
     // with Analytics; Epic 10 adds Monitor.
     const t = useTranslations("processes");
-    const [tab, setTab] = useState<"canvas" | "rules" | "analytics" | "monitor">("canvas");
     const TABS: ReadonlyArray<{
         key: "canvas" | "rules" | "analytics" | "monitor";
         label: string;
@@ -205,6 +211,7 @@ export function ProcessesClient({
                         canOperateCheckpoints={canOperateCheckpoints}
                         canEdit={canEditMaps}
                         canDelete={canDeleteMaps}
+                        focusStepKey={requestedStep}
                     />
                 )}
             </div>
@@ -222,6 +229,7 @@ function CanvasWorkspace({
     canOperateCheckpoints,
     canEdit,
     canDelete,
+    focusStepKey,
 }: {
     tenantSlug: string;
     processes: ProcessMapSummary[];
@@ -233,6 +241,8 @@ function CanvasWorkspace({
     canOperateCheckpoints: boolean;
     canEdit: boolean;
     canDelete: boolean;
+    /** The step to select once the map loads (`?step=`). */
+    focusStepKey: string | null;
 }) {
     // Mobile PR-5 — the xyflow canvas (pan/zoom/drag of a node graph) is
     // unusable on a phone. Below `md` we render a read-only LIST of the
@@ -280,6 +290,7 @@ function CanvasWorkspace({
                         canOperateCheckpoints={canOperateCheckpoints}
                         canEdit={canEdit}
                         canDelete={canDelete}
+                        focusStepKey={focusStepKey}
                     />
                 </CanvasModeProvider>
             </WorkspaceShell.Body>

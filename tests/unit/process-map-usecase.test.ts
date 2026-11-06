@@ -13,6 +13,8 @@
 // are unaffected.
 const mockDb = {
     processMap: { findFirst: jest.fn().mockResolvedValue({ canvasMode: 'DOCUMENT' }) },
+    // `prepareCanvasNodesForSave` reads the stored rule links before a save.
+    processNode: { findMany: jest.fn().mockResolvedValue([]) },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({

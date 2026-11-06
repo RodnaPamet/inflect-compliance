@@ -29,6 +29,29 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { ACTION_CONFIG_BY_TYPE } from '../schemas/automation.schemas';
 import { recordAutomationRuleCreated } from '@/lib/observability/business-metrics';
 import { resolveWebhookSecretWrite, toPublicRule } from '../automation/webhook-secret';
+import { readinessRefusal, ruleReadinessProblems } from '../automation/rule-readiness';
+import { findCanvasStepForRule } from '../services/canvas-rule-link';
+
+type StoredRule = Parameters<typeof toPublicRule>[0] & Parameters<typeof ruleReadinessProblems>[0];
+
+/**
+ * A rule as it leaves this module: without its signing key
+ * (`webhook-secret.ts`), and with what it still lacks before it can run
+ * (`rule-readiness.ts`), so every surface shows the server's own answer.
+ */
+function present<T extends StoredRule>(rule: T) {
+    return { ...toPublicRule(rule), readiness: ruleReadinessProblems(rule) };
+}
+
+/**
+ * Refuse a rule that would be ENABLED while incomplete. Called on the row as
+ * written, inside the write's transaction, so a refusal rolls the write back.
+ */
+function assertReadyIfEnabled(rule: StoredRule & { status: string }) {
+    if (rule.status !== 'ENABLED') return;
+    const problems = ruleReadinessProblems(rule);
+    if (problems.length > 0) throw badRequest(readinessRefusal(problems), { reasons: problems });
+}
 
 /**
  * Pure cycle check (Epic 7): walking the chain from `nextRuleId` via
@@ -139,7 +162,7 @@ export async function listAutomationRules(
     // `toPublicRule` on every rule that leaves this module: the row carries
     // the decrypted webhook signing key (see `webhook-secret.ts`).
     return runInTenantContext(ctx, async (db) =>
-        (await AutomationRuleRepository.list(db, ctx, filters)).map(toPublicRule),
+        (await AutomationRuleRepository.list(db, ctx, filters)).map(present),
     );
 }
 
@@ -148,7 +171,10 @@ export async function getAutomationRule(ctx: RequestContext, id: string) {
     return runInTenantContext(ctx, async (db) => {
         const rule = await AutomationRuleRepository.getById(db, ctx, id);
         if (!rule) throw notFound('Automation rule not found');
-        return toPublicRule(rule);
+        // The canvas step that owns it, for "Open on canvas"; null for a rule
+        // written on the Rules tab.
+        const canvas = await findCanvasStepForRule(db, ctx, id);
+        return { ...present(rule), canvas };
     });
 }
 
@@ -171,6 +197,7 @@ export async function createAutomationRule(
             name: sanitizePlainText(input.name),
             description: sanitizeOptional(input.description),
         });
+        assertReadyIfEnabled(rule);
         await logEvent(db, ctx, {
             action: 'AUTOMATION_RULE_CREATED',
             entityType: 'AutomationRule',
@@ -191,7 +218,7 @@ export async function createAutomationRule(
                 },
             },
         });
-        return toPublicRule(rule);
+        return present(rule);
     });
     recordAutomationRuleCreated();
     return created;
@@ -270,6 +297,17 @@ export async function updateAutomationRule(
                 : {}),
         });
         if (!rule) throw notFound('Automation rule not found');
+        // An edit that enables the rule, or changes what it does while it is
+        // enabled, must leave it complete.
+        if (
+            input.status !== undefined ||
+            input.triggerEvent !== undefined ||
+            input.actionType !== undefined ||
+            input.actionConfig !== undefined ||
+            input.scheduleConfig !== undefined
+        ) {
+            assertReadyIfEnabled(rule);
+        }
         await logEvent(db, ctx, {
             action: 'AUTOMATION_RULE_UPDATED',
             entityType: 'AutomationRule',
@@ -289,7 +327,7 @@ export async function updateAutomationRule(
                 },
             },
         });
-        return toPublicRule(rule);
+        return present(rule);
     });
 }
 
@@ -304,6 +342,7 @@ export async function toggleAutomationRule(
         if (!rule) {
             throw notFound('Automation rule not found, or it has been archived');
         }
+        assertReadyIfEnabled(rule);
         await logEvent(db, ctx, {
             action: status === 'ENABLED' ? 'AUTOMATION_RULE_ENABLED' : 'AUTOMATION_RULE_DISABLED',
             entityType: 'AutomationRule',
@@ -314,7 +353,7 @@ export async function toggleAutomationRule(
                 toStatus: status,
             },
         });
-        return toPublicRule(rule);
+        return present(rule);
     });
 }
 
@@ -334,6 +373,6 @@ export async function archiveAutomationRule(ctx: RequestContext, id: string) {
                 operation: 'archived',
             },
         });
-        return rule ? toPublicRule(rule) : rule;
+        return rule ? present(rule) : rule;
     });
 }
