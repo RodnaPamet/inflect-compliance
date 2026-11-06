@@ -350,7 +350,8 @@ export function AutomationInspectorPanel({
             {builderRule && (
                 <RuleBuilderModal
                     tenantSlug={tenantSlug}
-                    open={builderRule !== null}
+                    // Rendered only while a rule is picked, so it is open.
+                    open
                     setOpen={(next) => {
                         const open = typeof next === 'function' ? next(true) : next;
                         if (!open) {
