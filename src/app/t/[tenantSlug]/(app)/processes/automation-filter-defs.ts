@@ -57,6 +57,19 @@ export const buildRuleActionLabels = (t: Resolver): Record<RuleActionKey, string
     INVOKE_AGENT: t('ruleActionLabels.INVOKE_AGENT'),
 });
 
+/**
+ * The statuses the Status filter offers: every status but ARCHIVED.
+ *
+ * Archiving soft-deletes the rule (`deletedAt`), and the rules list excludes
+ * soft-deleted rows, so no archived rule ever reaches the table. Offering the
+ * option only ever produced an empty table. The badge label stays in
+ * `buildRuleStatusLabels`.
+ */
+function filterableRuleStatusLabels(t: Resolver): Record<Exclude<RuleStatusKey, 'ARCHIVED'>, string> {
+    const labels = buildRuleStatusLabels(t);
+    return { DRAFT: labels.DRAFT, ENABLED: labels.ENABLED, DISABLED: labels.DISABLED };
+}
+
 /** Trigger-event options derived from the canonical event catalog. */
 const TRIGGER_OPTIONS = AUTOMATION_EVENT_NAMES.map((name) => ({
     value: name,
@@ -73,7 +86,7 @@ const ruleFilterDefsInput = (t: Resolver, tGroup: Resolver) => ({
         description: t('filters.statusDesc'),
         group: tGroup('attributes'),
         icon: CircleDot,
-        options: optionsFromEnum(buildRuleStatusLabels(t)),
+        options: optionsFromEnum(filterableRuleStatusLabels(t)),
         multiple: true,
         resetBehavior: 'clearable',
     },

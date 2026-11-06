@@ -20,7 +20,7 @@ On a narrow screen the page lists the process maps but does not show the canvas:
 | Create, edit, save, duplicate and restore maps | Owner, Admin, Editor |
 | Delete a map | Owner, Admin |
 | Create, edit, enable, disable, reorder and archive automation rules | Owner, Admin |
-| Cancel a stuck rule run | Owner, Admin, Editor |
+| Cancel a stuck rule run, and test a rule from **{{ui:processes.tabMonitor}}** | Owner, Admin, Editor |
 | Approve or reject a run waiting at a human checkpoint | Owner, Admin |
 
 The canvas and its buttons are offered to every role in full: anyone can draw on it, and **{{ui:automation.documentBar.newProcess}}**, **{{ui:automation.documentBar.save}}** and **{{ui:automation.documentBar.delete}}** are always there. For a role that cannot make the change, saving fails with **{{ui:automation.documentBar.saveFailed}}** and nothing is kept. The same goes for the rule buttons on **{{ui:processes.tabRules}}** and the cancel button on **{{ui:processes.tabMonitor}}**.
@@ -50,7 +50,7 @@ On the left, a palette of the kinds of step you can place. In the middle, the ca
 
 **{{ui:processes.tabAnalytics}}.** How the rules have performed: **{{ui:processes.analytics.enabledRules}}**, how many runs, **{{ui:processes.analytics.successRate}}**, **{{ui:processes.analytics.avgDuration}}**, **{{ui:processes.analytics.stuckExecutionBreaches}}** and **{{ui:processes.analytics.errorRate}}**, a chart of runs over time and the rules that fire most.
 
-**{{ui:processes.tabMonitor}}.** **{{ui:processes.monitor.recentActivity}}**, the latest rule runs, and any runs stuck past their time limit.
+**{{ui:processes.tabMonitor}}.** **{{ui:processes.monitor.recentActivity}}**, the latest rule runs, and any runs stuck past their time limit. For Owners, Admins and Editors, **{{ui:automation.manualTrigger.heading}}** below them: pick an enabled rule, then **{{ui:automation.manualTrigger.dryRun}}** checks whether its conditions match the latest event without acting, and **{{ui:automation.manualTrigger.fire}}** runs it again on that event. Each says what happened, including when there was nothing to run.
 
 ## What you can do
 
@@ -66,7 +66,7 @@ Use the mode button to convert the map. Its steps become triggers, conditions an
 
 ### Manage rules
 
-On **{{ui:processes.tabRules}}**, Owners and Admins create a rule with **{{ui:processes.rules.addRule}}**, or start from one of the **{{ui:processes.rules.templates}}**. In a rule's details they can switch it on or off, change its priority, edit it, or archive it. Archiving gives you a few seconds to undo it.
+On **{{ui:processes.tabRules}}**, Owners and Admins create a rule with **{{ui:processes.rules.addRule}}**, or start from one of the **{{ui:processes.rules.templates}}**. In a rule's details they can switch it on or off, change its priority, edit it, or archive it. A change the server refuses is undone on screen and the reason is shown. An archived rule leaves the list. Archiving gives you a few seconds to undo it.
 
 ### Handle a run that needs a person
 

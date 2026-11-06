@@ -40,10 +40,12 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
 };
 
 /**
- * `canCancel` — cancelling a stuck run takes the write tier on the server
- * (`assertCanExecuteAutomation`), so without it the button is not offered (#4640).
+ * `canExecute` — cancelling a stuck run, and testing a rule (dry run or fire),
+ * take the write tier on the server (`assertCanExecuteAutomation`), so without
+ * it neither is offered (#4640). The test panel used to be offered to every
+ * role, and for a Reader both of its buttons only ever answered "failed".
  */
-export function MonitorTab({ canCancel = false }: { canCancel?: boolean } = {}) {
+export function MonitorTab({ canExecute = false }: { canExecute?: boolean } = {}) {
     const t = useTranslations('processes');
     // The execution-status vocabulary lives in `automation.executions` because
     // ExecutionsPanel owns it; this feed renders the SAME rows one click away
@@ -167,7 +169,7 @@ export function MonitorTab({ canCancel = false }: { canCancel?: boolean } = {}) 
                                         downstream chain. The tooltip says so
                                         rather than letting the verb imply more
                                         than it delivers. */}
-                                    {canCancel && (
+                                    {canExecute && (
                                     <Tooltip content={t('monitor.cancelHint')}>
                                         <Button variant="ghost" size="sm" onClick={() => cancel(e.id)}>
                                             {t('monitor.cancel')}
@@ -180,7 +182,7 @@ export function MonitorTab({ canCancel = false }: { canCancel?: boolean } = {}) 
                     </Card>
                 )}
             </div>
-            <ManualTriggerPanel />
+            {canExecute && <ManualTriggerPanel />}
         </div>
     );
 }

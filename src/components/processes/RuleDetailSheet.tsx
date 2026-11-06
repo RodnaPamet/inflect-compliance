@@ -8,8 +8,8 @@
  * Enable/disable toggle + priority stepper mutate optimistically against
  * the list cache; trigger + action summary cards read the rule's config.
  *
- * The execution mini-log is a placeholder until Epic 6 (execution history)
- * lands; the Edit button opens the builder modal from Epic 3.
+ * The execution history comes from Epic 6; the Edit button opens the
+ * builder modal from Epic 3.
  */
 import { useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
@@ -95,8 +95,11 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                 body: JSON.stringify({ status, priority }),
             });
             if (!res.ok) {
-                const err = await res.json().catch(() => ({ error: 'Update failed' }));
-                throw new Error(err.error ?? 'Update failed');
+                // The API's envelope is `{ error: { code, message } }`, so
+                // `err.error` was an OBJECT and the thrown message read
+                // "[object Object]". The server's sentence, or ours.
+                const refusal: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(refusal, t('rules.updateFailed')));
             }
             return res.json();
         },
@@ -125,7 +128,24 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
     const ruleName = (id: string): string =>
         rulesList?.find((r) => r.id === id)?.name ?? id;
 
-    const isArchived = rule?.status === 'ARCHIVED';
+    /*
+        The row AS THE LIST CACHE HAS IT NOW, not the snapshot the tab took on
+        click. The toggle and the stepper write to that cache (optimistically,
+        rolled back on failure), and read from the snapshot they never moved:
+        the switch flipped back the moment it was pressed and the stepper
+        stayed on its old number, as if neither had done anything.
+    */
+    const live = (rule && rulesList?.find((r) => r.id === rule.id)) ?? rule;
+
+    /** A toggle or priority change; a refusal is SAID, not an unhandled rejection. */
+    const patchRule = (input: { status?: 'ENABLED' | 'DISABLED'; priority?: number }) => {
+        if (!rule) return;
+        patchMutation.trigger({ id: rule.id, ...input }).catch((err: unknown) => {
+            toast.error(extractMutationError(err, t('rules.updateFailed')));
+        });
+    };
+
+    const isArchived = live?.status === 'ARCHIVED';
 
     /**
      * Archive the rule after a 5-second undo window (Epic 67).
@@ -174,7 +194,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
             },
         });
     }, [rule, apiUrl, globalMutate, triggerUndoToast, t, toast, onOpenChange]);
-    const isEnabled = rule?.status === 'ENABLED';
+    const isEnabled = live?.status === 'ENABLED';
 
     const triggerSummary = useMemo(
         () => (rule ? humanizeEvent(rule.triggerEvent) : ''),
@@ -215,10 +235,10 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
         <Sheet
             open={open}
             onOpenChange={onOpenChange}
-            title={rule?.name ?? 'Rule'}
-            description="Automation rule detail"
+            title={rule?.name ?? t('rules.resSingular')}
+            description={t('rules.sheetDescription')}
         >
-            {rule && (
+            {rule && live && (
                 <>
                     <Sheet.Header title={rule.name} />
                     <Sheet.Body>
@@ -229,19 +249,16 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                                     <StatusBadge
                                         variant={isEnabled ? 'success' : 'neutral'}
                                     >
-                                        {RULE_STATUS_LABELS[rule.status] ?? rule.status}
+                                        {RULE_STATUS_LABELS[live.status] ?? live.status}
                                     </StatusBadge>
                                 </div>
                                 <label className="flex items-center gap-compact text-sm text-content-muted">
-                                    {isEnabled ? 'Enabled' : 'Disabled'}
+                                    {isEnabled ? RULE_STATUS_LABELS.ENABLED : RULE_STATUS_LABELS.DISABLED}
                                     <Switch
                                         checked={isEnabled}
                                         disabled={!canManage || isArchived || patchMutation.isMutating}
                                         onCheckedChange={(checked) =>
-                                            patchMutation.trigger({
-                                                id: rule.id,
-                                                status: checked ? 'ENABLED' : 'DISABLED',
-                                            })
+                                            patchRule({ status: checked ? 'ENABLED' : 'DISABLED' })
                                         }
                                         aria-label={t('rules.toggleEnabledAria')}
                                     />
@@ -252,7 +269,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                             <Card>
                                 <div className="space-y-tight">
                                     <p className="text-[11px] uppercase tracking-wide text-content-subtle">
-                                        Trigger
+                                        {t('rules.colTrigger')}
                                     </p>
                                     <p className="text-sm text-content-emphasis">
                                         {triggerSummary}
@@ -264,7 +281,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                             <Card>
                                 <div className="space-y-tight">
                                     <p className="text-[11px] uppercase tracking-wide text-content-subtle">
-                                        Action
+                                        {t('rules.colAction')}
                                     </p>
                                     <p className="text-sm text-content-emphasis">
                                         {RULE_ACTION_LABELS[rule.actionType] ?? rule.actionType}
@@ -544,22 +561,21 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
 
                             {/* Priority */}
                             <div className="flex items-center justify-between gap-default">
-                                <span className="text-sm text-content-muted">Priority</span>
+                                <span className="text-sm text-content-muted">{t('rules.colPriority')}</span>
                                 <NumberStepper
-                                    value={rule.priority}
+                                    value={live.priority}
                                     min={0}
                                     max={1000}
                                     disabled={!canManage || isArchived || patchMutation.isMutating}
-                                    onChange={(value) =>
-                                        patchMutation.trigger({ id: rule.id, priority: value })
-                                    }
+                                    onChange={(value) => patchRule({ priority: value })}
                                     aria-label={t('rules.priorityAria')}
                                 />
                             </div>
 
-                            {/* Execution history (Epic 6) — list + re-trigger. */}
+                            {/* Execution history (Epic 6). Running a rule by hand is
+                                Monitor's "Test a rule", which says what happened. */}
                             <Card>
-                                <ExecutionsPanel ruleId={rule.id} ruleEnabled={isEnabled} />
+                                <ExecutionsPanel ruleId={rule.id} />
                             </Card>
                         </div>
                     </Sheet.Body>
@@ -587,7 +603,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit, canManage = 
                                 </Button>
                             )}
                             {canManage && onEdit && !isArchived && (
-                                <Button variant="secondary" onClick={() => onEdit(rule)}>
+                                <Button variant="secondary" onClick={() => onEdit(live)}>
                                     {t('rules.edit')}
                                 </Button>
                             )}
