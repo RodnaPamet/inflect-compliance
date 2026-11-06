@@ -126,11 +126,11 @@ const AGENTIC_ROUTES: readonly string[] = [
     // #3807 — the pilot auditor's set-up (step 3c). Linked from the Views
     // menu's ASSURANCE group for a holder of `admin.agent_registry`, its key.
     '/agents/audit-pilot',
-    // #3870 — ASK, the asking surface. Linked from the SIDEBAR rather than the
-    // Views menu, and that is the point of the difference: it is the only
-    // agentic page gated on a content key (`controls.view`) rather than an
-    // admin one, so the Views menu — which lives on admin-gated pages — would
-    // have been an inbound link its own audience could never follow.
+    // #3870 — ASK, the asking surface. Gated on a content key
+    // (`controls.view`) rather than an admin one. It was linked from the
+    // SIDEBAR until 2026-11-06, when the owner took it out of the menu; its
+    // inbound link is now the agent-run start form's ad-hoc question
+    // (`workflow-start-plan.ts`).
     '/agents/ask',
 ] as const;
 

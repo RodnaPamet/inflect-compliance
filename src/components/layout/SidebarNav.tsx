@@ -135,34 +135,11 @@ export function useNavSections(): NavSectionDef[] {
                     // a small number read as "the tenant is fine".
                     badgeLabel: t('calendarBadgeLabel'),
                 },
-                // #3870 — ASK. The one agent surface that is NOT the register,
-                // and the only one here gated on a content key rather than an
-                // admin one: it shows a person their own answer, bounded by
-                // their own permissions (ADR 0004), so `controls.view` is the
-                // gate the page and both its routes assert.
-                //
-                // IN GOVERN, not Manage, and placed LAST so no adjacency
-                // moves. `agentic-nav-item` pins the whole Manage membership as an
-                // exact ordered list precisely so an appended item cannot slip
-                // in — so an entry there would have meant editing a
-                // deliberately-pinned assertion. Govern holds the records a
-                // question is asked ABOUT (assets, risks, controls), which is
-                // the better home anyway.
-                //
-                // It needs its OWN entry rather than living under the Views
-                // menu on `/agents`, because that page is admin-gated — a
-                // reader-level surface reachable only from a page that forbids
-                // readers is unreachable in practice, which is what
-                // `agentic-route-inbound-links` is really checking.
-                //
-                // Coerced, because the filter above is FAIL-CLOSED: a gate
-                // resolving to `undefined` disappears silently with no error.
-                {
-                    href: tenantHref('/agents/ask'),
-                    label: t('agentsAsk'),
-                    icon: Robot,
-                    visible: Boolean(perms.controls?.view),
-                },
+                // #3870's ASK page (`/agents/ask`) is no longer in the sidebar
+                // (owner decision, 2026-11-06). The page stays: it is reached
+                // from the agent-run start form's "ad-hoc question" option and
+                // by its URL, and the floating assistant is the everyday way
+                // to ask.
                 { href: tenantHref('/tests'), label: t('tests'), icon: Flask },
                 { href: tenantHref('/evidence'), label: t('evidence'), icon: FolderBookmark },
             ],

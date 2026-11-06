@@ -8,7 +8,7 @@ On the {{ui:agents.ask.title}} page you type a question in plain words, and an A
 
 ## Where to find it
 
-Open **{{ui:nav.agentsAsk}}** under **{{ui:nav.comply}}** in the sidebar.
+The page is not in the sidebar. Open it from the [agent runs](../manage/agent-runs.md) page, where the ad-hoc question links to it, or go to `/t/<workspace>/agents/ask` in your browser. For a quick question while you work, the floating assistant on every page is the everyday way to ask.
 
 ## Who can use it
 

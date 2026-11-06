@@ -18,7 +18,7 @@ Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar. The entry
 | Open an agent's own page | Owner, Admin, AI admin, Auditor |
 | Register an agent | Owner, Admin, AI admin |
 | Set the concurrent-run cap and the monthly token budget | Owner, Admin, AI admin |
-| Choose the agent that answers questions on {{ui:nav.agentsAsk}} | Owner, Admin, AI admin, on the agent's own page |
+| Choose the agent that answers questions on {{ui:agents.ask.title}} | Owner, Admin, AI admin, on the agent's own page |
 
 Editors and Readers do not see the sidebar entry, and opening the page shows **{{ui:agents.register.accessTitle}}**. Auditors get the same page with every change withheld: no **{{ui:agents.register.addAgent}}** button, and the cap and the budget shown as sentences without a form.
 
@@ -88,7 +88,7 @@ Click **{{ui:agents.register.new.submit}}**. The agent joins the register as {{u
 
 Under **{{ui:agents.register.concurrency.heading}}**, type a whole number up to 1,000 and click **{{ui:agents.register.concurrency.save}}**. Leave the box empty for no cap. A cap of 0 stops new agent runs from starting without stopping the ones already running.
 
-### Choose the agent that answers on {{ui:nav.agentsAsk}}
+### Choose the agent that answers on {{ui:agents.ask.title}}
 
 Open the agent and click **{{ui:admin.agentDetail.interactive.use}}**. From then on it answers every question asked on the [{{ui:agents.ask.title}}](../comply/ask.md) page, in place of any agent chosen before, and its page shows **{{ui:admin.agentDetail.interactive.badge}}** beside its name. Click **{{ui:admin.agentDetail.interactive.stop}}** to stop it; questions are then refused until another agent is chosen. A retired agent cannot be chosen. Until an agent is chosen, every question on that page is refused.
 
