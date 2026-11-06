@@ -621,7 +621,7 @@ const HIGH_MULTIPLICITY = 5;
 // the `tenantMembership.findFirst` that looked them up. `retention-hardening`'s
 // `toContain('findFirst')` now has one position, the duplicate-task check it
 // names. No test changed. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1138;
+const AMBIGUOUS_NEEDLE_BASELINE = 1137;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

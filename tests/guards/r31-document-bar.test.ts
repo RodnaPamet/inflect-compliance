@@ -122,9 +122,9 @@ describe("R31 (Bundle 3) — document bar", () => {
         });
 
         it("does not duplicate tldraw's own undo, redo and snap controls", () => {
-            for (const id of ["canvas-undo-btn", "canvas-redo-btn", "canvas-snap-toggle"]) {
-                expect(src).not.toContain(`data-testid="${id}"`);
-            }
+            expect(src).not.toContain('data-testid="canvas-undo-btn"');
+            expect(src).not.toContain('data-testid="canvas-redo-btn"');
+            expect(src).not.toContain('data-testid="canvas-snap-toggle"');
         });
 
         it("wraps rather than pushing Save past the frame's clipped edge", () => {
