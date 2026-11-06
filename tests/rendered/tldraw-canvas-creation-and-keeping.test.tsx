@@ -230,6 +230,30 @@ describe('a step inside a frame', () => {
     });
 });
 
+describe('the map opens framed on its content', () => {
+    // The camera is not remembered between visits, and a fresh editor looks at
+    // page (0, 0). A map drawn elsewhere opened with only an edge of a step on
+    // screen, which read as the save having moved it.
+    it('a step far from the origin is in the middle of the view when the map opens', async () => {
+        const { editor } = await mount({ nodes: [node('far', -2400, -1800)], edges: [] });
+        const [step] = stepShapes(editor);
+        const bounds = editor.getShapePageBounds(step!.id)!;
+        const view = editor.getViewportPageBounds();
+        expect(bounds.center.x).toBeCloseTo(view.center.x);
+        expect(bounds.center.y).toBeCloseTo(view.center.y);
+    });
+
+    it('never zooms a small map in past 100%', async () => {
+        const { editor } = await mount({ nodes: [node('one', 500, 500)], edges: [] });
+        expect(editor.getZoomLevel()).toBeLessThanOrEqual(1);
+    });
+
+    it('an empty map is left where it is', async () => {
+        const { editor } = await mount();
+        expect(editor.getCamera()).toMatchObject({ x: 0, y: 0, z: 1 });
+    });
+});
+
 describe('what the map cannot keep is not offered', () => {
     it('one page only', async () => {
         const { editor } = await mount();
