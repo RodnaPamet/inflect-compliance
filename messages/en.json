@@ -15685,7 +15685,8 @@
     "palette": {
       "paletteAria": "Process palette",
       "tools": "Tools",
-      "dragToAdd": "Drag to add a {label} node"
+      "dragToAdd": "Drag to add a {label} node",
+      "clickToAdd": "Add a {label} step (click, or drag onto the canvas)"
     },
     "canvasBase": {
       "emptyState": "Drag a process step from the palette to begin.",

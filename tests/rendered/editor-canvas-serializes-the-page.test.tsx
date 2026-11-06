@@ -25,7 +25,7 @@ import { installTldrawJsdomShims } from '../helpers/tldraw-jsdom';
 installTldrawJsdomShims();
 
 import { act, render } from '@testing-library/react';
-import type { Editor } from 'tldraw';
+import { PageRecordType, type Editor } from 'tldraw';
 
 import { TldrawProcessCanvas } from '@/components/processes/TldrawProcessCanvas';
 import { serializeEditorCanvas } from '@/components/processes/tldraw/editor-canvas';
@@ -164,16 +164,25 @@ describe('the session never reaches the document', () => {
 
 describe('only the CURRENT page becomes rows', () => {
     it('a process shape parked on a second page is not saved', async () => {
-        // Measured as a real hazard, not a hypothetical: `createPage` is in the
-        // default UI, and with a shape on page two `allRecords()` reports three
-        // shapes while the current page has two. Reading the store instead of
-        // the page would turn that shape into a row on a map it does not belong
-        // to — and, since the id is minted from its nodeKey, quietly into a
-        // node the user never put there.
+        // Measured as a real hazard, not a hypothetical: with a shape on page
+        // two `allRecords()` reports three shapes while the current page has
+        // two. Reading the store instead of the page would turn that shape into
+        // a row on a map it does not belong to — and, since the id is minted
+        // from its nodeKey, quietly into a node the user never put there.
+        //
+        // The canvas now runs in single-page mode (`maxPages: 1`), so the UI
+        // offers no second page and `createPage` refuses one. The page is put
+        // straight into the store here, which is what a pasted or restored
+        // document could still do, and the serializer must still hold.
         const editor = await mount();
 
         await act(async () => {
-            editor.createPage({ name: 'Page 2' });
+            editor.createPage({ name: 'Refused' });
+        });
+        expect(editor.getPages()).toHaveLength(1);
+
+        await act(async () => {
+            editor.store.put([PageRecordType.create({ name: 'Page 2', index: 'a9' as never })]);
         });
         const pages = editor.getPages();
         expect(pages.length).toBe(2);

@@ -91,6 +91,19 @@ function fakeEditor(over: { canUndo?: boolean; canRedo?: boolean } = {}) {
     };
 }
 
+/**
+ * The map's manual save. TYPED for the same reason as `saveTldrawCanvas`
+ * above: an untyped `jest.fn` makes `mock.calls[0]` an empty tuple.
+ */
+const saveMap = jest.fn(
+    async (_opts?: { name?: string }): Promise<{
+        ok: boolean;
+        error: string | null;
+        cause?: unknown;
+        saved: boolean;
+    }> => ({ ok: true, error: null, saved: true }),
+);
+
 function setup(over: Partial<Parameters<typeof useTldrawDocumentBar>[0]> = {}) {
     const f = fakeEditor();
     const onProcessesChange = jest.fn();
@@ -114,8 +127,8 @@ function setup(over: Partial<Parameters<typeof useTldrawDocumentBar>[0]> = {}) {
             toast: { error: jest.fn() } as never,
             onActiveIdChange,
             onProcessesChange,
-            onSaved: jest.fn(),
             onConflict: jest.fn(),
+            saveMap,
             fetchImpl,
             ...over,
         }),
@@ -132,25 +145,22 @@ beforeEach(() => {
     }
 });
 
-describe('rename routes through the save, not a second fetch', () => {
-    it('sends the new name WITH the version token', async () => {
-        // The design decision. A separate PUT would have to re-derive the
-        // version, and the one that forgot would write over a concurrent edit.
+describe('save and rename go through the MAP\'s save, not a PUT of their own', () => {
+    it('a rename is the map save with a name', async () => {
+        // The design decision. A PUT of its own would race the autosave for
+        // the version token, and the loser's 409 reads as another editor.
         const { hook } = setup();
         act(() => hook.result.current.handlers.setEditedName('Quarterly close'));
         await act(async () => {
             await hook.result.current.handlers.handleRenameCommit();
         });
 
-        expect(saveTldrawCanvas).toHaveBeenCalledTimes(1);
-        expect(saveTldrawCanvas.mock.calls[0]![0]).toMatchObject({
-            mapId: 'map-1',
-            name: 'Quarterly close',
-            expectedVersion: 4,
-        });
+        expect(saveMap).toHaveBeenCalledTimes(1);
+        expect(saveMap.mock.calls[0]![0]).toEqual({ name: 'Quarterly close' });
+        expect(saveTldrawCanvas).not.toHaveBeenCalled();
     });
 
-    it('optimistically updates the summary list', async () => {
+    it('updates the summary list once the rename landed', async () => {
         const { hook, onProcessesChange } = setup();
         act(() => hook.result.current.handlers.setEditedName('Renamed'));
         await act(async () => {
@@ -161,6 +171,19 @@ describe('rename routes through the save, not a second fetch', () => {
         ]);
     });
 
+    it('and does NOT when the server did not take it — the field snaps back', async () => {
+        // A 409 resolves without throwing (the reload toast owns it), so
+        // `ok` is true and only `saved` says the name did not land.
+        saveMap.mockResolvedValueOnce({ ok: true, error: null, saved: false });
+        const { hook, onProcessesChange } = setup();
+        act(() => hook.result.current.handlers.setEditedName('Renamed'));
+        await act(async () => {
+            await hook.result.current.handlers.handleRenameCommit();
+        });
+        expect(onProcessesChange).not.toHaveBeenCalled();
+        expect(hook.result.current.doc.editedName).toBe('Invoice approval');
+    });
+
     it('refuses an EMPTY name and snaps the field back', async () => {
         // Clearing the field and blurring must not send `name: ''`. The check
         // lives here rather than in the save, next to the text input.
@@ -169,7 +192,7 @@ describe('rename routes through the save, not a second fetch', () => {
         await act(async () => {
             await hook.result.current.handlers.handleRenameCommit();
         });
-        expect(saveTldrawCanvas).not.toHaveBeenCalled();
+        expect(saveMap).not.toHaveBeenCalled();
         expect(hook.result.current.doc.editedName).toBe('Invoice approval');
     });
 
@@ -179,17 +202,28 @@ describe('rename routes through the save, not a second fetch', () => {
         await act(async () => {
             await hook.result.current.handlers.handleRenameCommit();
         });
-        expect(saveTldrawCanvas).not.toHaveBeenCalled();
+        expect(saveMap).not.toHaveBeenCalled();
     });
 
     it('a plain save carries NO name', async () => {
         // Teeth for the rename test: a hook that always passed `editedName`
-        // would satisfy it while making every autosave a rename.
+        // would satisfy it while making every manual save a rename.
         const { hook } = setup();
         await act(async () => {
             await hook.result.current.handlers.handleSave();
         });
-        expect(Object.keys(saveTldrawCanvas.mock.calls[0]![0])).not.toContain('name');
+        expect(saveMap).toHaveBeenCalledTimes(1);
+        expect(saveMap.mock.calls[0]![0]).toBeUndefined();
+        expect(saveTldrawCanvas).not.toHaveBeenCalled();
+    });
+
+    it('does nothing while there is no map save yet, rather than throwing', async () => {
+        const { hook } = setup({ saveMap: null });
+        await act(async () => {
+            await hook.result.current.handlers.handleSave();
+        });
+        expect(hook.result.current.doc.error).toBeNull();
+        expect(hook.result.current.busy.saving).toBe(false);
     });
 });
 
@@ -500,13 +534,27 @@ describe('a failure says what failed, in a sentence (#4987)', () => {
         expect(hook.result.current.doc.error).toBe('Could not duplicate this map');
     });
 
-    it('a save that rejects with no reason reads the bar sentence', async () => {
-        saveTldrawCanvas.mockRejectedValueOnce(new Error(''));
+    it('a save that fails with no reason reads the bar sentence', async () => {
+        saveMap.mockResolvedValueOnce({ ok: false, error: '', cause: new Error(''), saved: false });
         const { hook } = setup();
         await act(async () => {
             await hook.result.current.handlers.handleSave();
         });
         expect(hook.result.current.doc.error).toBe('Could not save the canvas');
+    });
+
+    it("a save the server refused with a reason shows the server's reason", async () => {
+        saveMap.mockResolvedValueOnce({
+            ok: false,
+            error: 'Only an editor can change this map',
+            cause: new Error('Only an editor can change this map'),
+            saved: false,
+        });
+        const { hook } = setup();
+        await act(async () => {
+            await hook.result.current.handlers.handleSave();
+        });
+        expect(hook.result.current.doc.error).toBe('Only an editor can change this map');
     });
 
     it("a failed fetch's browser text is replaced too", async () => {

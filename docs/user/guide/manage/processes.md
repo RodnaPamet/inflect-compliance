@@ -23,7 +23,7 @@ On a narrow screen the page lists the process maps but does not show the canvas:
 | Cancel a stuck rule run | Owner, Admin, Editor |
 | Approve or reject a run waiting at a human checkpoint | Owner, Admin |
 
-The canvas and its buttons are offered to every role in full: anyone can draw on it, and **{{ui:automation.documentBar.newProcess}}**, **{{ui:automation.documentBar.save}}** and **{{ui:automation.documentBar.delete}}** are always there. For a role that cannot make the change, saving fails with **{{ui:automation.documentBar.saveFailed}}** and nothing is kept. The same goes for the rule buttons on **{{ui:processes.tabRules}}** and the cancel button on **{{ui:processes.tabMonitor}}**.
+A role that cannot edit maps sees the canvas read-only: there is no palette, and no **{{ui:automation.documentBar.newProcess}}**, **{{ui:automation.documentBar.duplicate}}** or **{{ui:automation.documentBar.save}}**. **{{ui:automation.documentBar.delete}}** appears only for Owners and Admins.
 
 If your workspace uses custom roles, editing maps also needs your custom role's permission to edit processes.
 
@@ -40,11 +40,12 @@ Use the canvas to document how work flows through the business, in a form your a
 - A list to choose which map to work on, and the map's name, which you can edit in place.
 - **{{ui:automation.documentBar.newProcess}}** and **{{ui:automation.documentBar.duplicate}}**.
 - The map's mode: **{{ui:automation.documentBar.modeProcessMap}}** or **{{ui:automation.documentBar.modeAutomation}}**, with a button to convert it to the other.
-- **{{ui:automation.documentBar.undo}}**, **{{ui:automation.documentBar.redo}}** and **{{ui:automation.documentBar.snap}}** to snap to the grid.
 - The map's status, **{{ui:automation.documentBar.statusDraft}}**, **{{ui:automation.documentBar.statusActive}}** or **{{ui:automation.documentBar.statusArchived}}**.
 - Whether your changes are saved: **{{ui:automation.documentBar.unsaved}}**, **{{ui:automation.documentBar.saving}}**, **{{ui:automation.documentBar.saved}}** or **{{ui:automation.documentBar.saveFailed}}**. Then **{{ui:automation.documentBar.save}}** and **{{ui:automation.documentBar.delete}}**.
 
-On the left, a palette of the kinds of step you can place. In the middle, the canvas. On the right, the inspector, which shows the properties of the step or connection you select. A side panel lists the map's saved versions.
+When the window is narrow the bar wraps onto a second line, so **{{ui:automation.documentBar.save}}** is always on screen.
+
+On the left, a palette of the kinds of step you can place: process steps, decisions, risks, assets and the rest. In the middle, the canvas, with its own toolbar for selecting, connecting steps with an arrow, and adding notes, text, drawings and frames, and its own undo and redo. On the right, the inspector, which shows the properties of the step or connection you select. A side panel lists the map's saved versions.
 
 **{{ui:processes.tabRules}}.** The workspace's automation rules, with their name, the event that triggers each, the action it takes, its status, when it last fired, how many times it has run, and its priority. Click a rule to open its details. Above the list, **{{ui:processes.rules.templates}}** and **{{ui:processes.rules.addRule}}**.
 
@@ -56,9 +57,11 @@ On the left, a palette of the kinds of step you can place. In the middle, the ca
 
 ### Map a process
 
-Click **{{ui:automation.documentBar.newProcess}}**, give the map a name, and place steps from the palette onto the canvas. Drag between two steps to connect them. Select a step or a connection to edit its label and details in the inspector, including the controls, risks and assets it is linked to. Press **/** on the canvas for a list of every canvas action, such as arranging the map automatically or grouping steps.
+Click **{{ui:automation.documentBar.newProcess}}** and give the map a name. To add a step, click its kind in the palette, which places it in the middle of the view, or drag it onto the spot you want. While you are inside a group, a new step goes into that group. To connect two steps, pick the arrow in the canvas toolbar and draw from one step to the other. Select a step or a connection to edit its label and details in the inspector, including the controls, risks and assets it is linked to. Press **/** on the canvas for a list of every canvas action, such as arranging or aligning the map, undo and redo, or snapping to the grid.
 
-Your changes save on their own after a pause, and **{{ui:automation.documentBar.save}}** saves at once. Each save keeps a version you can compare against the current map or restore from the version list. Restoring asks first, in a dialog that names the version, and keeps the history: the restored map becomes a new version.
+Notes, text, drawings and frames are kept with the map and come back when you open it again. The canvas has one page, and does not take images, videos or embedded web pages, because the map would not keep them.
+
+Your changes save on their own after a pause, and **{{ui:automation.documentBar.save}}** saves at once. If a save is already under way, **{{ui:automation.documentBar.save}}** waits for it and then saves again, so the two never trip over each other. Renaming the map saves it too. Each save keeps a version you can compare against the current map or restore from the version list. Restoring asks first, in a dialog that names the version, and keeps the history: the restored map becomes a new version.
 
 ### Turn a map into an automation workflow
 
@@ -87,7 +90,7 @@ Click **{{ui:automation.documentBar.delete}}**. You are asked to type the map's 
 | --- | --- | --- |
 | The page was not found | The process canvas module is off | Ask an Owner to turn it on |
 | **{{ui:processes.mobileEmpty}}** | The workspace has no process maps | Open the page on a larger screen to create one |
-| **{{ui:automation.documentBar.saveFailed}}** | The latest change was not kept. Your role may not edit maps | Check your role; reload the page to see the map as it is stored |
+| **{{ui:automation.documentBar.saveFailed}}** | The latest change was not kept. The reason is shown beside it | Click **{{ui:automation.documentBar.save}}** to try again; if it fails again, reload the page to see the map as it is stored |
 | **{{ui:automation.documentBar.deleteFailed}}** | The map was not deleted. Only Owners and Admins can delete maps | Ask an Owner or Admin |
 | **{{ui:processes.rules.emptyTitle}}** | The workspace has no automation rules | Owners and Admins click **{{ui:processes.rules.addRule}}** |
 | **{{ui:processes.rules.loadError}}** | The rules did not load | Reload the page |

@@ -82,6 +82,11 @@ import { CheckpointReviewProvider } from '@/lib/processes/canvas-checkpoint-revi
 import { CheckpointReviewPanel } from '@/components/processes/CheckpointReviewPanel';
 import type { AutosaveStatus } from '@/lib/processes/use-canvas-autosave';
 import { useTldrawDocumentBar } from '@/lib/processes/use-tldraw-document-bar';
+import type { TldrawCanvasAutosaveApi } from '@/lib/processes/use-tldraw-canvas-autosave';
+import {
+    createProcessNode,
+    placementForClick,
+} from '@/components/processes/tldraw/create-process-node';
 import { useTldrawSelection } from '@/lib/processes/use-tldraw-selection';
 
 /**
@@ -236,6 +241,17 @@ function Inner({
     const [editor, setEditor] = useState<Editor | null>(null);
     const [version, setVersion] = useState<number | undefined>(undefined);
     const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>('idle');
+    const [autosaveError, setAutosaveError] = useState<string | null>(null);
+    /*
+        The open map's manual save, handed up by `TldrawProcessMap`. Held as a
+        function in state, so it is set through an updater: passed bare,
+        `setState` would CALL it as one.
+    */
+    const [saveMap, setSaveMap] = useState<TldrawCanvasAutosaveApi['saveNow'] | null>(null);
+    const handleSaveNowChange = useCallback(
+        (next: TldrawCanvasAutosaveApi['saveNow'] | null) => setSaveMap(() => next),
+        [],
+    );
     const [reloadKey, setReloadKey] = useState(0);
     /**
      * The open diff, holding the live snapshot CAPTURED AT CLICK TIME.
@@ -290,9 +306,14 @@ function Inner({
     useUnsavedNavigationGuard(hasUnsavedWork, t('unsavedLeaveConfirm'));
 
     const handleState = useCallback(
-        (s: { version: number | undefined; autosaveStatus: AutosaveStatus }) => {
+        (s: {
+            version: number | undefined;
+            autosaveStatus: AutosaveStatus;
+            autosaveError: string | null;
+        }) => {
             setVersion(s.version);
             setAutosaveStatus(s.autosaveStatus);
+            setAutosaveError(s.autosaveError);
         },
         [],
     );
@@ -368,12 +389,12 @@ function Inner({
         activeProcess,
         version,
         autosaveStatus,
-        autosaveError: null,
+        autosaveError,
         toast,
         onActiveIdChange,
         onProcessesChange,
-        onSaved: handleSaved,
         onConflict: handleConflict,
+        saveMap,
     });
 
     const selection = useTldrawSelection(editor);
@@ -390,6 +411,26 @@ function Inner({
      * the keyboard parity.
      */
     const drill = useCanvasDrillStack();
+
+    /**
+     * A palette item clicked, rather than dragged: the step lands in the middle
+     * of the view, inside the group the user has drilled into, and is selected
+     * so the inspector opens on it. The same `createProcessNode` the drop uses,
+     * so the two ways in cannot drift apart.
+     */
+    const handleAddStep = useCallback(
+        (kind: string, label: string) => {
+            if (!editor || !canEdit) return;
+            const id = createProcessNode(editor, {
+                kind,
+                label,
+                point: placementForClick(editor),
+                parentNodeKey: drill.currentGroupId,
+            });
+            editor.select(id);
+        },
+        [editor, canEdit, drill.currentGroupId],
+    );
 
     /**
      * The `/` shortcut is scoped to this element.
@@ -456,8 +497,9 @@ function Inner({
                 arrangeForce: (scope) => {
                     if (editor) void runForceLayout(editor, scope);
                 },
-                group: () => editor?.groupShapes(ids()),
-                ungroup: () => editor?.ungroupShapes(ids()),
+                // No `group` / `ungroup`: tldraw groups are off on this
+                // canvas (see `TldrawProcessCanvas`), so the palette offers
+                // neither rather than a verb whose result a save would drop.
                 align: (edge) => editor?.alignShapes(ids(), edge),
                 distribute: (axis) => editor?.distributeShapes(ids(), axis),
                 deleteSelection: () => editor?.deleteShapes(ids()),
@@ -519,7 +561,7 @@ function Inner({
             <CanvasCommandPalette groups={commandGroups} hostRef={canvasHostRef} />
 
             <div className="flex min-h-0 flex-1">
-                {canEdit && <ProcessPalette />}
+                {canEdit && <ProcessPalette onAdd={handleAddStep} />}
 
                 {/* `relative`, so the checkpoint panel's `absolute` resolves
                     against the CANVAS AREA rather than the page: it must sit
@@ -536,6 +578,7 @@ function Inner({
                         onEnterGroup={drill.enter}
                         onEditorReady={setEditor}
                         onStateChange={handleState}
+                        onSaveNowChange={handleSaveNowChange}
                         onSaved={handleSaved}
                         readOnly={!canEdit}
                     />

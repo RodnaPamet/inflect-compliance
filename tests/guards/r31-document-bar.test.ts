@@ -24,10 +24,11 @@
  *     so future bundles can target the canonical document
  *     bar without ambiguity
  *
- * The process selector, name input, action cluster, snap
- * toggle, autosave status, version pill, and Save stay in
- * place — every existing testid the R26 / R28 ratchets pin
- * keeps working.
+ * The process selector, name input, action cluster, autosave
+ * status, version pill, and Save stay in place. The bar's own
+ * Undo, Redo and Snap buttons are GONE: the canvas is tldraw,
+ * which draws its own undo and redo and keeps snapping in its
+ * preferences, and the command palette offers all three.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -113,14 +114,24 @@ describe("R31 (Bundle 3) — document bar", () => {
                 "process-name-input",
                 "new-process-btn",
                 "duplicate-process-btn",
-                "canvas-undo-btn",
-                "canvas-redo-btn",
-                "canvas-snap-toggle",
                 "autosave-status",
                 "save-process-btn",
             ]) {
                 expect(src).toMatch(new RegExp(`data-testid="${id}"`));
             }
+        });
+
+        it("does not duplicate tldraw's own undo, redo and snap controls", () => {
+            expect(src).not.toContain('data-testid="canvas-undo-btn"');
+            expect(src).not.toContain('data-testid="canvas-redo-btn"');
+            expect(src).not.toContain('data-testid="canvas-snap-toggle"');
+        });
+
+        it("wraps rather than pushing Save past the frame's clipped edge", () => {
+            // The page's frame is `overflow-hidden`, so an unwrapping bar
+            // hid whatever overflowed — the Save button, at its end.
+            expect(src).toMatch(/data-canvas-document-bar="true"/);
+            expect(src).toMatch(/className="flex flex-wrap items-center gap-x-default/);
         });
     });
 });

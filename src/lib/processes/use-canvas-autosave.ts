@@ -4,10 +4,10 @@
  * R28 — Canvas autosave.
  *
  * Debounced "save N seconds after the last edit" loop for the
- * Processes canvas. Sits OUTSIDE the manual Save button — the
- * button still ships, and a manual save resets the autosave
- * dirty clock. Autosave is the safety net, not the primary
- * commit gesture.
+ * Processes canvas. The manual Save button goes THROUGH it
+ * (`flush`), so the two never race each other for the version
+ * token. Autosave is the safety net, not the primary commit
+ * gesture.
  *
  *   • The consumer flags edits via `markDirty()` — typically
  *     inside the `onNodesChange` / `onEdgesChange` handlers
@@ -72,6 +72,26 @@ export interface CanvasAutosaveApi {
     lastSavedAt: number | null;
     /** Error message from the last failed save, or null. */
     error: string | null;
+    /**
+     * Save NOW, through the same queue — the manual Save button.
+     *
+     * Cancels the debounce, waits for a save already in flight, then saves
+     * whether or not anything is dirty (a rename is a save of an unchanged
+     * graph). One queue matters: a manual save that ran beside the autosave
+     * sent the version the other had just spent, and the server answered 409,
+     * which the user saw as somebody else editing their map.
+     */
+    flush: () => Promise<FlushResult>;
+}
+
+/** What a manual save reports back. */
+export interface FlushResult {
+    /** True when the save callback resolved. */
+    ok: boolean;
+    /** The failed save's message, or null. */
+    error: string | null;
+    /** What the failed save threw, for a caller that words its own message. */
+    cause?: unknown;
 }
 
 export function useCanvasAutosave({
@@ -85,6 +105,8 @@ export function useCanvasAutosave({
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const dirtySinceRef = useRef<number | null>(null);
     const inFlightRef = useRef(false);
+    // The in-flight save itself, so `flush` can wait for it.
+    const inFlightPromiseRef = useRef<Promise<FlushResult> | null>(null);
     // Carry the latest save callback through the timer closure so
     // a re-rendered consumer doesn't bind a stale reference.
     const saveRef = useRef(save);
@@ -99,38 +121,56 @@ export function useCanvasAutosave({
         }
     }, []);
 
-    const runSave = useCallback(async () => {
-        if (inFlightRef.current) return;
-        if (!enabled) return;
+    const runSave = useCallback((): Promise<FlushResult> => {
+        if (inFlightRef.current || !enabled) {
+            return Promise.resolve({ ok: false, error: null });
+        }
         const startedAt = Date.now();
         inFlightRef.current = true;
         setStatus("saving");
         setError(null);
-        try {
-            await saveRef.current();
-            // Re-check dirty: if an edit arrived during the save,
-            // schedule another debounce cycle. Otherwise we're
-            // genuinely clean.
-            const dirtyAt = dirtySinceRef.current;
-            const stillDirty = dirtyAt !== null && dirtyAt > startedAt;
-            setLastSavedAt(Date.now());
-            if (stillDirty) {
-                setStatus("pending");
-                clearTimer();
-                timerRef.current = setTimeout(() => {
-                    void runSave();
-                }, delayMs);
-            } else {
-                setStatus("saved");
-                dirtySinceRef.current = null;
+        const run = (async (): Promise<FlushResult> => {
+            try {
+                await saveRef.current();
+                // Re-check dirty: if an edit arrived during the save,
+                // schedule another debounce cycle. Otherwise we're
+                // genuinely clean.
+                const dirtyAt = dirtySinceRef.current;
+                const stillDirty = dirtyAt !== null && dirtyAt > startedAt;
+                setLastSavedAt(Date.now());
+                if (stillDirty) {
+                    setStatus("pending");
+                    clearTimer();
+                    timerRef.current = setTimeout(() => {
+                        void runSave();
+                    }, delayMs);
+                } else {
+                    setStatus("saved");
+                    dirtySinceRef.current = null;
+                }
+                return { ok: true, error: null };
+            } catch (e) {
+                const message = e instanceof Error ? e.message : "Autosave failed";
+                setError(message);
+                setStatus("error");
+                return { ok: false, error: message, cause: e };
+            } finally {
+                inFlightRef.current = false;
+                inFlightPromiseRef.current = null;
             }
-        } catch (e) {
-            setError(e instanceof Error ? e.message : "Autosave failed");
-            setStatus("error");
-        } finally {
-            inFlightRef.current = false;
-        }
+        })();
+        inFlightPromiseRef.current = run;
+        return run;
     }, [enabled, delayMs, clearTimer]);
+
+    const flush = useCallback(async (): Promise<FlushResult> => {
+        clearTimer();
+        // Wait for a save already on the wire. Its result is not ours: the
+        // graph may have changed since it serialised, so save again.
+        const pending = inFlightPromiseRef.current;
+        if (pending) await pending;
+        return runSave();
+    }, [clearTimer, runSave]);
 
     const markDirty = useCallback(() => {
         if (!enabled) return;
@@ -170,7 +210,7 @@ export function useCanvasAutosave({
     // halves, including a test documenting that the object-dep shape still
     // churns.
     return useMemo(
-        () => ({ markDirty, markClean, status, lastSavedAt, error }),
-        [markDirty, markClean, status, lastSavedAt, error],
+        () => ({ markDirty, markClean, flush, status, lastSavedAt, error }),
+        [markDirty, markClean, flush, status, lastSavedAt, error],
     );
 }

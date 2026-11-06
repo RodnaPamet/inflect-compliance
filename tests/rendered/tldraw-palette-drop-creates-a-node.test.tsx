@@ -53,10 +53,17 @@ function nodes(editor: Editor) {
         ) as Array<{ x: number; y: number; props: { nodeKey: string; nodeType: string; label: string } }>;
 }
 
-/** A drop carrying `payload` at the given client point. */
-async function drop(payload: string | null, at = { clientX: 300, clientY: 220 }) {
-    const host = document.querySelector('[data-tldraw-process-canvas="true"]');
-    if (!host) throw new Error('canvas host not found');
+/**
+ * A drop carrying `payload` at the given client point, dispatched on `target`
+ * (default: our host wrapper).
+ */
+async function drop(
+    payload: string | null,
+    at = { clientX: 300, clientY: 220 },
+    target = '[data-tldraw-process-canvas="true"]',
+) {
+    const host = document.querySelector(target);
+    if (!host) throw new Error(`drop target not found: ${target}`);
     const data = new Map<string, string>();
     if (payload !== null) data.set(PALETTE_DRAG_MIME, payload);
     await act(async () => {
@@ -144,6 +151,72 @@ describe('dropping a palette item', () => {
             editor.undo();
         });
         expect(nodes(editor)).toHaveLength(0);
+    });
+});
+
+describe('a drop on tldraw\'s OWN canvas element — where a real drop lands', () => {
+    it('still creates the node', async () => {
+        // THE defect behind "palette items cannot be used". In a browser the
+        // drop lands on tldraw's canvas, inside our wrapper, and tldraw's own
+        // drop handler stops the event there. Our handler sat on the wrapper in
+        // the BUBBLE phase, so it never ran; every test above dispatched on the
+        // wrapper itself and so never saw it. It is in the capture phase now.
+        const editor = await mount();
+        expect(document.querySelector('.tl-canvas')).not.toBeNull();
+        await drop(
+            JSON.stringify({ kind: 'risk', label: 'Risk' }),
+            { clientX: 300, clientY: 220 },
+            '.tl-canvas',
+        );
+        const created = nodes(editor);
+        expect(created).toHaveLength(1);
+        expect(created[0]!.props.nodeType).toBe('risk');
+    });
+
+    it('leaves a drag that is not a palette item for tldraw', async () => {
+        // A dragover claimed for everything would take file drops from tldraw.
+        await mount();
+        const host = document.querySelector('[data-tldraw-process-canvas="true"]')!;
+        const over = (types: string[]) => {
+            const event = new Event('dragover', { bubbles: true, cancelable: true });
+            Object.assign(event, { dataTransfer: { types, dropEffect: '' } });
+            act(() => {
+                host.dispatchEvent(event);
+            });
+            return event.defaultPrevented;
+        };
+        expect(over(['Files'])).toBe(false);
+        expect(over([PALETTE_DRAG_MIME])).toBe(true);
+    });
+});
+
+describe('a drop while drilled into a group', () => {
+    it('puts the step IN that group, or the drill filter would hide it at once', async () => {
+        let editor: Editor | undefined;
+        await act(async () => {
+            render(
+                <div style={{ width: 800, height: 600 }}>
+                    <TldrawProcessCanvas
+                        rows={{
+                            nodes: [
+                                {
+                                    nodeKey: 'g1', nodeType: 'group', label: 'Approvals',
+                                    subtitle: null, posX: 0, posY: 0, parentNodeKey: null, dataJson: null,
+                                },
+                            ],
+                            edges: [],
+                        }}
+                        drillGroupId="g1"
+                        onEditorReady={(e) => (editor = e)}
+                    />
+                </div>,
+            );
+        });
+        await drop(JSON.stringify({ kind: 'processStep', label: 'Inside' }));
+        const created = nodes(editor!).find((n) => n.props.label === 'Inside') as
+            | { props: { parentNodeKey: string | null } }
+            | undefined;
+        expect(created?.props.parentNodeKey).toBe('g1');
     });
 });
 

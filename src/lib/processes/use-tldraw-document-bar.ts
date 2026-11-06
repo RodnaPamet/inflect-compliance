@@ -18,9 +18,10 @@
  *
  * Not a separate endpoint. The xyflow rename PUTs `name` alongside a full
  * `serializeGraphForSave(...)`, so it carries the graph too — which is why it
- * reads as engine-coupled. Here it goes through `saveTldrawCanvas` with its
- * new optional `name`, so it inherits the version token, the 409 handling and
- * the `onSaved` contract rather than reimplementing all three beside them.
+ * reads as engine-coupled. Here it goes through the map's `saveMap` with a
+ * `name`, the same call the Save button makes. That is the autosave's own
+ * queue, so a rename inherits the version token, the 409 handling and the
+ * `onSaved` contract, and cannot race an autosave for the token.
  *
  * ── Undo/redo is tldraw's, and it has to be OBSERVED ─────────────────
  *
@@ -44,7 +45,8 @@ import {
     deleteProcessMap,
     type CanvasMode,
 } from '@/lib/processes/switch-canvas-mode';
-import { saveTldrawCanvas, type SavedProcessMap } from '@/lib/processes/tldraw-save';
+import { saveTldrawCanvas } from '@/lib/processes/tldraw-save';
+import type { ManualSaveResult } from '@/lib/processes/use-tldraw-canvas-autosave';
 import { refusalReason } from '@/lib/api-error';
 import { extractMutationError } from '@/lib/mutations';
 
@@ -92,8 +94,17 @@ export interface UseTldrawDocumentBarOptions<P extends DocumentBarProcess> {
     toast: ToastApi;
     onActiveIdChange: (id: string | null) => void;
     onProcessesChange: (next: P[]) => void;
-    onSaved: (saved: SavedProcessMap) => void;
     onConflict: () => void;
+    /**
+     * The open map's manual save, or `null` until the map and editor are up.
+     *
+     * Save and rename go through this rather than a PUT of their own: it is
+     * the autosave's queue, so the two share one version token. A Save that
+     * PUT by itself while an autosave was in flight sent the version the
+     * autosave had just spent, and the 409 that came back read as somebody
+     * else editing the map.
+     */
+    saveMap: ((opts?: { name?: string }) => Promise<ManualSaveResult>) | null;
     /** Seam for tests. */
     fetchImpl?: typeof fetch;
 }
@@ -120,8 +131,8 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
     toast,
     onActiveIdChange,
     onProcessesChange,
-    onSaved,
     onConflict,
+    saveMap,
     fetchImpl,
 }: UseTldrawDocumentBarOptions<P>) {
     const [editedName, setEditedName] = useState(activeProcess?.name ?? '');
@@ -187,61 +198,48 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
         [editor],
     );
 
-    /** Save the current page. Shared by the manual save and the rename. */
-    const saveNow = useCallback(
-        async (name?: string) => {
-            if (!editor || !mapId) return;
-            await saveTldrawCanvas({
-                tenantSlug,
-                mapId,
-                canvas: serializeEditorCanvas(editor),
-                ...(version !== undefined ? { expectedVersion: version } : {}),
-                ...(name !== undefined ? { name } : {}),
-                toast,
-                onConflict,
-                onSaved,
-                ...(fetchImpl ? { fetchImpl } : {}),
-            });
-        },
-        [editor, mapId, tenantSlug, version, toast, onConflict, onSaved, fetchImpl],
-    );
-
     const handleSave = useCallback(async () => {
+        if (!saveMap) return;
         setSaving(true);
         setError(null);
         try {
-            await saveNow();
-        } catch (e) {
-            setError(extractMutationError(e, failSave));
+            const result = await saveMap();
+            if (!result.ok) setError(extractMutationError(result.cause ?? null, failSave));
         } finally {
             setSaving(false);
         }
-    }, [saveNow, failSave]);
+    }, [saveMap, failSave]);
 
     const handleRenameCommit = useCallback(async () => {
         if (!activeProcess) return;
         const trimmed = editedName.trim();
         // An empty or unchanged name is a no-op, and the field snaps back —
         // otherwise clearing it and blurring would send `name: ''`.
-        if (trimmed === '' || trimmed === activeProcess.name) {
+        if (trimmed === '' || trimmed === activeProcess.name || !saveMap) {
             setEditedName(activeProcess.name);
             return;
         }
         setSaving(true);
         setError(null);
         try {
-            await saveNow(trimmed);
-            onProcessesChange(
-                processes.map((p) =>
-                    p.id === activeProcess.id ? { ...p, name: trimmed } : p,
-                ),
-            );
-        } catch (e) {
-            setError(extractMutationError(e, failRename));
+            const result = await saveMap({ name: trimmed });
+            if (result.saved) {
+                onProcessesChange(
+                    processes.map((p) =>
+                        p.id === activeProcess.id ? { ...p, name: trimmed } : p,
+                    ),
+                );
+            } else {
+                // Refused, or answered with a conflict the reload toast owns:
+                // either way the stored name is still the old one, so the
+                // field says so rather than showing a rename that did not land.
+                setEditedName(activeProcess.name);
+                if (!result.ok) setError(extractMutationError(result.cause ?? null, failRename));
+            }
         } finally {
             setSaving(false);
         }
-    }, [activeProcess, editedName, saveNow, processes, onProcessesChange, failRename]);
+    }, [activeProcess, editedName, saveMap, processes, onProcessesChange, failRename]);
 
     /**
      * Create a map, in either canvas mode (#3116).
