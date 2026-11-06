@@ -445,8 +445,7 @@
     "account": "Акаунт",
     "multiFactorAuth": "Многофакторно удостоверяване",
     "signOut": "Изход",
-    "closeNavigationDrawer": "Затвори навигационния панел",
-    "agentsAsk": "Попитай"
+    "closeNavigationDrawer": "Затвори навигационния панел"
   },
   "dashboard": {
     "title": "Табло за съответствие",

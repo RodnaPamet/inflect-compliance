@@ -445,8 +445,7 @@
     "account": "Account",
     "multiFactorAuth": "Multi-factor authentication",
     "signOut": "Sign out",
-    "closeNavigationDrawer": "Close navigation drawer",
-    "agentsAsk": "Ask"
+    "closeNavigationDrawer": "Close navigation drawer"
   },
   "dashboard": {
     "title": "Compliance Dashboard",
