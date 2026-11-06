@@ -31,6 +31,7 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { apiErrorMessage } from '@/lib/api-error';
 import {
     EVENT_LABELS,
     eventOptionsByDomain,
@@ -680,10 +681,16 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                 body: JSON.stringify(payload),
             });
             if (!res.ok) {
-                const e = await res.json().catch(() => ({ error: t('saveFailed') }));
-                throw new Error(e.error ?? t('saveFailed'));
+                // `e.error` is the envelope OBJECT (`{ code, message }`), so
+                // this read "[object Object]". The server's sentence, or ours.
+                const refusal: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(refusal, t('saveFailed')));
             }
             await mutate(apiUrl(CACHE_KEYS.automation.rules.list()));
+            // And the rule's own detail, which the sheet's Configuration card
+            // reads: without this it showed the configuration from before the
+            // edit until the page was reloaded.
+            if (editRule) await mutate(apiUrl(CACHE_KEYS.automation.rules.detail(editRule.id)));
             setOpen(false);
             setForm(EMPTY);
             setStep(1);

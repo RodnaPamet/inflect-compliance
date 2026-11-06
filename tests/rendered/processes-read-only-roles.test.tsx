@@ -148,9 +148,9 @@ async function renderRules(canManage: boolean) {
 }
 
 async function openRule(view: Awaited<ReturnType<typeof renderRules>>) {
-    // The rules table has row selection, so the single click selects and the
-    // DOUBLE click opens the rule's sheet.
-    await act(async () => { fireEvent.doubleClick(view.getByText('Notify owner on overdue task')); });
+    // The rules table has no row selection (it has no bulk action), so the
+    // single click opens the rule's sheet.
+    await act(async () => { fireEvent.click(view.getByText('Notify owner on overdue task')); });
     await waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull());
     return document.querySelector('[role="dialog"]') as HTMLElement;
 }

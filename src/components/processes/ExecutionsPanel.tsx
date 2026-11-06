@@ -4,20 +4,25 @@
  * Execution history panel (Automation Epic 6).
  *
  * The GRC audit trail for a single rule: recent executions with status,
- * trigger source, duration, and an expandable error/outcome line, plus a
- * manual re-trigger. Reads the cursor-paginated executions endpoint (first
- * page) via SWR; "Load more" advances the cursor.
+ * trigger source, duration, and an expandable error/outcome line. Reads the
+ * cursor-paginated executions endpoint (first page) via SWR.
+ *
+ * It had a "Re-trigger" button too, and it was removed rather than fixed.
+ * It called the same endpoint as Monitor's "Test a rule" → Fire, but read
+ * only the status: the server answers 200 with `enqueued: false` when there
+ * is nothing to replay, and the button said "Re-run queued" for a run that
+ * never happened. It was also offered to every role, while the server takes
+ * the write tier. Fire reports each outcome, and is offered to the roles that
+ * can use it.
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
-import { Button } from '@/components/ui/button';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { useToast } from '@/components/ui/hooks';
 import { ApiClientError } from '@/lib/api-client';
 import {
     buildExecutionStatusLabels,
@@ -41,22 +46,15 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     SKIPPED: 'neutral',
 };
 
-export function ExecutionsPanel({
-    ruleId,
-    ruleEnabled,
-}: {
-    ruleId: string;
-    ruleEnabled: boolean;
-}) {
+export function ExecutionsPanel({ ruleId }: { ruleId: string }) {
     const t = useTranslations('automation.executions');
-    const toast = useToast();
     const apiUrl = useTenantApiUrl();
     // Shared with MonitorTab — see execution-status-labels.ts for why these
     // stopped being a local record.
     const statusLabels = buildExecutionStatusLabels((k) => t(k as Parameters<typeof t>[0]));
     const triggerLabels = buildTriggerSourceLabels((k) => t(k as Parameters<typeof t>[0]));
     const key = apiUrl(CACHE_KEYS.automation.rules.executions(ruleId));
-    const { data, isLoading, error, mutate } = useSWR<{
+    const { data, isLoading, error } = useSWR<{
         items: ExecutionRow[];
         nextCursor: string | null;
     }>(
@@ -73,48 +71,13 @@ export function ExecutionsPanel({
         },
     );
     const [expanded, setExpanded] = useState<string | null>(null);
-    const [retriggering, setRetriggering] = useState(false);
-
-    async function reTrigger() {
-        setRetriggering(true);
-        try {
-            const res = await fetch(apiUrl(`/automation/rules/${ruleId}/re-trigger`), {
-                method: 'POST',
-            });
-            // Fire-and-forget before: a 403 (no execute grant), a 429 (mutation
-            // rate limit) and a successful enqueue were indistinguishable — the
-            // spinner stopped and the list did not change, which reads as "the
-            // rule ran and produced nothing".
-            if (!res.ok) {
-                toast.error(t('retriggerFailed'));
-                return;
-            }
-            toast.success(t('retriggerQueued'));
-            // Give the worker a beat, then refresh the list.
-            await mutate();
-        } finally {
-            setRetriggering(false);
-        }
-    }
-
     const items = data?.items ?? [];
 
     return (
         <div className="space-y-tight">
-            <div className="flex items-center justify-between">
-                <p className="text-[11px] uppercase tracking-wide text-content-subtle">
-                    {t('recent')}
-                </p>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={!ruleEnabled || retriggering}
-                    loading={retriggering}
-                    onClick={reTrigger}
-                >
-                    {t('retrigger')}
-                </Button>
-            </div>
+            <p className="text-[11px] uppercase tracking-wide text-content-subtle">
+                {t('recent')}
+            </p>
             {error ? (
                 <InlineNotice variant="error">{t('loadError')}</InlineNotice>
             ) : isLoading ? (

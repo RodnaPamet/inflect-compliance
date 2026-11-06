@@ -193,7 +193,7 @@ export function ProcessesClient({
                 ) : tab === "analytics" ? (
                     <AnalyticsTab />
                 ) : tab === "monitor" ? (
-                    <MonitorTab canCancel={canOperateCheckpoints} />
+                    <MonitorTab canExecute={canOperateCheckpoints} />
                 ) : (
                     <CanvasWorkspace
                         tenantSlug={tenantSlug}

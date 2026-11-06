@@ -340,7 +340,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/TraceabilityPanel.tsx': 1, // partial, 1 prop
     'src/components/dev/swr-devtools.tsx': 6, // 6 jsx; the 3 a11y props left for common.ui (#3209 tranche 4)
     'src/components/layout/MobileNavDrawer.tsx': 1, // partial, 1 prop
-    'src/components/processes/RuleDetailSheet.tsx': 4, // partial, 3 jsx + 1 prop
     'src/components/risks/RiskScoreExplainer.tsx': 1, // partial, 1 prop
     'src/components/ui/ComplianceStatusIndicator.tsx': 4, // no-intl, 4 prop
     'src/components/ui/DonutChart.tsx': 1, // partial, 1 jsx

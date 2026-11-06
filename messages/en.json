@@ -10533,7 +10533,7 @@
       "colPriority": "Priority",
       "never": "Never",
       "emptyTitle": "No automation rules yet",
-      "emptyDesc": "Automation rules fire actions when domain events occur. The rule builder arrives in a later release.",
+      "emptyDesc": "Automation rules fire actions when domain events occur. Start from a template, or create a rule.",
       "resPlural": "rules",
       "resSingular": "rule",
       "archive": "Archive rule",
@@ -10543,7 +10543,10 @@
       "toggleEnabledAria": "Toggle rule enabled",
       "priorityAria": "Rule priority",
       "close": "Close",
-      "edit": "Edit"
+      "edit": "Edit",
+      "emptyDescReadOnly": "Automation rules fire actions when domain events occur. Owners and Admins create them.",
+      "updateFailed": "Could not update this rule.",
+      "sheetDescription": "Automation rule detail"
     },
     "analytics": {
       "emptyTitle": "No automation rules yet",
@@ -15664,7 +15667,6 @@
     },
     "executions": {
       "recent": "Recent executions",
-      "retrigger": "Re-trigger",
       "loading": "Loading…",
       "empty": "No executions yet.",
       "duration": "Duration: {ms}ms",
@@ -15674,8 +15676,6 @@
       "statusPending": "PENDING",
       "statusSkipped": "SKIPPED",
       "loadError": "Could not load this rule’s execution history.",
-      "retriggerFailed": "Could not re-run this rule.",
-      "retriggerQueued": "Re-run queued.",
       "triggeredByEvent": "Event",
       "triggeredByManual": "Manual",
       "triggeredBySchedule": "Schedule",

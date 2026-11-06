@@ -8,8 +8,8 @@
  * execution count, and priority, filterable by status / trigger / action.
  *
  * Filtering is in-memory over the fetched list (rule counts are small).
- * Row click → RuleDetailSheet and the "+ Rule" builder land in Epics 2-3;
- * Epic 1 ships the read-only inventory.
+ * A row click opens RuleDetailSheet; Owners and Admins also get the
+ * builder and the template library.
  */
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -236,10 +236,16 @@ function RulesTabInner({ tenantSlug, canManage }: { tenantSlug: string; canManag
                     getRowId: getRuleRowId,
                     resourceName: (plural) => (plural ? t('rules.resPlural') : t('rules.resSingular')),
                     onRowClick: handleRuleRowClick,
+                    // No select column: the tab has no bulk action, so the
+                    // checkboxes did nothing — and selection took the single
+                    // click, which made opening a rule a DOUBLE click.
+                    selectionEnabled: false,
                     emptyState: (
                         <EmptyState
                             title={t('rules.emptyTitle')}
-                            description={t('rules.emptyDesc')}
+                            description={
+                                canManage ? t('rules.emptyDesc') : t('rules.emptyDescReadOnly')
+                            }
                         />
                     ),
                     'data-testid': 'automation-rules-table',
@@ -256,13 +262,19 @@ function RulesTabInner({ tenantSlug, canManage }: { tenantSlug: string; canManag
                     setBuilderOpen(true);
                 }}
             />
-            <RuleBuilderModal
-                tenantSlug={tenantSlug}
-                open={builderOpen}
-                setOpen={setBuilderOpen}
-                editRule={editRule}
-            />
-            <TemplateLibraryModal open={templatesOpen} setOpen={setTemplatesOpen} />
+            {/* Mounted only for a viewer who can open them: nothing else does,
+                and a closed modal still costs its fetches and its render. */}
+            {canManage && (
+                <>
+                    <RuleBuilderModal
+                        tenantSlug={tenantSlug}
+                        open={builderOpen}
+                        setOpen={setBuilderOpen}
+                        editRule={editRule}
+                    />
+                    <TemplateLibraryModal open={templatesOpen} setOpen={setTemplatesOpen} />
+                </>
+            )}
         </>
     );
 }
