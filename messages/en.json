@@ -15631,7 +15631,7 @@
       "actionInvokeAgent": "Invoke agent",
       "connectHint": "Connect this step to an Action or Agent step. It then sets that step's rule.",
       "saveToConnect": "Save the map to create the rule of the step this leads to.",
-      "configures": "{count, plural, one {Sets this rule:} other {Sets these # rules:}}",
+      "configures": "Sets the rule of each step it leads to:",
       "editAction": "Edit action",
       "editConditions": "Edit conditions",
       "editConditionsOf": "Edit conditions of {name}",

@@ -45,8 +45,14 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { eventOptionsByDomain } from '@/lib/automation/event-labels';
 import { useToast } from '@/components/ui/hooks';
 import { apiErrorMessage } from '@/lib/api-error';
-import { RuleBuilderModal } from './RuleBuilderModal';
-import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
+import { RuleBuilderModal, type RuleBuilderModalProps } from './RuleBuilderModal';
+
+/**
+ * A rules-list row, as the builder takes it. Named through the builder's props
+ * rather than imported from the Rules tab: a component must not import from a
+ * route directory.
+ */
+type AutomationRuleRow = NonNullable<RuleBuilderModalProps['editRule']>;
 
 export type AutomationKind = 'trigger' | 'condition' | 'action' | 'slaGate' | 'agent';
 
@@ -222,7 +228,7 @@ export function AutomationInspectorPanel({
             {!owning && (
                 <div className="space-y-tight" data-testid="automation-inspector-fed-rules">
                     <p className="text-xs text-content-muted">
-                        {t('configures', { count: ruleIds.length })}
+                        {t('configures')}
                     </p>
                     <ul className="space-y-tight">
                         {ruleIds.map((id) => (
