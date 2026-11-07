@@ -1,0 +1,228 @@
+{
+  "_meta": {
+    "purpose": "The 24 risks of the FINOS AI Governance Framework (AIGF) as global RiskTemplate rows, so a tenant can start a risk-register entry from any of them.",
+    "licensing": "FINOS AIGF content is CC-BY-4.0. Only the risk identifiers and short titles are FINOS's; every description is Inflect's own summary. The [FINOS AIGF RI-n] marker on each description is the attribution, as the [OWASP Top 10 Privacy Risks] marker is for those templates.",
+    "scoring": "FINOS does not rate likelihood or impact, so every template starts at the matrix midpoint (3 x 3) for the tenant to assess. A different default here would be an Inflect judgement presented as FINOS's.",
+    "categories": "Values from RISK_CATEGORIES (src/lib/risk/categories.ts): FINOS type SEC is Technical, OP is Operational, RC is Compliance, and RI-20, which is about reputation itself, is Reputational.",
+    "identifiers": "FINOS numbers its risks by a `sequence` and retires numbers rather than reusing them, so RI-3, RI-11, RI-12, RI-13, RI-15 and RI-21 are correctly absent.",
+    "deliveredBy": "scripts/seed-risk-templates.ts, on every container start (scripts/entrypoint.sh). Not added to prisma/seed.ts, as with the AIUC-1 catalogue: that would change the E2E database for no gain in coverage. Locally: npm run db:seed-risk-templates."
+  },
+  "templates": [
+    {
+      "id": "finos-aigf-ri-1",
+      "title": "Information Leaked To Hosted Model",
+      "description": "Confidential, personal or proprietary data sent to a model hosted by a third party is retained, memorised or exposed by the provider, or drawn back out through crafted prompts, because the boundary in both directions was trusted. [FINOS AIGF RI-1]",
+      "category": "Compliance",
+      "frameworkTag": "FINOS-AIGF:RI-1",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-2",
+      "title": "Information Leaked to Vector Store",
+      "description": "Embeddings, prompt logs and caches derived from sensitive documents are stored with weaker protection than the documents themselves, and the original content is reconstructed or inferred from them. [FINOS AIGF RI-2]",
+      "category": "Technical",
+      "frameworkTag": "FINOS-AIGF:RI-2",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-4",
+      "title": "Hallucination and Inaccurate Outputs",
+      "description": "The model states fabricated or wrong information with confidence, and a person or downstream process acts on it as fact; grounding the model in retrieved sources lowers the rate but does not remove it. [FINOS AIGF RI-4]",
+      "category": "Operational",
+      "frameworkTag": "FINOS-AIGF:RI-4",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-5",
+      "title": "Foundation Model Versioning",
+      "description": "The provider changes the model, its system prompt or its serving stack without notice, so behaviour that was tested and approved shifts in production with nothing in the organisation's own change record. [FINOS AIGF RI-5]",
+      "category": "Operational",
+      "frameworkTag": "FINOS-AIGF:RI-5",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-6",
+      "title": "Non-Deterministic Behaviour",
+      "description": "The same input yields different outputs from one run to the next, so results cannot be reproduced for a customer, a test or an investigation, and a single passing test proves little about the next answer. [FINOS AIGF RI-6]",
+      "category": "Operational",
+      "frameworkTag": "FINOS-AIGF:RI-6",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-7",
+      "title": "Availability of Foundational Model",
+      "description": "The hosted model becomes slow, throttled or unavailable through a provider outage, capacity limits or runaway consumption, and the business processes built on it stop with no working fallback. [FINOS AIGF RI-7]",
+      "category": "Operational",
+      "frameworkTag": "FINOS-AIGF:RI-7",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-8",
+      "title": "Tampering With the Foundational Model",
+      "description": "A third-party model's weights, training data or serving infrastructure is altered upstream, planting hidden triggers or removing safeguards, and the organisation consuming it has no way to verify where it came from. [FINOS AIGF RI-8]",
+      "category": "Technical",
+      "frameworkTag": "FINOS-AIGF:RI-8",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-9",
+      "title": "Data Poisoning",
+      "description": "An adversary plants misleading or malicious records in training, fine-tuning or continuously ingested data, steering the model's decisions in ways that stay quiet until they cause a loss. [FINOS AIGF RI-9]",
+      "category": "Technical",
+      "frameworkTag": "FINOS-AIGF:RI-9",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-10",
+      "title": "Prompt Injection",
+      "description": "Instructions placed in a user's message, or hidden in a document, web page or tool result the model reads, override the system's intended behaviour and make it disclose data or take actions it should not. [FINOS AIGF RI-10]",
+      "category": "Technical",
+      "frameworkTag": "FINOS-AIGF:RI-10",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-14",
+      "title": "Inadequate System Alignment",
+      "description": "A retrieval-augmented system gives answers that read well but drift from its business purpose: wrong conclusions from the documents it retrieved, constraints it was meant to respect ignored, or a tone unfit for the setting. [FINOS AIGF RI-14]",
+      "category": "Operational",
+      "frameworkTag": "FINOS-AIGF:RI-14",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-16",
+      "title": "Bias and Discrimination",
+      "description": "Skewed training data, design choices or proxy variables cause the system to treat people in protected groups less favourably, for example in credit, fraud screening or service decisions. [FINOS AIGF RI-16]",
+      "category": "Compliance",
+      "frameworkTag": "FINOS-AIGF:RI-16",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-17",
+      "title": "Lack of Explainability",
+      "description": "Nobody can say why the system reached a given outcome, so it cannot be justified to a customer or supervisor, and errors or unfair patterns go unnoticed because there is nothing to inspect. [FINOS AIGF RI-17]",
+      "category": "Compliance",
+      "frameworkTag": "FINOS-AIGF:RI-17",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-18",
+      "title": "Model Overreach / Expanded Use",
+      "description": "People rely on the system for tasks beyond what it was approved and validated for, or treat it as an expert, and act on output that nobody qualified has checked. [FINOS AIGF RI-18]",
+      "category": "Operational",
+      "frameworkTag": "FINOS-AIGF:RI-18",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-19",
+      "title": "Data Quality and Drift",
+      "description": "The data behind the system goes stale, incomplete or wrong, or the world moves away from what it learned, and its answers become inaccurate or irrelevant without any visible failure. [FINOS AIGF RI-19]",
+      "category": "Operational",
+      "frameworkTag": "FINOS-AIGF:RI-19",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-20",
+      "title": "Reputational Risk",
+      "description": "An offensive, false or unfair output from a customer-facing AI system becomes public, and because one failure can repeat across many interactions, the damage to trust spreads faster than the organisation can respond. [FINOS AIGF RI-20]",
+      "category": "Reputational",
+      "frameworkTag": "FINOS-AIGF:RI-20",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-22",
+      "title": "Regulatory Compliance and Oversight",
+      "description": "An AI system used in a regulated activity is not supervised to the standard the same activity would face if a person did it, covering suitability, fairness, record-keeping and conduct, and the gap surfaces as a breach. [FINOS AIGF RI-22]",
+      "category": "Compliance",
+      "frameworkTag": "FINOS-AIGF:RI-22",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-23",
+      "title": "Intellectual Property (IP) and Copyright",
+      "description": "Generated content reproduces material the organisation has no right to use, or staff paste confidential or licensed material into an external AI tool, creating infringement claims or loss of trade secrets. [FINOS AIGF RI-23]",
+      "category": "Compliance",
+      "frameworkTag": "FINOS-AIGF:RI-23",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-24",
+      "title": "Agent Action Authorization Bypass",
+      "description": "An agent performs an action outside its intended authority, such as a payment, a change to restricted data or a step that should have needed approval, by chaining tools, abusing an API or going around the workflow. [FINOS AIGF RI-24]",
+      "category": "Technical",
+      "frameworkTag": "FINOS-AIGF:RI-24",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-25",
+      "title": "Tool Chain Manipulation and Injection",
+      "description": "Crafted input steers an agent to pick the wrong tool, call tools in a harmful order or pass malicious parameters to a legitimate call, so its own permitted tools become the means of attack. [FINOS AIGF RI-25]",
+      "category": "Technical",
+      "frameworkTag": "FINOS-AIGF:RI-25",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-26",
+      "title": "MCP Server Supply Chain Compromise",
+      "description": "A Model Context Protocol server an agent depends on is malicious or compromised, and the data, tools or instructions it returns quietly corrupt the decisions of every agent connected to it. [FINOS AIGF RI-26]",
+      "category": "Technical",
+      "frameworkTag": "FINOS-AIGF:RI-26",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-27",
+      "title": "Agent State Persistence Poisoning",
+      "description": "Malicious instructions or corrupted reasoning are written into an agent's memory or saved state and carried into later sessions, so a single compromise keeps influencing decisions long after the original attack. [FINOS AIGF RI-27]",
+      "category": "Technical",
+      "frameworkTag": "FINOS-AIGF:RI-27",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-28",
+      "title": "Multi-Agent Trust Boundary Violations",
+      "description": "One compromised agent passes bad data, instructions or state to the agents it shares channels or resources with, and the failure cascades across a whole business process. [FINOS AIGF RI-28]",
+      "category": "Operational",
+      "frameworkTag": "FINOS-AIGF:RI-28",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-29",
+      "title": "Agent-Mediated Credential Discovery and Harvesting",
+      "description": "An agent is manipulated into using its legitimate access to search for, read and send out passwords, API keys and other secrets, giving an attacker a foothold for moving across the estate. [FINOS AIGF RI-29]",
+      "category": "Technical",
+      "frameworkTag": "FINOS-AIGF:RI-29",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    },
+    {
+      "id": "finos-aigf-ri-30",
+      "title": "Skill/Plugin Supply Chain Compromise",
+      "description": "A community or third-party skill or plugin loaded into an agent carries hostile instructions that steer its reasoning, scripts that run with the user's local privileges, or both. FINOS publishes this risk as a draft. [FINOS AIGF RI-30]",
+      "category": "Technical",
+      "frameworkTag": "FINOS-AIGF:RI-30",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3
+    }
+  ]
+}

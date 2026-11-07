@@ -1,0 +1,243 @@
+# Cross-Framework Mapping Set: FINOS AI Governance Framework → ISO/IEC 42001:2023
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# PROVENANCE: every entry is a citation FINOS itself publishes. Each AIGF
+# mitigation's front matter lists the ISO/IEC 42001:2023 clauses it addresses
+# (`iso-42001_references`), and this file is those lists, generated from the FINOS source at
+# commit 67b8c3257695. Entries carry [FINOS-crosswalk] rather than [curated]:
+# the judgement that the two relate is FINOS's, not Inflect's.
+#
+# STRENGTH: FINOS cites a clause without grading the overlap, so every entry is
+# RELATED, which gap analysis treats as "review needed" and never as covered.
+# Grading one up would be an Inflect judgement presented as FINOS's.
+#
+# NOT CARRIED: citations of clauses Inflect's ISO/IEC 42001:2023 library does not
+# model, which would resolve to nothing (mapping-targets-exist):
+#   (none)
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:finos-aigf-to-iso-42001
+name: "FINOS AI Governance Framework → ISO/IEC 42001:2023"
+description: >
+  The ISO/IEC 42001:2023 clauses FINOS cites for each AI Governance Framework
+  mitigation. Published by FINOS; structural guidance, not a compliance
+  guarantee.
+version: 1
+source_framework_ref: FINOS-AIGF
+target_framework_ref: ISO42001-2023
+
+mapping_entries:
+  - source_ref: "MI-2"
+    target_ref: "A.7.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.2 (Manage data for development and enhancement) for MI-2 (Data Filtering From External Knowledge Bases). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-2"
+    target_ref: "A.7.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.3 (Document dataset origin and selection rationale) for MI-2 (Data Filtering From External Knowledge Bases). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-2"
+    target_ref: "A.7.4"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.4 (Define and verify data-quality criteria) for MI-2 (Data Filtering From External Knowledge Bases). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-2"
+    target_ref: "A.7.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.6 (Document data-preparation techniques used) for MI-2 (Data Filtering From External Knowledge Bases). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-3"
+    target_ref: "A.6.1.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.1.3 (Document responsible design and development processes) for MI-3 (User/App/Model Firewalling/Filtering). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-3"
+    target_ref: "A.6.2.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.2 (Capture functional and non-functional requirements) for MI-3 (User/App/Model Firewalling/Filtering). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-3"
+    target_ref: "A.9.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.9.2 (Define responsible-use operational processes) for MI-3 (User/App/Model Firewalling/Filtering). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-5"
+    target_ref: "A.6.2.4"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.4 (Define verification and validation methodologies) for MI-5 (System Acceptance Testing). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-5"
+    target_ref: "A.6.2.5"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.5 (Create a deployment plan with release criteria) for MI-5 (System Acceptance Testing). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-6"
+    target_ref: "A.7.4"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.4 (Define and verify data-quality criteria) for MI-6 (Data Quality & Classification/Sensitivity). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-6"
+    target_ref: "A.7.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.2 (Manage data for development and enhancement) for MI-6 (Data Quality & Classification/Sensitivity). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-6"
+    target_ref: "A.4.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.4.3 (Record dataset provenance and characteristics) for MI-6 (Data Quality & Classification/Sensitivity). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-7"
+    target_ref: "A.2.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.2.3 (Align the AI policy with other organizational policies) for MI-7 (Legal and Contractual Frameworks for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-7"
+    target_ref: "A.10.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.10.2 (Allocate accountability across the AI supply chain) for MI-7 (Legal and Contractual Frameworks for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-7"
+    target_ref: "A.10.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.10.3 (Assess and manage supplier AI expectations) for MI-7 (Legal and Contractual Frameworks for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-7"
+    target_ref: "A.8.5"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.8.5 (Share relevant AI system information proactively) for MI-7 (Legal and Contractual Frameworks for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-8"
+    target_ref: "A.6.2.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.6 (Establish operation and performance monitoring) for MI-8 (Quality of Service (QoS) and DDoS Prevention for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-8"
+    target_ref: "A.4.5"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.4.5 (Record computing infrastructure and environments) for MI-8 (Quality of Service (QoS) and DDoS Prevention for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-10"
+    target_ref: "A.6.2.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.3 (Maintain design and development documentation) for MI-10 (AI Model Version Pinning). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-10"
+    target_ref: "A.6.2.5"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.5 (Create a deployment plan with release criteria) for MI-10 (AI Model Version Pinning). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-10"
+    target_ref: "A.6.2.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.6 (Establish operation and performance monitoring) for MI-10 (AI Model Version Pinning). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-10"
+    target_ref: "A.4.4"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.4.4 (Track algorithms, models and tooling dependencies) for MI-10 (AI Model Version Pinning). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-12"
+    target_ref: "A.3.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.3.2 (Define AI roles and accountability structures) for MI-12 (Role-Based Access Control for AI Data). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-12"
+    target_ref: "A.7.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.2 (Manage data for development and enhancement) for MI-12 (Role-Based Access Control for AI Data). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-14"
+    target_ref: "A.7.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.2 (Manage data for development and enhancement) for MI-14 (Encryption of AI Data at Rest). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-17"
+    target_ref: "A.6.1.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.1.3 (Document responsible design and development processes) for MI-17 (AI Firewall Implementation and Management). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-17"
+    target_ref: "A.6.2.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.2 (Capture functional and non-functional requirements) for MI-17 (AI Firewall Implementation and Management). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-17"
+    target_ref: "A.9.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.9.2 (Define responsible-use operational processes) for MI-17 (AI Firewall Implementation and Management). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-18"
+    target_ref: "A.9.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.9.2 (Define responsible-use operational processes) for MI-18 (Agent Authority Least Privilege Framework). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-18"
+    target_ref: "A.6.2.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.6 (Establish operation and performance monitoring) for MI-18 (Agent Authority Least Privilege Framework). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-24"
+    target_ref: "A.6.2.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.6 (Establish operation and performance monitoring) for MI-24 (Human-in-the-Loop Action Approval Gate). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-24"
+    target_ref: "A.9.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.9.2 (Define responsible-use operational processes) for MI-24 (Human-in-the-Loop Action Approval Gate). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-1"
+    target_ref: "A.7.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.2 (Manage data for development and enhancement) for MI-1 (AI Data Leakage Prevention and Detection). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-1"
+    target_ref: "A.6.2.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.6 (Establish operation and performance monitoring) for MI-1 (AI Data Leakage Prevention and Detection). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-1"
+    target_ref: "A.5.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.5.2 (Define a repeatable AI impact-assessment process) for MI-1 (AI Data Leakage Prevention and Detection). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-4"
+    target_ref: "A.6.2.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.6 (Establish operation and performance monitoring) for MI-4 (AI System Observability). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-4"
+    target_ref: "A.6.2.8"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.8 (Log events across the system life cycle) for MI-4 (AI System Observability). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-9"
+    target_ref: "A.6.2.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.6 (Establish operation and performance monitoring) for MI-9 (AI System Alerting and Denial of Wallet (DoW) / Spend Monitoring). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-9"
+    target_ref: "A.4.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.4.2 (Document an inventory of AI system resources) for MI-9 (AI System Alerting and Denial of Wallet (DoW) / Spend Monitoring). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-11"
+    target_ref: "A.6.2.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.6 (Establish operation and performance monitoring) for MI-11 (Human Feedback Loop for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-11"
+    target_ref: "A.8.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.8.2 (Provide user-facing system documentation) for MI-11 (Human Feedback Loop for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-11"
+    target_ref: "A.8.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.8.3 (Enable an external problem-reporting mechanism) for MI-11 (Human Feedback Loop for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-11"
+    target_ref: "A.3.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.3.3 (Establish a mechanism for reporting concerns) for MI-11 (Human Feedback Loop for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-13"
+    target_ref: "A.8.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.8.2 (Provide user-facing system documentation) for MI-13 (Providing Citations and Source Traceability for AI-Generated Information). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-13"
+    target_ref: "A.6.1.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.1.2 (Set responsible AI development objectives) for MI-13 (Providing Citations and Source Traceability for AI-Generated Information). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-13"
+    target_ref: "A.6.2.7"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.7 (Provide technical documentation for audiences) for MI-13 (Providing Citations and Source Traceability for AI-Generated Information). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-15"
+    target_ref: "A.6.2.4"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.4 (Define verification and validation methodologies) for MI-15 (Using Large Language Models for Automated Evaluation (LLM-as-a-Judge)). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-15"
+    target_ref: "A.6.2.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.6 (Establish operation and performance monitoring) for MI-15 (Using Large Language Models for Automated Evaluation (LLM-as-a-Judge)). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-16"
+    target_ref: "A.7.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.2 (Manage data for development and enhancement) for MI-16 (Preserving Source Data Access Controls in AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-16"
+    target_ref: "A.7.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.7.3 (Document dataset origin and selection rationale) for MI-16 (Preserving Source Data Access Controls in AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-16"
+    target_ref: "A.9.2"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.9.2 (Define responsible-use operational processes) for MI-16 (Preserving Source Data Access Controls in AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-21"
+    target_ref: "A.8.3"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.8.3 (Enable an external problem-reporting mechanism) for MI-21 (Agent Decision Audit and Explainability). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-21"
+    target_ref: "A.6.2.6"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites A.6.2.6 (Establish operation and performance monitoring) for MI-21 (Agent Decision Audit and Explainability). FINOS does not grade the overlap, so it is held at RELATED."

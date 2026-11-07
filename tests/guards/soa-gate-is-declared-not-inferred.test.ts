@@ -122,10 +122,10 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
         // fixtures on retirement took three away, leaving a floor of 15. COSO
         // ICF 2013 then added one without moving the floor, which left a margin
         // of one — exactly the slack this line exists to refuse — AIUC-1 added
-        // another, and EU drone operations a third. Set to the population
-        // itself so a fixture silently dropping out of the production seeder
+        // another, EU drone operations a third, and the FINOS AIGF a fourth.
+        // Set to the population itself so a fixture silently dropping out of the production seeder
         // reddens here instead of being absorbed by slack.
-        expect(applied.length).toBeGreaterThanOrEqual(18);
+        expect(applied.length).toBeGreaterThanOrEqual(19);
         expect(applied.map((a) => a.key)).toEqual(
             expect.arrayContaining(['ISO27701', 'ISO42001', 'ISO27001', 'SOC2']),
         );
@@ -197,6 +197,10 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
             // artifact this gate turns on is Annex-A-shaped by construction;
             // 2019/947 has no annex of controls to accept or exclude.
             'EU-UAS-OPS',
+            // FINOS AIGF gets NO Statement of Applicability: it has no annex,
+            // and the artifact this gate turns on is Annex-A-shaped. A tenant
+            // scopes it per mitigation with requirement applicability.
+            'FINOS-AIGF',
             'GDPR',
             'IMDA-MGF',
             'IMDA-MGF-2026',

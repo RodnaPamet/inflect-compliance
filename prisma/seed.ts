@@ -1403,6 +1403,8 @@ Reviewed at least annually.` },
         // same key, so without the catalogue first the sync would import it as
         // a library row with none of its seven subcategory packs.
         'prisma/fixtures/eu-uas-ops-control-templates.json',
+        // FINOS AIGF, for the same reason: one key shared with its library.
+        'prisma/fixtures/finos-aigf-control-templates.json',
     ]) {
         const result = await applyCatalogFile(prisma, loadCatalogFile(rel), rel);
         console.log(

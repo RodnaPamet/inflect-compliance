@@ -145,9 +145,9 @@ checkout) right after the catalogue seed. It calls `syncLibrariesAtStartup`,
 which imports every library and mapping set whose content hash has changed and
 skips the rest, so an unchanged start writes nothing.
 
-- **A row with a pack belongs to the catalogue.** `AIUC-1` and `COSO-ICF-2013`
-  are written by their catalogue fixture under the library's own key, so the
-  sync does not import those two libraries. Their mapping sets still import:
+- **A row with a pack belongs to the catalogue.** `AIUC-1`, `COSO-ICF-2013`,
+  `EU-UAS-OPS` and `FINOS-AIGF` are written by their catalogue fixture under
+  the library's own key, so the sync does not import those libraries. Their mapping sets still import:
   they resolve against the catalogue's row by key and code.
 - **The YAML ships in the image.** The Dockerfile copies `src/data/libraries`
   into `/app`, and the script passes that directory explicitly. `LIBRARIES_DIR`

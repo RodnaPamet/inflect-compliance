@@ -258,9 +258,10 @@ describe('ASVS 4.0.3 — L1 delivery (the catalogue production applies)', () => 
 
 describe('ASVS 4.0.3 — application-security risk templates (seed.ts only)', () => {
     /**
-     * DELIBERATELY still about `prisma/seed.ts`. RiskTemplate has no production
-     * writer: no seeder `scripts/entrypoint.sh` runs touches it, and no
-     * CatalogFile carries risk templates. Repointing these at the applied
+     * DELIBERATELY still about `prisma/seed.ts`. These templates have no
+     * production writer: they are inline there, the production risk-template
+     * seeder delivers only fixture-backed sets, and no CatalogFile carries
+     * risk templates. Repointing these at the applied
      * catalogue would assert something false, so the weaker question stays —
      * and the honest reading of a green run here is "seeded in dev", not
      * "available to a customer".

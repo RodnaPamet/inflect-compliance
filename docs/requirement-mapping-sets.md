@@ -251,6 +251,8 @@ directory rather than editing rows by hand.
 | `DORA-2022` | `ISO27001-2022` | `dora-to-iso27001.yaml` | 20 |
 | `DORA-2022` | `NIS2-2022` | `dora-to-nis2.yaml` | 16 |
 | `EU-AI-ACT-2024` | `AIUC-1` | `eu-ai-act-to-aiuc-1.yaml` | 39 |
+| `FINOS-AIGF` | `EU-AI-ACT-2024` | `finos-aigf-to-eu-ai-act.yaml` | 9 |
+| `FINOS-AIGF` | `ISO42001-2023` | `finos-aigf-to-iso-42001.yaml` | 53 |
 | `IMDA-MGF-2026` | `AIUC-1` | `imda-mgf-to-aiuc-1.yaml` | 49 |
 | `IMDA-MGF-2026` | `ISO42001-2023` | `imda-mgf-to-iso-42001.yaml` | 47 |
 | `IMDA-MGF-2026` | `OWASP-ASI-TOP10` | `imda-mgf-to-owasp-agentic.yaml` | 27 |

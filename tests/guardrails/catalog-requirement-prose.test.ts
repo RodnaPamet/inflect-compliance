@@ -212,6 +212,7 @@ describe('catalogue requirements carry prose', () => {
         ['nist-ssdf-800-218.yaml', 'ssdf'],
         ['aiuc-1.yaml', 'aiuc-1'],
         ['eu-uas-ops.yaml', 'eu-uas-ops'],
+        ['finos-aigf.yaml', 'finos-aigf'],
         // nis2 is deliberately absent: its library is keyed thematically
         // (NIS2-RM) and its fixture by article (Art.21(2)(a)), so a code join
         // resolves nothing. prisma/fixtures/nis2-library-map.json is the join,
@@ -414,6 +415,9 @@ describe('catalogue requirements carry prose', () => {
         // article or point), so it adds 51 to the population and none to the
         // ceiling.
         'eu-uas-ops-control-templates.json': '0 of 51',
+        // FINOS AIGF ships every requirement WITH a summary, generated from the
+        // library's descriptions, which are Inflect's own.
+        'finos-aigf-control-templates.json': '0 of 25',
         'asvs-l1-control-templates.json': '0 of 128',
         'cis-v8-ig1-control-templates.json': '0 of 56',
         // COSO ships every requirement WITH a summary. It is the first

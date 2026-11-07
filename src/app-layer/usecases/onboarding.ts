@@ -65,7 +65,7 @@ export function isStepApplicable(
         // is never shown and is excluded from the progress denominator.
         const fws: string[] =
             stepData?.FRAMEWORK_SELECTION?.selectedFrameworks ?? [];
-        const AI_FWS = new Set(['AISVS', 'ISO42001', 'EU_AI_ACT', 'EU-AI-ACT', 'OWASP-AISVS', 'AIUC-1']);
+        const AI_FWS = new Set(['AISVS', 'ISO42001', 'EU_AI_ACT', 'EU-AI-ACT', 'OWASP-AISVS', 'AIUC-1', 'FINOS-AIGF']);
         const hasAiFramework =
             Array.isArray(fws) && fws.some((f) => AI_FWS.has(String(f).toUpperCase().replace(/\s+/g, '')));
         const buildsAi = stepData?.COMPANY_PROFILE?.usesAiSystems === true;

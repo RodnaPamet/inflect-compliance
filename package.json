@@ -29,6 +29,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed-self-assessments": "tsx scripts/seed-self-assessments.ts",
     "db:seed-policy-templates": "tsx scripts/seed-policy-templates.ts",
+    "db:seed-risk-templates": "tsx scripts/seed-risk-templates.ts",
     "db:seed-control-tasks": "tsx scripts/seed-control-template-tasks.ts",
     "db:seed-catalogs": "tsx scripts/seed-framework-catalogs.ts",
     "db:sync-libraries": "tsx scripts/sync-framework-libraries.ts",

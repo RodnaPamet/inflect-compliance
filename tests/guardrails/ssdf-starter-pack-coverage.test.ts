@@ -177,8 +177,8 @@ describe('SSDF Starter Pack — curated control templates', () => {
 
 describe('SSDF Starter Pack — secure-development risk templates', () => {
     // Deliberately still read from `prisma/seed.ts`: these seven RiskTemplates
-    // have NO production writer — no CatalogFile carries risk templates and no
-    // seeder in entrypoint.sh applies them. Repointing these at the applied
+    // have NO production writer — no CatalogFile carries risk templates, and
+    // the entrypoint's risk-template seeder delivers only fixture-backed sets. Repointing these at the applied
     // catalogue would assert a delivery path that does not exist. The weak
     // assertion is the honest one until a production writer exists.
     const seed = read('prisma/seed.ts');

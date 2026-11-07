@@ -235,9 +235,10 @@ describe('CIS v8 — framework + pack delivery', () => {
 });
 
 describe('CIS v8 — cyber-hygiene risk templates (dev seeder only)', () => {
-    // RiskTemplate has NO production writer: `prisma/seed.ts` is the only file
-    // in the repo that touches `riskTemplate.upsert`, and no seeder
-    // `scripts/entrypoint.sh` runs applies one. These assertions are therefore
+    // These templates have NO production writer: they are inline in
+    // `prisma/seed.ts`, and the production seeder `scripts/entrypoint.sh` runs
+    // (`scripts/seed-risk-templates.ts`) delivers only the fixture-backed sets,
+    // which do not include them. These assertions are therefore
     // left exactly as they were — repointing them at a delivery path would
     // assert something false. The describe was renamed to say so out loud.
     const seed = read('prisma/seed.ts');

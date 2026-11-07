@@ -67,7 +67,8 @@ const DEV_SEEDER = 'prisma/seed.ts';
 // AIUC-1 is the AI-agent standard; it is delivered only by its CatalogFile (it
 // is not in prisma/seed.ts at all), so the CatalogFile case below is the one
 // that proves it.
-const AI_FRAMEWORK_KEYS = ['OWASP-AISVS', 'ISO42001', 'EU-AI-ACT', 'AIUC-1'];
+// FINOS-AIGF likewise ships only as a CatalogFile.
+const AI_FRAMEWORK_KEYS = ['OWASP-AISVS', 'ISO42001', 'EU-AI-ACT', 'AIUC-1', 'FINOS-AIGF'];
 
 describe('AI-governance step — declared keys drive the gate', () => {
     it('the applied catalogue is non-empty', () => {

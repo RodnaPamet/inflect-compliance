@@ -80,6 +80,9 @@ const PAIRS: Record<string, Pair> = {
     // are generated from the library, both keyed on the regulation's own
     // article and point references (Art.14, UAS.OPEN.030 …).
     'eu-uas-ops-control-templates.json': { library: 'eu-uas-ops.yaml', join: { kind: 'exact' } },
+    // Exact by construction: requirements generated from the library, both
+    // keyed on FINOS's own mitigation identifiers (MI-1 … MI-25).
+    'finos-aigf-control-templates.json': { library: 'finos-aigf.yaml', join: { kind: 'exact' } },
 
     'iso27001-control-templates.json': {
         library: 'iso27001-2022.yaml',

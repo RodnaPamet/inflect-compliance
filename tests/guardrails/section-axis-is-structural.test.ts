@@ -145,6 +145,10 @@ describe('the section axis is structural, not a tier (#2619)', () => {
             // the axis an operator's obligations actually follow, and the
             // one its seven packs are cut along.
             'EU-UAS-OPS': 11,
+            // FINOS types each mitigation preventative or detective; that is
+            // its own grouping, and the template category carries the FINOS
+            // domain with a "FINOS AIGF " prefix instead.
+            'FINOS-AIGF': 2,
             GDPR: 4,
             'IMDA-MGF-2026': 4,
             'ISO27001-2022': 4,
@@ -194,7 +198,7 @@ describe('the section axis is structural, not a tier (#2619)', () => {
             'OWASP-ASVS', 'CIS-V8', 'SOC2', 'NIST-SSDF', 'ISO27701', 'DORA', 'NIS2',
             'ISO27001', 'OWASP-ASI', 'IMDA-MGF', 'NIST-PRIVACY', 'ISO9001',
             'ISO28000', 'ISO39001', 'ISO42001', 'OWASP-AISVS', 'EU-AI-ACT',
-            'AIUC-1', 'EU-UAS-OPS',
+            'AIUC-1', 'EU-UAS-OPS', 'FINOS-AIGF',
         ];
         const offenders = keys
             .map((k) => ({ key: k, applied: appliedCatalogFor(k) }))
