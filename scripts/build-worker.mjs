@@ -113,6 +113,13 @@ await build({
     entryPoints: ['scripts/seed-policy-templates.ts'],
     outfile: 'dist/seed-policy-templates.mjs',
 });
+// Fixture-backed risk-template seeder (FINOS AIGF risks) — same shape as the
+// policy-template seeder above. Fixture JSON inlined at build time.
+await build({
+    ...common,
+    entryPoints: ['scripts/seed-risk-templates.ts'],
+    outfile: 'dist/seed-risk-templates.mjs',
+});
 
 await build({
     ...common,
@@ -160,4 +167,4 @@ await build({
     outfile: 'dist/seed-vendor-questionnaires.mjs',
 });
 
-console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/sync-framework-libraries.mjs + dist/backfill-task-checklists.mjs + dist/catalog-check.mjs');
+console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-risk-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/sync-framework-libraries.mjs + dist/backfill-task-checklists.mjs + dist/catalog-check.mjs');

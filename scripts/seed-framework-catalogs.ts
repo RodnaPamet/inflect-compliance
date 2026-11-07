@@ -92,6 +92,9 @@ const CATALOG_FIXTURES = [
     // (A1, A2, A3, STS-01, STS-02, operational authorisation, LUC), which the
     // install wizard makes a tenant choose among.
     'prisma/fixtures/eu-uas-ops-control-templates.json',
+    // FINOS AI Governance Framework: one control per mitigation. Converges on
+    // ONE row with src/data/libraries/finos-aigf.yaml, for AIUC-1's reason.
+    'prisma/fixtures/finos-aigf-control-templates.json',
     // Last on purpose. This one carries no standard of its own — it gives the
     // 151-control internal-controls library a framework and a pack so a tenant
     // can install it deliberately, instead of receiving it as a side effect of

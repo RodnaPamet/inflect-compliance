@@ -83,6 +83,9 @@ const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string | st
     // The library ref_id and the catalogue key are the same string on purpose:
     // both writers converge on one Framework row.
     'AIUC-1': { frameworkKey: 'AIUC-1', packKey: 'AIUC_1_BASELINE' },
+    // Shipped with its starter pack from the first commit, one authored control
+    // per mitigation; library ref_id and catalogue key are the same string.
+    'FINOS-AIGF': { frameworkKey: 'FINOS-AIGF', packKey: 'FINOS_AIGF_BASELINE' },
     // Eight packs, not one: one per operating subcategory, which the install
     // wizard makes a tenant choose among (at least one), plus a class C2 pack
     // that is A2 and A3 together. Each is wired, and

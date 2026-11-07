@@ -233,6 +233,7 @@ export const FRAMEWORK_KEY_LABELS: Record<string, string> = {
     'IMDA-MGF': 'IMDA MGF',
     'AIUC-1': 'AIUC-1',
     'EU-UAS-OPS': 'EU Drones',
+    'FINOS-AIGF': 'FINOS AIGF',
     INTERNAL_CONTROLS: 'Internal Control',
 };
 

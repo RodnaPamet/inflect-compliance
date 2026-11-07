@@ -1,0 +1,70 @@
+# Cross-Framework Mapping Set: FINOS AI Governance Framework → the EU AI Act
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# PROVENANCE: every entry is a citation FINOS itself publishes. Each AIGF
+# mitigation's front matter lists the the EU AI Act clauses it addresses
+# (`eu-ai-act_references`), and this file is those lists, generated from the FINOS source at
+# commit 67b8c3257695. Entries carry [FINOS-crosswalk] rather than [curated]:
+# the judgement that the two relate is FINOS's, not Inflect's.
+#
+# STRENGTH: FINOS cites a clause without grading the overlap, so every entry is
+# RELATED, which gap analysis treats as "review needed" and never as covered.
+# Grading one up would be an Inflect judgement presented as FINOS's.
+#
+# NOT CARRIED: citations of clauses Inflect's the EU AI Act library does not
+# model, which would resolve to nothing (mapping-targets-exist):
+#   MI-11 -> c9-s1-a72
+#   MI-13 -> c9-s4-a86
+#   MI-21 -> c9-s1-a72
+#   MI-21 -> c9-s4-a86
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:finos-aigf-to-eu-ai-act
+name: "FINOS AI Governance Framework → the EU AI Act"
+description: >
+  The the EU AI Act clauses FINOS cites for each AI Governance Framework
+  mitigation. Published by FINOS; structural guidance, not a compliance
+  guarantee.
+version: 1
+source_framework_ref: FINOS-AIGF
+target_framework_ref: EU-AI-ACT-2024
+
+mapping_entries:
+  - source_ref: "MI-5"
+    target_ref: "Art.9"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites Art.9 (Risk management system) for MI-5 (System Acceptance Testing). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-5"
+    target_ref: "Art.15"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites Art.15 (Accuracy, robustness and cybersecurity) for MI-5 (System Acceptance Testing). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-6"
+    target_ref: "Art.10"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites Art.10 (Data and data governance) for MI-6 (Data Quality & Classification/Sensitivity). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-24"
+    target_ref: "Art.14"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites Art.14 (Human oversight) for MI-24 (Human-in-the-Loop Action Approval Gate). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-11"
+    target_ref: "Art.14"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites Art.14 (Human oversight) for MI-11 (Human Feedback Loop for AI Systems). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-13"
+    target_ref: "Art.13"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites Art.13 (Transparency and information to deployers) for MI-13 (Providing Citations and Source Traceability for AI-Generated Information). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-21"
+    target_ref: "Art.12"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites Art.12 (Record-keeping) for MI-21 (Agent Decision Audit and Explainability). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-21"
+    target_ref: "Art.26"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites Art.26 (Obligations of deployers) for MI-21 (Agent Decision Audit and Explainability). FINOS does not grade the overlap, so it is held at RELATED."
+  - source_ref: "MI-21"
+    target_ref: "Art.13"
+    strength: RELATED
+    rationale: "[FINOS-crosswalk] FINOS cites Art.13 (Transparency and information to deployers) for MI-21 (Agent Decision Audit and Explainability). FINOS does not grade the overlap, so it is held at RELATED."

@@ -67,6 +67,15 @@ echo ""
 echo "→ Seeding policy-template library..."
 node dist/seed-policy-templates.mjs || echo "⚠ policy-template seed skipped (non-fatal)"
 
+# ── 1c'. Seed the fixture-backed risk-template library (idempotent) ──
+#
+# Same rationale as 1c: global RiskTemplate rows written only by prisma/seed.ts
+# never reach production. Upsert-by-id over the fixture sets (today the FINOS
+# AI Governance Framework risks) — safe to re-run. Non-fatal.
+echo ""
+echo "→ Seeding risk-template library..."
+node dist/seed-risk-templates.mjs || echo "⚠ risk-template seed skipped (non-fatal)"
+
 # ── 1d. Seed built-in vendor-assessment questionnaires (idempotent) ──
 #
 # The Supplier Due Diligence + Supplier Security Assessment templates are

@@ -1,0 +1,564 @@
+# FINOS AI Governance Framework (AIGF) — Framework Library
+#
+# WHY THIS FRAMEWORK EXISTS IN INFLECT: the AIGF is the financial-services
+# industry's open catalogue of AI risks and the mitigations that address them,
+# maintained by FINOS (the Fintech Open Source Foundation) and cited against
+# ISO/IEC 42001, the EU AI Act, NIST SP 800-53 and OWASP. It sits beside ISO
+# 42001 (the management system) and the EU AI Act (the regulation) as the
+# control-level catalogue a regulated firm can implement and evidence.
+#
+# WHAT IS MODELLED. The 25 MITIGATIONS are the requirements: they are what an
+# organisation implements and evidences. The 24 RISKS are not requirements; they
+# ship as risk templates (prisma/fixtures/risk-templates-finos-aigf.json), so a
+# risk register can start from them. Mitigations are grouped as FINOS types them,
+# preventative and detective.
+#
+# LICENSING: CC-BY-4.0, which permits copying with attribution. The product
+# decision (2026-11-07) is nonetheless an INDEX: identifiers and short titles are
+# FINOS's, every description is Inflect's own, and the FINOS prose stays at the
+# source. That keeps the content stable when FINOS rewrites its text, which it
+# does often, and needs no review of how much was copied.
+#
+# IDENTIFIERS are FINOS's own sequence numbers (`MI-n`), as its repository files
+# carry them. FINOS retires a number rather than reusing it. Its public ID scheme
+# is still under discussion upstream (finos/ai-governance-framework#398); if it
+# changes, the new identifier belongs in each node's annotation, not in `ref_id`,
+# which is the key every tenant link resolves against.
+#
+# THE KEY CARRIES NO EDITION. The AIGF is revised in place on its main branch
+# with stable identifiers, so an edition in `ref_id` would make each revision a
+# second framework (the OWASP-ASI-TOP10 and AIUC-1 reasoning).
+# `publication_date` names the snapshot this file reflects: commit 67b8c3257695.
+#
+# DRAFTS. FINOS marks MI-24 and MI-25 as draft. They are carried, and their
+# descriptions say so, so a tenant can decide whether to adopt them yet.
+#
+# ONE FRAMEWORK ROW. prisma/fixtures/finos-aigf-control-templates.json declares
+# this same key and its requirements are generated from this file, so the
+# library import and the catalogue write one Framework row with the same
+# requirement rows (the AIUC-1 and COSO precedent).
+
+urn: urn:inflect:library:finos-aigf
+locale: en
+ref_id: FINOS-AIGF
+name: FINOS AI Governance Framework
+description: >-
+  The FINOS AI Governance Framework (AIGF) is an open catalogue of the risks of
+  running AI systems in financial services, and of the mitigations that address
+  them, maintained by the Fintech Open Source Foundation. Inflect carries each
+  mitigation as one requirement, with FINOS identifiers and short titles and
+  Inflect-written descriptions of what the mitigation asks an organisation to
+  demonstrate. The risks are in the risk-template library.
+copyright: >-
+  FINOS AI Governance Framework, (c) FINOS and contributors, licensed under
+  CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Source:
+  https://github.com/finos/ai-governance-framework. Inflect stores the
+  mitigation identifiers and short titles with attribution to FINOS; every
+  description is Inflect's own, and the FINOS text is not reproduced. Not legal
+  advice.
+version: 1
+text_hash: 5a1aa2f84170cbc35704856991ec0df6a20a2cf5825f083589463085ec5c6706
+publication_date: "2026-11-02"
+provider: FINOS (Fintech Open Source Foundation)
+packager: inflect
+kind: INDUSTRY_STANDARD
+
+objects:
+  framework:
+    urn: urn:inflect:framework:finos-aigf
+    ref_id: FINOS-AIGF
+    name: FINOS AI Governance Framework
+    description: >-
+      The 25 mitigations of the FINOS AI Governance Framework, grouped as FINOS
+      types them. Identifiers and titles are FINOS's; the descriptions are
+      Inflect's account of what each mitigation asks an organisation to
+      demonstrate.
+    requirement_nodes:
+      # ─── Preventative mitigations ────────────────────────────────────
+      - urn: urn:inflect:req:finos-aigf:prev
+        ref_id: PREV
+        name: Preventative mitigations
+        description: >-
+          Mitigations that stop a risk from occurring: limits on what an AI
+          system may read, reach and do, filters on what passes in and out of
+          it, and the terms and versions it is built on.
+        depth: 1
+        assessable: false
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-2
+        ref_id: MI-2
+        name: "Data Filtering From External Knowledge Bases"
+        description: >-
+          An organisation should be able to show that content taken from its
+          internal knowledge sources (wikis, document stores, databases and
+          collaboration sites) is cleaned before it is embedded, indexed or sent
+          to a model: sensitive categories are identified, each has a set
+          treatment such as masking, redaction or tokenisation, the pipeline
+          applies and records those treatments, material too sensitive to clean
+          sits in a separate AI environment, and sampling shows what the filters
+          missed.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-3
+        ref_id: MI-3
+        name: "User/App/Model Firewalling/Filtering"
+        description: >-
+          The organisation can show that every point where data passes into or
+          out of a model has a written set of checks: prompts from users,
+          responses back to them, calls between application components, and
+          internal content sent to an outside service to be turned into
+          embeddings. It can show which checks are static patterns and which
+          rely on a classifier or judge model, how streamed replies are handled,
+          that every check logs what it blocks or alters, and that the checks
+          are tested against attack and leakage samples. Running a dedicated
+          firewall product is a separate matter, covered by MI-17.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-5
+        ref_id: MI-5
+        name: "System Acceptance Testing"
+        description: >-
+          An organisation must be able to show that before an AI system goes
+          live it was tested against acceptance criteria agreed in advance with
+          the business and control functions, in an environment and with data
+          representative of production, with real users taking part; that
+          because model output varies, the criteria assert required or forbidden
+          content and an accepted pass rate rather than exact wording; that
+          defects were tracked and the serious ones re-tested; and that the
+          business owner signed the release with known limitations stated.
+          Ongoing evaluation after release belongs to MI-15.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-6
+        ref_id: MI-6
+        name: "Data Quality & Classification/Sensitivity"
+        description: >-
+          An organisation should be able to show that every source of data used
+          to train, test or run its AI systems is documented with its purpose,
+          limits and lineage, carries a sensitivity label from the
+          organisation's own classification scheme, and is measured against
+          quality dimensions and thresholds the organisation has set; and that
+          pipelines hold back data that fails those thresholds or exceeds its
+          permitted sensitivity until someone fixes or authorises it.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-7
+        ref_id: MI-7
+        name: "Legal and Contractual Frameworks for AI Systems"
+        description: >-
+          An organisation must be able to show that every external party
+          supplying an AI model, inference service, training data or AI tooling
+          is bound by a written agreement, and that the organisation understands
+          what that agreement commits each side to. The agreement settles what
+          the supplier does with prompts, outputs and other data sent to it, how
+          intellectual property in training data and outputs is treated, who
+          carries which lifecycle duty and liability, the service levels, and
+          how the supplier announces model changes. Terms are checked against
+          internal requirements before signature and revisited as usage changes.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-8
+        ref_id: MI-8
+        name: "Quality of Service (QoS) and DDoS Prevention for AI Systems"
+        description: >-
+          The organisation can show that its AI services stay usable for
+          legitimate users when traffic is heavy or hostile. That means per-key
+          or per-user request limits, throttling of bursts, validation that
+          turns away malformed or very costly requests, network-level flood
+          protection, load balancing with failover, isolation of core inference
+          from overloaded upstream parts, priority for critical work when
+          capacity runs short, and monitoring that catches abusive traffic
+          early. Budget and spend alerting is MI-9's subject, and content
+          filtering of prompts is MI-3's.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-10
+        ref_id: MI-10
+        name: "AI Model Version Pinning"
+        description: >-
+          The organisation can show that each production AI system calls a
+          specific, approved model version rather than whatever the provider
+          currently serves, and that moving to a new version is a deliberate,
+          tested and reversible change. It can show an inventory of deployed
+          models and their pinned versions, supplier commitments on versioning,
+          release notes and deprecation notice, a record of which version
+          produced each output, an evaluation of each candidate version against
+          the current baseline, staged rollout with a working rollback, and
+          periodic checks that production matches the approved versions.
+          Acceptance testing in full is MI-5's subject.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-12
+        ref_id: MI-12
+        name: "Role-Based Access Control for AI Data"
+        description: >-
+          An organisation should be able to show who and what may read, change
+          or delete the data its AI systems are built and run on: a defined set
+          of human roles and non-human identities such as models, pipelines and
+          service accounts, a matrix tying each to data classes and actions on
+          least privilege with conflicting duties separated, enforcement at
+          every store, platform, API and application, strong authentication,
+          logged access, and periodic recertification by data owners.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-14
+        ref_id: MI-14
+        name: "Encryption of AI Data at Rest"
+        description: >-
+          An organisation should be able to show that everything its AI systems
+          store persistently is encrypted: training and test sets, intermediate
+          artefacts, embeddings in vector databases, model files, logs,
+          configuration and every backup. It should hold an encryption standard
+          matched to its classification scheme, keys managed in a dedicated key
+          management system with restricted access and rotation, evidence that
+          hosted and self-run vector stores have encryption actually switched
+          on, and periodic checks that it remains so.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-17
+        ref_id: MI-17
+        name: "AI Firewall Implementation and Management"
+        description: >-
+          The organisation can show that a dedicated AI firewall layer, whether
+          a gateway, a security proxy, an extended web application firewall or a
+          guardian model, is deployed against a written policy of what it must
+          stop. It can show where the layer sits in each AI traffic path, the
+          latency it adds, how its rules and threat signatures are kept current,
+          that its alerts reach the security monitoring and response tooling,
+          and that it is tested for bypass, missed threats and false blocks. The
+          filtering rules themselves are MI-3's subject and the scoping of agent
+          permissions is MI-18's.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-18
+        ref_id: MI-18
+        name: "Agent Authority Least Privilege Framework"
+        description: >-
+          The organisation can show, for every agent it runs, a written list of
+          the tools, APIs, endpoints and data sources that agent is allowed to
+          use, each grant justified by the agent's job. It can show that a
+          component the agent cannot alter refuses and logs any call outside
+          that list, including commands run at the operating-system level, that
+          any temporary widening was approved by a person and lapsed afterwards,
+          and that grants nobody uses are taken away. Isolation between agents,
+          credential handling and the approval mechanism itself are separate
+          mitigations.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-19
+        ref_id: MI-19
+        name: "Tool Chain Validation and Sanitization"
+        description: >-
+          An organisation running agents that choose and call tools must be able
+          to show that each call is checked at the moment it runs: that the tool
+          chosen suits the task and the caller's authority, that every parameter
+          passed to an API meets its expected type, format, range and business
+          rules and cannot carry an injection, that data handed from one tool to
+          the next is cleaned before reuse, and that the order of calls follows
+          an approved pattern. Validation failures reach security monitoring,
+          and the rules themselves are version controlled, tested and kept
+          current.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-20
+        ref_id: MI-20
+        name: "MCP Server Security Governance"
+        description: >-
+          An organisation whose agents use MCP servers must be able to show that
+          it decides which servers may be connected, vets each one before
+          approval, and enforces that decision technically so clients cannot
+          reach unapproved servers. It records the implementation it approved
+          and the level of protection it chose for its deployment, protects the
+          connection with encryption and authentication, watches server
+          behaviour and security advisories, can cut off a compromised server
+          quickly, and re-reviews approved servers over time.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-22
+        ref_id: MI-22
+        name: "Multi-Agent Isolation and Segmentation"
+        description: >-
+          Where several agents work together, the organisation can show that
+          each runs in its own compartment, with its own runtime account, state,
+          memory, cache and temporary storage, and that agents talk to each
+          other only over authenticated channels along routes a written matrix
+          allows. It can show the trust levels it assigned to agents and why,
+          that a failing or compromised agent can be cut off without bringing
+          down the rest, and that the boundaries have been tested. What each
+          agent may do on its own is covered by least privilege, and its secrets
+          by credential protection.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-23
+        ref_id: MI-23
+        name: "Agentic System Credential Protection Framework"
+        description: >-
+          The organisation can show that its agents run without stored secrets
+          in their images, environment variables or file systems, that they
+          receive only short-lived credentials scoped to the task through a
+          broker that checks who is asking, and that secret stores, credential
+          administration interfaces and credential-revealing tools are out of
+          their reach. It can also show that it watches agent behaviour for
+          signs of credential hunting and that it can rotate and revoke exposed
+          credentials quickly. What an agent may do with the access it holds is
+          a separate least-privilege matter.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-24
+        ref_id: MI-24
+        name: "Human-in-the-Loop Action Approval Gate"
+        description: >-
+          The organisation can show which agent actions it has designated as
+          needing a person's approval and why, and that each such action is held
+          before any side effect until an authorised approver, never the
+          requester or the agent, decides on the exact resolved action through a
+          channel that cannot be spoofed or replayed. It can show the record
+          linking action, rule, approver and outcome, how standing pre-approvals
+          are bounded and attributed, and that tests could not push a gated
+          action through without approval. What the agent may reach at all is
+          set by least privilege. FINOS publishes this mitigation as a draft.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-25
+        ref_id: MI-25
+        name: "Skill/Plugin Integrity and Governance"
+        description: >-
+          An organisation that lets agents load skills or plugins, bundles of
+          instructions and often scripts that run with the agent's authority,
+          must be able to show that only reviewed versions load. It knows which
+          skills are installed and where they came from, reviews both
+          instruction text and bundled code and dependencies before approval,
+          distributes approved versions from a controlled source, verifies at
+          load time that a skill matches what was approved, re-reviews changes,
+          and detects attempts to load anything else. FINOS publishes this
+          mitigation as a draft.
+        parent_urn: urn:inflect:req:finos-aigf:prev
+        depth: 2
+        assessable: true
+        section: Preventative mitigations
+        category: Preventative mitigations
+
+      # ─── Detective mitigations ───────────────────────────────────────
+      - urn: urn:inflect:req:finos-aigf:det
+        ref_id: DET
+        name: Detective mitigations
+        description: >-
+          Mitigations that make a risk visible when it occurs: monitoring,
+          logging, alerting, evaluation and human feedback that surface a
+          failure so it can be acted on.
+        depth: 1
+        assessable: false
+        category: Detective mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-1
+        ref_id: MI-1
+        name: "AI Data Leakage Prevention and Detection"
+        description: >-
+          An organisation should be able to show that it knows every route by
+          which conversation data, proprietary training sets and model weights
+          could leave its control through an AI system, including calls to
+          externally hosted model providers; that each route carries preventive
+          safeguards proportionate to the harm a leak would cause; and that
+          planted markers, data fingerprints and monitoring would reveal a leak
+          that got past those safeguards and send it into incident handling.
+        parent_urn: urn:inflect:req:finos-aigf:det
+        depth: 2
+        assessable: true
+        section: Detective mitigations
+        category: Detective mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-4
+        ref_id: MI-4
+        name: "AI System Observability"
+        description: >-
+          An organisation must be able to show that each AI system it runs emits
+          structured logs, metrics and traces covering what users sent, what the
+          model returned, the calls made to models, retrieval stores and tools,
+          resource consumption, security events and the versions in force at the
+          time; that this telemetry lands in a central place where it can be
+          searched and correlated end to end; that baselines and anomaly alerts
+          exist; and that retention and the chosen signals are revisited as the
+          system changes. The durable record of agent decisions belongs to MI-21
+          and spend alerting to MI-9.
+        parent_urn: urn:inflect:req:finos-aigf:det
+        depth: 2
+        assessable: true
+        section: Detective mitigations
+        category: Detective mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-9
+        ref_id: MI-9
+        name: "AI System Alerting and Denial of Wallet (DoW) / Spend Monitoring"
+        description: >-
+          The organisation can show that money spent on usage-priced AI services
+          is bounded and watched. It can show a hard spending cap at
+          organisation level, budgets that cascade down to departments, projects
+          and keys, alerts at staged thresholds and on unusual spending,
+          automatic throttling or suspension when a hard limit is reached,
+          attribution of every cost to a business unit, project, user or use
+          case, and investigation of each spend alert to tell legitimate use
+          from misconfiguration or a deliberate attempt to run up costs.
+          Request-rate limits for availability are MI-8's subject.
+        parent_urn: urn:inflect:req:finos-aigf:det
+        depth: 2
+        assessable: true
+        section: Detective mitigations
+        category: Detective mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-11
+        ref_id: MI-11
+        name: "Human Feedback Loop for AI Systems"
+        description: >-
+          An organisation must be able to show that the users and subject-matter
+          experts of each AI system have an easy way to rate outputs, comment on
+          them and report harmful, biased or insecure behaviour; that what is
+          collected is tied to the system's performance indicators, triaged by
+          severity and tracked to an action and an outcome; that participation
+          is watched for decline; and that people who reported something hear
+          what happened where feasible. This is the human channel: operational
+          telemetry belongs to MI-4 and automated model-based grading to MI-15.
+        parent_urn: urn:inflect:req:finos-aigf:det
+        depth: 2
+        assessable: true
+        section: Detective mitigations
+        category: Detective mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-13
+        ref_id: MI-13
+        name: "Providing Citations and Source Traceability for AI-Generated Information"
+        description: >-
+          An organisation must be able to show that its AI systems which produce
+          informational answers link each claim to the specific passage and
+          version of the source it came from, that users can open or read that
+          source, that content drawn from the model's general knowledge or heavy
+          synthesis is labelled as uncited rather than given an invented
+          reference, that citation relevance and broken or changed links are
+          checked, and that users and technical reviewers are told how citations
+          work and where they fall short. What may enter the knowledge base is
+          governed by MI-2.
+        parent_urn: urn:inflect:req:finos-aigf:det
+        depth: 2
+        assessable: true
+        section: Detective mitigations
+        category: Detective mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-15
+        ref_id: MI-15
+        name: "Using Large Language Models for Automated Evaluation (LLM-as-a-Judge)"
+        description: >-
+          Where an organisation uses one model to grade another system's
+          outputs, it must be able to show that the judge works from a written
+          rubric with a defined scope and output format; that its agreement with
+          expert human grading was measured on a representative set before its
+          scores were relied on, and is re-measured over time; that sampled
+          outputs are judged on a recorded cadence; and that flagged items,
+          low-confidence verdicts and a sample of passes go to a person with a
+          route for escalation. Pre-release acceptance belongs to MI-5 and
+          general user feedback to MI-11.
+        parent_urn: urn:inflect:req:finos-aigf:det
+        depth: 2
+        assessable: true
+        section: Detective mitigations
+        category: Detective mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-16
+        ref_id: MI-16
+        name: "Preserving Source Data Access Controls in AI Systems"
+        description: >-
+          An organisation should be able to show that when an AI system,
+          especially one using retrieval augmented generation, ingests documents
+          and records, the permissions those items carried at source travel with
+          them, so a user can only receive answers built from content they could
+          have opened directly. It should be able to show which enforcement
+          pattern each retrieval index uses, that the pattern does not rely on
+          model instructions, and that logging, red teaming and reconciliation
+          catch any path that bypasses it.
+        parent_urn: urn:inflect:req:finos-aigf:det
+        depth: 2
+        assessable: true
+        section: Detective mitigations
+        category: Detective mitigations
+
+      - urn: urn:inflect:req:finos-aigf:mi-21
+        ref_id: MI-21
+        name: "Agent Decision Audit and Explainability"
+        description: >-
+          The organisation can show, for each agent use case, a recorded risk
+          analysis choosing how much of the agent's decision-making it keeps,
+          from minimal security logging with human oversight up to a full
+          tamper-evident trail with reasoning and context. It can show that the
+          records it keeps at that depth actually let it reconstruct what an
+          agent did, and where required why, for investigation and
+          accountability, and it states plainly where a model provider's hidden
+          reasoning limits what can be captured. Approval of individual actions
+          is a separate mitigation.
+        parent_urn: urn:inflect:req:finos-aigf:det
+        depth: 2
+        assessable: true
+        section: Detective mitigations
+        category: Detective mitigations
