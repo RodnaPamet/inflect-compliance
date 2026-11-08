@@ -109,7 +109,7 @@ describe('MCP server — authentication inherits the TenantApiKey chain', () => 
         // is refused.
         expect(auth).toMatch(/mcp:read/);
         expect(auth).toMatch(/mcp:propose/);
-        expect(auth).toMatch(/throw forbidden\(/);
+        expect(auth).toMatch(/throw forbidden\('API key does not have an MCP capability scope/);
     });
 
     it('the route authenticates every request before dispatch', () => {

@@ -730,6 +730,13 @@ model TenantApiKey {
   /// this column exists to end, so it is unrepresentable rather than merely
   /// discouraged.
   maxAutonomyLevel Int?
+  /// When true, `/api/mcp` refuses this key presented directly: it may reach MCP
+  /// tools only through an audience-scoped token exchanged for it at
+  /// `POST /api/mcp/token` (#5004). It narrows the MCP endpoint and nothing else —
+  /// the exchange itself, and every `/api/t/**` REST route, still take the key.
+  /// It is what the harness criterion `H2.audience_tokens` reads. Set at creation,
+  /// never changed: re-issue the key to move it.
+  requiresTokenExchange Boolean @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   tenant      Tenant    @relation(fields: [tenantId], references: [id])

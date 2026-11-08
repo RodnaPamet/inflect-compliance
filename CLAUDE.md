@@ -827,6 +827,15 @@ reading over REST. It does NOT hold a key to its agent's tool grants on REST:
 REST reach is still the key's scopes intersected with its principal. So a key
 meant for `/api/mcp` carries only the scopes its grants need.
 
+**A key can be made to reach MCP tools only through an exchanged token** (#5004).
+`TenantApiKey.requiresTokenExchange` is set at creation (only on a key with an MCP
+scope) and never changed; re-issue the key to move it. `completeMcpAuthentication`
+refuses such a key presented directly at `/api/mcp` — after the per-key budget,
+before the registration gate — with a 403 and an `AUTHZ_DENIED` row (gate
+`token_exchange_required`); its `ifxt_` token from `POST /api/mcp/token` is
+admitted. It starts no agent run either (`startWorkflowRun`), because a run's tool
+calls carry no audience. REST routes are unaffected.
+
 **Last-OWNER protection — two layers.** Usecase layer
 (`updateTenantMemberRole`, `deactivateTenantMember`, `removeTenantMember`)
 counts ACTIVE OWNERs and throws `forbidden('Cannot demote/deactivate the last

@@ -22,7 +22,7 @@ import {
 import { agentCredentialStanding, agentTermsApply } from '@/lib/agentic/agent-credential-standing';
 import { isAgentRegistrationEnforced } from '@/lib/agentic/agent-registration-gate';
 import { readPlatformKill } from '@/lib/agentic/kill-switch';
-import { MCP_ENDPOINT_SCOPES } from '@/lib/mcp/endpoint-scope';
+import { MCP_ENDPOINT_SCOPES, admitsMcpEndpoint } from '@/lib/mcp/endpoint-scope';
 
 // ─── List API Keys ───
 
@@ -45,6 +45,7 @@ export async function listApiKeys(ctx: RequestContext) {
                 createdAt: true,
                 agentId: true,
                 maxAutonomyLevel: true,
+                requiresTokenExchange: true,
                 createdBy: { select: { id: true, name: true, email: true } },
                 // The BINDING, named rather than referenced (#2446). The screen
                 // has to say "acts as Deploy Bot", not print a cuid — and an
@@ -261,6 +262,12 @@ export interface CreateApiKeyInput {
      * it, which is the state the column exists to end.
      */
     maxAutonomyLevel?: number | null;
+    /**
+     * Refuse this key presented directly at `/api/mcp`: it may reach MCP tools
+     * only through an audience-scoped token exchanged for it (#5004). Requires
+     * an MCP scope, because on any other key it would narrow nothing.
+     */
+    requiresTokenExchange?: boolean;
 }
 
 export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput) {
@@ -287,6 +294,14 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
         if (expiresAt <= new Date()) {
             throw badRequest('Expiry date must be in the future.');
         }
+    }
+
+    const requiresTokenExchange = input.requiresTokenExchange === true;
+    if (requiresTokenExchange && !admitsMcpEndpoint(input.scopes)) {
+        throw badRequest(
+            'Requiring an exchanged token needs an MCP scope (mcp:read or mcp:propose): ' +
+                'the requirement narrows the MCP endpoint, and a key that cannot reach it has nothing to narrow.',
+        );
     }
 
     // Generate key
@@ -367,6 +382,7 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
                     createdById: ctx.userId,
                     agentId,
                     maxAutonomyLevel,
+                    requiresTokenExchange,
                 },
                 select: {
                     id: true,
@@ -377,6 +393,7 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
                     createdAt: true,
                     agentId: true,
                     maxAutonomyLevel: true,
+                    requiresTokenExchange: true,
                 },
             });
         } catch (err) {
@@ -399,6 +416,7 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
                     expiresAt: expiresAt?.toISOString() ?? null,
                     agentId,
                     maxAutonomyLevel,
+                    requiresTokenExchange,
                 },
                 summary: `Created API key: ${name}`,
             },

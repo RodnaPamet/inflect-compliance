@@ -31,6 +31,8 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { cn } from '@inflect/ui/lib/cn';
 import { FormField } from '@/components/ui/form-field';
+import { Checkbox } from '@/components/ui/checkbox';
+import { admitsMcpEndpoint } from '@/lib/mcp/endpoint-scope';
 
 // ─── Types ───
 
@@ -58,6 +60,8 @@ interface ApiKeyRecord {
      */
     agentId: string | null;
     maxAutonomyLevel: number | null;
+    /** MCP calls only through an exchanged, audience-scoped token (#5004). */
+    requiresTokenExchange?: boolean;
     agent: { id: string; name: string; status: string; autonomyLevel: number } | null;
 }
 
@@ -211,6 +215,9 @@ function BindingCell({ record, muted }: { record: ApiKeyRecord; muted?: boolean 
                 <span className="text-content-subtle">
                     {t('apiKeys.autonomyCap', { level: record.maxAutonomyLevel })}
                 </span>
+            )}
+            {record.requiresTokenExchange === true && (
+                <span className="text-content-subtle">{t('apiKeys.requiresExchangeTag')}</span>
             )}
         </div>
     );
@@ -391,6 +398,7 @@ export default function ApiKeysPage() {
     const [createExpiry, setCreateExpiry] = useState('');
     const [createAgentId, setCreateAgentId] = useState('');
     const [createMaxAutonomy, setCreateMaxAutonomy] = useState('');
+    const [createRequiresExchange, setCreateRequiresExchange] = useState(false);
     const [creating, setCreating] = useState(false);
     /**
      * The bindable agents, and whether we were allowed to ask.
@@ -484,6 +492,9 @@ export default function ApiKeysPage() {
                         createAgentId && createMaxAutonomy !== ''
                             ? Number(createMaxAutonomy)
                             : null,
+                    // Sent only while the scopes can reach MCP, which is when
+                    // the box is shown; the usecase refuses it otherwise.
+                    requiresTokenExchange: admitsMcpEndpoint(createScopes) && createRequiresExchange,
                 }),
             });
 
@@ -501,6 +512,7 @@ export default function ApiKeysPage() {
             setCreateExpiry('');
             setCreateAgentId('');
             setCreateMaxAutonomy('');
+            setCreateRequiresExchange(false);
             setShowCreate(false);
             await fetchKeys();
         } catch (err) {
@@ -876,6 +888,20 @@ export default function ApiKeysPage() {
                         <label className="text-xs text-content-muted uppercase tracking-wider mb-2 block">{t('apiKeys.scopesLabel')}</label>
                         <ScopePicker selected={createScopes} onChange={setCreateScopes} />
                     </div>
+
+                    {admitsMcpEndpoint(createScopes) && (
+                        <div>
+                            <label className="flex items-center gap-tight text-sm text-content-default">
+                                <Checkbox
+                                    id="key-requires-exchange"
+                                    checked={createRequiresExchange}
+                                    onCheckedChange={(c) => setCreateRequiresExchange(c === true)}
+                                />
+                                {t('apiKeys.requiresExchangeLabel')}
+                            </label>
+                            <p className="text-xs text-content-muted mt-1">{t('apiKeys.requiresExchangeHint')}</p>
+                        </div>
+                    )}
 
                     <div className="flex gap-tight pt-2">
                         <Button
