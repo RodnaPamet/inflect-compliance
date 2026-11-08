@@ -171,10 +171,26 @@ export interface RegisterFixture {
         axesDeclared: boolean;
         tierFresh: boolean;
         policyCardInForce: boolean;
-        apiKeys: Array<{ id: string; createdAt: string; expiresAt: string | null }>;
+        apiKeys: Array<{ id: string; createdAt: string; expiresAt: string | null; mcpCapable: boolean; requiresTokenExchange: boolean }>;
         confirmedPrincipals: string[];
+        enforcement: {
+            autonomyCeiling: number;
+            proposeRefused: boolean;
+            orchestrateRefused: boolean;
+            grants: { read: number; propose: number; external: number };
+            manifestsPinned: boolean;
+            profileInForce: boolean;
+            skillsMounted: boolean | null;
+        };
     }>;
 }
+
+/**
+ * The token the fake tenant's `/api/mcp/token` exchanges the ingest key for
+ * (#5004). Its `/api/mcp` takes this and nothing else — as Inflect does for a
+ * key that requires the exchange.
+ */
+export const REGISTER_EXCHANGED_TOKEN = 'ifxt_ZmFrZS1yZWdpc3Rlci10b2tlbg.ZmFrZS1zaWc';
 
 /** The fixture register: the scanner itself with its ingest key, and an agent a person confirmed as an Entra principal. */
 export function registerFixture(): RegisterFixture {
@@ -189,8 +205,26 @@ export function registerFixture(): RegisterFixture {
                 axesDeclared: true,
                 tierFresh: true,
                 policyCardInForce: true,
-                apiKeys: [{ id: 'key_ingest_acme', createdAt: '2026-10-09T00:00:00.000Z', expiresAt: '2027-01-01T00:00:00.000Z' }],
+                apiKeys: [
+                    {
+                        id: 'key_ingest_acme',
+                        createdAt: '2026-10-09T00:00:00.000Z',
+                        expiresAt: '2027-01-01T00:00:00.000Z',
+                        mcpCapable: true,
+                        requiresTokenExchange: true,
+                    },
+                ],
                 confirmedPrincipals: [],
+                // On the read-only bound: reads only, refused above them.
+                enforcement: {
+                    autonomyCeiling: 1,
+                    proposeRefused: true,
+                    orchestrateRefused: true,
+                    grants: { read: 1, propose: 0, external: 0 },
+                    manifestsPinned: true,
+                    profileInForce: false,
+                    skillsMounted: false,
+                },
             },
             {
                 registeredAgentId: 'agt_support_acme',
@@ -201,6 +235,16 @@ export function registerFixture(): RegisterFixture {
                 policyCardInForce: false,
                 apiKeys: [],
                 confirmedPrincipals: ['entra:sp:a0000001-0000-4000-8000-000000003686'],
+                // Off the bound: it may propose, and its runs could not be read.
+                enforcement: {
+                    autonomyCeiling: 3,
+                    proposeRefused: false,
+                    orchestrateRefused: false,
+                    grants: { read: 2, propose: 1, external: 0 },
+                    manifestsPinned: false,
+                    profileInForce: false,
+                    skillsMounted: null,
+                },
             },
         ],
     };
@@ -644,6 +688,7 @@ export function createSourceFakes(opts: {
                 path: u.pathname,
                 query: u.search,
                 ...(isMcp ? { rpc, body: String(init.body) } : {}),
+                ...(!isMcp && method === 'POST' && u.origin === INGEST && u.pathname === '/api/mcp/token' ? { body: String(init.body) } : {}),
             };
             log.push(entry);
             const headers = new Headers(init.headers);
@@ -743,6 +788,7 @@ export function createSourceFakes(opts: {
         // ── The Inflect ingest ──
         if (u.origin === INGEST) {
             if (method === 'POST' && u.pathname === '/api/mcp') return inflectMcp(headers, body);
+            if (method === 'POST' && u.pathname === '/api/mcp/token') return inflectTokenExchange(body);
             if (method === 'POST' && /^\/api\/t\/[^/]+\/admin\/agents\/harness-scans$/.test(u.pathname)) {
                 posted.push(String(body));
                 ingestAuth.push(headers.get('authorization') ?? '');
@@ -846,6 +892,9 @@ export function createSourceFakes(opts: {
      */
     function inflectMcp(headers: Headers, body: unknown): Answer {
         ingestAuth.push(headers.get('authorization') ?? '');
+        // The ingest key presented directly is refused, as for a key that
+        // requires the exchange (#5004).
+        if (headers.get('authorization') !== `Bearer ${REGISTER_EXCHANGED_TOKEN}`) return json({ error: 'forbidden' }, 403);
         const message = JSON.parse(String(body)) as { id?: number; method?: string; params?: { name?: string } };
         const reply = (result: unknown) => json({ jsonrpc: '2.0', id: message.id, result });
         if (message.method === 'initialize') {
@@ -862,6 +911,37 @@ export function createSourceFakes(opts: {
         }
         if (message.method === 'tools/call') return reply({ content: [{ type: 'text', text: MCP_MARKERS.toolCallResult }] });
         return json({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Method not found' } });
+    }
+
+    /**
+     * Inflect's `/api/mcp/token` (RFC 8693): an `iflk_` key, for the register
+     * tool's audience alone, is answered with `REGISTER_EXCHANGED_TOKEN`.
+     */
+    function inflectTokenExchange(body: unknown): Answer {
+        let req: { grant_type?: unknown; subject_token?: unknown; audience?: unknown };
+        try {
+            req = JSON.parse(String(body)) as typeof req;
+        } catch {
+            return json({ error: 'invalid_request' }, 400);
+        }
+        if (
+            req.grant_type !== 'urn:ietf:params:oauth:grant-type:token-exchange' ||
+            typeof req.subject_token !== 'string' ||
+            !req.subject_token.startsWith('iflk_') ||
+            JSON.stringify(req.audience) !== JSON.stringify(['get_harness_register'])
+        ) {
+            return json({ error: 'invalid_request' }, 400);
+        }
+        return json(
+            {
+                access_token: REGISTER_EXCHANGED_TOKEN,
+                issued_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+                token_type: 'Bearer',
+                expires_in: 300,
+                audience: ['get_harness_register'],
+            },
+            201,
+        );
     }
 
     /**

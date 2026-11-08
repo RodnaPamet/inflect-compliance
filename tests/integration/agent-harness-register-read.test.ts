@@ -57,6 +57,7 @@ interface Seeded {
 }
 const ids: Record<string, Seeded> = {};
 const keys: Record<string, string> = {};
+let exchangeOnlyKeyId = '';
 
 async function rpc(token: string, body: unknown): Promise<{ status: number; json: unknown }> {
     const req = new NextRequest('http://localhost/api/mcp', {
@@ -91,7 +92,7 @@ async function mintKey(
     userId: string,
     scopes: string[],
     agentId: string | null,
-    extra: { revokedAt?: Date; expiresAt?: Date } = {},
+    extra: { revokedAt?: Date; expiresAt?: Date; requiresTokenExchange?: boolean } = {},
 ): Promise<{ plaintext: string; id: string }> {
     const { plaintext, keyHash, keyPrefix } = generateApiKey();
     const row = await prisma.tenantApiKey.create({
@@ -216,6 +217,7 @@ describeFn('get_harness_register, end to end', () => {
         keys.noIngest = (await mintKey(TENANT_A, a.owner, ['mcp:read', 'admin:read'], a.scanner)).plaintext;
         keys.noGrant = (await mintKey(TENANT_A, a.owner, INGEST_SCOPES, a.ungranted)).plaintext;
         keys.readerPrincipal = (await mintKey(TENANT_A, a.reader, INGEST_SCOPES, a.scanner)).plaintext;
+        exchangeOnlyKeyId = (await mintKey(TENANT_A, a.owner, INGEST_SCOPES, a.scanner, { requiresTokenExchange: true })).id;
     });
 
     afterAll(async () => {
@@ -278,7 +280,39 @@ describeFn('get_harness_register, end to end', () => {
             const scanner = view.agents.find((x) => x.registeredAgentId === a.scanner)!;
             expect(scanner).toMatchObject({ tierFresh: false, policyCardInForce: false, confirmedPrincipals: [] });
             // The scanner's own key is the agent's own live key.
-            expect(scanner.apiKeys).toHaveLength(3);
+            expect(scanner.apiKeys).toHaveLength(4);
+        });
+
+        it('per key, whether it reaches /api/mcp and whether it must be exchanged (#5004)', async () => {
+            const view = JSON.parse(await payloadText()) as HarnessRegisterView;
+            const a = ids[TENANT_A];
+            const scanner = view.agents.find((x) => x.registeredAgentId === a.scanner)!;
+            const flagged = scanner.apiKeys.filter((k) => k.requiresTokenExchange).map((k) => k.id);
+            expect(flagged).toEqual([exchangeOnlyKeyId]);
+            expect(scanner.apiKeys.every((k) => k.mcpCapable)).toBe(true);
+            // `controls:read` alone does not reach the endpoint.
+            const target = view.agents.find((x) => x.registeredAgentId === a.target)!;
+            expect(target.apiKeys).toEqual([expect.objectContaining({ mcpCapable: false, requiresTokenExchange: false })]);
+        });
+
+        it('what the gate enforces on each agent (#5004)', async () => {
+            const view = JSON.parse(await payloadText()) as HarnessRegisterView;
+            const a = ids[TENANT_A];
+            // Autonomy 2 under a LOW tier: propose is admitted, orchestrate is
+            // not. Its one grant is a read, and the call above pinned it.
+            const scanner = view.agents.find((x) => x.registeredAgentId === a.scanner)!;
+            expect(scanner.enforcement).toEqual({
+                autonomyCeiling: 2,
+                proposeRefused: false,
+                orchestrateRefused: true,
+                grants: { read: 1, propose: 0, external: 0 },
+                manifestsPinned: true,
+                profileInForce: false,
+                skillsMounted: false,
+            });
+            // No grant pins nothing.
+            const target = view.agents.find((x) => x.registeredAgentId === a.target)!;
+            expect(target.enforcement).toMatchObject({ grants: { read: 0, propose: 0, external: 0 }, manifestsPinned: false });
         });
 
         it('carries no name and no key material', async () => {

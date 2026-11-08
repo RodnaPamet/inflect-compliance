@@ -24,8 +24,8 @@ import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure
 import { ENTRA_READ_PATHS, GRAPH_ORIGIN } from './sources/entra';
 import { GCP_IAM_ORIGIN, GCP_READ_PATHS, GOOGLE_OAUTH_ORIGIN, GOOGLE_TOKEN_PATH } from './sources/gcp-service-accounts';
 import { GITHUB_API_ORIGIN, GITHUB_READ_PATHS } from './sources/github-actions';
-import { HARNESS_REGISTER_TOOL, MCP_MESSAGES, OPENSHELL_METHODS, OPENSHELL_PROFILE_SCOPE, OPENSHELL_READ_SCOPE, OPENSHELL_SERVICE } from './http';
-import { INFLECT_MCP_PATH } from './sources/inflect-register';
+import { HARNESS_REGISTER_TOOL, MCP_MESSAGES, TOKEN_EXCHANGE_GRANT, OPENSHELL_METHODS, OPENSHELL_PROFILE_SCOPE, OPENSHELL_READ_SCOPE, OPENSHELL_SERVICE } from './http';
+import { INFLECT_MCP_PATH, INFLECT_TOKEN_PATH } from './sources/inflect-register';
 import { SKIPPED_DIRECTORIES, SOURCE_EXTENSIONS } from './sources/code/files';
 import { LANGSMITH_READ_PATHS } from './sources/langsmith';
 
@@ -39,8 +39,11 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * under `inflect-agent-harness/3`, and the GCP service-account source (#3785).
  * 0.10.0: the OpenShell source (#3936) — a gRPC gateway read, declared below as
  * its own surface because it is neither a GET nor JSON-RPC over HTTP.
+ * 0.11.0: the register read exchanges the ingest key for a token naming the
+ * register tool alone, and the register source reports the gate's enforcement
+ * as H2 and H3 verdicts (#5004).
  */
-export const SCANNER_VERSION = '0.10.0';
+export const SCANNER_VERSION = '0.11.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -97,7 +100,9 @@ export const SCANNER_SURFACE = {
     // condition 1, owner decision 5 on #3686): never `tools/call`.
     lists: [{ source: 'mcp', method: 'POST', host: 'configured', jsonRpc: [...MCP_MESSAGES] }],
     // The scanner's own tenant's register: the handshake, then ONE tool call,
-    // of ONE named read tool (DPIA condition 2, owner decision 7 on #3686).
+    // of ONE named read tool (DPIA condition 2, owner decision 7 on #3686),
+    // on a token exchanged for that one tool (#5004). The key goes to the
+    // exchange; the MCP endpoint sees only the token.
     readsRegister: [
         {
             source: 'inflect-register',
@@ -105,6 +110,7 @@ export const SCANNER_SURFACE = {
             path: INFLECT_MCP_PATH,
             jsonRpc: ['initialize', 'notifications/initialized', 'tools/call'],
             tool: HARNESS_REGISTER_TOOL,
+            exchange: { method: 'POST', path: INFLECT_TOKEN_PATH, audience: [HARNESS_REGISTER_TOOL] },
         },
     ],
     // The client's own OpenShell gateway, named in its configuration. The
@@ -191,6 +197,27 @@ export function isDeclaredRegisterMessage(body: string): boolean {
     return message?.method === 'tools/call' && message.params?.name === HARNESS_REGISTER_TOOL;
 }
 
+/**
+ * Whether one body sent to the tenant's `/api/mcp/token` is on the declared
+ * surface: the token-exchange grant, for an audience of the register tool and
+ * nothing else.
+ */
+export function isDeclaredRegisterExchange(body: string): boolean {
+    let message: { grant_type?: unknown; audience?: unknown } | null;
+    try {
+        message = JSON.parse(body) as typeof message;
+    } catch {
+        return false;
+    }
+    const audience = message?.audience;
+    return (
+        message?.grant_type === TOKEN_EXCHANGE_GRANT &&
+        Array.isArray(audience) &&
+        audience.length === 1 &&
+        audience[0] === HARNESS_REGISTER_TOOL
+    );
+}
+
 /** Whether `pathname` is `declared`, where a `{name}` segment of `declared` stands for exactly one segment. */
 function pathMatches(declared: string, pathname: string): boolean {
     const want = declared.split('/');
@@ -212,6 +239,9 @@ export function isDeclaredRequest(method: string, url: string): boolean {
     // The register read posts to the tenant's `/api/mcp`; its messages are held
     // by `isDeclaredRegisterMessage`.
     if (pathname === INFLECT_MCP_PATH) return true;
+    // The register token's exchange, on the same tenant's origin; its body is
+    // held by `isDeclaredRegisterExchange`.
+    if (pathname === INFLECT_TOKEN_PATH) return true;
     // A gRPC call to the client's gateway: the service and RPC decide, not the
     // host, which the estate configures.
     if (isDeclaredGatewayCall(pathname)) return true;

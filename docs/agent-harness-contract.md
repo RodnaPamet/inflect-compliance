@@ -258,7 +258,10 @@ scanner that reads the tenant's register (its `inflect-register` source, #3686)
 also needs `mcp:read`, the capability `/api/mcp` takes, and its agent must be
 granted the one tool it calls, `get_harness_register`. That tool is authorized on
 `admin.agent_harness_ingest` and returns ids, statuses, dates and flags. A
-scanner key needs no other scope, and should have none.
+scanner key needs no other scope, and should have none. The scanner exchanges
+the key at `/api/mcp/token` for a token naming that tool before it calls it
+(#5004), so the key can be created with "MCP calls only through an exchanged
+token" set; the report itself is still posted with the key.
 
 **Whose reports count.** The tenant registers the scanner's public key with
 `POST /api/t/{tenantSlug}/admin/agents/harness-scanner-keys`

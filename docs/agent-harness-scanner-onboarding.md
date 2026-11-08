@@ -26,7 +26,11 @@ scanner signed it, so each estate has a scanner of its own.
    bound to the scanner agent. If the estate reads the register (the
    `inflect-register` source, which the pilot does), give the key `mcp:read` as
    well and grant the scanner agent the tool `get_harness_register`. The key
-   holds no other scope.
+   holds no other scope. Tick "Agent tool calls only through a short-lived,
+   tool-scoped token" when you create it: the scanner exchanges the key for such
+   a token before it reads the register (#5004), and the setting is what the
+   harness criterion `H2.audience_tokens` reads. It cannot be changed later; to
+   move an existing key, issue a new one.
 4. **Declare the estate** at `POST /api/t/{slug}/admin/agents/harness-estates`
    (`admin.agent_registry`): its name, the scanner agent, the cadence in hours
    (1 to 720), and each source kind with its owner. Every owner must be an

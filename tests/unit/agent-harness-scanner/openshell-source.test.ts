@@ -405,7 +405,9 @@ describe('4b. the declared surface, and what it refuses', () => {
         // construction: the hash is over canonical JSON of the whole object,
         // and `readsGateway` is in it.
         expect(JSON.stringify(SCANNER_SURFACE)).toContain('openshell.v1.OpenShell');
-        expect(SCANNER_VERSION).toBe('0.10.0');
+        // Raised with the gateway surface (0.10.0), and only ever raised since.
+        const [major, minor] = SCANNER_VERSION.split('.').map(Number);
+        expect(major > 0 || minor >= 10).toBe(true);
     });
 });
 

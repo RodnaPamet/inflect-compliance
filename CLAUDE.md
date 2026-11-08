@@ -1892,6 +1892,16 @@ and the container are #3686.
   exchange is the one POST, behind its own interface. Every request is declared
   in `scanner-surface.ts`, whose hash is the report's manifest hash, and the
   tests hold each fake's request log to it: a new endpoint goes there first.
+- **The register read is on an exchanged token, and its H2/H3 verdicts are the
+  register's facts** (#5004). The wire trades the ingest key at the tenant's
+  `/api/mcp/token` for a token naming `get_harness_register` alone and refuses
+  any answer that is not an `ifxt_` token. `get_harness_register` decides
+  every fact (per-key `mcpCapable` / `requiresTokenExchange`, and an
+  `enforcement` block built with the funnel's own ceiling and pin checks); the
+  source only maps them. The four no-write H3 criteria are met on the WHOLE
+  read-only bound only and are otherwise unanswered, never "no";
+  `H3.payloads_guarded` is "met" on the scanner's own agent only. Extend that one
+  tool rather than add a second: DPIA condition 2 allows one.
 - **A secret's value is never requested.** Okta's `/apps/{id}/credentials/secrets`
   and Key Vault's `/secrets/{name}` return values; credentials are reported by
   reference.
