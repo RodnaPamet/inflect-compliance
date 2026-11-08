@@ -2,8 +2,10 @@
  * The scanner's register source over the fixture tenant (#3686, part c).
  *
  *   1. ONE NAMED TOOL, ON ITS OWN TENANT (DPIA condition 2, owner decision 7):
- *      the handshake and one `tools/call` of `get_harness_register` to the
- *      ingest host's `/api/mcp`, with the ingest key, and nothing else.
+ *      the key exchanged at `/api/mcp/token` for a token naming that one tool
+ *      (#5004), then the handshake and one `tools/call` of
+ *      `get_harness_register` to the ingest host's `/api/mcp` on that token,
+ *      and nothing else. The key never reaches `/api/mcp`.
  *   2. WHAT IT REPORTS (owner decision 4): each agent, as its confirmed
  *      principal when a person confirmed one, with its owner, its own keys by
  *      reference and the verdicts the register can evidence — and no "no" for a
@@ -12,6 +14,9 @@
  *      `registeredAgentId`, and drops the same member from any other source.
  *   4. A read that cannot be trusted is INCOMPLETE with the contract's reason.
  *   5. Through the runner, beside the Entra source: one agent, linked, via both.
+ *   6. WHAT THE GATE ENFORCES (#5004): audience tokens from the keys, pinned
+ *      manifests, the four no-write H3 criteria on the enforced bound only, and
+ *      the scanner's own payload guards on its own agent only.
  */
 import { generateKeyPairSync } from 'crypto';
 
@@ -24,26 +29,36 @@ import {
     INGEST,
     MCP_MARKERS,
     NEVER_REPORTED,
+    REGISTER_EXCHANGED_TOKEN,
     registerFixture,
     type Fakes,
+    type RegisterFixture,
 } from '../../helpers/agent-harness-source-fakes';
+import {
+    ACCESS_TOKEN_TYPE as SERVER_ACCESS_TOKEN_TYPE,
+    TOKEN_EXCHANGE_GRANT_TYPE as SERVER_TOKEN_EXCHANGE_GRANT,
+} from '@/lib/mcp/token-exchange';
 import { verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
 import { ConfigError, parseScannerConfig } from '../../../packages/agent-harness-scanner/src/config';
-import { createSourceWire } from '../../../packages/agent-harness-scanner/src/http';
+import { ACCESS_TOKEN_TYPE, createSourceWire, TOKEN_EXCHANGE_GRANT } from '../../../packages/agent-harness-scanner/src/http';
 import { jsonLineLog } from '../../../packages/agent-harness-scanner/src/log';
 import { buildReportBody, rawPublicKeyHex } from '../../../packages/agent-harness-scanner/src/report';
 import { runScan } from '../../../packages/agent-harness-scanner/src/scan';
-import { isDeclaredRegisterMessage, isDeclaredRequest } from '../../../packages/agent-harness-scanner/src/scanner-surface';
-import { inflectRegisterSource } from '../../../packages/agent-harness-scanner/src/sources/inflect-register';
+import {
+    isDeclaredRegisterExchange,
+    isDeclaredRegisterMessage,
+    isDeclaredRequest,
+} from '../../../packages/agent-harness-scanner/src/scanner-surface';
+import { inflectRegisterSource, READ_ONLY_BOUND_CRITERIA } from '../../../packages/agent-harness-scanner/src/sources/inflect-register';
 import type { SourceRead } from '../../../packages/agent-harness-scanner/src/source';
 
 const ASOF = new Date('2026-10-19T03:00:00.000Z');
 const INGEST_KEY_VALUE = 'iflk_fake-ingest-key-3686';
 const SUPPORT_SP = `entra:sp:${ENTRA.spSupport}`;
 
-async function read(fakes: Fakes): Promise<SourceRead> {
+async function read(fakes: Fakes, scannerAgentId?: string): Promise<SourceRead> {
     const wire = createSourceWire({ fetchImpl: fakes.fetchImpl, deadline: ASOF.getTime() + 60_000, now: () => ASOF.getTime() });
-    return inflectRegisterSource({ baseUrl: INGEST, tenantSlug: 'acme', apiKey: INGEST_KEY_VALUE }).read({
+    return inflectRegisterSource({ baseUrl: INGEST, tenantSlug: 'acme', apiKey: INGEST_KEY_VALUE, scannerAgentId }).read({
         asOf: ASOF,
         deadline: ASOF.getTime() + 60_000,
         now: () => ASOF.getTime(),
@@ -52,20 +67,42 @@ async function read(fakes: Fakes): Promise<SourceRead> {
 }
 
 describe('1. one named tool, on its own tenant', () => {
-    it('the handshake and one tools/call of get_harness_register, with the ingest key', async () => {
+    it('the key exchanged for a token naming the tool, then the handshake and one tools/call on that token', async () => {
         const fakes = createSourceFakes();
         const result = await read(fakes);
         expect(result).toMatchObject({ kind: 'inflect-register', status: 'COMPLETE', rows: 2 });
-        expect(fakes.log.map((r) => `${r.method} ${r.host}${r.path} ${r.rpc}`)).toEqual([
+        expect(fakes.log.map((r) => `${r.method} ${r.host}${r.path} ${r.rpc ?? '-'}`)).toEqual([
+            'POST inflect.example.com/api/mcp/token -',
             'POST inflect.example.com/api/mcp initialize',
             'POST inflect.example.com/api/mcp notifications/initialized',
             'POST inflect.example.com/api/mcp tools/call',
         ]);
-        for (const r of fakes.log) {
-            expect(isDeclaredRegisterMessage(r.body ?? '')).toBe(true);
-            expect(isDeclaredRequest(r.method, `https://${r.host}${r.path}`)).toBe(true);
-        }
-        expect(fakes.ingestAuth).toEqual([`Bearer ${INGEST_KEY_VALUE}`, `Bearer ${INGEST_KEY_VALUE}`, `Bearer ${INGEST_KEY_VALUE}`]);
+        const [exchange, ...messages] = fakes.log;
+        expect(isDeclaredRegisterExchange(exchange.body ?? '')).toBe(true);
+        expect(JSON.parse(exchange.body ?? '{}')).toEqual({
+            grant_type: TOKEN_EXCHANGE_GRANT,
+            subject_token: INGEST_KEY_VALUE,
+            audience: ['get_harness_register'],
+            requested_token_type: ACCESS_TOKEN_TYPE,
+        });
+        for (const r of messages) expect(isDeclaredRegisterMessage(r.body ?? '')).toBe(true);
+        for (const r of fakes.log) expect(isDeclaredRequest(r.method, `https://${r.host}${r.path}`)).toBe(true);
+        // The MCP endpoint saw the exchanged token, three times, and never the key.
+        expect(fakes.ingestAuth).toEqual(Array.from({ length: 3 }, () => `Bearer ${REGISTER_EXCHANGED_TOKEN}`));
+        for (const r of messages) expect(r.body).not.toContain(INGEST_KEY_VALUE);
+    });
+
+    it('spells the exchange as the server takes it', () => {
+        expect(TOKEN_EXCHANGE_GRANT).toBe(SERVER_TOKEN_EXCHANGE_GRANT);
+        expect(ACCESS_TOKEN_TYPE).toBe(SERVER_ACCESS_TOKEN_TYPE);
+    });
+
+    it('the declared exchange is for the register tool alone', () => {
+        const body = (audience: unknown) => JSON.stringify({ grant_type: TOKEN_EXCHANGE_GRANT, subject_token: 'iflk_x', audience });
+        expect(isDeclaredRegisterExchange(body(['get_harness_register']))).toBe(true);
+        expect(isDeclaredRegisterExchange(body(['get_harness_register', 'list_controls']))).toBe(false);
+        expect(isDeclaredRegisterExchange(body('get_harness_register'))).toBe(false);
+        expect(isDeclaredRegisterExchange(body(['propose_risks']))).toBe(false);
     });
 
     it('the declared surface admits that one tool and no other', () => {
@@ -96,6 +133,12 @@ describe('2. what it reports', () => {
             ['H2.policy_card', true],
             ['H2.credential_bound', true],
             ['H2.grant_kind_declared', true],
+            ['H2.audience_tokens', true],
+            ['H3.manifests_pinned', true],
+            ['H3.propose_not_commit', true],
+            ['H3.prior_state_reads', true],
+            ['H3.skills_declared', true],
+            ['H3.delegation_narrows', true],
         ]);
         expect(scanner?.verdicts.every((v) => v.evidence?.startsWith('inflect-register:agents/agt_scanner_acme#'))).toBe(true);
     });
@@ -158,6 +201,28 @@ describe('4. a read that cannot be trusted is INCOMPLETE', () => {
         fakes.override = (r) => (r.path === '/api/mcp' ? { status: 403 } : undefined);
         expect(await read(fakes)).toMatchObject({ status: 'INCOMPLETE', reason: 'AUTH_FAILED' });
     });
+
+    it('a refused exchange is AUTH_FAILED, and nothing is sent to /api/mcp', async () => {
+        const fakes = createSourceFakes();
+        fakes.override = (r) => (r.path === '/api/mcp/token' ? { status: 401 } : undefined);
+        expect(await read(fakes)).toMatchObject({ status: 'INCOMPLETE', reason: 'AUTH_FAILED' });
+        expect(fakes.log.filter((r) => r.path === '/api/mcp')).toEqual([]);
+    });
+
+    it('an exchange that answers with anything but an exchanged token is refused, never forwarded', async () => {
+        for (const access_token of [INGEST_KEY_VALUE, 'ifxt_no-signature', '', 42]) {
+            const fakes = createSourceFakes();
+            fakes.override = (r) => (r.path === '/api/mcp/token' ? { status: 201, body: { access_token } } : undefined);
+            expect(await read(fakes)).toMatchObject({ status: 'INCOMPLETE', reason: 'AUTH_FAILED' });
+            expect(fakes.log.filter((r) => r.path === '/api/mcp')).toEqual([]);
+        }
+    });
+
+    it('a register without the enforcement member is PAGINATION_TORN', async () => {
+        const register = registerFixture();
+        delete (register.agents[0] as Partial<RegisterFixture['agents'][number]>).enforcement;
+        expect(await read(createSourceFakes({ register }))).toMatchObject({ status: 'INCOMPLETE', reason: 'PAGINATION_TORN' });
+    });
 });
 
 describe('5. through the runner, beside the Entra source', () => {
@@ -194,8 +259,12 @@ describe('5. through the runner, beside the Entra source', () => {
         // The one tool call made was the register read.
         expect(fakes.log.filter((r) => r.rpc === 'tools/call')).toHaveLength(1);
         expect(raw).not.toContain(MCP_MARKERS.toolCallResult);
+        // The scanner's own agent carries its payload guards; no other agent does.
+        const own = body.agents.find((a) => a.discoveredId === 'inflect:agent:agt_scanner_acme');
+        expect(own?.verdicts.find((v) => v.criterion === 'H3.payloads_guarded')).toMatchObject({ met: true });
+        expect(support?.verdicts.some((v) => v.criterion === 'H3.payloads_guarded')).toBe(false);
         const logText = lines.join('\n');
-        for (const never of [...NEVER_REPORTED, INGEST_KEY_VALUE]) {
+        for (const never of [...NEVER_REPORTED, INGEST_KEY_VALUE, REGISTER_EXCHANGED_TOKEN]) {
             expect(raw).not.toContain(never);
             expect(logText).not.toContain(never);
         }
@@ -210,5 +279,55 @@ describe('5. through the runner, beside the Entra source', () => {
         };
         expect(() => parseScannerConfig({ ...base, sources: [{ kind: 'inflect-register' }] })).not.toThrow();
         expect(() => parseScannerConfig({ ...base, sources: [{ kind: 'inflect-register', tool: 'list_controls' }] })).toThrow(ConfigError);
+    });
+});
+
+describe('6. what the gate enforces', () => {
+    const verdicts = async (register: RegisterFixture, id: string, scannerAgentId?: string) => {
+        const result = await read(createSourceFakes({ register }), scannerAgentId);
+        const obs = result.observations.find((o) => o.registeredAgentId === id);
+        return new Map(obs?.verdicts.map((v) => [v.criterion, v.met]));
+    };
+    const scannerOf = (r: RegisterFixture) => r.agents[0];
+
+    it('off the bound, the four are unanswered — not a no — and an agent with no key gives no answer on tokens', async () => {
+        const answered = await verdicts(registerFixture(), 'agt_support_acme');
+        for (const c of READ_ONLY_BOUND_CRITERIA) expect(answered.has(c)).toBe(false);
+        expect(answered.get('H3.manifests_pinned')).toBe(false);
+        expect(answered.has('H2.audience_tokens')).toBe(false);
+    });
+
+    it.each([
+        ['propose is admitted', { proposeRefused: false }],
+        ['orchestrate is admitted', { orchestrateRefused: false }],
+        ['a propose grant', { grants: { read: 1, propose: 1, external: 0 } }],
+        ['an external grant', { grants: { read: 1, propose: 0, external: 1 } }],
+        ['a profile in force', { profileInForce: true }],
+        ['a run mounted a skill', { skillsMounted: true }],
+        ['the runs could not be read', { skillsMounted: null }],
+    ])('one term short of the bound — %s — leaves all four unanswered', async (_label, over) => {
+        const register = registerFixture();
+        scannerOf(register).enforcement = { ...scannerOf(register).enforcement, ...over };
+        const answered = await verdicts(register, 'agt_scanner_acme');
+        for (const c of READ_ONLY_BOUND_CRITERIA) expect(answered.has(c)).toBe(false);
+    });
+
+    it('audience tokens: met only when every key that reaches /api/mcp requires the exchange', async () => {
+        const register = registerFixture();
+        const key = scannerOf(register).apiKeys[0];
+        scannerOf(register).apiKeys = [key, { ...key, id: 'key_raw_acme', requiresTokenExchange: false }];
+        expect((await verdicts(register, 'agt_scanner_acme')).get('H2.audience_tokens')).toBe(false);
+        // A key that cannot reach the endpoint is not counted either way.
+        scannerOf(register).apiKeys = [key, { ...key, id: 'key_rest_acme', mcpCapable: false, requiresTokenExchange: false }];
+        expect((await verdicts(register, 'agt_scanner_acme')).get('H2.audience_tokens')).toBe(true);
+        // Only keys that cannot reach it: unanswered.
+        scannerOf(register).apiKeys = [{ ...key, mcpCapable: false }];
+        expect((await verdicts(register, 'agt_scanner_acme')).has('H2.audience_tokens')).toBe(false);
+    });
+
+    it('payloads guarded: on the scanner\'s own agent, and only there', async () => {
+        expect((await verdicts(registerFixture(), 'agt_scanner_acme', 'agt_scanner_acme')).get('H3.payloads_guarded')).toBe(true);
+        expect((await verdicts(registerFixture(), 'agt_support_acme', 'agt_scanner_acme')).has('H3.payloads_guarded')).toBe(false);
+        expect((await verdicts(registerFixture(), 'agt_scanner_acme')).has('H3.payloads_guarded')).toBe(false);
     });
 });

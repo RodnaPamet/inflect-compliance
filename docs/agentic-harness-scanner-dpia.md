@@ -367,9 +367,13 @@ the customer names, checked at configuration and again before every request, as
 the self-hosted LangSmith is.
 
 The register source (#3686) reads the scanner's own tenant's register through
-one MCP read tool, `get_harness_register`, on that tenant's `/api/mcp`, with the
-ingest key. It sends `initialize`, the initialized notification and one
-`tools/call` naming that tool, and the request log asserts it. The tool returns
+one MCP read tool, `get_harness_register`, on that tenant's `/api/mcp`. Since
+#5004 it first exchanges the ingest key at the same tenant's `/api/mcp/token` for
+a short-lived token whose audience is that one tool, and `/api/mcp` is sent only
+that token. It then sends `initialize`, the initialized notification and one
+`tools/call` naming that tool, and the request log asserts all four requests.
+The exchange adds no destination and no data category: it is the same tenant,
+and it carries the credential `/api/mcp` was already sent. The tool returns
 ids, statuses, dates and flags: no agent name, no key name or prefix, no free
 text. The owner it reports is an Inflect user id, the `agents[].owner` member
 above, and a person's identifier as that row records.
@@ -452,7 +456,9 @@ condition 8.
    estate's MCP server. An MCP server's read token, where the server takes one,
    is sent with the messages condition 1 names and nothing else. The one tool
    the scanner calls is `get_harness_register`, on its own tenant's Inflect
-   `/api/mcp`, with its ingest key; its wire names no other tool.
+   `/api/mcp`, on a token its ingest key is exchanged for at that tenant's
+   `/api/mcp/token` naming that tool alone (#5004); its wire names no other
+   tool.
 3. The vault reader lists secret names, references and metadata, and never
    reads a secret's value.
 4. The scanner sends nothing anywhere except, over HTTPS, the ingest route of

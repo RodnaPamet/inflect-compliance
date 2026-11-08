@@ -80,7 +80,12 @@ export function buildSources(
                 unreadable.push(sourceResult(s.kind, 0, [], new SourceReadError('AUTH_FAILED', 'the ingest key is not set')));
             } else {
                 sources.push(
-                    inflectRegisterSource({ baseUrl: config.inflect.baseUrl, tenantSlug: config.inflect.tenantSlug, apiKey: apiKey.trim() }),
+                    inflectRegisterSource({
+                        baseUrl: config.inflect.baseUrl,
+                        tenantSlug: config.inflect.tenantSlug,
+                        apiKey: apiKey.trim(),
+                        scannerAgentId: config.scanner.agentId,
+                    }),
                 );
             }
             continue;

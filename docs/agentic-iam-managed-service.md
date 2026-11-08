@@ -133,7 +133,7 @@ is the step-by-step; this section says who does each step.
 |---|---|---|---|
 | Register the scanner as an agent, with a client owner | Client | The register (`admin.agent_registry`) | Register row and audit row |
 | Trust the scanner's signing key | Client | `POST …/admin/agents/harness-scanner-keys` (`admin.agent_registry`) | Scanner key row, audit row |
-| Issue the ingest key: `admin:harness_ingest`, plus `mcp:read` and the `get_harness_register` grant if the register is read | Client | `/admin/api-keys` (`admin.manage`); the agent's tools (`admin.agent_tool_exposure`) | API key bound to the scanner agent; grant row |
+| Issue the ingest key: `admin:harness_ingest`, plus `mcp:read`, the exchange requirement (#5004) and the `get_harness_register` grant if the register is read | Client | `/admin/api-keys` (`admin.manage`); the agent's tools (`admin.agent_tool_exposure`) | API key bound to the scanner agent; grant row |
 | Declare the estate: its cadence and each source with a client owner | Client, from the provider's estate plan | `POST …/admin/agents/harness-estates` (`admin.agent_registry`) | Estate row, audit row |
 | Provide a read-only credential per source, from the estate's secret store | Client | The estate | None in Inflect |
 | Build the container from a reviewed commit of this repository, run `scan --dry-run`, then `schedule` | Provider | The estate (`packages/agent-harness-scanner/Dockerfile`) | Signed reports |

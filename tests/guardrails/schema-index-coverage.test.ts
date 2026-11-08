@@ -504,6 +504,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // #5004 — the harness register read asks which of a page of agents has a
+    // profile in force.
+    AgentProfile:
+        'The one list read is readHarnessRegisterForScanner: filter (tenantId, agentId IN ' +
+        'the page, currentApprovedVersion not null), bounded by the page. @@unique([tenantId, ' +
+        'agentId]) serves it leading-column, and holds at most one row per agent, so the ' +
+        'version predicate filters a set no larger than the page.',
     // #4568 — the kill switch's only read is "every live sandbox of this
     // tenant", which `@@index([tenantId, openedAt])` serves leading-column.
     OpenShellSandboxLease:

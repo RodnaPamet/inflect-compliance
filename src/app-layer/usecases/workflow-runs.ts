@@ -70,7 +70,7 @@ import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, notFound, forbidden } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
-import { assertRunStartNotByExchangeOnlyKey, enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
+import { assertRunStartNotByExchangeOnlyKey, enforceMcpCapability } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';

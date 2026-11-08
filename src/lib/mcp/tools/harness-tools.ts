@@ -40,6 +40,7 @@ import { z } from 'zod';
 import { getDiscoveredAgentFacts } from '@/app-layer/usecases/agent-harness-facts';
 import { readHarnessRegisterForScanner } from '@/app-layer/usecases/agent-harness-register-read';
 import type { RequestContext } from '@/app-layer/types';
+import type { ToolDefinition } from '../tool-manifest';
 
 import type { McpReadTool } from './types';
 
@@ -105,8 +106,13 @@ export const getHarnessRegisterTool: McpReadTool<z.infer<typeof noArgs>> = {
         'For a harness scanner: the live registered agents of this tenant, as the ' +
         "scanner's inflect-register source reports them. Per agent: its id, status and " +
         'owner user id; whether its axes are declared, its risk tier is scored and fresh, ' +
-        'and a policy card is in force; its live API keys by id and date; and the service ' +
-        'principals a person confirmed as it. No names and no free text. Read-only, tenant-scoped.',
+        'and a policy card is in force; its live API keys by id and date, whether each can ' +
+        'reach the MCP endpoint and whether it must be exchanged for an audience-scoped ' +
+        'token; the service principals a person confirmed as it; and what the gate enforces ' +
+        'on it: its autonomy ceiling and the rungs that ceiling refuses, its tool grants by ' +
+        'class, whether every grant verifies against its pinned manifest, and whether a ' +
+        'profile is in force or a run of it mounted skills. No names and no free text. ' +
+        'Read-only, tenant-scoped.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     argsSchema: noArgs,
     resourceScope: { resource: 'admin', action: 'harness_ingest' },
@@ -115,5 +121,19 @@ export const getHarnessRegisterTool: McpReadTool<z.infer<typeof noArgs>> = {
         basis: 'effective',
         mirrors: 'POST /api/t/:slug/admin/agents/harness-scans (ingestHarnessReport: admin.agent_harness_ingest)',
     },
-    run: async (ctx: RequestContext) => readHarnessRegisterForScanner(ctx),
+    run: async (ctx: RequestContext) => readHarnessRegisterForScanner(ctx, { builtInTools: await builtInToolDefinitions() }),
 };
+
+/**
+ * This build's built-in tool definitions, by name, as the funnel hashes them
+ * against a tenant's pins (#5004). Loaded on call: the registry imports this
+ * file, so a static import would be a cycle.
+ */
+async function builtInToolDefinitions(): Promise<ReadonlyMap<string, ToolDefinition>> {
+    const [{ READ_TOOLS }, { PROPOSE_TOOLS }] = await Promise.all([import('./registry'), import('./propose-tools')]);
+    const defs = new Map<string, ToolDefinition>();
+    for (const t of [...READ_TOOLS, ...PROPOSE_TOOLS]) {
+        defs.set(t.name, { name: t.name, description: t.description, inputSchema: t.inputSchema });
+    }
+    return defs;
+}

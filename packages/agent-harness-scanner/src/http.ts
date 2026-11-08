@@ -22,7 +22,10 @@
  * tool itself: `read` calls `get_harness_register` with no arguments on the
  * Inflect endpoint the caller hands it, and can call nothing else (DPIA
  * condition 2 as amended by owner decision 7: one named tool, the scanner's own
- * tenant).
+ * tenant). Before it, it exchanges the ingest key at the same tenant's
+ * `/api/mcp/token` for a short-lived token whose audience is that one tool
+ * (RFC 8693, #5004), and only that token reaches `/api/mcp`: the key itself is
+ * sent to the exchange and nowhere else on that origin but the ingest.
  *
  * Every request is held to four rules, each of which ends the source's read
  * with the contract's reason rather than an exception the runner has to guess
@@ -95,14 +98,39 @@ export interface McpListingWire {
     listTools(session: McpSession, cursor: string | null): Promise<{ readonly tools: readonly unknown[]; readonly nextCursor: string | null }>;
 }
 
+/** Where the register is read: the tenant's MCP endpoint and its token exchange, on one origin. */
+export interface RegisterTarget {
+    /** The tenant's `/api/mcp`, https. It is sent the exchanged token, never the key. */
+    readonly url: string;
+    /** The tenant's `/api/mcp/token`, on the same origin as `url`. The one place the key is sent. */
+    readonly tokenUrl: string;
+    /** The ingest API key, exchanged for a token naming `HARNESS_REGISTER_TOOL` alone. */
+    readonly apiKey: string;
+}
+
 /** The register read, over the scanner's own tenant's Inflect MCP endpoint. */
 export interface RegisterReadWire {
-    /** `initialize`, the notification, then `tools/call` of `HARNESS_REGISTER_TOOL`; the tool's JSON payload. */
-    read(target: McpTarget): Promise<unknown>;
+    /**
+     * The key exchanged for an audience-scoped token, then `initialize`, the
+     * notification, and `tools/call` of `HARNESS_REGISTER_TOOL` on that token;
+     * the tool's JSON payload.
+     */
+    read(target: RegisterTarget): Promise<unknown>;
 }
 
 /** The one tool the scanner may call, on its own tenant's `/api/mcp`, and no other. */
 export const HARNESS_REGISTER_TOOL = 'get_harness_register';
+
+/**
+ * RFC 8693's grant and token type, as Inflect's `/api/mcp/token` takes them.
+ * Spelled here because the scanner may not import the server's module;
+ * `tests/unit/agent-harness-scanner/inflect-register-source.test.ts` holds them
+ * equal to it.
+ */
+export const TOKEN_EXCHANGE_GRANT = 'urn:ietf:params:oauth:grant-type:token-exchange';
+export const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
+/** An exchanged token's shape: Inflect's prefix, a payload and a signature. Anything else is refused. */
+const EXCHANGED_TOKEN = /^ifxt_[A-Za-z0-9_-]{1,4096}\.[A-Za-z0-9_-]{1,256}$/;
 
 /** The protocol revision the scanner speaks. A server may answer with another it supports. */
 export const MCP_PROTOCOL_VERSION = '2025-06-18';
@@ -624,8 +652,55 @@ export function createSourceWire(
         },
     };
 
+    /**
+     * The key, exchanged for a token whose audience is the register tool alone
+     * (#5004). JSON, as Inflect's exchange takes it. Any refusal is a credential
+     * the source could not use; an answer that is not an exchanged token is
+     * refused rather than forwarded, so nothing but such a token reaches the
+     * MCP endpoint.
+     */
+    async function exchangeForRegisterToken(target: RegisterTarget, origin: string): Promise<string> {
+        if (!isOnOrigin(target.tokenUrl, origin)) {
+            throw new SourceReadError('AUTH_FAILED', 'the token exchange is not on the register origin');
+        }
+        try {
+            const res = await t.fetchImpl(target.tokenUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({
+                    grant_type: TOKEN_EXCHANGE_GRANT,
+                    subject_token: target.apiKey,
+                    audience: [HARNESS_REGISTER_TOOL],
+                    requested_token_type: ACCESS_TOKEN_TYPE,
+                }),
+                redirect: 'error',
+                signal: AbortSignal.timeout(remaining(t)),
+            });
+            if (!res.ok) {
+                await res.body?.cancel();
+                const reason = res.status === 429 ? 'RATE_LIMITED' : res.status >= 500 ? 'UNREACHABLE' : 'AUTH_FAILED';
+                throw new SourceReadError(reason, `the token exchange answered HTTP ${res.status}`);
+            }
+            const body = parseJson(await readCapped(res, 64 * 1024, charge)) as { access_token?: unknown };
+            if (typeof body.access_token !== 'string' || !EXCHANGED_TOKEN.test(body.access_token)) {
+                throw new SourceReadError('AUTH_FAILED', 'the token exchange returned no exchanged token');
+            }
+            return body.access_token;
+        } catch (err) {
+            throw classifyThrow(err);
+        }
+    }
+
     const register: RegisterReadWire = {
-        async read(target) {
+        async read(registerTarget) {
+            let origin: string;
+            try {
+                origin = new URL(registerTarget.url).origin;
+            } catch {
+                throw new SourceReadError('UNREACHABLE', 'the MCP endpoint is not a URL');
+            }
+            const token = await exchangeForRegisterToken(registerTarget, origin);
+            const target: McpTarget = { url: registerTarget.url, headers: { Authorization: `Bearer ${token}` } };
             const session = await mcp.open(target);
             const { result } = await call(target, 'tools/call', { name: HARNESS_REGISTER_TOOL, arguments: {} }, session);
             // Inflect's tool result: a JSON payload in the first text block. A

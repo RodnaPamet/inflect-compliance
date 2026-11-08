@@ -26,7 +26,27 @@
  *     has a key of its own — `H2.credential_bound` and `H2.grant_kind_declared`.
  *     An agent with no key leaves those two unanswered rather than answering
  *     no: its credential may be one another source sees, and a "no" here would
- *     outvote it. `H2.audience_tokens` is not claimed.
+ *     outvote it.
+ *
+ * AND WHAT THE GATE ENFORCES (#5004, owner decisions of 2026-11-08):
+ *
+ *   • `H2.audience_tokens` — only when the agent holds a key that reaches
+ *     `/api/mcp`, and met only when every such key requires the exchange. No
+ *     such key leaves it unanswered, for the reason the two above give.
+ *   • `H3.manifests_pinned` — the register's `manifestsPinned`: at least one
+ *     grant, none external, each verifying against its pin.
+ *   • `H3.propose_not_commit`, `H3.prior_state_reads`, `H3.skills_declared`,
+ *     `H3.delegation_narrows` — met for a read-only agent ON AN ENFORCED BOUND
+ *     ONLY, and the evidence names it: the ceiling refuses propose and
+ *     orchestrate at the gate, no propose or external grant, no profile in
+ *     force, and no run mounted a skill (read in full). Anything short of the
+ *     whole bound leaves the four unanswered, never "met" on an empty set and
+ *     never "no", which would outvote a source that evidences them.
+ *   • `H3.payloads_guarded` — on the scanner's OWN agent only, and only "met":
+ *     the scanner refuses to sign a report with a secret-shaped member
+ *     (`firstSecretShapedMember`, `report.ts`) and the ingest refuses one again
+ *     with the same check, over every string (`ingestHarnessReport`). That is a fact about this program, so it says
+ *     nothing about any other agent.
  *
  * The payload is checked against a strict schema; one it cannot read tears the
  * source. A register the server reports as truncated is read as far as it went
@@ -54,13 +74,18 @@ export interface InflectRegisterSourceOptions {
     readonly tenantSlug: string;
     /** The ingest API key, resolved from the environment by the caller. */
     readonly apiKey: string;
+    /** The scanner's own registered agent (`scanner.agentId`), the one its self-verdicts are about. */
+    readonly scannerAgentId?: string;
 }
 
 /** The register's MCP endpoint, on the scanner's own tenant's Inflect. */
 export const INFLECT_MCP_PATH = '/api/mcp';
+/** The token exchange the ingest key is traded at for the register read (#5004), on the same origin. */
+export const INFLECT_TOKEN_PATH = '/api/mcp/token';
 
 const plainId = z.string().refine(isPlainId, 'an id');
 const isoDate = z.string().datetime();
+const count = z.number().int().min(0).max(100_000);
 
 const RegisterViewSchema = z
     .object({
@@ -76,8 +101,31 @@ const RegisterViewSchema = z
                         axesDeclared: z.boolean(),
                         tierFresh: z.boolean(),
                         policyCardInForce: z.boolean(),
-                        apiKeys: z.array(z.object({ id: plainId, createdAt: isoDate, expiresAt: isoDate.nullable() }).strict()).max(100),
+                        apiKeys: z
+                            .array(
+                                z
+                                    .object({
+                                        id: plainId,
+                                        createdAt: isoDate,
+                                        expiresAt: isoDate.nullable(),
+                                        mcpCapable: z.boolean(),
+                                        requiresTokenExchange: z.boolean(),
+                                    })
+                                    .strict(),
+                            )
+                            .max(100),
                         confirmedPrincipals: z.array(z.string().regex(/^[a-z][a-z0-9-]{0,31}:\S{1,220}$/)).max(100),
+                        enforcement: z
+                            .object({
+                                autonomyCeiling: z.number().int().min(-1).max(6),
+                                proposeRefused: z.boolean(),
+                                orchestrateRefused: z.boolean(),
+                                grants: z.object({ read: count, propose: count, external: count }).strict(),
+                                manifestsPinned: z.boolean(),
+                                profileInForce: z.boolean(),
+                                skillsMounted: z.boolean().nullable(),
+                            })
+                            .strict(),
                     })
                     .strict(),
             )
@@ -85,7 +133,34 @@ const RegisterViewSchema = z
     })
     .strict();
 
-function verdictsOf(agent: z.infer<typeof RegisterViewSchema>['agents'][number]): CriterionVerdict[] {
+type RegisterAgent = z.infer<typeof RegisterViewSchema>['agents'][number];
+
+/**
+ * The read-only bound the four no-write H3 criteria stand on (owner decision
+ * 1 on #5004): every term is something the gate ENFORCES, and the bound is all
+ * of them in one expression. `skillsMounted` must be read as false — unknown
+ * is not "none".
+ */
+function readOnlyBoundHolds(e: RegisterAgent['enforcement']): boolean {
+    return (
+        e.proposeRefused &&
+        e.orchestrateRefused &&
+        e.grants.propose === 0 &&
+        e.grants.external === 0 &&
+        !e.profileInForce &&
+        e.skillsMounted === false
+    );
+}
+
+/** The four H3 criteria a read-only agent meets on the enforced bound, and only there. */
+export const READ_ONLY_BOUND_CRITERIA = [
+    'H3.propose_not_commit',
+    'H3.prior_state_reads',
+    'H3.skills_declared',
+    'H3.delegation_narrows',
+] as const;
+
+function verdictsOf(agent: RegisterAgent, isScanner: boolean): CriterionVerdict[] {
     const at = (member: string) => `inflect-register:agents/${agent.registeredAgentId}#${member}`;
     const verdicts: CriterionVerdict[] = [
         { criterion: 'H1.registered', met: true, evidence: at('status') },
@@ -100,6 +175,27 @@ function verdictsOf(agent: z.infer<typeof RegisterViewSchema>['agents'][number])
             { criterion: 'H2.credential_bound', met: true, evidence: at('apiKeys') },
             { criterion: 'H2.grant_kind_declared', met: true, evidence: at('apiKeys') },
         );
+    }
+    const mcpKeys = agent.apiKeys.filter((k) => k.mcpCapable);
+    if (mcpKeys.length > 0) {
+        verdicts.push({
+            criterion: 'H2.audience_tokens',
+            met: mcpKeys.every((k) => k.requiresTokenExchange),
+            evidence: at('apiKeys.requiresTokenExchange'),
+        });
+    }
+    verdicts.push({ criterion: 'H3.manifests_pinned', met: agent.enforcement.manifestsPinned, evidence: at('enforcement.manifestsPinned') });
+    if (readOnlyBoundHolds(agent.enforcement)) {
+        for (const criterion of READ_ONLY_BOUND_CRITERIA) {
+            verdicts.push({ criterion, met: true, evidence: at('enforcement.readOnlyBound') });
+        }
+    }
+    if (isScanner) {
+        verdicts.push({
+            criterion: 'H3.payloads_guarded',
+            met: true,
+            evidence: 'scanner:report.firstSecretShapedMember+ingest.firstSecretShapedMember',
+        });
     }
     return verdicts;
 }
@@ -117,7 +213,8 @@ export function inflectRegisterSource(opts: InflectRegisterSourceOptions): Harne
             try {
                 const payload = await ctx.register.read({
                     url: `${origin}${INFLECT_MCP_PATH}`,
-                    headers: { Authorization: `Bearer ${opts.apiKey}` },
+                    tokenUrl: `${origin}${INFLECT_TOKEN_PATH}`,
+                    apiKey: opts.apiKey,
                 });
                 const parsed = RegisterViewSchema.safeParse(payload);
                 if (!parsed.success) throw new SourceReadError('PAGINATION_TORN', 'the register read was not the register');
@@ -141,7 +238,7 @@ export function inflectRegisterSource(opts: InflectRegisterSourceOptions): Harne
                             registeredAgentId: agent.registeredAgentId,
                             owner: { kind: 'user', id: agent.ownerUserId, source: 'inflect-register' },
                             credentials,
-                            verdicts: verdictsOf(agent),
+                            verdicts: verdictsOf(agent, agent.registeredAgentId === opts.scannerAgentId),
                         });
                     }
                 }
