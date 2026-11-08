@@ -24,6 +24,7 @@ import {
 } from '@/lib/privacy/linddun';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
+import { deliveredRiskTemplates, riskTemplateDeliveryGap } from '../helpers/risk-template-delivery';
 import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -113,19 +114,20 @@ describe('risks carry a LINDDUN classification (lens over existing machinery)', 
     });
 });
 
-describe('LINDDUN-categorized privacy risk templates seed', () => {
-    const seed = read('prisma/seed.ts');
+describe('LINDDUN-categorized privacy risk templates reach production', () => {
+    // Asked of what production receives (prisma/risk-template-fixtures.ts via
+    // the entrypoint's seeder), not of prisma/seed.ts, which no deploy runs.
+    const delivered = deliveredRiskTemplates('privacy');
 
-    it('seeds a privacy risk-template set (more than the lone GDPR template)', () => {
-        expect(seed).toContain('privacyRiskTemplates');
-        expect(seed).toMatch(/linddunCategories:\s*\[/);
-        // Anchor a few LINDDUN privacy risks.
-        expect(seed).toMatch(/Re-identification of De-identified Data/);
-        expect(seed).toMatch(/Excessive Data Linking/);
-        expect(seed).toMatch(/Unlawful or Non-compliant Processing/);
-    });
-
-    it('rides the existing RiskTemplate upsert path (no new machinery)', () => {
-        expect(seed).toMatch(/privacyRiskTemplates[\s\S]{0,2400}prisma\.riskTemplate\.upsert/);
+    it('delivers a privacy risk-template set, every one LINDDUN-classified', () => {
+        expect(riskTemplateDeliveryGap()).toBeNull();
+        const titles = delivered.map((t) => t.title);
+        expect(titles).toEqual(expect.arrayContaining([
+            'Re-identification of De-identified Data',
+            'Excessive Data Linking',
+            'Unlawful or Non-compliant Processing',
+        ]));
+        const unclassified = delivered.filter((t) => normalizeLinddunCodes(t.linddunCategories ?? null).length === 0).map((t) => t.id);
+        expect(unclassified).toEqual([]);
     });
 });

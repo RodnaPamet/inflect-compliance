@@ -1,0 +1,81 @@
+{
+  "_meta": {
+    "purpose": "Companion to the CIS Controls v8 IG1 starter pack: the failure modes the essential safeguards exist to prevent. frameworkTag 'CIS', category 'Cyber Hygiene'.",
+    "origin": "Moved verbatim from the inline `cisRiskTemplates` array in prisma/seed.ts (2026-11-08), so production receives it: prisma/seed.ts is never run on a deploy.",
+    "deliveredBy": "scripts/seed-risk-templates.ts on every container start (scripts/entrypoint.sh), and prisma/seed.ts in dev, both through prisma/risk-template-fixtures.ts."
+  },
+  "templates": [
+    {
+      "id": "cis-unmanaged-asset",
+      "title": "Unmanaged Asset on the Network",
+      "description": "A device that is not on the asset inventory connects to the network and receives access without going through onboarding or hardening.",
+      "category": "Cyber Hygiene",
+      "defaultLikelihood": 4,
+      "defaultImpact": 3,
+      "frameworkTag": "CIS"
+    },
+    {
+      "id": "cis-unauthorized-software",
+      "title": "Unauthorized or Unsupported Software in Use",
+      "description": "Software that is unapproved or past end-of-life runs on enterprise assets, expanding the attack surface with no patch path.",
+      "category": "Cyber Hygiene",
+      "defaultLikelihood": 4,
+      "defaultImpact": 3,
+      "frameworkTag": "CIS"
+    },
+    {
+      "id": "cis-unpatched-vulnerability",
+      "title": "Unpatched Known Vulnerability Exploited",
+      "description": "A known vulnerability is exploited because operating-system or application patches were not applied within the remediation window.",
+      "category": "Cyber Hygiene",
+      "defaultLikelihood": 4,
+      "defaultImpact": 5,
+      "frameworkTag": "CIS"
+    },
+    {
+      "id": "cis-weak-authentication",
+      "title": "Account Compromise via Weak Authentication",
+      "description": "An account is taken over because it lacked multi-factor authentication or reused a weak password.",
+      "category": "Cyber Hygiene",
+      "defaultLikelihood": 3,
+      "defaultImpact": 5,
+      "frameworkTag": "CIS"
+    },
+    {
+      "id": "cis-malware-infection",
+      "title": "Malware Infection on Enterprise Assets",
+      "description": "Malicious code executes on assets due to missing anti-malware defenses, autorun exposure, or unfiltered email and web content.",
+      "category": "Cyber Hygiene",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "CIS"
+    },
+    {
+      "id": "cis-unrecoverable-data",
+      "title": "Unrecoverable Data After Incident",
+      "description": "Data cannot be restored after ransomware or failure because backups were missing, unprotected, or never tested.",
+      "category": "Cyber Hygiene",
+      "defaultLikelihood": 2,
+      "defaultImpact": 5,
+      "frameworkTag": "CIS"
+    },
+    {
+      "id": "cis-sensitive-data-exposure",
+      "title": "Sensitive Data Exposure",
+      "description": "Sensitive information is disclosed because it was not classified, access-controlled, or encrypted at rest and in transit.",
+      "category": "Cyber Hygiene",
+      "defaultLikelihood": 3,
+      "defaultImpact": 5,
+      "frameworkTag": "CIS"
+    },
+    {
+      "id": "cis-untrained-workforce",
+      "title": "Successful Social-Engineering Attack",
+      "description": "A phishing or social-engineering attack succeeds because staff were not trained to recognize and report it.",
+      "category": "Cyber Hygiene",
+      "defaultLikelihood": 4,
+      "defaultImpact": 4,
+      "frameworkTag": "CIS"
+    }
+  ]
+}

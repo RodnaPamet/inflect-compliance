@@ -11,8 +11,8 @@
  *     requirement codes;
  *   - that catalogue declares the framework (key CIS-V8) and the pack
  *     production actually has (CIS_V8_IG1);
- *   - prisma/seed.ts — dev only — additionally seeds the cyber-hygiene risk
- *     templates, which have no production writer at all;
+ *   - the cyber-hygiene risk templates reach production through the
+ *     entrypoint's risk-template seeder (they were dev-only until 2026-11-08);
  *   - the two mapping sets resolve on BOTH sides (source refs exist in the CIS
  *     library, target refs exist in the ISO 27001 / NIST CSF libraries) and
  *     together cover every IG1 safeguard.
@@ -23,6 +23,7 @@ import * as path from 'node:path';
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
 import { appliedCatalogFor, productionDeclaringSources } from '../helpers/applied-catalogue';
+import { deliveredRiskTemplates, riskTemplateDeliveryGap } from '../helpers/risk-template-delivery';
 import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -234,29 +235,17 @@ describe('CIS v8 — framework + pack delivery', () => {
     });
 });
 
-describe('CIS v8 — cyber-hygiene risk templates (dev seeder only)', () => {
-    // These templates have NO production writer: they are inline in
-    // `prisma/seed.ts`, and the production seeder `scripts/entrypoint.sh` runs
-    // (`scripts/seed-risk-templates.ts`) delivers only the fixture-backed sets,
-    // which do not include them. These assertions are therefore
-    // left exactly as they were — repointing them at a delivery path would
-    // assert something false. The describe was renamed to say so out loud.
-    const seed = read('prisma/seed.ts');
+describe('CIS v8 — cyber-hygiene risk templates reach production', () => {
+    // Asked of what production receives: the entrypoint's risk-template seeder
+    // writes prisma/fixtures/risk-templates-cis.json (2026-11-08). These were
+    // inline in prisma/seed.ts before, which no deploy runs, and this describe
+    // was named "dev seeder only" to say so.
+    const delivered = deliveredRiskTemplates('cis');
 
-    // 'reads the CIS requirement fixture (dev path)' was DELETED rather than
-    // repointed. It asserted that prisma/seed.ts contains
-    // 'cis-v8-requirements.json', which was true while seed.ts built CIS v8 a
-    // second time. That block is gone — the CatalogFile carries the 56
-    // requirements and a production seeder applies them — so the assertion had
-    // no subject left. The requirements are covered by the delivery describe
-    // above, against the file production actually reads.
-
-    it('seeds CIS cyber-hygiene risk templates on the shared RiskTemplate path', () => {
-        const block = seed.slice(seed.indexOf('cisRiskTemplates'));
-        expect(block).toMatch(/frameworkTag:\s*'CIS'/);
-        const ids = [...block.matchAll(/id:\s*'(cis-[a-z-]+)'/g)].map((m) => m[1]);
-        expect(new Set(ids).size).toBeGreaterThanOrEqual(7);
-        expect(seed).toMatch(/for \(const t of cisRiskTemplates\)[\s\S]{0,120}riskTemplate\.upsert/);
+    it('delivers at least seven CIS cyber-hygiene templates, tagged CIS', () => {
+        expect(riskTemplateDeliveryGap()).toBeNull();
+        expect(new Set(delivered.filter((t) => t.id.startsWith('cis-')).map((t) => t.id)).size).toBeGreaterThanOrEqual(7);
+        expect(delivered.filter((t) => t.frameworkTag !== 'CIS').map((t) => t.id)).toEqual([]);
     });
 });
 

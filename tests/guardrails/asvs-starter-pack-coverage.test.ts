@@ -30,6 +30,8 @@ import { codeOf } from '../helpers/source-blocks';
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
 
+import { deliveredRiskTemplates, riskTemplateDeliveryGap } from '../helpers/risk-template-delivery';
+
 const ROOT = path.resolve(__dirname, '../..');
 const LIB = path.join(ROOT, 'src/data/libraries');
 const MAP = path.join(LIB, 'mappings');
@@ -256,24 +258,16 @@ describe('ASVS 4.0.3 — L1 delivery (the catalogue production applies)', () => 
     });
 });
 
-describe('ASVS 4.0.3 — application-security risk templates (seed.ts only)', () => {
-    /**
-     * DELIBERATELY still about `prisma/seed.ts`. These templates have no
-     * production writer: they are inline there, the production risk-template
-     * seeder delivers only fixture-backed sets, and no CatalogFile carries
-     * risk templates. Repointing these at the applied
-     * catalogue would assert something false, so the weaker question stays —
-     * and the honest reading of a green run here is "seeded in dev", not
-     * "available to a customer".
-     */
-    const seed = read('prisma/seed.ts');
+describe('ASVS 4.0.3 — application-security risk templates reach production', () => {
+    // Asked of what production receives: the entrypoint's risk-template seeder
+    // writes prisma/fixtures/risk-templates-asvs.json (2026-11-08). These were
+    // inline in prisma/seed.ts before, which no deploy runs.
+    const delivered = deliveredRiskTemplates('asvs');
 
-    it('seeds ASVS application-security risk templates on the shared RiskTemplate path', () => {
-        const block = seed.slice(seed.indexOf('asvsRiskTemplates'));
-        expect(block).toMatch(/frameworkTag:\s*'ASVS'/);
-        const ids = [...block.matchAll(/id:\s*'(asvs-[a-z-]+)'/g)].map((m) => m[1]);
-        expect(new Set(ids).size).toBeGreaterThanOrEqual(7);
-        expect(seed).toMatch(/for \(const t of asvsRiskTemplates\)[\s\S]{0,120}riskTemplate\.upsert/);
+    it('delivers at least seven ASVS application-security templates, tagged ASVS', () => {
+        expect(riskTemplateDeliveryGap()).toBeNull();
+        expect(new Set(delivered.filter((t) => t.id.startsWith('asvs-')).map((t) => t.id)).size).toBeGreaterThanOrEqual(7);
+        expect(delivered.filter((t) => t.frameworkTag !== 'ASVS').map((t) => t.id)).toEqual([]);
     });
 });
 

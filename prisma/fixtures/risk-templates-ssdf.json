@@ -1,0 +1,72 @@
+{
+  "_meta": {
+    "purpose": "Companion to the NIST SSDF starter pack: the failure modes the SSDF practices exist to prevent. frameworkTag 'SSDF', category 'Secure Development'.",
+    "origin": "Moved verbatim from the inline `ssdfRiskTemplates` array in prisma/seed.ts (2026-11-08), so production receives it: prisma/seed.ts is never run on a deploy.",
+    "deliveredBy": "scripts/seed-risk-templates.ts on every container start (scripts/entrypoint.sh), and prisma/seed.ts in dev, both through prisma/risk-template-fixtures.ts."
+  },
+  "templates": [
+    {
+      "id": "ssdf-vulnerable-dependency",
+      "title": "Vulnerable Dependency Shipped",
+      "description": "A third-party component with a known vulnerability is included in a release because it was not caught by software composition analysis.",
+      "category": "Secure Development",
+      "defaultLikelihood": 4,
+      "defaultImpact": 4,
+      "frameworkTag": "SSDF"
+    },
+    {
+      "id": "ssdf-unreviewed-merge",
+      "title": "Unreviewed Code Merged to Production",
+      "description": "Code reaches production without mandatory peer review, allowing defects or malicious changes to slip through.",
+      "category": "Secure Development",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "SSDF"
+    },
+    {
+      "id": "ssdf-secrets-committed",
+      "title": "Secrets Committed to Source Control",
+      "description": "Credentials, tokens, or keys are committed to a repository and exposed to anyone with read access or in history.",
+      "category": "Secure Development",
+      "defaultLikelihood": 3,
+      "defaultImpact": 5,
+      "frameworkTag": "SSDF"
+    },
+    {
+      "id": "ssdf-exploitable-vuln-released",
+      "title": "Exploitable Vulnerability Released",
+      "description": "A security defect reaches production because SAST/DAST and security testing were not performed or not gated in CI.",
+      "category": "Secure Development",
+      "defaultLikelihood": 3,
+      "defaultImpact": 5,
+      "frameworkTag": "SSDF"
+    },
+    {
+      "id": "ssdf-compromised-pipeline",
+      "title": "Compromised Build Pipeline",
+      "description": "An attacker gains control of the CI/CD pipeline or build environment and injects malicious code into artifacts.",
+      "category": "Secure Development",
+      "defaultLikelihood": 2,
+      "defaultImpact": 5,
+      "frameworkTag": "SSDF"
+    },
+    {
+      "id": "ssdf-tampered-artifact",
+      "title": "Tampered or Unsigned Release Artifact",
+      "description": "A release artifact is altered after build, or ships without integrity verification information, so acquirers cannot detect tampering.",
+      "category": "Secure Development",
+      "defaultLikelihood": 2,
+      "defaultImpact": 5,
+      "frameworkTag": "SSDF"
+    },
+    {
+      "id": "ssdf-unpatched-disclosed-vuln",
+      "title": "Unpatched Disclosed Vulnerability",
+      "description": "A publicly disclosed vulnerability in the software is not remediated within its SLA because there is no coordinated vulnerability-disclosure and response process.",
+      "category": "Secure Development",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "SSDF"
+    }
+  ]
+}
