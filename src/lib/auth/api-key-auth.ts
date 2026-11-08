@@ -693,6 +693,9 @@ async function finaliseApiKeyAuth(
         // ("no key-level narrowing") that a consumer should see rather than have
         // to infer from an absent property.
         apiKeyMaxAutonomy: apiKey.maxAutonomyLevel ?? null,
+        // Set only when true, so a context built before the column existed and a
+        // key that does not require the exchange read the same (#5004).
+        ...(apiKey.requiresTokenExchange ? { apiKeyRequiresTokenExchange: true } : {}),
     };
 
     // ── Narrow an AGENT-BOUND credential to its principal, HERE ──────────

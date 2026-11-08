@@ -70,7 +70,7 @@ import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, notFound, forbidden } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
-import { enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
+import { assertRunStartNotByExchangeOnlyKey, enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
@@ -282,6 +282,10 @@ export async function startWorkflowRun(
 ): Promise<StartWorkflowResult> {
     if (ctx.apiKeyId) {
         enforceMcpCapability(ctx, 'orchestrate');
+        // A key that requires the exchange starts no run (#5004): every tool
+        // call a run makes carries no audience, so the engine would be the way
+        // around the requirement. Before the row exists, so nothing is written.
+        await assertRunStartNotByExchangeOnlyKey(ctx, { method: 'POST', path: `agent run ${workflowKey}` });
     } else if (opts.readOnlyAuthority) {
         // The narrowed assert. Its claim is checked against the definition a
         // few lines down, before anything else happens.

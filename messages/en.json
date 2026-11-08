@@ -7707,7 +7707,10 @@
       "autonomyNone": "No key-level limit",
       "autonomyCap": "max L{level}",
       "colBinding": "Acts as",
-      "noBinding": "No binding"
+      "noBinding": "No binding",
+      "requiresExchangeLabel": "Agent tool calls only through a short-lived, tool-scoped token",
+      "requiresExchangeHint": "Inflect refuses this key when an agent presents it directly to call tools. The agent exchanges it for a short-lived token naming the tools it will call. REST calls still take the key.",
+      "requiresExchangeTag": "· exchanged tokens only"
     },
     "notifications": {
       "runOutboxConfirmTitle": "Send queued emails now?",

@@ -89,6 +89,15 @@ export interface RequestContext {
     apiKeyMaxAutonomy?: number | null;
 
     /**
+     * `TenantApiKey.requiresTokenExchange` (#5004): this credential may reach
+     * `/api/mcp` only through an audience-scoped token exchanged for it, never
+     * presented directly. Read by `completeMcpAuthentication` and, because a
+     * run's tool calls carry no audience, by `startWorkflowRun`; absent on a
+     * session context and on a key that does not require it.
+     */
+    apiKeyRequiresTokenExchange?: boolean;
+
+    /**
      * Set when this context belongs to a RUN AN A2A PEER STARTED (#3679): the
      * peer, and the verified inbound message that started it.
      *

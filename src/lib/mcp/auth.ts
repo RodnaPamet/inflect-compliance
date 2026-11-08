@@ -184,6 +184,76 @@ async function denyUnresolvedPrincipal(
 }
 
 /**
+ * The refusal of a key that may reach `/api/mcp` only through an exchanged,
+ * audience-scoped token, presented directly (#5004). ONE hash-chained
+ * `AUTHZ_DENIED` row, best-effort, then the 403. The message names the remedy:
+ * it is a configuration the caller can fix, as the gate's other refusals do.
+ */
+const DIRECT_KEY_USE_MESSAGE =
+    'This API key may reach MCP tools only through an audience-scoped token. ' +
+    'Exchange it at POST /api/mcp/token for the tools you will call, and present that token instead.';
+
+/**
+ * A run cannot be started with an exchanged token (`getTenantCtx` does not
+ * accept one), and every tool call a run makes carries no audience. So a key
+ * that requires the exchange starts no run: the engine would otherwise be the
+ * way around the requirement.
+ */
+const RUN_START_MESSAGE =
+    'This API key may reach MCP tools only through an audience-scoped token, and an agent run ' +
+    'calls its tools with no audience. Start runs with a key that does not require the exchange.';
+
+async function denyDirectKeyUse(
+    ctx: RequestContext,
+    surface: { method: string; path: string },
+    message: string = DIRECT_KEY_USE_MESSAGE,
+): Promise<never> {
+    try {
+        await appendAuditEntry({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            actorType: 'API_KEY',
+            entity: 'TenantApiKey',
+            entityId: ctx.apiKeyId ?? 'unknown-api-key',
+            action: 'AUTHZ_DENIED',
+            details: `API key presented directly at ${surface.method} ${surface.path}; it requires an exchanged token`,
+            detailsJson: {
+                category: 'access',
+                event: 'authz_denied',
+                gate: 'token_exchange_required',
+                reason: 'TOKEN_EXCHANGE_REQUIRED',
+                apiKeyId: ctx.apiKeyId ?? null,
+                agentId: ctx.agentId ?? null,
+                method: surface.method,
+                path: surface.path,
+            },
+            requestId: ctx.requestId,
+            metadataJson: { apiKeyId: ctx.apiKeyId ?? null, reason: 'TOKEN_EXCHANGE_REQUIRED' },
+        });
+    } catch (err) {
+        logger.warn('audit: failed to record token-exchange AUTHZ_DENIED', {
+            requestId: ctx.requestId,
+            tenantId: ctx.tenantId,
+            error: err instanceof Error ? err.message : 'non-Error thrown',
+        });
+    }
+    throw forbidden(message);
+}
+
+/**
+ * Refuse a key that requires the exchange at the start of an agent run (#5004),
+ * with the same audited row as the refusal at `/api/mcp`. Asked by
+ * `startWorkflowRun` before the run row exists. A no-op for every other caller.
+ */
+export async function assertRunStartNotByExchangeOnlyKey(
+    ctx: RequestContext,
+    surface: { method: string; path: string },
+): Promise<void> {
+    if (ctx.apiKeyRequiresTokenExchange !== true) return;
+    await denyDirectKeyUse(ctx, surface, RUN_START_MESSAGE);
+}
+
+/**
  * A credential that has been verified and admitted to the endpoint, and
  * nothing more: no registration gate yet, and no invocation.
  *
@@ -276,6 +346,15 @@ export async function verifyMcpCredential(
  * credential is not bound to an ACTIVE one.
  */
 export async function completeMcpAuthentication(verified: VerifiedMcpCredential): Promise<McpAuthResult> {
+    // A key that requires the exchange is refused when presented directly
+    // (#5004). Asked here rather than in `verifyMcpCredential` so the refusal
+    // comes after the per-key budget is charged — a holder repeating it spends
+    // its own budget and cannot manufacture denial rows for free — and before
+    // the registration gate and the invocation, which it makes moot.
+    if (verified.audience === null && verified.keyCtx.apiKeyRequiresTokenExchange === true) {
+        await denyDirectKeyUse(verified.keyCtx, verified.surface);
+    }
+
     // Its return value is the LIVE ACTIVE agent, or null — a narrower thing than
     // `ctx.agentId`, and the two are used for different jobs. This value keys the
     // deny-by-default tool allowlist, which must apply only to an agent the

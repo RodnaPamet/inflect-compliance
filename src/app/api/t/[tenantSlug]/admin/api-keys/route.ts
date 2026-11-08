@@ -22,6 +22,12 @@ const CreateApiKeySchema = z.object({
      * refused in the usecase, where the agent row is resolved under RLS.
      */
     maxAutonomyLevel: z.number().int().min(0).max(6).nullable().optional(),
+    /**
+     * Refuse the key presented directly at `/api/mcp`: it reaches MCP tools only
+     * through an audience-scoped token exchanged for it (#5004). Requires an MCP
+     * scope; refused in the usecase otherwise.
+     */
+    requiresTokenExchange: z.boolean().optional(),
 });
 
 export const GET = withApiErrorHandling(
