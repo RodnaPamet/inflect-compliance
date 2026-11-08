@@ -1,0 +1,144 @@
+{
+  "_meta": {
+    "purpose": "The general cybersecurity, physical, legal and operational starter templates. Ids are the slug the original seed derived from each title (title, whitespace to '-', lower-cased, first 25 characters), kept so existing rows are updated in place rather than duplicated.",
+    "origin": "Moved verbatim from the inline `riskTemplates` array in prisma/seed.ts (2026-11-08), so production receives it: prisma/seed.ts is never run on a deploy.",
+    "deliveredBy": "scripts/seed-risk-templates.ts on every container start (scripts/entrypoint.sh), and prisma/seed.ts in dev, both through prisma/risk-template-fixtures.ts."
+  },
+  "templates": [
+    {
+      "id": "data-breach-via-sql-injec",
+      "title": "Data Breach via SQL Injection",
+      "description": "Risk of unauthorized data access through SQL injection attacks on input fields.",
+      "category": "Cybersecurity",
+      "defaultLikelihood": 3,
+      "defaultImpact": 5,
+      "frameworkTag": "ISO27001:A.8"
+    },
+    {
+      "id": "phishing-attack-compromis",
+      "title": "Phishing Attack Compromise",
+      "description": "Risk of credential theft through targeted phishing campaigns against employees.",
+      "category": "Cybersecurity",
+      "defaultLikelihood": 4,
+      "defaultImpact": 4,
+      "frameworkTag": "ISO27001:A.6"
+    },
+    {
+      "id": "ddos-service-disruption",
+      "title": "DDoS Service Disruption",
+      "description": "Risk of service downtime caused by distributed denial-of-service attacks.",
+      "category": "Cybersecurity",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "ISO27001:A.8"
+    },
+    {
+      "id": "ransomware-infection",
+      "title": "Ransomware Infection",
+      "description": "Risk of data encryption and extortion through ransomware malware.",
+      "category": "Cybersecurity",
+      "defaultLikelihood": 3,
+      "defaultImpact": 5,
+      "frameworkTag": "ISO27001:A.8"
+    },
+    {
+      "id": "insider-data-theft",
+      "title": "Insider Data Theft",
+      "description": "Risk of sensitive data exfiltration by privileged internal users.",
+      "category": "Cybersecurity",
+      "defaultLikelihood": 2,
+      "defaultImpact": 5,
+      "frameworkTag": "ISO27001:A.6"
+    },
+    {
+      "id": "third-party-vendor-breach",
+      "title": "Third-Party Vendor Breach",
+      "description": "Risk of data exposure through compromised third-party service providers.",
+      "category": "Vendor",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "ISO27001:A.5"
+    },
+    {
+      "id": "physical-server-room-intr",
+      "title": "Physical Server Room Intrusion",
+      "description": "Risk of unauthorized physical access to server rooms and data centers.",
+      "category": "Physical",
+      "defaultLikelihood": 2,
+      "defaultImpact": 4,
+      "frameworkTag": "ISO27001:A.7"
+    },
+    {
+      "id": "natural-disaster-impact",
+      "title": "Natural Disaster Impact",
+      "description": "Risk of infrastructure damage from earthquakes, floods, or severe weather.",
+      "category": "Physical",
+      "defaultLikelihood": 1,
+      "defaultImpact": 5,
+      "frameworkTag": "ISO27001:A.7"
+    },
+    {
+      "id": "gdpr-non-compliance",
+      "title": "GDPR Non-Compliance",
+      "description": "Risk of penalties from failure to comply with EU data protection regulations.",
+      "category": "Legal",
+      "defaultLikelihood": 2,
+      "defaultImpact": 5,
+      "frameworkTag": "GDPR"
+    },
+    {
+      "id": "license-violation",
+      "title": "License Violation",
+      "description": "Risk of legal action from unauthorized use of third-party software licenses.",
+      "category": "Legal",
+      "defaultLikelihood": 2,
+      "defaultImpact": 3,
+      "frameworkTag": null
+    },
+    {
+      "id": "key-personnel-departure",
+      "title": "Key Personnel Departure",
+      "description": "Risk of knowledge loss and operational disruption from critical staff turnover.",
+      "category": "Operational",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3,
+      "frameworkTag": "ISO27001:A.6"
+    },
+    {
+      "id": "backup-failure",
+      "title": "Backup Failure",
+      "description": "Risk of data loss due to failed or incomplete backup procedures.",
+      "category": "Operational",
+      "defaultLikelihood": 2,
+      "defaultImpact": 5,
+      "frameworkTag": "ISO27001:A.8"
+    },
+    {
+      "id": "cloud-misconfiguration",
+      "title": "Cloud Misconfiguration",
+      "description": "Risk of data exposure through improperly configured cloud services.",
+      "category": "Cybersecurity",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "ISO27001:A.8"
+    },
+    {
+      "id": "weak-access-controls",
+      "title": "Weak Access Controls",
+      "description": "Risk of unauthorized system access due to inadequate authentication and authorization.",
+      "category": "Cybersecurity",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "ISO27001:A.8"
+    },
+    {
+      "id": "business-email-compromise",
+      "title": "Business Email Compromise",
+      "description": "Risk of financial loss through fraudulent email impersonation of executives.",
+      "category": "Cybersecurity",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "ISO27001:A.5"
+    }
+  ]
+}

@@ -268,7 +268,7 @@ a `userId` but stores no contact PII).
 | `WorkflowStep` | Operational | maybe | None today — cascade on run/tenant delete only | No TTL today — the run's append-only step narrative |
 | `FrameworkVersionDiff` | Configuration | No | Global reference (no tenantId) — never per-tenant deleted | Lives with the framework library; a version-diff record |
 | `TenantFrameworkDelta` | Operational | No | Cascade on tenant/diff delete | No TTL today — reviewed/dismissed deltas are candidates for time-boxed prune |
-| `RiskTemplate` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
+| `RiskTemplate` | Configuration | No | None — global reference data, upserted on every container start by `scripts/seed-risk-templates.ts` | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `RiskTreatmentPlan` | Business record | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | Soft-deleted rows **not auto-purged** — gap |
 | `ScimGroup` | Configuration | maybe | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `Task` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |

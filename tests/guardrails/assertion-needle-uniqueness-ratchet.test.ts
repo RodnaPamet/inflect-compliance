@@ -621,7 +621,12 @@ const HIGH_MULTIPLICITY = 5;
 // the `tenantMembership.findFirst` that looked them up. `retention-hardening`'s
 // `toContain('findFirst')` now has one position, the duplicate-task check it
 // names. No test changed. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1137;
+//
+// 1137 -> 1135 on 2026-11-08. The risk templates left prisma/seed.ts for
+// fixtures, and the LINDDUN and OWASP-privacy guards stopped asserting whole-file
+// needles over the seed (`toContain('privacyRiskTemplates')` among them); they
+// read the delivered set as data. Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1135;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
@@ -752,7 +757,9 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1137;
 //   `control-task-create-modal`'s window on the ELEMENT's own end instead of a
 //   fixed 400 characters, which also narrowed its needle from one satisfied in
 //   several places to one satisfied in the panel's props alone. Measured.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 157;
+// 157 -> 156 (2026-11-08): `toContain('privacyRiskTemplates')` over prisma/seed.ts,
+// retired when the risk templates moved to fixtures. Measured.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 156;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

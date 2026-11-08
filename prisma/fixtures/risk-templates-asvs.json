@@ -1,0 +1,81 @@
+{
+  "_meta": {
+    "purpose": "Companion to the OWASP ASVS 4.0.3 L1 starter pack: the failure modes the Level 1 verification requirements exist to prevent. frameworkTag 'ASVS', category 'Application Security'.",
+    "origin": "Moved verbatim from the inline `asvsRiskTemplates` array in prisma/seed.ts (2026-11-08), so production receives it: prisma/seed.ts is never run on a deploy.",
+    "deliveredBy": "scripts/seed-risk-templates.ts on every container start (scripts/entrypoint.sh), and prisma/seed.ts in dev, both through prisma/risk-template-fixtures.ts."
+  },
+  "templates": [
+    {
+      "id": "asvs-injection",
+      "title": "Injection Vulnerability Exploited",
+      "description": "Untrusted input reaches an interpreter (SQL, OS command, LDAP, template) because it was not parameterized or validated, letting an attacker execute unintended commands.",
+      "category": "Application Security",
+      "defaultLikelihood": 4,
+      "defaultImpact": 5,
+      "frameworkTag": "ASVS"
+    },
+    {
+      "id": "asvs-broken-authentication",
+      "title": "Broken Authentication",
+      "description": "Weak password handling, missing anti-automation, or poor recovery flows let an attacker take over user accounts.",
+      "category": "Application Security",
+      "defaultLikelihood": 3,
+      "defaultImpact": 5,
+      "frameworkTag": "ASVS"
+    },
+    {
+      "id": "asvs-broken-access-control",
+      "title": "Broken Access Control",
+      "description": "Authorization is enforced only client-side or object references are not checked, so a user can reach data or actions outside their permission.",
+      "category": "Application Security",
+      "defaultLikelihood": 4,
+      "defaultImpact": 5,
+      "frameworkTag": "ASVS"
+    },
+    {
+      "id": "asvs-xss",
+      "title": "Cross-Site Scripting",
+      "description": "User-supplied content is rendered without context-aware output encoding, allowing script execution in the browser of another user.",
+      "category": "Application Security",
+      "defaultLikelihood": 4,
+      "defaultImpact": 4,
+      "frameworkTag": "ASVS"
+    },
+    {
+      "id": "asvs-sensitive-data-exposure",
+      "title": "Sensitive Data Exposure",
+      "description": "Sensitive data is transmitted or stored without adequate encryption, or leaks through caching, logs, or client-side storage.",
+      "category": "Application Security",
+      "defaultLikelihood": 3,
+      "defaultImpact": 5,
+      "frameworkTag": "ASVS"
+    },
+    {
+      "id": "asvs-security-misconfiguration",
+      "title": "Security Misconfiguration",
+      "description": "Missing security headers, verbose errors, debug modes, or permissive CORS leave the application exposed in production.",
+      "category": "Application Security",
+      "defaultLikelihood": 4,
+      "defaultImpact": 4,
+      "frameworkTag": "ASVS"
+    },
+    {
+      "id": "asvs-vulnerable-components",
+      "title": "Vulnerable and Outdated Components",
+      "description": "A known-vulnerable dependency is exploited because components were not kept current or their integrity was not verified.",
+      "category": "Application Security",
+      "defaultLikelihood": 4,
+      "defaultImpact": 5,
+      "frameworkTag": "ASVS"
+    },
+    {
+      "id": "asvs-business-logic-abuse",
+      "title": "Business Logic Abuse",
+      "description": "Workflow steps, timing, or quantity limits are not enforced server-side, letting an attacker automate or bypass business rules.",
+      "category": "Application Security",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "ASVS"
+    }
+  ]
+}

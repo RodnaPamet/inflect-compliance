@@ -5,7 +5,7 @@
     "scoring": "FINOS does not rate likelihood or impact, so every template starts at the matrix midpoint (3 x 3) for the tenant to assess. A different default here would be an Inflect judgement presented as FINOS's.",
     "categories": "Values from RISK_CATEGORIES (src/lib/risk/categories.ts): FINOS type SEC is Technical, OP is Operational, RC is Compliance, and RI-20, which is about reputation itself, is Reputational.",
     "identifiers": "FINOS numbers its risks by a `sequence` and retires numbers rather than reusing them, so RI-3, RI-11, RI-12, RI-13, RI-15 and RI-21 are correctly absent.",
-    "deliveredBy": "scripts/seed-risk-templates.ts, on every container start (scripts/entrypoint.sh). Not added to prisma/seed.ts, as with the AIUC-1 catalogue: that would change the E2E database for no gain in coverage. Locally: npm run db:seed-risk-templates."
+    "deliveredBy": "scripts/seed-risk-templates.ts on every container start (scripts/entrypoint.sh), and prisma/seed.ts in dev, both through prisma/risk-template-fixtures.ts."
   },
   "templates": [
     {

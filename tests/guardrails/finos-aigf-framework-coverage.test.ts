@@ -31,7 +31,7 @@ import { RISK_CATEGORIES } from '@/lib/risk/categories';
 
 import { loadCatalogFile } from '../../prisma/catalog-loader';
 import { appliedSources } from '../helpers/applied-catalogue';
-import { codeOf } from '../helpers/source-blocks';
+import { deliveredRiskTemplates, riskTemplateDeliveryGap } from '../helpers/risk-template-delivery';
 
 const ROOT = path.resolve(__dirname, '../..');
 const LIB = 'src/data/libraries/finos-aigf.yaml';
@@ -203,12 +203,8 @@ describe('FINOS AIGF — the risks ship as risk templates', () => {
     });
 
     it('is delivered to production by the risk-template seeder the entrypoint runs', () => {
-        const entrypoint = fs.readFileSync(path.join(ROOT, 'scripts/entrypoint.sh'), 'utf8');
-        const live = entrypoint.split('\n').filter((l) => !l.trim().startsWith('#'));
-        expect(live.some((l) => l.includes('node dist/seed-risk-templates.mjs'))).toBe(true);
-        const code = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-        expect(code('scripts/build-worker.mjs')).toContain("'scripts/seed-risk-templates.ts'");
-        expect(code('scripts/seed-risk-templates.ts')).toContain("require('../prisma/fixtures/risk-templates-finos-aigf.json')");
+        expect(riskTemplateDeliveryGap()).toBeNull();
+        expect(deliveredRiskTemplates('finos-aigf').map((t) => t.id)).toEqual(risks.templates.map((t) => t.id));
     });
 });
 

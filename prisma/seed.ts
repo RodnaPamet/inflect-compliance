@@ -15,6 +15,7 @@ import {
 } from './aisvs-vendor-questionnaire';
 import { loadCatalogFile } from './catalog-loader';
 import { fixtureArray, fixtureObject } from './fixture-io';
+import { seedRiskTemplates } from './risk-template-fixtures';
 import { parseIsoClause } from '@/lib/controls/control-taxonomy';
 import path from 'node:path';
 import { syncLibrariesAtStartup } from '@/app-layer/usecases/library-sync';
@@ -287,138 +288,14 @@ async function main() {
     console.log('✅ Assets seeded');
 
     // ─── Seed risk templates (global) ───
-    const riskTemplates = [
-        { title: 'Data Breach via SQL Injection', description: 'Risk of unauthorized data access through SQL injection attacks on input fields.', category: 'Cybersecurity', defaultLikelihood: 3, defaultImpact: 5, frameworkTag: 'ISO27001:A.8' },
-        { title: 'Phishing Attack Compromise', description: 'Risk of credential theft through targeted phishing campaigns against employees.', category: 'Cybersecurity', defaultLikelihood: 4, defaultImpact: 4, frameworkTag: 'ISO27001:A.6' },
-        { title: 'DDoS Service Disruption', description: 'Risk of service downtime caused by distributed denial-of-service attacks.', category: 'Cybersecurity', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'ISO27001:A.8' },
-        { title: 'Ransomware Infection', description: 'Risk of data encryption and extortion through ransomware malware.', category: 'Cybersecurity', defaultLikelihood: 3, defaultImpact: 5, frameworkTag: 'ISO27001:A.8' },
-        { title: 'Insider Data Theft', description: 'Risk of sensitive data exfiltration by privileged internal users.', category: 'Cybersecurity', defaultLikelihood: 2, defaultImpact: 5, frameworkTag: 'ISO27001:A.6' },
-        { title: 'Third-Party Vendor Breach', description: 'Risk of data exposure through compromised third-party service providers.', category: 'Vendor', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'ISO27001:A.5' },
-        { title: 'Physical Server Room Intrusion', description: 'Risk of unauthorized physical access to server rooms and data centers.', category: 'Physical', defaultLikelihood: 2, defaultImpact: 4, frameworkTag: 'ISO27001:A.7' },
-        { title: 'Natural Disaster Impact', description: 'Risk of infrastructure damage from earthquakes, floods, or severe weather.', category: 'Physical', defaultLikelihood: 1, defaultImpact: 5, frameworkTag: 'ISO27001:A.7' },
-        { title: 'GDPR Non-Compliance', description: 'Risk of penalties from failure to comply with EU data protection regulations.', category: 'Legal', defaultLikelihood: 2, defaultImpact: 5, frameworkTag: 'GDPR' },
-        { title: 'License Violation', description: 'Risk of legal action from unauthorized use of third-party software licenses.', category: 'Legal', defaultLikelihood: 2, defaultImpact: 3, frameworkTag: null },
-        { title: 'Key Personnel Departure', description: 'Risk of knowledge loss and operational disruption from critical staff turnover.', category: 'Operational', defaultLikelihood: 3, defaultImpact: 3, frameworkTag: 'ISO27001:A.6' },
-        { title: 'Backup Failure', description: 'Risk of data loss due to failed or incomplete backup procedures.', category: 'Operational', defaultLikelihood: 2, defaultImpact: 5, frameworkTag: 'ISO27001:A.8' },
-        { title: 'Cloud Misconfiguration', description: 'Risk of data exposure through improperly configured cloud services.', category: 'Cybersecurity', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'ISO27001:A.8' },
-        { title: 'Weak Access Controls', description: 'Risk of unauthorized system access due to inadequate authentication and authorization.', category: 'Cybersecurity', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'ISO27001:A.8' },
-        { title: 'Business Email Compromise', description: 'Risk of financial loss through fraudulent email impersonation of executives.', category: 'Cybersecurity', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'ISO27001:A.5' },
-    ];
-    for (const t of riskTemplates) {
-        await prisma.riskTemplate.upsert({
-            where: { id: t.title.replace(/\s+/g, '-').toLowerCase().slice(0, 25) },
-            create: t,
-            update: {},
-        });
+    // Every built-in set (generic, privacy, SSDF, CIS, ASVS, ISO 27701, FINOS
+    // AIGF) comes from prisma/fixtures/risk-templates-*.json through the SAME
+    // function the production seeder runs, so dev and production cannot differ.
+    // They were inline here until 2026-11-08, and this file never runs on a
+    // deploy, so no deployed database had received any of them.
+    for (const { label, count } of await seedRiskTemplates(prisma)) {
+        console.log(`✅ Risk templates seeded: ${label} (${count})`);
     }
-    console.log('✅ Risk templates seeded (15 templates)');
-
-    // ─── Privacy risk templates (LINDDUN lens + OWASP Top 10 Privacy Risks) ───
-    // P2: IC's risk register had only one privacy template ("GDPR Non-Compliance").
-    // These add a privacy set, each carrying a LINDDUN privacy-threat
-    // classification (src/lib/privacy/linddun.ts — LINDDUN © KU Leuven) and a
-    // frameworkTag onto a NIST Privacy Framework subcategory. They ride the
-    // SAME RiskTemplate → createRiskFromTemplate path as every other template.
-    //
-    // P3: the OWASP Top 10 Privacy Risks (© OWASP, CC-BY-SA) entries are
-    // PARAPHRASED + attributed via the "[OWASP Top 10 Privacy Risks]" marker —
-    // never the verbatim OWASP text.
-    const privacyRiskTemplates: Array<{ id: string; title: string; description: string; category: string; defaultLikelihood: number; defaultImpact: number; frameworkTag: string; linddunCategories: string[] }> = [
-        // P2 — LINDDUN-categorized privacy risks
-        { id: 'priv-reidentification', title: 'Re-identification of De-identified Data', description: 'Individuals are singled out or re-identified from data that was meant to be anonymous or pseudonymous.', category: 'Privacy', defaultLikelihood: 2, defaultImpact: 5, frameworkTag: 'NIST-PF:CT.DP-P2', linddunCategories: ['I'] },
-        { id: 'priv-excessive-linking', title: 'Excessive Data Linking', description: 'Records meant to stay separate are correlated, building a fuller profile of an individual than any single source intended.', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 3, frameworkTag: 'NIST-PF:CT.DP-P1', linddunCategories: ['L'] },
-        { id: 'priv-unlawful-processing', title: 'Unlawful or Non-compliant Processing', description: 'Personal data is processed without a valid legal basis or outside the bounds of applicable privacy regulation.', category: 'Privacy', defaultLikelihood: 2, defaultImpact: 5, frameworkTag: 'NIST-PF:GV.PO-P5', linddunCategories: ['NC'] },
-        { id: 'priv-excessive-disclosure', title: 'Excessive Data Collection and Disclosure', description: 'More personal data is collected, stored, or shared than necessary for the stated purpose.', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'NIST-PF:CT.PO-P2', linddunCategories: ['DD'] },
-        { id: 'priv-transparency-control', title: 'Lack of Transparency and Data-Subject Control', description: 'Individuals are unaware of how their data is processed and cannot exercise access, correction, deletion, or consent-withdrawal rights.', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 3, frameworkTag: 'NIST-PF:CM.AW-P1', linddunCategories: ['U'] },
-        { id: 'priv-covert-tracking', title: 'Covert Tracking and Behavioral Detection', description: 'An individual\'s presence or activity is inferred from observable side effects without their awareness.', category: 'Privacy', defaultLikelihood: 2, defaultImpact: 3, frameworkTag: 'NIST-PF:CT.DP-P3', linddunCategories: ['D'] },
-        // P3 — OWASP Top 10 Privacy Risks (paraphrased + attributed)
-        { id: 'owasp-priv-webapp-breach', title: 'Web Application Vulnerability Leading to Data Breach', description: 'A web-application security flaw is exploited to expose personal data. [OWASP Top 10 Privacy Risks]', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 5, frameworkTag: 'NIST-PF:PR.PO-P10', linddunCategories: ['DD'] },
-        { id: 'owasp-priv-operator-leak', title: 'Operator-Sided Data Leakage', description: 'Personal data leaks through the operator\'s own systems, staff, or processes rather than an external attack. [OWASP Top 10 Privacy Risks]', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 5, frameworkTag: 'NIST-PF:PR.DS-P5', linddunCategories: ['DD'] },
-        { id: 'owasp-priv-breach-response', title: 'Insufficient Data Breach Response', description: 'The organization detects, handles, or notifies individuals of a privacy breach too slowly or incompletely. [OWASP Top 10 Privacy Risks]', category: 'Privacy', defaultLikelihood: 2, defaultImpact: 4, frameworkTag: 'NIST-PF:CM.AW-P7', linddunCategories: ['NC'] },
-        { id: 'owasp-priv-overbroad-consent', title: 'Overbroad or Bundled Consent', description: 'Consent is requested for everything at once rather than granular, purpose-specific choices. [OWASP Top 10 Privacy Risks]', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 3, frameworkTag: 'NIST-PF:CT.PO-P1', linddunCategories: ['U'] },
-        { id: 'owasp-priv-nontransparent', title: 'Non-Transparent Policies and Terms', description: 'Privacy policies and terms are unclear, hard to find, or do not reflect actual data practices. [OWASP Top 10 Privacy Risks]', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 3, frameworkTag: 'NIST-PF:CM.PO-P1', linddunCategories: ['U'] },
-        { id: 'owasp-priv-insufficient-deletion', title: 'Insufficient Deletion of Personal Data', description: 'Personal data is retained beyond its purpose or not fully deleted on request or expiry. [OWASP Top 10 Privacy Risks]', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'NIST-PF:CT.DM-P4', linddunCategories: ['DD'] },
-        { id: 'owasp-priv-data-quality', title: 'Insufficient Data Quality', description: 'Outdated or inaccurate personal data leads to wrong decisions about individuals. [OWASP Top 10 Privacy Risks]', category: 'Privacy', defaultLikelihood: 2, defaultImpact: 3, frameworkTag: 'NIST-PF:CT.DM-P1', linddunCategories: ['NC'] },
-        { id: 'owasp-priv-session-expiry', title: 'Missing or Insufficient Session Expiration', description: 'Sessions exposing personal data are not expired, leaving data accessible on shared or lost devices. [OWASP Top 10 Privacy Risks]', category: 'Privacy', defaultLikelihood: 2, defaultImpact: 3, frameworkTag: 'NIST-PF:PR.AC-P1', linddunCategories: ['DD'] },
-        { id: 'owasp-priv-access-modify', title: 'Inability of Users to Access and Modify Data', description: 'Individuals cannot view, correct, or export the personal data held about them. [OWASP Top 10 Privacy Risks]', category: 'Privacy', defaultLikelihood: 2, defaultImpact: 3, frameworkTag: 'NIST-PF:CT.PO-P3', linddunCategories: ['U'] },
-        { id: 'owasp-priv-unnecessary-collection', title: 'Collection of Data Not Required for the Primary Purpose', description: 'Personal data unrelated to the service\'s primary purpose is collected and retained. [OWASP Top 10 Privacy Risks]', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'NIST-PF:ID.IM-P6', linddunCategories: ['DD'] },
-    ];
-    for (const t of privacyRiskTemplates) {
-        await prisma.riskTemplate.upsert({
-            where: { id: t.id },
-            create: t,
-            update: { description: t.description, category: t.category, defaultLikelihood: t.defaultLikelihood, defaultImpact: t.defaultImpact, frameworkTag: t.frameworkTag, linddunCategories: t.linddunCategories },
-        });
-    }
-    console.log(`✅ Privacy risk templates seeded (${privacyRiskTemplates.length} LINDDUN + OWASP templates)`);
-
-    // ─── SSDF secure-development risk templates ───
-    // Companion to the SSDF Starter Pack: the failure modes the SSDF practices
-    // exist to prevent. frameworkTag 'SSDF', category 'Secure Development'. Ride
-    // the SAME RiskTemplate → createRiskFromTemplate path as every other template.
-    const ssdfRiskTemplates: Array<{ id: string; title: string; description: string; category: string; defaultLikelihood: number; defaultImpact: number; frameworkTag: string }> = [
-        { id: 'ssdf-vulnerable-dependency', title: 'Vulnerable Dependency Shipped', description: 'A third-party component with a known vulnerability is included in a release because it was not caught by software composition analysis.', category: 'Secure Development', defaultLikelihood: 4, defaultImpact: 4, frameworkTag: 'SSDF' },
-        { id: 'ssdf-unreviewed-merge', title: 'Unreviewed Code Merged to Production', description: 'Code reaches production without mandatory peer review, allowing defects or malicious changes to slip through.', category: 'Secure Development', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'SSDF' },
-        { id: 'ssdf-secrets-committed', title: 'Secrets Committed to Source Control', description: 'Credentials, tokens, or keys are committed to a repository and exposed to anyone with read access or in history.', category: 'Secure Development', defaultLikelihood: 3, defaultImpact: 5, frameworkTag: 'SSDF' },
-        { id: 'ssdf-exploitable-vuln-released', title: 'Exploitable Vulnerability Released', description: 'A security defect reaches production because SAST/DAST and security testing were not performed or not gated in CI.', category: 'Secure Development', defaultLikelihood: 3, defaultImpact: 5, frameworkTag: 'SSDF' },
-        { id: 'ssdf-compromised-pipeline', title: 'Compromised Build Pipeline', description: 'An attacker gains control of the CI/CD pipeline or build environment and injects malicious code into artifacts.', category: 'Secure Development', defaultLikelihood: 2, defaultImpact: 5, frameworkTag: 'SSDF' },
-        { id: 'ssdf-tampered-artifact', title: 'Tampered or Unsigned Release Artifact', description: 'A release artifact is altered after build, or ships without integrity verification information, so acquirers cannot detect tampering.', category: 'Secure Development', defaultLikelihood: 2, defaultImpact: 5, frameworkTag: 'SSDF' },
-        { id: 'ssdf-unpatched-disclosed-vuln', title: 'Unpatched Disclosed Vulnerability', description: 'A publicly disclosed vulnerability in the software is not remediated within its SLA because there is no coordinated vulnerability-disclosure and response process.', category: 'Secure Development', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'SSDF' },
-    ];
-    for (const t of ssdfRiskTemplates) {
-        await prisma.riskTemplate.upsert({
-            where: { id: t.id },
-            create: t,
-            update: { description: t.description, category: t.category, defaultLikelihood: t.defaultLikelihood, defaultImpact: t.defaultImpact, frameworkTag: t.frameworkTag },
-        });
-    }
-    console.log(`✅ SSDF risk templates seeded (${ssdfRiskTemplates.length} secure-development templates)`);
-
-    // ─── CIS Controls v8 cyber-hygiene risk templates ───
-    // Companion to the CIS v8 IG1 Starter Pack: the failure modes the essential
-    // CIS safeguards exist to prevent. frameworkTag 'CIS', category 'Cyber
-    // Hygiene'. Rides the shared RiskTemplate upsert path (no bespoke machinery).
-    const cisRiskTemplates: Array<{ id: string; title: string; description: string; category: string; defaultLikelihood: number; defaultImpact: number; frameworkTag: string }> = [
-        { id: 'cis-unmanaged-asset', title: 'Unmanaged Asset on the Network', description: 'A device that is not on the asset inventory connects to the network and receives access without going through onboarding or hardening.', category: 'Cyber Hygiene', defaultLikelihood: 4, defaultImpact: 3, frameworkTag: 'CIS' },
-        { id: 'cis-unauthorized-software', title: 'Unauthorized or Unsupported Software in Use', description: 'Software that is unapproved or past end-of-life runs on enterprise assets, expanding the attack surface with no patch path.', category: 'Cyber Hygiene', defaultLikelihood: 4, defaultImpact: 3, frameworkTag: 'CIS' },
-        { id: 'cis-unpatched-vulnerability', title: 'Unpatched Known Vulnerability Exploited', description: 'A known vulnerability is exploited because operating-system or application patches were not applied within the remediation window.', category: 'Cyber Hygiene', defaultLikelihood: 4, defaultImpact: 5, frameworkTag: 'CIS' },
-        { id: 'cis-weak-authentication', title: 'Account Compromise via Weak Authentication', description: 'An account is taken over because it lacked multi-factor authentication or reused a weak password.', category: 'Cyber Hygiene', defaultLikelihood: 3, defaultImpact: 5, frameworkTag: 'CIS' },
-        { id: 'cis-malware-infection', title: 'Malware Infection on Enterprise Assets', description: 'Malicious code executes on assets due to missing anti-malware defenses, autorun exposure, or unfiltered email and web content.', category: 'Cyber Hygiene', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'CIS' },
-        { id: 'cis-unrecoverable-data', title: 'Unrecoverable Data After Incident', description: 'Data cannot be restored after ransomware or failure because backups were missing, unprotected, or never tested.', category: 'Cyber Hygiene', defaultLikelihood: 2, defaultImpact: 5, frameworkTag: 'CIS' },
-        { id: 'cis-sensitive-data-exposure', title: 'Sensitive Data Exposure', description: 'Sensitive information is disclosed because it was not classified, access-controlled, or encrypted at rest and in transit.', category: 'Cyber Hygiene', defaultLikelihood: 3, defaultImpact: 5, frameworkTag: 'CIS' },
-        { id: 'cis-untrained-workforce', title: 'Successful Social-Engineering Attack', description: 'A phishing or social-engineering attack succeeds because staff were not trained to recognize and report it.', category: 'Cyber Hygiene', defaultLikelihood: 4, defaultImpact: 4, frameworkTag: 'CIS' },
-    ];
-    for (const t of cisRiskTemplates) {
-        await prisma.riskTemplate.upsert({
-            where: { id: t.id },
-            create: t,
-            update: { description: t.description, category: t.category, defaultLikelihood: t.defaultLikelihood, defaultImpact: t.defaultImpact, frameworkTag: t.frameworkTag },
-        });
-    }
-    console.log(`✅ CIS risk templates seeded (${cisRiskTemplates.length} cyber-hygiene templates)`);
-
-    // ─── OWASP ASVS application-security risk templates ───
-    // Companion to the ASVS 4.0.3 L1 Starter Pack: the failure modes the Level 1
-    // verification requirements exist to prevent. frameworkTag 'ASVS', category
-    // 'Application Security'. Shared RiskTemplate path.
-    const asvsRiskTemplates: Array<{ id: string; title: string; description: string; category: string; defaultLikelihood: number; defaultImpact: number; frameworkTag: string }> = [
-        { id: 'asvs-injection', title: 'Injection Vulnerability Exploited', description: 'Untrusted input reaches an interpreter (SQL, OS command, LDAP, template) because it was not parameterized or validated, letting an attacker execute unintended commands.', category: 'Application Security', defaultLikelihood: 4, defaultImpact: 5, frameworkTag: 'ASVS' },
-        { id: 'asvs-broken-authentication', title: 'Broken Authentication', description: 'Weak password handling, missing anti-automation, or poor recovery flows let an attacker take over user accounts.', category: 'Application Security', defaultLikelihood: 3, defaultImpact: 5, frameworkTag: 'ASVS' },
-        { id: 'asvs-broken-access-control', title: 'Broken Access Control', description: 'Authorization is enforced only client-side or object references are not checked, so a user can reach data or actions outside their permission.', category: 'Application Security', defaultLikelihood: 4, defaultImpact: 5, frameworkTag: 'ASVS' },
-        { id: 'asvs-xss', title: 'Cross-Site Scripting', description: 'User-supplied content is rendered without context-aware output encoding, allowing script execution in the browser of another user.', category: 'Application Security', defaultLikelihood: 4, defaultImpact: 4, frameworkTag: 'ASVS' },
-        { id: 'asvs-sensitive-data-exposure', title: 'Sensitive Data Exposure', description: 'Sensitive data is transmitted or stored without adequate encryption, or leaks through caching, logs, or client-side storage.', category: 'Application Security', defaultLikelihood: 3, defaultImpact: 5, frameworkTag: 'ASVS' },
-        { id: 'asvs-security-misconfiguration', title: 'Security Misconfiguration', description: 'Missing security headers, verbose errors, debug modes, or permissive CORS leave the application exposed in production.', category: 'Application Security', defaultLikelihood: 4, defaultImpact: 4, frameworkTag: 'ASVS' },
-        { id: 'asvs-vulnerable-components', title: 'Vulnerable and Outdated Components', description: 'A known-vulnerable dependency is exploited because components were not kept current or their integrity was not verified.', category: 'Application Security', defaultLikelihood: 4, defaultImpact: 5, frameworkTag: 'ASVS' },
-        { id: 'asvs-business-logic-abuse', title: 'Business Logic Abuse', description: 'Workflow steps, timing, or quantity limits are not enforced server-side, letting an attacker automate or bypass business rules.', category: 'Application Security', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'ASVS' },
-    ];
-    for (const t of asvsRiskTemplates) {
-        await prisma.riskTemplate.upsert({
-            where: { id: t.id },
-            create: t,
-            update: { description: t.description, category: t.category, defaultLikelihood: t.defaultLikelihood, defaultImpact: t.defaultImpact, frameworkTag: t.frameworkTag },
-        });
-    }
-    console.log(`✅ ASVS risk templates seeded (${asvsRiskTemplates.length} application-security templates)`);
 
     // ─── Seed risks (tenant-wide) ───
     const riskCount = await prisma.risk.count({ where: { tenantId: tenant.id } });
@@ -1370,23 +1247,8 @@ Reviewed at least annually.` },
             `tasks ${iso27701Result.tasks.created}c/${iso27701Result.tasks.unchanged}=`,
     );
 
-    // ─── ISO 27701 privacy risk templates ───
-    // The failure modes the PIMS controls exist to prevent. frameworkTag 'ISO27701'.
-    const iso27701RiskTemplates: Array<{ id: string; title: string; description: string; category: string; defaultLikelihood: number; defaultImpact: number; frameworkTag: string; linddunCategories: string[] }> = [
-        { id: 'pims-no-lawful-basis', title: 'Processing Without a Valid Lawful Basis', description: 'PII is processed for a purpose that has no documented lawful basis, breaching the PIMS conditions for processing.', category: 'Privacy', defaultLikelihood: 2, defaultImpact: 5, frameworkTag: 'ISO27701', linddunCategories: ['NC'] },
-        { id: 'pims-unfulfilled-rights', title: 'Unfulfilled Data-Subject Rights Request', description: 'An access, correction or erasure request is missed or answered late because no rights-handling process is in place.', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'ISO27701', linddunCategories: ['U'] },
-        { id: 'pims-unlawful-transfer', title: 'Unlawful Cross-Border Transfer', description: 'PII is transferred to another jurisdiction without an established transfer basis or safeguards.', category: 'Privacy', defaultLikelihood: 2, defaultImpact: 4, frameworkTag: 'ISO27701', linddunCategories: ['NC'] },
-        { id: 'pims-unmanaged-subprocessor', title: 'Unmanaged Sub-processor', description: 'A sub-processor handles PII without an agreement or disclosure to the customer, breaking the chain of accountability.', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 4, frameworkTag: 'ISO27701', linddunCategories: ['NC'] },
-        { id: 'pims-retention-overrun', title: 'PII Retained Beyond Purpose', description: 'PII is kept past its retention period or not de-identified when the processing purpose ends.', category: 'Privacy', defaultLikelihood: 3, defaultImpact: 3, frameworkTag: 'ISO27701', linddunCategories: ['DD'] },
-    ];
-    for (const t of iso27701RiskTemplates) {
-        await prisma.riskTemplate.upsert({
-            where: { id: t.id },
-            create: t,
-            update: { description: t.description, category: t.category, defaultLikelihood: t.defaultLikelihood, defaultImpact: t.defaultImpact, frameworkTag: t.frameworkTag, linddunCategories: t.linddunCategories },
-        });
-    }
-    console.log(`✅ ISO 27701 privacy risk templates seeded (${iso27701RiskTemplates.length})`);
+    // ISO 27701 privacy risk templates: seeded with every other built-in set
+    // above, from prisma/fixtures/risk-templates-iso27701.json.
 
     // ─── COSO ICF 2013, AIUC-1 and EU drone operations ───
     // The catalogues that declare the SAME framework key as their library

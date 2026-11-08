@@ -1,0 +1,69 @@
+{
+  "_meta": {
+    "purpose": "ISO/IEC 27701 privacy risk templates: the failure modes the PIMS controls exist to prevent. frameworkTag 'ISO27701', each with a LINDDUN classification.",
+    "origin": "Moved verbatim from the inline `iso27701RiskTemplates` array in prisma/seed.ts (2026-11-08), so production receives it: prisma/seed.ts is never run on a deploy.",
+    "deliveredBy": "scripts/seed-risk-templates.ts on every container start (scripts/entrypoint.sh), and prisma/seed.ts in dev, both through prisma/risk-template-fixtures.ts."
+  },
+  "templates": [
+    {
+      "id": "pims-no-lawful-basis",
+      "title": "Processing Without a Valid Lawful Basis",
+      "description": "PII is processed for a purpose that has no documented lawful basis, breaching the PIMS conditions for processing.",
+      "category": "Privacy",
+      "defaultLikelihood": 2,
+      "defaultImpact": 5,
+      "frameworkTag": "ISO27701",
+      "linddunCategories": [
+        "NC"
+      ]
+    },
+    {
+      "id": "pims-unfulfilled-rights",
+      "title": "Unfulfilled Data-Subject Rights Request",
+      "description": "An access, correction or erasure request is missed or answered late because no rights-handling process is in place.",
+      "category": "Privacy",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "ISO27701",
+      "linddunCategories": [
+        "U"
+      ]
+    },
+    {
+      "id": "pims-unlawful-transfer",
+      "title": "Unlawful Cross-Border Transfer",
+      "description": "PII is transferred to another jurisdiction without an established transfer basis or safeguards.",
+      "category": "Privacy",
+      "defaultLikelihood": 2,
+      "defaultImpact": 4,
+      "frameworkTag": "ISO27701",
+      "linddunCategories": [
+        "NC"
+      ]
+    },
+    {
+      "id": "pims-unmanaged-subprocessor",
+      "title": "Unmanaged Sub-processor",
+      "description": "A sub-processor handles PII without an agreement or disclosure to the customer, breaking the chain of accountability.",
+      "category": "Privacy",
+      "defaultLikelihood": 3,
+      "defaultImpact": 4,
+      "frameworkTag": "ISO27701",
+      "linddunCategories": [
+        "NC"
+      ]
+    },
+    {
+      "id": "pims-retention-overrun",
+      "title": "PII Retained Beyond Purpose",
+      "description": "PII is kept past its retention period or not de-identified when the processing purpose ends.",
+      "category": "Privacy",
+      "defaultLikelihood": 3,
+      "defaultImpact": 3,
+      "frameworkTag": "ISO27701",
+      "linddunCategories": [
+        "DD"
+      ]
+    }
+  ]
+}

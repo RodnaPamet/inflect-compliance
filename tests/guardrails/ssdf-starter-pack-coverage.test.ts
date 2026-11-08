@@ -26,9 +26,9 @@
  * coincidence — nothing tied that path to the file a seeder actually applies.
  * They now come from `appliedCatalogFor('NIST-SSDF')`, which discovers it.
  *
- * The secure-development RiskTemplates are the exception and are deliberately
- * still asserted against `seed.ts`: they have no production writer at all, so
- * repointing them would assert a delivery path that does not exist.
+ * The secure-development RiskTemplates were the last exception, asserted
+ * against `seed.ts` because they had no production writer. Since 2026-11-08 the
+ * entrypoint's risk-template seeder delivers them, and they are asked of that.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -36,6 +36,7 @@ import * as path from 'node:path';
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 
 import { appliedCatalogFor, productionDeclaringSources } from '../helpers/applied-catalogue';
+import { deliveredRiskTemplates, riskTemplateDeliveryGap } from '../helpers/risk-template-delivery';
 import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -175,23 +176,16 @@ describe('SSDF Starter Pack — curated control templates', () => {
     });
 });
 
-describe('SSDF Starter Pack — secure-development risk templates', () => {
-    // Deliberately still read from `prisma/seed.ts`: these seven RiskTemplates
-    // have NO production writer — no CatalogFile carries risk templates, and
-    // the entrypoint's risk-template seeder delivers only fixture-backed sets. Repointing these at the applied
-    // catalogue would assert a delivery path that does not exist. The weak
-    // assertion is the honest one until a production writer exists.
-    const seed = read('prisma/seed.ts');
+describe('SSDF Starter Pack — secure-development risk templates reach production', () => {
+    // Asked of what production receives: the entrypoint's risk-template seeder
+    // writes prisma/fixtures/risk-templates-ssdf.json (2026-11-08). These were
+    // inline in prisma/seed.ts before, which no deploy runs.
+    const delivered = deliveredRiskTemplates('ssdf');
 
-    it('seeds SSDF risk templates tagged frameworkTag SSDF + category Secure Development', () => {
-        const block = seed.slice(seed.indexOf('ssdfRiskTemplates'));
-        expect(block).toMatch(/frameworkTag:\s*'SSDF'/);
-        // At least seven secure-development failure modes.
-        const ids = [...block.matchAll(/id:\s*'(ssdf-[a-z-]+)'/g)].map((m) => m[1]);
-        expect(new Set(ids).size).toBeGreaterThanOrEqual(7);
-    });
-
-    it('rides the shared RiskTemplate upsert path (no bespoke machinery)', () => {
-        expect(seed).toMatch(/for \(const t of ssdfRiskTemplates\)[\s\S]{0,120}riskTemplate\.upsert/);
+    it('delivers at least seven SSDF templates, tagged SSDF and filed under Secure Development', () => {
+        expect(riskTemplateDeliveryGap()).toBeNull();
+        expect(new Set(delivered.filter((t) => t.id.startsWith('ssdf-')).map((t) => t.id)).size).toBeGreaterThanOrEqual(7);
+        const off = delivered.filter((t) => t.frameworkTag !== 'SSDF' || t.category !== 'Secure Development').map((t) => t.id);
+        expect(off).toEqual([]);
     });
 });
