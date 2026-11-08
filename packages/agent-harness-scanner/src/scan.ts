@@ -27,6 +27,7 @@ import { azureKeyVaultSource } from './sources/azure-key-vault';
 import { entraSource } from './sources/entra';
 import { gcpServiceAccountSource } from './sources/gcp-service-accounts';
 import { githubActionsSource } from './sources/github-actions';
+import { proveEgress, type EgressProbe, type EgressProof } from './egress-proof';
 import { inflectRegisterSource } from './sources/inflect-register';
 import { langchainCodeSource } from './sources/langchain';
 import { langSmithSource } from './sources/langsmith';
@@ -43,6 +44,8 @@ export interface ScanDeps {
     readonly fetchImpl?: FetchLike;
     /** How a customer-named host is re-resolved. A TEST SEAM, like `fetchImpl`: production uses DNS. */
     readonly resolveHost?: ResolveHost;
+    /** How the egress proof reaches the network. A TEST SEAM: production dials. */
+    readonly egressProbe?: EgressProbe;
     readonly now?: () => number;
 }
 
@@ -63,7 +66,7 @@ function requiredEnv(env: Env, name: string, what: string): string {
 export function buildSources(
     config: ScannerConfig,
     env: Env,
-    seams: { readonly resolveHost?: ResolveHost } = {},
+    seams: { readonly resolveHost?: ResolveHost; readonly egressProof?: EgressProof } = {},
 ): { sources: HarnessSource[]; unreadable: SourceRead[] } {
     const sources: HarnessSource[] = [];
     const unreadable: SourceRead[] = [];
@@ -85,6 +88,7 @@ export function buildSources(
                         tenantSlug: config.inflect.tenantSlug,
                         apiKey: apiKey.trim(),
                         scannerAgentId: config.scanner.agentId,
+                        egressProof: seams.egressProof,
                     }),
                 );
             }
@@ -177,7 +181,22 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
 
     const asOf = new Date(now());
     const deadline = asOf.getTime() + config.timeBoxSeconds * 1000;
-    const { sources, unreadable } = buildSources(config, env, { resolveHost: deps.resolveHost });
+    // The egress proof, once per scan and before any source reads, so a scan
+    // taken outside its confinement says so in the same report (#5004).
+    const egressProof = config.egress
+        ? await proveEgress({
+              proxyUrl: config.egress.proxyUrl,
+              allowedHost: new URL(config.inflect.baseUrl).hostname,
+              canaryHost: config.egress.canaryHost,
+              env,
+              probe: deps.egressProbe,
+          })
+        : undefined;
+    if (egressProof) {
+        if (egressProof.met) log.info('egress proven', {});
+        else log.warn('egress not proven', { failed: egressProof.failed });
+    }
+    const { sources, unreadable } = buildSources(config, env, { resolveHost: deps.resolveHost, egressProof });
 
     const reads = await Promise.all(
         sources.map(async (source) => {

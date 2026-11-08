@@ -103,9 +103,12 @@ server was read to the end of its listing.
 
 The scanner's own tenant's register, read through the one MCP tool the scanner
 may call (DPIA condition 2, as amended by owner decision 7 on #3686):
-`get_harness_register`, on the ingest host's `/api/mcp`, with the ingest key. The
-key needs `mcp:read` beside `admin:harness_ingest`, and the scanner agent must be
-granted the tool (owner decision 3). The source takes no configuration field:
+`get_harness_register`, on the ingest host's `/api/mcp`. The scanner first
+exchanges the ingest key at the same host's `/api/mcp/token` for a short-lived
+token naming that one tool (#5004), and `/api/mcp` sees only that token, so the
+key can be created with "Agent tool calls only through a short-lived,
+tool-scoped token" set. The key needs `mcp:read` beside `admin:harness_ingest`,
+and the scanner agent must be granted the tool (owner decision 3). The source takes no configuration field:
 `{ "kind": "inflect-register" }`.
 
 Per live registered agent (not deleted, not `RETIRED`, not a legacy placeholder),
@@ -122,7 +125,18 @@ it reports (owner decision 4):
   (deny-by-default grants) and `H2.policy_card`. `H2.credential_bound` and
   `H2.grant_kind_declared` are reported only when the agent has a key of its
   own, so the register's silence never outvotes another source that sees the
-  credential. `H2.audience_tokens` is not claimed.
+  credential;
+- what Inflect's gate enforces on it (#5004): `H2.audience_tokens` when it holds
+  a key that reaches `/api/mcp` (met only when every such key requires the
+  exchange), `H3.manifests_pinned`, and — only when the whole read-only bound
+  holds (the ceiling refuses propose and orchestrate, no propose or external
+  grant, no profile, no run mounted a skill) — `H3.propose_not_commit`,
+  `H3.prior_state_reads`, `H3.skills_declared` and `H3.delegation_narrows`.
+  Short of the bound those four are unanswered, never "no";
+- on the scanner's OWN agent only: `H3.payloads_guarded` (the scanner refuses to
+  sign a report with a secret-shaped member, and the ingest refuses one again)
+  and, when the configuration names an egress proxy, `H3.egress_enforced` from
+  this scan's own proof (Container, below).
 
 It is the only source whose `registeredAgentId` reaches the report. A register
 larger than one read returns is read as far as it goes and reported `BYTE_CAP`.
@@ -656,6 +670,18 @@ What the image is, and why:
   rather than caching (`TSX_DISABLE_CACHE`).
 - **The scanner is process 1** (`node --import tsx`, no wrapper), and stops at
   once on `SIGTERM` or `SIGINT`. A scan cut short posts nothing.
+- **It carries its own egress proxy** (#5004 part C), `src/egress-proxy.ts`:
+  CONNECT tunnels to exact allowlisted hostnames on 443 (`EGRESS_ALLOW`), and
+  403 or 405 for everything else, an empty allowlist refusing all. Run the image
+  a second time with `--entrypoint node` and the argument list
+  `--import tsx /app/packages/agent-harness-scanner/src/egress-proxy.ts`, put
+  the scanner on a network whose only exit is that container, and point the
+  scanner at it with `HTTPS_PROXY` and `NODE_USE_ENV_PROXY=1`. Name the proxy and
+  a canary host in the configuration's `egress` block, and every scan proves the
+  confinement before it reads: the proxy admits the Inflect host, refuses the
+  canary, and a direct connection to the Inflect host fails. The result is the
+  scanner's own `H3.egress_enforced`. The production overlay
+  (`deploy/docker-compose.harness-scanner.yml`) is the worked example.
 
 CI's `Scanner image` job builds it on every pull request, runs
 `container/smoke.sh` against it, and gates on Trivy at `CRITICAL,HIGH`. The

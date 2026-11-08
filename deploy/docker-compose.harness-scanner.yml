@@ -51,6 +51,28 @@
 #    not an error. A directory mount that is empty still reads
 #    "config.json: not found", which the scanner refuses at start and logs.
 #
+# ── EGRESS: ONE WAY OUT, AND IT IS AN ALLOWLIST (#5004 part C) ───────
+#
+# The scanner sits on `harness-scanner-internal`, an INTERNAL network with no
+# route out and nothing else on it: not the internet, and not the production
+# database or Redis on the default network. Its one neighbour is
+# `harness-egress`, the CONNECT-only proxy that ships in the scanner's own
+# image (`packages/agent-harness-scanner/src/egress-proxy.ts`), which is also
+# on `harness-scanner-egress` and forwards a tunnel to a host on EGRESS_ALLOW,
+# port 443, and refuses everything else. The scanner's fetch goes through it
+# (HTTPS_PROXY, honoured because NODE_USE_ENV_PROXY=1).
+#
+# The allowlist is exactly the hosts the pilot's sources and the ingest reach:
+# Microsoft Graph and its token endpoint (entra-sp), the GitHub API (cicd),
+# Google's IAM API and token endpoint (gcp-sa), and the Inflect origin
+# (inflect-register and the ingest). A source added to the configuration needs
+# its host added here, or it reads UNREACHABLE — the safe direction.
+#
+# Every scan PROVES this before it reads (`egress-proof.ts`): the proxy admits
+# the Inflect host, refuses the canary in the configuration, and a direct
+# connection to the Inflect host fails. The result is the scanner's own
+# `H3.egress_enforced` verdict.
+#
 # ── HARDENING ─────────────────────────────────────────────────────────
 #
 # The README's Container section: a read-only root filesystem, every
@@ -77,7 +99,7 @@
 #           scan --dry-run --config /etc/agent-harness-scanner/config.json
 #
 # ── TEARDOWN ──────────────────────────────────────────────────────────
-#   docker compose ... rm -sf harness-scanner
+#   docker compose ... rm -sf harness-scanner harness-egress
 #   revoke the ingest key and each source's read credential at its source
 #   remove /opt/inflect/.env.scanner
 #
@@ -96,6 +118,18 @@ services:
       - no-new-privileges:true
     env_file:
       - ./.env.scanner
+    # After `env_file`, so these win over anything that file sets.
+    environment:
+      HTTPS_PROXY: http://harness-egress:3128
+      # Cleartext too, so a plain-http request meets the proxy's 405 rather
+      # than a missing route.
+      HTTP_PROXY: http://harness-egress:3128
+      NO_PROXY: ""
+      NODE_USE_ENV_PROXY: "1"
+    networks:
+      - harness-scanner-internal
+    depends_on:
+      - harness-egress
     volumes:
       - ./harness-scanner:/etc/agent-harness-scanner:ro
     logging:
@@ -105,3 +139,35 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  harness-egress:
+    # The SAME digest as the scanner: the proxy is reviewed code from this
+    # repository, not a third-party image. `vm.sh` refuses two digests.
+    image: ghcr.io/rodnapamet/agent-harness-scanner@sha256:7b2906f3b64e00bd88940e4416e3cdf496472fb903f998f7fdfdcbaacdd7a7ec
+    restart: unless-stopped
+    entrypoint: ["node", "--import", "tsx", "/app/packages/agent-harness-scanner/src/egress-proxy.ts"]
+    command: []
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Exact hostnames, no wildcard. Empty or missing refuses every tunnel.
+    environment:
+      EGRESS_ALLOW: graph.microsoft.com,login.microsoftonline.com,api.github.com,iam.googleapis.com,oauth2.googleapis.com,app.inflect.bg
+    networks:
+      - harness-scanner-internal
+      - harness-scanner-egress
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  # No route out. The scanner's only network.
+  harness-scanner-internal:
+    internal: true
+  # The proxy's way out, and nothing else's.
+  harness-scanner-egress: {}

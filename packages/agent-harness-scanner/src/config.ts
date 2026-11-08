@@ -336,6 +336,30 @@ export const ScannerConfigSchema = z
         schedule: z.object({ everyHours: z.number().int().min(1).max(720) }).strict(),
         /** Read in a fixed time box each. */
         timeBoxSeconds: z.number().int().min(10).max(3_600).default(600),
+        /**
+         * The egress proxy this deployment's scanner is confined to (#5004 part
+         * C). When set, every scan proves the confinement before it reads and
+         * reports it as `H3.egress_enforced` on the scanner's own agent
+         * (`egress-proof.ts`). Absent, the criterion is left unanswered.
+         */
+        egress: z
+            .object({
+                /** `http://<host>:<port>`, the proxy as the scanner's network names it. */
+                proxyUrl: z
+                    .string()
+                    .refine((v) => {
+                        try {
+                            const u = new URL(v);
+                            return u.protocol === 'http:' && u.username === '' && u.password === '' && (u.pathname === '/' || u.pathname === '') && u.search === '';
+                        } catch {
+                            return false;
+                        }
+                    }, 'proxyUrl must be http://<host>:<port> with nothing else'),
+                /** A host the proxy must refuse. */
+                canaryHost: z.string().regex(/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/, 'canaryHost must be a lower-case hostname'),
+            })
+            .strict()
+            .optional(),
         sources: z.array(SourceConfigSchema).min(1).max(SOURCE_KINDS.length),
     })
     .strict()

@@ -9,8 +9,14 @@
     "tenantSlug": "replace-with-the-tenant-slug",
     "apiKeyEnv": "INFLECT_INGEST_KEY"
   },
-  "schedule": { "everyHours": 24 },
+  "schedule": {
+    "everyHours": 24
+  },
   "timeBoxSeconds": 600,
+  "egress": {
+    "proxyUrl": "http://harness-egress:3128",
+    "canaryHost": "example.com"
+  },
   "sources": [
     {
       "kind": "entra-sp",
@@ -20,27 +26,22 @@
       "includeThirdPartyApplications": false
     },
     {
-      "kind": "mcp",
-      "servers": [
-        {
-          "label": "inflect",
-          "url": "https://app.inflect.bg/api/mcp",
-          "agents": [],
-          "readTokenEnv": "INFLECT_INGEST_KEY"
-        }
-      ]
+      "kind": "inflect-register"
     },
-    { "kind": "inflect-register" },
     {
       "kind": "cicd",
       "product": "github-actions",
-      "repositories": ["RodnaPamet/inflect-compliance"],
+      "repositories": [
+        "RodnaPamet/inflect-compliance"
+      ],
       "tokenEnv": "GITHUB_READ_TOKEN"
     },
     {
       "kind": "gcp-sa",
       "product": "gcp-iam",
-      "projects": ["hazel-design-419410"],
+      "projects": [
+        "hazel-design-419410"
+      ],
       "keyEnv": "GCP_SCANNER_KEY"
     }
   ]

@@ -373,7 +373,20 @@ a short-lived token whose audience is that one tool, and `/api/mcp` is sent only
 that token. It then sends `initialize`, the initialized notification and one
 `tools/call` naming that tool, and the request log asserts all four requests.
 The exchange adds no destination and no data category: it is the same tenant,
-and it carries the credential `/api/mcp` was already sent. The tool returns
+and it carries the credential `/api/mcp` was already sent.
+
+Inflect's own deployment of the scanner (#5004 part C) confines it to an egress
+proxy that ships in the same image and forwards a TLS tunnel only to an exact
+allowlist of hosts, on port 443: Microsoft Graph and its token endpoint, the
+GitHub API, Google's IAM API and token endpoint, and the Inflect origin. The
+proxy decides on the tunnel's host and never sees inside it, so it logs a host
+and a decision and nothing else. Each scan proves the confinement before it
+reads, with two CONNECTs to the proxy and one direct TCP connection attempt, all
+opened and closed with nothing sent: the Inflect host is admitted, a canary host
+(`example.com`) is refused by the proxy before anything is dialled, and the
+direct connection fails. That adds no destination either: the canary never
+leaves the VM. The pilot no longer reads Inflect's `/api/mcp` as an `mcp`
+source, so its MCP reads are the register's alone. The tool returns
 ids, statuses, dates and flags: no agent name, no key name or prefix, no free
 text. The owner it reports is an Inflect user id, the `agents[].owner` member
 above, and a person's identifier as that row records.

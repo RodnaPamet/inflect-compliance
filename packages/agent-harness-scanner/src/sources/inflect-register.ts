@@ -42,6 +42,10 @@
  *     force, and no run mounted a skill (read in full). Anything short of the
  *     whole bound leaves the four unanswered, never "met" on an empty set and
  *     never "no", which would outvote a source that evidences them.
+ *   • `H3.egress_enforced` — on the scanner's OWN agent only, from this scan's
+ *     egress proof (`egress-proof.ts`, part C) when the deployment is confined
+ *     to a proxy; a failed proof is a "no", because it is the scanner's own
+ *     observation of its own container. No proof configured: unanswered.
  *   • `H3.payloads_guarded` — on the scanner's OWN agent only, and only "met":
  *     the scanner refuses to sign a report with a secret-shaped member
  *     (`firstSecretShapedMember`, `report.ts`) and the ingest refuses one again
@@ -56,6 +60,8 @@ import { z } from 'zod';
 
 import type { CriterionVerdict } from '@/lib/agentic/harness-ladder';
 import { MAX_AGENTS } from '@/lib/agentic/harness-contract';
+
+import type { EgressProof } from '../egress-proof';
 
 import {
     ageInDays,
@@ -76,6 +82,8 @@ export interface InflectRegisterSourceOptions {
     readonly apiKey: string;
     /** The scanner's own registered agent (`scanner.agentId`), the one its self-verdicts are about. */
     readonly scannerAgentId?: string;
+    /** This scan's egress proof (#5004 part C), when the deployment is confined to a proxy. */
+    readonly egressProof?: EgressProof;
 }
 
 /** The register's MCP endpoint, on the scanner's own tenant's Inflect. */
@@ -160,7 +168,7 @@ export const READ_ONLY_BOUND_CRITERIA = [
     'H3.delegation_narrows',
 ] as const;
 
-function verdictsOf(agent: RegisterAgent, isScanner: boolean): CriterionVerdict[] {
+function verdictsOf(agent: RegisterAgent, isScanner: boolean, egressProof: EgressProof | undefined): CriterionVerdict[] {
     const at = (member: string) => `inflect-register:agents/${agent.registeredAgentId}#${member}`;
     const verdicts: CriterionVerdict[] = [
         { criterion: 'H1.registered', met: true, evidence: at('status') },
@@ -196,6 +204,9 @@ function verdictsOf(agent: RegisterAgent, isScanner: boolean): CriterionVerdict[
             met: true,
             evidence: 'scanner:report.firstSecretShapedMember+ingest.firstSecretShapedMember',
         });
+        // Taken by this scan, from inside this container: met or not, it is
+        // this program's own observation, so a failed proof is a "no".
+        if (egressProof) verdicts.push({ criterion: 'H3.egress_enforced', met: egressProof.met, evidence: egressProof.evidence });
     }
     return verdicts;
 }
@@ -238,7 +249,7 @@ export function inflectRegisterSource(opts: InflectRegisterSourceOptions): Harne
                             registeredAgentId: agent.registeredAgentId,
                             owner: { kind: 'user', id: agent.ownerUserId, source: 'inflect-register' },
                             credentials,
-                            verdicts: verdictsOf(agent, agent.registeredAgentId === opts.scannerAgentId),
+                            verdicts: verdictsOf(agent, agent.registeredAgentId === opts.scannerAgentId, opts.egressProof),
                         });
                     }
                 }

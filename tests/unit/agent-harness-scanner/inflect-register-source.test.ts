@@ -17,6 +17,9 @@
  *   6. WHAT THE GATE ENFORCES (#5004): audience tokens from the keys, pinned
  *      manifests, the four no-write H3 criteria on the enforced bound only, and
  *      the scanner's own payload guards on its own agent only.
+ *   7. THE EGRESS PROOF (#5004 part C): this scan's, on the scanner's own agent
+ *      only, a "no" when it failed, nothing when no proxy is configured — and
+ *      through the runner, taken before the sources read.
  */
 import { generateKeyPairSync } from 'crypto';
 
@@ -51,14 +54,15 @@ import {
 } from '../../../packages/agent-harness-scanner/src/scanner-surface';
 import { inflectRegisterSource, READ_ONLY_BOUND_CRITERIA } from '../../../packages/agent-harness-scanner/src/sources/inflect-register';
 import type { SourceRead } from '../../../packages/agent-harness-scanner/src/source';
+import type { EgressProbe, EgressProof } from '../../../packages/agent-harness-scanner/src/egress-proof';
 
 const ASOF = new Date('2026-10-19T03:00:00.000Z');
 const INGEST_KEY_VALUE = 'iflk_fake-ingest-key-3686';
 const SUPPORT_SP = `entra:sp:${ENTRA.spSupport}`;
 
-async function read(fakes: Fakes, scannerAgentId?: string): Promise<SourceRead> {
+async function read(fakes: Fakes, scannerAgentId?: string, egressProof?: EgressProof): Promise<SourceRead> {
     const wire = createSourceWire({ fetchImpl: fakes.fetchImpl, deadline: ASOF.getTime() + 60_000, now: () => ASOF.getTime() });
-    return inflectRegisterSource({ baseUrl: INGEST, tenantSlug: 'acme', apiKey: INGEST_KEY_VALUE, scannerAgentId }).read({
+    return inflectRegisterSource({ baseUrl: INGEST, tenantSlug: 'acme', apiKey: INGEST_KEY_VALUE, scannerAgentId, egressProof }).read({
         asOf: ASOF,
         deadline: ASOF.getTime() + 60_000,
         now: () => ASOF.getTime(),
@@ -329,5 +333,85 @@ describe('6. what the gate enforces', () => {
         expect((await verdicts(registerFixture(), 'agt_scanner_acme', 'agt_scanner_acme')).get('H3.payloads_guarded')).toBe(true);
         expect((await verdicts(registerFixture(), 'agt_support_acme', 'agt_scanner_acme')).has('H3.payloads_guarded')).toBe(false);
         expect((await verdicts(registerFixture(), 'agt_scanner_acme')).has('H3.payloads_guarded')).toBe(false);
+    });
+});
+
+describe('7. the egress proof', () => {
+    const PROOF_MET: EgressProof = { met: true, failed: null, evidence: 'egress:proxy=harness-egress:3128;direct=blocked' };
+    const PROOF_FAILED: EgressProof = { met: false, failed: 'DIRECT_EGRESS_OPEN', evidence: 'egress:failed=DIRECT_EGRESS_OPEN' };
+    const egressOf = async (proof: EgressProof | undefined, id: string) => {
+        const result = await read(createSourceFakes(), 'agt_scanner_acme', proof);
+        return result.observations.find((o) => o.registeredAgentId === id)?.verdicts.find((v) => v.criterion === 'H3.egress_enforced');
+    };
+
+    it('is reported on the scanner\'s own agent, met or not, with the proof\'s own evidence', async () => {
+        expect(await egressOf(PROOF_MET, 'agt_scanner_acme')).toEqual({ criterion: 'H3.egress_enforced', met: true, evidence: PROOF_MET.evidence });
+        expect(await egressOf(PROOF_FAILED, 'agt_scanner_acme')).toMatchObject({ met: false });
+    });
+
+    it('says nothing about any other agent, and nothing when no proxy is configured', async () => {
+        expect(await egressOf(PROOF_MET, 'agt_support_acme')).toBeUndefined();
+        expect(await egressOf(undefined, 'agt_scanner_acme')).toBeUndefined();
+    });
+
+    it('through the runner: proven before the sources read, and in the signed report', async () => {
+        const { privateKey } = generateKeyPairSync('ed25519');
+        const calls: string[] = [];
+        const probe: EgressProbe = {
+            connectThrough: async (_proxy, target) => {
+                calls.push(`CONNECT ${target}`);
+                return target === 'inflect.example.com:443' ? 200 : 403;
+            },
+            dialDirect: async (host, port) => {
+                calls.push(`TCP ${host}:${port}`);
+                return false;
+            },
+        };
+        const fakes = createSourceFakes();
+        const { body } = await runScan({
+            config: parseScannerConfig({
+                estate: 'acme-pilot',
+                scanner: { agentId: 'agt_scanner_acme', signingKeyEnv: 'SCANNER_SIGNING_KEY' },
+                inflect: { baseUrl: INGEST, tenantSlug: 'acme', apiKeyEnv: 'INFLECT_INGEST_KEY' },
+                schedule: { everyHours: 24 },
+                egress: { proxyUrl: 'http://harness-egress:3128', canaryHost: 'example.com' },
+                sources: [{ kind: 'inflect-register' }],
+            }),
+            env: {
+                SCANNER_SIGNING_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+                INFLECT_INGEST_KEY: INGEST_KEY_VALUE,
+                HTTPS_PROXY: 'http://harness-egress:3128',
+                NODE_USE_ENV_PROXY: '1',
+            },
+            log: jsonLineLog(() => {}),
+            fetchImpl: fakes.fetchImpl,
+            egressProbe: probe,
+            now: () => ASOF.getTime(),
+        });
+        expect(calls).toEqual(['CONNECT inflect.example.com:443', 'CONNECT example.com:443', 'TCP inflect.example.com:443']);
+        const own = body.agents.find((a) => a.discoveredId === 'inflect:agent:agt_scanner_acme');
+        expect(own?.verdicts.find((v) => v.criterion === 'H3.egress_enforced')).toMatchObject({ met: true });
+    });
+
+    it('the configuration takes only an http proxy URL and a hostname canary', () => {
+        const base = {
+            estate: 'acme-pilot',
+            scanner: { agentId: 'agt_scanner_acme', signingKeyEnv: 'SCANNER_SIGNING_KEY' },
+            inflect: { baseUrl: INGEST, tenantSlug: 'acme', apiKeyEnv: 'INFLECT_INGEST_KEY' },
+            schedule: { everyHours: 24 },
+            sources: [{ kind: 'inflect-register' }],
+        };
+        const withEgress = (egress: unknown) => () => parseScannerConfig({ ...base, egress });
+        expect(withEgress({ proxyUrl: 'http://harness-egress:3128', canaryHost: 'example.com' })).not.toThrow();
+        for (const bad of [
+            { proxyUrl: 'https://harness-egress:3128', canaryHost: 'example.com' },
+            { proxyUrl: 'http://u:p@harness-egress:3128', canaryHost: 'example.com' },
+            { proxyUrl: 'http://harness-egress:3128/path', canaryHost: 'example.com' },
+            { proxyUrl: 'http://harness-egress:3128', canaryHost: 'Example.com' },
+            { proxyUrl: 'http://harness-egress:3128', canaryHost: '*.example.com' },
+            { proxyUrl: 'http://harness-egress:3128', canaryHost: 'example.com', extra: true },
+        ]) {
+            expect(withEgress(bad)).toThrow(ConfigError);
+        }
     });
 });

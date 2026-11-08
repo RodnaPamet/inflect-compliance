@@ -1902,6 +1902,13 @@ and the container are #3686.
   read-only bound only and are otherwise unanswered, never "no";
   `H3.payloads_guarded` is "met" on the scanner's own agent only. Extend that one
   tool rather than add a second: DPIA condition 2 allows one.
+- **Inflect's own scanner runs behind its own egress proxy** (#5004 part C).
+  `src/egress-proxy.ts` (CONNECT-only, exact hosts on 443, empty refuses all)
+  runs from the scanner's pinned image; the scanner's only network is internal.
+  Each scan proves it (`egress-proof.ts`: proxy admits Inflect, refuses the
+  canary, a direct dial fails) as its own `H3.egress_enforced`. A source added
+  to the pilot needs its host on `EGRESS_ALLOW`, which a test holds equal to the
+  configuration's hosts.
 - **A secret's value is never requested.** Okta's `/apps/{id}/credentials/secrets`
   and Key Vault's `/secrets/{name}` return values; credentials are reported by
   reference.

@@ -72,6 +72,15 @@ configure)
     for f in "$OVERLAY" config.json env.partial; do
         [ -s "$STAGE/$f" ] || { echo "the stage is missing $f" >&2; exit 1; }
     done
+    # The overlay runs the egress proxy from the scanner's own image (#5004
+    # part C). An image from before the proxy would start a scanner with no way
+    # out, so refuse it here, before anything is installed.
+    docker pull -q "$IMAGE" >/dev/null
+    if ! docker run --rm --network none --entrypoint node "$IMAGE" -e \
+        "require('fs').accessSync('/app/packages/agent-harness-scanner/src/egress-proxy.ts')" 2>/dev/null; then
+        echo "the pinned image carries no egress proxy: publish a new image (Scanner image workflow) and pin its digest in the overlay first" >&2
+        exit 1
+    fi
     install -m 0644 -o root -g root "$STAGE/$OVERLAY" "$OVERLAY"
     install -d -m 0755 -o root -g root harness-scanner
     install -m 0644 -o root -g root "$STAGE/config.json" harness-scanner/config.json
@@ -120,8 +129,11 @@ public-key)
 
 dry-run)
     need "$OVERLAY" harness-scanner/config.json .env.scanner
+    # The scanner's only way out is its egress proxy (#5004 part C), so the
+    # proxy is up before the scan, and the scan runs without re-creating it.
     # The report goes to a summariser and nowhere else; the scanner's own log
     # lines (kinds and counts) stay on stderr.
+    compose up -d harness-egress
     compose run --rm --no-deps -T harness-scanner scan --dry-run --config "$CONFIG_IN_CONTAINER" \
         | docker run --rm -i --network none --entrypoint node "$IMAGE" -e '
 let s = "";
@@ -133,6 +145,10 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
         console.log(`${x.kind}: ${x.status}${x.reason ? " " + x.reason : ""} (${x.rows ?? "?"} rows)`);
     }
     console.log(`agents: ${(r.agents || []).length}`);
+    for (const a of r.agents || []) {
+        const v = (a.verdicts || []).find((x) => x.criterion === "H3.egress_enforced");
+        if (v) console.log(`egress: ${v.met ? "enforced" : "NOT enforced"} (${v.evidence})`);
+    }
     const complete = sources.length > 0 && sources.every((x) => x.status === "COMPLETE");
     console.log(complete ? "every source COMPLETE" : "NOT every source is COMPLETE: do not start the schedule");
     process.exit(complete ? 0 : 3);
@@ -142,12 +158,12 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
 start)
     need "$OVERLAY" harness-scanner/config.json .env.scanner
     compose up -d harness-scanner
-    compose ps harness-scanner
+    compose ps harness-scanner harness-egress
     ;;
 
 status)
     if [ -e "$OVERLAY" ]; then
-        compose ps -a harness-scanner
+        compose ps -a harness-scanner harness-egress
         id="$(compose ps -a -q harness-scanner)"
         if [ -n "$id" ]; then
             docker inspect -f 'state={{.State.Status}} started={{.State.StartedAt}} restarts={{.RestartCount}}' "$id"
@@ -160,7 +176,7 @@ status)
 
 stop)
     need "$OVERLAY"
-    compose rm -sf harness-scanner
+    compose rm -sf harness-scanner harness-egress
     ;;
 
 *)
