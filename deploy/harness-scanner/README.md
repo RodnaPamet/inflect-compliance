@@ -75,8 +75,20 @@ scanner on the VM has no GitHub token to federate with.
 1. Register the scanner as an agent in Inflect's tenant. Its id is
    `SCANNER_AGENT_ID`.
 2. Create an API key bound to that agent, holding `admin:harness_ingest` and
-   `mcp:read`. That is `INFLECT_INGEST_KEY`.
-3. Grant the scanner agent the tool `get_harness_register`.
+   `mcp:read`, with "Agent tool calls only through a short-lived, tool-scoped
+   token" ticked (#5004). That is `INFLECT_INGEST_KEY`.
+3. Grant the scanner agent the tool `get_harness_register`, and nothing else.
+   Keep it at autonomy 1 with no behaviour profile: that bound is what its
+   read-only H3 verdicts stand on.
+4. Give it a policy card.
+5. The estate the scanner reports for declares its four sources: `entra-sp`,
+   `inflect-register`, `cicd` and `gcp-sa`. The pilot read Inflect's own
+   `/api/mcp` as an `mcp` source until 2026-11-08 (#5004 part C); an estate
+   still declaring `mcp` reads STALE until that source is removed from it.
+
+The scanner runs behind its own egress proxy (#5004 part C; the overlay's
+header). `configure` refuses an image that predates it, so the overlay's digest
+must name an image published after that change.
 
 ### In GitHub (Settings → Environments → `production`)
 
@@ -101,10 +113,10 @@ scanner on the VM has no GitHub token to federate with.
 | `preflight` | Lists what is on the VM, by name, and pulls the pinned image | `image pull: ok` |
 | `configure` | Installs the overlay, the configuration and `.env.scanner` (root, 0600). Generates the signing key on the VM the first time and keeps it after | `configured: …` |
 | `public-key` | Prints the scanner's public key | Register it against the scanner agent in Inflect |
-| `dry-run` | One scan, not posted, summarised per source | `every source COMPLETE` |
+| `dry-run` | Starts the egress proxy, then one scan, not posted, summarised per source and with the egress proof | `every source COMPLETE` and `egress: enforced` |
 | `start` | `up -d harness-scanner`. It scans at once, then every 24 hours | `status` shows it running |
 | `status` | The container's state and its last 30 log lines | |
-| `stop` | Stops and removes the container | |
+| `stop` | Stops and removes the scanner and its egress proxy | |
 
 `configure` can be re-run at any time, to rotate a credential or change an id.
 It keeps the signing key, so the registered public key stays valid.

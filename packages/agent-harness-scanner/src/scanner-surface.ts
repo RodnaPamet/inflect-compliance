@@ -41,9 +41,10 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * its own surface because it is neither a GET nor JSON-RPC over HTTP.
  * 0.11.0: the register read exchanges the ingest key for a token naming the
  * register tool alone, and the register source reports the gate's enforcement
- * as H2 and H3 verdicts (#5004).
+ * as H2 and H3 verdicts (#5004). 0.12.0: the egress proof, and the proxy it
+ * runs behind (#5004 part C).
  */
-export const SCANNER_VERSION = '0.11.0';
+export const SCANNER_VERSION = '0.12.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -138,6 +139,16 @@ export const SCANNER_SURFACE = {
         },
     ],
     sends: [{ method: 'POST', path: INGEST_PATH_TEMPLATE }],
+    // The egress proof (#5004 part C), only when the configuration names a
+    // proxy: two CONNECTs to it — the Inflect host, which it must admit, and
+    // the configured canary, which it must refuse — and one direct TCP dial to
+    // the Inflect host, which must fail. Each is opened and closed; nothing is
+    // sent through a tunnel.
+    provesEgress: [
+        { method: 'CONNECT', via: 'configured proxy', target: '{inflectHost}:443', expect: 200 },
+        { method: 'CONNECT', via: 'configured proxy', target: '{canaryHost}:443', expect: 403 },
+        { method: 'TCP', via: 'direct', target: '{inflectHost}:443', expect: 'refused' },
+    ],
 } as const;
 
 /**

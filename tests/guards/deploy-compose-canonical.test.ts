@@ -272,12 +272,16 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
         expose?: unknown;
         labels?: unknown;
         command?: string[];
+        entrypoint?: string[];
+        networks?: string[];
     };
-    const doc = yaml.load(read(SCANNER_OVERLAY)) as { services: Record<string, Service> };
+    const doc = yaml.load(read(SCANNER_OVERLAY)) as { services: Record<string, Service>; networks?: Record<string, unknown> };
     const svc = doc.services['harness-scanner'];
+    const proxy = doc.services['harness-egress'];
 
-    it('defines the scanner and nothing else', () => {
-        expect(Object.keys(doc.services)).toEqual(['harness-scanner']);
+    it('defines the scanner and its egress proxy, and nothing else', () => {
+        // The proxy is #5004 part C: the scanner's one way out.
+        expect(Object.keys(doc.services).sort()).toEqual(['harness-egress', 'harness-scanner']);
     });
 
     it('pins the published image by digest', () => {
@@ -286,7 +290,36 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
 
     it('reads its own environment file, never .env.prod, and interpolates nothing', () => {
         expect(svc.env_file).toEqual(['./.env.scanner']);
-        expect(svc.environment).toBeUndefined();
+        // The only literals it sets are the ones that point it at its proxy:
+        // no secret, and nothing interpolated from the host's env files.
+        expect(svc.environment).toEqual({
+            HTTPS_PROXY: 'http://harness-egress:3128',
+            HTTP_PROXY: 'http://harness-egress:3128',
+            NO_PROXY: '',
+            NODE_USE_ENV_PROXY: '1',
+        });
+        expect(read(SCANNER_OVERLAY)).not.toContain('${');
+    });
+
+    it('sits on an internal network only; the proxy is its one neighbour with a way out', () => {
+        expect(svc.networks).toEqual(['harness-scanner-internal']);
+        expect(doc.networks?.['harness-scanner-internal']).toEqual({ internal: true });
+        expect([...(proxy.networks ?? [])].sort()).toEqual(['harness-scanner-egress', 'harness-scanner-internal']);
+    });
+
+    it('runs the proxy from the same pinned image, as narrowly as the scanner, holding no credential', () => {
+        expect(proxy.image).toBe(svc.image);
+        expect(proxy.entrypoint).toEqual(['node', '--import', 'tsx', '/app/packages/agent-harness-scanner/src/egress-proxy.ts']);
+        expect(proxy.read_only).toBe(true);
+        expect(proxy.user).toBe('1000:1000');
+        expect(proxy.cap_drop).toEqual(['ALL']);
+        expect(proxy.security_opt).toEqual(['no-new-privileges:true']);
+        expect(proxy.env_file).toBeUndefined();
+        expect(proxy.volumes).toBeUndefined();
+        expect(proxy.ports).toBeUndefined();
+        expect(proxy.expose).toBeUndefined();
+        expect(proxy.labels).toBeUndefined();
+        expect(Object.keys(proxy.environment as Record<string, string>)).toEqual(['EGRESS_ALLOW']);
     });
 
     it('runs read-only, unprivileged, as uid 1000, with every capability dropped', () => {
