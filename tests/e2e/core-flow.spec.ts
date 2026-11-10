@@ -96,6 +96,13 @@ test.describe('Core Certification Flow', () => {
                 .first();
             await codeOption.waitFor({ state: 'visible', timeout: 10_000 });
             await codeOption.click();
+            // The picker is multi-select (#5018): it stays open after a pick,
+            // and its open list covers the submit button. Escape in its search
+            // box closes the list only (the handler stops propagation), so
+            // the modal underneath stays open.
+            await comboSearch.press('Escape');
+            await expect(codeOption).toBeHidden();
+            await expect(page.locator('#upload-form')).toBeVisible();
 
             await page.click('#submit-upload-btn');
             await expect(page.locator('#upload-form')).not.toBeVisible({
