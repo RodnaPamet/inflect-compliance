@@ -623,6 +623,7 @@ function tenantPathTemplate(pathname: string): string | null {
  */
 export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
     'a2a-signing-key',
+    'assurance-checks',
     'audit-pilot',
     'budget',
     'concurrency',
