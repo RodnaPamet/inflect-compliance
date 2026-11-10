@@ -8,19 +8,18 @@ tests, the raw rows its re-performance recomputes, what counts as an exception,
 and what makes it INCONCLUSIVE. This version proposes library v1 as procedures
 1 to 5. Procedures 6 to 8 are catalogued and are later.
 
-**Status: adopted for this repository; internal audit's approval and the
-provider's agreement are open.** The provider is the managed-service provider
-whose IAM practice runs the use cases
-([`docs/agentic-iam-managed-service.md`](agentic-iam-managed-service.md)). The
-repository owner's merge of this file's pull request is the repository owner's
-sign-off, and it adopts catalogue version 2 for this repository, as an earlier
-merge adopted version 1. The merge does not supply the acts of external
-parties. Internal audit's approval and the provider's agreement of version 2
-are recorded on issue #4379 when given, and of version 1 on issue #3663; none
-of the four is recorded. While they are open, library v1 is proposed to
-internal audit and the provider, and no procedure here is a definition either
-of them has approved or agreed. "Library v1" names the set, procedures 1 to 5;
-version 2 changes one of their attributes and not the set, so the name stands.
+**Status: approved by the repository owner, as sole operator; not
+independently approved.** The design expected internal audit to approve each
+version and the managed-service provider
+([`docs/agentic-iam-managed-service.md`](agentic-iam-managed-service.md)) to
+agree it and supply each procedure's methodology reference. Neither exists:
+the repository owner is the sole operator. The owner approved catalogue
+versions 1 and 2 on 2026-11-10, recorded on issue #3663 for version 1 and #4379
+for version 2. So no procedure here is a definition that anyone independent of
+the people it audits has reviewed, approved or agreed, and the code says so as
+`OWNER_APPROVED_NOT_INDEPENDENT`. "Library v1" names the set, procedures 1 to
+5; version 2 changes one of their attributes and not the set, so the name
+stands.
 
 Procedures 1 to 5 run on `main` as handlers on the control-test runner, as the
 registered auditor agent (step `3c`, #3676;
@@ -113,8 +112,8 @@ substitution for the legacy recertification evidence.
 
 A change to a procedure is a pull request to this file. It raises the catalogue
 version, the repository owner's merge of that pull request adopts the new
-version, and internal audit's approval and the provider's agreement of it are recorded on
-its step issue when given, as for the first version. A procedure id is never
+version, and its approval is recorded on its step issue: by the owner, not
+independently, while there is no internal audit or provider. A procedure id is never
 renamed and never reused.
 
 ## The library
@@ -1021,8 +1020,8 @@ names the step that builds it, or says that no step does.
 |---|---|---|
 | No handler runs any procedure | 6 to 8 | no step; adding one is a change to this catalogue and a new step issue |
 | No agent subjects in access reviews: `AccessReviewScope` has no agent value | procedure 2 | step `3a` (#3674) |
-| Internal audit's approval and the provider's agreement of versions 1 and 2 are open; the repository owner's merge adopts a version and supplies neither | all | internal audit and the provider, each recorded on the version's issue when given: #3663 for version 1, #4379 for version 2 |
-| The provider's methodology reference for each procedure is open | all | the provider, recorded on issue #3663 when given |
+| Versions 1 and 2 are approved by the owner as sole operator, on 2026-11-10, and not independently: there is no internal audit or provider | all | an independent reviewer, if one is engaged, recorded on the version's issue (#3663 for version 1, #4379 for version 2) |
+| No procedure has a provider methodology reference, because there is no provider | all | none while there is no provider |
 | The parameters `leaverWindowHours` and `remediationWindowDays` are agreed 2026-10-19 for the pilot: 24 h and 14 days, entered on each plan (`automationConfig.parameters`, written by `setUpAuditPilotAsOwner` in `usecases/audit-pilot-setup.ts`, from the `/agents/audit-pilot` page or `scripts/audit-pilot-setup.ts`); the library holds no default, so a value beyond the pilot is the second line's to enter on its plan. `killGraceSeconds` has no stored home | 1, 2, 6 | the second line sets the values beyond the pilot; procedure 6 has no step |
 | An account disabled outside Inflect carries no disable time, so L2 is UNTESTABLE for it | procedure 1 | no step; named in the step `3c` pull request (#3676) |
 | `src/app-layer/usecases/identity-sync.ts` stores an undetermined `isAdmin` or `mfaEnrolled` as `false`, including every Okta account past the enrichment cap | procedure 4 | no step; named in the step `3c` pull request (#3676) |

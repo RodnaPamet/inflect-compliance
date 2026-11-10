@@ -381,12 +381,12 @@ describeFn('library v1 audit procedures, run as the registered auditor agent', (
             for (const p of raised) {
                 const payload = JSON.parse(p.payloadJson) as Record<string, string>;
                 expect(payload).toMatchObject({ type: 'NONCONFORMITY', sourceKind: 'AUDIT_PROCEDURE', controlId: f.controlId });
-                expect(payload.description).toMatch(/not an approved or agreed definition/);
+                expect(payload.description).toMatch(/not an independently approved definition/);
                 expect(JSON.stringify(payload)).not.toMatch(/leaver\.example\.test|Dated Leaver|Undated Leaver/i);
                 // Pinned by the funnel that allowed it: this auditor has no card.
                 expect(p.policyCardVersion).toBe(0);
             }
-            expect(r.evidence).toMatch(/Library v1 status: PROPOSED/);
+            expect(r.evidence).toMatch(/Library v1 status: OWNER_APPROVED/);
 
             // A re-run of the same period raises nothing twice: it names the live proposals.
             const again = await run(f, planId);

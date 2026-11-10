@@ -2309,12 +2309,15 @@ auditor is not the auditee". Five rules, each held by a test:
 library v1 — catalogue procedures 1 to 5 — on the control-test runner as the
 registered auditor agent. Six rules, each held by a test or a lint rule:
 
-- **Library v1 is PROPOSED.** `LIBRARY_V1_STATUS` records internal audit's
-  approval, the managed-service provider's agreement and each provider
-  methodology reference as OPEN, for the catalogue version in force (its row of
-  `CATALOGUE_VERSION_STATUS`). Changing one is a claim about an external
-  party's act; it belongs only in the pull request that records that act on
-  the version's issue: #3663 for catalogue version 1, #4379 for version 2.
+- **Library v1 is owner-approved, not independently approved.** There is no
+  internal audit, managed-service provider or external auditor: the owner is
+  the sole operator, and approved catalogue versions 1 and 2 on 2026-11-10.
+  `CATALOGUE_VERSION_STATUS` records each party's act as
+  `OWNER_APPROVED_NOT_INDEPENDENT`, never `APPROVED` or `AGREED`, which would
+  name an independent party; the reliance pack keeps both catalogue limits for
+  that reason. Changing a value is a claim about somebody's act; it belongs only
+  in the pull request that records it on the version's issue: #3663 for
+  catalogue version 1, #4379 for version 2.
 - **One runner, one INTEGRATION handler.** `agenticControlTestHandler` sends a
   `procedure` config to `auditProcedureHandler`; never a second runner or a
   second INTEGRATION registration (the registry throws on one).

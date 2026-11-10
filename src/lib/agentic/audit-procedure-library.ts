@@ -6,20 +6,26 @@
  * `src/app-layer/services/audit-procedures/` read the raw rows and ask the
  * questions here, so every rule below is unit-tested without a tenant.
  *
- * ── LIBRARY v1 IS PROPOSED, NOT APPROVED ────────────────────────────────────
+ * ── LIBRARY v1 IS OWNER-APPROVED, NOT INDEPENDENTLY APPROVED ─────────────────
  *
  * "Library v1" names the SET, procedures 1 to 5. The catalogue that defines
  * them is versioned on its own: version 1 (#3663), and version 2 (#4379), which
- * changes procedure 2's R3 and not the set, so the set keeps its name. The
- * repository owner's merge adopted each version for this repository. Internal
- * audit's approval and the managed-service provider's agreement of each are
- * OPEN, and so is each procedure's provider methodology reference: each is
- * recorded on that version's issue when given. `CATALOGUE_VERSION_STATUS` says
- * so per version, `LIBRARY_V1_STATUS` for the version in force, and every
- * finding proposal and every evidence row the handlers write carries that
- * status, so nothing a person reads presents the library as approved. Changing
- * a value there is a claim about an external party's act; it belongs in the
- * pull request that records the act on the version's issue, never in a tidy-up.
+ * changes procedure 2's R3 and not the set, so the set keeps its name.
+ *
+ * The design expected three outside acts for each version: internal audit's
+ * approval, the managed-service provider's agreement, and each procedure's
+ * provider methodology reference. None of those parties exists: the repository
+ * owner is the sole operator (owner decision, 2026-11-10). The owner approved
+ * both versions on 2026-11-10, and the values say exactly that,
+ * `OWNER_APPROVED_NOT_INDEPENDENT`: approved, and by nobody independent of the
+ * people the procedures audit. `CATALOGUE_VERSION_STATUS` says so per version,
+ * `LIBRARY_V1_STATUS` for the version in force, and every finding proposal and
+ * every evidence row the handlers write carries that status, so nothing a
+ * person reads presents the library as independently approved. The reliance
+ * pack still raises its two catalogue limits, because it lifts them only for
+ * `APPROVED` and `AGREED`. Changing a value here is a claim about somebody's
+ * act; it belongs in the pull request that records the act on the version's
+ * issue, never in a tidy-up.
  *
  * ── FOUR RULES THE SHAPES CARRY ─────────────────────────────────────────────
  *
@@ -63,24 +69,25 @@ export function isLibraryV1Procedure(id: string): id is LibraryV1ProcedureId {
 
 /**
  * Where each catalogue version stands with the parties whose act it waits on.
- * Every value that names an external party is OPEN until that party's act is
- * recorded on the version's own issue — #3663 for version 1, #4379 for version
- * 2. The merge of a pull request is the repository owner's sign-off and
- * supplies neither. A workpaper keeps the version it was written under, so a
+ * Each value is recorded on the version's own issue — #3663 for version 1,
+ * #4379 for version 2. Both versions were approved by the owner, the sole
+ * operator, on 2026-11-10; no internal audit, provider or external auditor
+ * exists, so no value is `APPROVED` or `AGREED`, which would name an
+ * independent party's act. A workpaper keeps the version it was written under, so a
  * reader holding workpapers of both asks each version for its own standing
  * (`catalogueVersionStatus`), never the version in force for all of them.
  */
 export const CATALOGUE_VERSION_STATUS = {
     1: {
-        internalAuditApproval: 'OPEN',
-        providerAgreement: 'OPEN',
-        providerMethodologyReference: 'OPEN',
+        internalAuditApproval: 'OWNER_APPROVED_NOT_INDEPENDENT',
+        providerAgreement: 'OWNER_APPROVED_NOT_INDEPENDENT',
+        providerMethodologyReference: 'OWNER_APPROVED_NOT_INDEPENDENT',
         recordedOn: '#3663',
     },
     2: {
-        internalAuditApproval: 'OPEN',
-        providerAgreement: 'OPEN',
-        providerMethodologyReference: 'OPEN',
+        internalAuditApproval: 'OWNER_APPROVED_NOT_INDEPENDENT',
+        providerAgreement: 'OWNER_APPROVED_NOT_INDEPENDENT',
+        providerMethodologyReference: 'OWNER_APPROVED_NOT_INDEPENDENT',
         recordedOn: '#4379',
     },
 } as const;
@@ -102,8 +109,8 @@ export function catalogueVersionStatus(version: number): CatalogueVersionStandin
  */
 export const LIBRARY_V1_STATUS = {
     catalogueVersion: AUDIT_PROCEDURE_CATALOGUE_VERSION,
-    /** Adopted for this repository by the owner's merge; proposed to the two parties below. */
-    status: 'PROPOSED',
+    /** Approved by the owner as sole operator; nobody independent has reviewed it. */
+    status: 'OWNER_APPROVED',
     ...CATALOGUE_VERSION_STATUS[AUDIT_PROCEDURE_CATALOGUE_VERSION],
 } as const;
 
@@ -113,10 +120,10 @@ export const LIBRARY_V1_STATUS = {
  * it beside workpapers written under either.
  */
 export const LIBRARY_V1_STATUS_SENTENCE =
-    'Audit procedure library v1 is proposed to internal audit and the managed-service provider: ' +
-    'their approval and their agreement of catalogue version 2 are open on #4379, as they are of ' +
-    'version 1 on #3663, and each procedure\'s provider methodology reference is open, so this ' +
-    'procedure is not an approved or agreed definition.';
+    'Audit procedure library v1 was approved by the repository owner, as sole operator, for ' +
+    'catalogue versions 1 and 2 on 2026-11-10 (#3663, #4379). There is no internal audit, ' +
+    'managed-service provider or external auditor, so no independent party has reviewed or ' +
+    'agreed it, and this procedure is not an independently approved definition.';
 
 export type PeriodKind = 'MONTH' | 'QUARTER';
 
