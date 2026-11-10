@@ -22,6 +22,7 @@ jest.mock('@/lib/db-context', () => ({
 
 const listToolsMock = jest.fn();
 jest.mock('@/app-layer/integrations/mcp/client', () => ({
+    ...jest.requireActual('@/app-layer/integrations/mcp/client'),
     listTools: (...a: unknown[]) => listToolsMock(...a),
 }));
 
@@ -379,5 +380,45 @@ describe('external tool catalogue — credential resolution', () => {
         await listExternalMcpTools(ctx, CONN);
 
         expect(typeof authorizationForMock.mock.calls[0][3]).toBe('function');
+    });
+});
+
+describe('a tool server that cannot be read is named, never a 500 (#5024)', () => {
+    // Imported here rather than at the top: the real classes, through the
+    // module mocks above that spread `requireActual`.
+    const { McpClientError } = jest.requireActual('@/app-layer/integrations/mcp/client');
+    const { McpTokenError } = jest.requireActual('@/app-layer/integrations/mcp/token');
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockTx.integrationConnection.findFirst.mockResolvedValue(connectionRow);
+        mockTx.mcpToolManifestPin.findMany.mockResolvedValue([]);
+        authorizationForMock.mockResolvedValue('Bearer abc');
+    });
+
+    it('passes a protocol refusal through as a 502 EXTERNAL_SERVICE_ERROR', async () => {
+        listToolsMock.mockRejectedValue(new McpClientError('MCP server returned HTTP 401 for tools/list'));
+        await expect(listExternalMcpTools(ctx, CONN)).rejects.toMatchObject({
+            code: 'EXTERNAL_SERVICE_ERROR',
+            status: 502,
+            message: 'MCP server returned HTTP 401 for tools/list',
+        });
+    });
+
+    it('says a token that cannot be minted is our side of the connection', async () => {
+        authorizationForMock.mockRejectedValue(new McpTokenError('token endpoint returned no access_token'));
+        await expect(listExternalMcpTools(ctx, CONN)).rejects.toMatchObject({
+            code: 'EXTERNAL_SERVICE_ERROR',
+            message: expect.stringContaining('Could not obtain an access token'),
+        });
+        expect(listToolsMock).not.toHaveBeenCalled();
+    });
+
+    it('describes any other failure itself, never quoting the remote text', async () => {
+        listToolsMock.mockRejectedValue(new Error('<html>remote page text</html>'));
+        const err = await listExternalMcpTools(ctx, CONN).catch((e: unknown) => e);
+        expect(err).toMatchObject({ code: 'EXTERNAL_SERVICE_ERROR', status: 502 });
+        expect((err as Error).message).toMatch(/Could not reach the tool server/);
+        expect((err as Error).message).not.toContain('remote page text');
     });
 });

@@ -35,9 +35,9 @@ import { z } from 'zod';
 
 import { decryptField, encryptField } from '@/lib/security/encryption';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, notFound } from '@/lib/errors/types';
-import { listTools } from '@/app-layer/integrations/mcp/client';
-import { authorizationFor } from '@/app-layer/integrations/mcp/token';
+import { badRequest, externalServiceError, notFound } from '@/lib/errors/types';
+import { listTools, McpClientError } from '@/app-layer/integrations/mcp/client';
+import { authorizationFor, McpTokenError } from '@/app-layer/integrations/mcp/token';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 import { declaresWrite } from '@/lib/mcp/tool-write-classification';
 import { coerceStoredMode, type ExternalWriteMode } from '@/lib/integrations/external-write-ladder';
@@ -115,6 +115,47 @@ export interface ExternalToolManifestState extends ToolManifestState {
  * instruction text from a third party. None of that is a plain read.
  */
 /**
+ * The catalogue read, with every failure of the far end NAMED (#5024).
+ *
+ * The read reaches another party's server, so it fails for reasons that are
+ * not ours: an unreachable host, a refused credential, a protocol error. Each
+ * used to escape as a bare `Error` and reach the operator as "An unexpected
+ * internal server error occurred", which says the bug is here and hides the
+ * reason they need. Each is now a 502 `EXTERNAL_SERVICE_ERROR` carrying the
+ * sentence the connection's Test button already gives for the same failure
+ * (`mcp-server-provider.validateConnection`), under the same rule:
+ *
+ *   - a token that cannot be minted is OUR side, and says so;
+ *   - a protocol-level refusal is text the server authored about its own API,
+ *     and passes through;
+ *   - anything else (SSRF refusal, TLS, timeout) is described by us, never by
+ *     an arbitrary remote string rendered as though this deployment vouched
+ *     for it.
+ *
+ * A failure that is ours (a bug in this function) is not caught here.
+ */
+async function readCatalogueOrExplain<T>(read: () => Promise<T>, connectionId: string): Promise<T> {
+    try {
+        return await read();
+    } catch (err) {
+        if (err instanceof McpTokenError) {
+            throw externalServiceError(`Could not obtain an access token for this connection: ${err.message}`);
+        }
+        if (err instanceof McpClientError) {
+            throw externalServiceError(err.message);
+        }
+        logger.warn('mcp.external_catalogue_unreachable', {
+            connectionId,
+            error: err instanceof Error ? err.name : 'non-Error thrown',
+        });
+        throw externalServiceError(
+            'Could not reach the tool server. It must be an HTTPS endpoint on a public address; ' +
+                'private addresses and redirects are refused. The connection\'s Test button gives the same check.',
+        );
+    }
+}
+
+/**
  * Persist a refresh token Entra rotated during an exchange.
  *
  * ONE helper rather than a copy per call site. Entra may hand back a NEW
@@ -182,14 +223,15 @@ export async function listExternalMcpTools(
     // Measured 2026-09-26 against Microsoft's Entra MCP server: Test ok at
     // 11:51:25, this function 401 at 11:55:12, Test ok again at 11:59:46 —
     // same connection, same refresh token, the path as the only variable.
-    const authorization = await authorizationFor(
-        connection.id,
-        (connection.configJson ?? {}) as Record<string, unknown>,
-        secrets,
-        persistRotatedRefreshToken(ctx, connection.id, secrets),
-    );
-
-    const { tools: advertised, refusedNames } = await listTools({ url, authorization });
+    const { tools: advertised, refusedNames } = await readCatalogueOrExplain(async () => {
+        const authorization = await authorizationFor(
+            connection.id,
+            (connection.configJson ?? {}) as Record<string, unknown>,
+            secrets,
+            persistRotatedRefreshToken(ctx, connection.id, secrets),
+        );
+        return listTools({ url, authorization });
+    }, connection.id);
     const considered = advertised.slice(0, MAX_EXTERNAL_TOOLS);
 
     // One query for every pin this connection owns, rather than one per tool.
