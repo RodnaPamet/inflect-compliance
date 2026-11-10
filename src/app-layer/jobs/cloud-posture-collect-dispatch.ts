@@ -108,7 +108,7 @@ export async function runCloudPostureCollectDispatch(): Promise<{
     // block above them.
     for (;;) { // guardrail-allow: n+1 — cursor pagination, not a per-row read
         const page = await prisma.integrationConnection.findMany({
-            where: { provider: { in: providers }, isEnabled: true },
+            where: { provider: { in: providers }, isEnabled: true, tenant: { deletedAt: null } },
             select: { id: true, tenantId: true, provider: true },
             orderBy: { id: 'asc' },
             take: PAGE_SIZE,

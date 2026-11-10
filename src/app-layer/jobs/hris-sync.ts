@@ -64,7 +64,7 @@ export async function runHrisSyncDispatch(): Promise<{ connections: number; disp
     // Was `take: 1000` with no signal — see ./drain-pages.
     const connections = await drainPages((cursor) =>
         prisma.integrationConnection.findMany({
-            where: { provider: { in: [...HRIS_PROVIDERS] }, isEnabled: true },
+            where: { provider: { in: [...HRIS_PROVIDERS] }, isEnabled: true, tenant: { deletedAt: null } },
             select: { id: true, tenantId: true },
             orderBy: { id: 'asc' },
             take: DRAIN_PAGE_SIZE,

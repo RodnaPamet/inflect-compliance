@@ -19,6 +19,7 @@ const update = jest.fn();
 const membershipUpdateMany = jest.fn();
 const membershipDeleteMany = jest.fn();
 const userUpdateMany = jest.fn().mockResolvedValue({ count: 3 });
+const connectionUpdateMany = jest.fn();
 /** Call order across the statements — the trigger exemption depends on it. */
 const calls: string[] = [];
 /**
@@ -78,6 +79,10 @@ jest.mock('@/lib/prisma', () => ({
         user: {
             updateMany: (...a: unknown[]) => userUpdateMany(...a),
         },
+        // #5017 — the removal switches off the workspace's integrations.
+        integrationConnection: {
+            updateMany: (...a: unknown[]) => connectionUpdateMany(...a),
+        },
         // Interactive transaction (#3173). The callback receives a client that
         // records every write against the transaction it ran in, so atomicity
         // is asserted by GROUPING rather than by a count or a sequence.
@@ -98,6 +103,9 @@ jest.mock('@/lib/prisma', () => ({
                         deleteMany: (...a: unknown[]) => membershipDeleteMany(...a),
                     },
                     user: { updateMany: (...a: unknown[]) => userUpdateMany(...a) },
+                    integrationConnection: {
+                        updateMany: (...a: unknown[]) => connectionUpdateMany(...a),
+                    },
                     // `appendAuditEntryWithin` issues raw SQL; present so a
                     // direct call on the tx cannot fail for a missing method.
                     $executeRawUnsafe: jest.fn().mockResolvedValue(0),
@@ -207,6 +215,12 @@ function installMocks() {
     userUpdateMany.mockImplementation(() => {
         record('user.updateMany');
         return Promise.resolve({ count: 3 });
+    });
+    // #5017 — same treatment, so its position and count are assertable.
+    connectionUpdateMany.mockReset();
+    connectionUpdateMany.mockImplementation(() => {
+        record('integrationConnection.updateMany');
+        return Promise.resolve({ count: 2 });
     });
 }
 
@@ -328,6 +342,23 @@ describe('deleteTenantUnderOrg', () => {
         expect(where.tenantMemberships?.some?.tenantId).toBe('t-1');
     });
 
+    it('switches off the workspace\'s enabled integrations (#5017)', async () => {
+        /*
+            The nightly dispatchers pick connections across every tenant, so a
+            connection left enabled on a removed workspace kept calling the
+            customer's directory until the purge. Scoped to THIS tenant and to
+            rows that are enabled, so the count says what was live.
+        */
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'acme-nis2', name: 'acme-nis2' });
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        expect(connectionUpdateMany).toHaveBeenCalledTimes(1);
+        expect(connectionUpdateMany).toHaveBeenCalledWith({
+            where: { tenantId: 't-1', isEnabled: true },
+            data: { isEnabled: false },
+        });
+    });
+
     it('inside the SAME transaction as the soft-delete, not after it', async () => {
         /*
             A session outliving a committed removal is the gap being closed, so
@@ -348,6 +379,7 @@ describe('deleteTenantUnderOrg', () => {
             'tenant.update',
             'tenantMembership.updateMany',
             'user.updateMany',
+            'integrationConnection.updateMany',
             'appendAuditEntryWithin',
         ]]);
         // Nothing reached the client with no transaction open.
@@ -380,6 +412,7 @@ describe('deleteTenantUnderOrg', () => {
             'tenant.update',
             'tenantMembership.updateMany',
             'user.updateMany',
+            'integrationConnection.updateMany',
             'appendAuditEntryWithin',
         ]);
     });
@@ -460,6 +493,20 @@ describe('the removal is written to the audit trail', () => {
         expect(input.detailsJson.revokedMemberships).toBe(11);
     });
 
+    it('carries the number of integrations it switched off (#5017)', async () => {
+        connectionUpdateMany.mockImplementation(() => {
+            record('integrationConnection.updateMany');
+            return Promise.resolve({ count: 4 });
+        });
+
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        const [, input] = appendAuditEntryWithin.mock.calls[0] as unknown as [
+            unknown, { detailsJson: { disabledConnections: number } },
+        ];
+        expect(input.detailsJson.disabledConnections).toBe(4);
+    });
+
     /**
      * LAST, so it fails closed: if the entry cannot be written, no workspace
      * disappears unrecorded. A row claiming a deletion that then rolled back
@@ -532,11 +579,12 @@ describe('the removal is also recorded where it can still be read', () => {
         await deleteTenantUnderOrg(ctx, 't-1');
 
         expect(orgAppendFromInsideTx).toEqual([false]);
-        // And the transaction still holds exactly the four durable statements.
+        // And the transaction still holds exactly the five durable statements.
         expect(transactions).toEqual([[
             'tenant.update',
             'tenantMembership.updateMany',
             'user.updateMany',
+            'integrationConnection.updateMany',
             'appendAuditEntryWithin',
         ]]);
     });

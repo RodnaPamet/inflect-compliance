@@ -57,29 +57,35 @@ describe('library v1', () => {
         expect(AUDIT_PROCEDURE_CATALOGUE_VERSION).toBe(2);
         expect(LIBRARY_V1_STATUS).toEqual({
             catalogueVersion: 2,
-            status: 'PROPOSED',
-            internalAuditApproval: 'OPEN',
-            providerAgreement: 'OPEN',
-            providerMethodologyReference: 'OPEN',
+            status: 'OWNER_APPROVED',
+            internalAuditApproval: 'OWNER_APPROVED_NOT_INDEPENDENT',
+            providerAgreement: 'OWNER_APPROVED_NOT_INDEPENDENT',
+            providerMethodologyReference: 'OWNER_APPROVED_NOT_INDEPENDENT',
             recordedOn: '#4379',
         });
     });
 
-    it('keeps version 1\'s standing on #3663, every party still open for both versions, and knows no third', () => {
-        const open = { internalAuditApproval: 'OPEN', providerAgreement: 'OPEN', providerMethodologyReference: 'OPEN' };
+    it('keeps version 1\'s standing on #3663, both versions owner-approved and neither independently, and knows no third', () => {
+        // The owner is the sole operator (2026-11-10): no internal audit,
+        // provider or external auditor exists, so nothing reads APPROVED or
+        // AGREED, the values that would name an independent party's act.
+        const owner = { internalAuditApproval: 'OWNER_APPROVED_NOT_INDEPENDENT', providerAgreement: 'OWNER_APPROVED_NOT_INDEPENDENT', providerMethodologyReference: 'OWNER_APPROVED_NOT_INDEPENDENT' };
         expect(CATALOGUE_VERSION_STATUS).toEqual({
-            1: { ...open, recordedOn: '#3663' },
-            2: { ...open, recordedOn: '#4379' },
+            1: { ...owner, recordedOn: '#3663' },
+            2: { ...owner, recordedOn: '#4379' },
         });
         expect(catalogueVersionStatus(1)?.recordedOn).toBe('#3663');
         expect(catalogueVersionStatus(3)).toBeNull();
         expect(catalogueVersionStatus(0)).toBeNull();
     });
 
-    it('says, in the sentence every proposal and evidence row carries, where each version\'s acts are recorded', () => {
-        expect(LIBRARY_V1_STATUS_SENTENCE).toContain('catalogue version 2 are open on #4379');
-        expect(LIBRARY_V1_STATUS_SENTENCE).toContain('version 1 on #3663');
-        expect(LIBRARY_V1_STATUS_SENTENCE).not.toMatch(/\b(approved|agreed) (by|on)\b/);
+    it('says, in the sentence every proposal and evidence row carries, who approved it and that nobody independent did', () => {
+        expect(LIBRARY_V1_STATUS_SENTENCE).toContain('approved by the repository owner, as sole operator');
+        expect(LIBRARY_V1_STATUS_SENTENCE).toContain('(#3663, #4379)');
+        expect(LIBRARY_V1_STATUS_SENTENCE).toContain('no independent party has reviewed or agreed it');
+        expect(LIBRARY_V1_STATUS_SENTENCE).toContain('not an independently approved definition');
+        // Never names an outside party as having approved or agreed it.
+        expect(LIBRARY_V1_STATUS_SENTENCE).not.toMatch(/(approved|agreed) by (internal audit|the (managed-service )?provider|an? (external )?auditor)/i);
     });
 });
 
@@ -279,10 +285,10 @@ describe('an exception as a finding proposal', () => {
         expect(rationale).toMatch(/^Exception PRIVILEGED_WITHOUT_MFA from the re-performance/);
     });
 
-    it('never presents the library as approved, and never closes anything', () => {
+    it('never presents the library as independently approved, and never closes anything', () => {
         const text = String(item.description);
-        expect(text).toMatch(/proposed to internal audit and the managed-service provider/);
-        expect(text).toMatch(/not an approved or agreed definition/);
+        expect(text).toMatch(/approved by the repository owner, as sole operator/);
+        expect(text).toMatch(/not an independently approved definition/);
         expect(text).toMatch(/the auditor closes and resolves nothing/);
     });
 });
