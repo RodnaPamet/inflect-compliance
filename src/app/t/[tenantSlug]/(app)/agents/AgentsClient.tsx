@@ -118,6 +118,11 @@ interface Props {
      */
     canSetCapacity?: boolean;
     /**
+     * May this reader schedule the four assurance checks (#5014)? The register
+     * write and `tests.create`, computed on the server. Defaults to FALSE.
+     */
+    canScheduleChecks?: boolean;
+    /**
      * `admin.agent_registry` alone — the key the assurance views gate their
      * own pages on. Defaults to `canWrite`.
      */
@@ -218,6 +223,7 @@ function AgentsInner({
     proposalsAwaitingReview,
     canWrite,
     canSetCapacity = canWrite,
+    canScheduleChecks = false,
     canInvestigate = canWrite,
     truncated = false,
     truncationCap = 200,
@@ -555,7 +561,9 @@ function AgentsInner({
                     <div className="space-y-compact">
                         <TruncationBanner truncated={truncated} cap={truncationCap} />
                         <GovernanceBanner governance={governance} />
-                        {assurance && <AssurancePanel assurance={assurance} />}
+                        {assurance && (
+                            <AssurancePanel assurance={assurance} tenantSlug={tenantSlug} canSchedule={canScheduleChecks} />
+                        )}
                         <ConcurrencyPanel
                             cap={governance.concurrency.cap}
                             inFlight={governance.concurrency.inFlight}
@@ -734,7 +742,14 @@ function AgentsInner({
 export interface AgenticAssurance {
     riskCoverage: { scored: number; total: number };
     sampleAudit: { answered: number; dissented: number; disagreementRate: number | null };
-    controlTests: Array<{ checkId: string; title: string; result: string | null; lastRunAt: string | Date | null }>;
+    controlTests: Array<{
+        checkId: string;
+        title: string;
+        result: string | null;
+        lastRunAt: string | Date | null;
+        /** Whether a plan runs this check (#5014). Absent reads as scheduled, so nothing is offered on a guess. */
+        scheduled?: boolean;
+    }>;
 }
 
 /**
@@ -748,12 +763,22 @@ export interface AgenticAssurance {
  * reads as a pass, and "no result" and "passed" are the two things an assurance
  * surface must never conflate.
  */
-export function AssurancePanel({ assurance }: { assurance: AgenticAssurance }) {
+export function AssurancePanel({
+    assurance,
+    tenantSlug,
+    canSchedule = false,
+}: {
+    assurance: AgenticAssurance;
+    tenantSlug?: string;
+    /** May this reader schedule the checks (#5014)? Computed on the server. */
+    canSchedule?: boolean;
+}) {
     const t = useTranslations('agents');
     // The control-test register's own result labels: these are control tests.
     const tTests = useTranslations('controlTests');
     const { riskCoverage: rc, sampleAudit: sa, controlTests } = assurance;
     const unscored = rc.total - rc.scored;
+    const unscheduled = controlTests.some((c) => c.scheduled === false);
 
     return (
         <div className="space-y-tight text-sm" data-testid="agents-assurance">
@@ -784,8 +809,10 @@ export function AssurancePanel({ assurance }: { assurance: AgenticAssurance }) {
                     <li key={c.checkId}>
                         <span className="text-content-default">{c.title}</span>{' '}
                         {c.result === null ? (
-                            <span className="text-content-warning">
-                                {t('register.assurance.checkNeverRun')}
+                            <span className="text-content-warning" data-testid={`agents-assurance-never-${c.checkId}`}>
+                                {c.scheduled === false
+                                    ? t('register.assurance.checkNotScheduled')
+                                    : t('register.assurance.checkNeverRun')}
                             </span>
                         ) : (
                             <span
@@ -798,6 +825,108 @@ export function AssurancePanel({ assurance }: { assurance: AgenticAssurance }) {
                     </li>
                 ))}
             </ul>
+
+            {canSchedule && unscheduled && tenantSlug && <ScheduleAssuranceChecks tenantSlug={tenantSlug} />}
+        </div>
+    );
+}
+
+/** One check's line of the setup's answer, as the panel renders it. */
+interface AssuranceSetupStep {
+    check: string;
+    title: string;
+    outcome: 'UNCHANGED' | 'DIFFERS' | 'WOULD_CHANGE' | 'CHANGED';
+    control: { id: string; code: string | null; name: string } | null;
+}
+
+type AssuranceSetupAnswer =
+    | { ok: false; refusal: string; detail: string }
+    | { ok: true; applied: boolean; steps: AssuranceSetupStep[] };
+
+/**
+ * SCHEDULE THE FOUR CHECKS (#5014). A dry run first, which names the control
+ * each new plan would sit on, then the write on confirmation. The server
+ * decides everything, including the control; this renders its answer.
+ */
+export function ScheduleAssuranceChecks({ tenantSlug }: { tenantSlug: string }) {
+    const t = useTranslations('agents');
+    const router = useRouter();
+    const [busy, setBusy] = useState(false);
+    const [preview, setPreview] = useState<AssuranceSetupStep[] | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    async function post(apply: boolean): Promise<AssuranceSetupAnswer | null> {
+        const res = await fetch(`/api/t/${tenantSlug}/admin/agents/assurance-checks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apply }),
+        });
+        const body: unknown = await res.json().catch(() => null);
+        if (!res.ok) {
+            setError(apiRefusalMessage(body, t('register.assurance.schedule.failed')));
+            return null;
+        }
+        return body as AssuranceSetupAnswer;
+    }
+
+    async function run(apply: boolean) {
+        setBusy(true);
+        setError(null);
+        try {
+            const answer = await post(apply);
+            if (!answer) return;
+            if (!answer.ok) {
+                setPreview(null);
+                setError(answer.detail);
+                return;
+            }
+            if (!apply) {
+                setPreview(answer.steps.filter((s) => s.outcome === 'WOULD_CHANGE'));
+                return;
+            }
+            setPreview(null);
+            router.refresh();
+        } catch {
+            setError(t('register.assurance.schedule.failed'));
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return (
+        <div className="space-y-tight" data-testid="agents-assurance-schedule">
+            {preview === null ? (
+                <Button variant="secondary" size="sm" loading={busy} onClick={() => run(false)} id="agents-assurance-schedule-preview">
+                    {t('register.assurance.schedule.button')}
+                </Button>
+            ) : (
+                <>
+                    <p>{t('register.assurance.schedule.previewIntro')}</p>
+                    <ul className="list-disc pl-6" data-testid="agents-assurance-schedule-preview-list">
+                        {preview.map((s) => (
+                            <li key={s.check}>
+                                {t('register.assurance.schedule.previewLine', {
+                                    title: s.title,
+                                    control: s.control ? `${s.control.code ?? ''} ${s.control.name}`.trim() : '',
+                                })}
+                            </li>
+                        ))}
+                    </ul>
+                    <div className="flex gap-compact">
+                        <Button variant="secondary" size="sm" loading={busy} onClick={() => run(true)} id="agents-assurance-schedule-apply">
+                            {t('register.assurance.schedule.confirm')}
+                        </Button>
+                        <Button variant="secondary" size="sm" disabled={busy} onClick={() => setPreview(null)}>
+                            {t('register.assurance.schedule.cancel')}
+                        </Button>
+                    </div>
+                </>
+            )}
+            {error && (
+                <InlineNotice variant="error" data-testid="agents-assurance-schedule-error">
+                    {error}
+                </InlineNotice>
+            )}
         </div>
     );
 }
