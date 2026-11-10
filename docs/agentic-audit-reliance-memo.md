@@ -116,13 +116,13 @@ role in the rule, not by name.
 
 The pack states every limit that applies; it does not decide whether to rely.
 
-- **Library v1 is not an approved or agreed definition.** Internal audit's
-  approval and the managed-service provider's agreement are open for both
-  catalogue versions: on #3663 for version 1 and on #4379 for version 2. Each
-  procedure's provider methodology reference is open too. The pack says so as
+- **Library v1 is not an independently approved definition.** There is no
+  internal audit or managed-service provider: the owner, the sole operator,
+  approved both catalogue versions on 2026-11-10 (#3663 for version 1, #4379
+  for version 2), and nobody independent has. The pack says so as
   `CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT` and
   `CATALOGUE_NOT_AGREED_BY_PROVIDER`, judged for every version its workpapers
-  were written under, until each is recorded.
+  were written under, until an independent party approves and agrees it.
 - **ISO/IEC 42001 coverage is narrow.** Only `agent.authority_conformance` cites
   an ISO/IEC 42001 Annex A identifier (A.9.4). The other four procedures evidence
   access controls under ISO/IEC 27001:2022 Annex A and SOC 2 CC6.1, which the AI

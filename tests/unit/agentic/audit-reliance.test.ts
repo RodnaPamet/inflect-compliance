@@ -239,9 +239,9 @@ describe('the summary states the scope, the catalogue’s standing and the defin
         expect(summary.limits).toContain('PROCEDURE_WITHOUT_CONTROL');
     });
 
-    it('states that the catalogue is not yet approved by internal audit nor agreed by the provider', () => {
+    it('states that the catalogue is owner-approved only, and keeps both limits that need an independent act', () => {
         const { summary } = planOf(input());
-        expect(summary.catalogue.status.internalAuditApproval).toBe('OPEN');
+        expect(summary.catalogue.status.internalAuditApproval).toBe('OWNER_APPROVED_NOT_INDEPENDENT');
         expect(summary.limits).toEqual(
             expect.arrayContaining(['CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT', 'CATALOGUE_NOT_AGREED_BY_PROVIDER']),
         );
@@ -266,8 +266,8 @@ describe('a pack holding workpapers of catalogue versions 1 and 2', () => {
         expect(summary.schemaVersion).toBe(2);
         expect(summary.catalogue.versions).toEqual([1, 2]);
         expect(summary.catalogue.byVersion).toEqual([
-            { catalogueVersion: 1, internalAuditApproval: 'OPEN', providerAgreement: 'OPEN', providerMethodologyReference: 'OPEN', recordedOn: '#3663' },
-            { catalogueVersion: 2, internalAuditApproval: 'OPEN', providerAgreement: 'OPEN', providerMethodologyReference: 'OPEN', recordedOn: '#4379' },
+            { catalogueVersion: 1, internalAuditApproval: 'OWNER_APPROVED_NOT_INDEPENDENT', providerAgreement: 'OWNER_APPROVED_NOT_INDEPENDENT', providerMethodologyReference: 'OWNER_APPROVED_NOT_INDEPENDENT', recordedOn: '#3663' },
+            { catalogueVersion: 2, internalAuditApproval: 'OWNER_APPROVED_NOT_INDEPENDENT', providerAgreement: 'OWNER_APPROVED_NOT_INDEPENDENT', providerMethodologyReference: 'OWNER_APPROVED_NOT_INDEPENDENT', recordedOn: '#4379' },
         ]);
         // `status` is the version in force; the statement names both issues.
         expect([summary.catalogue.status.catalogueVersion, summary.catalogue.status.recordedOn]).toEqual([2, '#4379']);

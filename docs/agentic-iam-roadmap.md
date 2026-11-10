@@ -441,18 +441,17 @@ INCONCLUSIVE; an empty population is never a pass. It proposes library v1 as the
 first five. The repository owner's merge of its pull request is the repository
 owner's sign-off and adopts the version for this repository: version 1 first,
 then version 2, which changes procedure 2's R3 for a legacy application
-(#4379; owner decision, 2026-10-26). The merge does not supply internal audit's
-approval or the managed-service provider's agreement: none is recorded, each is
-recorded when given on the version's issue (#3663 for version 1, #4379 for
-version 2), and while they are open library v1 is proposed to them, not
-approved or agreed. The catalogue records the ownership
+(#4379; owner decision, 2026-10-26). There is no internal audit or
+managed-service provider: the owner is the sole operator, and approved both
+versions on 2026-11-10 (recorded on #3663 and #4379). Library v1 is therefore
+owner-approved and not independently approved. The catalogue records the ownership
 rule of decision 3: the second line is to own and operate the auditor agent, and
 internal audit is to approve its procedures and sample its workpapers. The
 line-of-defence value, the auditor independence check and the workpaper record
 are on `main` (step `3b`, below), and library v1 runs on the control-test runner
-as the registered auditor agent (step `3c`, below). Each procedure's provider
-methodology reference is open: the provider supplies it, and it is recorded on
-#3663 when given.
+as the registered auditor agent (step `3c`, below). With no provider, no
+procedure has a provider methodology reference; the owner's approval stands in
+its place, and says so.
 
 ### Agent retirement and ownership transfer
 
@@ -932,10 +931,10 @@ auditee (rule 8).
 
 Step `3c` (#3676) runs library v1 — procedures 1 to 5 of the catalogue — on the
 existing control-test runner, as the registered auditor agent. Library v1 is
-proposed to internal audit and the managed-service provider, not approved or
-agreed by either:
+approved by the owner as sole operator, and by nobody independent:
 `LIBRARY_V1_STATUS` in `src/lib/agentic/audit-procedure-library.ts` records
-both as open, and every evidence row and finding proposal says so.
+each party's act as `OWNER_APPROVED_NOT_INDEPENDENT`, and every evidence row
+and finding proposal says so.
 
 - **One runner.** A control-test plan of type INTEGRATION whose
   `automationConfig` names a `procedure` and an `auditorAgentId` runs it;
@@ -1216,7 +1215,7 @@ on #3682. Neither the methodology nor the record names the provider.
 | Skills | Nine original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine, and `iam-audit-procedures` by another, `audit-narrative` (#3749); both are read-only by declaration, as every Flue workflow with no PROPOSE step must be (#3775); each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry; Entra service-principal disable for contained agents, promoted to applied only on a read. | — |
-| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. Library v1 runs on the control-test runner as the registered auditor agent: five procedures re-performed from raw rows, one workpaper per run, every exception a finding proposal, an empty population inconclusive; only the auditor's owner sets or switches off a procedure plan; the `/agents/audit-pilot` page (or `scripts/audit-pilot-setup.ts`) sets the pilot up with its agreed parameters, as the owner. Internal audit samples the workpapers: a daily keyed draw at the tenant's rate (100% in the pilot), which only internal audit sets, each assigned to an ACTIVE third-line member who does not own the auditor or recorded UNASSIGNED with a reason, answered once in codes on `/audits/workpaper-reviews`, where internal audit sees every assignment, every dissent a finding proposal somebody other than the dissenter decides, and the re-performance agreement rate in the governance pack with its definition. The auditor agent narrates a period's workpapers (`audit-narrative`, #3749), on demand and by a daily dispatch that starts one run per tenant as the auditor under its owner's permissions: each narrative is held to its workpaper's conclusion and codes before it is stored, write-once and encrypted, and is shown on the review sheet. | Internal audit's approval and the managed-service provider's agreement of the catalogue are open; procedures 6 to 8 have no handler. |
+| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. Library v1 runs on the control-test runner as the registered auditor agent: five procedures re-performed from raw rows, one workpaper per run, every exception a finding proposal, an empty population inconclusive; only the auditor's owner sets or switches off a procedure plan; the `/agents/audit-pilot` page (or `scripts/audit-pilot-setup.ts`) sets the pilot up with its agreed parameters, as the owner. Internal audit samples the workpapers: a daily keyed draw at the tenant's rate (100% in the pilot), which only internal audit sets, each assigned to an ACTIVE third-line member who does not own the auditor or recorded UNASSIGNED with a reason, answered once in codes on `/audits/workpaper-reviews`, where internal audit sees every assignment, every dissent a finding proposal somebody other than the dissenter decides, and the re-performance agreement rate in the governance pack with its definition. The auditor agent narrates a period's workpapers (`audit-narrative`, #3749), on demand and by a daily dispatch that starts one run per tenant as the auditor under its owner's permissions: each narrative is held to its workpaper's conclusion and codes before it is stored, write-once and encrypted, and is shown on the review sheet. | The catalogue is approved by the owner as sole operator, not independently: there is no internal audit or managed-service provider. Procedures 6 to 8 have no handler. |
 | Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer, and requests the disable of its Entra service principal through the external write ladder; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | — |
 
 ## Roadmap (future direction)
