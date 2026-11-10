@@ -12,7 +12,8 @@
 #                        and the image digest the app and worker run
 #   library-sync         the counts from the last library and crosswalk sync
 #   log-errors           error and fatal log lines in the last 24 hours, counted
-#                        per container and component (or job)
+#                        per container and component (or job), with each
+#                        container's start time: its log begins there
 #   access-review-dates  access-review campaigns with a 1970 date or a period
 #                        that ends before it starts, counted per scope (#4390)
 #   bcrypt               whether the app's native bcrypt module loads and
@@ -75,6 +76,16 @@ log-errors)
     # the line names no component. Both are code identifiers, and nothing else
     # in the line is ever printed.
     echo "## Error and fatal log lines, last 24 hours"
+    echo
+    # A container's log starts when the container does. Watchtower replaces the
+    # app and worker on every new image, so the 24 hours shrink to the time
+    # since then, and lines from before it are gone. Say so, with the start
+    # time, so an empty table is never read as a quiet day.
+    for svc in app worker; do
+        echo "- $svc: logs since $(docker inspect -f '{{.State.StartedAt}}' "$(need "$svc")") (container start)"
+    done
+    echo
+    echo "Lines from before a container started are not covered; integration runs are also recorded in the IntegrationExecution table."
     echo
     echo "| Container | Component | Lines |"
     echo "| --- | --- | --- |"
