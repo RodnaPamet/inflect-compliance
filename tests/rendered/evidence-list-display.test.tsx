@@ -137,6 +137,36 @@ describe('Type column — the file kind in the reader\'s language', () => {
     });
 });
 
+describe('empty Control and Category cells, and the Title width', () => {
+    it('show a dash, not the escape text "\\u2014"; the title fills its column once the layout is fixed', async () => {
+        mount([
+            evidenceRow({
+                id: 'ev-bare',
+                title: 'A record with a long enough title to need its column widened',
+                evidenceControlLinks: [],
+                category: null,
+            }),
+        ]);
+        const TITLE = 'A record with a long enough title to need its column widened';
+        // The list re-renders after its first read, so take the row once it has settled.
+        let row: HTMLElement | null = null;
+        await waitFor(() => {
+            row = screen.getByText(TITLE).closest('tr');
+            expect(row).not.toBeNull();
+        });
+        const title = screen.getByText(TITLE);
+        // JSX text does not read JS escapes: `<span>\u2014</span>` printed six characters.
+        expect(row!.textContent).not.toContain('\\u2014');
+        const dashes = Array.from(row!.querySelectorAll('span.text-content-subtle')).filter(
+            (el) => el.textContent === '\u2014',
+        );
+        expect(dashes.length).toBeGreaterThanOrEqual(2);
+        // The 28ch default cap is lifted once the table holds fixed widths.
+        expect(title.className).toContain('max-w-trunc-default');
+        expect(title.className).toContain('[table[data-layout=fixed]_&]:max-w-none');
+    });
+});
+
 describe('the "all current" celebration', () => {
     it('is translated, and names the 30-day window it checks', async () => {
         mount([evidenceRow()], metrics({ total: 1, expired: 0, expiringSoon: 0, needsReview: 0, current: 1 }));

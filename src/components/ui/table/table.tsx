@@ -1437,6 +1437,10 @@ export function Table<T extends TableRowData>({
                 ],
                 className,
               )}
+              // Exposes measure-then-fix: a cell can hold a default width
+              // cap while the columns are measured ("auto") and fill its
+              // column once they are fixed (the Evidence title does).
+              data-layout={applyFixedLayout ? "fixed" : "auto"}
               style={{
                 width: "100%",
                 tableLayout: applyFixedLayout ? "fixed" : "auto",

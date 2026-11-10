@@ -122,6 +122,24 @@ describe('<DataTable> column resizing — behavioural (Tier 2)', () => {
         expect(nameTh.style.width).toBe('320px');
     });
 
+    it('names its layout on the table, so a cell can cap its width only while columns are measured', () => {
+        const resizable = render(
+            <DataTable<ThingRow>
+                data={rows}
+                columns={columns}
+                getRowId={(r) => r.id}
+                enableColumnResizing
+            />,
+        );
+        expect(resizable.container.querySelector('table')?.getAttribute('data-layout')).toBe('fixed');
+        resizable.unmount();
+
+        const plain = render(
+            <DataTable<ThingRow> data={rows} columns={columns} getRowId={(r) => r.id} />,
+        );
+        expect(plain.container.querySelector('table')?.getAttribute('data-layout')).toBe('auto');
+    });
+
     it('mounts a drag handle on every resizable (non-utility) column', () => {
         const { container } = render(
             <DataTable<ThingRow>

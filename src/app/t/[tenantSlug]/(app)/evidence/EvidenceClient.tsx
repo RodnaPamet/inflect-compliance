@@ -1132,10 +1132,15 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                 // on hover. (A prior JS substring truncated the DOM text itself,
                 // which silently broke the evidence-list E2E specs that assert
                 // the new row's full title appears.)
+                //
+                // The 28ch cap holds only while the table measures its columns
+                // (auto layout). Once it switches to fixed layout the title fills
+                // its column, so dragging Title wider shows more of the title
+                // without the column starting as wide as the longest one.
                 const title = row.original.title;
                 const truncated = !!title && title.length > 20;
                 const inner = (
-                    <TableTitleCell className="block max-w-trunc-default truncate">
+                    <TableTitleCell className="block max-w-trunc-default truncate [table[data-layout=fixed]_&]:max-w-none">
                         {title}
                     </TableTitleCell>
                 );
@@ -1180,13 +1185,13 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
         {
             id: 'control',
             header: t.control,
-            // EP-3 \u2014 many-to-many links; the cell condenses to the
+            // EP-3 — many-to-many links; the cell condenses to the
             // first control's code/annex id + a "+N" overflow badge.
             accessorFn: (ev) => controlLinksLabel(ev.evidenceControlLinks),
             cell: ({ row }) => {
                 const links = row.original.evidenceControlLinks ?? [];
                 if (links.length === 0) {
-                    return <span className="text-content-subtle">\u2014</span>;
+                    return <span className="text-content-subtle">—</span>;
                 }
                 const label = controlLinksLabel(links);
                 const full = links
@@ -1206,7 +1211,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
         {
             id: 'category',
             header: tx('colHeaders.category'),
-            // EP-3 \u2014 persisted classification, previously invisible.
+            // EP-3 — persisted classification, previously invisible.
             accessorFn: (ev: { category?: string | null }) => ev.category || '',
             cell: ({ row }: { row: { original: { category?: string | null } } }) =>
                 row.original.category ? (
@@ -1214,16 +1219,16 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                         {row.original.category}
                     </span>
                 ) : (
-                    <span className="text-content-subtle">\u2014</span>
+                    <span className="text-content-subtle">—</span>
                 ),
         },
         {
             id: 'folder',
             header: tx('colHeaders.folder'),
-            // B8 follow-up \u2014 the Folder column matches the
+            // B8 follow-up — the Folder column matches the
             // VendorDocsTable shape: empty/null = em-dash, otherwise
             // a muted tag. Hidden by default if a tenant has zero
-            // foldered evidence \u2014 the column-visibility gear keeps
+            // foldered evidence — the column-visibility gear keeps
             // it discoverable.
             accessorFn: (ev: { folder?: string | null }) => ev.folder || '',
             cell: ({ row }: { row: { original: { folder?: string | null } } }) =>
