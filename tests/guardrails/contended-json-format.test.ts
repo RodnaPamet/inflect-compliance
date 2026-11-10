@@ -140,7 +140,11 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // dispatch-only, read-only capacity snapshot of the production VM (the
         // AI roadmap's capacity budget, C0). Its key sorts last, so it is an
         // append; git aligns the old closing brace with the new entry's, +5/-0.
-        keyOrderSha: '73aa5415a1030866e8eb3b0012d7e1a870d2de2a89f78b24e1718681ee53cc1a',
+        //
+        // Updated 2026-11-10 for `vm-check.yml:vm-check`, the dispatch-only
+        // read-only checks of the production VM from a fixed list. Its key
+        // sorts after `vm-capacity`, so it is an append again, +5/-0.
+        keyOrderSha: 'cbbac2c896e484eb61a3c42a6994a19abda1f295260c4270fdd6677050944324',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

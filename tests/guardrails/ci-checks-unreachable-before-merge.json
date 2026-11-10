@@ -118,5 +118,10 @@
         "kind": "never",
         "reason": "Manual dispatch only, in the `production` environment whose reviewer approves each run. It reaches the production VM over IAP as root to read its capacity (the AI roadmap's capacity budget, step C0), which a pull request must never reach.",
         "coveredBy": "tests/guards/vm-capacity-workflow.test.ts holds the workflow's shape (dispatch only, the production environment, OIDC and contents:read alone, Workload Identity Federation and no key, no secret read) and its scripts' (no command tracing, no environment or compose file printed, every docker call naming the fields it prints, nothing written on the VM outside its own stage). RESIDUAL: the ssh to the VM and the report itself run only when somebody dispatches it."
+    },
+    "vm-check.yml:vm-check": {
+        "kind": "never",
+        "reason": "Manual dispatch only, in the `production` environment whose reviewer approves each run. It reaches the production VM over IAP as root to run one check from a fixed read-only list (owner decision 2026-11-10), which a pull request must never reach.",
+        "coveredBy": "tests/guards/vm-check-workflow.test.ts holds the workflow's shape (dispatch only, a choice input and no free-text one, the production environment, OIDC and contents:read alone, Workload Identity Federation and no key, no secret read, the input passed as a value) and its scripts' (the same check list in all three places, no command tracing, no environment or compose file printed, docker calls limited and field-named, every log read piped into a filter, the query read-only, nothing written on the VM outside its own stage). RESIDUAL: the ssh to the VM and the checks themselves run only when somebody dispatches it."
     }
 }

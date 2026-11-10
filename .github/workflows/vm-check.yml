@@ -1,0 +1,70 @@
+#
+# Read-only checks on the production VM, from a fixed list.
+#
+# WHY A WORKFLOW AND NOT A SESSION. The owner chose (2026-11-10) to give Claude's
+# sessions a way to look at production that needs no key in a session: a
+# session dispatches this workflow, the `production` environment's reviewer
+# approves the run, and the session reads its output. It holds the identity the
+# `Scanner VM` and `VM capacity` workflows hold, Workload Identity Federation
+# with no key anywhere, and reads no secret.
+#
+# A FIXED LIST, NOT A COMMAND. That identity is root on the VM, so the input is
+# a choice of named checks, each written out in `deploy/vm-check/remote.sh`. A
+# free-text command would make every push to this repository a way to run
+# anything on production. A new check is a pull request.
+#
+# READ-ONLY. Every check reads; the database query runs in a read-only
+# transaction.
+#
+# THE LOGS ARE PUBLIC, because the repository is. The checks print names,
+# states, versions and counts: never a log line, a row, an environment file, a
+# compose file, or a container's environment, command line or labels.
+#
+name: VM check
+
+on:
+    workflow_dispatch:
+        inputs:
+            check:
+                description: Which read-only check to run on the production VM
+                required: true
+                type: choice
+                options:
+                    - containers
+                    - library-sync
+                    - log-errors
+                    - access-review-dates
+                    - bcrypt
+
+# One at a time: two runs staging the script on the VM at once would race.
+concurrency:
+    group: vm-check
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+    id-token: write
+
+jobs:
+    vm-check:
+        name: VM check (${{ inputs.check }})
+        runs-on: ubuntu-latest
+        environment: production
+        timeout-minutes: 15
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Authenticate to GCP (Workload Identity Federation)
+              uses: google-github-actions/auth@v3
+              with:
+                  workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+                  service_account: ${{ vars.GCP_VM_OPERATOR_SA }}
+
+            - name: Set up gcloud
+              uses: google-github-actions/setup-gcloud@v3
+
+            - name: Run the check on the VM
+              env:
+                  CHECK: ${{ inputs.check }}
+              run: deploy/vm-check/vm.sh "$CHECK"
