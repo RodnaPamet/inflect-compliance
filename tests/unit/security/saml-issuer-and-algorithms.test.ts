@@ -53,6 +53,13 @@ function edited(body: string, edit: (xml: string) => string): string {
     return Buffer.from(edit(Buffer.from(body, 'base64').toString('utf8'))).toString('base64');
 }
 
+/**
+ * Either layer may refuse: node-saml from 5.2 checks the assertion's issuer
+ * against `idpIssuer` itself, and `validateSamlResponse` checks it again. What
+ * this suite holds is that the assertion is REFUSED, by whichever comes first.
+ */
+const FOREIGN_ISSUER = /unexpected identity provider|Unknown SAML issuer/;
+
 describe('the assertion must come from the configured identity provider', () => {
     it('accepts an assertion from the configured entity', async () => {
         await expect(validate(respond())).resolves.toMatchObject({ email: 'alice@acme.com' });
@@ -60,13 +67,13 @@ describe('the assertion must come from the configured identity provider', () => 
 
     it('refuses an assertion another entity issued, though the configured certificate signed it', async () => {
         await expect(validate(respond({ issuer: 'https://other-idp.example.com/entity' }))).rejects.toThrow(
-            /unexpected identity provider/,
+            FOREIGN_ISSUER,
         );
     });
 
     it("judges the assertion's issuer, not only the Response's", async () => {
         await expect(validate(respond({ assertionIssuer: 'https://other-idp.example.com/entity' }))).rejects.toThrow(
-            /unexpected identity provider/,
+            FOREIGN_ISSUER,
         );
     });
 });

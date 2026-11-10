@@ -47,6 +47,11 @@ const defaultOptions = {
         // AWS SDK — native HTTP client, credential resolution
         '@aws-sdk/client-s3',
         '@aws-sdk/s3-request-presigner',
+        // BullMQ — from 6.7 it `require`s the optional
+        // `@valkey/valkey-glide` inside a try/catch. Node tolerates the
+        // missing module at run time; webpack refuses the build
+        // ("Module not found"). Loaded by Node, like the worker's own build.
+        'bullmq',
     ],
     // PRERENDER SOURCE MAPS — OFF. Next's default is TRUE (config-shared.js:146),
     // and its own memory guidance names this knob for exactly our symptom:
