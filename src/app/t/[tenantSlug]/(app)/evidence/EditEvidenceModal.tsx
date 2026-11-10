@@ -41,6 +41,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { EvidenceCategoryField, EvidenceDescriptionField } from './_form/EvidenceFormFields';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import {
     parseYMD,
@@ -72,6 +73,11 @@ export interface EditEvidenceInitial {
     controlLinks: ControlOption[];
     /** EP-3 — persisted classification. */
     category: string | null;
+    /**
+     * #5018 — what the evidence shows. Optional so a caller that cannot seed it
+     * sends nothing (an omitted key leaves the stored description untouched).
+     */
+    description?: string | null;
     /** B8 follow-up — current folder label (null = unfoldered). */
     folder?: string | null;
     /** Current tags (normalised, lower-cased). */
@@ -106,6 +112,8 @@ export interface EditEvidenceModalProps {
      * links are left exactly as they are.
      */
     canEditControlLinks: boolean;
+    /** Categories the workspace already uses, offered after the standard list (#5018). */
+    existingCategories?: ReadonlyArray<string>;
 }
 
 function controlLabel(c: ControlOption): string {
@@ -121,6 +129,7 @@ export function EditEvidenceModal({
     onSaved,
     canReplaceFile = true,
     canEditControlLinks,
+    existingCategories = [],
 }: EditEvidenceModalProps) {
     const apiUrl = useTenantApiUrl();
     const t = useTranslations('evidence');
@@ -140,6 +149,9 @@ export function EditEvidenceModal({
     >([]);
     // EP-3 — editable category.
     const [category, setCategory] = useState('');
+    // #5018 — sent only when the caller seeded it, like tags.
+    const [description, setDescription] = useState('');
+    const [descriptionSeeded, setDescriptionSeeded] = useState(false);
     // B8 follow-up — folder is editable post-create.
     const [folder, setFolder] = useState('');
     // Retention date — moved here from the inline table column. Held as a
@@ -199,6 +211,8 @@ export function EditEvidenceModal({
                 }),
             );
             setCategory(initial.category ?? '');
+            setDescription(initial.description ?? '');
+            setDescriptionSeeded(initial.description !== undefined);
             setFolder(initial.folder ?? '');
             const ymd = initial.retentionUntil ? initial.retentionUntil.split('T')[0] : '';
             setRetentionDate(ymd);
@@ -256,6 +270,9 @@ export function EditEvidenceModal({
                         ? { controlIds: selectedControls.map((o) => o.value) }
                         : {}),
                     category: category.trim() || null,
+                    // #5018 — sent only when seeded: an omitted key leaves the
+                    // stored description alone, where a blank one clears it.
+                    ...(descriptionSeeded ? { description: description.trim() || null } : {}),
                     // B8 follow-up — empty string clears the folder
                     // (the usecase null-coerces); a non-empty value
                     // sets it. `undefined` would skip the update.
@@ -488,18 +505,26 @@ export function EditEvidenceModal({
                                 />
                             </FormField>
                             {/* EP-3 — editable category. */}
-                            <FormField label={t('edit.categoryLabel')}>
-                                <Input
-                                    id="edit-evidence-category-input"
-                                    value={category}
-                                    onChange={(e) => {
-                                        setCategory(e.target.value);
-                                        markDirty();
-                                    }}
-                                    placeholder={t('edit.categoryPlaceholder')}
-                                />
-                            </FormField>
+                            <EvidenceCategoryField
+                                id="edit-evidence-category-input"
+                                value={category}
+                                onChange={(v) => {
+                                    setCategory(v);
+                                    markDirty();
+                                }}
+                                existingCategories={existingCategories}
+                            />
                         </div>
+                        {descriptionSeeded && (
+                            <EvidenceDescriptionField
+                                id="edit-evidence-description-input"
+                                value={description}
+                                onChange={(v) => {
+                                    setDescription(v);
+                                    markDirty();
+                                }}
+                            />
+                        )}
                         {/* EP-3 — multi-select control links. Sends
                             `controlIds` on save; the usecase reconciles
                             the add/remove diff. Read-only for a role that

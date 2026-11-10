@@ -219,12 +219,26 @@ describe('naming and metadata fallbacks', () => {
             controlId: 'ctrl-9',
             category: 'Policies',
         });
-        expect(mockUpload.mock.calls[0][2]).toMatchObject({ controlId: 'ctrl-9', category: 'Policies' });
+        expect(mockUpload.mock.calls[0][2]).toMatchObject({ controlIds: ['ctrl-9'], category: 'Policies' });
+    });
+
+    it('forwards every control the form picked, merged with a legacy controlId, once each (#5018)', async () => {
+        await importSharePointItems(ctx, {
+            connectionId: 'c1',
+            items: [{ driveId: 'd1', itemId: 'a' }],
+            controlIds: ['ctrl-1', 'ctrl-2'],
+            controlId: 'ctrl-2',
+            description: 'Signed supplier agreement',
+        });
+        expect(mockUpload.mock.calls[0][2]).toMatchObject({
+            controlIds: ['ctrl-1', 'ctrl-2'],
+            description: 'Signed supplier agreement',
+        });
     });
 
     it('nulls the optional evidence targets that were not supplied', async () => {
         await importSharePointItems(ctx, { connectionId: 'c1', items: [{ driveId: 'd1', itemId: 'a' }] });
-        expect(mockUpload.mock.calls[0][2]).toMatchObject({ controlId: null, category: null, folder: null });
+        expect(mockUpload.mock.calls[0][2]).toMatchObject({ controlIds: null, category: null, description: null, folder: null });
     });
 
     it('writes null sourceUrl / remoteUpdatedAt when Graph omits them', async () => {

@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { importSharePointItems } from '@/app-layer/integrations/providers/sharepoint';
+import { EVIDENCE_DESCRIPTION_MAX } from '@/lib/evidence-description';
 
 /**
  * SP-3 — manual import of picked SharePoint files as evidence (synchronous).
@@ -15,7 +16,10 @@ const Body = z.object({
         .array(z.object({ driveId: z.string().min(1), itemId: z.string().min(1), name: z.string().optional() }))
         .min(1),
     controlId: z.string().optional(),
+    // #5018 — the upload form links several controls; merged with `controlId`.
+    controlIds: z.array(z.string().min(1)).max(100).optional(),
     category: z.string().optional(),
+    description: z.string().max(EVIDENCE_DESCRIPTION_MAX).optional(),
     // `folder` was the one field the upload modal renders that this schema
     // did not accept, so it was unreachable end-to-end on the SharePoint
     // path even though `uploadEvidenceFile` has always taken it. `category`

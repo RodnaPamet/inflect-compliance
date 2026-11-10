@@ -154,8 +154,9 @@ describe('UploadEvidenceModal — business contract preserved', () => {
         // After the FileDropzone migration, retention is sent via a
         // separate POST (see `fires the follow-up retention POST` test
         // below) — NOT in the upload's FormData. The upload payload
-        // still carries file + title + controlId.
-        for (const field of ['file', 'title', 'controlId']) {
+        // still carries file + title + the controls (#5018: repeated
+        // `controlIds` fields, one per linked control).
+        for (const field of ['file', 'title', 'controlIds']) {
             // Allow for whitespace/newlines between the paren and the
             // field name — prettier may wrap long appends.
             expect(UPLOAD_MODAL_SRC).toMatch(

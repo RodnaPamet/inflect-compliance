@@ -67,6 +67,7 @@ import { celebrationDedupe, MILESTONES } from '@/lib/celebrations';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     buildEvidenceFilters,
+    categoryOptionsFromEvidence,
     EVIDENCE_ROW_DERIVED_FILTER_KEYS,
     EVIDENCE_FILTER_KEYS,
     evidenceFreshnessLabels,
@@ -186,6 +187,8 @@ interface EvidenceRow {
     content: string | null;
     // EP-3 — persisted classification, now surfaced in the list.
     category: string | null;
+    // #5018 — what the evidence shows; seeds the edit modal.
+    description?: string | null;
     // EP-3 — many-to-many control links replaced the singular `control`.
     evidenceControlLinks: Array<{
         control: {
@@ -507,6 +510,13 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     const evidence: EvidenceRow[] = useMemo(
         () => evidenceQuery.data?.rows ?? [],
         [evidenceQuery.data],
+    );
+
+    // #5018 — the categories the loaded evidence already uses, offered by every
+    // form after the standard list, so an established category stays one click.
+    const existingCategories = useMemo(
+        () => categoryOptionsFromEvidence(evidence).map((o) => String(o.value)),
+        [evidence],
     );
 
     // The pickers and the Linked control filter need EVERY control. The SSR
@@ -1324,6 +1334,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                                         (l) => l.control,
                                     ),
                                     category: ev.category ?? null,
+                                    description: ev.description ?? null,
                                     folder: ev.folder ?? null,
                                     // Seeded so the modal shows the row's real
                                     // tags and reconciles against them. Matches
@@ -1635,6 +1646,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                         apiUrl={apiUrl}
                         controls={controls}
                         canEditControlLinks={canEditControlLinks}
+                        existingCategories={existingCategories}
                     />
                     <EvidenceBulkImportModal
                         open={showBulkImport}
@@ -1654,6 +1666,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                         apiUrl={apiUrl}
                         controls={controls}
                         canEditControlLinks={canEditControlLinks}
+                        existingCategories={existingCategories}
                     />
                     <NewEvidenceLinkModal
                         open={showLinkModal}
@@ -1662,6 +1675,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                         apiUrl={apiUrl}
                         controls={controls}
                         canEditControlLinks={canEditControlLinks}
+                        existingCategories={existingCategories}
                     />
                 </>
             )}
@@ -1704,6 +1718,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                 initial={editInitial}
                 canReplaceFile={canUploadEvidence}
                 canEditControlLinks={canEditControlLinks}
+                existingCategories={existingCategories}
                 onSaved={() => {
                     // Revalidate the list cache so the freshly-saved
                     // values flow back into the table — and the record's

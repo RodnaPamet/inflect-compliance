@@ -33,7 +33,7 @@ import * as path from 'path';
 // LANGUAGE SPLIT. The raw reader is kept and the JSON path still uses it: a
 // catalogue is PARSED as data, never matched as text, so masking it would only
 // corrupt the parse. Text assertions go through the masked reader.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../../');
 function readRaw(rel: string): string {
@@ -52,6 +52,13 @@ const UPLOAD_SRC = read(
 const TEXT_EV_SRC = read(
     'src/app/t/[tenantSlug]/(app)/evidence/NewEvidenceTextModal.tsx',
 );
+// #5018 — the evidence forms' control picker is one shared, multi-select
+// field. The two modals render it by id; the Combobox lives here.
+const EVIDENCE_FIELDS_SRC = read(
+    'src/app/t/[tenantSlug]/(app)/evidence/_form/EvidenceFormFields.tsx',
+);
+// The control field alone: the category field beside it is a Combobox too.
+const EVIDENCE_CONTROLS_FIELD = functionBodyOf(EVIDENCE_FIELDS_SRC, 'EvidenceControlsField');
 
 interface MigrationSurface {
     label: string;
@@ -74,20 +81,6 @@ const SURFACES: MigrationSurface[] = [
         src: RISK_MODAL_SRC,
         pickerId: 'risk-template-select',
         name: 'templateId',
-        insideModal: true,
-    },
-    {
-        label: 'UploadEvidenceModal — control linker',
-        src: UPLOAD_SRC,
-        pickerId: 'control-select',
-        name: 'controlId',
-        insideModal: true,
-    },
-    {
-        label: 'NewEvidenceTextModal — control linker',
-        src: TEXT_EV_SRC,
-        pickerId: 'text-evidence-control-select',
-        name: 'controlId',
         insideModal: true,
     },
 ];
@@ -176,51 +169,32 @@ describe('NewRiskModal — templateOptions', () => {
     });
 });
 
-// ─── Control linker — UploadEvidenceModal ───────────────────────
+// ─── Control linker — the evidence forms' shared field (#5018) ──
 
-describe('UploadEvidenceModal — control linker', () => {
-    it('drops the external controlSearch state (Combobox owns search)', () => {
-        expect(UPLOAD_SRC).not.toMatch(/controlSearch/);
+describe('Evidence forms — control linker', () => {
+    it('is one multi-select Combobox inside a FormField, shared by the forms', () => {
+        expect(EVIDENCE_FIELDS_SRC).toMatch(/from ["']@\/components\/ui\/combobox["']/);
+        expect(EVIDENCE_FIELDS_SRC).toMatch(/from ["']@\/components\/ui\/form-field["']/);
+        expect(EVIDENCE_CONTROLS_FIELD).toMatch(/<FormField\b/);
+        expect(EVIDENCE_CONTROLS_FIELD).toMatch(/<Combobox<true, EvidenceControlOption>/);
+        expect(EVIDENCE_CONTROLS_FIELD).toMatch(/\bmultiple\b/);
+        expect(EVIDENCE_CONTROLS_FIELD).toMatch(/matchTriggerWidth/);
+        expect(EVIDENCE_CONTROLS_FIELD).toMatch(/forceDropdown/);
+        expect(EVIDENCE_CONTROLS_FIELD).toMatch(/caret\b/);
     });
 
-    it('drops the external filteredControls memo', () => {
-        expect(UPLOAD_SRC).not.toMatch(/filteredControls/);
-    });
-
-    it('projects controls into ComboboxOption with annex/code/name folded into label', () => {
-        expect(UPLOAD_SRC).toMatch(/controlOptions\s*=\s*useMemo/);
-        expect(UPLOAD_SRC).toMatch(
-            /`\$\{c\.annexId \|\| c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
+    it('folds annex id, code and name into the option label', () => {
+        expect(EVIDENCE_CONTROLS_FIELD).toMatch(
+            /`\$\{c\.annexId \|\| c\.code \|\| tx\('formFields\.customControl'\)\}: \$\{c\.name\}`/,
         );
     });
 
-    it('surfaces the control count in the FormField description', () => {
-        // The control-count description migrated to next-intl; assert the
-        // key branch is wired and the en value still reads "Search across …".
-        expect(UPLOAD_SRC).toMatch(
-            /controls\.length\s*===\s*0[\s\S]{0,160}searchControlsDesc/,
-        );
-        const en = JSON.parse(readRaw('messages/en.json')) as {
-            evidence: { upload: Record<string, string> };
-        };
-        expect(en.evidence.upload.searchControlsDesc).toMatch(/Search across/);
-    });
-});
-
-// ─── Control linker — NewEvidenceTextModal ──────────────────────
-
-describe('NewEvidenceTextModal — control linker', () => {
-    it('projects controls into ComboboxOption', () => {
-        expect(TEXT_EV_SRC).toMatch(/controlOptions\s*=\s*useMemo/);
-        expect(TEXT_EV_SRC).toMatch(
-            /`\$\{c\.annexId \|\| c\.code \|\| 'Custom'\}: \$\{c\.name\}`/,
-        );
-    });
-
-    it('wires setSelected into the update(controlId) reducer', () => {
-        expect(TEXT_EV_SRC).toMatch(
-            /setSelected=\{\(option\)\s*=>\s*[\s\S]{0,80}update\(['"]controlId['"],\s*option\?\.value\s*\?\?\s*['"]['"]\)/,
-        );
+    it.each([
+        ['UploadEvidenceModal', () => UPLOAD_SRC, 'control-select'],
+        ['NewEvidenceTextModal', () => TEXT_EV_SRC, 'text-evidence-control-select'],
+    ])('%s renders the shared field under its existing E2E id', (_name, src, id) => {
+        expect(src()).toMatch(new RegExp(`<EvidenceControlsField\\s+id=["']${id}["']`));
+        expect(src()).not.toMatch(/controlSearch|filteredControls/);
     });
 });
 

@@ -33,8 +33,9 @@ type FormSurface = { label: string; files: string[] };
 const FORM_FIELD_SURFACES: FormSurface[] = [
     { label: 'audits/cycles/page.tsx', files: ['src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx'] },
     { label: 'controls/NewControlModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/controls/NewControlModal.tsx'] },
-    { label: 'evidence/NewEvidenceTextModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/NewEvidenceTextModal.tsx'] },
-    { label: 'evidence/UploadEvidenceModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx'] },
+    // #5018 — the evidence forms' shared fields own the FormField now.
+    { label: 'evidence/NewEvidenceTextModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/NewEvidenceTextModal.tsx', 'src/app/t/[tenantSlug]/(app)/evidence/_form/EvidenceFormFields.tsx'] },
+    { label: 'evidence/UploadEvidenceModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx', 'src/app/t/[tenantSlug]/(app)/evidence/_form/EvidenceFormFields.tsx'] },
     {
         label: 'policies/new (shim + modal + fields)',
         files: [

@@ -224,6 +224,9 @@ const RICH_TEXT_COVERAGE: Readonly<
     // so it is sanitised at the single `reviewEvidence` write seam via the
     // three-state-preserving `sanitizeOptional` wrapper. The bulk-approve path
     // writes the source constant 'Bulk approved' — no user input reaches it.
+    // `Evidence.description` (#5018) — what the evidence shows, written by the
+    // JSON create, the multipart upload and the edit, all in this file.
+    Evidence: { usecases: ['src/app-layer/usecases/evidence.ts'], sanitizer: 'sanitizePlainText' },
     EvidenceReview: {
         usecases: ['src/app-layer/usecases/evidence.ts'],
         sanitizer: 'sanitizePlainText',

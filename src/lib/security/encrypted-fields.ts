@@ -272,6 +272,8 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
 
     // ─── Evidence / review ─────────────────────────────
     //  Evidence.content omitted — searched via EvidenceRepository.
+    //  Evidence.description is not searched, so it is encrypted (#5018).
+    Evidence: ['description'],
     EvidenceReview: ['comment'],
 
     // ─── Policy ────────────────────────────────────────

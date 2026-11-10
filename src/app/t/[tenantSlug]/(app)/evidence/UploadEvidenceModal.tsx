@@ -52,7 +52,6 @@ import {
 import {
     useCallback,
     useEffect,
-    useMemo,
     useRef,
     useState,
     type Dispatch,
@@ -66,7 +65,11 @@ import {
     type FileDropzoneHandle,
     type FileUploadEntry,
 } from '@/components/ui/FileDropzone';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import {
+    EvidenceCategoryField,
+    EvidenceControlsField,
+    EvidenceDescriptionField,
+} from './_form/EvidenceFormFields';
 import { FormField } from '@/components/ui/form-field';
 import { RequiredMarker } from '@/components/ui/required-marker';
 import { InfoTooltip } from '@/components/ui/tooltip';
@@ -118,6 +121,8 @@ export interface UploadEvidenceModalProps {
      * (#4326). Without it the picker is not shown and nothing sends a control.
      */
     canEditControlLinks: boolean;
+    /** Categories the workspace already uses, offered after the standard list (#5018). */
+    existingCategories?: ReadonlyArray<string>;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -130,6 +135,7 @@ export function UploadEvidenceModal({
     apiUrl,
     controls,
     canEditControlLinks,
+    existingCategories = [],
 }: UploadEvidenceModalProps) {
     const tx = useTranslations('evidence');
     const close = useCallback(() => setOpen(false), [setOpen]);
@@ -137,9 +143,12 @@ export function UploadEvidenceModal({
     const dropzoneRef = useRef<FileDropzoneHandle>(null);
 
     const [title, setTitle] = useState('');
-    const [controlId, setControlId] = useState('');
+    // #5018 — several controls, applied to every file in the batch.
+    const [controlIds, setControlIds] = useState<string[]>([]);
     // EP-3 — free-text category applied to every file in the batch.
     const [category, setCategory] = useState('');
+    // #5018 — what the evidence shows, applied to every file in the batch.
+    const [description, setDescription] = useState('');
     // B8 follow-up — free-text folder label applied to every file
     // in the upload batch. Datalist below seeds it with values
     // already in use on existing evidence.
@@ -201,8 +210,9 @@ export function UploadEvidenceModal({
                     body: JSON.stringify({
                         connectionId: spConnId,
                         items: items.map((i) => ({ driveId: i.driveId, itemId: i.itemId, name: i.name })),
-                        controlId: controlId || undefined,
+                        controlIds: controlIds.length > 0 ? controlIds : undefined,
                         category: category.trim() || undefined,
+                        description: description.trim() || undefined,
                         folder: folder.trim() || undefined,
                     }),
                 });
@@ -242,15 +252,16 @@ export function UploadEvidenceModal({
                 setError(tx('upload.spImportFailedNet'));
             }
         },
-        [apiUrl, spConnId, controlId, category, folder, retentionUntil, tx, swrMutate, setOpen],
+        [apiUrl, spConnId, controlIds, category, description, folder, retentionUntil, tx, swrMutate, setOpen],
     );
 
     // Reset on every open so a previous cancel doesn't leak state.
     useEffect(() => {
         if (!open) return;
         setTitle('');
-        setControlId('');
+        setControlIds([]);
         setCategory('');
+        setDescription('');
         setFolder('');
         setRetentionUntil('');
         setError('');
@@ -258,20 +269,6 @@ export function UploadEvidenceModal({
         setUploadingAll(false);
         setSpProbeError(false);
     }, [open]);
-
-    // Project controls into ComboboxOption shape. The annexId + code +
-    // name are all folded into the label so cmdk's fuzzy-match scoring
-    // hits on any of them — typing "A.5.1" or "access review" or the
-    // raw control code all filter to the same row.
-    const controlOptions = useMemo<ComboboxOption<ControlOption>[]>(
-        () =>
-            controls.map((c) => ({
-                value: c.id,
-                label: `${c.annexId || c.code || 'Custom'}: ${c.name}`,
-                meta: c,
-            })),
-        [controls],
-    );
 
     const telemetry = useFormTelemetry('UploadEvidenceModal');
 
@@ -299,9 +296,11 @@ export function UploadEvidenceModal({
     interface UploadVars {
         file: File;
         applyTitle: boolean;
-        controlId: string;
+        controlIds: string[];
         /** EP-3 — category applied to every uploaded file. */
         category: string;
+        /** #5018 — description applied to every uploaded file. */
+        description: string;
         /** B8 follow-up — folder label applied to every uploaded file. */
         folder: string;
         retentionUntil: string;
@@ -320,9 +319,11 @@ export function UploadEvidenceModal({
             // (multi-file uploads just take the filename — different
             // titles would all land on the same string otherwise).
             if (applyTitle && title) formData.append('title', title);
-            if (vars.controlId) formData.append('controlId', vars.controlId);
+            // #5018 — repeated `controlIds` fields; the route reads them all.
+            for (const id of vars.controlIds) formData.append('controlIds', id);
             // EP-3 — category rides every uploaded row in the batch.
             if (vars.category) formData.append('category', vars.category.trim());
+            if (vars.description.trim()) formData.append('description', vars.description.trim());
             // B8 follow-up — folder rides every uploaded row in the
             // batch. The /uploads route forwards it to createEvidence.
             if (vars.folder) formData.append('folder', vars.folder.trim());
@@ -407,8 +408,9 @@ export function UploadEvidenceModal({
                 const uploaded = await mutation.trigger({
                     file,
                     applyTitle,
-                    controlId,
+                    controlIds,
                     category,
+                    description,
                     folder,
                     retentionUntil,
                     onProgress: ctx.onProgress,
@@ -449,8 +451,9 @@ export function UploadEvidenceModal({
         },
         [
             mutation,
-            controlId,
+            controlIds,
             category,
+            description,
             folder,
             retentionUntil,
             telemetry,
@@ -494,7 +497,7 @@ export function UploadEvidenceModal({
         telemetry.trackSubmit({
             count: queued.length,
             hasTitle: title.trim().length > 0,
-            hasControlLink: Boolean(controlId),
+            hasControlLink: controlIds.length > 0,
             hasRetention: Boolean(retentionUntil),
         });
         setUploadingAll(true);
@@ -672,53 +675,34 @@ export function UploadEvidenceModal({
 
                         {/* Control link — Epic 55: searchable Combobox */}
                         {canEditControlLinks && (
-                        <FormField
-                            label={tx('upload.linkControlLabel')}
-                            description={
-                                controls.length === 0
-                                    ? tx('upload.controlsUnavailable')
-                                    : tx('upload.searchControlsDesc', { count: controls.length })
-                            }
-                        >
-                            <Combobox<false, ControlOption>
+                            <EvidenceControlsField
                                 id="control-select"
-                                name="controlId"
-                                options={controlOptions}
-                                selected={
-                                    controlOptions.find(
-                                        (o) => o.value === controlId,
-                                    ) ?? null
+                                controls={controls}
+                                value={controlIds}
+                                onChange={setControlIds}
+                                description={
+                                    controls.length === 0
+                                        ? tx('upload.controlsUnavailable')
+                                        : tx('upload.searchControlsDesc', { count: controls.length })
                                 }
-                                setSelected={(option) =>
-                                    setControlId(option?.value ?? '')
-                                }
-                                placeholder={tx('upload.noControlLink')}
-                                searchPlaceholder={tx('upload.searchControls')}
-                                emptyState={tx('upload.noControlsMatch')}
-                                matchTriggerWidth
-                                forceDropdown
-                                buttonProps={{ className: 'w-full' }}
-                                caret
                             />
-                        </FormField>
                         )}
 
                         {/* EP-3 — Category. Free text applied to every
                             file in the batch. */}
-                        <FormField
-                            label={tx('upload.categoryLabel')}
+                        <EvidenceCategoryField
+                            id="upload-evidence-category-input"
+                            value={category}
+                            onChange={setCategory}
+                            existingCategories={existingCategories}
                             description={tx('upload.categoryDesc')}
-                        >
-                            <input
-                                id="upload-evidence-category-input"
-                                type="text"
-                                className="input w-full"
-                                placeholder={tx('upload.categoryPlaceholder')}
-                                value={category}
-                                onChange={(e) => setCategory(e.target.value)}
-                                autoComplete="off"
-                            />
-                        </FormField>
+                        />
+
+                        <EvidenceDescriptionField
+                            id="upload-evidence-description-input"
+                            value={description}
+                            onChange={setDescription}
+                        />
 
                         {/* B8 follow-up — Folder. Applies to every
                             file in the batch; datalist seeds it

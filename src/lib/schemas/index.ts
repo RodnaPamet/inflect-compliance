@@ -12,6 +12,7 @@
  * convention is documented in `src/lib/openapi/registry.ts`. Add
  * `.openapi(...)` to every NEW request schema when you add it.
  */
+import { EVIDENCE_DESCRIPTION_MAX } from '@/lib/evidence-description';
 import { z } from '@/lib/openapi/zod';
 // `AssetType` is a Prisma enum on a NOT NULL column. Declaring it as
 // `z.string()` let any value through Zod and fail at the driver, which
@@ -432,6 +433,7 @@ export const PublishPolicySchema = z.object({
 
 // ─── Evidence ───
 
+
 // Shared internal base — no .openapi() metadata, so derived schemas
 // (e.g. CreateEvidenceFormSchema) don't inherit a colliding component
 // id. zod 4's metadata system propagates `.openapi(id)` through
@@ -452,6 +454,9 @@ const _CreateEvidenceBase = z.object({
     fileName: z.string().optional().nullable(),
     fileSize: z.coerce.number().optional().nullable(),
     category: z.string().optional().nullable(),
+    // #5018 — what the evidence shows and why it supports its controls.
+    // Plain text, sanitised and null-coerced at the usecase boundary.
+    description: z.string().max(EVIDENCE_DESCRIPTION_MAX).optional().nullable(),
     // B8 follow-up — free-text folder label, capped at 120 chars to
     // match VendorDocument.folder. Sanitised + null-coerced at the
     // usecase boundary.
@@ -479,6 +484,8 @@ export const UpdateEvidenceSchema = z.object({
     // links rather than moving the record). Omitted ⇒ links untouched.
     controlIds: z.array(z.string().min(1)).max(100).optional(),
     category: z.string().optional().nullable(),
+    // #5018 — three-state like `category`: omitted = untouched, null = cleared.
+    description: z.string().max(EVIDENCE_DESCRIPTION_MAX).optional().nullable(),
     // B8 follow-up — folder is editable post-create so a tenant
     // can re-organise their evidence library after the fact.
     folder: z.string().max(120).optional().nullable(),

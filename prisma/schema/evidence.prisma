@@ -20,6 +20,10 @@ model Evidence {
   type                 EvidenceType
   title                String
   content              String?
+  // What this evidence shows and why it supports its controls (#5018). Plain
+  // text, sanitised by every writer, encrypted at rest (Epic B manifest).
+  // Distinct from `content`, which is a TEXT note's body or a LINK's URL.
+  description          String?
   fileName             String?
   fileSize             Int?
   category             String?

@@ -17,7 +17,6 @@ import { useSWRConfig } from 'swr';
 import {
     useCallback,
     useEffect,
-    useMemo,
     useRef,
     useState,
     type Dispatch,
@@ -26,8 +25,11 @@ import {
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { FormField } from '@/components/ui/form-field';
+import {
+    EvidenceCategoryField,
+    EvidenceControlsField,
+    EvidenceDescriptionField,
+} from './_form/EvidenceFormFields';
 import { RequiredMarker } from '@/components/ui/required-marker';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -53,6 +55,8 @@ export interface NewEvidenceLinkModalProps {
      * shown and the record is created with no control.
      */
     canEditControlLinks: boolean;
+    /** Categories the workspace already uses, offered after the standard list (#5018). */
+    existingCategories?: ReadonlyArray<string>;
 }
 
 export function NewEvidenceLinkModal({
@@ -62,6 +66,7 @@ export function NewEvidenceLinkModal({
     apiUrl,
     controls,
     canEditControlLinks,
+    existingCategories = [],
 }: NewEvidenceLinkModalProps) {
     const tx = useTranslations('evidence');
     const close = useCallback(() => setOpen(false), [setOpen]);
@@ -71,8 +76,9 @@ export function NewEvidenceLinkModal({
     const [form, setForm] = useState({
         title: '',
         url: '',
-        controlId: '',
+        controlIds: [] as string[],
         category: '',
+        description: '',
         folder: '',
     });
     const [error, setError] = useState('');
@@ -81,7 +87,7 @@ export function NewEvidenceLinkModal({
     useEffect(() => {
         if (!open) return;
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setForm({ title: '', url: '', controlId: '', category: '', folder: '' });
+        setForm({ title: '', url: '', controlIds: [], category: '', description: '', folder: '' });
         setError('');
         const t = setTimeout(() => titleRef.current?.focus(), 60);
         return () => clearTimeout(t);
@@ -91,16 +97,6 @@ export function NewEvidenceLinkModal({
         field: K,
         value: (typeof form)[K],
     ) => setForm((prev) => ({ ...prev, [field]: value }));
-
-    const controlOptions = useMemo<ComboboxOption<ControlOption>[]>(
-        () =>
-            controls.map((c) => ({
-                value: c.id,
-                label: `${c.annexId || c.code || 'Custom'}: ${c.name}`,
-                meta: c,
-            })),
-        [controls],
-    );
 
     const telemetry = useFormTelemetry('NewEvidenceLinkModal');
 
@@ -114,7 +110,7 @@ export function NewEvidenceLinkModal({
         if (!canSubmit) return;
         setError('');
         telemetry.trackSubmit({
-            hasControlLink: Boolean(form.controlId),
+            hasControlLink: form.controlIds.length > 0,
             contentLength: form.url.length,
         });
         setSubmitting(true);
@@ -126,8 +122,9 @@ export function NewEvidenceLinkModal({
                     type: 'LINK',
                     title: form.title,
                     content: form.url.trim(),
-                    controlIds: form.controlId ? [form.controlId] : [],
+                    controlIds: form.controlIds,
                     category: form.category.trim() || null,
+                    description: form.description.trim() || null,
                     folder: form.folder.trim() || null,
                 }),
             });
@@ -211,47 +208,21 @@ export function NewEvidenceLinkModal({
                                 />
                             </div>
                             {canEditControlLinks && (
-                            <FormField label={tx('linkModal.linkControlLabel')}>
-                                <Combobox<false, ControlOption>
-                                    id="link-evidence-control-select"
-                                    name="controlId"
-                                    options={controlOptions}
-                                    selected={
-                                        controlOptions.find(
-                                            (o) => o.value === form.controlId,
-                                        ) ?? null
-                                    }
-                                    setSelected={(option) =>
-                                        update('controlId', option?.value ?? '')
-                                    }
-                                    placeholder={tx('linkModal.noControlLink')}
-                                    searchPlaceholder={tx('linkModal.searchControls')}
-                                    emptyState={tx('linkModal.noControlsMatch')}
-                                    matchTriggerWidth
-                                    forceDropdown
-                                    buttonProps={{ className: 'w-full' }}
-                                    caret
-                                />
-                            </FormField>
+                                <div className="sm:col-span-2">
+                                    <EvidenceControlsField
+                                        id="link-evidence-control-select"
+                                        controls={controls}
+                                        value={form.controlIds}
+                                        onChange={(v) => update('controlIds', v)}
+                                    />
+                                </div>
                             )}
-                            <div>
-                                <label
-                                    className="mb-1 block text-sm text-content-default"
-                                    htmlFor="link-evidence-category-input"
-                                >
-                                    {tx('linkModal.categoryLabel')}
-                                </label>
-                                <input
-                                    id="link-evidence-category-input"
-                                    type="text"
-                                    className="input w-full"
-                                    value={form.category}
-                                    onChange={(e) =>
-                                        update('category', e.target.value)
-                                    }
-                                    autoComplete="off"
-                                />
-                            </div>
+                            <EvidenceCategoryField
+                                id="link-evidence-category-input"
+                                value={form.category}
+                                onChange={(v) => update('category', v)}
+                                existingCategories={existingCategories}
+                            />
                             <div>
                                 <label
                                     className="mb-1 block text-sm text-content-default"
@@ -296,6 +267,11 @@ export function NewEvidenceLinkModal({
                                 autoComplete="off"
                             />
                         </div>
+                        <EvidenceDescriptionField
+                            id="link-evidence-description-input"
+                            value={form.description}
+                            onChange={(v) => update('description', v)}
+                        />
                     </fieldset>
                 </Modal.Body>
 

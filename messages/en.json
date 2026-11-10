@@ -3064,7 +3064,8 @@
       "linkControlFailed": "Failed to link control",
       "usedByLabel": "Used by",
       "usedBySummary": "{controls} controls · {risks} risks · {assets} assets",
-      "tagsLabel": "Tags"
+      "tagsLabel": "Tags",
+      "metaDescription": "Description"
     },
     "edit": {
       "title": "Edit evidence",
@@ -3263,6 +3264,22 @@
       "pending": "Scanning",
       "pendingTooltip": "This file is being scanned for viruses and is not available yet.",
       "pendingPreview": "Preview available once the antivirus scan completes."
+    },
+    "formFields": {
+      "customControl": "Custom",
+      "controlsLabel": "Controls",
+      "controlsDesc": "Every control this evidence supports. Pick as many as apply.",
+      "controlsPlaceholder": "No controls linked",
+      "searchControls": "Search controls…",
+      "noControlsMatch": "No controls match",
+      "categoryLabel": "Category",
+      "categoryDesc": "Pick a standard category, one already in use, or type a new one.",
+      "categoryPlaceholder": "No category",
+      "searchCategories": "Search or type a category…",
+      "createCategory": "Use \"{category}\"",
+      "descriptionLabel": "Description",
+      "descriptionDesc": "What this evidence shows and why it supports the controls. Optional.",
+      "descriptionPlaceholder": "e.g. Version 1 of the methodology, accepted by the provider's practice lead on 20 Oct 2026."
     }
   },
   "personnel": {
