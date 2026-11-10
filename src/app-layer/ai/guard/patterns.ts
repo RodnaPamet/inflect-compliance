@@ -335,6 +335,27 @@ function looksLikePath(token: string): boolean {
     return slashes > 0 && slashes / token.length > PATH_SLASH_DENSITY;
 }
 
+/**
+ * A COMPACT ISO-8601 TIMESTAMP IS NOT ENTROPY (#5012).
+ *
+ * The reference agent-harness scanner names each scan
+ * `<estate>-<YYYYMMDD>T<HHMMSS>Z-<hex>`, e.g.
+ *
+ *     inflect-own-20261109T074741Z-52a93bd5
+ *
+ * and `get_discovered_agent` returns that ref with every observation. `-` is in
+ * the rule's character class, so the whole ref is one 37-character candidate,
+ * and its only upper-case letters are the `T` and `Z` of the timestamp. Every
+ * `discovered-agent-review` run therefore parked for a human review at its
+ * first READ (live, 2026-11-10, run `cmwartyod003m01o5oj23z3z1`).
+ *
+ * The timestamp is REMOVED before the class test, not used to skip the token:
+ * a secret that carries upper case anywhere else still fires, and so does one
+ * that merely contains a timestamp-shaped run. What no longer fires is a token
+ * whose upper case came from the timestamp alone.
+ */
+const COMPACT_ISO_TIMESTAMP = /\d{8}T\d{6}(?:\d{1,3})?Z/g;
+
 export const EGRESS_RULES: ReadonlyArray<GuardRule<EgressCategory>> = [
     // Cloud / provider API keys.
     {
@@ -426,9 +447,11 @@ export const EGRESS_RULES: ReadonlyArray<GuardRule<EgressCategory>> = [
                 const tok = m[0];
                 // A REST path is not a token. See `looksLikePath`.
                 if (looksLikePath(tok)) continue;
-                const hasLower = /[a-z]/.test(tok);
-                const hasUpper = /[A-Z]/.test(tok);
-                const hasDigit = /[0-9]/.test(tok);
+                // A scan ref's timestamp is not entropy. See `COMPACT_ISO_TIMESTAMP`.
+                const judged = tok.replace(COMPACT_ISO_TIMESTAMP, '');
+                const hasLower = /[a-z]/.test(judged);
+                const hasUpper = /[A-Z]/.test(judged);
+                const hasDigit = /[0-9]/.test(judged);
                 // Require all three classes to fire — filters out plain hex ids,
                 // slugs, and sentences.
                 if (hasLower && hasUpper && hasDigit) return true;
