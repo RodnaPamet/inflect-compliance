@@ -20,7 +20,6 @@ import { useSWRConfig } from 'swr';
 import {
     useCallback,
     useEffect,
-    useMemo,
     useRef,
     useState,
     type Dispatch,
@@ -29,8 +28,11 @@ import {
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { FormField } from '@/components/ui/form-field';
+import {
+    EvidenceCategoryField,
+    EvidenceControlsField,
+    EvidenceDescriptionField,
+} from './_form/EvidenceFormFields';
 import { RequiredMarker } from '@/components/ui/required-marker';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -56,6 +58,8 @@ export interface NewEvidenceTextModalProps {
      * shown and the record is created with no control.
      */
     canEditControlLinks: boolean;
+    /** Categories the workspace already uses, offered after the standard list (#5018). */
+    existingCategories?: ReadonlyArray<string>;
 }
 
 export function NewEvidenceTextModal({
@@ -65,6 +69,7 @@ export function NewEvidenceTextModal({
     apiUrl,
     controls,
     canEditControlLinks,
+    existingCategories = [],
 }: NewEvidenceTextModalProps) {
     const tx = useTranslations('evidence');
     const close = useCallback(() => setOpen(false), [setOpen]);
@@ -79,8 +84,9 @@ export function NewEvidenceTextModal({
     const [form, setForm] = useState({
         title: '',
         content: '',
-        controlId: '',
+        controlIds: [] as string[],
         category: '',
+        description: '',
         // B8 follow-up — free-text folder label. Datalist below
         // seeds it with values already in use on existing evidence.
         folder: '',
@@ -94,8 +100,9 @@ export function NewEvidenceTextModal({
         setForm({
             title: '',
             content: '',
-            controlId: '',
+            controlIds: [],
             category: '',
+            description: '',
             folder: '',
             owner: '',
         });
@@ -109,16 +116,6 @@ export function NewEvidenceTextModal({
         value: (typeof form)[K],
     ) => setForm((prev) => ({ ...prev, [field]: value }));
 
-    const controlOptions = useMemo<ComboboxOption<ControlOption>[]>(
-        () =>
-            controls.map((c) => ({
-                value: c.id,
-                label: `${c.annexId || c.code || 'Custom'}: ${c.name}`,
-                meta: c,
-            })),
-        [controls],
-    );
-
     const [submitting, setSubmitting] = useState(false);
 
     const telemetry = useFormTelemetry('NewEvidenceTextModal');
@@ -131,7 +128,7 @@ export function NewEvidenceTextModal({
         if (!canSubmit) return;
         setError('');
         telemetry.trackSubmit({
-            hasControlLink: Boolean(form.controlId),
+            hasControlLink: form.controlIds.length > 0,
             contentLength: form.content?.length ?? 0,
         });
         setSubmitting(true);
@@ -139,7 +136,12 @@ export function NewEvidenceTextModal({
             const res = await fetch(apiUrl('/evidence'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...form, type: 'TEXT' }),
+                body: JSON.stringify({
+                    ...form,
+                    category: form.category.trim() || null,
+                    description: form.description.trim() || null,
+                    type: 'TEXT',
+                }),
             });
             if (!res.ok) {
                 // The error body is the envelope `{ error: { code, message } }`;
@@ -225,28 +227,14 @@ export function NewEvidenceTextModal({
                                 />
                             </div>
                             {canEditControlLinks && (
-                            <FormField label={tx('text.linkControlLabel')}>
-                                <Combobox<false, ControlOption>
-                                    id="text-evidence-control-select"
-                                    name="controlId"
-                                    options={controlOptions}
-                                    selected={
-                                        controlOptions.find(
-                                            (o) => o.value === form.controlId,
-                                        ) ?? null
-                                    }
-                                    setSelected={(option) =>
-                                        update('controlId', option?.value ?? '')
-                                    }
-                                    placeholder={tx('text.noControlLink')}
-                                    searchPlaceholder={tx('text.searchControls')}
-                                    emptyState={tx('text.noControlsMatch')}
-                                    matchTriggerWidth
-                                    forceDropdown
-                                    buttonProps={{ className: 'w-full' }}
-                                    caret
-                                />
-                            </FormField>
+                                <div className="sm:col-span-2">
+                                    <EvidenceControlsField
+                                        id="text-evidence-control-select"
+                                        controls={controls}
+                                        value={form.controlIds}
+                                        onChange={(v) => update('controlIds', v)}
+                                    />
+                                </div>
                             )}
                             <div>
                                 <label
@@ -266,24 +254,12 @@ export function NewEvidenceTextModal({
                                     autoComplete="off"
                                 />
                             </div>
-                            <div>
-                                <label
-                                    className="mb-1 block text-sm text-content-default"
-                                    htmlFor="text-evidence-category-input"
-                                >
-                                    {tx('text.categoryLabel')}
-                                </label>
-                                <input
-                                    id="text-evidence-category-input"
-                                    type="text"
-                                    className="input w-full"
-                                    value={form.category}
-                                    onChange={(e) =>
-                                        update('category', e.target.value)
-                                    }
-                                    autoComplete="off"
-                                />
-                            </div>
+                            <EvidenceCategoryField
+                                id="text-evidence-category-input"
+                                value={form.category}
+                                onChange={(v) => update('category', v)}
+                                existingCategories={existingCategories}
+                            />
                         </div>
                         {/* B8 follow-up — Folder. Free text with a
                             datalist that suggests folders already
@@ -329,6 +305,11 @@ export function NewEvidenceTextModal({
                                 placeholder={tx('text.contentPlaceholder')}
                             />
                         </div>
+                        <EvidenceDescriptionField
+                            id="text-evidence-description-input"
+                            value={form.description}
+                            onChange={(v) => update('description', v)}
+                        />
                     </fieldset>
                 </Modal.Body>
 

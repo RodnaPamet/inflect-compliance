@@ -185,6 +185,9 @@ const evidenceListSelect = {
     content: true,
     // EP-3 Part 5 — category is now a rendered column + filter.
     category: true,
+    // #5018 — seeds the list-row edit modal's description field, so a save from
+    // the list does not blank it. Decrypted by the Epic B extension on read.
+    description: true,
     // LEGACY free-text owner. Still selected because it is the only owner
     // a row created before the FK existed has, and the create-from-text
     // modal still writes it.

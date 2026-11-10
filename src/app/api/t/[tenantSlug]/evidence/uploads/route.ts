@@ -9,6 +9,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { uploadEvidenceFile } from '@/app-layer/usecases/evidence';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { EVIDENCE_DESCRIPTION_MAX } from '@/lib/evidence-description';
 
 // R5-P3 #6 — the metadata fields were raw formData.get casts with no
 // validation: the 120-char folder cap, the reviewCycle enum, and a parseable
@@ -25,6 +26,8 @@ const UploadMetadataSchema = z.object({
     riskId: z.string().max(64).optional(),
     assetId: z.string().max(64).optional(),
     category: z.string().max(200).optional(),
+    // #5018 — what the evidence shows; the same cap as the JSON create.
+    description: z.string().max(EVIDENCE_DESCRIPTION_MAX).optional(),
     folder: z.string().max(120).optional(),
     owner: z.string().max(200).optional(),
     reviewCycle: z.enum(['MONTHLY', 'QUARTERLY', 'SEMI_ANNUALLY', 'ANNUALLY']).optional(),
@@ -52,6 +55,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
         riskId: empty(formData.get('riskId')),
         assetId: empty(formData.get('assetId')),
         category: empty(formData.get('category')),
+        description: empty(formData.get('description')),
         folder: empty(formData.get('folder')),
         owner: empty(formData.get('owner')),
         reviewCycle: empty(formData.get('reviewCycle')),

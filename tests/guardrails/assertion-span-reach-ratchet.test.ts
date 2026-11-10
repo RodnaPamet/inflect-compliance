@@ -212,7 +212,7 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 139;
 //   read the delivered fixtures as data, when the templates moved to
 //   prisma/fixtures/risk-templates-*.json. All five were bounded, so the
 //   unbounded baseline does not move.
-const INTERIOR_SPAN_BASELINE = 297;
+const INTERIOR_SPAN_BASELINE = 295;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

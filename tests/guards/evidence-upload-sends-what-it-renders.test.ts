@@ -84,7 +84,9 @@ describe('the SharePoint import sends the fields the modal renders', () => {
         const at = imp.indexOf('await importOne(');
         expect(at).toBeGreaterThan(-1);
         const call = imp.slice(at, imp.indexOf('),', at));
-        expect(call).toMatch(/controlId:\s*input\.controlId/);
+        // #5018 — every control the form picked, merged with a legacy `controlId`.
+        expect(call).toMatch(/controlIds,/);
+        expect(call).toMatch(/description:\s*input\.description/);
         expect(call).toMatch(/category:\s*input\.category/);
         expect(call).toMatch(/folder:\s*input\.folder/);
     });

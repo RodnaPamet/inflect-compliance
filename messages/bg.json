@@ -3064,7 +3064,8 @@
       "linkControlFailed": "Свързването с контрола е неуспешно",
       "usedByLabel": "Използва се от",
       "usedBySummary": "{controls} контроли · {risks} риска · {assets} актива",
-      "tagsLabel": "Етикети"
+      "tagsLabel": "Етикети",
+      "metaDescription": "Описание"
     },
     "edit": {
       "title": "Редактиране на доказателство",
@@ -3263,6 +3264,22 @@
       "pending": "Сканиране",
       "pendingTooltip": "Файлът се сканира за вируси и все още не е наличен.",
       "pendingPreview": "Прегледът ще е наличен след завършване на антивирусната проверка."
+    },
+    "formFields": {
+      "customControl": "Собствена",
+      "controlsLabel": "Контроли",
+      "controlsDesc": "Всяка контрола, която това доказателство подкрепя. Изберете всички приложими.",
+      "controlsPlaceholder": "Няма свързани контроли",
+      "searchControls": "Търсене на контроли…",
+      "noControlsMatch": "Няма съвпадащи контроли",
+      "categoryLabel": "Категория",
+      "categoryDesc": "Изберете стандартна категория, вече използвана такава или въведете нова.",
+      "categoryPlaceholder": "Без категория",
+      "searchCategories": "Търсене или въвеждане на категория…",
+      "createCategory": "Използвай „{category}“",
+      "descriptionLabel": "Описание",
+      "descriptionDesc": "Какво показва това доказателство и защо подкрепя контролите. По избор.",
+      "descriptionPlaceholder": "напр. Версия 1 на методологията, приета от ръководителя на практиката на доставчика на 20 окт 2026 г."
     }
   },
   "personnel": {

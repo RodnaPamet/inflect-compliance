@@ -119,7 +119,7 @@ describe('importSharePointItems', () => {
         expect(r.imported).toBe(2);
         expect(r.failed).toBe(0);
         expect(mockUpload).toHaveBeenCalledTimes(2);
-        expect(mockUpload.mock.calls[0][2]).toMatchObject({ controlId: 'ctrl1' });
+        expect(mockUpload.mock.calls[0][2]).toMatchObject({ controlIds: ['ctrl1'] });
         expect(mockDb.integrationSyncMapping.upsert).toHaveBeenCalledTimes(2);
         // mapping carries the SharePoint webUrl as sourceUrl
         const upsertArg = mockDb.integrationSyncMapping.upsert.mock.calls[0][0];
@@ -143,7 +143,7 @@ describe('importSharePointItems', () => {
         });
         expect(r.imported).toBe(1);
         expect(mockUpload.mock.calls[0][2]).toMatchObject({
-            controlId: 'ctrl1',
+            controlIds: ['ctrl1'],
             category: 'policies',
             folder: 'SOC2/2026/Access reviews',
         });

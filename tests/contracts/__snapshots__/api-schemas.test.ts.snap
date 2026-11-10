@@ -2396,6 +2396,13 @@ exports[`API contract — per-schema snapshots schema: EvidenceCreateRequest 1`]
         "null"
       ]
     },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    },
     "folder": {
       "type": [
         "string",
@@ -2861,6 +2868,13 @@ exports[`API contract — per-schema snapshots schema: EvidenceUpdateRequest 1`]
         "string",
         "null"
       ]
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
     },
     "folder": {
       "type": [

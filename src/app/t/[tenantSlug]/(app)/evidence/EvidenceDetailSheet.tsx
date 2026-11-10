@@ -152,6 +152,8 @@ interface EvidenceDetailPayload {
     ownerUser?: { id: string; name: string | null; email: string | null } | null;
     /** EP-3 — persisted classification. */
     category: string | null;
+    /** #5018 — what the evidence shows; plain text. */
+    description?: string | null;
     /** B8 follow-up — folder label (null = unfoldered). */
     folder: string | null;
     /** Tags — the second organisation dimension beside `folder`. */
@@ -330,6 +332,14 @@ export function EvidenceDetailSheet({
         if (owner) rows.push({ label: t('detail.metaOwner'), value: owner });
         if (evidence.category) {
             rows.push({ label: t('detail.metaCategory'), value: evidence.category });
+        }
+        if (evidence.description) {
+            // Plain text, rendered as text: React escapes it, and the
+            // whitespace class keeps the author's line breaks.
+            rows.push({
+                label: t('detail.metaDescription'),
+                value: <span className="whitespace-pre-wrap" data-testid="evidence-detail-description">{evidence.description}</span>,
+            });
         }
         if (evidence.task) {
             // Back-reference — which task this evidence was uploaded from.
@@ -788,6 +798,7 @@ export function EvidenceDetailSheet({
                                                     }),
                                                 ),
                                             category: evidence.category,
+                                            description: evidence.description ?? null,
                                             folder: evidence.folder ?? null,
                                             tags: (evidence.tags ?? []).map((tg) => tg.tag),
                                             retentionUntil: evidence.retentionUntil,

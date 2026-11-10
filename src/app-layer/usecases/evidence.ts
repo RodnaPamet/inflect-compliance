@@ -37,6 +37,16 @@ function sanitizeEvidenceBody(type: string | null | undefined, body: string): st
 }
 
 /**
+ * #5018 — an evidence description is plain text: sanitised, trimmed, and blank
+ * means "none". Three-state like `sanitizeFolder` (undefined = untouched).
+ */
+function sanitizeDescription(v: string | null | undefined): string | null | undefined {
+    if (v === undefined) return undefined;
+    if (v === null) return null;
+    return sanitizePlainText(v).trim() || null;
+}
+
+/**
  * Folder is a trimmed label where blank means "no folder" (the UI groups on
  * null). Sanitising BEFORE the trim matters: `<b> </b>` is blank once the
  * markup is gone. Three-state like `sanitizeOptional`.
@@ -224,6 +234,7 @@ export async function createEvidence(
             fileName,
             fileSize,
             category: sanitizeOptional(data.category),
+            description: sanitizeDescription(data.description) ?? null,
             // B8 follow-up — sanitise, trim + null-coerce so empty input
             // maps to "no folder" (the UI group-by keys on null).
             folder: sanitizeFolder(data.folder) ?? null,
@@ -270,6 +281,7 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
     // (undefined = untouched, null = cleared, string = sanitised).
     const title = data.title === undefined ? undefined : requireSanitisedTitle(data.title);
     const category = sanitizeOptional(data.category);
+    const description = sanitizeDescription(data.description);
     const owner = sanitizeOptional(data.owner);
 
     const updated = await runInTenantContext(ctx, async (db) => {
@@ -342,6 +354,7 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
             content,
             ...(contentReReview ? { status: 'SUBMITTED' } : {}),
             category,
+            description,
             // B8 follow-up — folder is editable post-create. The
             // three-state contract is preserved (undefined = no
             // change; null = clear; string = set).
@@ -931,6 +944,8 @@ export async function uploadEvidenceFile(
         riskId?: string | null;
         assetId?: string | null;
         category?: string | null;
+        /** #5018 — what the evidence shows. Sanitised and null-coerced before `create`. */
+        description?: string | null;
         /** B8 follow-up — folder applied to the newly-created
          *  evidence row. Sanitised, trimmed + null-coerced before `create`. */
         folder?: string | null;
@@ -1118,6 +1133,7 @@ export async function uploadEvidenceFile(
             riskId,
             assetId,
             category: sanitizePlainText(metadata.category) || undefined,
+            description: sanitizeDescription(metadata.description) ?? null,
             // B8 follow-up — same sanitise + null-coercion as the TEXT path.
             folder: sanitizeFolder(metadata.folder) ?? null,
             owner: sanitizePlainText(metadata.owner) || undefined,

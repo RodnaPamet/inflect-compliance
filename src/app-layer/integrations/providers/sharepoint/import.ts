@@ -30,7 +30,11 @@ export interface SpImportInput {
     connectionId: string;
     items: Array<{ driveId: string; itemId: string; name?: string }>;
     controlId?: string;
+    /** #5018 — several controls, as the upload form now sends. Merged with `controlId`. */
+    controlIds?: string[];
     category?: string;
+    /** #5018 — what the evidence shows; applied to every imported record. */
+    description?: string;
     folder?: string;
 }
 export interface SpImportResult {
@@ -46,7 +50,7 @@ async function importOne(
     client: SharePointClient,
     connectionId: string,
     sel: { driveId: string; itemId: string; name?: string },
-    target: { controlId?: string; category?: string; folder?: string },
+    target: { controlIds: string[]; category?: string; description?: string; folder?: string },
 ): Promise<string> {
     const remoteEntityId = encodeRemoteId(sel.driveId, sel.itemId);
 
@@ -122,8 +126,9 @@ async function importOne(
 
         const evidence = await uploadEvidenceFile(ctx, file, {
             title: name,
-            controlId: target.controlId ?? null,
+            controlIds: target.controlIds.length > 0 ? target.controlIds : null,
             category: target.category ?? null,
+            description: target.description ?? null,
             folder: target.folder ?? null,
         });
 
@@ -229,7 +234,8 @@ export async function importSharePointItems(
     // control side's rule as well (#4326). `uploadEvidenceFile` asks it per
     // file; asking it once here refuses the whole import before anything is
     // claimed or downloaded, with one refusal on record rather than one per file.
-    if (input.controlId) {
+    const controlIds = [...new Set([...(input.controlIds ?? []), ...(input.controlId ? [input.controlId] : [])])];
+    if (controlIds.length > 0) {
         await assertMayChangeEvidenceControlLinks(ctx, SP_IMPORT_SURFACE);
     }
     const client = await getSharePointClient(ctx, input.connectionId, deps);
@@ -239,8 +245,9 @@ export async function importSharePointItems(
         try {
             evidenceIds.push(
                 await importOne(ctx, client, input.connectionId, sel, {
-                    controlId: input.controlId,
+                    controlIds,
                     category: input.category,
+                    description: input.description,
                     // `folder` is declared on SpImportInput, accepted by the
                     // route schema and persisted by importOne — this hop was
                     // the only one that dropped it, so the destination the
@@ -321,7 +328,7 @@ export async function runSharePointDeltaSync(
             const curTag = it.cTag ?? it.eTag;
             if (curTag && curTag !== prevTag) {
                 try {
-                    await importOne(ctx, client, connectionId, { driveId, itemId: it.id }, {});
+                    await importOne(ctx, client, connectionId, { driveId, itemId: it.id }, { controlIds: [] });
                     reimported++;
                 } catch (err) {
                     edgeLogger.error('SharePoint delta re-import failed', {
