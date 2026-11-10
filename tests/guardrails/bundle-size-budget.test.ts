@@ -246,8 +246,30 @@ const BUDGETS_KB: Record<string, number> = {
         dashboard route loads that form. The owner chose the shared control
         over the budget on 2026-11-02. The new budget is the measured route
         plus ~1, leaving the same headroom main had.
+
+        ─── `dashboard` and `controls` RAISED 2026-11-10 BY THE PRODUCTION GROUP BUMP (#5010, owner decision) ───
+        Thirty-five dependency versions. Measured with local `next build
+        --webpack` runs of #5010, against main's CI build (33d7322b):
+              bucket      worst route                        main     #5010    delta
+              dashboard   controls/dashboard/page            625.1    626.7    +1.6
+              controls    controls/…/tests/[planId]/page     668.9    670.5    +1.6
+        Every route grew about the same, so this is shared code. Attributed
+        with single-variable builds of #5010, putting one package back at a
+        time (same route, KB):
+              #5010 as is                                    670.5
+              @sentry/nextjs back to 11.8.0                  670.5   (no change)
+              next back to 16.4.2                            670.7   (no change)
+              react-window back to 2.5.0                     670.1   (-0.4)
+              react-window + lucide-react + react-hook-form  669.5   (-1.0)
+        So about 1.0 KB is those three browser packages, all loaded on nearly
+        every page (react-window behind <DataTable> and <Combobox>, icons,
+        forms), and the rest is spread thinly over the other client bumps.
+        No import-shape regression: it is more library code, one patch each.
+        Main had 0.9 KB left in `dashboard` and 1.1 KB in `controls`, so the
+        bump could not pass either. The owner chose on 2026-11-10 to attribute
+        first and then raise to measured + ~4, the convention.
     */
-    'dashboard': 626,
+    'dashboard': 631,
     // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
     // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
     // 653.2. The growth is in the task form and edit panel that the risk
@@ -314,7 +336,11 @@ const BUDGETS_KB: Record<string, number> = {
     // Splitting `env.ts` into server and client halves would, and it is a
     // 95-importer change that does not belong in a transport PR -- filed as
     // #4764, with this measurement, rather than done here or left unsaid.
-    'controls': 670,
+    //
+    // Raised 670 -> 675 by the production group bump (#5010, owner decision):
+    // 668.9 -> 670.5 KB, about 1.0 KB of it react-window, lucide-react and
+    // react-hook-form. Measured and attributed in the `dashboard` note.
+    'controls': 675,
     // Catch-all for any other tenant page.
     'tenant-default': 682,
     // Auth / public / org pages.
