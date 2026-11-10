@@ -44,7 +44,7 @@ async function discoverTenants(): Promise<string[]> {
         ),
         drainPages((cursor) =>
             prisma.integrationConnection.findMany({
-                where: { provider: MCP_SERVER_PROVIDER_ID },
+                where: { provider: MCP_SERVER_PROVIDER_ID, tenant: { deletedAt: null } },
                 select: { id: true, tenantId: true },
                 orderBy: { id: 'asc' },
                 take: DRAIN_PAGE_SIZE,

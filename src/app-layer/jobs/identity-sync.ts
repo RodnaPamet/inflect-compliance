@@ -251,7 +251,7 @@ export async function runIdentitySyncDispatch(): Promise<{ connections: number; 
     // the completion log still read like a clean success.
     const connections = await drainPages((cursor) =>
         prisma.integrationConnection.findMany({
-            where: { provider: { in: IDENTITY_PROVIDERS }, isEnabled: true },
+            where: { provider: { in: IDENTITY_PROVIDERS }, isEnabled: true, tenant: { deletedAt: null } },
             select: { id: true, tenantId: true },
             orderBy: { id: 'asc' },
             take: DRAIN_PAGE_SIZE,

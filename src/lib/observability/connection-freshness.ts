@@ -98,7 +98,9 @@ export async function getEnabledConnectionFreshness(
     now: number = Date.now(),
 ): Promise<ConnectionFreshness[]> {
     const connections = await prisma.integrationConnection.findMany({
-        where: { isEnabled: true },
+        // A deleted workspace's connections are not syncing on purpose (#5017),
+        // so counting them would report a stale feed nobody can act on.
+        where: { isEnabled: true, tenant: { deletedAt: null } },
         select: { id: true, provider: true, tenantId: true, createdAt: true },
         take: MAX_FRESHNESS_SERIES * 5, // read headroom; the cap is applied after ranking
     });
