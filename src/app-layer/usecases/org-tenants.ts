@@ -316,6 +316,22 @@ export async function deleteTenantUnderOrg(
         });
 
         /*
+            AND SWITCHES OFF ITS INTEGRATIONS (#5017). The nightly dispatchers
+            pick connections across every tenant, and they used to filter on
+            `isEnabled` alone, so a removed workspace went on calling its
+            customer's directory, HRIS and cloud accounts every night until the
+            purge 90 days later. They now skip a deleted tenant too; this is the
+            other half, for the same reason the memberships are revoked above:
+            a removal should not depend on every future reader's WHERE clause.
+            Only enabled rows are touched, so the count says what was live.
+            Whoever restores a tenant by hand re-enables what it still needs.
+        */
+        const disabledConnections = await tx.integrationConnection.updateMany({
+            where: { tenantId: tenant.id, isEnabled: true },
+            data: { isEnabled: false },
+        });
+
+        /*
             FOURTH: the audit entry, and it is the reason this is one
             transaction rather than a batch (#3173).
 
@@ -374,6 +390,7 @@ export async function deleteTenantUnderOrg(
                 // The number the operator asks about next, and the one the
                 // `logger.info` line below has always carried.
                 revokedMemberships: revokedMemberships.count,
+                disabledConnections: disabledConnections.count,
             },
             requestId: ctx.requestId,
         });

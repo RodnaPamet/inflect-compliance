@@ -71,7 +71,7 @@ export interface IntegrationPassportSweepTotals {
 async function discoverTenants(periodStart: Date): Promise<string[]> {
     const connections = await drainPages((cursor) =>
         prisma.integrationConnection.findMany({
-            where: { provider: MCP_SERVER_PROVIDER_ID },
+            where: { provider: MCP_SERVER_PROVIDER_ID, tenant: { deletedAt: null } },
             // Ids only. The read crosses tenants, so it carries nothing that
             // would matter if it were logged.
             select: { id: true, tenantId: true },

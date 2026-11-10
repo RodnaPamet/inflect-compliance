@@ -66,7 +66,7 @@ export async function runIdentityLeaverDispatch(): Promise<{
 }> {
     const connections = await drainPages((cursor) =>
         prisma.integrationConnection.findMany({
-            where: { provider: { in: [...WRITABLE_IDENTITY_PROVIDERS] }, isEnabled: true },
+            where: { provider: { in: [...WRITABLE_IDENTITY_PROVIDERS] }, isEnabled: true, tenant: { deletedAt: null } },
             // Ids and provider only. No configJson, no secrets, no tenant
             // content — the read crosses tenants, so it carries nothing that
             // would matter if it were logged.

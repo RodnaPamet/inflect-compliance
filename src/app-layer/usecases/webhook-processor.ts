@@ -237,7 +237,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
 
     // 4. Find connections for this provider (resolve tenant from DB, not from caller)
     const connections = await prisma.integrationConnection.findMany({
-        where: { provider, isEnabled: true },
+        where: { provider, isEnabled: true, tenant: { deletedAt: null } },
         select: {
             id: true,
             tenantId: true,

@@ -141,7 +141,7 @@ export async function runSharePointDeltaSyncDispatch(_payload: SharePointDeltaSy
     // two. See ./drain-pages.
     const connections = await drainPages((cursor) =>
         prisma.integrationConnection.findMany({
-            where: { provider: 'sharepoint', isEnabled: true },
+            where: { provider: 'sharepoint', isEnabled: true, tenant: { deletedAt: null } },
             select: { id: true, tenantId: true },
             orderBy: { id: 'asc' },
             take: DRAIN_PAGE_SIZE,
