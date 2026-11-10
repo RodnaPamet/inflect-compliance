@@ -275,7 +275,17 @@ export function withApiErrorHandling<Context = unknown>(
                         });
 
                         // ── Request failed ──
-                        logger.error(`request failed ${status} ${method} ${route}`, {
+                        // A 4xx is the API refusing a request it was right to
+                        // refuse (bad input, no session, no permission, absent
+                        // row), so it is a warning. Only a 5xx is the server
+                        // failing, and only that is an error. Logging both as
+                        // errors buried real 500s among routine refusals: on
+                        // 2026-11-10, five of production's six error lines in a
+                        // day were correct 401/403/404s. The request-error
+                        // metric above still counts every failure, and a
+                        // denial still writes its AUTHZ_DENIED audit row.
+                        const logFailure = status >= 500 ? logger.error : logger.warn;
+                        logFailure(`request failed ${status} ${method} ${route}`, {
                             component: 'api',
                             method,
                             status,
