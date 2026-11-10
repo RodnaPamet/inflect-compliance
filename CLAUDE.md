@@ -90,12 +90,28 @@ docker-compose up -d
 
 ## Production VM
 
-The production deployment runs on a single GCP VM, and **Claude has
-`gcloud` access to it** — project `hazel-design-419410`, instance
-`inflect-compliance`, zone `europe-west1-b`:
+The production deployment runs on a single GCP VM — project
+`hazel-design-419410`, instance `inflect-compliance`, zone
+`europe-west1-b`.
+
+**A cloud session holds no standing credential for it.** The way in
+is the **`VM check`** workflow (`.github/workflows/vm-check.yml`,
+owner decision 2026-11-10): dispatch it with one check from its
+fixed read-only list, the owner approves the run in the
+`production` environment, and the job's output is the answer. Its
+logs are public, so the checks print names, states and counts
+only. A check that is missing is a PR to `deploy/vm-check/remote.sh`,
+never a free-text input — the identity it holds is root on the VM.
+
+When the owner signs a session in to `gcloud` with their own Google
+account, direct access works too, for that container's lifetime.
+Run `gcloud` with `CLOUDSDK_AUTH_ACCESS_TOKEN` unset (the
+environment's value is a placeholder that overrides the login), and
+over IAP, because port 22 is refused from the sandbox:
 
 ```bash
-gcloud compute ssh inflect-compliance --zone europe-west1-b --command "…"
+env -u CLOUDSDK_AUTH_ACCESS_TOKEN gcloud compute ssh inflect-compliance \
+  --zone europe-west1-b --tunnel-through-iap --command "…"
 ```
 
 The VM hosts a Docker Compose stack at `/opt/inflect/`
@@ -122,7 +138,7 @@ operator actions.
 
 Non-structural VM work — inspecting container logs, a one-off job
 run — is still fine to execute directly via `gcloud compute ssh`
-rather than asking the operator.
+when the session is signed in, rather than asking the operator.
 
 ## Architecture
 

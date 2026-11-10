@@ -596,6 +596,26 @@ No approval sits between steps 1 and 3. See
 - **Scaling** is vertical: one VM, one `app` container and one `worker`
   container, with no autoscaling. More capacity means a larger machine type.
 
+### Read-only checks without a key
+
+Three dispatch-only workflows reach the VM as the `scanner-vm-operator` service
+account, through Workload Identity Federation, so no key exists to leak. Each
+runs in the `production` GitHub environment, whose reviewer approves every run.
+
+| Workflow | What it does |
+| --- | --- |
+| `Scanner VM` (`scanner-vm.yml`) | Configures, checks and starts the harness scanner (`deploy/harness-scanner/README.md`). |
+| `VM capacity` (`vm-capacity.yml`) | Prints memory, CPU and disk per container (`deploy/capacity/`). |
+| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`. |
+
+`VM check` is how a Claude Code session looks at production without holding a
+credential: the session dispatches it, the reviewer approves, and the session
+reads the job's output. The service account is root on the VM, so the input is
+a choice rather than a command, and a new check is a pull request. The
+repository is public, and so are the runs' logs: every check prints names,
+states, versions and counts, never a log line, a database row or a credential.
+`tests/guards/vm-check-workflow.test.ts` holds these properties.
+
 ## Observability provisioning
 
 The telemetry backend (OTel Collector + Prometheus + Tempo + Grafana) is
