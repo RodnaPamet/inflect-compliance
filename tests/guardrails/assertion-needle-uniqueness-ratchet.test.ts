@@ -626,7 +626,13 @@ const HIGH_MULTIPLICITY = 5;
 // fixtures, and the LINDDUN and OWASP-privacy guards stopped asserting whole-file
 // needles over the seed (`toContain('privacyRiskTemplates')` among them); they
 // read the delivered set as data. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1135;
+//
+// 1135 -> 1133 on 2026-11-10 (#5022). scripts/worker.ts and scripts/scheduler.ts
+// stopped building their own pino logger, whose `process.env.NODE_ENV !==
+// 'production'` line was a second match for the encryption-key guard's
+// `/NODE_ENV.*['"]production['"]/` in each file. The fail-fast check is now the
+// only line that satisfies it. No test changed. Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1133;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

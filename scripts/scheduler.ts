@@ -28,19 +28,16 @@
 import 'dotenv/config';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
-import pino from 'pino';
+import { createProcessLogger } from '../src/lib/observability/process-logger';
 import { QUEUE_NAME } from '../src/app-layer/jobs/types';
 import { SCHEDULED_JOBS } from '../src/app-layer/jobs/schedules';
 import { registerSchedules } from '../src/app-layer/jobs/register-schedules';
 
 // ─── Logger ───
 
-const log = pino({
-    level: process.env.LOG_LEVEL || 'info',
-    transport: process.env.NODE_ENV !== 'production'
-        ? { target: 'pino-pretty', options: { colorize: true, ignore: 'pid,hostname', translateTime: 'HH:MM:ss.l' } }
-        : undefined,
-});
+// Every line carries `requestId`, which is what the VM's Ops Agent keys on to
+// ship it to Cloud Logging (#5022).
+const log = createProcessLogger('scheduler');
 
 // ─── Redis ───
 

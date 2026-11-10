@@ -40,7 +40,7 @@ import { Worker, Job, Queue, UnrecoverableError } from 'bullmq';
 import Redis from 'ioredis';
 
 import { beat } from '../src/app-layer/jobs/worker-heartbeat';
-import pino from 'pino';
+import { createProcessLogger } from '../src/lib/observability/process-logger';
 import {
     QUEUE_NAME,
     type JobName,
@@ -49,12 +49,9 @@ import { registerSchedules } from '../src/app-layer/jobs/register-schedules';
 
 // ─── Standalone logger ───
 
-const log = pino({
-    level: process.env.LOG_LEVEL || 'info',
-    transport: process.env.NODE_ENV !== 'production'
-        ? { target: 'pino-pretty', options: { colorize: true, ignore: 'pid,hostname', translateTime: 'HH:MM:ss.l' } }
-        : undefined,
-});
+// Every line carries `requestId`, which is what the VM's Ops Agent keys on to
+// ship it to Cloud Logging (#5022).
+const log = createProcessLogger('worker');
 
 // ─── Redis connection ───
 
