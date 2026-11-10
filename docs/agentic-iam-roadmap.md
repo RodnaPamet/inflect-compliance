@@ -1131,14 +1131,13 @@ ISO/IEC 27001 certification body as the auditor.
   internal audit nor agreed by the managed-service provider, and only
   `agent.authority_conformance`
   citing an ISO/IEC 42001 Annex A identifier.
-- **The conclusion.** The external auditor's conclusion on memo version 1 is
-  recorded on #3681, dated 2026-10-20: it relies on the workpapers for every
-  control in scope, for SOC 2 and ISO/IEC 42001, over the workpapers written in
-  the pilot period from 2026-10-19 to 2026-10-20, on its own re-performed sample
-  and internal audit's agreement rate. The record does not name the audit firm.
-  Attaching it as Evidence to each control it covers is the tenant's act. Memo
-  version 2 (2026-10-26) adds catalogue version 2; no conclusion on it is
-  recorded.
+- **The conclusion.** No external auditor has concluded on any version of the
+  memo. A record dated 2026-10-20 on #3681 stated that one relied on the
+  workpapers of a pilot period from 2026-10-19 to 2026-10-20; the repository
+  owner withdrew it on 2026-11-10 (owner decision): Inflect has no external
+  audit engagement, and its tenant held no auditor agent or workpaper then. The
+  exit stays open until an external auditor is engaged and concludes on a pack
+  of real workpapers. The auditor agent first runs on 2026-12-02.
 
 ### Tenant-authored skills
 
@@ -1202,9 +1201,11 @@ auditor. Drafting it found two product gaps, both now closed: tenant skill
 authoring and approval are separate keys (#3778), and the monthly token budget
 that inbound A2A requires is set beside the concurrency cap (#3777).
 
-The repository owner's merge adopts it for this repository. The provider's
-practice lead accepted version 1 on 2026-10-20, and the acceptance is recorded
-on #3682. Neither the methodology nor the record names the provider.
+The repository owner's merge adopts it for this repository. No managed-service
+provider has accepted it: a record dated 2026-10-20 on #3682 stated that a
+provider's practice lead had, and the repository owner withdrew it on
+2026-11-10, because the acceptance was the owner's own. The step's exit, a
+provider's acceptance, stays open.
 
 ### What the six use cases stand on
 

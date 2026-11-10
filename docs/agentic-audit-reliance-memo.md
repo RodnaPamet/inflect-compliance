@@ -13,18 +13,18 @@ agent, with internal audit, which samples its work.
 **Status.** The repository owner's merge of the pull request that adds or
 changes this file is the owner's sign-off of that version. The external
 auditor's conclusion on reliance is that auditor's act: it is recorded on issue
-#3681, and as Evidence against each control it covers. The conclusion on
-version 1 is recorded on #3681, dated 2026-10-20: the external auditor relies
-on the workpapers for every control in scope, for SOC 2 and ISO/IEC 42001, over
-the workpapers written in the pilot period from 2026-10-19 to 2026-10-20, on the
-basis of its own re-performed sample and internal audit's agreement rate. The
-record does not name the audit firm. An editorial change to this memo that
+#3681, and as Evidence against each control it covers. **No external auditor
+has concluded on any version of this memo.** A record dated 2026-10-20 on #3681
+stated that one relied on the workpapers of a pilot period from 2026-10-19 to
+2026-10-20. The repository owner withdrew it on 2026-11-10: Inflect has no
+external audit engagement, and that tenant held no auditor agent and no
+workpaper in that period. Its auditor agent first runs on 2026-12-02. An editorial change to this memo that
 alters no procedure, control, limit or request does not raise its version;
 replacing a firm's name with its role (2026-10-20) was such a change. Version 2
 (2026-10-26) is not: it adds catalogue version 2 (#4379), which changes what
 `iam.recertification_completeness` tests for a legacy application. The
 workpapers the conclusion on version 1 covers were all written under catalogue
-version 1, and no conclusion on version 2 is recorded.
+version 1; no conclusion on either version is recorded.
 
 ## What we ask you to rely on
 

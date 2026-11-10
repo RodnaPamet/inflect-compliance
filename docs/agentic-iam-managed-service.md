@@ -5,12 +5,11 @@ practice (**the provider**) to run the six use cases of
 [the agentic IAM plan](agentic-iam-roadmap.md) for a client, on Inflect, as a
 managed service. Step `4e`, issue #3682.
 
-**Status: adopted for this repository, and accepted by the provider's practice
-lead.** The repository owner's merge of the pull request that added this file
-adopted version 1 for this repository. The practice lead's acceptance of
-version 1 is recorded on #3682, dated 2026-10-20
-([Acceptance](#acceptance)). The text is Inflect-original and reproduces none
-of the provider's methodology.
+**Status: adopted for this repository; no provider has accepted it.** The
+repository owner's merge of the pull request that added this file adopted
+version 1 for this repository. No managed-service provider has accepted any
+version ([Acceptance](#acceptance)). The text is Inflect-original and reproduces
+no provider's methodology.
 
 Every product fact here is true of `main`. Where this document states a rule
 the product does not enforce, it says so beside the rule, and
@@ -410,14 +409,17 @@ than restating it:
 
 ## Acceptance
 
-- **The acceptance.** The practice lead of the provider's IAM practice accepted
-  version 1 on 2026-10-20, as the text stood at commit `f55d00ec1`. The
-  acceptance is recorded on #3682. This document does not name the provider.
-- **The evidence filing.** Inflect files the accepted version as Evidence in
-  its own tenant against ISO/IEC 27001:2022 A.5.19, A.5.20 and A.5.22: the
-  supplier relationship, its agreement and its monitoring.
+- **The acceptance.** No managed-service provider has accepted this
+  methodology. A record dated 2026-10-20 on #3682 stated that a provider's
+  practice lead accepted version 1; the repository owner withdrew it on
+  2026-11-10, because no separate provider exists and the acceptance was the
+  owner's own. The owner's adoption is the merge described under Status.
+- **The evidence filing.** A provider's acceptance is filed as Evidence in
+  Inflect's own tenant against ISO/IEC 27001:2022 A.5.19, A.5.20 and A.5.22: the
+  supplier relationship, its agreement and its monitoring. With no provider,
+  there is no supplier relationship for those controls to evidence.
 - **A change** is a pull request to this file that raises the version. The
-  practice lead's acceptance of the new version is recorded on its issue when
-  given. An editorial change that alters no role, right, rule or activity does
+  provider's acceptance of a version, once there is a provider, is recorded on
+  its issue. An editorial change that alters no role, right, rule or activity does
   not raise the version, and its pull request says so. Replacing the provider's
   name with "the provider" (2026-10-20) was such a change.
