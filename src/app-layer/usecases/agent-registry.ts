@@ -461,6 +461,8 @@ export interface AgenticCheckStatus {
     /** `null` when the check has never produced a run — NOT a pass. */
     result: string | null;
     lastRunAt: Date | null;
+    /** Whether any live plan runs this check (#5014): "never run" with no plan is "not scheduled". */
+    scheduled: boolean;
 }
 
 export async function getAgenticAssuranceSignals(ctx: RequestContext): Promise<{
@@ -537,6 +539,7 @@ export async function getAgenticAssuranceSignals(ctx: RequestContext): Promise<{
                     title: AGENTIC_CHECKS[checkId].title,
                     result: run?.result ?? null,
                     lastRunAt: run?.executedAt ?? null,
+                    scheduled: byCheck.has(checkId),
                 };
             });
         }),

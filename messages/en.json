@@ -11536,7 +11536,16 @@
         "coveragePartial": "{scored} of {total} registered agent(s) have an assessed risk tier. The {unscored} unscored agent(s) are refused at the tool boundary until they are assessed.",
         "sampleNone": "No approved proposal has been sample-audited yet, so nothing is re-checking what reviewers approve.",
         "sampleRate": "A second reviewer disagreed with {dissented} of {answered} sampled approvals ({percent}%) in the last 90 days.",
-        "checkNeverRun": "never run"
+        "checkNeverRun": "never run",
+        "checkNotScheduled": "not scheduled",
+        "schedule": {
+          "button": "Schedule these checks",
+          "previewIntro": "Each check will run daily at 06:40 UTC and file its result as evidence on this control:",
+          "previewLine": "{title} on {control}",
+          "confirm": "Schedule checks",
+          "cancel": "Cancel",
+          "failed": "The checks could not be scheduled."
+        }
       },
       "concurrency": {
         "heading": "Concurrent runs",

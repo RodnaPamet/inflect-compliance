@@ -299,6 +299,10 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // has. The `/agents/audit-pilot` page calls it; `scripts/audit-pilot-setup.ts`
     // calls the same usecase from the command line.
     't/[tenantSlug]/admin/agents/audit-pilot/route.ts',
+    // #5014 — schedule the four agent assurance checks the register's Assurance
+    // section reads: a dry run, then the writes, through `createTestPlan` and
+    // `scheduleTestPlan`. The register's "Schedule these checks" button calls it.
+    't/[tenantSlug]/admin/agents/assurance-checks/route.ts',
     // #3669 — the registration intake: a SHADOW_AGENT finding becomes a DRAFT
     // register row through a provisional UNCLASSIFIED AI-system entry. Since
     // #3712 the harness tab's shadow list calls it: each shadow row carries its

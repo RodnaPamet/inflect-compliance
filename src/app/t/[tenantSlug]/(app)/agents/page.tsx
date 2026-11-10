@@ -165,6 +165,9 @@ export default async function AgentRegisterPage({
             canListVendors={canListVendors}
             canWrite={affordances.canManage}
             canSetCapacity={affordances.canAdminister}
+            // The setup's two gates (#5014): the register write the route
+            // takes, and the test-plan key both of its writes take.
+            canScheduleChecks={affordances.canManage && ctx.appPermissions?.tests?.create === true}
             // The assurance views gate themselves on the register KEY alone —
             // they are pages, not admin API writes — so the menu entry asks
             // the key, not the write affordance above.

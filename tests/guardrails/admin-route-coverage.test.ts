@@ -132,6 +132,9 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/owner-orphan-pass/route.ts',
     // #3807 — the pilot auditor's set-up, as the signed-in owner (`admin.agent_registry`).
     'admin/agents/audit-pilot/route.ts',
+    // #5014 — schedule the four agent assurance checks (`admin.agent_registry`;
+    // the usecase also asks `tests.create`, which both test-plan writes take).
+    'admin/agents/assurance-checks/route.ts',
     // #3470 — the Flue skill corpus behind the Skills tab. Read-only, and
     // `admin.agent_registry` rather than the per-agent exposure key: a
     // skill is instruction text delivered to a model and is tenant-wide.
