@@ -430,20 +430,24 @@ export async function startWorkflowRun(
     // stopped being — so a reader checking why every run came out `static` was
     // sent to the wrong term.
     //
-    // It then decayed the same way a second time, inside the correction (#3469).
-    // It went on to say the answer was `static` because NO registered
-    // WorkflowDefinition sets `driver`. Two now do — `access-posture` and
-    // `posture-review` both ask for `flue` — so a run on either is no longer
-    // static by that term, and a reader checking why one of them came out
-    // static would again be sent somewhere that is not the reason.
+    // It then decayed the same way a second time, inside the correction (#3469):
+    // it said the answer was `static` because NO registered WorkflowDefinition
+    // sets `driver`. Definitions DO set it, and a count of them decays too —
+    // this comment said "two" and was wrong again within weeks (residual F12) —
+    // so it names the two places to look rather than a number: registered
+    // workflows under `src/lib/agentic/workflows/` that ask for `flue`, and
+    // every compiled agent profile, which `agent-profile-runs.ts` builds asking
+    // for `tool-runner`. `grep "driver: '" ` over those two finds them all.
     //
     // THREE terms decide it, all fail-closed, and the definition's request is
     // only the first: `selectRunDriver` requires the DEFINITION to ask for the
     // engine; `resolveDriverForRun` requires the deployment to permit it (the
-    // env switch AND the per-tenant toggle); and the register must vouch for
-    // the run below. A `static` outcome means one of the three said no, and
-    // which one is the question worth asking — `driverDecision.reason` carries
-    // the answer for the deployment half.
+    // engine's own env switch, which may leave the Tool Runner to the
+    // workspace's organization, AND the per-tenant choice); and for any
+    // reasoning engine the register must vouch for the run below. A `static`
+    // outcome means one of the three said no, and which one is the question
+    // worth asking — `driverDecision.reason` carries the answer for the
+    // deployment half.
     //
     // The decision is resolved and recorded regardless, and that is deliberate
     // — a seam whose first exercise is the diff that also makes it
@@ -463,10 +467,10 @@ export async function startWorkflowRun(
     // about a different thing.
     //
     // That used to be harmless "only because both answers are always `static`".
-    // They are not: with `access-posture` and `posture-review` asking for
-    // `flue`, permitted and chosen can now differ on a real run, which is
-    // precisely when conflating them would misreport which engine did the
-    // work. Both are bound separately below and the audit entry takes the
+    // They are not: with definitions asking for `flue` and every agent profile
+    // asking for `tool-runner`, permitted and chosen can differ on a real run,
+    // which is precisely when conflating them would misreport which engine did
+    // the work. Both are bound separately below and the audit entry takes the
     // CHOSEN one.
     //
     // Resolved here, before the audit write, because the entry is appended
@@ -474,7 +478,7 @@ export async function startWorkflowRun(
     // afterwards. `selectRunDriver` is pure, so asking it twice — once here,
     // once inside `executeFrom` — costs nothing and cannot disagree.
     // Both bound to locals rather than called inside the audit payload. The
-    // values are a closed `'static' | 'flue'` union either way; what changes is
+    // values are the closed `AgentDriver` union either way; what changes is
     // that `no-raw-prompt-logging` can READ an identifier and cannot open a
     // call, so spelling the call at the sink buys four un-analysable holes in a
     // guard whose whole design is that its blind spots are counted.
@@ -485,8 +489,9 @@ export async function startWorkflowRun(
     // #4143): one that renders the pinned instructions as the operator's own
     // block and offers only the profile's tools. Here, as soon as the engine is
     // known and before the run row exists, so the refusal leaves nothing behind
-    // and names its reason. No engine runs a profile yet (owner decision,
-    // 2026-10-26), so every profile run stops here until Phase 2.
+    // and names its reason. Only the Tool Runner runs a profile (`runsProfiles`,
+    // since #4150); Flue stays false by the owner's decision of 2026-10-26, and
+    // the static engine cannot.
     if (def.profile) assertEngineRunsProfiles(chosenDriver);
 
     // ── A FLUE RUN MUST BE VOUCHED FOR BY THE REGISTER ──────────────────────

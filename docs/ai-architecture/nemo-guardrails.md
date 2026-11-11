@@ -19,7 +19,7 @@ inflect · ai architecture · nemo guardrails · roadmap v1 · 2026-10-29
 | Wave | 3 |
 | Depends on | [`garak.md`](./garak.md) Phase 1 (the before/after measurement); [`presidio.md`](./presidio.md) Phase 1 for PII rails |
 | Unblocks | model-based rails on the assistant and run input; closes the Flue audit's F5 residual (run input unscanned) by a second route |
-| Owner decisions | **D-L1-2** (LLM-free rails first; LLM-backed rails only on the tenant's permitted route) |
+| Owner decisions | **D-L1-2** (LLM-free rails first; LLM-backed rails only on the tenant's permitted route) — **adopted, owner, 2026-11-11** |
 | Complete at | Phase 3, with LLM-backed rails on the external route by API key |
 
 ## At a glance
@@ -63,10 +63,26 @@ flowchart LR
   model context; egress on result text before a third-party provider. Legacy
   data reaches a model only through it (legacy-access invariant 3). The
   product's own skills carry mandatory `injection` cases.
-- **One known gap, recorded 2026-10-09 against 3.164.1 and not re-verified
-  since:** `guardUntrustedInput` was applied only in `tools-adapter.ts`, so a
-  run's *initial input* reached prompt assembly unscanned (Flue audit finding
-  F5). The first PR under this roadmap re-checks that on `main`.
+- **The run input is scanned at admission, for every engine** (Flue audit
+  finding F5, recorded 2026-10-09 against 3.164.1; re-verified 2026-11-11
+  against 3.364.1, `f1644fb26`, and closed). `startWorkflowRun` passes every
+  string value of the run input through `guardUntrustedInput`
+  (`workflow-run-input:<key>`) before the engine is chosen and before the run
+  row exists, and `assertNoReviewRequired` refuses both `flag` and `block`;
+  the tenant's `audit` mode records and refuses nothing. `createSealedRun` has
+  that one caller, so no run reaches Flue or the Tool Runner without the scan.
+  Both engines build the model's message only through `runMessage` from
+  `openDeclaredRunInput`, which reads the declared keys out of the SEALED,
+  chain-verified context (the scanned bytes), then NFKC-cleans, neutralises,
+  fences and labels them `agent.run-input`. A profile run's other text, its
+  instructions, is not run input: it is scanned by the guard's own injection
+  scanner at save and approval (any verdict refuses) and re-hashed at every
+  resolution. Flue's A2A peer replies are guarded per reply on delivery. The
+  assistant's user turn and page context pass the same scanner at its door.
+  Pinned by `tests/integration/run-input-is-injection-scanned.test.ts` (static
+  engine, nested payload, clean control) and
+  `tests/integration/run-input-scan-precedes-every-engine.test.ts` (Flue and
+  Tool Runner, and the strict/audit arms).
 - **No NeMo Guardrails, no Colang, no model-based rail.** The scanners are
   pattern sets; nothing asks a model "is this a jailbreak".
 
@@ -107,11 +123,21 @@ verdict.
 ### Phase 0 — Re-verify the gap, decide the rails
 
 **Sub-phases.**
-- [ ] 0.1 Re-check F5 on `main`: is run input scanned before prompt assembly?
+- [x] 0.1 Re-check F5 on `main`: is run input scanned before prompt assembly?
       If not, fix it with the *existing* scanner in this phase (one call, one
-      test) — it must not wait for NeMo.
+      test) — it must not wait for NeMo. **Checked 2026-11-11 against 3.364.1:
+      already closed** (#3468 wired the admission scan; no code change was
+      needed). What was found, and what pins it, is in Current state above.
+      One difference from the mid-run arms, by design: at admission a `flag`
+      REFUSES rather than latching review, because no run exists yet to park
+      and creating one only to park it would leave a row nothing advances.
+      Whether a flagged start should instead create a run parked for review
+      is a question for the owner, not a gap. See
+      `docs/implementation-notes/2026-11-11-run-input-scan-every-engine.md`.
 - [ ] 0.2 D-L1-2: list the rails by whether they need an LLM; Phase 1 =
-      LLM-free; Phase 2 = LLM-backed on the permitted route.
+      LLM-free; Phase 2 = LLM-backed on the permitted route. **D-L1-2 decided:
+      adopted (LLM-free rails first) — owner, 2026-11-11.** The rail-by-rail
+      list and its residency consequences remain.
 - [ ] 0.3 Baseline: garak hit rates with the deterministic guard only
       ([`garak.md`](./garak.md) Phase 0/1) — the number NeMo must move.
 
