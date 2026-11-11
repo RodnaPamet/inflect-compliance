@@ -86,7 +86,6 @@ import {
     type CriterionVerdict,
     type HarnessCriterionId,
 } from './harness-ladder';
-import type { HarnessAgentModels, StoredSource } from './harness-read-model';
 
 export {
     HARNESS_CONTRACT_IDS,
@@ -515,6 +514,40 @@ export function harnessSignedMessage(body: unknown): Buffer {
 // written by an older build, must read as UNREADABLE — and every reader treats
 // unreadable as the unfavourable answer (an incomplete scan, an unmet
 // criterion) rather than trusting a shape it did not check.
+
+// The shapes the stored-value parsers below return. They are declared HERE, not
+// in the read model, so that this file's import closure (types included) stays
+// the contract's own files; the read model re-exports them.
+
+/** One stored source of a scan, as the contract re-validates it. */
+export interface StoredSource {
+    readonly kind: string;
+    readonly status: 'COMPLETE' | 'INCOMPLETE';
+    readonly rows: number;
+    readonly reason: string | null;
+}
+
+/** One model endpoint an agent calls, as `/2` reports it: a reference and a model id. */
+export interface HarnessModelEndpointView {
+    readonly endpoint: string;
+    readonly model: string | null;
+}
+
+/**
+ * The model endpoints a scan item holds (#3759), in three states that never
+ * collapse into one another:
+ *
+ *   • NOT_REPORTED — the scan said nothing: a `/1` report, or a `/2` agent
+ *     without `models`. Not "calls no model";
+ *   • REPORTED — what the scanner reported, possibly EMPTY, which is the
+ *     scanner's claim that the agent calls none;
+ *   • UNREADABLE — the stored value failed re-validation. Never shown as
+ *     either of the other two.
+ */
+export type HarnessAgentModels =
+    | { readonly state: 'NOT_REPORTED' }
+    | { readonly state: 'UNREADABLE' }
+    | { readonly state: 'REPORTED'; readonly endpoints: readonly HarnessModelEndpointView[] };
 
 /**
  * A scan's stored sources, re-validated against the contract (strict, each kind
