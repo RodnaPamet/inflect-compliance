@@ -943,9 +943,11 @@ that a person confirms, and that difference keeps the two positions consistent:
   scheme in `@sindresorhus/transliterate` gives `Щ → Shch`. *Щербанов* is therefore
   `Shterbanov` in one and `Shcherbanov` in the other — and the HR system and the
   legacy application were very likely filled in by different people.
-- **`@sindresorhus/transliterate` is only a transitive dependency today,** through
-  `@sindresorhus/slugify`, which nothing in `src/` imports. Using it means adding it
-  as a direct dependency under the dependency-governance process.
+- **`@sindresorhus/transliterate` is not installed.** It used to arrive only through
+  `@sindresorhus/slugify`, which nothing imported, and both were removed on
+  2026-11-11. `src/lib/identity/reconcile/normalise.ts` uses in-house tables instead.
+  Using the package would mean adding it as a direct dependency under the
+  dependency-governance process.
 
 #### Proving it works
 

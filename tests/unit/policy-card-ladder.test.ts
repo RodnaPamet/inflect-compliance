@@ -137,17 +137,30 @@ describe('widening is ONE rung on ONE dimension', () => {
         ]);
     });
 
-    it('adding ONE tool is one rung; adding two is two', () => {
+    it('adding any number of tools in one edit is ONE rung, and names every tool (#5046)', () => {
         expect(
             checkLadderStep(BASE, card({ permittedTools: [...BASE.permittedTools, 'list_tasks'] })),
         ).toBeNull();
 
-        const twoTools = checkLadderStep(
+        const added = card({ permittedTools: [...BASE.permittedTools, 'list_tasks', 'list_findings'] });
+        expect(checkLadderStep(BASE, added)).toBeNull();
+        expect(comparePolicyCards(BASE, added)).toEqual([
+            { dimension: 'permittedTools', rungs: 1, detail: 'grants list_tasks, list_findings' },
+        ]);
+    });
+
+    it('a tools batch is still ONE dimension: with a ceiling raise in the same edit it is refused (#5046)', () => {
+        // What keeps a batch within the card's existing reach: the ceiling it
+        // would need cannot rise in the same edit.
+        const both = checkLadderStep(
             BASE,
-            card({ permittedTools: [...BASE.permittedTools, 'list_tasks', 'list_findings'] }),
+            card({
+                permittedTools: [...BASE.permittedTools, 'list_tasks', 'list_findings'],
+                maxDataScope: 'WRITE_TENANT_DATA',
+            }),
         );
-        expect(twoTools?.reason).toBe('MULTI_RUNG_WIDEN');
-        expect(twoTools?.widenings[0]).toMatchObject({ dimension: 'permittedTools', rungs: 2 });
+        expect(both?.reason).toBe('MULTI_DIMENSION_WIDEN');
+        expect(both?.widenings.map((w) => w.dimension).sort()).toEqual(['maxDataScope', 'permittedTools']);
     });
 
     it('DROPPING an escalation trigger is a widening; adding one is not', () => {
@@ -208,23 +221,21 @@ describe('narrowing is free — any dimension, any distance, all at once', () =>
     });
 
     it('a narrowing does NOT pay for a widening on the same dimension', () => {
-        // Two tools removed and two added is a net widening of two, not a wash.
-        // Each new reach is a decision on its own; the removals are unrelated
-        // decisions that happen to be in the same edit.
-        const swap = checkLadderStep(
-            BASE,
-            card({ permittedTools: ['list_tasks', 'list_findings'] }),
-        );
-        expect(swap?.reason).toBe('MULTI_RUNG_WIDEN');
-        expect(swap?.widenings[0]).toMatchObject({ dimension: 'permittedTools', rungs: 2 });
-        // The removals ARE reported — they are simply not subtracted from the
-        // additions. Asserted so that a future "net delta" simplification, which
-        // would make this edit legal, fails here rather than shipping.
+        // Two tools removed and two added: the additions are one widening rung
+        // (#5046) and the removals are reported beside it, never subtracted.
+        // Asserted so that a "net delta" simplification, which would report this
+        // edit as no widening at all, fails here rather than shipping.
         expect(comparePolicyCards(BASE, card({ permittedTools: ['list_tasks', 'list_findings'] })))
             .toEqual([
-                expect.objectContaining({ dimension: 'permittedTools', rungs: 2 }),
+                expect.objectContaining({ dimension: 'permittedTools', rungs: 1 }),
                 expect.objectContaining({ dimension: 'permittedTools', rungs: -2 }),
             ]);
+        // …and it is still a widening, so it locks every other dimension.
+        const swapAndRaise = checkLadderStep(
+            BASE,
+            card({ permittedTools: ['list_tasks', 'list_findings'], maxActionsPerRun: 50 }),
+        );
+        expect(swapAndRaise?.reason).toBe('MULTI_DIMENSION_WIDEN');
     });
 
     it('an edit that changes nothing is allowed and reports no delta', () => {

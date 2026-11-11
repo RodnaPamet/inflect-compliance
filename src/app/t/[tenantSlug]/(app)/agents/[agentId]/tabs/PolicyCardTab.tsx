@@ -1215,9 +1215,6 @@ function PolicyCardEditor({
         [base.permittedTools],
     );
 
-    const toolsAdded = draft.permittedTools.filter(
-        (tool) => !base.permittedTools.includes(tool),
-    ).length;
     const triggersDropped = base.escalationTriggers.filter(
         (rule) => !draft.escalationTriggers.includes(rule),
     ).length;
@@ -1503,16 +1500,15 @@ function PolicyCardEditor({
                                             id={`agent-policy-card-tool-${tool}`}
                                             size="sm"
                                             checked={checked}
-                                            // Adding a tool is a rung, and a
-                                            // second one is a second rung. A
-                                            // tool the draft's own ceilings
+                                            // Any number of tools within the
+                                            // draft's ceilings is one rung
+                                            // (#5046). A tool those ceilings
                                             // refuse is offered to nobody: the
                                             // usecase would reject the whole
                                             // card by name.
                                             disabled={
                                                 !checked &&
                                                 (unreachable ||
-                                                    toolsAdded >= 1 ||
                                                     widenLockedFor('permittedTools'))
                                             }
                                             onCheckedChange={(next) =>
