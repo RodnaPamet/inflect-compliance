@@ -606,6 +606,28 @@ export function verifyInflectAgentCard(card: unknown, trustedPublicKey: string):
 }
 
 /**
+ * The signing key an Inflect peer's card names as CURRENT, or `null` (#3752,
+ * owner decision 2026-11-11: register a peer from its card, not a pasted key).
+ *
+ * The key is accepted only when the card verifies under it, so a card that
+ * names a key it was not signed with names nothing. That does not make the key
+ * trusted: what makes it the peer's key is the person who reads the card and
+ * approves it, and the pin covers the key with the rest of the card. A card
+ * with no Inflect signing block (another implementation's) returns `null`, and
+ * the operator pastes the key the peer gave them instead.
+ */
+export function cardSigningKey(card: unknown): { readonly publicKey: string; readonly fingerprint: string } | null {
+    if (typeof card !== 'object' || card === null || Array.isArray(card)) return null;
+    const inflect = (card as Record<string, unknown>)['x-inflect'] as { signingKeys?: unknown } | undefined;
+    if (!inflect || !Array.isArray(inflect.signingKeys)) return null;
+    const current = (inflect.signingKeys as Array<Record<string, unknown>>).find((k) => k?.status === 'CURRENT');
+    if (!current || typeof current.publicKey !== 'string') return null;
+    if (!verifyInflectAgentCard(card, current.publicKey).ok) return null;
+    const fingerprint = harnessKeyFingerprint(current.publicKey);
+    return fingerprint ? { publicKey: current.publicKey, fingerprint } : null;
+}
+
+/**
  * The deployment's public https origin, normalised, or `null` when `configured`
  * is not one. No request-derived fallback: the identity is signed, so it must
  * be the address peers reach, never a proxy's bind address.

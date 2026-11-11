@@ -30,6 +30,8 @@ import {
     updatePeerAgent,
 } from '@/app-layer/usecases/peer-agents';
 import type { RequestContext } from '@/app-layer/types';
+import { a2aSigningKeyFromSeed, mintA2aSigningSeed } from '@/lib/agentic/a2a/signing-key';
+import { buildInflectAgentCard, signInflectAgentCard } from '@/lib/agentic/a2a/own-card';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(120_000);
@@ -229,6 +231,41 @@ describe('1. pinning', () => {
         expect(text).not.toContain('Reconciles supplier invoices');
         expect(text).not.toContain('Ignore prior instructions');
         expect(text).not.toContain('partner.example/two');
+    });
+});
+
+describe('1b. the key comes from the card the person approves (#3752)', () => {
+    it('left out, the key is the CURRENT key of the Inflect card read at registration', async () => {
+        const k = a2aSigningKeyFromSeed(mintA2aSigningSeed());
+        if (!k) throw new Error('no key');
+        served = signInflectAgentCard(
+            buildInflectAgentCard({
+                origin: 'https://inflect.partner.example',
+                tenantSlug: 'partner',
+                current: { publicKeyHex: k.publicKeyHex, fingerprint: k.fingerprint },
+                previous: null,
+                now: new Date(),
+            }),
+            k,
+        ) as unknown as Record<string, unknown>;
+        try {
+            const { peer } = await register(T1, 'https://partner.example/key-from-card/agent-card.json', {
+                signingPublicKey: undefined,
+            });
+            expect(peer.signingKeyFingerprint).toBe(k.fingerprint);
+            const stored = await prisma.peerAgent.findUniqueOrThrow({ where: { id: peer.id }, select: { signingPublicKey: true } });
+            expect(stored.signingPublicKey).toBe(k.publicKeyHex);
+            // Still pinned to nothing: reading the key is not approving the card.
+            expect((await checkPeerAdmission(ctxFor(T1), peer.id, seam)).admitted).toBe(false);
+        } finally {
+            served = baseCard();
+        }
+    });
+
+    it('left out, a card naming no key it was signed with refuses, and registers nothing', async () => {
+        const url = 'https://partner.example/keyless/agent-card.json';
+        await expect(register(T1, url, { signingPublicKey: undefined })).rejects.toThrow(/names no signing key/);
+        expect(await prisma.peerAgent.count({ where: { tenantId: T1, cardUrl: url } })).toBe(0);
     });
 });
 
