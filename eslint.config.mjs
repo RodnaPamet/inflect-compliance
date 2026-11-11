@@ -451,6 +451,23 @@ const config = [
         rules: { 'local/anthropic-client-single-seam': 'off' },
     },
     {
+        // ── One way into the vector store (Layer 4, D-L4-1 pgvector first) ──
+        //
+        // `src/app-layer/repositories/VectorRepository.ts` takes the tenant
+        // from the request context, refuses any record carrying more than a
+        // key, a content hash and a vector (D-L4-2, vectors only), and bounds
+        // every read. So no other file under `src/` may load a backend under
+        // `repositories/vector/`, or name the store's table in a literal.
+        // See eslint-rules/rules/vector-store-single-seam.js.
+        files: ['src/**/*.ts', 'src/**/*.tsx'],
+        rules: { 'local/vector-store-single-seam': 'error' },
+    },
+    {
+        // The seam and its backends.
+        files: ['src/app-layer/repositories/VectorRepository.ts', 'src/app-layer/repositories/vector/**/*.ts'],
+        rules: { 'local/vector-store-single-seam': 'off' },
+    },
+    {
         // ── The engine-neutral tool core imports no engine (Step 0a) ──
         //
         // `src/lib/agentic/engine-tools/` is what every engine Inflect runs

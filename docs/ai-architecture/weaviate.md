@@ -64,14 +64,18 @@ flowchart LR
 
 ## Current state (true today)
 
-- **There is no vector store and no embedding anywhere.** `weaviate` and
-  `pgvector` return nothing under `src/`; every `vector` in `src/` is prose
-  ("enumeration vector", "XSS vector") or the circuit breaker's class vector,
-  and none is an embedding. No Prisma model carries an
-  `Unsupported(...)` column. The database is PostgreSQL 16 behind PgBouncer,
-  and the production stack (`deploy/docker-compose.prod.yml`, repo-canonical
-  since #2849) runs `postgres`, `pgbouncer`, `redis`, `clamav`, `app`,
-  `worker`, `watchtower`, `caddy` — nothing else.
+- **There is a vector store SEAM and no vector store.**
+  `src/app-layer/repositories/VectorRepository.ts` (2026-11-11, pgvector first)
+  is the only way in, held by ESLint `local/vector-store-single-seam`; it is off
+  unless `VECTOR_STORE_BACKEND=pgvector`, and no Postgres this repository runs
+  carries the `vector` extension, so no table exists
+  ([implementation note](../implementation-notes/2026-11-11-vector-store-seam.md)).
+  `weaviate` returns nothing under `src/`; the 18 files matching `embedding`
+  use the word in its prompt/UI sense (`risk-assessment/prompt-builder.ts`,
+  `EvidenceGallery.tsx`). The database is PostgreSQL 16 behind PgBouncer, and
+  the production stack (`deploy/docker-compose.prod.yml`, repo-canonical since
+  #2849) runs `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`,
+  `watchtower`, `caddy` — nothing else.
 - **The Postgres image cannot load pgvector.** Every Postgres in the
   repository is `postgres:16-alpine`: `deploy/docker-compose.prod.yml`, the
   four root Compose files (`docker-compose.yml`, `.test`, `.staging`, `.prod`)

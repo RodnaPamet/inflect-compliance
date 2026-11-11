@@ -42,6 +42,7 @@ const LOCAL_RULES = [
     'require-test-prisma-transaction-budget',
     'anthropic-client-single-seam',
     'no-positional-comment-strip',
+    'vector-store-single-seam',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

@@ -488,6 +488,15 @@ export const env = createEnv({
         // set on the org Settings page), and a workspace with no organization
         // stays off. A workspace owner still chooses the engine.
         AGENT_DRIVER_TOOL_RUNNER: z.string().optional(),
+        // The vector store's backend (Layer 4; D-L4-1, pgvector first). Only the
+        // exact value 'pgvector' turns it on; unset or anything else is OFF and
+        // constructs nothing (`getVectorRepository()` returns null). A plain
+        // string for the reason AGENT_DRIVER_FLUE above carries: a typo is "off",
+        // never a process that will not boot. Set it ONLY after the Postgres
+        // image carries the `vector` extension and the KnowledgeVector migration
+        // has run (docs/implementation-notes/2026-11-11-vector-store-seam.md);
+        // until then the backend refuses PGVECTOR_NOT_INSTALLED on every call.
+        VECTOR_STORE_BACKEND: z.string().optional(),
         // RUNS STARTED BY A PERSON IN A BROWSER (#3868 step 2) — opt-in.
         //
         // Every Flue run today is started by a job, a credential or an
@@ -860,6 +869,7 @@ export const env = createEnv({
         A2A_HOST_CONSUMER_TOKEN_SECRET: process.env.A2A_HOST_CONSUMER_TOKEN_SECRET,
         AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
         AGENT_DRIVER_TOOL_RUNNER: process.env.AGENT_DRIVER_TOOL_RUNNER,
+        VECTOR_STORE_BACKEND: process.env.VECTOR_STORE_BACKEND,
         AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
         AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,
