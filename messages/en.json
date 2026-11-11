@@ -12985,7 +12985,7 @@
         "cardUrl": "Agent card URL",
         "cardUrlHint": "The https address where the peer publishes its agent card.",
         "signingKey": "Peer signing public key",
-        "signingKeyHint": "The public key the peer signs its messages with. The other organisation gives it to you; paste it exactly as sent.",
+        "signingKeyHint": "Optional. Left blank, the key is read from the peer's card, which you then read and approve. Paste it only for a peer whose card does not name one.",
         "owner": "Owner in this workspace",
         "ownerHint": "The active member who answers for this peer.",
         "ownerPlaceholder": "Choose a person",

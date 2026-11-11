@@ -94,7 +94,7 @@ export function RegisterPeerForm({
     const tierOptions: ComboboxOption[] = RISK_TIERS.map((tier) => ({ value: tier, label: t(`peers.register.tier.${tier}`) }));
 
     const complete =
-        name.trim().length > 0 && cardUrl.trim().length > 0 && signingPublicKey.trim().length > 0 && owner !== null && vendor !== null;
+        name.trim().length > 0 && cardUrl.trim().length > 0 && owner !== null && vendor !== null;
 
     const submit = async () => {
         if (!complete || !owner || !vendor) return;
@@ -107,7 +107,8 @@ export function RegisterPeerForm({
                 body: JSON.stringify({
                     name: name.trim(),
                     cardUrl: cardUrl.trim(),
-                    signingPublicKey: signingPublicKey.trim(),
+                    // Left blank, the key is read from the card the person then approves (#3752).
+                    ...(signingPublicKey.trim() ? { signingPublicKey: signingPublicKey.trim() } : {}),
                     ownerUserId: owner.value,
                     vendorId: vendor.value,
                     ...(riskTier ? { riskTier: riskTier.value } : {}),
@@ -144,7 +145,7 @@ export function RegisterPeerForm({
                         onChange={(e) => setCardUrl(e.target.value)}
                     />
                 </FormField>
-                <FormField label={t('peers.register.signingKey')} description={t('peers.register.signingKeyHint')} required>
+                <FormField label={t('peers.register.signingKey')} description={t('peers.register.signingKeyHint')}>
                     <Input
                         id="peer-register-signing-key"
                         value={signingPublicKey}

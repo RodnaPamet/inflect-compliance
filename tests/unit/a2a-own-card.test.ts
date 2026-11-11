@@ -11,6 +11,7 @@ import {
     CARD_MEMBERS,
     a2aOriginFrom,
     buildInflectAgentCard,
+    cardSigningKey,
     inflectA2aIdentity,
     signInflectAgentCard,
     verifyInflectAgentCard,
@@ -125,6 +126,45 @@ describe('the signature', () => {
         const extended = { ...card, agents: ['a'] } as unknown as InflectAgentCard;
         expect(verifyInflectAgentCard(extended, current.publicKeyHex)).toEqual({ ok: false, reason: 'UNEXPECTED_MEMBER' });
         expect(verifyInflectAgentCard('not a card', current.publicKeyHex)).toEqual({ ok: false, reason: 'MALFORMED' });
+    });
+});
+
+describe('the key a peer is registered with, read from its card (#3752)', () => {
+    it('is the CURRENT key, when the card verifies under it', () => {
+        const { card, current } = cardFor('acme');
+        expect(cardSigningKey(card)).toEqual({ publicKey: current.publicKeyHex, fingerprint: current.fingerprint });
+    });
+
+    it('is the CURRENT key, not the previous one, during a rotation', () => {
+        const old = key();
+        const { card, current } = cardFor('acme', key(), { k: old, retiredAt: new Date(NOW.getTime() - 60_000) });
+        expect(cardSigningKey(card)?.fingerprint).toBe(current.fingerprint);
+    });
+
+    it('is nothing when the card names a key it was not signed with', () => {
+        const { card } = cardFor('acme');
+        const other = key();
+        const swapped = {
+            ...card,
+            'x-inflect': {
+                ...card['x-inflect'],
+                signingKeys: card['x-inflect'].signingKeys.map((k) =>
+                    k.status === 'CURRENT' ? { ...k, publicKey: other.publicKeyHex, fingerprint: other.fingerprint } : k,
+                ),
+            },
+        };
+        expect(cardSigningKey(swapped)).toBeNull();
+    });
+
+    it('is nothing when the card has been altered after signing', () => {
+        const { card } = cardFor('acme');
+        expect(cardSigningKey({ ...card, description: `${card.description} (edited)` })).toBeNull();
+    });
+
+    it('is nothing for a card with no Inflect signing block, or not a card at all', () => {
+        expect(cardSigningKey({ name: 'Other', description: '', url: 'https://peer.example/a2a', skills: [] })).toBeNull();
+        expect(cardSigningKey(null)).toBeNull();
+        expect(cardSigningKey([])).toBeNull();
     });
 });
 

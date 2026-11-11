@@ -117,6 +117,21 @@ describe('registering a peer', () => {
         await waitFor(() => expect(onRegistered).toHaveBeenCalledWith(expect.objectContaining({ peer: { id: 'peer_1', name: 'Partner agent' } })));
     });
 
+    it('sends no key when none is pasted, so the server reads it from the card (#3752)', async () => {
+        const calls = mockFetch([{ ok: true, body: { peer: { id: 'peer_1', name: 'Partner agent' }, card: { readable: true } } }]);
+        renderForm();
+        fireEvent.change(document.getElementById('peer-register-name')!, { target: { value: 'Partner agent' } });
+        fireEvent.change(document.getElementById('peer-register-card-url')!, {
+            target: { value: 'https://partner.example/.well-known/agent-card.json' },
+        });
+        await choose('peer-register-owner', 'Olga Owner');
+        await choose('peer-register-vendor', 'Partner Ltd');
+        expect(screen.getByTestId('peer-register-submit')).toBeEnabled();
+        fireEvent.click(screen.getByTestId('peer-register-submit'));
+        await waitFor(() => expect(calls).toHaveLength(1));
+        expect(calls[0].body).not.toHaveProperty('signingPublicKey');
+    });
+
     it('sends a risk tier when one is chosen', async () => {
         const calls = mockFetch([{ ok: true, body: { peer: { id: 'peer_1', name: 'Partner agent' }, card: { readable: true } } }]);
         renderForm();

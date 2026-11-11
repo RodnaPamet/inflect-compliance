@@ -44,6 +44,7 @@ import {
 import { fetchAgentCard, type AgentCardFetchOptions, type AgentCardFetchResult } from '@/lib/agentic/peer-agent-card-fetch';
 import { recordPeerCardCheck } from '@/lib/observability/integration-metrics';
 import { recentAgentCard, type RecentCardOptions } from '@/lib/agentic/a2a/card-cache';
+import { cardSigningKey } from '@/lib/agentic/a2a/own-card';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 const RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
@@ -55,7 +56,12 @@ export const RegisterPeerAgentSchema = z
         cardUrl: z.string().min(1).max(2048),
         ownerUserId: z.string().min(1).max(64),
         vendorId: z.string().min(1).max(64),
-        signingPublicKey: z.string().min(1).max(256),
+        /**
+         * Optional (#3752): left out, the key is read from the card, which the
+         * person approving then reads with the rest of it. Pasted, for a peer whose
+         * card carries no Inflect signing block.
+         */
+        signingPublicKey: z.string().min(1).max(256).optional(),
         riskTier: z.enum(RISK_TIERS).optional(),
     })
     .strict();
@@ -175,16 +181,36 @@ export async function registerPeerAgent(
     assertMayManagePeers(ctx);
     const parsed = RegisterPeerAgentSchema.parse(input);
     const cardUrl = normaliseCardUrl(parsed.cardUrl);
-    const fingerprint = harnessKeyFingerprint(parsed.signingPublicKey);
-    if (!fingerprint) throw badRequest('signingPublicKey is not an Ed25519 public key (raw 32 bytes, hex or base64)');
     const name = sanitizePlainText(parsed.name).trim();
     if (!name) throw badRequest('A peer needs a name');
 
     // Read the card first, outside any transaction. A card that cannot be read
-    // does not stop the registration: the peer is unpinned, and so refused,
-    // until somebody reads and approves it.
+    // does not stop the registration of a pasted key: the peer is unpinned, and
+    // so refused, until somebody reads and approves it.
     const read = await fetchAgentCard(cardUrl, opts);
     recordPeerCardCheck({ outcome: outcomeOf(read, null), context: 'register' });
+
+    // The key: pasted, or read from the card the person will approve (#3752).
+    let signingPublicKey: string;
+    let keySource: 'PASTED' | 'CARD';
+    if (parsed.signingPublicKey) {
+        signingPublicKey = parsed.signingPublicKey.trim();
+        keySource = 'PASTED';
+    } else {
+        const fromCard = read.ok ? cardSigningKey(read.card) : null;
+        if (!fromCard) {
+            throw badRequest(
+                read.ok
+                    ? 'The peer\'s card names no signing key this workspace can verify. Paste the key the peer gave you.'
+                    : 'The peer\'s card could not be read, so its signing key could not be taken from it. Paste the key the peer gave you, or try again.',
+                { reason: 'CARD_NAMES_NO_KEY' },
+            );
+        }
+        signingPublicKey = fromCard.publicKey;
+        keySource = 'CARD';
+    }
+    const fingerprint = harnessKeyFingerprint(signingPublicKey);
+    if (!fingerprint) throw badRequest('signingPublicKey is not an Ed25519 public key (raw 32 bytes, hex or base64)');
 
     const peer = await runInTenantContext(ctx, async (db) => {
         await assertOwnerInTenant(db, ctx, parsed.ownerUserId);
@@ -203,7 +229,7 @@ export async function registerPeerAgent(
                 cardUrl,
                 ownerUserId: parsed.ownerUserId,
                 vendorId: parsed.vendorId,
-                signingPublicKey: parsed.signingPublicKey.trim(),
+                signingPublicKey,
                 signingKeyFingerprint: fingerprint,
                 ...(parsed.riskTier ? { riskTier: parsed.riskTier, riskTierScoredAt: now } : {}),
                 ...(read.ok ? { observedCardHash: read.hashes.cardHash, observedAt: now } : {}),
@@ -226,6 +252,7 @@ export async function registerPeerAgent(
                     vendorId: created.vendorId,
                     riskTier: created.riskTier,
                     signingKeyFingerprint: created.signingKeyFingerprint,
+                    keySource,
                     observedCardHash: created.observedCardHash,
                 },
             },
