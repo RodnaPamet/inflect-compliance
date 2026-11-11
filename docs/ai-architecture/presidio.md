@@ -19,7 +19,7 @@ inflect · ai architecture · presidio · roadmap v1 · 2026-10-29
 | Wave | 3 — first of the Layer 1 additions, because [`langfuse.md`](./langfuse.md) capture-on and [`nemo-guardrails.md`](./nemo-guardrails.md) PII rails both wait on it |
 | Depends on | nothing (CPU, in-deployment) |
 | Unblocks | content capture in tracing; PII rails; an enforced "no PII" on sub-processor rows that currently promise it by construction |
-| Owner decisions | **D-L1-1** (redaction scope: which egress paths, which entity types, which locales) |
+| Owner decisions | **D-L1-1** (redaction scope) — decided 2026-11-11: external model routes only; PERSON, EMAIL, PHONE, IBAN, ЕГН; EN + BG; `LOCAL_ONLY` local route not redacted. Recorded in [`2026-11-11-pii-redaction-decision.md`](../implementation-notes/2026-11-11-pii-redaction-decision.md) |
 | Complete at | Phase 3 |
 
 ## At a glance
@@ -28,7 +28,7 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · scope<br/>D-L1-1 paths and types<br/>EN + BG fixtures, EGN<br/>precision and recall"}}:::gate
+  P0{{"Phase 0 · scope<br/>D-L1-1 paths and types<br/>EN + BG fixtures, EGN<br/>precision and recall"}}:::done
   P1["Phase 1 · PiiDetector seam<br/>in-deployment CPU service<br/>egress use fails closed<br/>mounted only with a record"]:::todo
   P2["Phase 2 · fourth egress slice<br/>two keys, env + aiPiiRedaction<br/>one redaction site, every engine"]:::todo
   P3["Phase 3 · reuse<br/>trace masking, PII rail<br/>no-PII promises get a check"]:::todo
@@ -71,7 +71,25 @@ flowchart LR
 - **Legacy-access data is neutralised by hand-written rules** (names
   neutralised, email local part only — the reconciliation engine's own
   normalisers), not by a general PII detector.
-- **No Presidio, no NER model, no Python** in the app (G5).
+- **No Presidio, no NER model, no Python** in the app (G5). Phase 0 (2026-11-11)
+  added the detector's *image source* only: `guards/presidio/` holds the
+  analyzer configuration (five entity types, EN + BG), the custom recognisers
+  (ЕГН by date and checksum, Bulgarian and UK phones, Bulgarian names in both
+  scripts, an e-mail recogniser that makes no network call) and their pytest
+  suite, behind a digest-pinned `Dockerfile` with no entrypoint, in no Compose
+  file and built by no CI job yet. Nothing calls it.
+- **D-L1-1 is decided and is code.** `src/lib/ai/pii/scope.ts` holds the five
+  types (`PERSON`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, `IBAN_CODE`, `BG_EGN`), the
+  two locales and `LOCAL_ROUTE_REDACTED = false`.
+- **A fixture corpus and a first record exist.** `tests/fixtures/pii/` is 85
+  generated EN + BG cases with ground-truth spans in all four case kinds; a
+  Jest test regenerates it and refuses a hand edit.
+  `src/lib/ai/pii/evaluation-record.ts` recomputes per-type, per-locale
+  precision and recall from a record's raw spans, and
+  `evals/pii/records/` holds one record for the current configuration hash
+  (CI fails when a recogniser changes without a new one). Its figures are a
+  development-set measure — the recognisers were corrected against the same
+  corpus — and are not yet a mount condition.
 
 ## Fit, and what is deliberately not adopted
 
@@ -111,20 +129,31 @@ they are the first Phase 1 deliverable and the reason a fixture set matters.
 ### Phase 0 — Scope, fixtures, recognisers
 
 **Sub-phases.**
-- [ ] 0.1 D-L1-1: which egress paths (external model providers first; A2A
-      outbound; SIEM stream is already structured-only), which entity types
-      (PERSON, EMAIL, PHONE, IBAN, ЕГН, LOCATION, ORG?), which action per type
-      (replace with `<PERSON_1>`, hash, mask), and whether `LOCAL_ONLY`
-      tenants get it on the local route (default no).
-- [ ] 0.2 `tests/fixtures/pii/`: a synthetic EN + BG set (names in both
-      scripts, ЕГН with valid checksums generated, IBANs, phones, emails,
-      addresses) with ground-truth spans — generated, not collected; a
-      content hash.
-- [ ] 0.3 Custom recognisers written and unit-tested in the Presidio config
-      (Python, in the service image only): ЕГН checksum, BG phone, Cyrillic
-      name NER via the chosen model.
-- [ ] 0.4 Precision/recall per entity type on the fixture set, recorded in
-      the house shape (G11) — the first record.
+- [x] 0.1 D-L1-1 (owner, initialled 2026-11-11): external model routes only;
+      PERSON, EMAIL, PHONE, IBAN, ЕГН — LOCATION and ORG are out of scope, not
+      flag-only; EN + BG; `LOCAL_ONLY` tenants' local route is not redacted.
+      The action per type was not part of the decision; the recorded default
+      is a numbered typed placeholder (`<PERSON_1>`) for all five, which
+      Phase 1's `policy.ts` encodes.
+- [x] 0.2 `tests/fixtures/pii/`: `generate.ts` (seeded) → `corpus.json` +
+      `corpus.sha256`; 85 cases, task / refusal / injection / missing-input in
+      both locales; Latin and Cyrillic names (with patronymics), computed ЕГН
+      and IBAN check digits, BG and Ofcom-drama UK phones, reserved e-mail
+      domains, unlabelled addresses and organisations. Offsets are UTF-16 and
+      the corpus stays in the BMP, so they equal Python's.
+- [x] 0.3 `guards/presidio/inflect_pii/`: `BgEgnRecognizer` (date and
+      checksum), `BgPhoneRecognizer` (libphonenumber, regions BG + GB — under
+      the default regions every ЕГН is also a phone number — and no written
+      dates), `BulgarianNameRecognizer` (morphology, both scripts,
+      case-sensitive), `OfflineEmailRecognizer` (the stock one asks
+      publicsuffix.org and refuses private TLDs: 0 of 17 fixture e-mails
+      found). NER models: `en_core_web_sm` (EN) and `xx_ent_wiki_sm` (BG; no
+      spaCy pipeline is trained on Bulgarian), pinned by sha256.
+- [x] 0.4 `evals/pii/records/e6ff3ad0d4d33dba.json`, scored by
+      `scorePiiRecord`: recall 1.0 for every type in both locales; precision
+      1.0 except PERSON (EN 0.71, BG 0.96, all NER false positives). A
+      development-set figure: a held-out corpus (different templates and
+      pools) comes before any record is a mount condition (Phase 1.4).
 
 **Prompt.**
 ```text
