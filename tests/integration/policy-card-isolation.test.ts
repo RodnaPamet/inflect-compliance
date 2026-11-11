@@ -452,6 +452,63 @@ describe('the ladder is enforced on the real write path', () => {
             }),
         ).rejects.toThrow(/refuses on every call/);
     });
+
+    /** The card in force, as the next edit must restate it. */
+    async function inForce() {
+        const at = await headVersion();
+        const card = await prisma.agentPolicyCard.findUniqueOrThrow({
+            where: { tenantId_agentId: { tenantId: T1, agentId: seeded[T1].agentId } },
+            select: { id: true },
+        });
+        const row = await prisma.agentPolicyCardVersion.findFirstOrThrow({
+            where: { tenantId: T1, cardId: card.id, version: at },
+        });
+        return {
+            at,
+            card: {
+                permittedTools: [...row.permittedTools],
+                maxDataScope: row.maxDataScope,
+                maxAutonomyLevel: row.maxAutonomyLevel,
+                maxActionsPerRun: row.maxActionsPerRun,
+                maxActionsPerDay: row.maxActionsPerDay,
+                escalationTriggers: [...row.escalationTriggers],
+                approvalRung: row.approvalRung,
+            },
+        };
+    }
+
+    it('several tools within the ceilings are ONE widening, written as one version (#5046)', async () => {
+        const { at, card } = await inForce();
+        const adding = ['list_tasks', 'list_findings', 'list_evidence_expiring'].filter(
+            (t) => !card.permittedTools.includes(t),
+        );
+        expect(adding.length).toBeGreaterThan(1);
+
+        const written = await updateAgentPolicyCard(ctxFor(T1), seeded[T1].agentId, {
+            expectedVersion: at,
+            card: { ...card, permittedTools: [...card.permittedTools, ...adding] },
+        });
+        expect(written.version).toBe(at + 1);
+        expect(await headVersion()).toBe(at + 1);
+    });
+
+    it('a tools batch naming one tool past the ceilings is refused whole, by that name (#5046)', async () => {
+        const { at, card } = await inForce();
+        // `propose_risks` writes tenant data, past the READ_TENANT_DATA ceiling.
+        await expect(
+            updateAgentPolicyCard(ctxFor(T1), seeded[T1].agentId, {
+                expectedVersion: at,
+                card: {
+                    ...card,
+                    maxDataScope: 'READ_TENANT_DATA',
+                    permittedTools: [...card.permittedTools, 'list_tasks', 'propose_risks'].filter(
+                        (t, i, all) => all.indexOf(t) === i,
+                    ),
+                },
+            }),
+        ).rejects.toThrow(/"propose_risks" reaches/);
+        expect(await headVersion()).toBe(at);
+    });
 });
 
 describe('creating a card', () => {

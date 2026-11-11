@@ -926,6 +926,33 @@ describe('the one-rung rule is enforced on the controls, not only at the save', 
         expect(box('agent-policy-card-tool-list_controls')).toBeEnabled();
         expect(box('agent-policy-card-tool-list_risks')).toBeChecked();
     });
+
+    it('several reachable tools can be added in one edit, and that spends the one widening (#5046)', () => {
+        renderTab(cardPayload());
+        openEditor();
+        expect(withholdingReasonForTool('list_tasks', V3)).toBeNull();
+        expect(withholdingReasonForTool('list_findings', V3)).toBeNull();
+
+        fireEvent.click(box('agent-policy-card-tool-list_controls'));
+        // A second and a third reachable tool stay offered: a batch within the
+        // card's ceilings is one rung.
+        expect(box('agent-policy-card-tool-list_tasks')).toBeEnabled();
+        fireEvent.click(box('agent-policy-card-tool-list_tasks'));
+        expect(box('agent-policy-card-tool-list_findings')).toBeEnabled();
+        fireEvent.click(box('agent-policy-card-tool-list_findings'));
+
+        // The batch is the edit's one widening, so every other ladder's rung
+        // above the base closes, and a tool past the ceiling is still refused.
+        expect(
+            rungs('agent-policy-card-data-scope').filter((r) => r.disabled).map((r) => r.value),
+        ).toEqual(['WRITE_TENANT_DATA']);
+        expect(box('agent-policy-card-tool-propose_risks')).toBeDisabled();
+
+        expect(box('agent-policy-card-save-btn')).toBeEnabled();
+        expect(
+            screen.queryByText(nested('ladderRefusal', 'MULTI_RUNG_WIDEN')),
+        ).not.toBeInTheDocument();
+    });
 });
 
 describe('the ceilings set elsewhere are pre-empted on the controls', () => {
