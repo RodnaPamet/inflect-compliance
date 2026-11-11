@@ -108,12 +108,14 @@ const SCOPE_GROUPS: Record<string, { labelKey: string; scopes: string[] }> = {
     // by a `*` key, which is the hole #2225 closed for assets/personnel.
     access_reviews: { labelKey: 'scopeGroup.access_reviews', scopes: ['access_reviews:read', 'access_reviews:write', 'access_reviews:admin'] },
     identity_reconciliation: { labelKey: 'scopeGroup.identity_reconciliation', scopes: ['identity_reconciliation:read', 'identity_reconciliation:admin'] },
-    // One scope each, and no `:read`: `continuity` / `processes` carry a
-    // single `edit` action in PermissionSet, so SCOPE_ACTION_MAP gives them a
-    // `write` group and nothing else. Listing `continuity:read` here would be
-    // an operator-visible checkbox that validateScopes rejects.
+    // No `:read` for `continuity`: it carries a single `edit` action in
+    // PermissionSet, so SCOPE_ACTION_MAP gives it a `write` group and nothing
+    // else. Listing `continuity:read` here would be an operator-visible
+    // checkbox that validateScopes rejects. `processes:read` does exist
+    // (#5053): an empty group, the resource scope an agent key needs for the
+    // process-map propose tool, granting nothing over REST.
     continuity: { labelKey: 'scopeGroup.continuity', scopes: ['continuity:write'] },
-    processes:  { labelKey: 'scopeGroup.processes',  scopes: ['processes:write'] },
+    processes:  { labelKey: 'scopeGroup.processes',  scopes: ['processes:read', 'processes:write'] },
     vendors:    { labelKey: 'scopeGroup.vendors',    scopes: ['vendors:read', 'vendors:write'] },
     findings:   { labelKey: 'scopeGroup.findings',   scopes: ['findings:read', 'findings:write'] },
     tests:      { labelKey: 'scopeGroup.tests',      scopes: ['tests:read', 'tests:write'] },
