@@ -49,6 +49,11 @@
         "reason": "`Build docs site` runs only on pull requests that touch docs/, site/, CONTRIBUTING.md, messages/en.json, src/, prisma/schema/enums.prisma, scripts/docs-reference/ or the workflow itself. Those paths are the whole input of the build: the stager reads the allowlisted docs, the landing page, the manifest, the English message catalogue (for `{{ui:\u2026}}` labels) and the page files under src/app/ (for a guide's `route:`), and the reference generator reads src/ (permissions, error classes, the sidebar, every page's API calls) and the Role enum, so a PR outside them cannot change what the site builds from.",
         "coveredBy": "tests/guardrails/docs-site-publication.test.ts runs in Ratchets on EVERY pull request, unfiltered, and holds the publication policy (allowlist, never-publish list, no production coordinates, landing-page links). RESIDUAL: a source file that a published doc links to can be deleted by a PR outside the filter; the next docs build renders that link as plain text and logs a warning rather than failing."
     },
+    "garak.yml:garak": {
+        "kind": "never",
+        "reason": "Nightly garak LLM red-team of the assistant (schedule + dispatch only). It boots the full app, spends a capped budget on the dedicated CI model key (D-EV-1, USD 5/night) and needs that repository secret, which a pull request from a fork never has; running it per PR would multiply the spend by the PR count.",
+        "coveredBy": "PARTIAL: the AI guard's injection and egress pattern sets are unit-tested at PR time (src/app-layer/ai/guard/), skills carry mandatory injection cases in their evaluation sets, and tests/guardrails/garak-workflow-pinning.test.ts holds this workflow's deferral date, budget and skip-without-key shape in Ratchets on every PR. The composed-system probe itself is accepted as post-merge, reported nightly."
+    },
     "ghcr-publish.yml:build-push": {
         "kind": "never",
         "reason": "Publishes the image to GHCR on push to main; publishing cannot meaningfully happen from a PR.",

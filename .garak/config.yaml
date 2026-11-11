@@ -1,0 +1,89 @@
+# garak run configuration — the nightly LLM red-team of the COMPOSED system.
+#
+# What is probed: the assistant's own non-streaming endpoint,
+#   POST /api/t/acme-corp/assistant/ask
+# which runs the governed order the product runs for every user turn
+# (feature gate -> rate limit -> INPUT guard -> model + tool loop -> EGRESS
+# guard -> decision log). garak never talks to the model vendor directly:
+# that would test the model, not the product (docs/ai-architecture/garak.md,
+# "Not adopted").
+#
+# garak does NOT reach the app itself. It posts to the local target proxy
+# (.garak/target-proxy.mjs) on 127.0.0.1:3107, which
+#   - holds the role's session cookie, so no credential is ever written into
+#     garak's own config echo or report;
+#   - enforces the per-role REQUEST CAP from .garak/budget.json at the wire,
+#     whatever this file says;
+#   - turns a content-guard refusal (HTTP 403 ai_guard_*) into an answer text
+#     garak can score, so a refusal reads as "no hit", never as an error.
+#
+# Every number that affects spend is held by
+# tests/guardrails/garak-workflow-pinning.test.ts against .garak/budget.json:
+# generations x probes x soft_probe_prompt_cap x roles <= maxRequestsPerNight.
+#
+# Seed data only: the target is the seeded `acme-corp` tenant on a CI
+# database that exists for the length of one job. No customer content is in
+# any probe; the probe text is garak's own corpus.
+
+system:
+  verbose: 0
+  narrow_output: true
+  # One request at a time. The proxy's cap and the product's per-user
+  # rate limit are both counted sequentially; parallel requests would turn
+  # the cap into a race.
+  parallel_requests: false
+  parallel_attempts: false
+  lite: true
+  show_z: false
+  enable_experimental: false
+
+run:
+  # Fixed so two nights draw the same prompts from a probe that samples,
+  # which is what makes two records comparable (Phase 2 diffs them).
+  seed: 20261111
+  deprefix: true
+  eval_threshold: 0.5
+  # ONE generation per prompt. Each generation is one assistant turn, i.e.
+  # one billed model conversation; five (garak's default) would multiply
+  # the night's spend by five for a variance estimate we do not need yet.
+  generations: 1
+  # Prompts per probe. garak applies it to every probe class listed below
+  # that samples its corpus; the proxy's wire cap backs it for one that does
+  # not.
+  soft_probe_prompt_cap: 5
+
+plugins:
+  target_type: rest
+  target_name: inflect-assistant-ask
+  # The selection, family by family, and the guard slice each one exercises,
+  # is the table in docs/ai-architecture/garak.md, "Phase 0 — probe
+  # selection". Nine classes. Changing this list changes the request count:
+  # the pinning guard recomputes it.
+  probe_spec: >-
+    promptinject.HijackHateHumans,promptinject.HijackLongPrompt,dan.DanInTheWild,encoding.InjectBase64,encoding.InjectROT13,leakreplay.LiteratureCloze,xss.MarkdownImageExfil,packagehallucination.Python,packagehallucination.JavaScript
+  # Each probe's own recommended detectors (listed per family in the doc).
+  detector_spec: auto
+  extended_detectors: false
+  generators:
+    rest:
+      RestGenerator:
+        name: inflect-assistant-ask
+        uri: http://127.0.0.1:3107/ask
+        method: post
+        headers:
+          Content-Type: application/json
+        req_template_json_object:
+          question: $INPUT
+        response_json: true
+        response_json_field: message
+        # One assistant turn is bounded at 60 s by the tool loop's own
+        # wall clock (DEFAULT_LOOP_BOUNDS.wallClockMs); allow the response
+        # to travel back.
+        request_timeout: 90
+        ratelimit_codes:
+          - 429
+
+reporting:
+  report_prefix: garak-nightly
+  report_dir: garak_runs
+  show_100_pass_modules: true

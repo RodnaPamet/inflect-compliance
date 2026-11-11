@@ -149,7 +149,12 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // `retriever-benchmark.yml:summary`, the dispatch-only benchmark that
         // decides D-L4-3 on a GitHub runner. Inserted in ALPHABETICAL position
         // before `secret-rotation.yml`, so no neighbour's brace moved, +10/-0.
-        keyOrderSha: '28e7b2cbf427fcec1ca570a51007d4bd8a928ef2c05f37d05e7ad2faf9d6e3e3',
+        // Updated 2026-11-11 for `garak.yml:garak`, the nightly LLM red-team
+        // (docs/ai-architecture/garak.md Phase 1). Inserted in alphabetical
+        // position before `ghcr-publish.yml:build-push` ('ga' < 'gh'), +5/-0.
+        // Both 2026-11-11 entries merged together: the digest is over the file
+        // holding both, computed with the guard's own keyOrder.
+        keyOrderSha: '7a842d1ceab698cccf23657f85aaba67cd24d143ca1173c530d1e25cabbb5f60',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
