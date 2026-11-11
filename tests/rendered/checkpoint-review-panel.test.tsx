@@ -103,7 +103,20 @@ import {
     useCheckpointReview,
 } from '@/lib/processes/canvas-checkpoint-review';
 import { computeProposalDiff } from '@/lib/agentic/proposal-diff';
+import { withheldProposalDiff } from '@/lib/agentic/proposal-kind-rollout';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+
+/** A string from the real `agents` catalogue, so a copy edit cannot break a test. */
+function agentsEn(dotted: string): string {
+    const v = dotted
+        .split('.')
+        .reduce<unknown>(
+            (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
+            (require('../../messages/en.json') as Record<string, unknown>).agents,
+        );
+    if (typeof v !== 'string') throw new Error(`messages/en.json has no string at agents.${dotted}`);
+    return v;
+}
 
 /**
  * The guard columns, constant across this file.
@@ -392,6 +405,64 @@ describe('the decision goes through the proposals routes', () => {
         expect(screen.getByText('Proposal is already REJECTED')).toBeInTheDocument();
         // The row STAYS — nothing was decided.
         expect(screen.getByTestId('checkpoint-proposal-prop-1')).toBeInTheDocument();
+    });
+});
+
+describe('a proposal is named in words, never by its stored codes (#5053)', () => {
+    it('labels the kind and the operation', () => {
+        mount();
+        const label = screen.getByTestId('checkpoint-kind-prop-1');
+        expect(label).toHaveTextContent(
+            agentsEn('quarantine.kindOperation')
+                .replace('{kind}', agentsEn('proposals.kind.RISK'))
+                .replace('{operation}', agentsEn('quarantine.operation.UPDATE')),
+        );
+        expect(label.textContent).not.toContain('RISK');
+        expect(label.textContent).not.toContain('UPDATE');
+    });
+
+    it('a process-map proposal is labelled, offers no Approve, and can be rejected', () => {
+        const diff = withheldProposalDiff('PROCESS_MAP');
+        if (!diff) throw new Error('PROCESS_MAP_PROPOSALS_IMPLEMENTED is true, so the kind no longer has a withheld diff');
+        load({
+            data: review({
+                proposals: [proposal({ kind: 'PROCESS_MAP', operation: 'CREATE', targetEntityId: null, diff })],
+            }),
+        });
+        mount();
+        expect(screen.getByTestId('checkpoint-kind-prop-1')).toHaveTextContent(
+            agentsEn('proposals.kind.PROCESS_MAP'),
+        );
+        expect(screen.getByTestId('checkpoint-kind-prop-1').textContent).not.toContain('PROCESS_MAP');
+        expect(screen.queryByTestId('checkpoint-approve-prop-1')).toBeNull();
+        expect(screen.getByTestId('checkpoint-reject-prop-1')).toBeInTheDocument();
+        // Its notice says this version cannot approve it yet, not that its
+        // content could not be read.
+        expect(screen.getByTestId('proposal-diff-withheld-prop-1')).toHaveTextContent(
+            agentsEn('proposals.diff.reasonKindNotApprovable'),
+        );
+        expect(screen.queryByTestId('proposal-diff-uncomputable-prop-1')).toBeNull();
+        expect(screen.getByTestId('proposal-diff-prop-1').textContent).not.toContain(
+            agentsEn('proposals.diff.reasonPayloadUnreadable'),
+        );
+    });
+
+    it('a refusal the queue words is worded here too', async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            json: async () => ({
+                error: {
+                    message: 'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE: this release reads process-map proposals',
+                    details: { reason: 'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE' },
+                },
+            }),
+        });
+        mount();
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('checkpoint-approve-prop-1'));
+        });
+        expect(screen.getByText(agentsEn('proposals.refused.processMapNotAvailable'))).toBeInTheDocument();
+        expect(screen.queryByText(/PROCESS_MAP_PROPOSALS_NOT_AVAILABLE/)).toBeNull();
     });
 });
 

@@ -66,7 +66,14 @@ import { buildProposalDiff } from '@/app-layer/usecases/agent-proposal-diff';
 import { ExternalWriteProposalPayloadSchema } from '@/lib/agentic/external-write-proposal';
 import { openApprovedExternalWrite } from '@/app-layer/usecases/external-write-approval';
 import { isDiffReviewable } from '@/lib/agentic/proposal-diff';
+import { PROCESS_MAP_PROPOSALS_IMPLEMENTED } from '@/lib/agentic/proposal-kind-rollout';
 import type { RequestContext } from '@/app-layer/types';
+
+/**
+ * The reason both PROCESS_MAP refusals carry in `details.reason` (#5053), so the
+ * review queue words the refusal rather than showing the server's sentence.
+ */
+export const PROCESS_MAP_PROPOSALS_NOT_AVAILABLE = 'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE';
 
 /**
  * Mirrors the `AgentProposalKind` Prisma enum.
@@ -82,8 +89,21 @@ import type { RequestContext } from '@/app-layer/types';
  * first — stops type-checking until the new member is handled, which is the
  * mechanism the identity ladder's "a rung inherits nothing by falling through"
  * rule asks for, enforced rather than remembered.
+ *
+ * `PROCESS_MAP` (#5053) is CREATE-only, names no target, and is READ-ONLY in
+ * this release: the value reaches the database in two deploys, so deploy 1
+ * teaches every reader and writes none. `createAgentProposal` refuses the kind
+ * by name before anything else, and `approveAgentProposal` refuses it while
+ * `PROCESS_MAP_PROPOSALS_IMPLEMENTED` is false. Both refusals carry
+ * `details.reason` = `PROCESS_MAP_PROPOSALS_NOT_AVAILABLE`.
  */
-export type AgentProposalKind = 'RISK' | 'CONTROL' | 'POLICY' | 'FINDING' | 'EXTERNAL_WRITE';
+export type AgentProposalKind =
+    | 'RISK'
+    | 'CONTROL'
+    | 'POLICY'
+    | 'FINDING'
+    | 'EXTERNAL_WRITE'
+    | 'PROCESS_MAP';
 
 /**
  * WHAT a proposal would do. Mirrors the `AgentProposalOperation` enum.
@@ -656,6 +676,21 @@ export async function createAgentProposal(
     ctx: RequestContext,
     input: ProposeInput,
 ): Promise<ProposalResult> {
+    // ═══ PROCESS_MAP IS READ-ONLY IN THIS RELEASE (#5053, deploy 1 of 2) ═══
+    //
+    // At the VERY TOP, before the operation is resolved: an UPDATE-shaped
+    // PROCESS_MAP would otherwise be refused by `requireStorableUpdateTarget`
+    // with a different sentence, and every shape must get the same refusal.
+    // Unconditional and by name, so the compiler narrows `input.kind` below and
+    // `SCHEMA_BY_KIND[input.kind]` needs no entry for it. This usecase is the
+    // only `agentProposal.create` site, so this one refusal is what makes this
+    // release write nothing of the kind.
+    if (input.kind === 'PROCESS_MAP') {
+        throw badRequest(
+            'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE: this release reads process-map proposals but does not accept them',
+            { reason: PROCESS_MAP_PROPOSALS_NOT_AVAILABLE },
+        );
+    }
     const operation: AgentProposalOperation = input.operation ?? 'CREATE';
     if (input.kind === 'EXTERNAL_WRITE' && operation !== 'CREATE') {
         // MEASURED, not stylistic. `buildProposalDiff` resolves an UPDATE's
@@ -1479,6 +1514,19 @@ export async function approveAgentProposal(
     await assertNotComposer(ctx, proposal);
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
+    }
+    // ═══ A PROCESS_MAP IS NOT APPROVED WHILE THE BRAKE IS ON (#5053) ═══
+    //
+    // A row written by a newer container mid-rollout reaches here. Refused
+    // before the edits check, the diff, both guard re-scans, the signature
+    // insert and the claim, so the row stays PENDING with no signature. It is
+    // never burned ACCEPTED with no created record, which is what the dispatch
+    // switch's unknown-kind throw would do once the claim had been taken.
+    if (proposal.kind === 'PROCESS_MAP' && !PROCESS_MAP_PROPOSALS_IMPLEMENTED) {
+        throw badRequest(
+            'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE: this release reads process-map proposals but cannot approve them',
+            { reason: PROCESS_MAP_PROPOSALS_NOT_AVAILABLE },
+        );
     }
 
     // ═══ HOW MANY HUMANS THIS ONE NEEDS ═══

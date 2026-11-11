@@ -34,6 +34,7 @@ import {
     computeProposalDiff,
     type ProposalDiff,
 } from '@/lib/agentic/proposal-diff';
+import { withheldProposalDiff } from '@/lib/agentic/proposal-kind-rollout';
 import type { RequestContext } from '@/app-layer/types';
 
 /** The four kinds a proposal can name, matching `AgentProposalKind`. */
@@ -142,6 +143,16 @@ export async function buildProposalDiffs(
 
     const out = new Map<string, ProposalDiff>();
     for (const p of proposals) {
+        // ═══ A PROCESS_MAP ROW IS NOT REVIEWABLE WHILE THE BRAKE IS ON (#5053) ═══
+        //
+        // This release reads the kind and approves none of it, so a row written
+        // by a newer container mid-rollout must not reach the queue or the
+        // canvas review panel with an Approve control whose click is refused.
+        const withheld = withheldProposalDiff(p.kind);
+        if (withheld) {
+            out.set(p.id, withheld);
+            continue;
+        }
         const isUpdate = p.operation === 'UPDATE';
         // `?? null` and not `|| undefined`: for an UPDATE, "no row came back"
         // must reach `computeProposalDiff` as an explicit null (TARGET_MISSING),

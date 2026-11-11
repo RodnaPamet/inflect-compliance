@@ -20,7 +20,16 @@ export type ProposalDiffStatus =
     | 'UPDATE'
     | 'NO_CHANGES'
     | 'TARGET_MISSING'
-    | 'PAYLOAD_UNREADABLE';
+    | 'PAYLOAD_UNREADABLE'
+    /**
+     * The proposal's KIND is one this release reads but does not approve
+     * (#5053: `PROCESS_MAP` while `PROCESS_MAP_PROPOSALS_IMPLEMENTED` is false).
+     * Nothing is wrong with the row - a newer container may have written it
+     * mid-rollout - so it is not reported as unreadable. Not reviewable; the
+     * row can still be rejected. Only `withheldProposalDiff` produces it;
+     * `computeProposalDiff` never does.
+     */
+    | 'KIND_NOT_APPROVABLE';
 
 /**
  * One field of the proposal, rendered.
@@ -87,7 +96,8 @@ const REVIEWABLE: readonly ProposalDiffStatus[] = ['CREATE', 'UPDATE', 'NO_CHANG
  * the diff was computed and is being shown truthfully, and "the answer is
  * nothing" is an answer. The two refusals are FALSE because the reviewer would
  * be consenting to something nobody rendered - which is the entire failure this
- * module exists to prevent.
+ * module exists to prevent. `KIND_NOT_APPROVABLE` is FALSE because the approve
+ * usecase would refuse the click anyway.
  */
 export function isDiffReviewable(diff: Pick<ProposalDiff, 'status'>): boolean {
     return REVIEWABLE.includes(diff.status);
