@@ -304,6 +304,18 @@ export const env = createEnv({
         // Unset outside a published image; read through `buildVersion()`.
         BUILD_SHA: z.string().optional(),
 
+        // The DocumentParser seam's backend (ragflow.md Phase 1, D-L4-4: a
+        // Docling-class parsing-only service run by the OPERATOR inside the
+        // deployment). Operator config only — no tenant column reaches it (G6),
+        // and the request goes through safeFetch, so it must be https. Absent
+        // (or empty) = no backend is constructed and the deterministic paragraph
+        // stub parses text documents only. Pointing it at a host OUTSIDE the
+        // deployment makes that host a sub-processor (G2) — a register change,
+        // not a configuration change.
+        DOC_PARSER_BASE_URL: emptyToUndefined(z.string().url().optional()),
+        // Sent as `X-Api-Key` (docling-serve's DOCLING_SERVE_API_KEY). Optional.
+        DOC_PARSER_API_KEY: emptyToUndefined(z.string().optional()),
+
         // AI Risk Assessment. 'stub' (default, no network/key) | 'anthropic'
         // (direct Claude API — reuses ANTHROPIC_API_KEY / ANTHROPIC_MODEL
         // below, the SAME credential as the posture summary) | 'openrouter' |
@@ -812,6 +824,8 @@ export const env = createEnv({
         STRIPE_PRICE_ID_ENTERPRISE: process.env.STRIPE_PRICE_ID_ENTERPRISE,
         APP_URL: process.env.APP_URL,
         BUILD_SHA: process.env.BUILD_SHA,
+        DOC_PARSER_BASE_URL: process.env.DOC_PARSER_BASE_URL,
+        DOC_PARSER_API_KEY: process.env.DOC_PARSER_API_KEY,
 
         AI_RISK_PROVIDER: process.env.AI_RISK_PROVIDER,
         AI_QUESTIONNAIRE_PROVIDER: process.env.AI_QUESTIONNAIRE_PROVIDER,

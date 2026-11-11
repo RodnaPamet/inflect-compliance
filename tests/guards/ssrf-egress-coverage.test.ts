@@ -153,6 +153,12 @@ const MCP_CLIENTS: readonly string[] = [
     // another organisation's agent is exactly the request that must not find a
     // second way out.
     'src/lib/agentic/a2a/client.ts',
+    // The FOURTH (ragflow.md Phase 1, D-L4-4): the DocumentParser seam's
+    // Docling backend. Its host is operator config, not a tenant column, but it
+    // carries tenant documents out of the process and reads back text a model
+    // will see — so it takes the one wire too, cap and deadline included,
+    // rather than growing a capped reader of its own.
+    'src/lib/ai/parsing/docling-provider.ts',
 ];
 
 describe('SSRF — every tenant-controlled sink routes through safeFetch', () => {
@@ -259,7 +265,8 @@ describe('SSRF — the MCP clients reach the network only through the shared tra
         // reader checking "is the MCP client covered?" finds yes for one of two
         // and is unlikely to ask which. Pinning the denominator makes a future
         // omission loud.
-        expect(MCP_CLIENTS).toHaveLength(3);
+        // Four since the DocumentParser seam's Docling client joined the wire.
+        expect(MCP_CLIENTS).toHaveLength(4);
     });
 });
 
