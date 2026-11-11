@@ -10,6 +10,7 @@ import { parseCidr } from "@/lib/security/cidr";
 import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 import { DEV_FALLBACK_DATA_ENCRYPTION_KEY } from '@/lib/security/encryption-constants';
+import { checkWebBotAuthSeed, seedRefusalMessage } from '@/lib/web-bot-auth/seed';
 
 /**
  * Treat an EMPTY value as absent — #4564, and it is load-bearing rather than
@@ -275,6 +276,60 @@ export const env = createEnv({
         // (primary). Remove this var ONCE the rotation job reports zero
         // remaining v1 rows under the previous key.
         DATA_ENCRYPTION_KEY_PREVIOUS: z.string().min(32).optional(),
+
+        // Web Bot Auth (docs/ai-architecture/web-bot-auth.md Phase 1, D-L1-5):
+        // ONE Ed25519 signing seed for the DEPLOYMENT, never per tenant — a
+        // monitored vendor must not learn which customer monitors it. Both are
+        // optional: absent, no key is built and the key directory at
+        // /.well-known/http-message-signatures-directory answers 404. A 32-byte
+        // seed as 64 hex characters (`openssl rand -hex 32`) or base64(url).
+        // Refused at startup when malformed, equal to a DATA_ENCRYPTION_KEY
+        // (a key reused across purposes spreads its compromise), the previous
+        // equal to the current, or — in production — a published test seed.
+        // PREVIOUS is published beside the current key during a rotation's
+        // grace; unset it to end the grace. Cross-field values are read from
+        // process.env directly, as the DATA_ENCRYPTION_KEY refinement does.
+        WEB_BOT_AUTH_SIGNING_KEY: z
+            .string()
+            .optional()
+            .superRefine((val, ctx) => {
+                if (!val) return;
+                const refusal = checkWebBotAuthSeed({
+                    seed: val,
+                    dataEncryptionKeys: [
+                        process.env.DATA_ENCRYPTION_KEY,
+                        process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
+                    ],
+                    refusePublishedTestSeeds: process.env.NODE_ENV === 'production',
+                });
+                if (refusal) {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        message: seedRefusalMessage('WEB_BOT_AUTH_SIGNING_KEY', refusal),
+                    });
+                }
+            }),
+        WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY: z
+            .string()
+            .optional()
+            .superRefine((val, ctx) => {
+                if (!val) return;
+                const refusal = checkWebBotAuthSeed({
+                    seed: val,
+                    dataEncryptionKeys: [
+                        process.env.DATA_ENCRYPTION_KEY,
+                        process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
+                    ],
+                    currentSigningKey: process.env.WEB_BOT_AUTH_SIGNING_KEY,
+                    refusePublishedTestSeeds: process.env.NODE_ENV === 'production',
+                });
+                if (refusal) {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        message: seedRefusalMessage('WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY', refusal),
+                    });
+                }
+            }),
 
         // Security / CORS
         CORS_ALLOWED_ORIGINS: z.string().default(""),
@@ -826,6 +881,8 @@ export const env = createEnv({
 
         DATA_ENCRYPTION_KEY: process.env.DATA_ENCRYPTION_KEY,
         DATA_ENCRYPTION_KEY_PREVIOUS: process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
+        WEB_BOT_AUTH_SIGNING_KEY: process.env.WEB_BOT_AUTH_SIGNING_KEY,
+        WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY: process.env.WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY,
 
         CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
         EGRESS_PRIVATE_CIDR_ALLOWLIST: process.env.EGRESS_PRIVATE_CIDR_ALLOWLIST,

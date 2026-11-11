@@ -314,31 +314,54 @@ before signing is the baseline; a change without one is an anecdote).
 
 ### Phase 1 — The deployment key and the signed directory
 
-**Sub-phases.**
-- [ ] 1.1 `WEB_BOT_AUTH_SIGNING_KEY` (a 32-byte Ed25519 seed) and
+**Sub-phases.** The first slice landed on 2026-11-11
+(`docs/implementation-notes/2026-11-11-web-bot-auth-key-directory.md`); what
+it left open is named on each line.
+- [x] 1.1 `WEB_BOT_AUTH_SIGNING_KEY` (a 32-byte Ed25519 seed) and
       `WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY` (rotation grace) in `src/env.ts`,
-      both optional. Absent means no signer is constructed and the directory
-      route answers 404 (G9). A malformed value fails startup in production,
-      and so does a seed equal to `DATA_ENCRYPTION_KEY`, because a key reused
-      across purposes is a key whose compromise spreads.
-- [ ] 1.2 `src/lib/web-bot-auth/`, pure: `key.ts` (seed to key, public JWK,
-      RFC 7638 thumbprint as `keyid`), `sign.ts` (`signRequest(request, key,
-      now)` returns the three headers, covering the components 0.1 names,
-      with `created`, `expires` inside 0.1's window and
-      `tag="web-bot-auth"`), and `directory.ts` (the JWKS document, current
-      key plus previous key during the grace).
-- [ ] 1.3 `GET /.well-known/http-message-signatures-directory` on the
-      operator's public origin: the media type from 0.1, the response signed
-      once per published key, `Cache-Control` with a short max-age, added to
-      `PUBLIC_PATH_EXACT` and to an edge rate limit. GET only.
-- [ ] 1.4 Conformance as a record (G11): the reference verifier from 0.3
-      verifies signatures made by `sign.ts` and the served directory;
-      the draft's own examples reproduce byte for byte; Cloudflare's
-      `http-signature-directory` validator passes against a CI-built
-      instance. Committed under `evals/web-bot-auth/records/`.
-- [ ] 1.5 The tenant-free assertion: a test signs requests under several
-      tenant contexts and asserts the headers, the signature base and the
-      directory are byte-identical across them.
+      both optional. Absent means no key is constructed and the directory
+      route answers 404 (G9). The env schema refuses a malformed seed, a seed
+      equal to either `DATA_ENCRYPTION_KEY` (judged on the decoded bytes, so
+      a second spelling is the same key), a previous key equal to the current
+      one, and in production a published test seed. The route's loader asks
+      the same again and fails closed, because tests and
+      `SKIP_ENV_VALIDATION` builds skip the schema.
+- [ ] 1.2 `src/lib/web-bot-auth/`, pure: `seed.ts` (strict decoding and the
+      refusals), `key.ts` (seed to key, public JWK, RFC 7638 thumbprint as
+      `keyid`), `message-signature.ts` (the RFC 9421 signature base,
+      `@signature-params` and Ed25519 members, which both the directory and a
+      later request signer use), and `directory.ts` (the JWKS document,
+      current key plus previous key during the grace) are on `main`.
+      **Open:** `signRequest(request, key, now)`, the three request headers,
+      waits for 0.1's reading of the covered components, the window and the
+      `Signature-Agent` form, and has no caller until Phase 2.
+- [x] 1.3 `GET /.well-known/http-message-signatures-directory`
+      (`src/app/.well-known/…/route.ts`): the media type
+      `application/http-message-signatures-directory+json`, the response
+      signed once per published key over `"@authority";req` with
+      `tag="http-message-signatures-directory"`, the authority taken from
+      `APP_URL` and never from the request's `Host`, `Cache-Control:
+      public, max-age=300` inside a one-hour signature, the exact path added
+      to `PUBLIC_PATH_EXACT`. GET only. The per-IP read budget
+      (`API_READ_LIMIT`) is charged in the handler rather than at the edge,
+      so `src/middleware.ts` did not change.
+- [ ] 1.4 Conformance as a record (G11). **Landed:** the vector set
+      `evals/web-bot-auth/vectors.json`: RFC 8037 A.3's thumbprint, RFC
+      8032 TEST 1, and RFC 9421 B.2.6's signature base and signature,
+      reproduced byte for byte, plus regression vectors of the served
+      directory judged by an independent verifier
+      (`tests/helpers/web-bot-auth-verifier.ts`). **Open:** the reference
+      verifier from 0.3 and Cloudflare's `http-signature-directory`
+      validator against a CI-built instance, and the record under
+      `evals/web-bot-auth/records/` they produce. The draft gives no test
+      vector of its own as far as could be read; the primary texts were
+      unreachable from this session too.
+- [x] 1.5 The tenant-free assertion, for the directory: requests carrying
+      different tenants' cookies, slugs, hosts and forwarded hosts get a
+      byte-identical body, `Signature-Input` and `Signature`. The route
+      takes no context, so nothing a request carries can reach it. The same
+      assertion over request headers and the signature base belongs with
+      `signRequest`.
 
 **Prompt.**
 ```text

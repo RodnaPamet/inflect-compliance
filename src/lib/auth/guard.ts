@@ -41,6 +41,11 @@ const PUBLIC_PATH_EXACT = new Set([
     '/favicon.ico',
     '/robots.txt',
     '/sitemap.xml',
+    // Web Bot Auth key directory (docs/ai-architecture/web-bot-auth.md
+    // Phase 1). Public keys only, no tenant data, 404 when unconfigured; the
+    // per-IP read budget is charged in the handler. EXACT path: no other
+    // `/.well-known/` path is opened by this entry.
+    '/.well-known/http-message-signatures-directory',
 ]);
 
 const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|gif|svg|webp|css|js|woff|woff2|ttf|eot|map|json)$/;
