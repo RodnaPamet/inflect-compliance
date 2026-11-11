@@ -533,6 +533,16 @@ export const env = createEnv({
         // one key to rotate, two model pins. A LOCAL_ONLY tenant's run never
         // reads it — that route is AI_LOCAL_MODEL.
         AGENT_FLUE_MODEL: z.string().default('claude-sonnet-5-5'),
+        // The WORKER role's model (D-L3-1, 2026-11-11): the model a Flue run's
+        // subagents run on, on the same EXTERNAL provider and key as
+        // AGENT_FLUE_MODEL — so it must be a model that provider serves, and
+        // no new sub-processor is involved. UNSET means the worker runs on the
+        // supervisor's model (`worker_fallback`), which is today's behaviour
+        // exactly. A LOCAL_ONLY tenant's run never reads it: both roles take
+        // the local route or are refused. See
+        // src/lib/agentic/flue/model-selection.ts and
+        // docs/ai-architecture/nemotron-reasoning.md Phase 1.
+        AGENT_FLUE_WORKER_MODEL: z.string().optional(),
         // The models the Tool Runner engine runs an agent profile's two tiers
         // on (Step 2a, docs/claude-tool-runner-design.md). A profile names a
         // TIER, never a model id, so these two are the deployment's whole
@@ -805,6 +815,7 @@ export const env = createEnv({
         AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
+        AGENT_FLUE_WORKER_MODEL: process.env.AGENT_FLUE_WORKER_MODEL,
         AGENT_TOOL_RUNNER_MODEL_BALANCED: process.env.AGENT_TOOL_RUNNER_MODEL_BALANCED,
         AGENT_TOOL_RUNNER_MODEL_DEEP: process.env.AGENT_TOOL_RUNNER_MODEL_DEEP,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,

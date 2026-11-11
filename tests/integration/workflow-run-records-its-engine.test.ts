@@ -62,6 +62,10 @@ type AuditDetails = {
     driverAllowed?: unknown;
     driverRequested?: unknown;
     driverReason?: unknown;
+    modelSupervisor?: unknown;
+    modelWorker?: unknown;
+    modelWorkerBasis?: unknown;
+    modelRefusal?: unknown;
 };
 
 /** The newest audit row for one action on one run, parsed. */
@@ -181,6 +185,22 @@ describeFn('a run records which engine walked it (real DB, real engine)', () => 
 
         const details = await auditDetails(runId, 'WORKFLOW_RUN_STARTED');
         expect(details.driverRequested).toBe('static');
+    });
+
+    it('a run no Flue model reasons for records both role models as null, not absent (D-L3-1)', async () => {
+        // The supervisor and worker specifiers are written beside `driver` in
+        // the opening entry. A static run resolves neither, and says so with a
+        // value — an absent key and a null hash differently in the chain.
+        const { runId } = await startWorkflowRun(ctx(), WF_DEFAULT, {});
+
+        const details = await auditDetails(runId, 'WORKFLOW_RUN_STARTED');
+        expect({
+            modelSupervisor: details.modelSupervisor,
+            modelWorker: details.modelWorker,
+            modelWorkerBasis: details.modelWorkerBasis,
+            modelRefusal: details.modelRefusal,
+        }).toEqual({ modelSupervisor: null, modelWorker: null, modelWorkerBasis: null, modelRefusal: null });
+        expect(Object.keys(details)).toEqual(expect.arrayContaining(['modelSupervisor', 'modelWorker']));
     });
 
     it('a RESUME names its own engine — it used to name none at all', async () => {

@@ -21,17 +21,17 @@ inflect · ai architecture · nemotron reasoning · roadmap v1 · 2026-10-29
 | Wave | 1 for the role axis (Phase 1); 2 for choosing models with records (Phase 3). Phases 0 and 2, which bring Nemotron itself, are optional Layer 5 work, after every other roadmap is complete |
 | Depends on | nothing for Phase 1; [`inspect.md`](./inspect.md) Phase 3's comparison records for Phase 3; Layer 5 ([`modal-inference.md`](./modal-inference.md)), optional and last, for Phases 0 and 2 |
 | Unblocks | cheaper subagent fan-out; [`inspect.md`](./inspect.md) Phase 3 |
-| Owner decisions | **D-L3-1** (the supervisor/worker role axis in model selection); **D-L3-2** (Nemotron as the default worker) is deferred with Layer 5 |
+| Owner decisions | **D-L3-1** (the supervisor/worker role axis in model selection) — **decided 2026-11-11: adopted** (owner); **D-L3-2** (Nemotron as the default worker) is deferred with Layer 5 |
 | Complete at | Phases 1 and 3, with the worker role served by an external model through API keys. Phases 0 and 2 are optional Layer 5 work |
 
 ## At a glance
 
-Purple hexagon: a decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Slate dashed: optional Layer 5 work, which starts only after every other roadmap is complete. Dashed white: another roadmap this one waits on or unblocks. Pink: the evaluation record.
+Purple hexagon: a decision. Green: a phase built (on the branch that ships it). Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Slate dashed: optional Layer 5 work, which starts only after every other roadmap is complete. Dashed white: another roadmap this one waits on or unblocks. Pink: the evaluation record.
 
 ```mermaid
 flowchart LR
-  G1{{"D-L3-1<br/>role axis"}}:::gate
-  P1["Phase 1 · role axis<br/>supervisor and worker specifiers<br/>worker by API key<br/>both recorded at run open"]:::todo
+  G1{{"D-L3-1<br/>role axis<br/>adopted 2026-11-11"}}:::gate
+  P1["Phase 1 · role axis<br/>supervisor and worker specifiers<br/>worker by API key<br/>both recorded at run open"]:::done
   P3["Phase 3 · choose models<br/>with records"]:::todo
   INS["inspect P3<br/>comparison records"]:::ext
   L5["Layer 5<br/>optional, after completion"]:::optional
@@ -54,14 +54,26 @@ flowchart LR
 
 ## Current state (true today)
 
-- **Two engines, one model per run, and the model is chosen by residency.**
-  Flue (`DRIVER_IMPLEMENTED.flue = true`) and the Claude Tool Runner
-  (`'tool-runner': true` since Step 2c, #4512, which runs agent profiles).
-  `resolveFlueModel` yields one
-  specifier per run: `inflect-external/${AGENT_FLUE_MODEL}` for `EXTERNAL`
-  tenants, `inflect-local/${AI_LOCAL_MODEL}` for `LOCAL_ONLY` (or a refusal).
-  There is no notion of *role* in the selection: a subagent uses the same
-  specifier as its parent.
+- **Two engines; on Flue, two roles per run, and the route is chosen by
+  residency.** Flue (`DRIVER_IMPLEMENTED.flue = true`) and the Claude Tool
+  Runner (`'tool-runner': true` since Step 2c, #4512, which runs agent
+  profiles). `resolveFlueModel` takes a `role` (`'supervisor' | 'worker'`,
+  absent reads as supervisor) and `resolveFlueRoleModels` answers both under
+  one set of residency terms (Phase 1, D-L3-1):
+  - **supervisor** (the run): `inflect-external/${AGENT_FLUE_MODEL}` for
+    `EXTERNAL` tenants, `inflect-local/${AI_LOCAL_MODEL}` for `LOCAL_ONLY`, or a
+    named refusal;
+  - **worker** (its subagents): `inflect-external/${AGENT_FLUE_WORKER_MODEL}`
+    when the deployment sets that variable, else the supervisor's specifier
+    with basis `worker_fallback`. A `LOCAL_ONLY` tenant's worker takes the
+    local route or the same refusal — the role chooses a model id, never a
+    route.
+
+  Unset, `AGENT_FLUE_WORKER_MODEL` leaves every run as it was: the delegate
+  definition carries no `model` override and inherits the parent's.
+  The Tool Runner has no delegates, so it has only the supervisor role; its
+  model is the profile tier's (`toolRunnerModelFor`) and `clientForRun` is
+  role-independent.
 - **The supervisor/worker shape already exists as subagents.**
   `flue/subagents/`, `subagent-fanout.ts` + `subagent-fanout-policy.ts`,
   `delegation-gate.ts`, `delegation-spans.ts` (Flue Phase 3 shipped since the
@@ -176,24 +188,50 @@ Nemotron revision, and D-L3-2 is initialled.
 **Gate.** D-L3-1 only. This phase does not wait for Phase 0's verification.
 
 **Sub-phases.**
-- [ ] 1.1 `model-selection.ts`: `FlueModelSelection.role`; `resolveFlueModel`
+- [x] 1.1 `model-selection.ts`: `FlueModelSelection.role`; `resolveFlueModel`
       resolves per role: supervisor → `AGENT_FLUE_MODEL` on the tenant's
       permitted route; worker → a new optional `AGENT_FLUE_WORKER_MODEL` on
       `inflect-external` (a model on a provider already registered for agent
       runs), or `AI_LOCAL_MODEL` on `inflect-local` once Layer 5 exists, else
       the supervisor's choice with a `worker_fallback` reason. `LOCAL_ONLY`
       tenants: both roles local or refused — identical rules.
-- [ ] 1.2 `subagent-fanout.ts` / `flue/subagents/`: subagents request
+      *Built:* `FlueModelRole`, `resolveFlueRoleModels`, `AGENT_FLUE_WORKER_MODEL`
+      in `src/env.ts`; the external provider registers the worker model beside
+      the supervisor's (`buildFlueProviders`), never alone. The local-gateway
+      worker for an EXTERNAL tenant waits for Layer 5 and is not built.
+- [x] 1.2 `subagent-fanout.ts` / `flue/subagents/`: subagents request
       `role: 'worker'`; the parent requests `supervisor`; the run records
       both specifiers in its opening audit entry (the way it records
       `driver` and `policyCardVersion`).
-- [ ] 1.3 Subagent output enters the parent through `guardUntrustedInput`
-      (assert in a test named for it, if not already).
-- [ ] 1.4 Per-turn accounting labels tokens by role; the monthly budget and
+      *Built:* the plan carries `workerModelSpecifier`; `agent.ts` sets the
+      delegate's `model` through `workerModelOverride` only when it differs
+      from the parent's; `WORKFLOW_RUN_STARTED` carries `modelSupervisor`,
+      `modelWorker`, `modelWorkerBasis` and `modelRefusal` (null on an engine
+      that resolves no Flue model). `executeFlueRun` refuses a worker on a
+      different provider (`flue_worker_route_mismatch`) and a worker model the
+      runtime did not register, before anything is sent.
+- [x] 1.3 Subagent output enters the parent through `guardUntrustedInput`
+      (assert in a test named for it, if not already). *Already held:*
+      `guardDelegateAnswer` (`tools-adapter.ts`), asserted in
+      `tests/unit/flue-tools-adapter.test.ts` and, on the runtime,
+      `tests/flue/delegation-is-capped.test.ts`.
+- [x] 1.4 Per-turn accounting labels tokens by role; the monthly budget and
       run caps are unchanged (already charged to the parent).
-- [ ] 1.5 Tests: "a LOCAL_ONLY tenant's worker never resolves off the local
+      *Built:* a `turn` event carrying the runtime's `taskId` is a worker
+      call; its Art 12 decision row names the worker's model, and the
+      `MODEL_CALL` step carries `tokensByRole`. `costTokens` is charged the
+      total exactly as before.
+- [x] 1.5 Tests: "a LOCAL_ONLY tenant's worker never resolves off the local
       route", "worker fallback is recorded with its reason", "a run's
       opening entry carries both specifiers".
+      *Built:* `tests/unit/flue-worker-role-obeys-residency.test.ts` (configured
+      worker, unset worker = supervisor, LOCAL_ONLY never external for either
+      role, the socket re-check refusing either role's mismatched specifier,
+      the opening record), `tests/unit/flue-per-turn-accounting.test.ts`
+      (worker calls recorded and labelled as the worker's),
+      `tests/flue/delegate-runs-on-the-worker-model.test.ts` (the delegate is
+      served on the worker model on the wire), and the opening entry's keys in
+      `tests/integration/workflow-run-records-its-engine.test.ts`.
 
 **Prompt.**
 ```text

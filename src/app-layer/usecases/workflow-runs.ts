@@ -84,6 +84,12 @@ import {
     type ContentProvenance,
 } from '@/lib/agentic/content-provenance';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
+import {
+    RESIDENCY_SELECT,
+    residencyTermsFrom,
+    flueOpeningModels,
+    type FlueOpeningModels,
+} from '@/lib/agentic/flue/model-selection';
 import { canonicalJson } from '@/lib/canonical-json';
 import { SkillLoadError } from '@/lib/agentic/flue/skills';
 import { resolveRunSkillMount } from '@/lib/agentic/flue/skills/tenant-mount';
@@ -545,6 +551,22 @@ export async function startWorkflowRun(
     // beside the repository's, marked `origin: 'tenant'`.
     const mountedSkills = isReasoningEngine(chosenDriver) ? await pinSkillsOrRefuse(ctx, def) : [];
 
+    // ── WHICH MODELS, BY ROLE, THE RUN OPENS UNDER (D-L3-1) ─────────────────
+    //
+    // A Flue run's supervisor (the run) and worker (its subagents) may run on
+    // different models. Both answers go into the opening entry beside `driver`
+    // and `policyCardVersion`, for the same reason: the entry is hash-chained
+    // and written before the walk, and "which model reasoned for this run" is
+    // asked long after the configuration has moved on. Resolved under the
+    // same residency terms the driver then resolves with.
+    //
+    // A COMPARISON with 'flue', not `isReasoningEngine`: the specifiers are the
+    // Flue engine's own (`inflect-external/…`); the Tool Runner names its model
+    // by profile tier and has no delegates. Read before the row exists, so a
+    // failed read leaves nothing behind. Every other driver's entry records
+    // the four keys as null.
+    const openingModels = chosenDriver === 'flue' ? await readFlueOpeningModels(ctx) : null;
+
     // Row + first chain link (seq 0, prev null), one transaction. An `input`
     // already over the size cap fails here and no run is created.
     //
@@ -605,6 +627,15 @@ export async function startWorkflowRun(
             driverAllowed: driverDecision.driver,
             driverReason: driverDecision.reason,
             driver: chosenDriver,
+            // Both roles' models (D-L3-1). NULL on an engine that resolves no
+            // Flue model (static; the Tool Runner names its own by tier) —
+            // the question was asked and the answer is "none", which is
+            // written as a value rather than an absent key so every entry has
+            // the same shape.
+            modelSupervisor: openingModels?.modelSupervisor ?? null,
+            modelWorker: openingModels?.modelWorker ?? null,
+            modelWorkerBasis: openingModels?.modelWorkerBasis ?? null,
+            modelRefusal: openingModels?.modelRefusal ?? null,
         },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
@@ -1324,6 +1355,14 @@ async function pinSkillsOrRefuse(ctx: RequestContext, def: WorkflowDefinition): 
         if (err instanceof SkillLoadError) throw badRequest(`skill_not_mountable: ${err.message}`);
         throw err;
     }
+}
+
+/** The tenant's residency, read once, answered as both roles' models. */
+async function readFlueOpeningModels(ctx: RequestContext): Promise<FlueOpeningModels> {
+    const settings = await runInTenantContext(ctx, (db) =>
+        db.tenantSecuritySettings.findUnique({ where: { tenantId: ctx.tenantId }, select: RESIDENCY_SELECT }),
+    );
+    return flueOpeningModels(residencyTermsFrom(settings));
 }
 
 async function createSealedRun(

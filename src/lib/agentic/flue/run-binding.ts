@@ -105,6 +105,17 @@ export interface FlueRunBinding {
     skills: readonly FlueSkillDocument[];
     /** `<provider-id>/<model-id>`, already resolved against the tenant's residency. */
     modelSpecifier: string;
+    /**
+     * The WORKER role's specifier (D-L3-1) — what the run's subagents ask for —
+     * resolved by the driver under the SAME residency terms as
+     * `modelSpecifier`, and checked by the engine to name the same provider.
+     *
+     * Optional so every `bindRun` that predates the role axis compiles: absent,
+     * and equal to `modelSpecifier`, both mean "the delegate inherits the
+     * parent's model", which is what `agent.ts` then does by NOT setting a
+     * model override — the exact delegate definition it always built.
+     */
+    workerModelSpecifier?: string;
 
     /**
      * HOW MANY SUBAGENTS ONE TURN OF THIS RUN MAY DELEGATE TO (#3473).
