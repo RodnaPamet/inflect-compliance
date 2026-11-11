@@ -14,7 +14,7 @@
         "dev:developers": "npm run reference && npm run stage && ASTRO_TELEMETRY_DISABLED=1 astro dev --root developers"
     },
     "dependencies": {
-        "@astrojs/starlight": "0.42.7",
-        "astro": "7.4.2"
+        "@astrojs/starlight": "0.42.9",
+        "astro": "7.4.7"
     }
 }

@@ -278,9 +278,12 @@ export async function validateSamlResponse(
     }
 
     // The assertion must come from the identity provider this workspace
-    // configured. node-saml 5 reads `idpIssuer` only for logout messages, so
-    // an assertion naming any issuer passed as long as the certificate signed
-    // it. `profile.issuer` is read from the verified assertion.
+    // configured. Before 5.2, node-saml read `idpIssuer` only for logout
+    // messages, so an assertion naming any issuer passed as long as the
+    // certificate signed it. From 5.2 node-saml refuses it itself ("Unknown
+    // SAML issuer") before this line runs. This check stays as the backstop:
+    // it also refuses when no `idpIssuer` is configured, which node-saml lets
+    // through. `profile.issuer` is read from the verified assertion.
     const idpIssuer = saml.options.idpIssuer;
     if (!idpIssuer || profile.issuer !== idpIssuer) {
         throw new Error('SAML assertion was issued by an unexpected identity provider');
