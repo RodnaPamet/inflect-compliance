@@ -102,7 +102,92 @@ const SECRET_SHAPES: readonly RegExp[] = [
 ];
 
 export function looksLikeSecret(value: string): boolean {
-    return SECRET_SHAPES.some((re) => re.test(value));
+    return SECRET_SHAPES.some((re) => re.test(value)) || containsCardNumber(value);
+}
+
+// ─── The PCI line (D-L1-8, initialled 2026-11-11) ───────────────────────────
+//
+// Inflect never stores, processes or transmits a card number (a PAN, or a
+// network token such as a Mastercard Agentic Token, which has a PAN's shape).
+// That keeps the product outside PCI DSS cardholder-data scope, and the line is
+// held here, by a refusal in code, rather than by a sentence in a policy. Every
+// caller of `looksLikeSecret` refuses one: the harness contract's credential
+// and endpoint references, the ingest's walk over every string in a report
+// (`firstSecretShapedMember`), the IAM skills' evidence references, and the
+// spending-authority writer Phase 1 of
+// `docs/ai-architecture/mastercard-agent-pay.md` adds.
+//
+// A card number is a run of 13 to 19 digits that passes the Luhn check and
+// whose first digit is a payment-card major industry identifier (ISO/IEC
+// 7812-1: 2 to 6). Two ways of writing one are recognised:
+//
+//   • CONTIGUOUS: `5555555555554444`.
+//   • GROUPED as cards are printed, with ONE separator kind (a space or a
+//     hyphen) used throughout: 4-4-4-4, 4-4-4-1..4 and 4-4-4-4-1..3, and the
+//     4-6-5 / 4-6-4 groupings of American Express and Diners Club.
+//
+// What keeps ordinary numbers out, each a measured choice:
+//
+//   • The first digit. A millisecond timestamp, a Snowflake id and a
+//     microsecond clock all start with 1 today, and 10% of any digit run passes
+//     Luhn, so without it one id in ten in a report would be refused. The cost
+//     is MII 7, 8 and 9 (fleet cards, RuPay's 81/82 range, national schemes),
+//     which are outside every network Agent Pay and AP4M use.
+//   • The boundary. A run inside a longer digit run (a 21-digit GCP unique id),
+//     after a `+` (an E.164 phone number), or beside a decimal point (an amount
+//     or a float) is not a candidate. Neither is a group that continues past
+//     the card grouping (`2026-11-11 2026-12-11`, a GUID's groups).
+//   • The grouping. A phone number or a date range written with spaces or
+//     hyphens does not fall into 4-4-4 groups.
+//
+// A false refusal names the member and costs a scanner fix; a false acceptance
+// puts cardholder data in a tenant's database and Inflect inside PCI scope.
+
+/** A candidate's digits pass the Luhn (mod 10) check. */
+export function passesLuhn(digits: string): boolean {
+    if (!/^\d+$/.test(digits)) return false;
+    let sum = 0;
+    for (let i = 0; i < digits.length; i++) {
+        let d = digits.charCodeAt(digits.length - 1 - i) - 48;
+        if (i % 2 === 1) {
+            d *= 2;
+            if (d > 9) d -= 9;
+        }
+        sum += d;
+    }
+    return sum % 10 === 0;
+}
+
+// A run is not a candidate inside a longer digit run, after a `+`, or beside a
+// decimal point.
+const RUN_LEAD = String.raw`(?<![\d+])(?<!\d\.)`;
+const RUN_TAIL = String.raw`(?!\d)(?!\.\d)`;
+// A grouped candidate also never starts or ends mid-group: no digit and
+// separator before its first group, no separator and digit after its last.
+const GROUP_LEAD = String.raw`${RUN_LEAD}(?<!\d[ -])`;
+const GROUP_TAIL = String.raw`${RUN_TAIL}(?![ -]\d)`;
+
+const CARD_CANDIDATES: readonly RegExp[] = [
+    new RegExp(`${RUN_LEAD}[2-6]\\d{12,18}${RUN_TAIL}`, 'g'),
+    // 4-4-4 then up to two shorter-or-equal groups: 13 to 19 digits.
+    new RegExp(`${GROUP_LEAD}[2-6]\\d{3}([ -])\\d{4}\\1\\d{4}(?:\\1\\d{1,4}(?:\\1\\d{1,3})?)?${GROUP_TAIL}`, 'g'),
+    // American Express 4-6-5, Diners Club 4-6-4.
+    new RegExp(`${GROUP_LEAD}[2-6]\\d{3}([ -])\\d{6}\\1\\d{4,5}${GROUP_TAIL}`, 'g'),
+];
+
+/**
+ * Does the value contain a card number (D-L1-8)? Pure and linear; reports
+ * only yes or no, so no caller can echo the number it found.
+ */
+export function containsCardNumber(value: string): boolean {
+    for (const re of CARD_CANDIDATES) {
+        re.lastIndex = 0;
+        for (let m = re.exec(value); m !== null; m = re.exec(value)) {
+            const digits = m[0].replace(/[ -]/g, '');
+            if (digits.length >= 13 && digits.length <= 19 && passesLuhn(digits)) return true;
+        }
+    }
+    return false;
 }
 
 /**

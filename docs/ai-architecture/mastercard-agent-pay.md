@@ -22,7 +22,7 @@ inflect · ai architecture · mastercard agent pay · roadmap v1 · 2026-10-30
 | Wave | 2 for Phases 0–1 (data only, no Mastercard call); 3 for Phases 2–3; 4 for Phase 4, conditional on API access |
 | Depends on | nothing for Phases 0–1; Phase 2's key-directory check reuses [`web-bot-auth.md`](./web-bot-auth.md) Phase 3's verifier; Phase 4 needs Mastercard API access, which is gated |
 | Unblocks | a register that knows which agents can spend money; recertification and kill switch that reach spending authority; evidence for agent payments against the library's controls |
-| Owner decisions | **D-L1-8** (Inflect never holds a payment credential and its own agents never pay), **D-L1-9** (spending authority is a declared, reviewed privilege on the register), **D-L1-10** (reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once access exists) |
+| Owner decisions | **D-L1-8** (Inflect never holds a payment credential and its own agents never pay), **D-L1-9** (spending authority is a declared, reviewed privilege on the register), **D-L1-10** (reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once access exists) — all three **adopted, initialled 2026-11-11** ([decision note](../implementation-notes/2026-11-11-agent-pay-decisions.md)) |
 | Complete at | Phase 3. Phase 4 follows when Mastercard grants API access; it is not Layer 5 and completeness does not wait for it |
 
 ## At a glance
@@ -121,7 +121,13 @@ on**.
   frameworks are `owasp-agentic-top10`, `eu-ai-act`, `dora`, `soc2` and
   `aiuc-1`.
 - **No card data anywhere**: Inflect is outside PCI DSS cardholder-data scope
-  today, and D-L1-8 keeps it there.
+  today, and D-L1-8 keeps it there. Since Phase 0.2 the line is a refusal in
+  code: `looksLikeSecret` (`src/lib/agentic/harness-contract-rules.ts`) treats a
+  card number (13–19 digits, first digit 2–6, contiguous or in printed card
+  groups, passing Luhn) as secret-shaped, so the harness contract and the
+  ingest's walk (`firstSecretShapedMember`) refuse a report carrying one.
+  `firstSecretShapedPath` is the same walk over any value, numbers included,
+  for Phase 1's writer.
 
 ## Fit, and what is deliberately not adopted
 
@@ -157,9 +163,10 @@ PAN, an Agentic Token value, a wallet key or a payment credential of any
 kind. It records references (the token requestor's own token reference, the
 agent platform's name) and the envelope. That keeps Inflect outside PCI DSS
 cardholder-data scope, which is worth more than any feature here. The
-harness contract already refuses a credential-shaped value
-(`firstSecretShapedMember`); Phase 0 adds a card-number shape (a 13–19 digit
-run that passes the Luhn check) to it and to the register's writer.
+harness contract refuses a credential-shaped value
+(`firstSecretShapedMember`), and since Phase 0 a card number (a 13–19 digit
+run that passes the Luhn check) is one; Phase 1's register writer refuses
+through the same walk.
 
 **Not adopted, with the reason.**
 
@@ -188,22 +195,38 @@ run that passes the Luhn check) to it and to the register's writer.
       requestor can be authorised, the AP4M early-access terms, the
       authentication scheme, and the Web Bot Auth tag and directory location
       Agent Pay uses. Record each answer, and each "not available", in the
-      implementation note.
-- [ ] 0.2 D-L1-8 initialled: no payment credential in Inflect's custody, no
+      implementation note. *Partly answered 2026-11-11*
+      ([note](../implementation-notes/2026-11-11-agent-pay-decisions.md)):
+      read through search excerpts of the named Mastercard Developers pages,
+      because the hosts were not reachable from the session. Found: an Agent
+      Pay product whose APIs are the agent platform's (Cards API enrollment,
+      Authentication API, Verifiable Intent Registration), OAuth 1.0a with
+      production access granted by Mastercard, AP4M in pilot with private
+      terms. Not found: a token-status read, a consent-policy read, a
+      suspension an outside party may call, third-party authorisation, the
+      confirmed Web Bot Auth tag values and the key directory location. Open
+      until the pages are read directly and the questions are put to
+      Mastercard.
+- [x] 0.2 D-L1-8 initialled: no payment credential in Inflect's custody, no
       payment initiated by its agents. Add the card-number shape (13–19
       digits passing Luhn) to `firstSecretShapedMember` and to every writer
-      Phase 1 adds, with a test per writer.
-- [ ] 0.3 D-L1-9 initialled, with the envelope's fields: rail (`AGENT_PAY_TOKEN`,
+      Phase 1 adds, with a test per writer. *Done 2026-11-11 for the harness
+      contract; each Phase 1 writer refuses through `firstSecretShapedPath`
+      and carries its own test.*
+- [x] 0.3 D-L1-9 initialled (2026-11-11), with the envelope's fields: rail (`AGENT_PAY_TOKEN`,
       `AP4M`, `OTHER`), per-transaction limit and currency, period budget and
       period, merchant scope (domains, merchant category codes), expiry, the
       consenting person (a member of the tenant), the token requestor (agent
       platform) and its token reference. No field may carry a credential.
-- [ ] 0.4 Framework mapping: which requirements in the existing library the
+- [x] 0.4 Framework mapping: which requirements in the existing library the
       Phase 3 evidence is filed against (candidates: OWASP agentic ASI03 and
       ASI02, EU AI Act Article 14, SOC 2 CC6, DORA, AIUC-1), and whether a
-      PCI DSS library is wanted at all (default: no).
-- [ ] 0.5 D-L1-10 initialled, with the trigger for Phase 4: written API
-      access for at least one tenant's token requestor, plus a sandbox.
+      PCI DSS library is wanted at all (default: no). *Recorded 2026-11-11:
+      `ASI03`, `ASI02`, `Art.14`, `CC6.1`–`CC6.3`, `DORA.Art.9`, AIUC-1
+      `B006`; no PCI DSS library.*
+- [x] 0.5 D-L1-10 initialled (2026-11-11), with the trigger for Phase 4:
+      written API access for at least one tenant's token requestor, plus a
+      sandbox.
 
 **Prompt.**
 ```text
@@ -435,3 +458,8 @@ Mastercard's own documentation:
 - [Mastercard: Agent Pay for Machines in action](https://www.mastercard.com/global/en/news-and-trends/press/2026/october/Mastercard-Agent-Pay-for-Machines-in-action.html)
 - [Cloudflare blog: securing agentic commerce with Visa and Mastercard](https://blog.cloudflare.com/secure-agentic-commerce/)
 - [Mastercard Developers Agent Toolkit](https://developer.mastercard.com/platform/documentation/agent-toolkit/)
+
+Read on 2026-11-11 for Phase 0.1, through search excerpts of the Mastercard
+Developers pages (the hosts were not reachable from the session); each page and
+what it was taken to say is listed in the
+[Phase 0 note](../implementation-notes/2026-11-11-agent-pay-decisions.md).
