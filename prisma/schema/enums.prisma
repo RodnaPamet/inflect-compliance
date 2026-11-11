@@ -2078,6 +2078,14 @@ enum PeerAgentStatus {
   RETIRED
 }
 
+/// A peer invitation's state (#3752). PENDING moves once, to ACCEPTED or
+/// REVOKED, and never back; expiry is read off `expiresAt`, not stored.
+enum PeerInvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
 /// Lifecycle of a host consumer — a host that calls Inflect as a CLIENT
 /// (#3861). Deliberately the same three states as `PeerAgentStatus`: the
 /// difference between the two principals is how they authenticate and what

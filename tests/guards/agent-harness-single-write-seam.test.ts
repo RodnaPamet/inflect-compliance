@@ -65,6 +65,9 @@ const SEAMS = {
         table: 'PeerAgentInboundCredential',
         seam: 'src/app-layer/usecases/a2a-peer-credentials.ts',
     },
+    // A2A peer invitations (#3752, owner decisions 2026-11-11): created,
+    // revoked and claimed in one file, so the single-use rule has one writer.
+    peerInvitation: { table: 'PeerInvitation', seam: 'src/app-layer/usecases/peer-invitations.ts' },
     // The tenant's own A2A signing key (owner decision 2026-10-19). One writer,
     // because it is the only place the seed is decrypted and the only place a
     // rotation can be refused to anybody but an OWNER.
@@ -140,6 +143,7 @@ describe('the harness tables have one write seam each', () => {
             'src/app-layer/usecases/agent-harness-scans.ts',
             'src/app-layer/usecases/agent-profiles.ts',
             'src/app-layer/usecases/peer-agents.ts',
+            'src/app-layer/usecases/peer-invitations.ts',
             'src/app-layer/usecases/tenant-skills.ts',
         ]);
     });

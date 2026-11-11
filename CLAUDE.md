@@ -2169,6 +2169,28 @@ Card text is hashed through `JSON.stringify`, not straight to SHA-256: UTF-8
 encoding turns every lone surrogate into U+FFFD, so two different texts would
 hash alike.
 
+**A2A peer invitations** (`usecases/peer-invitations.ts`, since #3752; owner
+decisions 2026-11-11) connect two workspaces in three acts: invite in A, accept
+in B, approve B's card in A. Five rules in it are easy to undo:
+
+- **The acceptance pins nothing on the inviting side.** It registers the
+  acceptor UNPINNED; a person there approves its card with the ordinary
+  approval. Do not pin on acceptance "to save a click": that is trust on first
+  use, by a machine.
+- **The acceptance is signed by the key the acceptor's OWN card names**, over
+  the exact body, fresh for five minutes, and the code is single-use, 7-day and
+  SHA-256 at rest. A leaked code alone cannot register a card its holder does
+  not hold the key of.
+- **Where the acceptance goes comes from the pinned card** (`card.url` +
+  `/invitations`), never from the code.
+- **The inviting side acts as the person who invited, re-read on arrival**
+  (`resolveMemberContext`): one who left or lost the register key or the admin
+  tier refuses (`INVITER_NOT_AUTHORISED`). Never a system context with borrowed
+  authority.
+- **A workspace already holding a live token for the inviter refuses**
+  (`ALREADY_CONNECTED`). Reconnecting would revoke a working token before the
+  inviter could refuse.
+
 **A2A messaging** (`usecases/a2a-inbound.ts`, `a2a-outbound.ts`, since #3679)
 carries tasks both ways with one pinned peer. Ten rules in it are easy to undo:
 

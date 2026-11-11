@@ -30,6 +30,7 @@ import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { buildPeerFilters, PEER_FILTER_KEYS } from './filter-defs';
 import { PEER_CARD_LABEL_KEY, PEER_CARD_VARIANT, peerCardState, peerPinState } from './peer-state';
 import { RegisterPeerForm, type PeerChoice, type RegisteredPeer } from './RegisterPeerForm';
+import { AcceptInvitationForm, InvitationCodePanel, InvitePeerForm } from './PeerInvitationForms';
 import { SigningKeyPanel, type SigningKeyView } from './SigningKeyPanel';
 
 export interface PeerRow {
@@ -63,6 +64,10 @@ interface Props {
     /** The member or vendor read failed, so the form cannot offer them (#4901). */
     ownersUnavailable?: boolean;
     vendorsUnavailable?: boolean;
+    /** The register's live agents, for an invitation's receiving agent (#3752). */
+    agents?: PeerChoice[];
+    /** The workflows a peer's task can start: those declaring no required input. */
+    workflows?: PeerChoice[];
 }
 
 const STATUS_VARIANT: Record<PeerRow['status'], StatusBadgeVariant> = {
@@ -119,6 +124,8 @@ function PeersInner({
     vendors = [],
     ownersUnavailable = false,
     vendorsUnavailable = false,
+    agents = [],
+    workflows = [],
 }: Props) {
     // `useGuardedPush`, not `router.push`: a cold row click during hydration
     // can have its transition dropped by the client router (#3099).
@@ -224,7 +231,12 @@ function PeersInner({
     );
 
     const toast = useToast();
-    const [registering, setRegistering] = useState(false);
+    // One inline form at a time: register by hand, invite, or accept an invitation.
+    const [mode, setMode] = useState<'register' | 'invite' | 'accept' | null>(null);
+    const registering = mode === 'register';
+    const setRegistering = (on: boolean) => setMode(on ? 'register' : null);
+    const [inviteCode, setInviteCode] = useState<string | null>(null);
+    const choices = useMemo(() => ({ owners, vendors, agents, workflows }), [owners, vendors, agents, workflows]);
     const onRegistered = useCallback(
         (registered: RegisteredPeer) => {
             // The peer is refused until its card is approved, which is done on
@@ -234,7 +246,7 @@ function PeersInner({
                     ? t('peers.register.done', { name: registered.peer.name })
                     : t('peers.register.doneCardUnreadable', { name: registered.peer.name }),
             );
-            setRegistering(false);
+            setMode(null);
             guardedPush(`/t/${tenantSlug}/agents/peers/${registered.peer.id}`);
         },
         [guardedPush, t, tenantSlug, toast],
@@ -264,8 +276,27 @@ function PeersInner({
                 ),
                 description: t('peers.description'),
                 actions: (
-                    // Secondary: the form it opens carries the submit, and the
-                    // list's own content is read-only.
+                    // Secondary: each form it opens carries its own submit, and
+                    // the list's own content is read-only.
+                    <div className="flex flex-wrap gap-compact">
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setMode('invite')}
+                        disabled={mode !== null || inviteCode !== null}
+                        data-testid="peer-invite-open"
+                    >
+                        {t('peers.invite.open')}
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setMode('accept')}
+                        disabled={mode !== null}
+                        data-testid="peer-accept-open"
+                    >
+                        {t('peers.accept.open')}
+                    </Button>
                     <Button
                         type="button"
                         variant="secondary"
@@ -276,6 +307,7 @@ function PeersInner({
                     >
                         {t('peers.register.open')}
                     </Button>
+                    </div>
                 ),
             }}
             banner={
@@ -288,6 +320,28 @@ function PeersInner({
                             vendorsUnavailable={vendorsUnavailable}
                             onRegistered={onRegistered}
                             onCancel={() => setRegistering(false)}
+                        />
+                    )}
+                    {mode === 'invite' && (
+                        <InvitePeerForm
+                            choices={choices}
+                            onCreated={(code) => {
+                                setInviteCode(code);
+                                setMode(null);
+                            }}
+                            onCancel={() => setMode(null)}
+                        />
+                    )}
+                    {inviteCode && <InvitationCodePanel code={inviteCode} onDone={() => setInviteCode(null)} />}
+                    {mode === 'accept' && (
+                        <AcceptInvitationForm
+                            choices={choices}
+                            onAccepted={(accepted) => {
+                                toast.success(t('peers.accept.done', { name: accepted.name }));
+                                setMode(null);
+                                guardedPush(`/t/${tenantSlug}/agents/peers/${accepted.peerId}`);
+                            }}
+                            onCancel={() => setMode(null)}
                         />
                     )}
                     <SigningKeyPanel view={signingKey} />

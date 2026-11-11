@@ -364,6 +364,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/peers/[peerId]/inbound-credential/route.ts',
     't/[tenantSlug]/admin/agents/peers/[peerId]/kill/route.ts',
     't/[tenantSlug]/admin/agents/peers/[peerId]/messages/route.ts',
+    // A2A peer invitations (#3752): invite, list and revoke from the peers
+    // page; preview and accept from its Accept-an-invitation form.
+    't/[tenantSlug]/admin/agents/peers/invitations/route.ts',
+    't/[tenantSlug]/admin/agents/peers/invitations/[invitationId]/route.ts',
+    't/[tenantSlug]/admin/agents/peers/invitations/preview/route.ts',
+    't/[tenantSlug]/admin/agents/peers/invitations/accept/route.ts',
     't/[tenantSlug]/admin/agents/reports/export/route.ts',
     't/[tenantSlug]/admin/agents/reports/route.ts',
     't/[tenantSlug]/admin/agents/review-quality/route.ts',

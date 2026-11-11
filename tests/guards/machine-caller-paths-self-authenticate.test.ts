@@ -358,6 +358,15 @@ describe('/api/a2a: every exported method is the inbound endpoint or the publish
             // kill switch. Asserted by NAME rather than by trusting the path,
             // so a route that merely sits at `/token` without calling it fails.
             expect(body).toMatch(/issueHostConsumerToken\s*\(/);
+        } else if (method === 'POST' && file.endsWith('/invitations/route.ts')) {
+            // THE FIFTH KIND (#3752, owner decisions 2026-11-11). Where another
+            // workspace ACCEPTS this tenant's invitation, before any peer is
+            // registered here — so, like the token endpoint, there is no
+            // message to admit yet. Self-authenticating all the same: the
+            // single-use code and a signature by the key the acceptor's own
+            // card names, both checked inside `acceptPeerInvitationAtInviter`,
+            // which also re-reads the inviting person. Asserted by NAME.
+            expect(body).toMatch(/acceptPeerInvitationAtInviter\s*\(/);
         } else if (method === 'POST') {
             expect(body).toMatch(/handleInboundA2a\s*\(/);
         } else if (method === 'GET' && file.includes('/.well-known/')) {

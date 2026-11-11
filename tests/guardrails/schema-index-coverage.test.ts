@@ -748,6 +748,9 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'listPeerKills reads by (tenantId, peerId) ordered by engagedAt desc, and the per-message boundary read adds liftedAt IS NULL — both the tenantId-leading prefix of @@index([tenantId, peerId, liftedAt]); a peer is killed a handful of times, bounded take ≤100.',
     PeerAgentInboundCredential:
         'getPeerInboundCredential lists a peer\'s revoked credentials by (tenantId, peerId, revokedAt not null) ordered by revokedAt desc — @@index([tenantId, peerId, revokedAt]); the retirement cascade lists one agent\'s live credentials by (tenantId, receivingAgentId) — @@index([tenantId, receivingAgentId]); a peer holds a handful, bounded take ≤20 / cap+1.',
+    // A2A peer invitations (#3752, owner decisions 2026-11-11).
+    PeerInvitation:
+        'listPeerInvitations reads by tenantId ordered by createdAt desc — the tenantId-leading prefix of @@index([tenantId, status, createdAt]); a tenant issues a handful, bounded take ≤50. The acceptance reads one row by @@unique([tenantId, codeHash]).',
     // The tenant's own A2A signing key (#3679, owner decision 2026-10-19).
     TenantA2aSigningKey:
         'getTenantA2aSigningKeys lists the retired keys by (tenantId, retiredAt not null) ordered by retiredAt desc — @@index([tenantId, retiredAt]); the receipt re-verification reads by (tenantId, fingerprint IN …) — @@unique([tenantId, fingerprint]); a tenant rotates rarely, bounded take ≤200.',

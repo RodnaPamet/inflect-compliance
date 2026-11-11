@@ -6,6 +6,8 @@ import { listPeerAgents } from '@/app-layer/usecases/peer-agents';
 import { getTenantA2aSigningKeys } from '@/app-layer/usecases/a2a-signing-key';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';
+import { listRegisteredAgents } from '@/app-layer/usecases/agent-registry';
+import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity } from '@/lib/permissions';
 
@@ -43,12 +45,14 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
     // A failed member or vendor read is SAID, not swallowed into an empty
     // picker that cannot be filled (#4901). The vendor list is only the first
     // page; the form searches the vendor register for the rest.
-    const [peers, keys, owners, vendors, oversightReads] = await Promise.all([
+    const [peers, keys, owners, vendors, oversightReads, agentsRead] = await Promise.all([
         listPeerAgents(ctx),
         getTenantA2aSigningKeys(ctx),
         listAssignableUsers(ctx).catch(() => null),
         listVendors(ctx, {}, { take: 50 }).catch(() => null),
         oversightReadsFor(ctx),
+        // An invitation's receiving agent (#3752). Best-effort, as the pickers above.
+        listRegisteredAgents(ctx, { take: 200 }).catch(() => []),
     ]);
 
     const rows: PeerRow[] = peers.map((p) => ({
@@ -93,6 +97,14 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
                 label: m.name ?? m.email,
             }))}
             vendors={(vendors ?? []).map((v: { id: string; name: string }) => ({ id: v.id, label: v.name }))}
+            agents={agentsRead
+                .filter((a) => a.status !== 'RETIRED')
+                .map((a) => ({ id: a.id, label: a.name }))}
+            // A peer's task carries text only, so a workflow that declares a
+            // required input could never be started by one.
+            workflows={listWorkflowDefinitions()
+                .filter((w) => (w.requiredInput ?? []).length === 0)
+                .map((w) => ({ id: w.key, label: w.name }))}
         />
     );
 }
