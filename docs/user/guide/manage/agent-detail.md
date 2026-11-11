@@ -78,6 +78,8 @@ On **{{ui:admin.agentDetail.tabTools}}**, tick or untick a tool. A revoke can be
 
 On **{{ui:admin.agentDetail.tabPolicy}}**, click **{{ui:admin.agentDetail.policyCard.seedAction}}** the first time, then **{{ui:admin.agentDetail.policyCard.editAction}}**. The card can only narrow what the agent's grants and risk tier already allow.
 
+Each save may widen one thing: raise one limit by one step, or permit any number of tools the card's limits already allow. Taking authority away is never limited. A tool that reaches further than the card's data scope cannot be ticked, so to permit tools that read workspace data on a card at the lowest data scope, raise the data scope first, one step per save, then tick the tools in one save.
+
 ### Connect an agent you run
 
 Click **{{ui:admin.agentDetail.connect.action}}**. Owners and Admins name a key, set its autonomy ceiling (it can only be lower than the agent's own), and click **{{ui:admin.agentDetail.connect.mint}}**. {{ui:admin.agentDetail.connect.keyOnce}} The panel then shows the settings for your agent to use.

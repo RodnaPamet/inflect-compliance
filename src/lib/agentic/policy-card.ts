@@ -331,12 +331,19 @@ export interface PolicyDelta {
  * Every dimension that MOVED between two card versions, with the direction and
  * the distance.
  *
- * A set dimension's distance is its symmetric difference in the widening
- * direction: adding three tools is three rungs, because "one rung per widen" has
- * to mean something for a set or the tool list would be the way around the rule.
- * Adding two and removing five in one edit is a net WIDENING of two — the
- * removals do not pay for the additions, since the point of the rule is that
- * each new reach is looked at on its own.
+ * PERMITTED TOOLS: any number added in one edit is ONE rung (#5046, owner
+ * decision 2026-11-11). It used to be one rung per tool, which made readying a
+ * fresh agent one signed card version per tool it had already been granted. A
+ * batch is safe as one decision because none of it reaches further than the
+ * card already does: a card may not permit a tool its own data or autonomy
+ * ceiling refuses (`assertDeclarationsExercisable`, and the editor withholds
+ * the box), and a ceiling cannot rise in the same edit, since that would widen
+ * two dimensions. So every tool in the batch is within the ceilings the card
+ * already had, and raising a ceiling stays its own rung. Removals do not pay for
+ * additions, and are reported beside them.
+ *
+ * ESCALATION TRIGGERS keep one rung per trigger dropped: quieting a rule has no
+ * ceiling bounding it the way a tool's reach is bounded.
  */
 export function comparePolicyCards(
     from: AgentPolicyCardValue,
@@ -349,7 +356,7 @@ export function comparePolicyCards(
     if (toolsAdded.length > 0) {
         deltas.push({
             dimension: 'permittedTools',
-            rungs: toolsAdded.length,
+            rungs: 1,
             detail: `grants ${toolsAdded.join(', ')}`,
         });
     }
