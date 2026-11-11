@@ -81,6 +81,28 @@ describe('outbound', () => {
         expect(JSON.parse(buildA2aSendBody({ rpcId: 'j1', messageId: 'm1', text: 'go' })).method).toBe('message/send');
     });
 
+    it('a task Inflect sends names the workflow an Inflect receiver runs (#3752)', () => {
+        const sent = buildA2aSendBody({ rpcId: 'j1', messageId: 'm1', text: 'please summarise', skillId: 'diagnostic' });
+        expect(JSON.parse(sent).params.message.metadata).toEqual({ skillId: 'diagnostic', workflowKey: 'diagnostic' });
+        expect(parseA2aInboundRequest(sent)).toEqual({
+            ok: true,
+            request: {
+                method: 'message/send',
+                rpcId: 'j1',
+                messageId: 'm1',
+                contextId: null,
+                workflowKey: 'diagnostic',
+                text: 'please summarise',
+                data: {},
+            },
+        });
+    });
+
+    it('a task sent with no skill names no workflow, and an Inflect receiver refuses it', () => {
+        const sent = buildA2aSendBody({ rpcId: 'j1', messageId: 'm1', text: 'go' });
+        expect(parseA2aInboundRequest(sent)).toMatchObject({ ok: false, reason: 'WORKFLOW_NOT_NAMED' });
+    });
+
     it('reads a peer task reply, and treats a reply to another request as malformed', () => {
         const body = JSON.stringify({ jsonrpc: '2.0', id: 'j1', result: { kind: 'task', id: 't9', status: { state: 'working' } } });
         expect(parseA2aPeerReply(body, 'j1')).toEqual({ kind: 'task', taskId: 't9', contextId: null, state: 'working' });
