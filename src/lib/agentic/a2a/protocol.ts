@@ -310,7 +310,13 @@ export function buildA2aSendBody(send: A2aOutboundSend): string {
     };
     if (send.contextId) message.contextId = send.contextId;
     if (send.taskId) message.taskId = send.taskId;
-    if (send.skillId) message.metadata = { skillId: send.skillId };
+    // An Inflect receiver reads the workflow to run from `metadata.workflowKey`
+    // (`parseA2aInboundRequest`), and an Inflect card's skill id IS the workflow
+    // key (`host-card-skills.ts`). `skillId` alone left the two halves unable to
+    // meet: every task one Inflect workspace sent another was refused
+    // WORKFLOW_NOT_NAMED (#3752). Both names are sent, so a peer that reads
+    // `skillId` is unaffected.
+    if (send.skillId) message.metadata = { skillId: send.skillId, workflowKey: send.skillId };
     return JSON.stringify({
         jsonrpc: '2.0',
         id: send.rpcId,
