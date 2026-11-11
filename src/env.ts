@@ -420,6 +420,14 @@ export const env = createEnv({
         // or every scan flags — a third party's host would be a sub-processor
         // change. Read only by src/app-layer/ai/guard/providers/registry.ts.
         AI_GUARD_NEMO_BASE_URL: z.string().optional(),
+        // PII detector (docs/ai-architecture/presidio.md, Phase 1). The base
+        // URL of the in-deployment Presidio analyzer — operator configuration,
+        // never a tenant value (G6). Absent = no detector is constructed (G9).
+        // The config hash names the recogniser configuration the deployed
+        // service image was built from; the detector mounts only when a
+        // committed record under evals/pii/records/ answered exactly it.
+        AI_PII_BASE_URL: z.string().url().optional(),
+        AI_PII_CONFIG_HASH: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional(),
         AI_RISK_DAILY_QUOTA: z.string().optional(),
         AI_RISK_USER_RPM: z.string().optional(),
         // Global AI kill switch. 'false' disables EVERY AI feature
@@ -935,6 +943,8 @@ export const env = createEnv({
         AI_RERANK_LOCAL_BASE_URL: process.env.AI_RERANK_LOCAL_BASE_URL,
         AI_RERANK_LOCAL_MODEL: process.env.AI_RERANK_LOCAL_MODEL,
         AI_GUARD_NEMO_BASE_URL: process.env.AI_GUARD_NEMO_BASE_URL,
+        AI_PII_BASE_URL: process.env.AI_PII_BASE_URL,
+        AI_PII_CONFIG_HASH: process.env.AI_PII_CONFIG_HASH,
         AI_RISK_DAILY_QUOTA: process.env.AI_RISK_DAILY_QUOTA,
         AI_RISK_USER_RPM: process.env.AI_RISK_USER_RPM,
         AI_RISK_ENABLED: process.env.AI_RISK_ENABLED,

@@ -127,6 +127,14 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
         noBareFetchOf: 'fetchWithRetry(',
     },
     {
+        file: 'src/lib/ai/pii/presidio-provider.ts',
+        reason:
+            'The PII detector (presidio.md Phase 1): every outbound text bound for an ' +
+            'external model would be posted here. The host is operator config ' +
+            '(AI_PII_BASE_URL), never a tenant value, and G6 still puts it behind safeFetch.',
+        noBareFetchOf: 'fetch(url',
+    },
+    {
         file: 'src/lib/security/oidc-client.ts',
         reason:
             'SSO sign-in: a workspace administrator types the OIDC issuer, and the ' +

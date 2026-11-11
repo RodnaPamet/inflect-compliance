@@ -92,6 +92,15 @@ flowchart LR
   (CI fails when a recogniser changes without a new one). Its figures are a
   development-set measure — the recognisers were corrected against the same
   corpus — and are not yet a mount condition.
+- **No Presidio, no NER model, no Python** in the app (G5).
+- **The `PiiDetector` seam exists and is mounted nowhere** (2026-11-11,
+  `src/lib/ai/pii/`). It holds the D-L1-1 scope (`entities.ts`), a pure
+  `redact()`, a Presidio HTTP client behind `safeFetch`, a fixture stub, the
+  mount gate (`mount.ts`, a passing record under `evals/pii/records/` for
+  `AI_PII_CONFIG_HASH`), and the egress use (`egress.ts`), which blocks with
+  `PII_DETECTOR_UNAVAILABLE` when a tenant has redaction on and the detector
+  is unmounted or unreachable. No record exists, no service runs, and no
+  product path calls it, so no payload is checked yet.
 
 ## Fit, and what is deliberately not adopted
 
@@ -191,19 +200,33 @@ are not optional in a BG product).
 **Sub-phases.**
 - [ ] 1.1 Compose service `presidio` (analyzer + anonymizer, one image with
       the config from Phase 0, digest), app/worker network only, no published
-      port; `AI_PII_BASE_URL` optional (absent = no detector, G9).
-- [ ] 1.2 `src/lib/ai/pii/`: `types.ts` (`PiiDetector.analyze(text, locale)` →
+      port. Waits on the capacity budget's C1. `AI_PII_BASE_URL` and
+      `AI_PII_CONFIG_HASH` are already in `src/env.ts` (absent = no detector,
+      G9). Open: `safeFetch` is https-only and refuses private addresses, so a
+      Compose-internal `http://presidio:…` is unreachable on the seam's
+      transport (it is UNMOUNTED as `BASE_URL_NOT_HTTPS`); 1.1 decides between
+      TLS plus the deployment-level egress allowlist and an operator-only
+      internal dial in the `local-gateway.ts` style. The records directory
+      also has to be copied into the runtime image.
+- [x] 1.2 `src/lib/ai/pii/`: `types.ts` (`PiiDetector.analyze(text, locale)` →
       spans; `redact(text, spans, policy)` → `{ text, redactions }`),
       `presidio-provider.ts` (`safeFetch`, byte cap, deadline), `stub-provider.ts`
-      (fixture-driven), `policy.ts` (per-type action from D-L1-1).
-- [ ] 1.3 Outage policy: for the *egress* use, an unavailable detector
+      (fixture-driven), `policy.ts` (per-type action from D-L1-1). D-L1-1's
+      scope lives once in `entities.ts`; every type is REPLACED; there is no
+      HASH action, because an unkeyed digest of an ЕГН is reversible by
+      enumeration.
+- [x] 1.3 Outage policy: for the *egress* use, an unavailable detector
       **blocks** egress to an external provider with reason
       `PII_DETECTOR_UNAVAILABLE` for tenants that have redaction on (fail
       closed — the alternative is sending unredacted text), and is a no-op
-      for tenants that have it off.
-- [ ] 1.4 The record from Phase 0 is the mount condition: the provider is
+      for tenants that have it off. A configured but unmounted detector blocks
+      the same way; `FLAG` sends unchanged and records the outage.
+- [x] 1.4 The record from Phase 0 is the mount condition: the provider is
       registered only if a record exists for the current config hash (the
-      skills mount-gate pattern).
+      skills mount-gate pattern). The record shape, the four case kinds and
+      the proposed floors (recall 0.95, precision 0.80, per type per locale,
+      not yet initialled) are in `evaluation-record.ts`; Phase 0's record
+      must be written in that shape.
 
 **Prompt.**
 ```text

@@ -229,6 +229,13 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // endpoint would make that party a sub-processor of every tenant's AI
     // content and is the sub-processor change process, not a config change.
     AI_GUARD_NEMO_BASE_URL: 'base URL of a NeMo Guardrails server (open source, Apache-2.0) WE operate, running LLM-free rails; no data leaves our infrastructure, so not a sub-processor — operator deployment config, unreachable from any tenant setting; a third-party host here would be a sub-processor change',
+    // PII detector (docs/ai-architecture/presidio.md, Phase 1). Presidio runs as
+    // a CPU service INSIDE the deployment — the roadmap rejects a cloud PII API
+    // precisely because it would be a sub-processor receiving every payload. The
+    // service's register row (G2, legacy-mcp style) lands with its container in
+    // Phase 1.1; these two vars only name where it is and what it was built from.
+    AI_PII_BASE_URL: 'base URL of the in-deployment Presidio PII analyzer — operator-run, inside the perimeter, not a third-party processor',
+    AI_PII_CONFIG_HASH: 'hash naming the recogniser configuration the deployed PII analyzer was built from — a config string, not an endpoint',
     // Internal secrets (env-provided; stored in AWS Secrets Manager, itself listed).
     AUTH_SECRET: 'internal JWT/session signing secret',
     JWT_SECRET: 'internal JWT signing secret',
