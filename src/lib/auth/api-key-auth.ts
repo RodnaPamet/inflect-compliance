@@ -166,13 +166,22 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     // acted on automatically from then on. An unattended key doing that is the
     // shape recertification exists to detect.
     identity_reconciliation: { read: ['view'], admin: ['confirm'] },
-    // No `read` group on these two: `PermissionSet` gives them a single
+    // No `read` group on `continuity`: `PermissionSet` gives it a single
     // `edit` action and no `view`, so there is no flag a read scope could
-    // set. `continuity:write` / `processes:write` are the only meaningful
-    // grants, and `<domain>:read` is deliberately not a valid scope rather
+    // set, and `continuity:read` is deliberately not a valid scope rather
     // than a valid scope that resolves to nothing.
     continuity: { write: ['edit'] },
-    processes:  { write: ['edit'] },
+    // `processes` has the same single `edit` action, but it DOES carry a
+    // `read` group, and that group is empty, like the `mcp` capability scopes
+    // below (#5053, owner decision 2026-11-11). It is the resource scope the
+    // propose-not-commit tool for process maps requires, and a propose tool's
+    // resource scope is a `read` (`McpProposeTool.resourceScope.action`): a
+    // propose key must never carry `processes:write`, which would let it
+    // overwrite maps directly over REST. So `processes:read` sets no
+    // `PermissionSet` flag and reaches no REST route; it only lets a key name
+    // the domain to the MCP boundary. Every key minted before it resolves to
+    // exactly the permissions it resolved to before.
+    processes:  { read: [], write: ['edit'] },
     frameworks: { read: ['view'], write: ['install'] },
     // `workpaper_view` (#3749) is its own action, named-only like
     // `admin:agent_registry_view` (`WILDCARD_EXCLUDED_ACTIONS` below): it is how
