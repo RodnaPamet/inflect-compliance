@@ -120,6 +120,10 @@ function PassBlock({ pass, agentNames }: { pass: PassRow; agentNames: Readonly<R
     const tenantHref = useTenantHref();
     const result = pass.resultJson ?? {};
     const decisions = result.decisions ?? [];
+    // A dry run is stored NOT_APPLICABLE, as a refusal is (it changed nothing),
+    // but it DID check every owner: "Did not check" would misreport the very
+    // evidence the dwell asks a person to read before widening.
+    const dryRunChecked = pass.status === 'NOT_APPLICABLE' && !result.refusal && result.mode === 'DRY_RUN';
     const modeLabel = (mode: string) => (KNOWN_MODES.has(mode) ? tLadder(`writeLadder.mode.${mode}`) : mode);
     const signalLabel = (s: { kind: string; membership?: string }) => {
         if (!KNOWN_SIGNALS.has(s.kind)) return s.kind;
@@ -136,9 +140,15 @@ function PassBlock({ pass, agentNames }: { pass: PassRow; agentNames: Readonly<R
         <li className="space-y-compact border-t border-border-subtle pt-default" data-testid={`orphan-pass-${pass.id}`}>
             <div className="flex flex-wrap items-center gap-compact">
                 <span className="text-sm font-medium text-content-emphasis">{formatDateTime(pass.executedAt)}</span>
-                <StatusBadge variant={STATUS_VARIANT[pass.status] ?? 'neutral'} size="sm">
-                    {KNOWN_PASS_STATUS.has(pass.status) ? tPass(`orphanPass.passStatus.${pass.status}`) : pass.status}
-                </StatusBadge>
+                {dryRunChecked ? (
+                    <StatusBadge variant="info" size="sm">
+                        {tPass('orphanPass.passStatus.DRY_RUN_CHECKED')}
+                    </StatusBadge>
+                ) : (
+                    <StatusBadge variant={STATUS_VARIANT[pass.status] ?? 'neutral'} size="sm">
+                        {KNOWN_PASS_STATUS.has(pass.status) ? tPass(`orphanPass.passStatus.${pass.status}`) : pass.status}
+                    </StatusBadge>
+                )}
                 {result.mode && (
                     <span className="text-xs text-content-muted">
                         {tPass('orphanPass.passMode', { mode: modeLabel(result.mode) })}

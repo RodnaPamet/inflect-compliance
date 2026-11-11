@@ -215,8 +215,11 @@ describe('the recorded passes', () => {
         expect(decision).not.toHaveTextContent('MEMBERSHIP_NOT_ACTIVE');
         // A service-principal outcome this build has no words for is shown as stored.
         expect(decision).toHaveTextContent('Service principal: WOULD_REQUEST');
-        // The pass status is a label, not its code.
-        expect(screen.getByTestId('orphan-pass-pass_2')).toHaveTextContent('Did not check');
+        // The pass status is a label, not its code. A dry run checked every
+        // owner, so it never reads "Did not check"; a refusal pass still does.
+        expect(screen.getByTestId('orphan-pass-pass_2')).toHaveTextContent('Checked; nothing changed');
+        expect(screen.getByTestId('orphan-pass-pass_2')).not.toHaveTextContent('Did not check');
+        expect(screen.getByTestId('orphan-pass-pass_1')).toHaveTextContent('Did not check');
         expect(screen.getByTestId('orphan-pass-pass_2')).toHaveTextContent('Mode: Dry run');
     });
 
