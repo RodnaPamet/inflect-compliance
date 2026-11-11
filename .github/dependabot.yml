@@ -226,7 +226,13 @@ updates:
 
   # ── GitHub Actions (monthly) ──
   - package-ecosystem: github-actions
-    directory: /
+    # `/` alone reads only `.github/workflows/`. The composite actions in
+    # `.github/actions/` pin their own actions and were never proposed a bump:
+    # setup-node-prisma, which most CI jobs run through, sat on setup-node@v6
+    # after every workflow had moved to v7.
+    directories:
+      - /
+      - /.github/actions/*
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
