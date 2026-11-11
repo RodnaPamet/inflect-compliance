@@ -2235,17 +2235,21 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        # Bounded: this shells out to apt-get, which can stall on the network
-        # with no timeout of its own. See the note on the cached step below.
+        # The browser download only. System libraries are the next step's job,
+        # best-effort, on a hit or a miss alike. This was `--with-deps`, which
+        # made apt-get a hard dependency on every cache miss: on 2026-11-11 the
+        # runners moved to ubuntu-26.04, its Azure apt mirror stopped answering,
+        # and the Playwright 1.65 bump (#5034) had just changed the cache key, so
+        # every E2E run on main and on PRs timed out here without running a test.
         timeout-minutes: 8
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
-      - name: Install Playwright system deps (cached)
-        if: steps.pw-cache.outputs.cache-hit == 'true'
+      - name: Install Playwright system deps
         # BEST-EFFORT, and that is the whole point of this step now.
         #
-        # It exists to top up system libraries when the BROWSER cache hit but
-        # the runner image might lack a shared object. The ubuntu-24.04 image
+        # It exists to top up system libraries once the browser is in place,
+        # from the cache or the download above, in case the runner image lacks
+        # a shared object. The ubuntu-24.04 image
         # already ships nearly all of them, so this is belt-and-braces — not a
         # prerequisite. Yet it wraps apt-get, and on 2026-08-19 an apt mirror
         # stall failed it FIVE times: #2004, #2005, #2007, and main twice,
