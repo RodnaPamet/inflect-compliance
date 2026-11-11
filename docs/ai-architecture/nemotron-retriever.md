@@ -20,7 +20,7 @@ inflect · ai architecture · nemotron retriever · roadmap v1 · 2026-10-29
 | Wave | 1 for the CPU embedding and rerank arms (Phases 0–2, zero-GPU). The GPU arm (Phase 3) is optional Layer 5 work, after every other roadmap is complete |
 | Depends on | nothing for Phases 0–2; Layer 5 ([`modal-inference.md`](./modal-inference.md)), optional and last, for Phase 3 |
 | Unblocks | [`weaviate.md`](./weaviate.md) Phase 2 (nothing to index without a vector), [`ragas.md`](./ragas.md) |
-| Owner decisions | **D-L4-3** (de-NIM: open weights on TEI/vLLM, never the NIM container), **D-L5-1** (decided 2026-10-31: no self-hosting now; Layer 5 optional and last) |
+| Owner decisions | **D-L4-3** (**decided 2026-11-11**, owner: benchmark the Nemotron 1B embed and rerank models against a small open model on CPU and keep the smaller unless recall@10 drops by more than an agreed margin; open weights on an open engine, never the NIM container), **D-L4-1** (**decided 2026-11-11**, owner: pgvector first, in the existing Postgres under RLS), **D-L5-1** (decided 2026-10-31: no self-hosting now; Layer 5 optional and last). The margin itself is proposed in the Phase 0 note and not yet agreed |
 | Complete at | Phase 2: embeddings and rerank on CPU, in the deployment. Phase 3 is optional Layer 5 work |
 
 ## At a glance
@@ -29,7 +29,7 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · verify<br/>weights, licence, engine<br/>CPU latency, seed recall<br/>D-L4-3 de-NIM"}}:::gate
+  P0{{"Phase 0 · verify<br/>weights, licence, engine<br/>seed recall, then CPU latency<br/>D-L4-3 small vs Nemotron"}}:::gate
   P1["Phase 1 · embedding seam, CPU<br/>tei-embed service<br/>EmbeddingProvider by residency<br/>builds nothing external"]:::todo
   P2["Phase 2 · reranker<br/>RerankProvider on TEI<br/>hydrate under RLS, then rerank<br/>new revision key"]:::todo
   P3["Phase 3 · GPU arm<br/>on the Layer 5 VM<br/>CPU and GPU parity"]:::optional
@@ -76,13 +76,25 @@ flowchart LR
 
 ## Fit, and what is deliberately not adopted
 
-**Adopted.** The open-weight Nemotron retriever models — at the time of writing
-the *Llama-Nemotron Embed 1B v2* and *Llama-Nemotron Rerank 1B v2* family, or
-their current successors — served by an open engine: Hugging Face **Text
-Embeddings Inference** (TEI, Apache-2.0) on CPU in the deployment, for the
-pilot and for production; a GPU arm is optional Layer 5 work. A single `EmbeddingProvider` seam in
-`src/lib/ai/embeddings/` that is residency-routed exactly like
-`model-selection.ts`.
+**Adopted (D-L4-3, decided 2026-11-11).** Open-weight retriever models served
+by an open engine on CPU in the deployment — Hugging Face **Text Embeddings
+Inference** (TEI, Apache-2.0) wherever it serves the chosen model — and a GPU arm
+only as optional Layer 5 work. Which models is a measurement, not a preference:
+the current Nemotron 1B models (*Nemotron 3 Embed 1B* for embedding,
+*Llama Nemotron Rerank 1B v2* for reranking, as of 2026-11-11) are benchmarked
+against small open multilingual models (BGE / E5 / GTE class, MIT or
+Apache-2.0), and **the smaller is kept unless its recall@10 is lower by more than
+an agreed margin**. Vectors go to **pgvector** in the existing Postgres, under RLS
+(D-L4-1). A single `EmbeddingProvider` seam in `src/lib/ai/embeddings/` that is
+residency-routed exactly like `model-selection.ts`.
+
+Phase 0's desk research
+([`2026-11-11-retriever-phase0-facts.md`](../implementation-notes/2026-11-11-retriever-phase0-facts.md))
+found that TEI's native CPU backend refuses Llama- and Mistral-family models at
+start-up, so no current Nemotron retriever model runs on TEI's CPU build without
+an ONNX export (untested); the small candidates run on it natively. That is why
+the benchmark measures quality first and asks the engine question for a Nemotron
+model only if it wins on quality.
 
 **Not adopted, with the reason.**
 
@@ -93,64 +105,94 @@ pilot and for production; a GPU arm is optional Layer 5 work. A single `Embeddin
   content, so each is a 30-day notice before the first vector; a 1B embedding
   model runs on the VM's CPU today with no notice at all. The pilot is
   sovereign because it is cheaper to be.
-- *Dense-only.* Hybrid search (BM25 + vector) is Weaviate's; the reranker is
-  the second stage over hybrid hits. A dense-only pipeline would re-derive what
-  the store already does.
+- *Dense-only.* Hybrid search (full-text + vector) is the store's — Postgres
+  full-text beside pgvector under D-L4-1, Weaviate's BM25 only if the store
+  moves; the reranker is the second stage over hybrid hits. A dense-only
+  pipeline would re-derive what the store already does.
 
 ## Roadmap (future direction)
 
 ### Phase 0 — Verify the models, the licence and the engine
 
 **Goal.** Facts, not assumptions: which weights, under which licence, on which
-engine, at what latency on this VM's CPU.
+engine, how well they retrieve against a small open model (D-L4-3), and at what
+latency on this VM's CPU.
 
-**Sub-phases.**
-- [ ] 0.1 Identify the current open-weight Nemotron embed + rerank models and
-      their licence text (NVIDIA Open Model License); record that the terms
-      permit multi-tenant SaaS use — if they do not, this roadmap stops here.
-- [ ] 0.2 Confirm TEI serves both (embedding; reranker via the `/rerank`
-      route) on CPU; record dimensions, max sequence length, pooling.
-- [ ] 0.3 Benchmark on the VM's CPU: p50/p95 for a 512-token passage and a
-      20-token query, batch 32 — this decides whether Phase 1 ships or Phase 3
-      comes first.
-- [ ] 0.4 Retrieval quality on a 200-pair seed set (questions from the
-      questionnaire answer library → the policy/evidence chunk that answers
-      them): recall@10 for the embed model alone, then with the reranker.
-- [ ] 0.5 Dependency governance: TEI is a runtime image (digest), the model
+**Sub-phases.** The desk research is recorded in
+[`2026-11-11-retriever-phase0-facts.md`](../implementation-notes/2026-11-11-retriever-phase0-facts.md);
+the measurements are still to run.
+- [x] 0.1 Identify the current open-weight Nemotron embed + rerank models and
+      their licence; record whether the terms permit multi-tenant SaaS use.
+      Done 2026-11-11: Nemotron 3 Embed 1B (OpenMDW-1.1, quoted: SaaS use
+      permitted) and Llama Nemotron Rerank 1B v2, the only current 1B Nemotron
+      reranker. The Llama-based models carry the Llama 3.2 terms, including a
+      "Built with Llama" display obligation.
+- [ ] 0.1b Read the licence files in the model repositories themselves before
+      any weights enter `deploy/` (G5). Hugging Face was unreachable from the
+      session, so Llama Nemotron Rerank 1B v2's own licence is unverified and
+      Nemotron 3 Embed's is quoted from NVIDIA's GitHub, not the model card.
+- [x] 0.2 Which engine serves which model on CPU. Done 2026-11-11 from TEI's
+      source: TEI's native CPU backend refuses Llama- and Mistral-family models,
+      so no current Nemotron retriever model runs on TEI's CPU build without an
+      ONNX export (untested); the small multilingual candidates (E5, Arctic
+      Embed v2 / GTE, BGE-M3, BGE and GTE rerankers) run on it natively, fp32.
+- [ ] 0.3 Quality (Q1, engine-independent, in CI): recall@10 and nDCG@10 for
+      each embedder alone, then each reranker on a fixed top-50 pool, against
+      the 200-pair seed set, with a paired bootstrap interval. The decision rule
+      is D-L4-3's; **the margin is proposed, not agreed**: 0.03 absolute
+      overall and 0.05 on the Bulgarian slice, inconclusive results growing the
+      set to 400 rather than defaulting to the larger model.
+- [ ] 0.4 The 200-pair seed set: seeded questionnaire questions and authored
+      questions → chunks of the content the product ships (policy templates,
+      control and framework texts), 150 EN, 25 BG → BG, 25 BG → EN; seed data
+      only, committed under `tests/fixtures/rag/` with a content hash.
+- [ ] 0.5 CPU latency and memory (Q2) on the production VM for the candidates
+      Q1 keeps — a Nemotron model only if it won Q1 — through a dispatch-only
+      workflow modelled on `VM capacity`: a temporary TEI container at 1.0 CPU,
+      p50/p95 for a 20-token query, 32 × 512-token passages and a 1 × 50
+      rerank, plus `memory.peak` and the host CPU's flags. Proposed budgets
+      (not agreed): query p95 ≤ 250 ms, rerank p95 ≤ 2 s.
+- [ ] 0.6 Dependency governance: TEI is a runtime image (digest), the model
       weights are a volume (`deploy/` volume + a checksum of the snapshot
       recorded in the note); no Python enters the app image.
+- [ ] 0.7 The vector's shape suits pgvector (D-L4-1): `vector` indexes up to
+      2,000 dimensions and `halfvec` up to 4,000, so a 2048-dimension winner
+      needs `halfvec`; every small candidate (384–1024) fits `vector`.
 
 **Prompt.**
 ```text
-Context (main 3.338.0): no embedding model exists. Model routing is residency-based in
+Context: no embedding model exists. Model routing is residency-based in
 src/lib/agentic/flue/model-selection.ts (inflect-external / inflect-local; LOCAL_ONLY
-tenants never reach an external route). The local route is AI_LOCAL_BASE_URL (OpenAI-
-compatible). Runtime images are digest-pinned (docs/dependency-governance.md). The target
-names the Nemotron Retriever; the blueprint says de-NIM (open weights on open engines).
+tenants never reach an external route). Runtime images are digest-pinned
+(docs/dependency-governance.md). D-L4-3 (decided 2026-11-11): benchmark the Nemotron 1B
+embed and rerank models against small open multilingual models on CPU and keep the
+smaller unless recall@10 drops by more than the agreed margin. D-L4-1: pgvector first.
+docs/implementation-notes/2026-11-11-retriever-phase0-facts.md holds the models,
+licences, engine facts and the protocol.
 
-Task: a verification note, docs/implementation-notes/2026-MM-DD-nemotron-retriever-
-verification.md. (1) Name the current open-weight Nemotron embed and rerank models and
-quote the licence terms on multi-tenant commercial use. (2) Stand up TEI (CPU) locally
-with both, record dimensions/max length/pooling and the exact image digest. (3) Benchmark
-p50/p95 on a 512-token passage and a 20-token query at batch 32 on hardware comparable
-to the production VM. (4) Build a 200-pair seed set from the questionnaire answer library
-(question → the policy/evidence chunk that answers it) and report recall@10 with and
-without the reranker. Commit the set under tests/fixtures/rag/ (seed data only, no
-customer content).
+Task: (1) Author the 200-pair seed set described in that note and commit it under
+tests/fixtures/rag/ with a SHA-256 of its canonical JSON. (2) Run Q1 in a pinned CI image
+(reference implementations, each model's documented query/passage treatment):
+recall@10 and nDCG@10 per embedder, then per reranker on the winner's fixed top-50,
+with a paired bootstrap 95% interval. (3) Run Q2 on the production VM through a
+dispatch-only workflow modelled on vm-capacity.yml, for the candidates Q1 keeps.
+(4) Record every number, digest and weights checksum in a new implementation note.
 
-Constraints: no production change, no dependency added. If the licence forbids SaaS use,
-say so first and stop. Pin every version and digest you touched.
+Constraints: no production change beyond the temporary benchmark container, no
+dependency added to the app. Never resolve an inconclusive result towards the larger
+model. Read each kept model's licence file in its repository before recording it.
 
-Done when: the note answers the five sub-phases with numbers and the seed set is in
-the repo with a content hash.
+Done when: the record answers 0.3-0.5 with numbers and the seed set is in the repo with
+a content hash.
 ```
 
 **Hardening.** G5 (digests and licence recorded before adoption), G11 (the
 seed set is authored now, tied by content hash, so Phase 1 ships with its
 evaluation set rather than promising one).
 
-**Done when.** The note is on `main` with numbers, and the owner has initialled
-D-L4-3.
+**Done when.** The measurements are on `main` with numbers, the owner has agreed
+the margin, and the D-L4-3 rule has picked the embedder and the reranker.
+D-L4-3 itself was initialled on 2026-11-11.
 
 ### Phase 1 — The embedding seam, CPU-local
 
@@ -238,7 +280,7 @@ the mount gate can see.
 Context (main 3.338.0): the embedding seam (Phase 1) and VectorRepository.search (weaviate
 Phase 3) exist; the search_knowledge mount gate consumes a RAG evaluation record keyed by
 (embeddingModel, chunker, k, alpha). Chunk text is hydrated from Postgres under RLS, never
-from Weaviate (vectors-only rule D-L4-2).
+from any store outside Postgres (vectors-only rule D-L4-2, adopted 2026-11-11).
 
 Task: add reranking. (1) RerankProvider in src/lib/ai/embeddings/ (TEI /rerank backend,
 same residency routing and factory rules as the embedding provider, stub for tests). (2)
