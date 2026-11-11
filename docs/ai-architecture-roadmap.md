@@ -800,35 +800,35 @@ the child records the reasoning.
 | --- | --- | --- | --- |
 | D-L1-1 | PII redaction scope: paths, entity types, locales, LOCAL_ONLY handling | presidio | **decided 2026-11-11** (owner): external routes only; PERSON/EMAIL/PHONE/IBAN/ЕГН; EN+BG; LOCAL_ONLY off |
 | D-L1-2 | NeMo rails: LLM-free first; LLM-backed only on the tenant's permitted route | nemo-guardrails | **decided 2026-11-11** (owner): LLM-free rails first |
-| D-L1-3 | Behaviour anomaly signal; CPU detector before Morpheus | morpheus | CPU first |
-| D-L1-4 | NemoClaw: reference-only; runtime and privacy router declined | nemoclaw | declined |
+| D-L1-3 | Behaviour anomaly signal; CPU detector before Morpheus | morpheus | **decided 2026-11-11** (owner): CPU detector in the worker first |
+| D-L1-4 | NemoClaw: reference-only; runtime and privacy router declined | nemoclaw | **decided 2026-11-11** (owner): reference only; runtime and privacy router declined |
 | D-L1-5 | Web Bot Auth signing identity: one Ed25519 key per deployment, never per tenant, so no signature discloses which customer monitors a vendor | web-bot-auth | **decided 2026-11-11** (owner): adopt |
 | D-L1-6 | Outbound conduct: a User-Agent naming the bot, a public bot page, robots.txt honoured, registration with Cloudflare Verified Bots by the operator | web-bot-auth | **decided 2026-11-11** (owner): adopt |
 | D-L1-7 | Inbound verification: a label on public surfaces, never authorization; open directory fetch under cache and caps, or an allowlist of operators | web-bot-auth | **decided 2026-11-11** (owner): adopt |
-| D-L1-8 | Inflect never holds a payment credential (no PAN, token value or wallet key) and its own agents never pay; it stays outside PCI DSS cardholder-data scope | mastercard-agent-pay | adopt |
-| D-L1-9 | Spending authority is a declared envelope on the register, reviewed by a second person, required before activation, and reached by recertification and the kill switch | mastercard-agent-pay | adopt |
-| D-L1-10 | Reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once written API access and a sandbox exist | mastercard-agent-pay | wait for access; Phases 1–3 need none |
+| D-L1-8 | Inflect never holds a payment credential (no PAN, token value or wallet key) and its own agents never pay; it stays outside PCI DSS cardholder-data scope | mastercard-agent-pay | **decided 2026-11-11** (owner): adopt |
+| D-L1-9 | Spending authority is a declared envelope on the register, reviewed by a second person, required before activation, and reached by recertification and the kill switch | mastercard-agent-pay | **decided 2026-11-11** (owner): adopt |
+| D-L1-10 | Reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once written API access and a sandbox exist | mastercard-agent-pay | **decided 2026-11-11** (owner): adopt; Phases 1-3 need no access |
 | D-L2-1 | Langflow's box: the visual canvas is the product's own, editing the agent profile; Langflow not adopted | langflow | **decided 2026-10-29** (owner) |
-| D-L2-2 | Reasoning engines enforce flow checkpoints, or the canvas offers no checkpoint node | langflow | build enforcement; no checkpoint node until it lands |
+| D-L2-2 | Reasoning engines enforce flow checkpoints, or the canvas offers no checkpoint node | langflow | **decided 2026-11-11** (owner): enforcement first; no checkpoint node until it lands |
 | D-L2-3 | The agent-flow canvas is drawn by tldraw (3.x, watermark kept), never xyflow, and lives inside the process-canvas module | langflow | **decided 2026-10-29** (owner) |
 | D-L3-1 | Supervisor/worker role axis in model selection | nemotron-reasoning | **decided 2026-11-11** (owner): adopt |
 | D-L3-2 | Nemotron as the default worker | nemotron-reasoning | **deferred 2026-10-31** with Layer 5 (owner); the worker is a model reached through API keys |
-| D-L3-3 | An optimisation problem at GPU scale exists | cuopt | no; CPU seam if a feature wants it |
+| D-L3-3 | An optimisation problem at GPU scale exists | cuopt | **decided 2026-11-11** (owner): no; a CPU seam only if a feature wants one |
 | D-L4-1 | pgvector-first or Weaviate-first | weaviate | **decided 2026-11-11** (owner): **pgvector first**, in the existing Postgres under RLS; Weaviate only if a measured recall or latency floor is not met |
 | D-L4-2 | Vectors-only rule (no chunk text outside Postgres) | weaviate | **decided 2026-11-11** (owner): adopt |
 | D-L4-3 | De-NIM retriever: open weights on CPU TEI in the deployment; the GPU arm is optional Layer 5 | nemotron-retriever | **decided 2026-11-11** (owner): benchmark Nemotron against a small open model (BGE/E5 class) on CPU; keep the smaller unless recall@10 drops past an agreed margin |
 | D-L4-4 | Parser backend: RAGFlow slim or a parsing-only service | ragflow | **decided 2026-11-11** (owner): a Docling-class parsing-only service; RAGFlow measured, adopted only if Docling fails the fidelity eval |
-| D-L4-5 | Langfuse hosting: self-host / Cloud EU / OTel-only | langfuse | self-host if the VM bears it |
-| D-L4-6 | Trace content capture off by default; three conditions to turn on | langfuse | adopt |
+| D-L4-5 | Langfuse hosting: self-host / Cloud EU / OTel-only | langfuse | **decided 2026-11-11** (owner): **OTel-only for now**; no new service and no sub-processor |
+| D-L4-6 | Trace content capture off by default; three conditions to turn on | langfuse | **decided 2026-11-11** (owner): adopt |
 | D-L5-1 | Model usage through LLM API keys; no self-hosting now; Modal not adopted; Layer 5 optional, after every other roadmap is complete | modal-inference | **decided 2026-10-31** (owner) |
 | D-L5-2 | If Layer 5 is taken up: model, weights and licence, GPU class, zone and quota, cost | modal-inference | **deferred** until Layer 5 is taken up |
 | D-L5-3 | Triton consolidation trigger | triton | **deferred** with Layer 5 |
 | D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, a parsing-only service, Langfuse OTel-only) | § Capacity budget | measure first; smaller pieces the records allow; then resize to `e2-highmem-4`; never self-host Langfuse on the production VM |
 | D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | **decided 2026-11-11** (owner): a Haiku-class model through a dedicated CI key, capped at USD 5 a night, seed data only |
 | D-EV-2 | Ragas judge residency and cost | ragas | **decided 2026-11-11** (owner): as D-EV-1, one shared cap |
-| D-EV-3 | Who labels ARES triples, from the seed corpus | ares | operator, seed only |
+| D-EV-3 | Who labels ARES triples, from the seed corpus | ares | **decided 2026-11-11** (owner): operator, seed data only |
 | D-EV-4 | The product scores its own agents on its own ladder | inspect | **decided 2026-11-11** (owner): adopt |
-| D-EV-5 | SWE-bench: declined or placeholder | swe-bench | declined |
+| D-EV-5 | SWE-bench: declined or placeholder | swe-bench | **decided 2026-11-11** (owner): declined |
 
 ### How this document is updated
 
