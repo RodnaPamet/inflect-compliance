@@ -225,6 +225,21 @@ describe('API Key Scopes — scopesToPermissions', () => {
         expect(perms.evidence.view).toBe(false); // read not granted
     });
 
+    it('processes:read is a valid scope that sets no PermissionSet flag (#5053)', () => {
+        // The resource scope a propose key needs for process maps. It must not
+        // reach `processes.edit`, or a propose key could overwrite maps over REST.
+        expect(validateScopes(['processes:read'])).toEqual([]);
+        const perms = scopesToPermissions(['processes:read']);
+        expect(perms.processes.edit).toBe(false);
+        const granted = Object.entries(perms).flatMap(([resource, actions]) =>
+            Object.entries(actions as Record<string, boolean>)
+                .filter(([, on]) => on)
+                .map(([action]) => `${resource}.${action}`),
+        );
+        expect(granted).toEqual([]);
+        expect(scopesToPermissions(['processes:write']).processes.edit).toBe(true);
+    });
+
     it('grants nothing for empty scopes', () => {
         const perms = scopesToPermissions([]);
         // All should be false
@@ -259,6 +274,15 @@ describe('API Key Scopes — enforceApiKeyScope', () => {
         });
         expect(() => enforceApiKeyScope(ctx, 'evidence', 'write')).toThrow(/does not have scope/);
         expect(() => enforceApiKeyScope(ctx, 'controls', 'write')).toThrow(/does not have scope/);
+    });
+
+    it('processes:read passes a processes read check and never a write check (#5053)', () => {
+        const ctx = makeCtx('ADMIN', {
+            apiKeyId: 'ak-1',
+            apiKeyScopes: ['mcp:propose', 'processes:read'],
+        });
+        expect(() => enforceApiKeyScope(ctx, 'processes', 'read')).not.toThrow();
+        expect(() => enforceApiKeyScope(ctx, 'processes', 'write')).toThrow(/does not have scope/);
     });
 
     it('full access (*) allows everything', () => {

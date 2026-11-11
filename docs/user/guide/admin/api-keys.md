@@ -47,7 +47,8 @@ Give each system its own key, with only the access that system needs, and revoke
 | {{ui:admin.scopeGroup.controls}}, {{ui:admin.scopeGroup.evidence}}, {{ui:admin.scopeGroup.tasks}}, {{ui:admin.scopeGroup.risks}}, {{ui:admin.scopeGroup.assets}}, {{ui:admin.scopeGroup.vendors}}, {{ui:admin.scopeGroup.findings}}, {{ui:admin.scopeGroup.tests}}, {{ui:admin.scopeGroup.frameworks}}, {{ui:admin.scopeGroup.reports}} | **Read**, **Write** |
 | {{ui:admin.scopeGroup.policies}}, {{ui:admin.scopeGroup.access_reviews}} | **Read**, **Write**, **Admin** |
 | {{ui:admin.scopeGroup.incidents}}, {{ui:admin.scopeGroup.personnel}}, {{ui:admin.scopeGroup.identity_reconciliation}} | **Read**, **Admin** |
-| {{ui:admin.scopeGroup.continuity}}, {{ui:admin.scopeGroup.processes}} | **Write** |
+| {{ui:admin.scopeGroup.processes}} | **Read**, **Write** |
+| {{ui:admin.scopeGroup.continuity}} | **Write** |
 | {{ui:admin.scopeGroup.audits}} | **Read**, **Write**, **Workpaper_view** |
 | {{ui:admin.scopeGroup.admin}} | **Read**, **Write**, **External_tools**, **Harness_ingest**, **Agent_registry_view** |
 | {{ui:admin.scopeGroup.mcp}} | **Read**, **Propose**, **Orchestrate** |
@@ -57,6 +58,7 @@ A few of these need a word of explanation:
 - **Workpaper_view** reads the auditor agent's workpapers, and **Agent_registry_view** reads the workspace's agent register. Neither is part of **{{ui:admin.apiKeys.fullAccess}}**, so a key gets them only when you pick them by name.
 - **External_tools** lets the key reach tools on a server outside Inflect. It is separate from **Write** under {{ui:admin.scopeGroup.admin}} so that no key gains it by accident.
 - **Harness_ingest** is the one scope a harness scanner's key needs to send its reports.
+- **Read** under {{ui:admin.scopeGroup.processes}} lets the key read nothing through the API on its own, because process maps have no separate read permission. It is for keys that agents use, alongside the {{ui:admin.scopeGroup.mcp}} choices. **Write** is what edits process maps.
 - The {{ui:admin.scopeGroup.mcp}} choices are for keys that agents use: **Read** lets the key read through Inflect's agent tools, **Propose** lets it draft proposals for a person to approve, and **Orchestrate** lets it drive an agent run.
 
 **The new key.** After you click **{{ui:admin.apiKeys.createKey}}**, a box shows the key under the warning **{{ui:admin.apiKeys.copyWarning}}** Only its first characters are visible. The eye button, **{{ui:admin.apiKeys.showKey}}**, reveals the rest. **{{ui:admin.apiKeys.copy}}** copies it, and **{{ui:admin.apiKeys.dismissKey}}** closes the box.
