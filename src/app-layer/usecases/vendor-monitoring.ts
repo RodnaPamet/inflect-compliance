@@ -38,8 +38,12 @@ import {
     evaluateAttestations,
     isNewBreach,
     isFailingGrade,
+    isTlsGradeStale,
+    planTlsObservation,
     type AttestationView,
+    type TlsObservation,
 } from '@/app-layer/services/vendor-monitoring/evaluate';
+import { recordVendorTlsFetch } from '@/lib/observability/integration-metrics';
 import type { BreachSignal, TlsSignal } from '@/app-layer/services/vendor-monitoring/types';
 import { env } from '@/env';
 import type { FindingSeverity } from '@prisma/client';
@@ -160,6 +164,7 @@ export async function runVendorMonitor(
     let tlsGrade: string | null = monitor.tlsGrade;
     let newBreachAt: Date | null = null;
     let newTlsCheckedAt: Date | null = null;
+    let tlsObservation: TlsObservation | null = null;
 
     // ── Signal 1: attestation expiry. ──
     if (monitor.checkAttestation) {
@@ -243,20 +248,21 @@ export async function runVendorMonitor(
     // ── Signal 3: TLS / security-header grade (light — timeline + state). ──
     if (monitor.checkTls && domain) {
         const signal = input.tlsSignal ?? await getTlsProvider(env.VENDOR_MONITOR_TLS_PROVIDER).grade(domain);
-        if (signal.grade && signal.grade !== monitor.tlsGrade) {
-            tlsGrade = signal.grade;
-            newTlsCheckedAt = new Date(signal.checkedAt);
+        // A fetch that did not grade is recorded, never read as "no change":
+        // the grade and tlsCheckedAt stay, and the outcome marks them stale.
+        tlsObservation = planTlsObservation(monitor.tlsGrade, signal);
+        recordVendorTlsFetch({ provider: signal.source, outcome: tlsObservation.tlsFetchOutcome });
+        tlsGrade = tlsObservation.tlsGrade;
+        newTlsCheckedAt = tlsObservation.tlsCheckedAt;
+        if (tlsObservation.gradeChanged && tlsGrade && newTlsCheckedAt) {
             planned.push({
                 eventType: 'TLS_GRADE',
-                severity: isFailingGrade(signal.grade) ? 'MEDIUM' : 'INFO',
+                severity: isFailingGrade(tlsGrade) ? 'MEDIUM' : 'INFO',
                 source: signal.source,
-                summary: `TLS / security-header grade for ${domain}: ${signal.grade}${monitor.tlsGrade ? ` (was ${monitor.tlsGrade})` : ''}`,
-                fingerprint: `tls:${vendor.id}:${signal.grade}:${dayStamp(newTlsCheckedAt)}`,
-                detailsJson: { domain, grade: signal.grade, present: signal.presentHeaders, missing: signal.missingHeaders },
+                summary: `TLS / security-header grade for ${domain}: ${tlsGrade}${monitor.tlsGrade ? ` (was ${monitor.tlsGrade})` : ''}`,
+                fingerprint: `tls:${vendor.id}:${tlsGrade}:${dayStamp(newTlsCheckedAt)}`,
+                detailsJson: { domain, grade: tlsGrade, present: signal.presentHeaders, missing: signal.missingHeaders },
             });
-        } else if (signal.grade) {
-            tlsGrade = signal.grade;
-            newTlsCheckedAt = new Date(signal.checkedAt);
         }
     }
 
@@ -319,6 +325,9 @@ export async function runVendorMonitor(
                 ...(newBreachAt ? { breachLastSeenAt: newBreachAt, breachCount: { increment: 1 } } : {}),
                 ...(tlsGrade ? { tlsGrade } : {}),
                 ...(newTlsCheckedAt ? { tlsCheckedAt: newTlsCheckedAt } : {}),
+                ...(tlsObservation
+                    ? { tlsFetchOutcome: tlsObservation.tlsFetchOutcome, tlsFetchOutcomeAt: tlsObservation.tlsFetchOutcomeAt }
+                    : {}),
                 attestationExpiresAt: extractions.length ? extractions[0].auditPeriodEnd : null,
             },
         });
@@ -354,7 +363,7 @@ export async function runVendorMonitor(
             entityId: vendor.id,
             details: `Monitored ${vendor.name}: attestation=${attestationStatus}, breach=${breachDetected}, tls=${tlsGrade ?? 'n/a'} — ${evCreated} posture events, ${findingsCreated} findings`,
             detailsJson: { category: 'custom', event: 'vendor_monitor_run' },
-            metadata: { vendorId: vendor.id, attestationStatus, breachDetected, tlsGrade, reassessmentTriggered, eventsCreated: evCreated, findingsCreated },
+            metadata: { vendorId: vendor.id, attestationStatus, breachDetected, tlsGrade, tlsFetchOutcome: tlsObservation?.tlsFetchOutcome ?? null, reassessmentTriggered, eventsCreated: evCreated, findingsCreated },
         });
 
         return { eventsCreated: evCreated, notified: notifiedCount };
@@ -399,7 +408,10 @@ export async function getVendorPosture(ctx: RequestContext, vendorId: string) {
             breach: env.VENDOR_MONITOR_BREACH_PROVIDER === 'hibp-domain' ? 'hibp-domain' : 'stub',
             tls: env.VENDOR_MONITOR_TLS_PROVIDER === 'header-grade' ? 'header-grade' : 'stub',
         };
-        return { vendor, monitor, events, providers };
+        // Decided here, not in the panel: the rule for "this grade is stale"
+        // lives in one place, beside the writer of the outcome it reads.
+        const tlsGradeStale = monitor ? isTlsGradeStale(monitor) : false;
+        return { vendor, monitor, events, providers, tlsGradeStale };
     });
 }
 

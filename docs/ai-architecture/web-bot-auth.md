@@ -20,7 +20,7 @@ inflect · ai architecture · web bot auth · roadmap v1 · 2026-10-30
 | Wave | 1 for Phases 0–2 (no dependency, zero GPU, and it fixes a live blind spot in vendor monitoring); 3 for Phase 3 |
 | Depends on | nothing for Phases 0–2; Phase 3 waits on Phase 1's verifier pieces |
 | Unblocks | vendor monitoring that can tell "refused" from "unreachable"; registration as a verified bot; a signed-agent label on the public trust center; [`mastercard-agent-pay.md`](./mastercard-agent-pay.md) Phase 2, whose Know Your Agent check validates a customer agent's key directory with Phase 3's verifier |
-| Owner decisions | **D-L1-5** (the signing identity is the deployment, never a tenant), **D-L1-6** (outbound conduct: honest User-Agent, bot page, robots.txt, Cloudflare registration), **D-L1-7** (inbound verification: label only, never authorization) |
+| Owner decisions | **D-L1-5** (the signing identity is the deployment, never a tenant), **D-L1-6** (outbound conduct: honest User-Agent, bot page, robots.txt, Cloudflare registration), **D-L1-7** (inbound verification: label only, never authorization) — all three decided by the owner on 2026-11-11, defaults adopted |
 | Complete at | Phase 3 |
 
 ## At a glance
@@ -114,13 +114,23 @@ network allowlist, so **Phase 0.1 re-reads both before any code is written**.
   `tests/guards/ssrf-egress-coverage.test.ts`. The breach check queries a
   fixed HIBP host named in code, with the domain URL-encoded into the query,
   so it stays on `fetchWithRetry` (G6 admits code-constant hosts).
-- **A refusal is invisible.** The TLS provider retries a 429, a 5xx or a
-  network failure once, and maps every outcome but a 2xx (a 403, a challenge,
-  an address the SSRF guard refused, a timeout) to `grade: null`; and the
-  sweep treats `null` as "nothing observed", leaving
-  `tlsGrade` and `tlsCheckedAt` as they were and recording no event. A vendor
-  that puts the monitor behind a bot wall keeps its last grade indefinitely,
-  dated to when the site was last readable, and nothing says it refused us.
+- **A refusal is recorded, never read as no change** (2026-11-11, sub-phase
+  0.4). The TLS provider returns an outcome on every signal (`TlsSignal.outcome`,
+  `TLS_FETCH_OUTCOMES`): `GRADED`; `REFUSED` for any 4xx (a 403, a 429 that
+  outlasted the one retry) or a recognised challenge, read from headers only
+  (`cf-mitigated: challenge`, `x-amzn-waf-action: challenge|captcha`), on
+  whatever status it rides, including a 2xx, which is never graded;
+  `UNREACHABLE` for a network failure, a timeout, a name that does not
+  resolve, a 5xx that outlasted the retry, or a redirect chain that reached no
+  page; `BLOCKED` for a value that is not a bare host name, or a start URL or
+  redirect target the SSRF guard refused. The sweep still leaves `tlsGrade`
+  and `tlsCheckedAt` on a fetch that did not grade, and now writes
+  `VendorMonitor.tlsFetchOutcome` and `tlsFetchOutcomeAt` on every fetch
+  (a CHECK pins the four values and pairs the two columns), emits
+  `vendor_monitor.tls_fetch{provider,outcome}`, and the vendor page marks
+  the grade **Stale** with the reason whenever the last outcome is not
+  `GRADED` (`isTlsGradeStale`, decided on the server). No response body is
+  read or stored.
 - **There is no second crawler.** `SimpleMetadataProvider`
   (`services/vendor-enrichment.ts`) fetched homepages with a browser-like
   User-Agent and a bare `fetch`, and nothing selected it. It was deleted on
@@ -255,7 +265,9 @@ makes a refusal visible either way.
       decision on the same review, with an exact-pinned `structured-headers`
       (MIT, no dependencies, the parser the reference library uses) as the
       default carried there.
-- [ ] 0.4 Make the monitor's refusals visible **before** signing anything.
+- [x] 0.4 Make the monitor's refusals visible **before** signing anything
+      (2026-11-11; see "What Inflect sends to third-party websites today" and
+      `docs/implementation-notes/2026-11-11-vendor-monitor-tls-fetch-outcome.md`).
       The TLS provider returns an outcome: `GRADED`, `REFUSED` (403, a 429
       that outlasted the retries, or a recognised challenge response),
       `UNREACHABLE` (network failure, timeout, 5xx) or `BLOCKED` (the domain

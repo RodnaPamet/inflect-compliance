@@ -8,12 +8,14 @@ import {
     gradeSecurityHeaders,
     isFailingGrade,
     isNewBreach,
+    isTlsGradeStale,
+    planTlsObservation,
     GRADED_SECURITY_HEADERS,
     type AttestationView,
 } from '@/app-layer/services/vendor-monitoring/evaluate';
 import { TestModeBreachProvider } from '@/app-layer/services/vendor-monitoring/breach-provider';
 import { TestModeTlsProvider } from '@/app-layer/services/vendor-monitoring/tls-provider';
-import type { BreachSignal } from '@/app-layer/services/vendor-monitoring/types';
+import type { BreachSignal, TlsFetchOutcome, TlsSignal } from '@/app-layer/services/vendor-monitoring/types';
 
 const now = new Date('2026-07-01T00:00:00.000Z');
 
@@ -104,5 +106,48 @@ describe('provider stubs are deterministic + network-free', () => {
         const b = await p.grade('example.com');
         expect(a.grade).toBe(b.grade);
         expect(a.grade).toMatch(/^[A-F]$/);
+    });
+});
+
+describe('planTlsObservation — a fetch that did not grade is recorded, never read as no change', () => {
+    const at = '2026-07-02T02:00:00.000Z';
+    const signal = (outcome: TlsFetchOutcome, grade: string | null): TlsSignal => ({
+        source: 'header-grade', outcome, grade, checkedAt: at, presentHeaders: [], missingHeaders: [],
+    });
+
+    it('keeps the last grade and its check time, and records the refusal and when', () => {
+        for (const outcome of ['REFUSED', 'UNREACHABLE', 'BLOCKED'] as const) {
+            expect({ outcome, plan: planTlsObservation('B', signal(outcome, null)) }).toEqual({
+                outcome,
+                plan: { tlsGrade: 'B', tlsCheckedAt: null, gradeChanged: false, tlsFetchOutcome: outcome, tlsFetchOutcomeAt: new Date(at) },
+            });
+        }
+    });
+
+    it('a new grade replaces the old one, moves the check time and records GRADED', () => {
+        expect(planTlsObservation('B', signal('GRADED', 'A'))).toEqual({
+            tlsGrade: 'A', tlsCheckedAt: new Date(at), gradeChanged: true, tlsFetchOutcome: 'GRADED', tlsFetchOutcomeAt: new Date(at),
+        });
+        expect(planTlsObservation('A', signal('GRADED', 'A')).gradeChanged).toBe(false);
+    });
+
+    it('does not record GRADED beside a grade that was not observed', () => {
+        const plan = planTlsObservation('C', signal('GRADED', null));
+        expect(plan.tlsFetchOutcome).toBe('UNREACHABLE');
+        expect(plan.tlsGrade).toBe('C');
+    });
+});
+
+describe('isTlsGradeStale', () => {
+    it('a stored grade is stale once the latest fetch did not grade', () => {
+        expect(isTlsGradeStale({ tlsGrade: 'A', tlsFetchOutcome: 'REFUSED' })).toBe(true);
+        expect(isTlsGradeStale({ tlsGrade: 'A', tlsFetchOutcome: 'UNREACHABLE' })).toBe(true);
+        expect(isTlsGradeStale({ tlsGrade: 'A', tlsFetchOutcome: 'BLOCKED' })).toBe(true);
+    });
+
+    it('is not stale when the latest fetch graded, when there is no grade, or with no outcome recorded yet', () => {
+        expect(isTlsGradeStale({ tlsGrade: 'A', tlsFetchOutcome: 'GRADED' })).toBe(false);
+        expect(isTlsGradeStale({ tlsGrade: null, tlsFetchOutcome: 'REFUSED' })).toBe(false);
+        expect(isTlsGradeStale({ tlsGrade: 'A', tlsFetchOutcome: null })).toBe(false);
     });
 });

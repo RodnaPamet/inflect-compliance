@@ -1843,3 +1843,34 @@ export function recordIntegrationPassportSweep(attrs: { outcome: string }): void
     }
     _passportSweep.add(1, { outcome: attrs.outcome });
 }
+
+// ── Vendor monitor TLS-grade fetches (Web Bot Auth Phase 0.4) ──────────────
+
+let _vendorTlsFetch: Counter | null = null;
+
+/**
+ * One vendor homepage fetch for the TLS / security-header grade, by outcome
+ * (`GRADED`, `REFUSED`, `UNREACHABLE`, `BLOCKED`).
+ *
+ * Before this, every fetch that did not grade was a null grade the sweep read
+ * as "nothing observed", so a site that began refusing the monitor looked
+ * identical to one whose grade had not changed. The `REFUSED` share measured
+ * here before the monitor signs anything is the baseline Web Bot Auth Phase 2
+ * is judged against. No vendor or tenant label: four outcomes times a handful
+ * of providers.
+ *
+ * ALERT ON — a rising `REFUSED` share (sites challenging the monitor) and any
+ * sustained `BLOCKED` (vendor records that name a host the guard refuses).
+ */
+export function recordVendorTlsFetch(attrs: {
+    provider: string;
+    outcome: 'GRADED' | 'REFUSED' | 'UNREACHABLE' | 'BLOCKED';
+}): void {
+    if (!_vendorTlsFetch) {
+        _vendorTlsFetch = getMeter().createCounter('vendor_monitor.tls_fetch', {
+            description: 'Vendor homepage fetches for the TLS / security-header grade, by outcome',
+            unit: '1',
+        });
+    }
+    _vendorTlsFetch.add(1, { provider: attrs.provider, outcome: attrs.outcome });
+}

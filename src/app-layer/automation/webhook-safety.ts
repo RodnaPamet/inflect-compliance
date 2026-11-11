@@ -96,9 +96,23 @@ export function checkWebhookUrl(rawUrl: string): WebhookUrlVerdict {
     return { ok: true, host };
 }
 
-/** Thrown when a tenant-controlled URL fails the SSRF egress guard. */
+/**
+ * Thrown when a tenant-controlled URL fails the SSRF egress guard.
+ *
+ * `kind` separates the guard's refusals from a name the resolver could not
+ * answer for. Both stop the request; they mean different things to whoever
+ * reads the outcome. `REFUSED` is a decision about the destination (a scheme,
+ * a host, a private address) and holds until the URL changes. `UNRESOLVED` is
+ * DNS saying nothing, which may be a typo and may be a resolver having a bad
+ * night, so the vendor monitor reports it as unreachable rather than blocked.
+ */
+export type SsrfBlockKind = 'REFUSED' | 'UNRESOLVED';
+
 export class SsrfBlockedError extends Error {
-    constructor(message: string) {
+    constructor(
+        message: string,
+        readonly kind: SsrfBlockKind = 'REFUSED',
+    ) {
         super(message);
         this.name = 'SsrfBlockedError';
     }
@@ -117,7 +131,7 @@ export class SsrfBlockedError extends Error {
  */
 export class SsrfUnresolvableHostError extends SsrfBlockedError {
     constructor(readonly host: string) {
-        super(`cannot resolve ${host}`);
+        super(`cannot resolve ${host}`, 'UNRESOLVED');
         this.name = 'SsrfUnresolvableHostError';
     }
 }

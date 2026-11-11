@@ -9628,7 +9628,14 @@
       "toggleMaterializeFindings": "Escalate posture into Findings",
       "materializeFindingsHint": "Automatically turn posture events (breaches, expiries, TLS drops) into Findings.",
       "settingsSaveFailed": "Failed to update monitoring settings",
-      "stubMode": "Demo"
+      "stubMode": "Demo",
+      "tlsStale": "Stale",
+      "tlsLastFetch": "Last check {date}: {outcome}",
+      "tlsFetchOutcome": {
+        "REFUSED": "the site refused the monitor",
+        "UNREACHABLE": "the site could not be reached",
+        "BLOCKED": "the vendor's domain cannot be checked; correct it on the vendor record"
+      }
     },
     "dashboard": {
       "loadForbidden": "You don't have access to the vendor figures.",
