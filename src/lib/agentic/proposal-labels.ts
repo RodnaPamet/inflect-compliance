@@ -24,7 +24,14 @@
  */
 
 /** `AgentProposalKind`, mirrored; the label test compares it with the enum. */
-export const PROPOSAL_KINDS = ['RISK', 'CONTROL', 'POLICY', 'FINDING', 'EXTERNAL_WRITE'] as const;
+export const PROPOSAL_KINDS = [
+    'RISK',
+    'CONTROL',
+    'POLICY',
+    'FINDING',
+    'EXTERNAL_WRITE',
+    'PROCESS_MAP',
+] as const;
 
 /** Every key a stored proposal payload can carry. */
 export const PROPOSAL_FIELD_NAMES = [

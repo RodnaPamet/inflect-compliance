@@ -3,8 +3,8 @@
 // Enums live in enums.prisma; relations resolve across the schema folder.
 
 /// Epic MCP Phase 3 — the propose-not-commit queue. An external agent (via the
-/// MCP server, `mcp:propose` scope) can PROPOSE a risk/control/policy/finding;
-/// the proposal lands here as PENDING and a human approves it before the REAL
+/// MCP server, `mcp:propose` scope) can PROPOSE a risk/control/policy/finding,
+/// or a process map (CREATE-only, `targetEntityId` always NULL); the proposal lands here as PENDING and a human approves it before the REAL
 /// create-usecase runs. An agent never mutates a record directly. `payloadJson`
 /// (the proposed content, validated + Epic-D sanitised at the propose boundary)
 /// and `rationale` are encrypted at rest (Epic B — see encrypted-fields.ts).
@@ -26,7 +26,8 @@ model AgentProposal {
   ///
   /// A plain String with NO foreign key, and that is not laziness: the target
   /// is polymorphic over four tables (`kind` says which), so there is no single
-  /// column to point at. The consequence is that the target can be deleted out
+  /// column to point at. A process map is not one of them: a PROCESS_MAP
+  /// proposal is CREATE-only, so its `targetEntityId` is always NULL. The consequence is that the target can be deleted out
   /// from under a pending proposal, which the review path handles explicitly —
   /// the diff resolves to TARGET_MISSING and approval is refused. A dangling
   /// pointer that the reader is REQUIRED to check is safer here than a

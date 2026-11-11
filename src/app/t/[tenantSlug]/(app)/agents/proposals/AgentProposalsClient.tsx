@@ -43,6 +43,7 @@ import type { BulkRejectSkipReason } from '@/app-layer/usecases/agent-proposals'
 // that guard exists to force someone to make.
 import { ProposalDiffPanel } from '@/components/agentic/ProposalDiffPanel';
 import { proposalKindLabelKey } from '@/lib/agentic/proposal-labels';
+import { proposalRefusalKey } from '@/lib/agentic/proposal-refusal-keys';
 
 export interface ProposalRow {
     id: string;
@@ -191,25 +192,6 @@ function decisionBadgeFor(
         return { variant: 'info', key: 'proposals.awaitingSecond', testid: 'proposal-awaiting-second-badge' };
     }
     return null;
-}
-
-/**
- * The refusals of a single approve or reject this page words itself, keyed by
- * `error.details.reason` (#4970). Anything else, the four-eyes refusals
- * included, is shown as the server wrote it: those keep WHICH rule refused out
- * of the response by design, so the server's sentence is the only one that
- * says it.
- */
-const REFUSAL_KEY: Readonly<Record<string, 'composer' | 'ownDissent' | 'unknownDissent' | 'expired'>> = {
-    COMPOSER_MAY_NOT_APPROVE: 'composer',
-    DISSENT_AUTHOR_MAY_NOT_DECIDE: 'ownDissent',
-    DISSENT_AUTHOR_UNKNOWN: 'unknownDissent',
-    agent_proposal_expired: 'expired',
-};
-
-function refusalKey(body: unknown): 'composer' | 'ownDissent' | 'unknownDissent' | 'expired' | null {
-    const reason = (body as { error?: { details?: { reason?: unknown } } } | null)?.error?.details?.reason;
-    return typeof reason === 'string' ? (REFUSAL_KEY[reason] ?? null) : null;
 }
 
 /** The sentence each bulk-reject skip reason is reported with. */
@@ -436,7 +418,7 @@ export function AgentProposalsClient({
                 // (#4970); any other keeps the server's sentence, then the
                 // action's own fallback.
                 const body = await res.json().catch(() => null);
-                const known = refusalKey(body);
+                const known = proposalRefusalKey(body);
                 throw new Error(known ? t(`proposals.refused.${known}`) : apiErrorMessage(body, fallback));
             }
 

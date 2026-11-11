@@ -77,6 +77,7 @@ import { ShieldSlash } from '@inflect/ui/components/ui/icons/nucleo';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { extractMutationError } from '@/lib/mutations';
+import { proposalKindLabelKey } from '@/lib/agentic/proposal-labels';
 
 /**
  * One quarantined proposal, exactly as
@@ -129,7 +130,6 @@ export function ruleFamilyOf(ruleId: string): string | null {
     return RULE_FAMILY_KEY[`${scanner}.${family}`] ?? null;
 }
 
-const KINDS = new Set(['RISK', 'CONTROL', 'POLICY', 'FINDING', 'EXTERNAL_WRITE']);
 const OPERATIONS = new Set(['CREATE', 'UPDATE']);
 const PROVENANCES = new Set(['TENANT_AUTHORED', 'THIRD_PARTY_INGESTED', 'SYSTEM']);
 
@@ -257,13 +257,22 @@ function QuarantineInner({
         },
         [t],
     );
+    // One labelling of a proposal kind, through the shared list (#5053): the
+    // private copy this page kept had already missed a kind once.
+    const kindLabel = useCallback(
+        (kind: string): string => {
+            const key = proposalKindLabelKey(kind);
+            return key ? t(key) : kind;
+        },
+        [t],
+    );
     const proposalLabel = useCallback(
         (r: QuarantineRow): string =>
             t('quarantine.kindOperation', {
-                kind: KINDS.has(r.kind) ? t(`proposals.kind.${r.kind}`) : r.kind,
+                kind: kindLabel(r.kind),
                 operation: OPERATIONS.has(r.operation) ? t(`quarantine.operation.${r.operation}`) : r.operation,
             }),
-        [t],
+        [t, kindLabel],
     );
     const ruleLabel = useCallback(
         (ruleId: string): string => {
@@ -530,7 +539,7 @@ function QuarantineInner({
                                                     className="text-content-info hover:underline"
                                                     data-testid="quarantine-target-link"
                                                 >
-                                                    {t('quarantine.openTarget', { kind: t(`proposals.kind.${selected.kind}`) })}
+                                                    {t('quarantine.openTarget', { kind: kindLabel(selected.kind) })}
                                                 </Link>
                                             ) : (
                                                 <span className="font-mono text-xs">{selected.targetEntityId}</span>

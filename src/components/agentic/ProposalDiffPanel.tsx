@@ -58,6 +58,14 @@ function useFieldLabel(): (field: string) => string {
  * proposal is a computed, truthful answer and stays approvable (approving it is
  * a no-op; rejecting it is usually what a reviewer wants). TARGET_MISSING and
  * PAYLOAD_UNREADABLE are not answers, so approval is withdrawn entirely.
+ *
+ * ## "This release does not approve this kind" is a third thing (#5053)
+ *
+ * KIND_NOT_APPROVABLE is a well-formed row of a kind this release reads but
+ * does not approve - typically written by a newer container mid-rollout. It is
+ * neither "nothing changed" nor "could not be worked out", so it gets its own
+ * heading, badge and sentence: telling the reviewer the content is broken and
+ * to reject it would be false. Approval is withheld; reject stays available.
  */
 export function ProposalDiffPanel({
     proposalId,
@@ -71,6 +79,7 @@ export function ProposalDiffPanel({
 }) {
     const t = useTranslations('agents');
     const reviewable = isDiffReviewable(diff);
+    const kindWithheld = diff.status === 'KIND_NOT_APPROVABLE';
 
     return (
         <div
@@ -80,19 +89,36 @@ export function ProposalDiffPanel({
         >
             <div className="flex items-center gap-tight">
                 <span className="text-sm font-medium text-content-default">
-                    {diff.status === 'CREATE'
-                        ? t('proposals.diff.createHeading')
-                        : t('proposals.diff.updateHeading')}
+                    {kindWithheld
+                        ? t('proposals.diff.kindNotApprovableHeading')
+                        : diff.status === 'CREATE'
+                          ? t('proposals.diff.createHeading')
+                          : t('proposals.diff.updateHeading')}
                 </span>
                 {diff.status === 'NO_CHANGES' && (
                     <StatusBadge variant="warning">{t('proposals.diff.noChangesBadge')}</StatusBadge>
                 )}
                 {!reviewable && (
-                    <StatusBadge variant="error">{t('proposals.diff.blockedBadge')}</StatusBadge>
+                    <StatusBadge variant={kindWithheld ? 'warning' : 'error'}>
+                        {kindWithheld
+                            ? t('proposals.diff.kindNotApprovableBadge')
+                            : t('proposals.diff.blockedBadge')}
+                    </StatusBadge>
                 )}
             </div>
 
-            {diff.status === 'PAYLOAD_UNREADABLE' ? (
+            {kindWithheld ? (
+                <div
+                    data-testid={`proposal-diff-withheld-${proposalId}`}
+                    data-reason={diff.status}
+                    className="rounded border border-border-subtle bg-bg-subtle p-3 text-sm"
+                >
+                    <p className="font-medium text-content-warning">
+                        {t('proposals.diff.kindNotApprovableTitle')}
+                    </p>
+                    <p className="text-content-muted">{t('proposals.diff.reasonKindNotApprovable')}</p>
+                </div>
+            ) : diff.status === 'PAYLOAD_UNREADABLE' ? (
                 <UncomputableNotice
                     proposalId={proposalId}
                     reason={diff.status}
@@ -146,7 +172,9 @@ export function ProposalDiffPanel({
                         data-testid={`proposal-blocked-${proposalId}`}
                         className="text-xs text-content-error"
                     >
-                        {t('proposals.diff.approveBlocked')}
+                        {kindWithheld
+                            ? t('proposals.diff.approveBlockedKind')
+                            : t('proposals.diff.approveBlocked')}
                     </span>
                 )}
             </div>

@@ -84,6 +84,7 @@ import {
     type ProposalRow,
 } from '@/app/t/[tenantSlug]/(app)/agents/proposals/AgentProposalsClient';
 import { computeProposalDiff } from '@/lib/agentic/proposal-diff';
+import { withheldProposalDiff } from '@/lib/agentic/proposal-kind-rollout';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 
 function en(dotted: string): string {
@@ -184,6 +185,62 @@ describe('a refusal shows the server’s sentence', () => {
     });
 });
 
+// ─── a process-map proposal, read and not approved (#5053) ──────────────────
+
+describe('a process-map proposal in the release that only reads them', () => {
+    /** The row as the server sends it: the diff `buildProposalDiffs` gives the kind. */
+    function processMapRow(): ProposalRow {
+        const diff = withheldProposalDiff('PROCESS_MAP');
+        if (!diff) throw new Error('PROCESS_MAP_PROPOSALS_IMPLEMENTED is true, so the kind no longer has a withheld diff');
+        return row({ kind: 'PROCESS_MAP', diff });
+    }
+
+    it('is listed under its label, offers no Approve, and can still be rejected', () => {
+        renderQueue([processMapRow()]);
+        expect(screen.getByTestId('proposal-kind-p1')).toHaveTextContent(en('proposals.kind.PROCESS_MAP'));
+        expect(screen.queryByTestId('proposal-approve-p1')).toBeNull();
+        expect(screen.getByTestId('proposal-blocked-p1')).toHaveTextContent(en('proposals.diff.approveBlockedKind'));
+        expect(screen.getByTestId('proposal-reject-p1')).toBeEnabled();
+    });
+
+    it('says this version cannot approve it yet, never that its content is unreadable', () => {
+        renderQueue([processMapRow()]);
+        const notice = screen.getByTestId('proposal-diff-withheld-p1');
+        expect(notice).toHaveTextContent(en('proposals.diff.kindNotApprovableTitle'));
+        expect(notice).toHaveTextContent(en('proposals.diff.reasonKindNotApprovable'));
+        expect(screen.getByTestId('proposal-diff-p1')).toHaveTextContent(en('proposals.diff.kindNotApprovableHeading'));
+        // The PAYLOAD_UNREADABLE notice tells the reviewer to reject the row and
+        // check the agent; neither is true of a well-formed row of a kind this
+        // release does not approve.
+        expect(screen.queryByTestId('proposal-diff-uncomputable-p1')).toBeNull();
+        const card = screen.getByTestId('proposal-diff-p1');
+        expect(card.textContent).not.toContain(en('proposals.diff.reasonPayloadUnreadable'));
+        expect(card.textContent).not.toContain(en('proposals.diff.updateHeading'));
+    });
+
+    it('a refusal naming the kind is worded by the page, not shown as the code', async () => {
+        // Reached by an approval the server refuses for this reason.
+        mockFetch({
+            ok: false,
+            status: 400,
+            body: {
+                error: {
+                    code: 'BAD_REQUEST',
+                    message: 'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE: this release reads process-map proposals',
+                    details: { reason: 'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE' },
+                },
+            },
+        });
+        renderQueue([row()]);
+        await act(async () => {
+            screen.getByTestId('proposal-approve-p1').click();
+        });
+        const error = screen.getByTestId('proposal-action-error');
+        expect(error).toHaveTextContent(en('proposals.refused.processMapNotAvailable'));
+        expect(error.textContent).not.toContain('PROCESS_MAP');
+    });
+});
+
 // ─── the review window ──────────────────────────────────────────────────────
 
 describe('the review window', () => {
@@ -265,6 +322,7 @@ describe('kinds and fields are labels', () => {
     it.each([
         ['RISK', 'proposals.kind.RISK'],
         ['EXTERNAL_WRITE', 'proposals.kind.EXTERNAL_WRITE'],
+        ['PROCESS_MAP', 'proposals.kind.PROCESS_MAP'],
     ])('the %s kind', (kind, key) => {
         renderQueue([row({ kind })]);
         expect(screen.getByTestId('proposal-kind-p1')).toHaveTextContent(en(key));
