@@ -53,8 +53,17 @@ flowchart LR
 
 ## Current state (true today)
 
-- **No embedding model, no embedding provider, no vector.** See
-  [`weaviate.md`](./weaviate.md) § Current state.
+- **The embedding and rerank seam exists; no service behind it is deployed,
+  and no vector exists.** `src/lib/ai/embeddings/` holds the
+  `EmbeddingProvider` / `RerankProvider` contracts, the residency routing
+  (`select.ts`, `inflect-local/<model>` only), a TEI client for
+  `/v1/embeddings` and `/rerank` that reaches the network through `safeFetch`
+  alone (`http.ts`: deadline over the whole call, byte-capped body), a
+  deterministic stub the factory never chooses, the retriever revision key
+  and the `embeddings.requests` metric. With `AI_EMBED_LOCAL_*` /
+  `AI_RERANK_LOCAL_*` unset — every deployment today — the factory refuses
+  by name and constructs nothing. Nothing calls it yet; see
+  [`weaviate.md`](./weaviate.md) § Current state for the store.
 - **The model-provider seam already routes by residency, and that is the seam
   an embedding provider must copy.** `src/lib/agentic/flue/model-selection.ts`
   owns the decision: provider ids name a residency (`inflect-external`,
@@ -206,22 +215,32 @@ backend inside the perimeter and a stub for tests; no sub-processor touched.
 **Sub-phases.**
 - [ ] 1.1 `deploy/docker-compose.prod.yml`: `tei-embed` service (TEI CPU image,
       digest-pinned, model volume, no published port, `app`/`worker` network
-      only). Applied with `deploy/apply.sh`.
-- [ ] 1.2 `src/env.ts`: `AI_EMBED_LOCAL_BASE_URL`, `AI_EMBED_LOCAL_MODEL`
-      (optional; absent = no local embedding provider constructed).
-- [ ] 1.3 `src/lib/ai/embeddings/`: `types.ts` (`EmbeddingProvider.embed(texts,
+      only). Applied with `deploy/apply.sh`. Held by the capacity budget's C1
+      (G5). **Open before it lands:** `safeFetch` refuses `http:` and private
+      addresses, so a Compose-network address (`http://tei-embed:80`) is
+      refused by the egress policy — at route selection, by name
+      (`EMBED_ENDPOINT_REFUSED_BY_EGRESS_POLICY`). The service needs an
+      address the policy admits (TLS plus the self-hosted CIDR allowlist), or
+      an owner decision on a transport for operator-held in-network hosts.
+- [x] 1.2 `src/env.ts`: `AI_EMBED_LOCAL_BASE_URL`, `AI_EMBED_LOCAL_MODEL`
+      (optional; absent = no local embedding provider constructed), plus
+      `AI_EMBED_LOCAL_DIMENSIONS` (required with them) and
+      `AI_EMBED_LOCAL_QUERY_PREFIX` / `_PASSAGE_PREFIX` (absent = no prefix).
+      The model is configuration until the Phase 0 benchmark (D-L4-3).
+- [x] 1.3 `src/lib/ai/embeddings/`: `types.ts` (`EmbeddingProvider.embed(texts,
       { inputType: 'query' | 'passage' })` returning vectors + `model` +
       `dimensions`), `select.ts` (residency routing copied from
       `model-selection.ts`: `inflect-local/<model>` only for now; a
       `LOCAL_ONLY` tenant with no local embed route is **refused**, never
       routed elsewhere), `tei-provider.ts` (OpenAI-compatible `/v1/embeddings`
       through `safeFetch`), `stub-provider.ts` (deterministic hashed vectors
-      for tests).
-- [ ] 1.4 The factory returns before constructing anything external
+      for tests). The transport is `http.ts`, the directory's only fetch.
+- [x] 1.4 The factory returns before constructing anything external
       (residency is structural — the `identity-match/index.ts` pattern); the
       residency guard's constructor pin gains the new set.
-- [ ] 1.5 Outcome metric `embeddings.requests{provider,outcome}` and a duration
-      histogram.
+- [x] 1.5 Outcome metric `embeddings.requests{provider,outcome}` and a duration
+      histogram (`embeddings.request.duration`), both also labelled
+      `operation` (`embed` / `rerank`).
 
 **Prompt.**
 ```text
@@ -269,12 +288,18 @@ recall@10 on the Phase 0 seed set matches Phase 0's number within noise.
 the mount gate can see.
 
 **Sub-phases.**
-- [ ] 2.1 `RerankProvider.rerank(query, passages, { topN })` beside the embedding
+- [x] 2.1 `RerankProvider.rerank(query, passages, { topN })` beside the embedding
       seam, same residency routing, TEI `/rerank` backend on the same service
-      (second model on the same container or a sibling `tei-rerank`).
+      (second model on the same container or a sibling `tei-rerank`). The
+      route is `AI_RERANK_LOCAL_BASE_URL` / `AI_RERANK_LOCAL_MODEL`; the
+      service itself waits with 1.1. `rerankOrKeepHybridOrder` bounds the pool
+      to 50 and returns the hybrid order, with the reason, on any failure.
 - [ ] 2.2 `VectorRepository.search` gains `rerank: true` → hybrid top-50 then
       rerank to k; the revision key for the mount gate includes the rerank
-      model id.
+      model id. The key exists (`revision.ts`:
+      `{ embeddingModel, rerankModel, chunker, k, alpha }`, models never
+      provider ids, so the CPU and GPU arms share one revision); the search
+      waits on [`weaviate.md`](./weaviate.md) Phase 3.
 - [ ] 2.3 Text hydration happens **before** rerank (the cross-encoder needs the
       passage) and **under RLS** — never from the vector store.
 - [ ] 2.4 Seed-set eval re-run; the record is refreshed or the gate refuses.

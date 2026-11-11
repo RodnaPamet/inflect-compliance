@@ -320,6 +320,20 @@ export const env = createEnv({
         AI_LOCAL_BASE_URL: z.string().optional(),
         AI_LOCAL_MODEL: z.string().optional(),
         AI_LOCAL_API_KEY: z.string().optional(),
+        // Embeddings and reranking inside the deployment (Layer 4,
+        // docs/ai-architecture/nemotron-retriever.md). OPERATOR config only —
+        // no tenant column reaches these. Absent base URL = no provider is
+        // constructed and every request is refused by name
+        // (src/lib/ai/embeddings/select.ts). The model, its dimension and its
+        // query/passage prefixes are configuration, not code, until the
+        // Phase 0 benchmark decides them (D-L4-3).
+        AI_EMBED_LOCAL_BASE_URL: z.string().optional(),
+        AI_EMBED_LOCAL_MODEL: z.string().optional(),
+        AI_EMBED_LOCAL_DIMENSIONS: z.string().optional(),
+        AI_EMBED_LOCAL_QUERY_PREFIX: z.string().optional(),
+        AI_EMBED_LOCAL_PASSAGE_PREFIX: z.string().optional(),
+        AI_RERANK_LOCAL_BASE_URL: z.string().optional(),
+        AI_RERANK_LOCAL_MODEL: z.string().optional(),
         AI_RISK_DAILY_QUOTA: z.string().optional(),
         AI_RISK_USER_RPM: z.string().optional(),
         // Global AI kill switch. 'false' disables EVERY AI feature
@@ -801,6 +815,13 @@ export const env = createEnv({
         AI_LOCAL_BASE_URL: process.env.AI_LOCAL_BASE_URL,
         AI_LOCAL_MODEL: process.env.AI_LOCAL_MODEL,
         AI_LOCAL_API_KEY: process.env.AI_LOCAL_API_KEY,
+        AI_EMBED_LOCAL_BASE_URL: process.env.AI_EMBED_LOCAL_BASE_URL,
+        AI_EMBED_LOCAL_MODEL: process.env.AI_EMBED_LOCAL_MODEL,
+        AI_EMBED_LOCAL_DIMENSIONS: process.env.AI_EMBED_LOCAL_DIMENSIONS,
+        AI_EMBED_LOCAL_QUERY_PREFIX: process.env.AI_EMBED_LOCAL_QUERY_PREFIX,
+        AI_EMBED_LOCAL_PASSAGE_PREFIX: process.env.AI_EMBED_LOCAL_PASSAGE_PREFIX,
+        AI_RERANK_LOCAL_BASE_URL: process.env.AI_RERANK_LOCAL_BASE_URL,
+        AI_RERANK_LOCAL_MODEL: process.env.AI_RERANK_LOCAL_MODEL,
         AI_RISK_DAILY_QUOTA: process.env.AI_RISK_DAILY_QUOTA,
         AI_RISK_USER_RPM: process.env.AI_RISK_USER_RPM,
         AI_RISK_ENABLED: process.env.AI_RISK_ENABLED,

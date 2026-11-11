@@ -119,6 +119,14 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
         noBareFetchOf: 'fetchWithRetry(',
     },
     {
+        file: 'src/lib/ai/embeddings/http.ts',
+        reason:
+            'The embedding and rerank seam (Layer 4): an operator-configured ' +
+            'TEI base URL. Not tenant-writable, but G6 puts every new outbound ' +
+            'host behind safeFetch regardless — config is typed by a person too.',
+        noBareFetchOf: 'fetch(url',
+    },
+    {
         file: 'src/lib/security/oidc-client.ts',
         reason:
             'SSO sign-in: a workspace administrator types the OIDC issuer, and the ' +
@@ -286,6 +294,45 @@ describe('SSRF — the OIDC client reaches the identity provider only through sa
 
     it("hands jose's key-set fetch to safeFetch, not jose's default global fetch", () => {
         expect(oidcKeySetFetchesThroughTheGuard()).toBe(true);
+    });
+});
+
+/**
+ * The embedding seam has ONE network call, in `http.ts`, and the SINKS entry
+ * above holds that it is `safeFetch`. That is only the whole story while no
+ * other file in the directory fetches — a provider that grew its own call would
+ * reach the network beside the registered sink, so the directory is scanned
+ * with the name-agnostic pattern the MCP clients are held to. The population is
+ * git's, so a new file in the directory is in it the day it lands.
+ */
+const EMBEDDINGS_DIR = 'src/lib/ai/embeddings/';
+const EMBEDDINGS_TRANSPORT = 'src/lib/ai/embeddings/http.ts';
+
+const embeddingProviderFiles = () =>
+    repoRelativeFiles().filter((f) => f.startsWith(EMBEDDINGS_DIR) && f.endsWith('.ts') && f !== EMBEDDINGS_TRANSPORT);
+
+const embeddingFilesWithTheirOwnFetch = () => embeddingProviderFiles().filter((f) => ANY_FETCH_CALL.test(codeOf(f)));
+
+const embeddingTransportFetchCallsOtherThanSafeFetch = () =>
+    (codeOf(EMBEDDINGS_TRANSPORT).match(/\w*fetch\s*\(/gi) ?? []).filter((call) => !/^safeFetch\s*\($/.test(call));
+
+describe('SSRF — the embedding seam reaches the network only through its transport', () => {
+    it('no other file in the directory contains a fetch call', () => {
+        // The denominator first: the scan must cover the providers it guards.
+        expect(embeddingProviderFiles()).toEqual(
+            expect.arrayContaining([`${EMBEDDINGS_DIR}tei-provider.ts`, `${EMBEDDINGS_DIR}select.ts`]),
+        );
+        expect(embeddingFilesWithTheirOwnFetch()).toEqual([]);
+    });
+
+    it('the transport makes no fetch call other than safeFetch', () => {
+        expect(embeddingTransportFetchCallsOtherThanSafeFetch()).toEqual([]);
+    });
+
+    it('the transport has no injectable fetch to route around safeFetch', () => {
+        // A `fetchImpl` option on a production module is a path around the SSRF
+        // defence that reads as dependency injection (the MCP client's rule).
+        expect(codeOf(EMBEDDINGS_TRANSPORT).includes('fetchImpl')).toBe(false);
     });
 });
 

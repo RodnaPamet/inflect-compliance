@@ -208,6 +208,16 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     AI_LOCAL_BASE_URL: 'base URL of the tenant\'s OWN self-hosted OpenAI-compatible LLM gateway (AI sovereignty) — in-jurisdiction inference, not an external sub-processor',
     AI_LOCAL_MODEL: 'model name served by the tenant\'s self-hosted gateway — a config string, not an external endpoint',
     AI_LOCAL_API_KEY: 'optional bearer for the tenant\'s OWN local gateway — internal, not sent to any third party',
+    // The embedding and rerank seam (Layer 4, src/lib/ai/embeddings/). Every
+    // route is in-deployment (`inflect-local`); an external embedding
+    // provider would be a sub-processor and does not exist.
+    AI_EMBED_LOCAL_BASE_URL: 'base URL of the deployment\'s OWN embedding service (TEI inside the perimeter) — not an external sub-processor',
+    AI_EMBED_LOCAL_MODEL: 'embedding model name served by the in-deployment service — a config string, not an endpoint',
+    AI_EMBED_LOCAL_DIMENSIONS: 'vector length of the configured embedding model — a number, not an endpoint',
+    AI_EMBED_LOCAL_QUERY_PREFIX: 'query prefix the configured embedding model expects — a config string, not an endpoint',
+    AI_EMBED_LOCAL_PASSAGE_PREFIX: 'passage prefix the configured embedding model expects — a config string, not an endpoint',
+    AI_RERANK_LOCAL_BASE_URL: 'base URL of the deployment\'s OWN rerank service (TEI inside the perimeter) — not an external sub-processor',
+    AI_RERANK_LOCAL_MODEL: 'rerank model name served by the in-deployment service — a config string, not an endpoint',
     // Internal secrets (env-provided; stored in AWS Secrets Manager, itself listed).
     AUTH_SECRET: 'internal JWT/session signing secret',
     JWT_SECRET: 'internal JWT signing secret',
