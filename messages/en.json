@@ -13107,6 +13107,7 @@
         "PASSED": "Completed",
         "PARTIAL": "Partly completed",
         "NOT_APPLICABLE": "Did not check",
+        "DRY_RUN_CHECKED": "Checked; nothing changed",
         "ERROR": "Failed"
       },
       "signal": {
