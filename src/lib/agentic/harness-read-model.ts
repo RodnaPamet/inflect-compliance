@@ -23,8 +23,9 @@
  *     userinfo replaced by `***` (`redactPointerCredentials`), so a pointer
  *     that embedded a password is neither linked nor printed nor copied.
  *
- * PURE: no clock, no I/O. The one import beside the ladder is a TYPE
- * (`OwnerSignalKind`), erased at build, so the tab's bundle gains nothing.
+ * PURE: no clock, no I/O. Every import beside the ladder is a TYPE
+ * (`OwnerSignalKind`, and the stored shapes the contract owns), erased at
+ * build, so the tab's bundle gains nothing.
  */
 import {
     rungOf,
@@ -37,37 +38,14 @@ import type { OwnerSignalKind } from './iam-skill-outputs';
 
 export type HarnessScanCompleteness = 'COMPLETE' | 'INCOMPLETE' | 'EMPTY';
 
-/** One stored source of a scan, as the contract re-validates it. */
-export interface StoredSource {
-    readonly kind: string;
-    readonly status: 'COMPLETE' | 'INCOMPLETE';
-    readonly rows: number;
-    readonly reason: string | null;
-}
+// `StoredSource`, `HarnessModelEndpointView` and `HarnessAgentModels` are the
+// shapes the contract's stored-value parsers return, so the contract owns them
+// and this module re-exports them: one definition, and the contract's import
+// closure stays free of this file. The re-export is a TYPE, erased at build.
+export type { HarnessAgentModels, HarnessModelEndpointView, StoredSource } from './harness-contract';
+import type { HarnessAgentModels, StoredSource } from './harness-contract';
 
 export type HarnessStoredReach = 'READ_ONLY' | 'WRITE_OR_EXTERNAL' | 'UNKNOWN';
-
-/** One model endpoint an agent calls, as `/2` reports it: a reference and a model id. */
-export interface HarnessModelEndpointView {
-    readonly endpoint: string;
-    readonly model: string | null;
-}
-
-/**
- * The model endpoints a scan item holds (#3759), in three states that never
- * collapse into one another:
- *
- *   • NOT_REPORTED — the scan said nothing: a `/1` report, or a `/2` agent
- *     without `models`. Not "calls no model";
- *   • REPORTED — what the scanner reported, possibly EMPTY, which is the
- *     scanner's claim that the agent calls none;
- *   • UNREADABLE — the stored value failed re-validation. Never shown as
- *     either of the other two.
- */
-export type HarnessAgentModels =
-    | { readonly state: 'NOT_REPORTED' }
-    | { readonly state: 'UNREADABLE' }
-    | { readonly state: 'REPORTED'; readonly endpoints: readonly HarnessModelEndpointView[] };
 
 export type AcceptAffordance = 'ACCEPT' | 'RENEW' | 'OWNER_ONLY' | 'REGISTER_FIRST' | 'NONE';
 
