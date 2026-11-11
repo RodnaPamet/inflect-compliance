@@ -875,6 +875,7 @@ model RegisteredAgent {
   /// (#3679). The credential binds a peer to ONE agent; the agent's own grants
   /// decide what a peer-started run may reach.
   peerInboundCredentials PeerAgentInboundCredential[]
+  peerInvitations        PeerInvitation[]
   hostConsumers          HostConsumer[]
 
   /// Composite parent key so the child tables that attribute work to an agent
@@ -3421,6 +3422,65 @@ model PeerAgentInboundCredential {
   /// in it too, so a revoked token is refused as its peer's.
   @@unique([tenantId, keyHash])
   @@index([tenantId, peerId, revokedAt])
+  @@index([tenantId, receivingAgentId])
+}
+
+/// An invitation to become an A2A peer (#3752; owner decisions 2026-11-11).
+///
+/// Connecting two workspaces took eight manual acts, four on each side. An
+/// invitation makes it three: the inviting workspace creates one code, the
+/// invited workspace pastes it and approves the inviter's card, and its
+/// acceptance arrives here, where a person approves the acceptor's card with
+/// one click. The acceptance registers the acceptor UNPINNED, so it is refused
+/// until that click: an invitation pins nothing on this side, and the rule
+/// that no card is trusted until a person reads it stands.
+///
+/// The code is single-use, expires, and is stored only as a hash. Accepting it
+/// needs both the code and a signature by the key the acceptor's own card
+/// names, so a leaked code cannot point this workspace at somebody else's card.
+/// The grant it carries narrows like any inbound credential: one receiving
+/// agent and its workflows, nothing else.
+model PeerInvitation {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// SHA-256 of the code, and its first characters for an operator to
+  /// recognise it. The code itself is shown once and never stored.
+  codeHash   String
+  codePrefix String
+
+  /// Who in THIS tenant answers for the peer that accepts, and the supplier it
+  /// is filed under: both are required of every peer.
+  ownerUserId String
+  vendorId    String
+  /// The tier the accepted peer is registered with. Required: an unscored peer
+  /// is refused, and an invitation that produced one would connect nothing.
+  riskTier    AgentRiskTier
+
+  /// The inbound grant the accepted peer receives: one agent, its workflows.
+  receivingAgentId String
+  workflowKeys     String[]
+
+  status    PeerInvitationStatus @default(PENDING)
+  expiresAt DateTime
+
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  acceptedAt      DateTime?
+  /// The peer registered on acceptance, and the card URL it presented.
+  acceptedPeerId  String?
+  acceptedCardUrl String?
+  revokedAt       DateTime?
+  revokedByUserId String?
+  updatedAt       DateTime  @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent  RegisteredAgent @relation(fields: [receivingAgentId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  @@unique([id, tenantId])
+  /// How an acceptance finds its invitation from the code alone.
+  @@unique([tenantId, codeHash])
+  @@index([tenantId, status, createdAt])
   @@index([tenantId, receivingAgentId])
 }
 

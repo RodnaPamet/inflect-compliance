@@ -266,6 +266,13 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/peers/[peerId]/inbound-credential/route.ts',
     'admin/agents/peers/[peerId]/kill/route.ts',
     'admin/agents/peers/[peerId]/messages/route.ts',
+    // A2A peer invitations (#3752, owner decisions 2026-11-11). The peers
+    // rule's `admin.agent_registry`: inviting and accepting decide whom the
+    // tenant talks to, as registering does.
+    'admin/agents/peers/invitations/route.ts',
+    'admin/agents/peers/invitations/[invitationId]/route.ts',
+    'admin/agents/peers/invitations/preview/route.ts',
+    'admin/agents/peers/invitations/accept/route.ts',
     // The tenant's own A2A signing key (#3679, owner decision 2026-10-19).
     // Method-scoped rules above the /admin/agents catch-all: GET is the
     // register key, POST (generate or rotate) is admin.tenant_lifecycle.

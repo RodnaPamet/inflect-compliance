@@ -13066,7 +13066,40 @@
       },
       "colOwner": "Owner",
       "colVendor": "Supplier",
-      "cardUnapproved": "Not approved yet"
+      "cardUnapproved": "Not approved yet",
+      "invite": {
+        "open": "Invite a peer",
+        "heading": "Invite another workspace",
+        "intro": "Choose who answers for the workspace that accepts, its supplier, and which of your agents it may send tasks to. You get one code to send to the other workspace. It works once and expires in 7 days. When they accept, their workspace appears here and you approve its card before anything is exchanged.",
+        "owner": "Accountable owner",
+        "ownerHint": "The person in this workspace who answers for the peer.",
+        "vendorHint": "The supplier the other workspace belongs to.",
+        "agentHint": "The agent here that receives the peer's tasks. The peer reaches only what this agent is granted.",
+        "workflowsHint": "Only workflows that need no inputs are listed: a peer's task carries text only.",
+        "submit": "Create invitation",
+        "failed": "The invitation could not be created.",
+        "codeTitle": "Invitation code",
+        "codeNotice": "Copy this code now and send it to the other workspace. It is shown only once and works once.",
+        "copyCode": "Copy code",
+        "done": "Done"
+      },
+      "accept": {
+        "open": "Accept an invitation",
+        "heading": "Accept an invitation",
+        "intro": "Paste the code another workspace sent you. You read its agent card, choose who here answers for it and what it may reach, and approve. That one step connects both workspaces; they then approve your card on their side.",
+        "code": "Invitation code",
+        "codeHint": "The whole code, starting with https://.",
+        "read": "Read their card",
+        "readFailed": "The invitation could not be read.",
+        "cardTitle": "Their agent card",
+        "cardUrl": "Card address",
+        "cardHash": "Card hash",
+        "keyFingerprint": "Signing key fingerprint",
+        "approveNotice": "Approving pins this card as you read it, gives the other workspace access to the agent and workflows you chose, and stores the access it gives you. Sending stays off until you widen the connection.",
+        "submit": "Approve card and connect",
+        "failed": "The invitation could not be accepted.",
+        "done": "Connected to {name}. They approve your card on their side."
+      }
     },
     "orphanPass": {
       "accessTitle": "Owners only",

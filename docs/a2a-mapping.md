@@ -231,6 +231,39 @@ kill switch, its inbound credential (issued with the token shown once, and
 revoked), its quota, and every message with whether its receipt verifies. Each
 action is gated as its route is.
 
+### Connecting two workspaces: one invitation
+
+Two Inflect workspaces connect with three acts instead of setting everything
+up by hand on both sides (#3752, owner decisions 2026-11-11):
+
+1. **Invite**, in A. A person picks who answers for the peer that accepts,
+   its supplier and tier, and the one receiving agent and workflows it may
+   reach (only workflows that need no input are offered: a peer's task carries
+   text only). A gets one code, `<A's card URL>#iflinv_…`, shown once. It works
+   once, expires in 7 days and is stored only as its SHA-256.
+2. **Accept**, in B. A person pastes the code, reads A's card and approves it.
+   That one act registers A with the key its card names, pins the card as read,
+   issues A a token, POSTs a signed acceptance to A, and stores the token A
+   answers with as B's outbound connection.
+3. **Confirm**, in A. The acceptance registered B **unpinned** and stored B's
+   token as A's outbound connection. A person approves B's card on its peer
+   page, with the ordinary approval. Nothing flows until they do.
+
+Every existing rule holds, because each step is the existing usecase. No card
+is trusted on first use: B pins A by a person, A pins B by a person, and the
+acceptance pins nothing on A's side. Both outbound connections start with no
+rung stored, which reads as DISABLED.
+
+The acceptance (`POST /api/a2a/:slug/invitations`) is the invitation's own
+machine route. It is signed with the key the acceptor's OWN card names, over
+the exact body, and is fresh for five minutes. So a leaked code cannot make A
+register a card whose key the sender lacks. Where B sends it comes from A's
+card as B's person pinned it, never from the code. A acts as the person who
+created the invitation, re-read when the acceptance arrives: one who has left,
+or lost the register key, refuses it. A workspace already connected to the
+inviter refuses a new invitation from it (`ALREADY_CONNECTED`) rather than
+risk its working token on a refused attempt.
+
 ### A kill per peer
 
 `PeerAgentKillSwitch` is a sibling of the agent kill, not a column on the peer.
@@ -247,6 +280,7 @@ SUSPENDED refuses admission as before.
 | `PeerAgentKillSwitch` | `src/app-layer/usecases/a2a-peer-kill.ts` |
 | `PeerAgentInboundCredential` | `src/app-layer/usecases/a2a-peer-credentials.ts` |
 | `TenantA2aSigningKey` | `src/app-layer/usecases/a2a-signing-key.ts` |
+| `PeerInvitation` | `src/app-layer/usecases/peer-invitations.ts` |
 
 Held by `tests/guards/agent-harness-single-write-seam.test.ts`.
 

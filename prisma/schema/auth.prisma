@@ -214,6 +214,7 @@ model Tenant {
   peerAgentKillSwitches             PeerAgentKillSwitch[]
   peerAgentReplyDeliveries          PeerAgentReplyDelivery[]
   peerAgentInboundCredentials       PeerAgentInboundCredential[]
+  peerInvitations                   PeerInvitation[]
   hostConsumers                     HostConsumer[]
   hostConsumerMessages              HostConsumerMessage[]
   hostConsumerKillSwitches          HostConsumerKillSwitch[]
