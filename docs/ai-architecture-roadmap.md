@@ -532,21 +532,25 @@ that measures it.
 | Line | Containers | Added by | Memory ceiling | CPU cap | Basis |
 | --- | --- | --- | --- | --- | --- |
 | Today's stack | `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`, `watchtower`, `caddy` | on `main` | **not measured** | none | C0 measures each peak |
-| Embeddings | `tei-embed` | Retriever 1 | 5 GB (estimate) | 1.0 | a 1B-parameter model (`llama-nemotron-embed-1b-v2`) is about 4 GB of weights at fp32, before runtime overhead |
-| Reranking | `tei-rerank` | Retriever 2 | 5 GB (estimate) | 1.0 | the same size class; Retriever 0.1 confirms it |
-| Vectors | `weaviate` | Weaviate 1 | 1.5 GB (estimate) | 0.5 | vectors held in memory; the embedding dimension (384 to 2048, configurable) moves it most |
-| Parsing | a parsing-only service (D-L4-4) | RAGFlow 1 | 3 GB (estimate) | 1.0 | RAGFlow's full reference stack (server, search engine, MySQL, MinIO, Redis) is a second product and is not budgeted here |
+| Embeddings | `tei-embed` | Retriever 1 | 5 GB with Nemotron, 1 GB with a small open model (estimates) | 1.0 | a 1B-parameter model (`llama-nemotron-embed-1b-v2`) is about 4 GB of weights at fp32, before runtime overhead; D-L4-3 (2026-11-11) keeps the smaller model unless its recall falls past the margin |
+| Reranking | `tei-rerank` | Retriever 2 | 5 GB with Nemotron, 1 GB with a small open model (estimates) | 1.0 | the same size class; Retriever 0.1 confirms it |
+| Vectors | none: pgvector inside `postgres` (D-L4-1, 2026-11-11) | Vector store 1 | +1 GB on `postgres`'s line (estimate) | — | the index lives in Postgres's memory and page cache, so it raises that container's limit rather than adding one; the embedding dimension (384 to 2048) moves it most. The official `postgres:16-alpine` image does not ship pgvector, so the image changes too |
+| Parsing | a Docling-class parsing-only service (D-L4-4, 2026-11-11) | Parser 1 | 3 GB (estimate) | 1.0 | layout and table models on CPU. RAGFlow's full reference stack (server, search engine, MySQL, MinIO, Redis) is a second product and is not budgeted here |
 | PII detection | `presidio` | Presidio 1 | 1.5 GB (estimate) | 1.0 | a large spaCy pipeline plus recognisers |
 | Guard rails | `nemo-guardrails` | NeMo 1 | 1 GB (estimate) | 0.5 | LLM-free rails; LLM-backed rails call the external API, not this VM |
 | Traces | Langfuse self-host | Langfuse 1 | **does not fit** | — | Langfuse's own guide sets 8 GiB for ClickHouse alone, plus web, worker, Postgres and blob storage. D-L4-5 picks Cloud EU or OTel-only, or a VM of its own |
 | In-app work | none (Morpheus CPU detector, cuOpt CPU seam, Web Bot Auth, Agent Pay, the agent-flow canvas) | various | inside `app` / `worker` | — | measured with today's stack |
 | Evaluations | none on the VM | Garak, Ragas, ARES, Inspect | 0 | — | they run in CI images (G5, G11) |
 
-**What the arithmetic says.** The completeness additions alone come to about
-17 GB of estimated ceilings, above the 14.5 GB line before today's eight
-services are counted. Two embedding-class models at fp32 make up most of it.
-So the completeness target, as planned, does not fit this VM. Something has to
-give, and that is D-CAP-1:
+**What the arithmetic says.** As first planned, the completeness additions
+alone came to about 17 GB of estimated ceilings, above the 14.5 GB line before
+today's eight services were counted; two embedding-class models at fp32 made up
+most of it. The owner's decisions of 2026-11-11 (pgvector instead of a vector
+container, a small open retriever model unless recall says otherwise) bring the
+estimate to about 8.5 GB with small models, or about 16.5 GB if Retriever 0
+keeps the Nemotron pair. Whether 8.5 GB fits beside today's stack is C0's
+question: it does only if today's eight services measure under about 6 GB.
+Where it does not fit, something has to give, and that is D-CAP-1:
 
 - **Resize** to `e2-highmem-4` (4 vCPU, 32 GB). This doubles the machine, and
   its cost, and keeps one Compose file.
@@ -794,36 +798,36 @@ the child records the reasoning.
 
 | Id | Decision | Child | Default if undecided |
 | --- | --- | --- | --- |
-| D-L1-1 | PII redaction scope: paths, entity types, locales, LOCAL_ONLY handling | presidio | external routes only; PERSON/EMAIL/PHONE/IBAN/ЕГН; EN+BG; LOCAL_ONLY off |
-| D-L1-2 | NeMo rails: LLM-free first; LLM-backed only on the tenant's permitted route | nemo-guardrails | as stated |
+| D-L1-1 | PII redaction scope: paths, entity types, locales, LOCAL_ONLY handling | presidio | **decided 2026-11-11** (owner): external routes only; PERSON/EMAIL/PHONE/IBAN/ЕГН; EN+BG; LOCAL_ONLY off |
+| D-L1-2 | NeMo rails: LLM-free first; LLM-backed only on the tenant's permitted route | nemo-guardrails | **decided 2026-11-11** (owner): LLM-free rails first |
 | D-L1-3 | Behaviour anomaly signal; CPU detector before Morpheus | morpheus | CPU first |
 | D-L1-4 | NemoClaw: reference-only; runtime and privacy router declined | nemoclaw | declined |
-| D-L1-5 | Web Bot Auth signing identity: one Ed25519 key per deployment, never per tenant, so no signature discloses which customer monitors a vendor | web-bot-auth | adopt |
-| D-L1-6 | Outbound conduct: a User-Agent naming the bot, a public bot page, robots.txt honoured, registration with Cloudflare Verified Bots by the operator | web-bot-auth | adopt; register after Phase 2 |
-| D-L1-7 | Inbound verification: a label on public surfaces, never authorization; open directory fetch under cache and caps, or an allowlist of operators | web-bot-auth | label only; open fetch, cached and capped |
+| D-L1-5 | Web Bot Auth signing identity: one Ed25519 key per deployment, never per tenant, so no signature discloses which customer monitors a vendor | web-bot-auth | **decided 2026-11-11** (owner): adopt |
+| D-L1-6 | Outbound conduct: a User-Agent naming the bot, a public bot page, robots.txt honoured, registration with Cloudflare Verified Bots by the operator | web-bot-auth | **decided 2026-11-11** (owner): adopt |
+| D-L1-7 | Inbound verification: a label on public surfaces, never authorization; open directory fetch under cache and caps, or an allowlist of operators | web-bot-auth | **decided 2026-11-11** (owner): adopt |
 | D-L1-8 | Inflect never holds a payment credential (no PAN, token value or wallet key) and its own agents never pay; it stays outside PCI DSS cardholder-data scope | mastercard-agent-pay | adopt |
 | D-L1-9 | Spending authority is a declared envelope on the register, reviewed by a second person, required before activation, and reached by recertification and the kill switch | mastercard-agent-pay | adopt |
 | D-L1-10 | Reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once written API access and a sandbox exist | mastercard-agent-pay | wait for access; Phases 1–3 need none |
 | D-L2-1 | Langflow's box: the visual canvas is the product's own, editing the agent profile; Langflow not adopted | langflow | **decided 2026-10-29** (owner) |
 | D-L2-2 | Reasoning engines enforce flow checkpoints, or the canvas offers no checkpoint node | langflow | build enforcement; no checkpoint node until it lands |
 | D-L2-3 | The agent-flow canvas is drawn by tldraw (3.x, watermark kept), never xyflow, and lives inside the process-canvas module | langflow | **decided 2026-10-29** (owner) |
-| D-L3-1 | Supervisor/worker role axis in model selection | nemotron-reasoning | adopt |
+| D-L3-1 | Supervisor/worker role axis in model selection | nemotron-reasoning | **decided 2026-11-11** (owner): adopt |
 | D-L3-2 | Nemotron as the default worker | nemotron-reasoning | **deferred 2026-10-31** with Layer 5 (owner); the worker is a model reached through API keys |
 | D-L3-3 | An optimisation problem at GPU scale exists | cuopt | no; CPU seam if a feature wants it |
-| D-L4-1 | pgvector-first or Weaviate-first | weaviate | Weaviate (the target), with the note's trade-offs |
-| D-L4-2 | Vectors-only rule (no chunk text outside Postgres) | weaviate | adopt |
-| D-L4-3 | De-NIM retriever: open weights on CPU TEI in the deployment; the GPU arm is optional Layer 5 | nemotron-retriever | adopt |
-| D-L4-4 | Parser backend: RAGFlow slim or a parsing-only service | ragflow | measured in Phase 0 |
+| D-L4-1 | pgvector-first or Weaviate-first | weaviate | **decided 2026-11-11** (owner): **pgvector first**, in the existing Postgres under RLS; Weaviate only if a measured recall or latency floor is not met |
+| D-L4-2 | Vectors-only rule (no chunk text outside Postgres) | weaviate | **decided 2026-11-11** (owner): adopt |
+| D-L4-3 | De-NIM retriever: open weights on CPU TEI in the deployment; the GPU arm is optional Layer 5 | nemotron-retriever | **decided 2026-11-11** (owner): benchmark Nemotron against a small open model (BGE/E5 class) on CPU; keep the smaller unless recall@10 drops past an agreed margin |
+| D-L4-4 | Parser backend: RAGFlow slim or a parsing-only service | ragflow | **decided 2026-11-11** (owner): a Docling-class parsing-only service; RAGFlow measured, adopted only if Docling fails the fidelity eval |
 | D-L4-5 | Langfuse hosting: self-host / Cloud EU / OTel-only | langfuse | self-host if the VM bears it |
 | D-L4-6 | Trace content capture off by default; three conditions to turn on | langfuse | adopt |
 | D-L5-1 | Model usage through LLM API keys; no self-hosting now; Modal not adopted; Layer 5 optional, after every other roadmap is complete | modal-inference | **decided 2026-10-31** (owner) |
 | D-L5-2 | If Layer 5 is taken up: model, weights and licence, GPU class, zone and quota, cost | modal-inference | **deferred** until Layer 5 is taken up |
 | D-L5-3 | Triton consolidation trigger | triton | **deferred** with Layer 5 |
 | D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, a parsing-only service, Langfuse OTel-only) | § Capacity budget | measure first; smaller pieces the records allow; then resize to `e2-highmem-4`; never self-host Langfuse on the production VM |
-| D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | external CI key, budgeted |
-| D-EV-2 | Ragas judge residency and cost | ragas | external CI key, budgeted |
+| D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | **decided 2026-11-11** (owner): a Haiku-class model through a dedicated CI key, capped at USD 5 a night, seed data only |
+| D-EV-2 | Ragas judge residency and cost | ragas | **decided 2026-11-11** (owner): as D-EV-1, one shared cap |
 | D-EV-3 | Who labels ARES triples, from the seed corpus | ares | operator, seed only |
-| D-EV-4 | The product scores its own agents on its own ladder | inspect | adopt |
+| D-EV-4 | The product scores its own agents on its own ladder | inspect | **decided 2026-11-11** (owner): adopt |
 | D-EV-5 | SWE-bench: declined or placeholder | swe-bench | declined |
 
 ### How this document is updated
