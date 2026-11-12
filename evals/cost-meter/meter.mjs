@@ -3,8 +3,10 @@
  * The CI evaluation cost meter, shared by garak and Ragas
  * (docs/ai-architecture/ragas.md sub-phase 0.6; D-EV-1 and D-EV-2).
  *
- * One USD 5 nightly cap on the dedicated CI key, split into per-job SHARES
- * (`shares.json`, USD 2.50 each by default). Every number that turns tokens
+ * One USD 5 nightly cap on the dedicated CI key (decided: D-EV-1, D-EV-2),
+ * split into per-job SHARES (`shares.json`). The split itself — USD 2.50 each
+ * — is D-EV-11's PROPOSED default, open in the master roadmap until the owner
+ * initials it; the meter enforces whatever split the file states. Every number that turns tokens
  * into dollars comes from ONE pinned price table (`prices.json`), keyed by
  * model id, and a record names the table it was priced under by
  * `priceTableHash` — the SHA-256 of the file's exact bytes, so a reformatted
@@ -17,8 +19,8 @@
  * request's `max_tokens` of output, at list price, rounded UP to the micro-
  * dollar — and refuses it when spent + reserved + that worst case would pass
  * the share. `settle` then replaces the reservation with the usage the vendor
- * reported, or KEEPS the worst case when none came back: an unknown cost is
- * never read as a small one. Once a call is refused the meter is
+ * reported, or KEEPS the worst case when none came back or what came back
+ * cannot be read: an unknown cost is never read as a small one. Once a call is refused the meter is
  * `BUDGET_EXHAUSTED` for the rest of the run, and a record of that run never
  * passes a floor.
  *
@@ -35,8 +37,9 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 /**
- * The owner's decided ceiling (D-EV-1, D-EV-2). `shares.json` may state a
- * LOWER nightly cap; nothing in a file can raise this one.
+ * The owner's decided ceiling (D-EV-1, D-EV-2: USD 5 a night, one shared
+ * cap). `shares.json` may state a LOWER nightly cap; nothing in a file can
+ * raise this one. How it is split between jobs is NOT decided (D-EV-11).
  */
 export const DECIDED_NIGHTLY_CAP_USD = 5;
 
@@ -183,17 +186,31 @@ export function createMeter({ shareUsd, price }) {
         },
         /**
          * Replace a reservation with the reported usage, or keep the worst case
-         * when `usage` is null. Usage above the reservation is charged as
-         * reported (and flagged): the vendor's count is the bill.
+         * when `usage` is null OR unreadable (a partial object, a negative or
+         * fractional count): an unknown cost is never read as a small one, and
+         * never as zero. Usage above the reservation is charged as reported
+         * (and flagged): the vendor's count is the bill.
+         *
+         * The charge is computed BEFORE any state changes, so nothing between
+         * releasing the reservation and charging the spend can throw: a
+         * reservation leaves `reserved` only by entering `spent`.
          */
         settle(id, usage) {
             const worst = open.get(id);
             if (worst === undefined) throw new Error(`cost-meter: no open reservation ${id}`);
+            let charged = worst;
+            let usageUnreadable = false;
+            if (usage != null) {
+                try {
+                    charged = microUsdFor(price, usage.inputTokens, usage.outputTokens);
+                } catch {
+                    usageUnreadable = true;
+                }
+            }
             open.delete(id);
             reserved -= worst;
-            const charged = usage == null ? worst : microUsdFor(price, usage.inputTokens, usage.outputTokens);
             spent += charged;
-            return { chargedUsd: charged / MICRO, overran: charged > worst };
+            return { chargedUsd: charged / MICRO, overran: charged > worst, usageUnreadable };
         },
         spentUsd: () => spent / MICRO,
         reservedUsd: () => reserved / MICRO,

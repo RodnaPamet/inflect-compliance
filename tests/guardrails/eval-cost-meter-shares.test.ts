@@ -35,7 +35,11 @@ describe('the CI evaluation cost meter, as committed', () => {
         expect(Math.round(shares.nightlyCapUsd * 100)).toBeLessThanOrEqual(500);
     });
 
-    it('garak and Ragas each hold the decided default share of USD 2.50', () => {
+    // The USD 5 shared cap is decided (D-EV-1, D-EV-2); this split is NOT. It is
+    // D-EV-11's proposed default, open in docs/ai-architecture-roadmap.md until
+    // the owner initials it. Pinned so a move is a reviewed diff, not because
+    // the owner chose these numbers.
+    it('garak and Ragas each hold the proposed default share of USD 2.50 (D-EV-11, open)', () => {
         expect(shares.shares.garak?.usd).toBe(2.5);
         expect(shares.shares.ragas?.usd).toBe(2.5);
     });

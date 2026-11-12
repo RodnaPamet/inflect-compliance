@@ -13,8 +13,9 @@
  *   3. The spend cap is held in config and the numbers agree (D-EV-1, USD 5 a
  *      night, shared with Ragas by D-EV-2): the price and garak's share come
  *      from the shared cost meter (evals/cost-meter/), garak's own request
- *      count fits the proxy's wire cap, the roles fit the night, one planned
- *      role fits garak's share (so the measured breaker can start one), and
+ *      count fits the proxy's wire cap, the roles fit the night, the planned
+ *      night fits garak's share (so the measured breaker starts every role
+ *      on a night that costs what was planned), and
  *      the product's own AI quota equals the night's request cap. garak's count is
  *      probes x cap x generations ONLY for a probe that prunes to the cap, so
  *      every configured probe must be one read, in the pinned garak's source,
@@ -245,12 +246,14 @@ describe('garak spend cap (D-EV-1: USD 5 a night, shared with Ragas by D-EV-2)',
         expect(perRole).toBeLessThanOrEqual(budget.maxRequestsPerRole);
     });
 
-    it('the roles fit the night, the night fits the whole cap, and one planned role fits garak\'s share', () => {
+    it("the roles fit the night, and the planned night fits garak's share — the cap the breaker enforces", () => {
         expect(budget.roles.length * budget.maxRequestsPerRole).toBeLessThanOrEqual(budget.maxRequestsPerNight);
-        expect(budget.maxRequestsPerNight * plannedUsdPerRequest).toBeLessThanOrEqual(shares.nightlyCapUsd);
-        // The measured breaker admits a role only while spent + one planned
-        // role fits the share; a share below one planned role starts nothing.
-        expect(budget.maxRequestsPerRole * plannedUsdPerRequest).toBeLessThanOrEqual(garakShare.usd);
+        // Held against the SHARE, not the whole USD 5: the measured breaker
+        // (.garak/spend.mjs mayContinue) starts a role only while spent + one
+        // planned role fits garak's share, so a planned night above the share
+        // means the last role is skipped on a night that costs what was
+        // planned — a role silently unprobed while budget.json lists it.
+        expect(budget.maxRequestsPerNight * plannedUsdPerRequest).toBeLessThanOrEqual(garakShare.usd);
     });
 
     it("the product's own per-tenant AI quota equals the night's request cap", () => {

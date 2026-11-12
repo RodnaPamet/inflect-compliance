@@ -65,6 +65,32 @@ describe('cost meter: the check is before the call', () => {
         expect(out.open).toBe(0);
     });
 
+    it('unreadable usage is charged the worst case and closes the reservation: it never reopens the share', () => {
+        // A partial usage object (outputTokens missing) used to throw AFTER the
+        // reservation was released: spent stayed 0, the reservation was gone,
+        // and a second USD 2.00 call fitted a USD 2.50 share.
+        const out = inMeter<{ settled: { chargedUsd: number; usageUnreadable: boolean }; spent: number; reserved: number; open: number; next: boolean }[]>(`
+            const results = [];
+            for (const usage of [{ inputTokens: 1000000 }, { inputTokens: 1000000, outputTokens: -1 }, { inputTokens: 1.5, outputTokens: 0 }, {}]) {
+                const meter = m.createMeter({ shareUsd: 2.5, price: ${HAIKU} });
+                const r = meter.reserve({ inputTokens: 1000000, maxOutputTokens: 200000 });
+                const settled = meter.settle(r.id, usage);
+                const next = meter.reserve({ inputTokens: 1000000, maxOutputTokens: 200000 });
+                results.push({ settled, spent: meter.spentUsd(), reserved: meter.reservedUsd(), open: meter.openReservations(), next: next.ok });
+            }
+            return results;
+        `);
+        for (const r of out) {
+            expect(r).toEqual({
+                settled: { chargedUsd: 2, overran: false, usageUnreadable: true },
+                spent: 2,
+                reserved: 0,
+                open: 0,
+                next: false,
+            });
+        }
+    });
+
     it('a settled refund frees room for the next call; an open reservation still holds it', () => {
         const out = inMeter<{ heldRefused: boolean; afterSettle: boolean }>(`
             const meter = m.createMeter({ shareUsd: 0.01, price: ${HAIKU} });
@@ -114,7 +140,7 @@ describe('cost meter: shares never pass the decided USD 5', () => {
     const problems = (shares: string) => inMeter<string[]>(`return m.shareProblems(${shares}, ${TABLE});`);
     const share = (usd: number, model = 'claude-haiku-4-5') => `{ usd: ${usd}, model: '${model}' }`;
 
-    it('accepts the decided split', () => {
+    it('accepts the proposed default split (D-EV-11, open: USD 2.50 each)', () => {
         expect(problems(`{ nightlyCapUsd: 5, shares: { garak: ${share(2.5)}, ragas: ${share(2.5)} } }`)).toEqual([]);
     });
 

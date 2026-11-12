@@ -21,8 +21,9 @@ name: garak (LLM red-team, nightly)
 #   - MODEL (D-EV-1, owner, 2026-11-11): Haiku-class (AGENT_FLUE_MODEL below)
 #     through the DEDICATED CI key in the repository secret
 #     GARAK_CI_ANTHROPIC_KEY, seed data only. The USD 5 nightly cap is shared
-#     with Ragas (D-EV-2): garak meters against its SHARE (USD 2.50 by
-#     default) from the shared cost meter, evals/cost-meter/. With the secret
+#     with Ragas (D-EV-2): garak meters against its SHARE from the shared cost
+#     meter, evals/cost-meter/ — USD 2.50 under D-EV-11's PROPOSED default
+#     split, which the owner has not yet initialled. With the secret
 #     absent the job SKIPS cleanly (first step) and says so.
 #   - SPEND, three layers, each in config: garak's own prompt cap
 #     (.garak/config.yaml), the proxy's per-role wire cap and the product's
@@ -105,7 +106,7 @@ jobs:
       # per day (src/app-layer/ai/risk-assessment/rate-limiter.ts) =
       # budget.json maxRequestsPerNight. The per-user burst limit is raised so
       # garak is not throttled into retries.
-      AI_RISK_DAILY_QUOTA: '100'
+      AI_RISK_DAILY_QUOTA: '80'
       AI_RISK_USER_RPM: '60'
       TENANT_SLUG: acme-corp
 

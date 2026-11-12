@@ -7,6 +7,15 @@ re-plan. Two halves: the RAG evaluation record now describes the store that
 exists (dense pgvector, not hybrid Weaviate), and the USD 5 nightly CI cap that
 garak (D-EV-1) and Ragas (D-EV-2) share is enforced from one place.
 
+**The split is not an owner decision.** The shared USD 5 cap is decided (D-EV-2:
+"as D-EV-1, one shared cap"). How it divides is D-EV-11, which the master
+roadmap lists as **open**, with "shared, USD 2.50 each by default" as its
+PROPOSAL. `shares.json` carries that proposed default so the two jobs together
+cannot pass USD 5 while the owner decides; its `decision` text, the guardrail's
+test name and this note say so, and none of them attributes the split to the
+owner. When D-EV-11 is initialled, the split moves (if it moves) by an edit to
+`shares.json`, which the meter re-checks.
+
 ## Design
 
 ```
@@ -40,7 +49,7 @@ from each case's raw probe, never stored; `floor.eligible` is derived from
 | File | Role |
 | --- | --- |
 | `evals/cost-meter/prices.json` | The pinned price table, keyed by model id (Haiku 4.5 at USD 1 / 5 per million, the rates `.garak/budget.json` carried). |
-| `evals/cost-meter/shares.json` | The nightly cap (5.00) and each job's share and model: garak and Ragas, 2.50 each. |
+| `evals/cost-meter/shares.json` | The nightly cap (5.00) and each job's share and model: garak and Ragas, 2.50 each (D-EV-11's proposed default, open). |
 | `evals/cost-meter/meter.mjs` | The meter: share check, price lookup, reserve/settle in integer micro-dollars, `hash` / `check-shares` / `share` CLI. |
 | `.garak/spend.mjs` | garak's between-role breaker now prices from the table and caps at garak's share; adds a `cap` command. |
 | `.garak/budget.json` | Loses `nightlyCapUsd` and both rates; keeps `model`, which must equal garak's share's model. |
@@ -48,9 +57,11 @@ from each case's raw probe, never stored; `floor.eligible` is derived from
 | `src/lib/ai/evals/rag-record.ts` | Dense revision, price table hash, spend, status, retrieval probes, recomputed floor figures, floor eligibility, three new refusals. |
 | `tests/unit/rag-evaluation-record.test.ts` | The fixture record migrated to the new shape; three new blocks for 0.6. |
 | `tests/unit/eval-cost-meter.test.ts` | The meter's behaviour, run in a child `node` as CI runs it. |
-| `tests/guardrails/eval-cost-meter-shares.test.ts` | The committed shares pass the meter's own check; Σ ≤ 5.00; every model priced; the decided split. |
+| `tests/guardrails/eval-cost-meter-shares.test.ts` | The committed shares pass the meter's own check; Σ ≤ 5.00; every model priced; the proposed default split. |
 | `tests/guardrails/garak-workflow-pinning.test.ts`, `tests/unit/garak-wire-cap-and-record.test.ts` | Read the price and garak's share from the meter instead of `budget.json`. |
+| `.garak/config.yaml`, `.garak/budget.json`, `.github/workflows/garak.yml` | garak's planned night cut to fit its share: 4 prompts per probe, 40 per role, 80 a night (`AI_RISK_DAILY_QUOTA`). |
 | `docs/ai-architecture/ragas.md` | 0.6 ticked; a current-state bullet. |
+| `docs/ai-architecture/garak.md` | 1.4's four spend layers restated at the new numbers. |
 
 ## Decisions
 
@@ -95,23 +106,27 @@ from each case's raw probe, never stored; `floor.eligible` is derived from
   reservation can only round towards refusing. Shares must be whole cents and
   are summed in cents, so 2.50 + 2.51 is caught exactly.
 - **An unknown cost is the worst case.** `settle(id, null)` keeps the
-  reservation; usage reported above the reservation is charged as reported
-  and flagged (`overran`). Once a call is refused, the meter stays exhausted:
+  reservation, and so does usage that cannot be read (a partial object, a
+  negative or fractional count: `usageUnreadable`). The charge is computed
+  before any state changes, so a reservation leaves `reserved` only by entering
+  `spent`; an earlier draft released it first and then threw on bad usage,
+  which read the cost as zero and reopened the share. Usage reported above the
+  reservation is charged as reported and flagged (`overran`). Once a call is refused, the meter stays exhausted:
   a smaller later call that would fit is refused too, so a record's `status`
   cannot be COMPLETE over a run that skipped a call.
-- **garak's breaker is wired to its share, and that changes what a heavy night
-  does.** garak planned 2 roles × 50 requests at USD 0.03 = USD 3.00, which
-  fitted its old private USD 5 cap and does NOT fit a USD 2.50 share. Nothing
-  else in garak changed: the breaker still asks before each role whether spent
-  + one planned role (USD 1.50) fits, now against 2.50, so the editor role is
-  skipped (a `{"skipped":"BUDGET"}` file and a warning, as before) whenever the
-  owner role's measured spend passes USD 1.00. The pinning guard now holds
-  that one planned role fits the share (so the breaker can always start one)
-  and the planned night fits the whole USD 5. Fitting both roles inside the
-  share at the planned turn cost would need the per-role cap at 41 or below,
-  i.e. `soft_probe_prompt_cap` 4 (36 per role, 80 a night = USD 2.40) — a
-  change to garak's probe coverage that belongs to the garak roadmap, or the
-  Phase 0.4 baseline's measured p99 turn replacing the USD 0.03 estimate.
+- **garak's planned night is cut to fit its share, not left to the breaker.**
+  garak planned 2 roles × 50 requests at USD 0.03 = USD 3.00, which fitted its
+  old private USD 5 cap and does NOT fit a USD 2.50 share. Left alone, the
+  breaker (spent + one planned role must fit the share) would have skipped the
+  editor role whenever the owner role cost more than USD 1.00, against a
+  planned USD 1.50, with only a warning in a non-blocking job, while
+  `budget.json` still listed both roles. So the planned night now fits the
+  share: `soft_probe_prompt_cap` 4 (9 × 4 = 36 per role), wire cap 40 per
+  role, 80 a night, `AI_RISK_DAILY_QUOTA` 80, i.e. USD 2.40 at the planned
+  turn. The pinning guard holds the planned night against garak's SHARE (the
+  cap the breaker enforces), not against the whole USD 5. The cost is one
+  prompt per probe; the Phase 0.4 baseline's measured p99 turn replacing the
+  USD 0.03 estimate is what should move it back, through this same guard.
 
 ## What remains
 
@@ -135,5 +150,7 @@ from each case's raw probe, never stored; `floor.eligible` is derived from
   embeds through `judgeRevision.embeddingModel`; if that is a billed external
   model it needs a row in `prices.json` and a share line, and the record check
   should refuse it unpriced as it does the judge.
-- `docs/ai-architecture/garak.md` still describes the cap as garak's own USD 5;
-  its Phase 1 text is for that roadmap's owner to amend to the share.
+- **D-EV-11 is open.** The master roadmap's register still lists it, and the
+  master's Ragas row still reads 0.6 open; this branch may not edit the master
+  roadmap (a parallel branch rewrites it). Initialling D-EV-11, and ticking 0.6
+  in the master, are the owner's and that branch's acts.

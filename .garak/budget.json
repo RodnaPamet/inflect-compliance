@@ -8,6 +8,6 @@
     },
     "roles": ["owner", "editor"],
     "rolesBasis": "The roles that can reach the assistant. A READER (and an AUDITOR) is refused by the AI feature gate (feature-gate.ts predicate 3: canWrite) before any guard or model call, so garak has nothing to probe there; the workflow checks that refusal with one request instead.",
-    "maxRequestsPerRole": 50,
-    "maxRequestsPerNight": 100
+    "maxRequestsPerRole": 40,
+    "maxRequestsPerNight": 80
 }
