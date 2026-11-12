@@ -348,3 +348,69 @@ describe('6. read-only stays read-only: a write tool on a DISABLED connection is
         expect(set.omitted).toEqual([]);
     });
 });
+
+describe('7. a read-only run is offered no external write and no A2A send (#5365)', () => {
+    const names = (set: { tools: Array<{ tool: { name: string } }> }) => set.tools.map((t) => t.tool.name).sort();
+
+    /** An external tool on a connection that TAKES writes (not at DISABLED). */
+    const external = (name: string, declaresWrite: boolean): McpReadTool<unknown> =>
+        readTool(name, {
+            externalConnection: {
+                connectionId: 'conn-1',
+                connectionName: 'Directory',
+                declaresWrite,
+                connectionRefusesWrites: false,
+                reachesBusinessSystem: null,
+            },
+        });
+
+    beforeEach(() => {
+        mockLoadable.mockReturnValue([
+            readTool('list_risks'),
+            external('entra__get_user', false),
+            external('entra__disable_user', true),
+            // `adapterFor` sets `declaresWrite: true` for every A2A send,
+            // whatever the peer's definition says.
+            external('a2a__peer_one__send_task', true),
+        ]);
+        mockLoadablePropose.mockReturnValue([proposeTool('propose_risks')]);
+    });
+
+    it('withholds every external write and the A2A send as READ_ONLY_WORKFLOW, keeping external reads', () => {
+        const set = offerToolSet(invocation(), (offered) => offered, { sourcePrefix: 'probe-engine', readOnly: true });
+
+        // The directory READ stays: access-posture still reaches the directory.
+        expect(names(set)).toEqual(['entra__get_user', 'list_risks']);
+        expect(set.omitted).toEqual([
+            { name: 'entra__disable_user', reason: 'READ_ONLY_WORKFLOW' },
+            { name: 'a2a__peer_one__send_task', reason: 'READ_ONLY_WORKFLOW' },
+            { name: 'propose_risks', reason: 'READ_ONLY_WORKFLOW' },
+        ]);
+        // A withheld tool is not reachable, so its connection is not reported.
+        expect(set.externalConnections.map((c) => c.declaresWrite)).toEqual([false]);
+    });
+
+    it('a run that is NOT read-only is still offered both, exactly as before', () => {
+        const set = offerToolSet(invocation(), (offered) => offered, { sourcePrefix: 'probe-engine' });
+
+        expect(names(set)).toEqual([
+            'a2a__peer_one__send_task',
+            'entra__disable_user',
+            'entra__get_user',
+            'list_risks',
+            'propose_risks',
+        ]);
+        expect(set.omitted).toEqual([]);
+    });
+
+    it('binds every offered closure to a context marked readOnlyRun, and only for a read-only run', async () => {
+        const readOnly = offerToolSet(invocation(), (offered) => offered, { sourcePrefix: 'probe-engine', readOnly: true });
+        await readOnly.tools.find((t) => t.tool.name === 'entra__get_user')!.run({}, 'call-1');
+        expect(mockRunRead.mock.calls[0][0].ctx.readOnlyRun).toBe(true);
+
+        mockRunRead.mockClear();
+        const ordinary = offerToolSet(invocation(), (offered) => offered, { sourcePrefix: 'probe-engine' });
+        await ordinary.tools.find((t) => t.tool.name === 'entra__get_user')!.run({}, 'call-2');
+        expect(mockRunRead.mock.calls[0][0].ctx.readOnlyRun).toBeUndefined();
+    });
+});
