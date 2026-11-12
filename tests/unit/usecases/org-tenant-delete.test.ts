@@ -20,6 +20,7 @@ const membershipUpdateMany = jest.fn();
 const membershipDeleteMany = jest.fn();
 const userUpdateMany = jest.fn().mockResolvedValue({ count: 3 });
 const connectionUpdateMany = jest.fn();
+const scimRevokeMany = jest.fn();
 /** Call order across the statements — the trigger exemption depends on it. */
 const calls: string[] = [];
 /**
@@ -83,6 +84,10 @@ jest.mock('@/lib/prisma', () => ({
         integrationConnection: {
             updateMany: (...a: unknown[]) => connectionUpdateMany(...a),
         },
+        // #5184 — and revokes the other machine credential, the SCIM tokens.
+        tenantScimToken: {
+            updateMany: (...a: unknown[]) => scimRevokeMany(...a),
+        },
         // Interactive transaction (#3173). The callback receives a client that
         // records every write against the transaction it ran in, so atomicity
         // is asserted by GROUPING rather than by a count or a sequence.
@@ -105,6 +110,9 @@ jest.mock('@/lib/prisma', () => ({
                     user: { updateMany: (...a: unknown[]) => userUpdateMany(...a) },
                     integrationConnection: {
                         updateMany: (...a: unknown[]) => connectionUpdateMany(...a),
+                    },
+                    tenantScimToken: {
+                        updateMany: (...a: unknown[]) => scimRevokeMany(...a),
                     },
                     // `appendAuditEntryWithin` issues raw SQL; present so a
                     // direct call on the tx cannot fail for a missing method.
@@ -220,6 +228,14 @@ function installMocks() {
     connectionUpdateMany.mockReset();
     connectionUpdateMany.mockImplementation(() => {
         record('integrationConnection.updateMany');
+        return Promise.resolve({ count: 2 });
+    });
+    // #5184 — same treatment again. Returns a BatchPayload so a mutation that
+    // drops the revoke fails on the assertion that names it, rather than on
+    // the mock returning undefined.
+    scimRevokeMany.mockReset();
+    scimRevokeMany.mockImplementation(() => {
+        record('tenantScimToken.updateMany');
         return Promise.resolve({ count: 2 });
     });
 }
@@ -380,6 +396,7 @@ describe('deleteTenantUnderOrg', () => {
             'tenantMembership.updateMany',
             'user.updateMany',
             'integrationConnection.updateMany',
+            'tenantScimToken.updateMany',
             'appendAuditEntryWithin',
         ]]);
         // Nothing reached the client with no transaction open.
@@ -413,6 +430,7 @@ describe('deleteTenantUnderOrg', () => {
             'tenantMembership.updateMany',
             'user.updateMany',
             'integrationConnection.updateMany',
+            'tenantScimToken.updateMany',
             'appendAuditEntryWithin',
         ]);
     });
@@ -491,6 +509,43 @@ describe('the removal is written to the audit trail', () => {
             unknown, { detailsJson: { revokedMemberships: number } },
         ];
         expect(input.detailsJson.revokedMemberships).toBe(11);
+    });
+
+    /**
+     * #5184 — the OTHER machine credential. Its holder is the customer's own
+     * identity provider, which keeps pushing on its own schedule: a live SCIM
+     * token let a removed workspace go on serving `GET /api/scim/v2/Users`, and
+     * let `POST` / `PATCH {active: true}` RE-ACTIVATE the very memberships the
+     * step above had just deactivated — overwriting the access record this
+     * removal exists to preserve.
+     */
+    it('revokes the workspace SCIM tokens (#5184)', async () => {
+        await deleteTenantUnderOrg(ctx, 't-1');
+        expect(scimRevokeMany).toHaveBeenCalledTimes(1);
+        const [input] = scimRevokeMany.mock.calls[0] as unknown as [
+            { where: { tenantId: string; revokedAt: null }; data: { revokedAt: Date } },
+        ];
+        expect(input.where.tenantId).toBe('t-1');
+        // LIVE rows only: an already-revoked token keeps its own `revokedAt`
+        // rather than having its history rewritten by this removal.
+        expect(input.where.revokedAt).toBeNull();
+        expect(input.data.revokedAt).toBeInstanceOf(Date);
+    });
+
+    it('carries the number of SCIM tokens it revoked (#5184)', async () => {
+        scimRevokeMany.mockImplementation(() => {
+            record('tenantScimToken.updateMany');
+            return Promise.resolve({ count: 3 });
+        });
+
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        const [, input] = appendAuditEntryWithin.mock.calls[0] as unknown as [
+            unknown, { detailsJson: { revokedScimTokens: number } },
+        ];
+        // "What was live when the workspace was removed" is the question this
+        // transaction exists to answer, so the count belongs on the trail.
+        expect(input.detailsJson.revokedScimTokens).toBe(3);
     });
 
     it('carries the number of integrations it switched off (#5017)', async () => {
@@ -585,6 +640,7 @@ describe('the removal is also recorded where it can still be read', () => {
             'tenantMembership.updateMany',
             'user.updateMany',
             'integrationConnection.updateMany',
+            'tenantScimToken.updateMany',
             'appendAuditEntryWithin',
         ]]);
     });
