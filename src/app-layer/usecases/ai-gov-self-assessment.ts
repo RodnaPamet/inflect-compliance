@@ -100,6 +100,10 @@ export async function getAiGovAssessmentState(
                 mappings: q.mappingsJson,
                 applicable: conditionalApplies(q.conditional, arch),
                 answer: answerByQ.get(q.id)?.answer ?? null,
+                // The stored note, so the wizard can seed it (#5128). Without
+                // it the wizard held null and sent null on the next answer
+                // change, overwriting the note.
+                note: answerByQ.get(q.id)?.note ?? null,
             })),
             coverage: computeAiGovCoverage(scored),
         };
@@ -121,10 +125,17 @@ export async function saveAiGovAnswer(
         const question = await db.aiGovQuestion.findUnique({ where: { id: input.questionId } });
         if (!question) throw notFound('Question not found');
 
+        // `note` absent leaves the stored note as it is; `null` clears it
+        // (#5128). An answer-only change must not erase a justification.
         const note = input.note != null ? sanitizePlainText(input.note) : null;
         const saved = await db.aiGovSelfAssessmentAnswer.upsert({
             where: { assessmentId_questionId: { assessmentId: assessment.id, questionId: input.questionId } },
-            update: { answer: input.answer, note, answeredById: ctx.userId, answeredAt: new Date() },
+            update: {
+                answer: input.answer,
+                ...(input.note === undefined ? {} : { note }),
+                answeredById: ctx.userId,
+                answeredAt: new Date(),
+            },
             create: {
                 tenantId: ctx.tenantId,
                 assessmentId: assessment.id,

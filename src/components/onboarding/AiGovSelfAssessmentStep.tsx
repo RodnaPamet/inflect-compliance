@@ -48,6 +48,7 @@ type Question = {
     mappings: Mappings;
     applicable: boolean;
     answer: AnswerVal | null;
+    note?: string | null;
 };
 type CoverageCell = { percent: number | null };
 type Coverage = {
@@ -140,7 +141,7 @@ export function AiGovSelfAssessmentStep({
             setState(data);
             const map: Record<string, { answer: AnswerVal; note: string | null }> = {};
             for (const q of data.questions) {
-                if (q.answer) map[q.id] = { answer: q.answer, note: null };
+                if (q.answer) map[q.id] = { answer: q.answer, note: q.note ?? null };
             }
             setAnswers(map);
         } catch (e) {
@@ -156,9 +157,14 @@ export function AiGovSelfAssessmentStep({
     }, [load, architecture]);
 
     const saveAnswer = useCallback(
-        async (questionId: string, answer: AnswerVal, note: string | null) => {
+        // `note` undefined is an answer-only change: the PUT leaves the stored
+        // note alone (#5128).
+        async (questionId: string, answer: AnswerVal, note?: string | null) => {
             setSavingId(questionId);
-            setAnswers((prev) => ({ ...prev, [questionId]: { answer, note } }));
+            setAnswers((prev) => ({
+                ...prev,
+                [questionId]: { answer, note: note === undefined ? (prev[questionId]?.note ?? null) : note },
+            }));
             try {
                 const res = await fetch(`${base}/answers/${questionId}`, {
                     method: 'PUT',
@@ -323,7 +329,7 @@ export function AiGovSelfAssessmentStep({
                                                             className="flex flex-wrap gap-compact"
                                                             value={current ?? ''}
                                                             onValueChange={(v) =>
-                                                                saveAnswer(q.id, v as AnswerVal, answers[q.id]?.note ?? null)
+                                                                saveAnswer(q.id, v as AnswerVal)
                                                             }
                                                         >
                                                             {answerOptions.map((opt) => (

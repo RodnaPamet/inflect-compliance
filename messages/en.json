@@ -9810,7 +9810,9 @@
       "RELATED": "Related",
       "USES": "Uses",
       "MITIGATES": "Mitigates",
-      "STORES_DATA_FOR": "Stores Data"
+      "STORES_DATA_FOR": "Stores Data",
+      "PROVIDES_SERVICE_TO": "Provides Service To",
+      "ASSESSMENT_SOURCED": "From Assessment"
     },
     "criticalityLabel": {
       "LOW": "Low",
@@ -16492,7 +16494,8 @@
         "FILE": "File",
         "ISSUE": "Issue",
         "READINESS_REPORT": "Readiness Report",
-        "FRAMEWORK_COVERAGE": "Framework Coverage"
+        "FRAMEWORK_COVERAGE": "Framework Coverage",
+        "TEST_RUN": "Test Run"
       },
       "returnChannel": {
         "title": "Send feedback to the team",

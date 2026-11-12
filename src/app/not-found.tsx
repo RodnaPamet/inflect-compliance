@@ -28,7 +28,7 @@ export default async function NotFound() {
 
                 <div className="pt-6">
                     <Link
-                        href="/dashboard"
+                        href="/tenants"
                         className={buttonVariants({ variant: 'primary' })}
                     >
                         {t('returnToDashboard')}
