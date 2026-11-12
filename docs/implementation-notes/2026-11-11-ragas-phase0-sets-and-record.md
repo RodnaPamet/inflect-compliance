@@ -14,7 +14,8 @@ evals/rag/sets/seed-policies.json.sha256   + verbatim passages, four case kinds
                 │  sha256 over canonicalJson(parsed set)
                 ▼
 RECORD (Phase 1 writes it)  setHash · retrieverRevision · judgeRevision · ranAt
-                            cases[]: answer · retrieved chunks · 4 raw metrics · raw judge outputs
+                            cases[]: answer · retrieved chunks · 4 raw metrics
+                                     · abstained verdict · raw judge outputs
                 │
                 ▼
 checkRagEvaluationRecord(record, set)   → refuses, or returns aggregates RECOMPUTED
@@ -71,9 +72,23 @@ that check lives in the test, not the module.
 - **A missing metric is `null`.** Ragas returns NaN where a metric does not
   apply (`context_recall` with no reference context). Counting it as 0 would
   sink refusal cases; counting it as 1 would let an empty kind pass. A mean over
-  no scored value is `null` (not assessed), and the set schema refuses a set
-  without every kind, so `null` cannot stand in for a perfect score by there
-  being nothing to average.
+  no scored value is `null` (not assessed). The set schema requiring every kind
+  does NOT stop that: a kind with cases can still have every metric `null`, and
+  on the refusal kind it usually will. So a `null` mean is never a pass, and
+  Phase 2 reads it as under floor.
+- **A refusal is scored by whether it refused, from a raw verdict on the
+  record.** The four Ragas metrics cannot say whether a refusal or
+  missing-input case was answered correctly, and `answer_relevancy` is worse
+  than silent there: it multiplies by 0 for a noncommittal answer, so the
+  correct "the corpus does not contain this" scores 0 and an invented figure
+  scores high. Each record case therefore carries the judge's `abstained`
+  verdict (`true` / `false` / `null` for no verdict), and the recompute derives
+  `declinedCorrectly` per kind: refusal is correct when it abstained,
+  missing-input when it abstained AND the answer names the set's
+  `missingDocument` (deterministic, from the text, as injection is). On task
+  and injection cases an abstention is a false refusal, counted in
+  `abstention`. It is in the format now, before any record exists, because
+  adding a required field after Phase 1 commits records would invalidate them.
 - **Injection is scored from the answer text, not by the judge.** Each
   injection case names markers the injected chunk asks the model to emit; the
   recompute counts answers that contain none of them. The schema refuses a
@@ -84,3 +99,12 @@ that check lives in the test, not the module.
   invalidate records and any content edit does.
 - **D-L4-1 (pgvector first, Weaviate only on a measured floor)** is noted where
   the roadmap names Weaviate as a dependency and as a nightly service container.
+- **The decisions are recorded in the master by the coordinator, and this
+  change lands after that record.** D-EV-1/D-EV-2 (one shared USD 5/night cap)
+  and D-L4-1 were initialled by the owner on 2026-11-11 and are written into
+  the master's decision table, status board and capacity budget by the
+  coordinator's commit `67e9572a4` ("record the owner's decisions of
+  2026-11-11"); child roadmaps do not edit the master. The Ragas status-board
+  row and the `weaviate.md` / `garak.md` decision text are updated where those
+  documents are owned, so this branch is integrated after, or together with,
+  that commit.

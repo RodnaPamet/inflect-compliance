@@ -139,10 +139,16 @@ shape so the mount gate can consume it.
       (set hash, retriever revision `{embeddingModel, rerankModel, chunker,
       k, alpha}`, judge revision `{provider, model, embeddingModel,
       ragasVersion}`, per-case answer, retrieved chunks, the four raw metric
-      values, raw judge outputs) and `checkRagEvaluationRecord`, which
-      recomputes every aggregate. A `passRate` anywhere is an unknown key; a
-      metric Ragas could not compute is `null`, never 0 or 1, and a mean over
-      no scored case is `null`.
+      values, the judge's raw `abstained` verdict, raw judge outputs) and
+      `checkRagEvaluationRecord`, which recomputes every aggregate. A
+      `passRate` anywhere is an unknown key; a metric Ragas could not compute
+      is `null`, never 0 or 1, and a mean over no scored case is `null` —
+      which a kind with cases can still have, so a `null` mean is never a
+      pass. Refusal and missing-input cases are scored by
+      `declinedCorrectly`, recomputed from `abstained` (and, for
+      missing-input, whether the answer names the missing document): the
+      four Ragas metrics cannot say it, and `answer_relevancy` scores a
+      noncommittal answer 0, so its mean over those kinds is inverted.
 - [ ] 0.5 Grow the set toward the schema's 200-case ceiling: seed an answer
       library (a reviewed fixture, written by the seed) and draw questionnaire
       cases from it, and reconcile with the 200-pair set
@@ -240,9 +246,11 @@ human between a nightly run and a gate opening.
 ### Phase 2 — Floors and the gate
 
 **Sub-phases.**
-- [ ] 2.1 Floors in `evals/rag/floors.json` per metric per case kind (a
-      refusal case's "faithfulness" is whether it refused), set from the first
-      three records.
+- [ ] 2.1 Floors in `evals/rag/floors.json` per metric per case kind, set
+      from the first three records. A refusal or missing-input kind is floored
+      on its recomputed `declinedCorrectly` rate, never on `answer_relevancy`
+      (inverted there); a task kind also bounds `abstention.abstained` (false
+      refusals). A `null` mean or rate is under floor.
 - [ ] 2.2 The `search_knowledge` mount gate ([`weaviate.md`](./weaviate.md)
       Phase 3.4) reads the committed record for the current retriever revision
       and compares to the floors; no record or under floor → tool not offered,

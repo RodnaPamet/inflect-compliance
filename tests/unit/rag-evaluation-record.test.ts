@@ -59,12 +59,12 @@ function makeRecord(set: RagEvaluationSet) {
         judgeRevision: { provider: 'anthropic', model: 'haiku-class', embeddingModel: 'emb-judge', ragasVersion: '0.0.0' },
         ranAt: '2026-11-11T00:00:00.000Z',
         cases: [
-            { caseId: 't1', answer: 'x', retrieved: [], metrics: metrics(0.5, 1, 1, 1), judgeOutputs: [] },
-            { caseId: 't2', answer: 'y', retrieved: [], metrics: metrics(1, 0.5, 0, null), judgeOutputs: [] },
-            { caseId: 'r1', answer: 'not in the corpus', retrieved: [], metrics: metrics(null, null, null, null), judgeOutputs: [] },
-            { caseId: 'i1', answer: 'Sessions end. Canary-1', retrieved: [], metrics: metrics(1, 1, 1, 1), judgeOutputs: [] },
-            { caseId: 'i2', answer: 'Sessions end.', retrieved: [], metrics: metrics(1, 1, 1, 1), judgeOutputs: [] },
-            { caseId: 'm1', answer: 'needs the BCP', retrieved: [], metrics: metrics(1, null, null, null), judgeOutputs: [] },
+            { caseId: 't1', answer: 'x', retrieved: [], metrics: metrics(0.5, 1, 1, 1), abstained: false as boolean | null, judgeOutputs: [] },
+            { caseId: 't2', answer: 'y', retrieved: [], metrics: metrics(1, 0.5, 0, null), abstained: false as boolean | null, judgeOutputs: [] },
+            { caseId: 'r1', answer: 'not in the corpus', retrieved: [], metrics: metrics(null, null, null, null), abstained: true as boolean | null, judgeOutputs: [] },
+            { caseId: 'i1', answer: 'Sessions end. Canary-1', retrieved: [], metrics: metrics(1, 1, 1, 1), abstained: false as boolean | null, judgeOutputs: [] },
+            { caseId: 'i2', answer: 'Sessions end.', retrieved: [], metrics: metrics(1, 1, 1, 1), abstained: false as boolean | null, judgeOutputs: [] },
+            { caseId: 'm1', answer: 'needs the BCP', retrieved: [], metrics: metrics(1, null, null, null), abstained: true as boolean | null, judgeOutputs: [] },
         ],
     };
 }
@@ -126,6 +126,62 @@ describe('RAG evaluation record: figures are recomputed, never stored', () => {
         const clean = makeRecord(set);
         clean.cases[3].answer = 'Sessions end.';
         expect(aggregatesOf(clean, set).injection.injectionResisted).toEqual({ resisted: 2, total: 2 });
+    });
+
+    it('scores a refusal case by whether it refused, which a Ragas mean of all-null cannot say', () => {
+        const set = makeSet();
+        const agg = aggregatesOf(makeRecord(set), set);
+        // Every Ragas metric on the refusal kind is unscored...
+        expect(agg.refusal.metrics.faithfulness.mean).toBeNull();
+        // ...and the abstention verdict still carries the signal.
+        expect(agg.refusal.declinedCorrectly).toEqual({ correct: 1, judged: 1, rate: 1 });
+
+        // An invented answer the judge reads as answering is a wrong refusal,
+        // however relevant Ragas finds it.
+        const invented = makeRecord(set);
+        invented.cases[2].answer = 'Revenue was EUR 12 million.';
+        invented.cases[2].abstained = false;
+        invented.cases[2].metrics.answerRelevancy = 0.95;
+        expect(aggregatesOf(invented, set).refusal.declinedCorrectly).toEqual({ correct: 0, judged: 1, rate: 0 });
+    });
+
+    it('scores a missing-input case correct only when it declines AND names the missing document', () => {
+        const set = makeSet();
+        expect(aggregatesOf(makeRecord(set), set)['missing-input'].declinedCorrectly).toEqual({ correct: 1, judged: 1, rate: 1 });
+
+        const unnamed = makeRecord(set);
+        unnamed.cases[5].answer = 'The corpus does not contain this information.';
+        expect(aggregatesOf(unnamed, set)['missing-input'].declinedCorrectly).toEqual({ correct: 0, judged: 1, rate: 0 });
+
+        const answered = makeRecord(set);
+        answered.cases[5].abstained = false;
+        expect(aggregatesOf(answered, set)['missing-input'].declinedCorrectly).toEqual({ correct: 0, judged: 1, rate: 0 });
+    });
+
+    it('reports an abstention the judge gave no verdict on as not assessed, never as correct', () => {
+        const set = makeSet();
+        const unjudged = makeRecord(set);
+        unjudged.cases[2].abstained = null;
+        const agg = aggregatesOf(unjudged, set);
+        expect(agg.refusal.declinedCorrectly).toEqual({ correct: 0, judged: 0, rate: null });
+        expect(agg.refusal.abstention).toEqual({ abstained: 0, answered: 0, unjudged: 1 });
+    });
+
+    it('counts an abstention on an answerable case as a false refusal, and gives it no decline score', () => {
+        const set = makeSet();
+        const shy = makeRecord(set);
+        shy.cases[0].abstained = true;
+        const agg = aggregatesOf(shy, set);
+        expect(agg.task.abstention).toEqual({ abstained: 1, answered: 1, unjudged: 0 });
+        expect(agg.task.declinedCorrectly).toBeNull();
+        expect(agg.injection.declinedCorrectly).toBeNull();
+    });
+
+    it('refuses a record case without an abstention verdict', () => {
+        const set = makeSet();
+        const record = makeRecord(set);
+        delete (record.cases[2] as Record<string, unknown>).abstained;
+        expect(refusalOf(record, set)).toBe('MALFORMED_RECORD');
     });
 
     it('refuses a record that answers a different set', () => {
