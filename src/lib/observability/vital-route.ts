@@ -108,6 +108,64 @@ const ID_SEGMENT =
     /^(c[a-z0-9]{20,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+)$/i;
 
 /**
+ * Page prefixes whose NEXT path segment is a BEARER CAPABILITY, mapped to the
+ * literal sibling pages that are not (#5130).
+ *
+ * The middleware logs one `document_load` line per page load carrying the
+ * normalized route, and it runs on public paths: `/invite/` and `/audit/shared`
+ * are pass-through in `src/lib/auth/guard.ts`, so `isPassThrough` is true and
+ * the line is written. The tokens in those paths are the raw capability —
+ * audit-pack share tokens are `randomBytes(32).toString('hex')` and invite
+ * tokens `randomBytes(32).toString('base64url')`, and the database deliberately
+ * stores only a SHA-256 hash of each. `ID_SEGMENT` collapsed neither: a hex
+ * token matches `c[a-z0-9]{20,}` only when it happens to start with `c` (1 in
+ * 16), and a base64url token almost always contains `-` or `_` and so never
+ * matches. So roughly 94% of share tokens and nearly every invite token were
+ * written to the container log in plaintext, readable for the token's whole
+ * validity window by anyone who can read `docker logs`.
+ *
+ * This is an explicit list because the three prefixes are then handled
+ * DETERMINISTICALLY rather than probabilistically — see `OPAQUE_SEGMENT` below
+ * for the general backstop, which is the part that covers a prefix nobody
+ * remembered to add here.
+ *
+ * The values are the literal pages that are NOT tokens. `/invite/result` and
+ * `/invite/org` are real pages sitting beside `/invite/[token]`, so a blanket
+ * "the segment after /invite is a token" would destroy both labels. An unknown
+ * segment at one of these parents collapses to `[token]`: a new literal page
+ * added without updating this list loses label fidelity, which is the safe
+ * direction — the unsafe direction prints a credential.
+ */
+const CAPABILITY_PARENTS: ReadonlyMap<string, readonly string[]> = new Map([
+    ['/audit/shared', [] as readonly string[]],
+    ['/invite', ['org', 'result'] as readonly string[]],
+    ['/invite/org', [] as readonly string[]],
+]);
+
+/**
+ * A segment long enough and mixed enough to be a secret rather than a word.
+ *
+ * The general backstop for a token-bearing public path that is added later and
+ * never registered in `CAPABILITY_PARENTS`. The threshold is measured, not
+ * guessed: `src/app` currently holds 485 literal route segments, 24 of them 20
+ * characters or longer (`http-message-signatures-directory`,
+ * `vendor-assessment-templates`, `identity-account-protection`, …). Requiring a
+ * DIGIT is what separates those from a credential — exactly one of the 24
+ * carries a digit or uppercase (`ServiceProviderConfig`, which has no digit),
+ * and every segment that does contain a digit (`a2a`, `nis2-gap`, `nis2-assessment`,
+ * `a2a-signing-key`, `v2`) is far below 20 characters.
+ *
+ * So this collapses no real route label today, while catching essentially every
+ * credential: a 64-char hex token contains a digit with probability ~1, and a
+ * 43-char base64url token with probability ~0.9997. That residual is why the
+ * three known prefixes above are listed explicitly rather than left to this.
+ *
+ * NOTE: a bare length rule — which is the obvious spelling — would collapse all
+ * 24 of those real segments and silently destroy their route series.
+ */
+const OPAQUE_SEGMENT = /^(?=.*\d)[A-Za-z0-9_-]{20,}$/;
+
+/**
  * Collapse a page pathname to a bounded route label:
  *   `/t/acme/controls/ckxyz...`  →  `/t/[tenant]/controls/[id]`
  *   `/t/acme/dashboard`          →  `/t/[tenant]/dashboard`
@@ -127,7 +185,32 @@ export function normalizeVitalRoute(pathname: string): string {
             out.push('[tenant]');
             continue;
         }
-        out.push(ID_SEGMENT.test(seg) ? '[id]' : seg);
+        // A bearer capability never reaches the log (#5130).
+        //
+        // ORDER IS LOAD-BEARING. This runs BEFORE `ID_SEGMENT`, so a known
+        // capability parent always yields `[token]` whatever the token's shape.
+        // With the id check first, a hex share token that happened to start
+        // with `c` matched `c[a-z0-9]{20,}` and labelled `/audit/shared/[id]` —
+        // safe, but it split ONE route across two label values on a 1-in-16
+        // coin flip, which is precisely the cardinality this function exists to
+        // keep stable.
+        const literals = CAPABILITY_PARENTS.get(out.join('/'));
+        if (literals !== undefined && !literals.includes(seg)) {
+            out.push('[token]');
+            continue;
+        }
+        // A row id stays `[id]`, as it always has: checked before the general
+        // credential rule so a cuid — 25 characters, carrying digits — keeps
+        // its existing label rather than being reclassified as a secret.
+        if (ID_SEGMENT.test(seg)) {
+            out.push('[id]');
+            continue;
+        }
+        if (OPAQUE_SEGMENT.test(seg)) {
+            out.push('[token]');
+            continue;
+        }
+        out.push(seg);
     }
     let route = out.join('/') || '/';
     if (route.length > 1 && route.endsWith('/')) route = route.slice(0, -1);
