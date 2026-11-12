@@ -4,9 +4,11 @@ inflect · ai architecture · cuopt · roadmap v1 · 2026-10-29
 
 > **Status: living design** — the integration roadmap for NVIDIA cuOpt, named
 > by the target architecture for Layer 3 as an "optimisation tool for ERP/SAP
-> scheduling & logistics routing". **Complete: declined at Phase 0 (D-L3-3,
-> initialled by the owner 2026-11-11) — no feature has an optimisation problem
-> today, and none at GPU scale.** The **Current state** section is true today
+> scheduling & logistics routing". **Phase 0's decision is taken: declined (D-L3-3,
+> decided by the owner 2026-11-11) — no feature has an optimisation problem
+> today, and none at GPU scale.** The roadmap is complete once the master's
+> decision table and status board record it; that edit is the coordinator's
+> and is outstanding (§ Updating the master). The **Current state** section is true today
 > (re-verified 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap**
 > section records the decision; Phase 1 is kept as the plan for the day a
 > feature wants a solver. This is a
@@ -24,7 +26,7 @@ inflect · ai architecture · cuopt · roadmap v1 · 2026-10-29
 | Depends on | nothing for Phases 0–1; Layer 5 ([`modal-inference.md`](./modal-inference.md)), optional and last, for Phase 2 |
 | Unblocks | nothing |
 | Owner decisions | **D-L3-3** decided 2026-11-11: no GPU-scale optimisation problem; cuOpt only as a CPU seam's backend if a feature ever wants one |
-| Complete at | Phase 0's recorded decline — **complete 2026-11-11** (no feature wants a solver). Phase 1 reopens only when one does; Phase 2 is optional Layer 5 work |
+| Complete at | Phase 0's recorded decline — decided 2026-11-11 (no feature wants a solver); complete when the master records it. Phase 1 reopens only when one does; Phase 2 is optional Layer 5 work |
 
 ## At a glance
 
@@ -127,9 +129,11 @@ CPU backend solves inside the engine's step budget.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Find the problem and measure it (complete 2026-11-11: declined)
+### Phase 0 — Find the problem and measure it (decided 2026-11-11: declined; master record outstanding)
 
-**The record.** D-L3-3 was initialled by the owner on 2026-11-11: there is no
+**The record.** D-L3-3 was decided by the owner on 2026-11-11 (relayed to this
+change by the coordinating session; the owner's initials go in the master's
+decision table, which this change does not edit): there is no
 optimisation problem at a size that needs a GPU, and cuOpt enters only as a
 backend behind a CPU seam if a feature ever wants one. The code was then
 checked for a feature that wants one today (§ Current state), and none does:
@@ -247,7 +251,15 @@ burn a step's budget alone).
 
 ## Updating the master
 
-Phase 0 is complete: the master's row reads "declined — no optimisation
-problem in the product, none at GPU scale (D-L3-3, 2026-11-11)", with the
-implementation note's link. A feature that asks for a solver reopens Phase 1
-and flips the row back.
+Outstanding, and the coordinator's to do (this change does not edit the
+master, whose cuOpt row still reads "missing; CPU seam first if any" and whose
+D-L3-3 row shows only the default-if-undecided). Write:
+
+- **Status board**, cuOpt row, current-state column: "declined — no
+  optimisation problem in the product, none at GPU scale (D-L3-3,
+  2026-11-11)", linking the implementation note.
+- **Decisions for the owner**, D-L3-3: "**decided 2026-11-11** (owner): no;
+  CPU seam if a feature wants it", in place of the default-if-undecided text.
+
+Once both read so, the roadmap is complete at Phase 0. A feature that asks for
+a solver reopens Phase 1 and flips the row back.

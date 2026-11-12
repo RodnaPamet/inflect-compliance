@@ -5,9 +5,11 @@ inflect · ai architecture · langfuse · roadmap v1 · 2026-10-29
 > **Status: living design** — the integration roadmap for Langfuse, named by
 > the target architecture for Layer 4 as "tracing & observability" (the
 > diagram pairs it with LlamaIndex; see § Fit for why LlamaIndex is not
-> planned). **Complete: OTel-only, by Phase 0's recorded decision (D-L4-5 and
-> D-L4-6, initialled by the owner 2026-11-11).** No Langfuse service is run and
-> no sub-processor is added. The **Current state** section is true today
+> planned). **Phase 0's decision is taken: OTel-only (D-L4-5 and D-L4-6,
+> decided by the owner 2026-11-11).** No Langfuse service is run and no
+> sub-processor is added. The roadmap is complete once the master's decision
+> table and status board record it; that edit is the coordinator's and is
+> outstanding (§ Updating the master). The **Current state** section is true today
 > (re-verified 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap** section
 > records the decision; Phases 1–3 are kept as the plan if D-L4-5 is reopened. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
@@ -24,7 +26,7 @@ inflect · ai architecture · langfuse · roadmap v1 · 2026-10-29
 | Depends on | nothing to deploy; [`presidio.md`](./presidio.md) Phase 1 before any content capture |
 | Unblocks | the eval UI for [`ragas.md`](./ragas.md), [`inspect.md`](./inspect.md); per-tenant cost views |
 | Owner decisions | **D-L4-5** decided 2026-11-11: OTel-only (no new service, no sub-processor); **D-L4-6** decided 2026-11-11: content capture off by default, three conditions to turn it on |
-| Complete at | Phase 0's recorded OTel-only decision (D-L4-5) — **complete 2026-11-11** |
+| Complete at | Phase 0's recorded OTel-only decision (D-L4-5) — decided 2026-11-11; complete when the master records it |
 
 ## At a glance
 
@@ -81,11 +83,23 @@ flowchart LR
 - **No Langfuse, no LlamaIndex** (`package.json`, `src/`), and by D-L4-5
   (2026-11-11) none is planned: Langfuse is not deployed, and no Langfuse
   sub-processor row exists or is proposed.
-- **No trace or log carries prompt or completion text**, and by D-L4-6
-  (2026-11-11) none may until three conditions hold together (§ Phase 0). The
-  only content-free telemetry guard today is Flue's; the attribute-allowlist
-  guard of Phase 1 would be the second, and is not built because Phase 1 is
-  not pursued.
+- **No trace carries prompt or completion text**, and by D-L4-6 (2026-11-11)
+  none may until three conditions hold together (§ Phase 0). The only
+  content-free telemetry guard today is Flue's; the attribute-allowlist guard
+  of Phase 1 would be the second, and is not built because Phase 1 is not
+  pursued.
+- **The Art 12 decision log is NOT content-free, and is not a trace.**
+  `AiDecisionLog.outputSummary` holds the model's own answer text, sanitised
+  and cut to 4,000 characters for agentic runs and the assistant
+  (`AGENTIC_SUMMARY_MAX` in `src/app-layer/ai/decision-log/index.ts`; 500
+  otherwise), written by `flue/model-decision.ts` and
+  `tool-runner/model-decision.ts`. It is the record a reader parses back:
+  `usecases/audit-workpaper-narrative.ts` reads the narrative answer out of it.
+  Only the input is reduced to a digest. So "met by construction" below is
+  true of the trace pipeline alone: routing decision-log rows (or
+  `outputSummary`) into any trace sink, or exporting them, would put
+  completion text there, and needs D-L4-6's three conditions like any other
+  content.
 
 ## Fit, and what is deliberately not adopted
 
@@ -126,11 +140,13 @@ Phase 0 put the three in front of the owner, and the owner chose OTel-only.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Decide hosting and content policy (complete 2026-11-11)
+### Phase 0 — Decide hosting and content policy (decided 2026-11-11; master record outstanding)
 
-**The record.**
+**The record.** Both decisions were taken by the owner on 2026-11-11 and
+relayed to this change by the coordinating session; the owner's initials go in
+the master's decision table, which this change does not edit.
 
-- **D-L4-5, initialled 2026-11-11: OTel-only.** The existing OpenTelemetry
+- **D-L4-5, decided 2026-11-11: OTel-only.** The existing OpenTelemetry
   pipeline (`src/lib/observability/instrumentation.ts`, OTLP/HTTP traces and
   metrics, drained by Epic E's shutdown under its stage budget), the Art 12
   decision log and the in-house evaluation records answer the box's question —
@@ -141,14 +157,16 @@ Phase 0 put the three in front of the owner, and the owner chose OTel-only.
   alone is sized at 8 GiB), and Langfuse Cloud EU would be a sub-processor
   receiving traces that `LOCAL_ONLY` tenants could never use. So: no new
   service, no dependency, no sub-processor row, no notice clock started.
-- **D-L4-6, initialled 2026-11-11: content capture is off by default.** It
+- **D-L4-6, decided 2026-11-11: content capture is off by default.** It
   binds any trace sink, Langfuse or not, now or after a reopening: prompt and
   completion text may enter a trace only when an explicit deployment switch
   is on, **and** the tenant's residency permits the sink, **and** the
   Presidio mask hook ([`presidio.md`](./presidio.md) Phase 2) runs on the
   text first. Absent any one, the span carries ids, counts and verdicts only.
   OTel-only builds no capture switch at all, so today the rule is met by
-  construction.
+  construction **for traces**. It is not a statement about the decision log,
+  which stores completion text in `outputSummary` (§ Current state): that
+  column never feeds a trace sink unless the three conditions hold.
 - **Reopening.** D-L4-5 is reopened only by the owner. The trigger worth
   naming: an evaluation roadmap (Ragas, Inspect) finds the committed records
   unreadable without a browsing UI. Because the OTel pipeline is the
@@ -318,8 +336,16 @@ plan's, and applies if D-L4-5 is reopened.
 
 ## Updating the master
 
-Phase 0 is complete: the master's row reads "complete — OTel-only (D-L4-5,
-2026-11-11); content capture off by default (D-L4-6)", with the implementation
-note's link, and D-L4-5 and D-L4-6 read "decided 2026-11-11" in the decision
-table. The diagram's box is answered by the existing stack, which is a
-legitimate outcome of a roadmap.
+Outstanding, and the coordinator's to do (this change does not edit the
+master, whose Langfuse row still reads "missing" and whose D-L4-5 row still
+shows "self-host if the VM bears it" as the default-if-undecided). Write:
+
+- **Status board**, Langfuse row, current-state column: "complete — OTel-only
+  (D-L4-5, 2026-11-11); content capture off by default (D-L4-6)", linking the
+  implementation note.
+- **Decisions for the owner**, D-L4-5: "**decided 2026-11-11** (owner):
+  OTel-only"; D-L4-6: "**decided 2026-11-11** (owner): adopt", each in place
+  of the default-if-undecided text.
+
+Once both read so, the roadmap is complete. The diagram's box is answered by
+the existing stack, which is a legitimate outcome of a roadmap.

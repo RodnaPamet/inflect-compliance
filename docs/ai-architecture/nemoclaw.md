@@ -5,9 +5,10 @@ inflect · ai architecture · nemoclaw · roadmap v1 · 2026-10-29
 > **Status: living design** — the integration roadmap for NVIDIA NemoClaw,
 > which the target diagram places in Layer 1 beside NeMo Guardrails and
 > Presidio (the companion markdown does not name it; it names OpenShell under
-> Layer 5). **Phase 0 is complete (D-L1-4, initialled by the owner
+> Layer 5). **Phase 0's work is done and D-L1-4 is decided (by the owner,
 > 2026-11-11): reference-only; the agent runtime and the routed-inference
-> layer are declined.** The mapping found two policy tightenings worth taking,
+> layer are declined.** The master's decision table and status board do not
+> record it yet; that edit is the coordinator's (§ Updating the master). The mapping found two policy tightenings worth taking,
 > so the roadmap completes at Phase 1. The **Current state** section is true
 > today (re-verified 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap**
 > section is the plan. This is a child of
@@ -141,7 +142,7 @@ tighten; nothing is imported as a dependency.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Map the current release to what exists; decide (complete 2026-11-11)
+### Phase 0 — Map the current release to what exists; decide (done 2026-11-11; master record outstanding)
 
 **Sources read, 2026-11-11.** Primary sources only, from NVIDIA's `NemoClaw`
 repository on GitHub, branch `main`: the README,
@@ -210,7 +211,8 @@ nothing.
       the Vertex AI residual (Phase 1).*
 - [x] 0.3 D-L1-4 recorded in an implementation note: reference-only adoption;
       runtime and router declined with the reasons above; the OpenShell work
-      continues under #3924. *Initialled 2026-11-11;
+      continues under #3924. *Decided by the owner 2026-11-11 (the initials go in
+      the master's decision table, still outstanding);
       `docs/implementation-notes/2026-11-11-ai-roadmap-decision-completions.md`.*
 
 The two tightenings are proposed here as Phase 1 sub-phases; opening an issue
@@ -290,7 +292,16 @@ denials").
 
 ## Updating the master
 
-Phase 0 is complete: the master's row reads "reference-only; runtime and
-router declined (D-L1-4, 2026-11-11); Phase 1 — two policy tightenings". After
-Phase 1, the row reads complete. The master's Layer 5 current-state paragraph already
+Outstanding, and the coordinator's to do (this change does not edit the
+master, whose NemoClaw row still reads "substrate present (OpenShell); stack to
+be declined" and whose D-L1-4 row shows only the default-if-undecided). Write:
+
+- **Status board**, NemoClaw row: current state "reference-only; runtime and
+  router declined (D-L1-4, 2026-11-11); Phase 1 — two policy tightenings",
+  and completion phase "1" (Phase 0 found tightenings, so "0's recorded
+  decision" no longer applies).
+- **Decisions for the owner**, D-L1-4: "**decided 2026-11-11** (owner):
+  declined", in place of the default-if-undecided text.
+
+After Phase 1, the row reads complete. The master's Layer 5 current-state paragraph already
 carries OpenShell; this document adds nothing there.

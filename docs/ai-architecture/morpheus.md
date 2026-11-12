@@ -4,8 +4,9 @@ inflect · ai architecture · morpheus · roadmap v1 · 2026-10-29
 
 > **Status: living design** — the integration roadmap for NVIDIA Morpheus,
 > named by the target architecture for Layer 1 as "real-time pipeline
-> protection & anomaly detection". **D-L1-3 was initialled by the owner on
-> 2026-11-11: a CPU anomaly detector in the worker before Morpheus.** Phase 0's
+> protection & anomaly detection". **D-L1-3 was decided by the owner on
+> 2026-11-11: a CPU anomaly detector in the worker before Morpheus** (not yet
+> recorded in the master's decision table; § Updating the master). Phase 0's
 > signal definition is recorded below; its seeded measurement is still open.
 > The **Current state** section is true today (re-verified 2026-11-11 at main
 > 3.365.0, `8733323f`; it corrects an earlier statement that the circuit
@@ -131,7 +132,9 @@ raises a Finding and may latch the agent's circuit breaker through the
 
 ### Phase 0 — The signal, measured on CPU
 
-**The record (2026-11-11).** D-L1-3 was initialled by the owner: a CPU
+**The record (2026-11-11).** D-L1-3 was decided by the owner (relayed to this
+change by the coordinating session; the initials go in the master's decision
+table, which this change does not edit): a CPU
 detector in the worker first, Morpheus only above the threshold below. The
 signal is defined from the real tables, with no data read. It is defined
 around the breaker that already exists (§ Current state): the hourly breaker
@@ -280,8 +283,9 @@ external), G12 (optional), G11 (the parity window is the record that promotes it
 ## Updating the master
 
 Flip the row on the master [Status board](../ai-architecture-roadmap.md#status-board)
-per phase. D-L1-3 reads "decided 2026-11-11: CPU detector first" in the
-decision table, and the row reads "Phase 0 — signal defined; seeded check
-open". If Phase 0 concludes the CPU detector
+per phase. Outstanding, and the coordinator's (this change does not edit the
+master, whose D-L1-3 row shows only the default-if-undecided): write D-L1-3 as
+"**decided 2026-11-11** (owner): CPU detector first" in the decision table,
+and the status-board row as "Phase 0 — signal defined; seeded check open". If Phase 0 concludes the CPU detector
 suffices indefinitely, the row reads "CPU detector shipped; Morpheus dormant
 until <threshold>".

@@ -2,9 +2,12 @@
 
 **Commit:** on branch `wf/decision-completions` (docs only, no code)
 
-The owner initialled a set of AI-architecture decisions on 2026-11-11. This
-note is the Phase 0 record for the child roadmaps those decisions complete or
-advance, with each code fact re-verified at main 3.365.0 (`8733323f`). The
+The owner took a set of AI-architecture decisions on 2026-11-11, relayed to
+this change by the coordinating session. The owner's initials belong in the
+master roadmap's decision table, which this change does not edit, so at this
+commit the master still shows each decision only under "Default if undecided".
+This note is the Phase 0 record for the child roadmaps those decisions complete
+(once the master records them) or advance, with each code fact re-verified at main 3.365.0 (`8733323f`). The
 child documents in `docs/ai-architecture/` carry the same records in place;
 this note is where they point.
 
@@ -12,9 +15,9 @@ this note is where they point.
 
 | Roadmap | Decision | Outcome |
 | --- | --- | --- |
-| `swe-bench.md` | D-EV-5: declined | **complete at Phase 0** |
-| `langfuse.md` | D-L4-5: OTel-only; D-L4-6: content capture off by default | **complete at Phase 0** |
-| `cuopt.md` | D-L3-3: no GPU-scale optimisation problem; CPU seam only if a feature wants one | **complete at Phase 0** (no feature wants one) |
+| `swe-bench.md` | D-EV-5: declined | complete at Phase 0 once the master records it |
+| `langfuse.md` | D-L4-5: OTel-only; D-L4-6: content capture off by default | complete at Phase 0 once the master records it |
+| `cuopt.md` | D-L3-3: no GPU-scale optimisation problem; CPU seam only if a feature wants one | complete at Phase 0 once the master records it (no feature wants one) |
 | `nemoclaw.md` | D-L1-4: reference-only; runtime and routed inference declined | Phase 0 complete; two tightenings → Phase 1 |
 | `morpheus.md` | D-L1-3: CPU detector in the worker before Morpheus | Phase 0 signal defined; seeded check open |
 | `ares.md` | D-EV-3: the operator labels, seed data only | Phase 0.1 decided; labelling open |
@@ -50,8 +53,13 @@ What exists:
 - OTLP/HTTP traces and metrics (`src/lib/observability/instrumentation.ts`).
   They are off unless `OTEL_ENABLED=true`, export to
   `OTEL_EXPORTER_OTLP_ENDPOINT`, and Epic E drains them on shutdown.
-- The Art 12 decision log (`AiDecisionLog`). It stores an input digest and a
-  bounded output summary, never raw content.
+- The Art 12 decision log (`AiDecisionLog`). It stores an input digest, and
+  in `outputSummary` the model's own answer text, sanitised and cut to 4,000
+  characters for agentic runs (`AGENTIC_SUMMARY_MAX`). That is completion
+  text: the audit-narrative usecase parses its answer back out of it. The log
+  is the record, not a trace, so D-L4-6 being "met by construction" is a
+  statement about the trace pipeline only, and a decision-log row routed to a
+  trace sink would need D-L4-6's three conditions.
 - The in-house evaluation records, whose rates are recomputed from raw answers.
 
 Langfuse would add a browsing UI for LLM-shaped traces, datasets and scores.
@@ -200,9 +208,9 @@ measured:
 
 | File | Role |
 | --- | --- |
-| `docs/ai-architecture/swe-bench.md` | Phase 0 record; complete, declined |
-| `docs/ai-architecture/langfuse.md` | Phase 0 record; complete, OTel-only; D-L4-6 for any sink; Phases 1–3 marked not pursued |
-| `docs/ai-architecture/cuopt.md` | Phase 0 record; code search; complete, declined |
+| `docs/ai-architecture/swe-bench.md` | Phase 0 record; declined; completion waits on the master |
+| `docs/ai-architecture/langfuse.md` | Phase 0 record; OTel-only, completion waits on the master; D-L4-6 for any sink; Phases 1–3 marked not pursued |
+| `docs/ai-architecture/cuopt.md` | Phase 0 record; code search; declined; completion waits on the master |
 | `docs/ai-architecture/nemoclaw.md` | component map, policy diff, D-L1-4; Phase 1 sub-phases for the two tightenings |
 | `docs/ai-architecture/morpheus.md` | Current state corrected (the breaker exists); feature table; D-L1-3 |
 | `docs/ai-architecture/ares.md` | D-EV-3 recorded; overlap consequence |
@@ -211,12 +219,18 @@ measured:
 ## Decisions
 
 - **Completed documents stay `living`.** Each keeps its banner and its two
-  sections, with "Complete" stated in the banner and the "Where it sits" table.
+  sections. The banner and the "Where it sits" table say the decision is
+  taken and the roadmap completes once the master records it; neither claims
+  completion the master does not show.
   Reclassifying them would edit the contended classification file for no
   reader's benefit. The plans they did not pursue stay as the reopening plan.
 - **The master is not edited here.** Its status board and decision table
   belong to the coordinator. Each child document's "Updating the master"
-  section states the row text to write.
+  section states, as an instruction, the row text to write, and says what the
+  master reads today. The step is outstanding until the coordinator makes it,
+  and `swe-bench.md` keeps its sub-phase 0.2 (record in the master) unticked
+  so the board shows it. A child that said the master "reads" a text it does
+  not read would make the two disagree about whether a roadmap is complete.
 - **NemoClaw does not complete at Phase 0.** The diff found two real
   tightenings. Recording "none" to close the roadmap would have discarded the
   only concrete thing the comparison produced.

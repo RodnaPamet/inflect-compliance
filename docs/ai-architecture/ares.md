@@ -69,7 +69,8 @@ inference (PPI). Value over Ragas: much cheaper per evaluation (no large
 judge call per case), and calibrated against *your* labels rather than a
 zero-shot judge's taste.
 
-**D-EV-3, initialled by the owner 2026-11-11.** The operator labels the
+**D-EV-3, decided by the owner 2026-11-11** (the initials go in the master's
+decision table, not yet updated). The operator labels the
 triples, and only from seed data — never a customer's corpus or a customer's
 judgements. Nothing is labelled yet; the decision sets who may.
 
@@ -195,5 +196,7 @@ with human labels (Phase 1) and by agreement with Ragas over time (Phase 2).
 ## Updating the master
 
 Flip the row on the master [Status board](../ai-architecture-roadmap.md#status-board)
-per phase. D-EV-3 reads "decided 2026-11-11: operator, seed data only" in the
-decision table; the row stays at Phase 0 until the labelled set exists.
+per phase. Outstanding, and the coordinator's (this change does not edit the
+master, whose D-EV-3 row shows only the default-if-undecided): write D-EV-3 as
+"**decided 2026-11-11** (owner): operator, seed data only" in the decision
+table. The status-board row stays at Phase 0 until the labelled set exists.

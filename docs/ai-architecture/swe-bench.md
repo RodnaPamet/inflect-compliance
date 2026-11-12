@@ -4,8 +4,10 @@ inflect · ai architecture · swe-bench · roadmap v1 · 2026-10-29
 
 > **Status: living design** — the integration roadmap for SWE-bench, which
 > the target architecture places in the Validation column as "testing".
-> **Complete: declined at Phase 0 (D-EV-5, initialled by the owner
-> 2026-11-11).** The **Current state** section is true today (re-verified
+> **Phase 0's decision is taken: declined (D-EV-5, decided by the owner
+> 2026-11-11).** The roadmap is complete once the master's decision table and
+> status board record it; that edit is the coordinator's and is outstanding
+> (§ Updating the master). The **Current state** section is true today (re-verified
 > 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap** section records the
 > decision, because the benchmark measures a capability this product does not
 > have and has decided not to have. This is a child of
@@ -21,8 +23,8 @@ inflect · ai architecture · swe-bench · roadmap v1 · 2026-10-29
 | Wave | none (decision only) |
 | Depends on | — |
 | Unblocks | — |
-| Owner decisions | **D-EV-5** decided 2026-11-11: declined (no capability to measure) |
-| Complete at | Phase 0's recorded decision — **complete 2026-11-11, declined** |
+| Owner decisions | **D-EV-5** decided by the owner 2026-11-11: declined (no capability to measure); the master's decision table does not record it yet |
+| Complete at | Phase 0's recorded decision — decided 2026-11-11 (declined); complete when the master records it |
 
 ## At a glance
 
@@ -92,9 +94,11 @@ roadmap's to take.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Decide, and record (complete 2026-11-11)
+### Phase 0 — Decide, and record (decided 2026-11-11; master record outstanding)
 
-**The record.** D-EV-5 was initialled by the owner on 2026-11-11:
+**The record.** D-EV-5 was decided by the owner on 2026-11-11 (relayed to this
+change by the coordinating session; the owner's initials go in the master's
+decision table, which this change does not edit):
 **declined — no capability to measure.** SWE-bench scores an agent that edits
 a repository and runs its tests. No Inflect agent writes or executes code, and
 that is a decision held in code (`flue/refused-capabilities.ts` and its guard),
@@ -109,11 +113,13 @@ change before the benchmark became relevant, are in
 - [x] 0.1 D-EV-5: retire the box from the target diagram's Validation column,
       or keep it as a placeholder tied to the sandbox refusal. *Declined,
       2026-11-11: the box is answered "declined — no capability to measure".*
-- [x] 0.2 Record the decision in the master's decision table and mark this
+- [ ] 0.2 Record the decision in the master's decision table and mark this
       framework "declined — no capability to measure" or "placeholder".
-      *Recorded here and in the implementation note; the master's status-board
-      and decision-table rows are the coordinator's to flip, and read
-      "declined".*
+      *Outstanding. Recorded here and in the implementation note only. The
+      master is the coordinator's to edit, and at this writing its D-EV-5 row
+      still shows "declined" only as the default-if-undecided, with no date,
+      and its status-board row has no decision. § Updating the master gives
+      the text to write.*
 
 **Prompt.**
 ```text
@@ -144,6 +150,14 @@ Not applicable.
 
 ## Updating the master
 
-Phase 0 is complete: the master's row for SWE-bench reads "declined — no
-capability to measure (D-EV-5, 2026-11-11)". Nothing further unless the sandbox
-refusal is reversed, which reopens this document from its Fit section.
+Outstanding, and the coordinator's to do (this change does not edit the
+master). Write:
+
+- **Status board**, SWE-bench row, current-state column: "declined — no
+  capability to measure (D-EV-5, 2026-11-11)", linking the implementation note.
+- **Decisions for the owner**, D-EV-5: "**decided 2026-11-11** (owner):
+  declined", in place of the default-if-undecided text.
+
+Once both read so, tick 0.2 and the roadmap is complete. Nothing further unless
+the sandbox refusal is reversed, which reopens this document from its Fit
+section.

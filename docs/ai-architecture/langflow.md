@@ -237,7 +237,8 @@ no element that the engine would ignore.
 ### Phase 0 — Decide (done)
 
 D-L2-1 was decided by the owner on 2026-10-29 and is recorded in the master's
-decision table. **D-L2-2 was decided by the owner on 2026-11-11**, adopting the
+decision table. **D-L2-2 was decided by the owner on 2026-11-11** (not yet
+recorded in the master's decision table; § Updating the master), adopting the
 recommended answer: reasoning engines must enforce flow checkpoints before the
 canvas offers a checkpoint node. Enforcement is built in Phase 5.1, and the
 `checkpoint` kind enters the schema and the palette in the same pull request.
@@ -689,6 +690,8 @@ unmapped tool are refused by name. Reopening it is D-L2-1 again.
 ## Updating the master
 
 Flip the row on the master [Status board](../ai-architecture-roadmap.md#status-board)
-per phase. D-L2-2 reads "decided 2026-11-11: engines enforce checkpoints before
-the palette offers one" in the decision table. When Phase 5 lands,
+per phase. Outstanding, and the coordinator's (this change does not edit the
+master, whose D-L2-2 row shows only the default-if-undecided): write D-L2-2 as
+"**decided 2026-11-11** (owner): engines enforce checkpoints before the
+palette offers one" in the decision table. When Phase 5 lands,
 the master's target diagram turns the Layer 2 canvas node green.
