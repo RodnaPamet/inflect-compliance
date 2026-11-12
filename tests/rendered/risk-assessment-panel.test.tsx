@@ -190,6 +190,7 @@ async function renderPanel(props: Partial<React.ComponentProps<typeof RiskAssess
             risk={BASE_RISK}
             matrixConfig={MATRIX as React.ComponentProps<typeof RiskAssessmentPanel>['matrixConfig']}
             canWrite
+            canEditRisk
             canAdmin={false}
             ownerChoices={[]}
             onRiskUpdated={noop}
@@ -284,9 +285,22 @@ describe('RiskAssessmentPanel — residual flow', () => {
     });
 
     it('read-only users see no mutation affordances', async () => {
-        await renderPanel({ canWrite: false });
+        await renderPanel({ canWrite: false, canEditRisk: false });
         expect(screen.queryByText('Accept suggestion')).toBeNull();
         expect(screen.queryByText('Assess residual manually')).toBeNull();
+    });
+});
+
+describe('RiskAssessmentPanel — saves through PUT /risks/:id follow risks.edit', () => {
+    it('a writer without risks.edit may accept the suggestion but is offered no save through the risk', async () => {
+        await renderPanel({ canWrite: true, canEditRisk: false });
+        // Accepting the suggestion asks the write tier only.
+        expect(await screen.findByText('Accept suggestion')).toBeInTheDocument();
+        // The manual residual override, the inherent steppers and the review
+        // date save through PUT /risks/:id, which takes risks.edit.
+        expect(screen.queryByText('Assess residual manually')).toBeNull();
+        expect(document.getElementById('save-review-date-btn')).toBeNull();
+        expect(document.getElementById('apply-status-btn')).toBeNull();
     });
 });
 

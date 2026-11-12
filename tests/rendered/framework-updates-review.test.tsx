@@ -64,7 +64,7 @@ beforeEach(() => {
 
 describe('framework updates', () => {
     it('shows the changelog, the framework by name, the requirement titles and the flagged controls by name', () => {
-        render(<FrameworkUpdatesClient tenantSlug="acme" initialDeltas={[DELTA]} canWrite />);
+        render(<FrameworkUpdatesClient tenantSlug="acme" initialDeltas={[DELTA]} canWrite canCreateFindings />);
         expect(screen.getByTestId('delta-changelog-d1')).toHaveTextContent('Threat intelligence added.');
         expect(screen.getByText('ISO/IEC 27001 v2013 → v2022')).toBeInTheDocument();
         expect(screen.getByText(U.status.NEW)).toBeInTheDocument();
@@ -75,16 +75,23 @@ describe('framework updates', () => {
     });
 
     it('offers no write action to a role the server refuses, and says who can', () => {
-        render(<FrameworkUpdatesClient tenantSlug="acme" initialDeltas={[DELTA]} canWrite={false} />);
+        render(<FrameworkUpdatesClient tenantSlug="acme" initialDeltas={[DELTA]} canWrite={false} canCreateFindings={false} />);
         expect(document.getElementById('delta-review-d1')).toBeNull();
         expect(document.getElementById('delta-materialize-d1')).toBeNull();
         expect(document.getElementById('delta-dismiss-d1')).toBeNull();
         expect(document.getElementById('delta-restricted-d1')).toHaveTextContent(U.restricted);
     });
 
+    it('offers review and dismiss but not Create findings to a writer without findings.create', () => {
+        render(<FrameworkUpdatesClient tenantSlug="acme" initialDeltas={[DELTA]} canWrite canCreateFindings={false} />);
+        expect(document.getElementById('delta-review-d1')).not.toBeNull();
+        expect(document.getElementById('delta-dismiss-d1')).not.toBeNull();
+        expect(document.getElementById('delta-materialize-d1')).toBeNull();
+    });
+
     it('names the action that failed, not the URL segment', async () => {
         global.fetch = jest.fn(async () => reply(500, {})) as unknown as typeof fetch;
-        render(<FrameworkUpdatesClient tenantSlug="acme" initialDeltas={[DELTA]} canWrite />);
+        render(<FrameworkUpdatesClient tenantSlug="acme" initialDeltas={[DELTA]} canWrite canCreateFindings />);
         await act(async () => { fireEvent.click(document.getElementById('delta-materialize-d1')!); });
         expect(document.getElementById('framework-update-error')).toHaveTextContent(U.failed.materialize);
         expect(screen.queryByText(/materialize-findings/)).toBeNull();
@@ -92,7 +99,7 @@ describe('framework updates', () => {
 
     it('says the update is gone on a 404, and who can act on a 403', async () => {
         global.fetch = jest.fn(async () => reply(404, {})) as unknown as typeof fetch;
-        render(<FrameworkUpdatesClient tenantSlug="acme" initialDeltas={[DELTA]} canWrite />);
+        render(<FrameworkUpdatesClient tenantSlug="acme" initialDeltas={[DELTA]} canWrite canCreateFindings />);
         await act(async () => { fireEvent.click(document.getElementById('delta-review-d1')!); });
         expect(document.getElementById('framework-update-error')).toHaveTextContent(U.notFound);
 

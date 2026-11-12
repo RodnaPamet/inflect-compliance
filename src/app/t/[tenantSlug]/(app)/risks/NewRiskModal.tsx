@@ -98,6 +98,13 @@ export interface NewRiskModalProps {
     setOpen: Dispatch<SetStateAction<boolean>>;
     tenantSlug: string;
     apiUrl: (path: string) => string;
+    /**
+     * Linking a control to the new risk is `POST /risks/:id/controls`, which
+     * takes `controls.edit`. A role without it is not offered the picker, so
+     * the create never ends in a "some controls could not be linked" warning
+     * the role could not have avoided.
+     */
+    canLinkControls: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -107,6 +114,7 @@ export function NewRiskModal({
     setOpen,
     tenantSlug,
     apiUrl,
+    canLinkControls,
 }: NewRiskModalProps) {
     const tx = useTranslations('risks');
     // #4692 — the stored value stays English; the label is the user's language.
@@ -136,7 +144,7 @@ export function NewRiskModal({
 
     // ─── Lookups — controls + templates load while the modal is open ───
     const controlsQuery = useTenantSWR<CappedList<ControlOption> | ControlOption[]>(
-        open ? CACHE_KEYS.controls.list() : null,
+        open && canLinkControls ? CACHE_KEYS.controls.list() : null,
     );
     const controls = useMemo<ControlOption[]>(() => {
         // GET /controls returns the backfill-capped `{ rows, truncated }`
@@ -523,6 +531,7 @@ export function NewRiskModal({
                         </FormField>
 
                         {/* Linked controls (optional, collapsible feel) */}
+                        {canLinkControls && (
                         <details className="rounded-lg border border-border-subtle bg-bg-subtle">
                             <summary
                                 className="cursor-pointer px-4 py-2 text-sm text-content-default"
@@ -575,6 +584,7 @@ export function NewRiskModal({
                                 )}
                             </div>
                         </details>
+                        )}
                     </FormSection>
                     </fieldset>
                 </Modal.Body>

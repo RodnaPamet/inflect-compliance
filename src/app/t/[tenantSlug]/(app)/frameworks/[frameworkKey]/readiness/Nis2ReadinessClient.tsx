@@ -72,9 +72,13 @@ export function Nis2ReadinessClient({ tenantSlug }: { tenantSlug: string }) {
     // English and is told so once.
     const lang = locale === 'bg' ? ('bg' as const) : ('en' as const);
     const questionsInEnglish = locale !== 'en' && locale !== 'bg';
-    // `materializeNis2Gaps` asks `assertCanWrite`: a role the server refuses
-    // is not offered the button (#4733), and is told why.
-    const canWrite = useTenantContext().permissions.canWrite;
+    // `materializeNis2Gaps` asks `assertCanWrite`, and its route takes
+    // `findings.create` and `findings.edit` (it opens findings and reopens or
+    // closes earlier ones). A role the server refuses is not offered the
+    // button (#4733), and is told why.
+    const { permissions, appPermissions } = useTenantContext();
+    const canWrite =
+        permissions.canWrite && appPermissions.findings.create && appPermissions.findings.edit;
     const base = `/api/t/${tenantSlug}/onboarding/nis2-assessment`;
 
     const [data, setData] = useState<Payload | null>(null);

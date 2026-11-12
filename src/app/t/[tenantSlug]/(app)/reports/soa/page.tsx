@@ -48,7 +48,11 @@ export default async function SoAPage({
                 report={JSON.parse(JSON.stringify(report))}
                 controls={JSON.parse(JSON.stringify(controls))}
                 tenantSlug={tenantSlug}
-                canEdit={ctx.permissions.canWrite}
+                // Both writes on this page — mapping a control to a
+                // requirement (`POST /reports/soa/map`) and a not-applicable
+                // justification (`PATCH /controls/:id`) — take `controls.edit`
+                // on top of the write tier.
+                canEdit={ctx.permissions.canWrite && ctx.appPermissions.controls.edit}
             />
         </div>
     );

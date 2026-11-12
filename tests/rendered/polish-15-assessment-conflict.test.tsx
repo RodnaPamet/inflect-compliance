@@ -80,6 +80,7 @@ describe('assessment panel — save-conflict warning', () => {
                 risk={BASE}
                 matrixConfig={MATRIX as React.ComponentProps<typeof RiskAssessmentPanel>['matrixConfig']}
                 canWrite
+                canEditRisk
                 canAdmin={false}
                 ownerChoices={[]}
                 onRiskUpdated={() => {}}
@@ -122,6 +123,7 @@ describe('assessment panel — save-conflict warning', () => {
                 risk={BASE}
                 matrixConfig={MATRIX as React.ComponentProps<typeof RiskAssessmentPanel>['matrixConfig']}
                 canWrite
+                canEditRisk
                 canAdmin={false}
                 ownerChoices={[]}
                 onRiskUpdated={() => {}}

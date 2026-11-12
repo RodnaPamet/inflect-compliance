@@ -30,8 +30,13 @@ jest.mock('next-intl', () => {
 });
 
 let canWrite = true;
+// The route also takes `findings.create` and `findings.edit` (#5402).
+let findingsKeys = { create: true, edit: true };
 jest.mock('@/lib/tenant-context-provider', () => ({
-    useTenantContext: () => ({ permissions: { canRead: true, canWrite, canAdmin: false, canAudit: false, canExport: false } }),
+    useTenantContext: () => ({
+        permissions: { canRead: true, canWrite, canAdmin: false, canAudit: false, canExport: false },
+        appPermissions: { findings: { view: true, ...findingsKeys } },
+    }),
 }));
 
 jest.mock('next/navigation', () => ({
@@ -79,6 +84,7 @@ let readinessReply: () => ReturnType<typeof reply>;
 beforeEach(() => {
     locale = 'en';
     canWrite = true;
+    findingsKeys = { create: true, edit: true };
     readinessReply = () => reply(200, payload([gap('CRITICAL')]));
     global.fetch = jest.fn(async () => readinessReply()) as unknown as typeof fetch;
 });
@@ -117,6 +123,17 @@ describe('NIS2 readiness page', () => {
 
     it('does not offer findings to a role the server refuses, and says who can', async () => {
         canWrite = false;
+        render(<Nis2ReadinessClient tenantSlug="acme" />);
+        await screen.findByText('Gap CRITICAL');
+        expect(document.getElementById('nis2-create-findings-btn')).toBeNull();
+        expect(document.getElementById('nis2-create-findings-restricted')).toHaveTextContent(R.createRestricted);
+    });
+
+    it.each([
+        ['findings.create', { create: false, edit: true }],
+        ['findings.edit', { create: true, edit: false }],
+    ])('does not offer findings to a writer without %s', async (_key, keys) => {
+        findingsKeys = keys;
         render(<Nis2ReadinessClient tenantSlug="acme" />);
         await screen.findByText('Gap CRITICAL');
         expect(document.getElementById('nis2-create-findings-btn')).toBeNull();

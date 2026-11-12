@@ -110,6 +110,7 @@ export default async function RisksPage({
             permissions={ctx.permissions}
             bulkPermissions={riskBulkPermissions(ctx)}
             canCreate={riskCanCreate(ctx)}
+            canLinkControls={ctx.appPermissions.controls.edit}
             translations={{
                 title: t('title'),
                 listDescription: t('listDescription'),

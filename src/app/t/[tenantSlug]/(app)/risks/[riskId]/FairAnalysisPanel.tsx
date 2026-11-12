@@ -160,8 +160,10 @@ export function FairAnalysisPanel({
     const apiUrl = useTenantApiUrl();
     const money = useMoneyFormatter();
     /**
-     * `updateRiskFair` asserts canWrite. The panel mounts on the
-     * quantification tab for every reader, so Save was a guaranteed 403.
+     * `PUT /risks/:id/fair` takes `risks.edit` and `updateRiskFair` asserts
+     * canWrite, so Save is offered only to a role holding both. The panel
+     * mounts on the quantification tab for every reader, so Save was a
+     * guaranteed 403 for them.
      *
      * The inputs stay interactive deliberately: exploring what a different
      * TEF or loss magnitude would do to the distribution is a legitimate
@@ -169,8 +171,8 @@ export function FairAnalysisPanel({
      * cost more than it protects. What changes is that we no longer offer a
      * Save that cannot work — the notice says the exploration is local.
      */
-    const { permissions } = useTenantContext();
-    const canWrite = permissions.canWrite;
+    const { permissions, appPermissions } = useTenantContext();
+    const canWrite = permissions.canWrite && appPermissions.risks.edit;
     const [triples, setTriples] = useState<Triples>(() => seedTriples(initial));
     const [conf, setConf] = useState<Conf | null>(initial.fairConfidence);
     // PR-L — secondary-loss monetary estimates (regulatory fine, reputation,

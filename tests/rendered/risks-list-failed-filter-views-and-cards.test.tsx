@@ -136,6 +136,7 @@ function mount() {
                     permissions={{ canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true }}
                     bulkPermissions={{ canEdit: true, canDelete: true }}
                     canCreate
+                    canLinkControls
                     translations={translations}
                 />
             </TooltipProvider>
