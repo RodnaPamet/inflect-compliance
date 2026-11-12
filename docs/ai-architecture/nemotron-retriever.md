@@ -60,7 +60,9 @@ flowchart LR
   `/v1/embeddings` and `/rerank` that refuses an answer from any model but the
   configured one (the embeddings response's `model`, the reranker's `/info`),
   one transport that dials only addresses inside the deployment's perimeter
-  (`perimeter.ts`, `http.ts`: every resolved address, pinned, no redirects,
+  (`http.ts` over the shared in-deployment dial, `src/lib/ai/in-deployment-service.ts`,
+  which the Docling parser and the NeMo guard provider use too: every resolved
+  address, pinned, no redirects,
   deadline over the whole call, byte-capped body), a
   deterministic stub the factory never chooses, the retriever revision key
   and the `embeddings.requests` metric. With `AI_EMBED_LOCAL_*` /
@@ -225,8 +227,13 @@ backend inside the perimeter and a stub for tests; no sub-processor touched.
       pinned), and refuses a public one by name
       (`EMBED_ENDPOINT_OUTSIDE_PERIMETER`, `ENDPOINT_OUTSIDE_PERIMETER`).
       `safeFetch` is the wrong test here: it admits only public addresses,
-      which are exactly the ones that make the residency claim false — the
-      local AI gateway's reason (`tests/guards/ssrf-egress-coverage.test.ts`).
+      which are exactly the ones that make the residency claim false. The rule
+      is the one every in-deployment service is held to (G6 as amended by the
+      owner on 2026-11-12, `src/lib/ai/in-deployment-service.ts`, shared with
+      the Docling parser and the NeMo guard provider): one operator variable
+      read by one module, every resolved address inside, pinned, no redirect,
+      deadline, a byte cap that aborts (`tests/guards/ssrf-egress-coverage.test.ts`,
+      "THE IN-DEPLOYMENT SERVICES").
       `AI_EMBED_LOCAL_MODEL` must equal the container's `--model-id`.
 - [x] 1.2 `src/env.ts`: `AI_EMBED_LOCAL_BASE_URL`, `AI_EMBED_LOCAL_MODEL`
       (optional; absent = no local embedding provider constructed), plus
@@ -241,8 +248,9 @@ backend inside the perimeter and a stub for tests; no sub-processor touched.
       routed elsewhere), `tei-provider.ts` (OpenAI-compatible `/v1/embeddings`;
       the served model must be the configured one), `stub-provider.ts`
       (deterministic hashed vectors for tests). The transport is `http.ts`,
-      the directory's only fetch, held to the perimeter rule in `perimeter.ts`
-      rather than `safeFetch`.
+      the directory's JSON adapter over the shared in-deployment dial
+      (`src/lib/ai/in-deployment-service.ts`), not `safeFetch`; no file in
+      the directory makes a fetch call of its own.
 - [x] 1.4 The factory returns before constructing anything external
       (residency is structural — the `identity-match/index.ts` pattern); the
       residency guard's constructor pin gains the new set.
@@ -254,16 +262,17 @@ backend inside the perimeter and a stub for tests; no sub-processor touched.
 ```text
 Context (main 3.338.0): routing is residency-based (flue/model-selection.ts); the
 identity-match provider factory returns BEFORE constructing an external provider and
-tests/guards/ai-residency-enforcement.test.ts pins the constructor set; outbound calls go
-through safeFetch and new hosts join tests/guards/ssrf-egress-coverage.test.ts's
-population; the Compose file is repo-canonical and images are digest-pinned. Phase 0
+tests/guards/ai-residency-enforcement.test.ts pins the constructor set; outbound calls to
+hosts outside the deployment go through safeFetch, calls to a service run inside it go
+through src/lib/ai/in-deployment-service.ts (G6 as amended 2026-11-12), and new hosts join
+tests/guards/ssrf-egress-coverage.test.ts's population; the Compose file is repo-canonical and images are digest-pinned. Phase 0
 recorded the model, digest and benchmark.
 
 Task: add the embedding seam. (1) A `tei-embed` service (TEI CPU, digest-pinned, model
 volume, no published port). (2) AI_EMBED_LOCAL_BASE_URL / AI_EMBED_LOCAL_MODEL in
 src/env.ts, optional. (3) src/lib/ai/embeddings/: types.ts, select.ts (residency routing
 — inflect-local only; a LOCAL_ONLY tenant with no local route is refused with a named
-reason), tei-provider.ts (POST /v1/embeddings via safeFetch, inputType mapped to the
+reason), tei-provider.ts (POST /v1/embeddings via the in-deployment dial, inputType mapped to the
 model's query/passage prefixes, batch ≤ 64, abort on timeout, degrade rather than throw),
 stub-provider.ts (deterministic). (4) Factory that returns before constructing anything
 external; extend the residency guard's pinned constructor set in the same diff. (5)
@@ -281,8 +290,8 @@ against the real provider in the integration project.
 ```
 
 **Hardening.** G1 (residency first, structural), G6 (hosts are config, reads
-bounded, the SSRF guard's population; the address test is the perimeter's,
-not `safeFetch`'s — see 1.1), G5 (image + volume, no Python in the app image), G9 (absent
+bounded, the SSRF guard's population; the address test is the in-deployment
+rule's, not `safeFetch`'s — see 1.1), G5 (image + volume, no Python in the app image), G9 (absent
 config = no provider), checklist §3/§4 (runtime wiring, outcome metric). The
 `inputType` mapping is not cosmetic: asymmetric retrieval models score query
 and passage differently, and mixing them silently degrades recall.

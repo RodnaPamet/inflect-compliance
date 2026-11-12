@@ -14,6 +14,13 @@
  *
  * A new outbound sink on a tenant-derived URL must use `safeFetch` (and be added
  * to SINKS) or this fails CI.
+ *
+ * `safeFetch` is the rule for every host OUTSIDE the deployment. The services
+ * the operator runs INSIDE it — the Docling parser, the NeMo guard server, the
+ * TEI embedder and reranker — are held to the inverse rule instead (G6 as
+ * amended 2026-11-12; "THE IN-DEPLOYMENT SERVICES" below): an operator URL read
+ * by exactly one module, every resolved address inside the deployment, pinned,
+ * deadline-bounded, byte-capped, no redirect.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -25,6 +32,7 @@ jest.mock('node:dns', () => ({
 }));
 
 import { assertPublicAddress, isPrivateAddress, SsrfBlockedError } from '@/app-layer/automation/webhook-safety';
+import { IN_DEPLOYMENT_SERVICES } from '@/lib/ai/in-deployment-service';
 import { functionBodyOf, codeOf as blankComments } from '../helpers/source-blocks';
 import { repoRelativeFiles } from '../helpers/repo-files';
 
@@ -125,13 +133,6 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
             "issuer's discovery document names the token endpoint and the key set.",
         noBareFetchOf: 'fetch(discoveryUrl',
     },
-    {
-        file: 'src/app-layer/ai/guard/providers/nemo-provider.ts',
-        reason:
-            "The AI guard's NeMo Guardrails provider: an operator-configured base URL " +
-            '(AI_GUARD_NEMO_BASE_URL) that receives tenant text on every guarded call.',
-        noBareFetchOf: 'fetch(endpoint.url',
-    },
 ];
 
 /**
@@ -160,12 +161,10 @@ const MCP_CLIENTS: readonly string[] = [
     // another organisation's agent is exactly the request that must not find a
     // second way out.
     'src/lib/agentic/a2a/client.ts',
-    // The FOURTH (ragflow.md Phase 1, D-L4-4): the DocumentParser seam's
-    // Docling backend. Its host is operator config, not a tenant column, but it
-    // carries tenant documents out of the process and reads back text a model
-    // will see — so it takes the one wire too, cap and deadline included,
-    // rather than growing a capped reader of its own.
-    'src/lib/ai/parsing/docling-provider.ts',
+    // The DocumentParser seam's Docling backend was a FOURTH entry until the
+    // owner's G6 amendment (2026-11-12): it is an IN-DEPLOYMENT service, so it
+    // left the one wire — whose `safeFetch` refused the Compose network it
+    // lives on — for the in-deployment dial, where it is held below.
 ];
 
 describe('SSRF — every tenant-controlled sink routes through safeFetch', () => {
@@ -272,8 +271,9 @@ describe('SSRF — the MCP clients reach the network only through the shared tra
         // reader checking "is the MCP client covered?" finds yes for one of two
         // and is unlikely to ask which. Pinning the denominator makes a future
         // omission loud.
-        // Four since the DocumentParser seam's Docling client joined the wire.
-        expect(MCP_CLIENTS).toHaveLength(4);
+        // Three: the Docling client joined the wire and then left it for the
+        // in-deployment dial (G6 as amended 2026-11-12), where it is held below.
+        expect(MCP_CLIENTS).toHaveLength(3);
     });
 });
 
@@ -305,78 +305,124 @@ describe('SSRF — the OIDC client reaches the identity provider only through sa
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
- *  THE EMBEDDING SEAM — the second sink that must NOT route through safeFetch
+ *  THE IN-DEPLOYMENT SERVICES — the sinks that must NOT route through safeFetch
  * ══════════════════════════════════════════════════════════════════════════
  *
- * `src/lib/ai/embeddings/` dials a TEI service named by OPERATOR config
- * (`AI_EMBED_LOCAL_BASE_URL`, `AI_RERANK_LOCAL_BASE_URL`), under the provider
- * id `inflect-local` — a residency claim. It is not in `SINKS`, for the local
- * AI gateway's reason below: `safeFetch` admits only PUBLIC addresses, which
- * are exactly the addresses that make the claim false. It was in `SINKS` once,
- * and the only base URLs it could then reach were off-perimeter ones, so a
- * `LOCAL_ONLY` tenant's passages could leave under a local id.
+ * G6 as amended by the owner (2026-11-12): an IN-DEPLOYMENT service — an
+ * operator-set URL, read by exactly one module, never tenant-writable — must
+ * resolve to an address INSIDE the deployment (RFC 1918, loopback, IPv6 ULA;
+ * every resolved address) and is dialled with a deadline and a byte cap that
+ * aborts. `safeFetch` stays the rule for every host outside it.
  *
- * So its dial asks the INVERSE question (`perimeter.ts`): every address the
- * host resolves to must be inside the perimeter, the connection is pinned to
- * them, redirects are refused. This section holds the shape that makes that
- * the only way out:
+ * `safeFetch` is the WRONG test for these, not merely a stricter one: it admits
+ * only PUBLIC addresses, which for a service on the Compose network is every
+ * address but the right one. The embedding seam was in `SINKS` once and could
+ * then reach only off-perimeter hosts under the residency claim
+ * `inflect-local`; the Docling parser and the NeMo guard provider sat on the
+ * safeFetch path until the amendment, and each refused its own in-Compose
+ * server on every call.
  *
- *   • no file in the directory but the transport makes a fetch call;
- *   • the transport's only network call is undici's fetch, inside
- *     `perimeterFetch`, after the perimeter resolution and pinned to it;
- *   • every request goes through `perimeterFetch`;
- *   • no injectable fetch.
+ * So there is ONE dial, `src/lib/ai/in-deployment-service.ts`, and this section
+ * holds the chain that makes it safe to have:
  *
- * The population is git's, so a new file in the directory is in it the day it
- * lands. The address rule itself is exercised in
- * `tests/unit/ai/embedding-perimeter.test.ts`.
+ *   1. the dial resolves inside the deployment BEFORE it dials, pins the
+ *      connection to the checked addresses, refuses redirects, and offers no
+ *      injectable fetch;
+ *   2. exactly the registered client modules call it, and none of them — nor
+ *      any file in their directories — makes a fetch call of its own;
+ *   3. each client is constructed only by the module that reads its service's
+ *      variable;
+ *   4. each service's variable has exactly ONE reader (besides its
+ *      declaration), derived from the tree — the `AI_LOCAL_BASE_URL`
+ *      precedent below — and that reader takes it from `env`.
+ *
+ * Together: the only URL that reaches the dial is an operator's. The address
+ * rule itself, and the dial's behaviour, are exercised in
+ * `tests/unit/ai/in-deployment-service.test.ts`.
  */
-const EMBEDDINGS_DIR = 'src/lib/ai/embeddings/';
-const EMBEDDINGS_TRANSPORT = 'src/lib/ai/embeddings/http.ts';
+const IN_DEPLOYMENT_DIAL = 'src/lib/ai/in-deployment-service.ts';
 
-const embeddingProviderFiles = () =>
-    repoRelativeFiles().filter((f) => f.startsWith(EMBEDDINGS_DIR) && f.endsWith('.ts') && f !== EMBEDDINGS_TRANSPORT);
+/** The modules that call the dial, and why each is an in-deployment service. */
+const IN_DEPLOYMENT_CLIENTS: Record<string, string> = {
+    'src/lib/ai/embeddings/http.ts':
+        "The embedding seam's JSON adapter, for the TEI embedder and reranker (`inflect-local`, a residency claim).",
+    'src/lib/ai/parsing/docling-provider.ts':
+        "The DocumentParser seam's Docling backend (ragflow.md Phase 1, D-L4-4): tenant documents in, text a model will see out.",
+    'src/app-layer/ai/guard/providers/nemo-provider.ts':
+        "The AI guard's NeMo Guardrails provider: tenant text on every guarded call, and a verdict back.",
+};
 
-const embeddingFilesWithTheirOwnFetch = () => embeddingProviderFiles().filter((f) => ANY_FETCH_CALL.test(codeOf(f)));
+/** For each client module, the ONE module that imports it (step 3). */
+const CLIENT_CONSTRUCTED_BY: Record<string, { module: string; importedAs: RegExp }> = {
+    'src/lib/ai/embeddings/http.ts': {
+        module: 'src/lib/ai/embeddings/tei-provider.ts',
+        importedAs: /from '(\.|@\/lib\/ai\/embeddings)\/http'/,
+    },
+    'src/lib/ai/embeddings/tei-provider.ts': {
+        module: 'src/lib/ai/embeddings/select.ts',
+        importedAs: /from '(\.|@\/lib\/ai\/embeddings)\/tei-provider'/,
+    },
+    'src/lib/ai/parsing/docling-provider.ts': {
+        module: 'src/lib/ai/parsing/index.ts',
+        importedAs: /from '(\.|@\/lib\/ai\/parsing)\/docling-provider'/,
+    },
+    'src/app-layer/ai/guard/providers/nemo-provider.ts': {
+        module: 'src/app-layer/ai/guard/providers/registry.ts',
+        importedAs: /from '(\.|@\/app-layer\/ai\/guard\/providers)\/nemo-provider'/,
+    },
+};
 
-/** Every fetch-shaped call in the transport, by the function that makes it. */
-function transportFetchCallsByFunction(): Record<string, string[]> {
-    const code = codeOf(EMBEDDINGS_TRANSPORT);
+/** For each service's variable, the ONE module that reads it (step 4). */
+const IN_DEPLOYMENT_READERS: Record<keyof typeof IN_DEPLOYMENT_SERVICES, string> = {
+    'doc-parser': 'src/lib/ai/parsing/index.ts',
+    'ai-guard-nemo': 'src/app-layer/ai/guard/providers/registry.ts',
+    embed: 'src/lib/ai/embeddings/select.ts',
+    rerank: 'src/lib/ai/embeddings/select.ts',
+};
+
+/** Directories whose every file belongs to an in-deployment client, and so makes no fetch call. */
+const IN_DEPLOYMENT_CLIENT_DIRS = ['src/lib/ai/embeddings/', 'src/lib/ai/parsing/'];
+
+const srcTsFiles = () => repoRelativeFiles().filter((f) => f.startsWith('src/') && /\.tsx?$/.test(f));
+
+const inDeploymentClientPopulation = () =>
+    [
+        ...repoRelativeFiles().filter((f) => IN_DEPLOYMENT_CLIENT_DIRS.some((d) => f.startsWith(d)) && f.endsWith('.ts')),
+        ...Object.keys(IN_DEPLOYMENT_CLIENTS),
+    ].filter((f, i, all) => all.indexOf(f) === i);
+
+const inDeploymentClientsWithTheirOwnFetch = () =>
+    inDeploymentClientPopulation().filter((f) => ANY_FETCH_CALL.test(codeOf(f)));
+
+const inDeploymentClientsWithAFetchSeam = () =>
+    inDeploymentClientPopulation().filter((f) => codeOf(f).includes('fetchImpl'));
+
+/** Every fetch-shaped call in the dial, by the function that makes it. */
+function dialFetchCallsByFunction(): Record<string, string[]> {
+    const code = codeOf(IN_DEPLOYMENT_DIAL);
     const out: Record<string, string[]> = {};
-    for (const fn of ['perimeterFetch', 'requestJsonBounded']) {
+    for (const fn of ['pinnedFetch', 'inDeploymentRequest']) {
         const calls = (functionBodyOf(code, fn).match(/\w*fetch\s*\(/gi) ?? []).map((c) => c.replace(/\s+/g, ''));
-        // The extracted block starts at the signature, so `perimeterFetch(`
-        // names itself first; that is the declaration, not a call.
+        // The extracted block starts at the signature, so `pinnedFetch(` names
+        // itself first; that is the declaration, not a call.
         out[fn] = calls[0] === `${fn}(` ? calls.slice(1) : calls;
     }
     return out;
 }
 
-describe('SSRF — the embedding seam reaches the network only through its perimeter dial', () => {
-    it('no other file in the directory contains a fetch call', () => {
-        // The denominator first: the scan must cover the providers it guards.
-        expect(embeddingProviderFiles()).toEqual(
-            expect.arrayContaining([
-                `${EMBEDDINGS_DIR}tei-provider.ts`,
-                `${EMBEDDINGS_DIR}select.ts`,
-                `${EMBEDDINGS_DIR}perimeter.ts`,
-            ]),
-        );
-        expect(embeddingFilesWithTheirOwnFetch()).toEqual([]);
-    });
-
-    it('the only network call is undici fetch inside perimeterFetch, and every request dials through it', () => {
-        expect(transportFetchCallsByFunction()).toEqual({
-            perimeterFetch: ['undiciFetch('],
-            requestJsonBounded: ['perimeterFetch('],
+describe('SSRF — the in-deployment dial resolves inside the deployment, pins, and follows nothing', () => {
+    it('the only network call is undici fetch inside pinnedFetch, and every request dials through it', () => {
+        expect(dialFetchCallsByFunction()).toEqual({
+            pinnedFetch: ['undiciFetch('],
+            inDeploymentRequest: ['pinnedFetch('],
         });
         // And nothing else in the file makes one: the two calls above plus
-        // `perimeterFetch`'s own declaration are the whole file's.
-        expect((codeOf(EMBEDDINGS_TRANSPORT).match(/\w*fetch\s*\(/gi) ?? []).length).toBe(3);
+        // `pinnedFetch`'s own declaration are the whole file's.
+        expect((codeOf(IN_DEPLOYMENT_DIAL).match(/\w*fetch\s*\(/gi) ?? []).length).toBe(3);
     });
 
-    it('perimeterFetch resolves inside the perimeter before it dials, pins the connection, and refuses redirects', () => {
-        const body = functionBodyOf(codeOf(EMBEDDINGS_TRANSPORT), 'perimeterFetch');
+    it('pinnedFetch resolves inside the deployment before it dials, pins the connection, and refuses redirects', () => {
+        const body = functionBodyOf(codeOf(IN_DEPLOYMENT_DIAL), 'pinnedFetch');
         const resolveAt = body.indexOf('resolvePerimeterAddresses(');
         const dialAt = body.indexOf('undiciFetch(');
         const spreadAt = body.indexOf('...init');
@@ -389,10 +435,102 @@ describe('SSRF — the embedding seam reaches the network only through its perim
         }).toEqual({ resolvesFirst: true, pinned: true, manualAfterSpread: true });
     });
 
-    it('the transport has no injectable fetch to route around the perimeter check', () => {
-        // A `fetchImpl` option on a production module is a path around the
-        // address check that reads as dependency injection (the MCP client's rule).
-        expect(codeOf(EMBEDDINGS_TRANSPORT).includes('fetchImpl')).toBe(false);
+    it('the dial has no injectable fetch to route around the address check', () => {
+        expect(codeOf(IN_DEPLOYMENT_DIAL).includes('fetchImpl')).toBe(false);
+    });
+});
+
+describe('SSRF — the in-deployment clients reach the network only through the dial', () => {
+    it('exactly the registered clients call the dial', () => {
+        const callers = srcTsFiles()
+            .filter((f) => f !== IN_DEPLOYMENT_DIAL)
+            .filter((f) => /\binDeploymentRequest\s*\(/.test(codeOf(f)));
+        expect(callers.sort()).toEqual(Object.keys(IN_DEPLOYMENT_CLIENTS).sort());
+    });
+
+    it('no client, and no file in a client directory, makes a fetch call of its own', () => {
+        // The denominator first: the scan must cover the clients it guards.
+        expect(inDeploymentClientPopulation()).toEqual(
+            expect.arrayContaining([
+                ...Object.keys(IN_DEPLOYMENT_CLIENTS),
+                'src/lib/ai/embeddings/tei-provider.ts',
+                'src/lib/ai/embeddings/select.ts',
+                'src/lib/ai/parsing/index.ts',
+            ]),
+        );
+        expect(inDeploymentClientsWithTheirOwnFetch()).toEqual([]);
+    });
+
+    it('no client carries a fetch seam — a path around the address rule that reads as dependency injection', () => {
+        expect(inDeploymentClientsWithAFetchSeam()).toEqual([]);
+    });
+
+    it('no client is on the safeFetch path any longer', () => {
+        // The amendment's point: a client still importing `safeFetch` or the MCP
+        // wire would be refusing its own in-Compose server again.
+        const onTheOldPath = Object.keys(IN_DEPLOYMENT_CLIENTS).filter((f) =>
+            /safeFetch|webhook-safety|wire-transport/.test(codeOf(f)),
+        );
+        expect(onTheOldPath).toEqual([]);
+    });
+
+    it('each client is imported by exactly one module, ending at the one that reads its variable', () => {
+        const importers = Object.fromEntries(
+            Object.entries(CLIENT_CONSTRUCTED_BY).map(([client, { importedAs }]) => [
+                client,
+                srcTsFiles().filter((f) => f !== client && importedAs.test(codeOf(f))),
+            ]),
+        );
+        expect(importers).toEqual(
+            Object.fromEntries(Object.entries(CLIENT_CONSTRUCTED_BY).map(([client, { module }]) => [client, [module]])),
+        );
+    });
+});
+
+describe('SSRF — each in-deployment service URL is operator config read by exactly one module', () => {
+    it('every service the dial knows has a classified reader, and no classified reader is stale', () => {
+        expect(Object.keys(IN_DEPLOYMENT_READERS).sort()).toEqual(Object.keys(IN_DEPLOYMENT_SERVICES).sort());
+    });
+
+    it('exactly its declaration and its one reader name each variable', () => {
+        const found = Object.fromEntries(
+            Object.values(IN_DEPLOYMENT_SERVICES).map((variable) => [
+                variable,
+                // Comments stripped: prose naming the variable is not a read.
+                // The dial is left out: it NAMES each variable in its registry
+                // as a string, and reads none (asserted below).
+                srcTsFiles()
+                    .filter((f) => f !== IN_DEPLOYMENT_DIAL && codeOf(f).includes(variable))
+                    .sort(),
+            ]),
+        );
+        const expected = Object.fromEntries(
+            Object.entries(IN_DEPLOYMENT_SERVICES).map(([service, variable]) => [
+                variable,
+                ['src/env.ts', IN_DEPLOYMENT_READERS[service as keyof typeof IN_DEPLOYMENT_SERVICES]].sort(),
+            ]),
+        );
+        expect(found).toEqual(expected);
+    });
+
+    it('the dial reads no environment at all, so the names in its registry are labels, not reads', () => {
+        // If the dial could read a variable itself, a caller could reach a
+        // service without going through that service's one reader.
+        const code = codeOf(IN_DEPLOYMENT_DIAL);
+        expect({ importsEnv: /from '@\/env(-client)?'/.test(code), readsProcessEnv: code.includes('process.env') }).toEqual({
+            importsEnv: false,
+            readsProcessEnv: false,
+        });
+    });
+
+    it('each reader takes its variable from the operator env module', () => {
+        const fromEnv = Object.entries(IN_DEPLOYMENT_SERVICES)
+            .filter(([service, variable]) => {
+                const code = codeOf(IN_DEPLOYMENT_READERS[service as keyof typeof IN_DEPLOYMENT_SERVICES]);
+                return code.includes(`env.${variable}`) && /from '@\/env'/.test(code);
+            })
+            .map(([service]) => service);
+        expect(fromEnv.sort()).toEqual(Object.keys(IN_DEPLOYMENT_SERVICES).sort());
     });
 });
 

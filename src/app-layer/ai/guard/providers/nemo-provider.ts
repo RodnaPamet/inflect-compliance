@@ -19,23 +19,28 @@
  *     body, a response shape this client does not recognise, content it could
  *     not serialise — returns `providerUnavailable('nemo', kind)` and logs the
  *     reason (never the content). Unrecognised is not clean.
- *   - **`safeFetch` in an EXPLICIT branch**, never `fetchImpl ?? safeFetch`, so
- *     `tests/guards/ssrf-egress-coverage.test.ts` has a literal call to find
- *     and exactly one path reaches the network unprotected: the test seam. No
- *     file under `src/` passes `fetchImpl`; `registry.ts` passes the base URL
- *     alone.
- *   - **https or nothing, decided here from the URL, above the test seam.**
- *     The base URL is operator config (`AI_GUARD_NEMO_BASE_URL`, read only by
- *     `registry.ts`), never tenant-writable (G6). `safeFetch` also refuses a
- *     private address unless the self-hosted egress allowlist admits it — see
- *     the implementation note for what that means for an in-Compose server.
+ *   - **The in-deployment rule, not `safeFetch`** (G6 as amended 2026-11-12).
+ *     The server is one WE run inside the deployment, so the request goes
+ *     through `inDeploymentRequest` (`src/lib/ai/in-deployment-service.ts`):
+ *     http or https, every address the host resolves to inside the deployment
+ *     (RFC 1918, loopback, IPv6 ULA) with the connection pinned to them, no
+ *     redirect followed. A public address is REFUSED before anything is sent
+ *     (`EGRESS_REFUSED`) — a guard server outside the deployment would be a
+ *     sub-processor receiving tenant text. Behind `safeFetch` the opposite
+ *     held: an in-Compose server was refused on every scan.
+ *   - **No fetch seam.** This file makes no fetch call and takes no
+ *     `fetchImpl`; tests mock `undici` and `node:dns`, so the address rule runs
+ *     in every test. `tests/guards/ssrf-egress-coverage.test.ts` holds both.
+ *   - **The base URL is operator config** (`AI_GUARD_NEMO_BASE_URL`, read only
+ *     by `registry.ts`), never tenant-writable (G6).
  *   - **One deadline over the request AND the body, and a byte cap that ABORTS
- *     the read.** Never `res.json()` then a length check.
+ *     the read.** Both are the shared dial's; never `res.json()` then a length
+ *     check.
  *   - **Rule ids carry no content.** A rail's name is reduced to `[a-z0-9_]`
  *     and capped before it becomes `rail.<name>` (namespaced `nemo.` by
  *     `compose.ts`).
  */
-import { safeFetch } from '@/app-layer/automation/webhook-safety';
+import { checkPerimeterUrl, inDeploymentRequest, type InDeploymentFailure } from '@/lib/ai/in-deployment-service';
 import { logger } from '@/lib/observability/logger';
 import type { ScanResult } from '../injection-scanner';
 import { providerUnavailable } from './compose';
@@ -63,7 +68,10 @@ export type NemoScanFailure =
     | 'SCHEME_REFUSED'
     | 'REQUEST_UNSERIALISABLE'
     | 'REQUEST_TOO_LARGE'
+    /** The URL, or an address it resolves to, is outside the deployment; or a redirect. Nothing scanned. */
     | 'EGRESS_REFUSED'
+    /** The host did not resolve, or the socket failed: nothing answered. */
+    | 'UNREACHABLE'
     | 'TIMEOUT'
     | 'HTTP_ERROR'
     | 'TOO_LARGE'
@@ -71,17 +79,13 @@ export type NemoScanFailure =
     | 'UNRECOGNISED_RESPONSE';
 
 export interface NemoProviderOptions {
-    /** The server's base URL, e.g. `https://nemo-guardrails.internal:8000`. */
+    /** The server's base URL inside the deployment, e.g. `http://nemo-guardrails:8000`. */
     readonly baseUrl: string;
     readonly timeoutMs?: number;
-    /** Test seam. The ONLY path that reaches the network unprotected. No caller under `src/` passes one. */
-    readonly fetchImpl?: (url: string, init: RequestInit) => Promise<Response>;
 }
 
 /** What the NeMo rail type for each direction is called. */
 const RAIL_TYPE: Record<GuardScanKind, 'input' | 'output'> = { input: 'input', egress: 'output' };
-
-class CapExceeded extends Error {}
 
 type Outcome = { readonly ok: true; readonly scan: ScanResult } | { readonly ok: false; readonly reason: NemoScanFailure };
 
@@ -98,7 +102,11 @@ export function nemoEndpoint(baseUrl: string): { ok: true; url: string } | { ok:
     if (parsed.username || parsed.password || parsed.search || parsed.hash) {
         return { ok: false, reason: 'CONFIG_INVALID' };
     }
-    if (parsed.protocol !== 'https:') return { ok: false, reason: 'SCHEME_REFUSED' };
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { ok: false, reason: 'SCHEME_REFUSED' };
+    // The structural half of the in-deployment rule, asked once here: a public
+    // literal or a metadata host is refused as configuration, before any
+    // content is prepared. A NAME is judged by what it resolves to, at the dial.
+    if (!checkPerimeterUrl(parsed.href).ok) return { ok: false, reason: 'EGRESS_REFUSED' };
     const base = `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
     return { ok: true, url: `${base}${NEMO_CHECK_PATH}` };
 }
@@ -170,31 +178,17 @@ export function parseNemoVerdict(kind: GuardScanKind, body: unknown): Outcome {
     return { ok: true, scan: { verdict: 'malicious', ruleIds, maxSeverity: 'high' } };
 }
 
-async function readCapped(res: Response, controller: AbortController): Promise<string> {
-    const declared = Number(res.headers.get('content-length') ?? '');
-    if (Number.isFinite(declared) && declared > NEMO_MAX_RESPONSE_BYTES) {
-        controller.abort();
-        throw new CapExceeded();
-    }
-    const stream = res.body;
-    if (!stream) return '';
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let total = 0;
-    let out = '';
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        if (total > NEMO_MAX_RESPONSE_BYTES) {
-            await reader.cancel().catch(() => undefined);
-            controller.abort();
-            throw new CapExceeded();
-        }
-        out += decoder.decode(value, { stream: true });
-    }
-    return out + decoder.decode();
-}
+/** The dial's failure → this provider's reason. Every one of them fails closed. */
+const DIAL_FAILURE: Record<InDeploymentFailure, NemoScanFailure> = {
+    OUTSIDE_DEPLOYMENT: 'EGRESS_REFUSED',
+    REDIRECT_REFUSED: 'EGRESS_REFUSED',
+    UNRESOLVABLE: 'UNREACHABLE',
+    NETWORK_ERROR: 'UNREACHABLE',
+    TIMEOUT: 'TIMEOUT',
+    ABORTED: 'TIMEOUT',
+    HTTP_STATUS: 'HTTP_ERROR',
+    RESPONSE_TOO_LARGE: 'TOO_LARGE',
+};
 
 async function ask(opts: NemoProviderOptions, kind: GuardScanKind, content: unknown): Promise<Outcome> {
     const endpoint = nemoEndpoint(opts.baseUrl);
@@ -208,42 +202,20 @@ async function ask(opts: NemoProviderOptions, kind: GuardScanKind, content: unkn
     const body = requestBody(kind, subject.text);
     if (Buffer.byteLength(body, 'utf8') > NEMO_MAX_REQUEST_BYTES) return { ok: false, reason: 'REQUEST_TOO_LARGE' };
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? NEMO_TIMEOUT_MS);
+    const res = await inDeploymentRequest(
+        'ai-guard-nemo',
+        endpoint.url,
+        { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body },
+        { deadlineMs: opts.timeoutMs ?? NEMO_TIMEOUT_MS, maxResponseBytes: NEMO_MAX_RESPONSE_BYTES },
+    );
+    if (!res.ok) return { ok: false, reason: DIAL_FAILURE[res.reason] };
+    let parsed: unknown;
     try {
-        const init: RequestInit = {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', accept: 'application/json' },
-            body,
-            signal: controller.signal,
-        };
-        let res: Response;
-        try {
-            res = opts.fetchImpl ? await opts.fetchImpl(endpoint.url, init) : await safeFetch(endpoint.url, init);
-        } catch {
-            return { ok: false, reason: controller.signal.aborted ? 'TIMEOUT' : 'EGRESS_REFUSED' };
-        }
-        if (!res.ok) {
-            await res.body?.cancel().catch(() => undefined);
-            return { ok: false, reason: 'HTTP_ERROR' };
-        }
-        let text: string;
-        try {
-            text = await readCapped(res, controller);
-        } catch (e) {
-            if (e instanceof CapExceeded) return { ok: false, reason: 'TOO_LARGE' };
-            return { ok: false, reason: controller.signal.aborted ? 'TIMEOUT' : 'EGRESS_REFUSED' };
-        }
-        let parsed: unknown;
-        try {
-            parsed = JSON.parse(text);
-        } catch {
-            return { ok: false, reason: 'NOT_JSON' };
-        }
-        return parseNemoVerdict(kind, parsed);
-    } finally {
-        clearTimeout(timer);
+        parsed = JSON.parse(res.text);
+    } catch {
+        return { ok: false, reason: 'NOT_JSON' };
     }
+    return parseNemoVerdict(kind, parsed);
 }
 
 /**
@@ -259,7 +231,8 @@ export function createNemoGuardProvider(opts: NemoProviderOptions): GuardProvide
             try {
                 outcome = await ask(opts, kind, content);
             } catch {
-                outcome = { ok: false, reason: 'EGRESS_REFUSED' };
+                // The dial never throws; anything here is a defect, and a defect fails closed.
+                outcome = { ok: false, reason: 'UNREACHABLE' };
             }
             if (outcome.ok) return outcome.scan;
             // The reason only — never the content, never the URL.

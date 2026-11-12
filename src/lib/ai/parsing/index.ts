@@ -6,7 +6,10 @@
  * holds that). The rule is G9's: the operator names `DOC_PARSER_BASE_URL` or
  * nothing external is constructed and the deterministic stub parses text
  * documents. There is no tenant setting here — the parsing service is
- * deployment infrastructure, reached at an operator-configured host (G6).
+ * deployment infrastructure, reached at an operator-configured host inside
+ * the deployment. This module is the ONLY reader of `DOC_PARSER_BASE_URL`
+ * (G6's in-deployment rule, `src/lib/ai/in-deployment-service.ts`;
+ * `tests/guards/ssrf-egress-coverage.test.ts` derives the readers).
  *
  * `parseWithFallback` composes a primary with the stub:
  *

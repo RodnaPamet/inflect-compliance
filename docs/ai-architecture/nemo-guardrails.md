@@ -90,9 +90,13 @@ flowchart LR
   is unavailable (`guard.provider_unavailable.<id>`: `suspicious`, so `flag`,
   in both directions — a secret the patterns provider sees still blocks
   egress), never `clean`; `nemo-provider.ts` is an HTTP client
-  for a NeMo Guardrails server (`safeFetch`, https only, 3 s deadline over
-  request and body, 64 KiB response cap that aborts the read, 1 MiB request
-  cap) that reads only whether an activated rail of the matching type stopped,
+  for a NeMo Guardrails server held to the in-deployment rule (G6 as amended
+  by the owner on 2026-11-12; `src/lib/ai/in-deployment-service.ts`): http or
+  https, every address the host resolves to inside the deployment (RFC 1918,
+  loopback, IPv6 ULA) with the connection pinned to them, no redirect
+  followed, a public address refused before anything is sent, 3 s deadline
+  over resolution, request and body, 64 KiB response cap that aborts the
+  read, 1 MiB request cap. It reads only whether an activated rail of the matching type stopped,
   and fails closed on every other answer; `registry.ts` is the only reader of
   `AI_GUARD_NEMO_BASE_URL`. Unset, the guard is the patterns provider alone,
   nothing else is constructed, and every outcome and audit row is
@@ -109,11 +113,11 @@ flowchart LR
   questionnaire autofill and risk suggestions — so the nemo slice does not
   reach them until their scans move out of the transaction.
 - **No NeMo Guardrails server runs, and no rail config exists.** Phase 1.3 is
-  held by the capacity rule (master § Capacity budget, C1). `safeFetch`
-  refuses `http:` and private addresses, so a server on the Compose network
-  is reachable only over https and, on a self-hosted deployment, through the
-  egress allowlist; with the URL set to anything else the guard flags every
-  input and every egress, which is the outage rule working. Nothing
+  held by the capacity rule (master § Capacity budget, C1). When it lands, a
+  plain `http://nemo-guardrails:8000` on the Compose network is what the
+  client expects: no TLS terminator and no egress allowlist entry. A URL that
+  resolves outside the deployment, or does not resolve, makes the guard flag
+  every input and every egress, which is the outage rule working. Nothing
   asks a model "is this a jailbreak".
 
 ## Fit, and what is deliberately not adopted
@@ -203,8 +207,10 @@ anything), G11 (a baseline before a change).
 - [x] 1.1 `src/app-layer/ai/guard/providers/`: `types.ts`
       (`GuardProvider.scan(kind: 'input' | 'egress', text, ctx) →
       GuardOutcome`), `patterns-provider.ts` (today's scanners, unchanged
-      behaviour), `nemo-provider.ts` (HTTP to the NeMo server via `safeFetch`,
-      byte-capped, deadline, degrade to `flag` on outage — never to `allow`),
+      behaviour), `nemo-provider.ts` (HTTP to the NeMo server through the
+      in-deployment dial — every resolved address inside the deployment,
+      pinned, no redirect — byte-capped, deadline, degrade to `flag` on
+      outage — never to `allow`),
       `compose.ts` (worst-of).
 - [x] 1.2 `guardUntrustedInput` / `guardEgress` call the composed provider;
       every verdict row records which provider decided (the decision-log
@@ -227,13 +233,15 @@ anything), G11 (a baseline before a change).
 **Prompt.**
 ```text
 Context (main 3.338.0 + Phase 0): guardUntrustedInput/guardEgress return a three-arm
-GuardOutcome; the review latch and circuit breaker consume it; outbound calls use
-safeFetch with byte caps and deadlines (the MCP client is the pattern); images are
+GuardOutcome; the review latch and circuit breaker consume it; outbound calls to hosts
+outside the deployment use safeFetch, and calls to a service run inside it use
+src/lib/ai/in-deployment-service.ts (G6 as amended 2026-11-12), both with byte caps and
+deadlines; images are
 digest-pinned in the repo-canonical Compose file; absent config means a feature is off.
 
 Task: the GuardProvider seam. (1) src/app-layer/ai/guard/providers/{types,patterns-
 provider,nemo-provider,compose}.ts: patterns = today's scanners unchanged; nemo = HTTP to
-the NeMo Guardrails server (safeFetch, byte cap, deadline), outage → flag with reason
+the NeMo Guardrails server (the in-deployment dial, byte cap, deadline), outage → flag with reason
 GUARD_PROVIDER_UNAVAILABLE, never allow; compose = worst-of. (2) guardUntrustedInput /
 guardEgress use the composed provider; verdicts record the deciding provider. (3) A
 `nemo-guardrails` Compose service (digest), rails config under guards/nemo/config/ with

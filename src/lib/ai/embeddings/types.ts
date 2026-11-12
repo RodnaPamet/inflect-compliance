@@ -56,8 +56,8 @@ export type EmbeddingFailure =
     /** The request body would exceed its byte cap. Nothing was sent. */
     | 'INPUT_TOO_LARGE'
     /**
-     * The endpoint is, or resolves to, an address outside the deployment's
-     * perimeter (`perimeter.ts`). Nothing was sent.
+     * The endpoint is, or resolves to, an address outside the deployment
+     * (`src/lib/ai/in-deployment-service.ts`). Nothing was sent.
      */
     | 'ENDPOINT_OUTSIDE_PERIMETER'
     /** The service answered with a redirect, which is never followed. */

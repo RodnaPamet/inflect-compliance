@@ -103,9 +103,12 @@ export type ParseRefusalReason =
     /** Another 4xx: the backend refused this request. */
     | 'UPSTREAM_REFUSED'
     /**
-     * `safeFetch` refused the configured URL (scheme, an address it resolved
-     * to, redirect). A configuration fault. A name that does not resolve at
-     * all is NOT this: nothing was refused, so it is `UNREACHABLE`.
+     * The in-deployment rule refused the configured URL
+     * (`src/lib/ai/in-deployment-service.ts`): a scheme other than http(s),
+     * credentials in the URL, a metadata host, an address — literal or any one
+     * it resolves to — outside the deployment, or a redirect. A configuration
+     * fault. A name that does not resolve at all is NOT this: nothing was
+     * refused, so it is `UNREACHABLE`.
      */
     | 'EGRESS_REFUSED'
     /** 5xx or 429: the backend is up but cannot serve. */
@@ -120,8 +123,8 @@ export type ParseRefusalReason =
  * answered and the answer is unusable" or "this deployment is misconfigured".
  * Only these fall back to the stub, with a WARN (Phase 1's outage test).
  *
- * `EGRESS_REFUSED` is deliberately NOT here: an `http://` or private URL the
- * egress guard refuses will be refused on every parse, and falling back would
+ * `EGRESS_REFUSED` is deliberately NOT here: a URL outside the deployment the
+ * in-deployment rule refuses will be refused on every parse, and falling back would
  * hide a permanent misconfiguration behind a stub that reads only text.
  * `RESPONSE_TOO_LARGE` is not here either: the refusal is the property.
  */

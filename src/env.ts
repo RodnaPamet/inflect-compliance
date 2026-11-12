@@ -361,12 +361,14 @@ export const env = createEnv({
 
         // The DocumentParser seam's backend (ragflow.md Phase 1, D-L4-4: a
         // Docling-class parsing-only service run by the OPERATOR inside the
-        // deployment). Operator config only — no tenant column reaches it (G6),
-        // and the request goes through safeFetch, so it must be https. Absent
-        // (or empty) = no backend is constructed and the deterministic paragraph
-        // stub parses text documents only. Pointing it at a host OUTSIDE the
-        // deployment makes that host a sub-processor (G2) — a register change,
-        // not a configuration change.
+        // deployment). Operator config only — no tenant column reaches it, and
+        // it is read only by src/lib/ai/parsing/index.ts (G6). http or https;
+        // it must name an address INSIDE the deployment (RFC 1918, loopback,
+        // IPv6 ULA; every resolved address — src/lib/ai/in-deployment-service.ts),
+        // or every parse is refused. Absent (or empty) = no backend is
+        // constructed and the deterministic paragraph stub parses text
+        // documents only. A host OUTSIDE the deployment would be a
+        // sub-processor (G2) — a register change, not a configuration change.
         DOC_PARSER_BASE_URL: emptyToUndefined(z.string().url().optional()),
         // Sent as `X-Api-Key` (docling-serve's DOCLING_SERVE_API_KEY). Optional.
         DOC_PARSER_API_KEY: emptyToUndefined(z.string().optional()),
@@ -393,7 +395,9 @@ export const env = createEnv({
         // constructed and every request is refused by name
         // (src/lib/ai/embeddings/select.ts). A base URL must name an address
         // INSIDE the deployment (RFC 1918, loopback, IPv6 ULA; every resolved
-        // address), or it is refused — `inflect-local` is a residency claim.
+        // address; src/lib/ai/in-deployment-service.ts), or it is refused —
+        // `inflect-local` is a residency claim. Read only by
+        // src/lib/ai/embeddings/select.ts.
         // The model must be named exactly as the TEI process reports it
         // (`--model-id`): a result whose served model differs is refused. The
         // model, its dimension and its query/passage prefixes are
@@ -411,8 +415,10 @@ export const env = createEnv({
         // setting. Unset or blank = the deterministic `patterns` provider alone,
         // and nothing else is constructed. Set = patterns + nemo, composed
         // worst-of; an unreachable or unusable server flags (never allows).
-        // A server WE operate — pointing it at a third party's host is a
-        // sub-processor change. Read only by src/app-layer/ai/guard/providers/registry.ts.
+        // A server WE operate inside the deployment: http or https, and it must
+        // resolve INSIDE the deployment (src/lib/ai/in-deployment-service.ts),
+        // or every scan flags — a third party's host would be a sub-processor
+        // change. Read only by src/app-layer/ai/guard/providers/registry.ts.
         AI_GUARD_NEMO_BASE_URL: z.string().optional(),
         AI_RISK_DAILY_QUOTA: z.string().optional(),
         AI_RISK_USER_RPM: z.string().optional(),

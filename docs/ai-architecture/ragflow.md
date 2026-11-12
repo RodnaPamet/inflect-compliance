@@ -29,7 +29,7 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 ```mermaid
 flowchart LR
   P0{{"Phase 0 · size and decide<br/>fidelity fixtures<br/>footprint on one VM<br/>D-L4-4 backend"}}:::gate
-  P1["Phase 1 · DocumentParser seam<br/>parse, then delete the dataset<br/>safeFetch, byte cap, deadline<br/>holds-nothing test"]:::todo
+  P1["Phase 1 · DocumentParser seam<br/>parse, then delete the dataset<br/>in-deployment dial, byte cap, deadline<br/>holds-nothing test"]:::todo
   P2["Phase 2 · into the index<br/>sections bound the chunks<br/>tables become table chunks<br/>page and section citations"]:::todo
   P3["Phase 3 · nightly parse-eval<br/>dated marker a guard parses<br/>then blocking"]:::todo
   WV["weaviate P2"]:::ext
@@ -163,9 +163,15 @@ runs on the VM, reachable only from `worker`.
 - [x] 1.2 The Docling backend (adapted from RAGFlow's dataset lifecycle: a
       parsing-only service keeps nothing, so there is no dataset to delete):
       `POST /v1/convert/source` with the document base64-encoded and the
-      `json` format only, through `wirePost` — the registered `safeFetch` sink,
-      https only, one deadline covering the body, a byte cap that aborts rather
-      than truncates. The tenant's file name is never sent. A partial
+      `json` format only, through `inDeploymentRequest`
+      (`src/lib/ai/in-deployment-service.ts`, G6 as amended by the owner on
+      2026-11-12): http or https, every address the host resolves to inside the
+      deployment (RFC 1918, loopback, IPv6 ULA) with the connection pinned to
+      them, no redirect followed, one deadline covering the body, a byte cap
+      that aborts rather than truncates. A public address is `EGRESS_REFUSED`
+      before anything is sent. `DOC_PARSER_BASE_URL` is read by exactly one
+      module (`parsing/index.ts`), which the SSRF egress guard derives from the
+      tree. The tenant's file name is never sent. A partial
       conversion is `PARTIAL_PARSE`, never a smaller complete-looking document.
       An outage (`TIMEOUT`, `UNREACHABLE`, `UPSTREAM_UNAVAILABLE`) falls back to
       the stub with a WARN and a `fallbackFrom` label; every other refusal,
@@ -173,11 +179,12 @@ runs on the VM, reachable only from `worker`.
       `UNREACHABLE`, not `EGRESS_REFUSED`: nothing was refused.
 - [ ] 1.3 Compose service for the backend, digest-pinned, worker-network only,
       no published ports; secrets in `.env.prod`. Held by the capacity rule
-      (no new container before the capacity budget's C1). Note for it:
-      `safeFetch` refuses `http:` and private addresses, so the container needs
-      TLS in front of it and its range in `EGRESS_PRIVATE_CIDR_ALLOWLIST`, which
-      only a self-hosted deployment honours. Until then a configured URL parses
-      nothing and says `EGRESS_REFUSED`.
+      (no new container before the capacity budget's C1). Note for it: the
+      client is held to the in-deployment rule, not `safeFetch`, so a plain
+      `http://docling:5001` on the worker network is what it expects — no TLS
+      terminator and no `EGRESS_PRIVATE_CIDR_ALLOWLIST` entry. A URL naming a
+      host that resolves outside the deployment parses nothing and says
+      `EGRESS_REFUSED`.
 - [x] 1.4 `src/env.ts`: `DOC_PARSER_BASE_URL`, `DOC_PARSER_API_KEY` (optional,
       empty = absent; absent = nothing external is constructed and the stub
       parses).
@@ -196,16 +203,18 @@ runs on the VM, reachable only from `worker`.
 
 **Prompt.**
 ```text
-Context (main 3.338.0): outbound calls go through safeFetch and every new sink joins the
-SSRF egress guard's population; the MCP client (src/lib/mcp/client/) is the house pattern
+Context (main 3.338.0; G6 as amended 2026-11-12): outbound calls to hosts outside the
+deployment go through safeFetch, calls to a service run inside it go through
+src/lib/ai/in-deployment-service.ts, and every new sink joins the SSRF egress guard's
+population; the MCP client (src/lib/mcp/client/) is the house pattern
 for a byte-capped, deadline-bounded HTTP read of an untrusted service; the Compose file is
 repo-canonical and images are digest-pinned; docs/sub-processors.md is the register of
 every external connection, including in-deployment services. Phase 0 chose the backend.
 
 Task: add the DocumentParser seam. (1) src/lib/ai/parsing/{types,ragflow-provider|
 docling-provider,stub-provider}.ts. (2) For RAGFlow: dataset create → upload → parse →
-read chunks → delete dataset, all via safeFetch, streamed and byte-capped, under one
-deadline; a failure at any step still attempts the delete. (3) Compose services, digest-
+read chunks → delete dataset, all via the in-deployment dial, streamed and byte-capped,
+under one deadline; a failure at any step still attempts the delete. (3) Compose services, digest-
 pinned, worker-network only, no published ports. (4) DOC_PARSER_BASE_URL / _API_KEY in
 src/env.ts, optional; absent = stub. (5) A register row in docs/sub-processors.md in the
 "not a sub-processor — in-deployment" style. (6) Tests: "a parse leaves no dataset
@@ -219,7 +228,9 @@ Done when: lint/typecheck green, the SSRF guard sees the sink, the three tests p
 the integration project against the real service, and check-drift reports clean.
 ```
 
-**Hardening.** G6 (`safeFetch`, egress population, byte cap, deadline), G8
+**Hardening.** G6 as amended (the in-deployment rule: one operator variable read by
+one module, every resolved address inside the deployment, pinned, no redirect,
+byte cap, deadline; the SSRF guard's in-deployment section), G8
 (worker only), G9 (absent = stub), G5 (digests), G2's register (complete even
 for in-deployment services). The delete-after-parse is the isolation
 property; the test for it is the one that must never be weakened.

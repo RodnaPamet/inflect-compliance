@@ -5,8 +5,9 @@
  *   embed  → POST <base>/v1/embeddings   (TEI's OpenAI-compatible route)
  *   rerank → GET  <base>/info, then POST <base>/rerank (TEI's cross-encoder route)
  *
- * All through {@link requestJsonBounded}: an address inside the perimeter,
- * a deadline, a byte cap.
+ * All through {@link requestJsonBounded}, which dials only through the shared
+ * in-deployment rule (`src/lib/ai/in-deployment-service.ts`): every resolved
+ * address inside the deployment and pinned, a deadline, a byte cap that aborts.
  * The base URL is OPERATOR configuration read in `select.ts`; nothing a tenant
  * writes reaches it. Neither provider names a model in code — the model, its
  * dimension and its query/passage prefixes are configuration until the Phase 0
@@ -187,6 +188,7 @@ export class TeiEmbeddingProvider implements EmbeddingProvider {
         if (byteLength(body) > TEI_MAX_REQUEST_BYTES) return done({ ok: false, reason: 'INPUT_TOO_LARGE' });
 
         const res = await postJsonBounded(endpoint(this.route.baseUrl, '/v1/embeddings'), body, {
+            service: 'embed',
             deadlineMs: TEI_DEADLINE_MS,
             maxResponseBytes: TEI_MAX_EMBED_RESPONSE_BYTES,
             signal: opts.signal,
@@ -245,6 +247,7 @@ export class TeiRerankProvider implements RerankProvider {
         // TEI serves one reranker per process and takes no model field, so the
         // served model is read from /info BEFORE any passage is sent.
         const info = await getJsonBounded(endpoint(this.route.baseUrl, '/info'), {
+            service: 'rerank',
             deadlineMs: TEI_DEADLINE_MS,
             maxResponseBytes: TEI_MAX_INFO_RESPONSE_BYTES,
             signal: opts.signal,
@@ -255,6 +258,7 @@ export class TeiRerankProvider implements RerankProvider {
         if (served.data.model_id !== this.model) return done({ ok: false, reason: 'SERVED_MODEL_MISMATCH' });
 
         const res = await postJsonBounded(endpoint(this.route.baseUrl, '/rerank'), body, {
+            service: 'rerank',
             deadlineMs: TEI_DEADLINE_MS,
             maxResponseBytes: TEI_MAX_RERANK_RESPONSE_BYTES,
             signal: opts.signal,

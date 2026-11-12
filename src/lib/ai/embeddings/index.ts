@@ -29,8 +29,8 @@ export {
     STUB_DEFAULT_DIMENSIONS,
     stubVector,
 } from './stub-provider';
-export { checkPerimeterUrl, isPerimeterAddress } from './perimeter';
-export type { PerimeterRefusal } from './perimeter';
+export { checkPerimeterUrl, isPerimeterAddress } from '@/lib/ai/in-deployment-service';
+export type { PerimeterRefusal } from '@/lib/ai/in-deployment-service';
 export { rerankOrKeepHybridOrder } from './rerank-fallback';
 export type { RerankOrder } from './rerank-fallback';
 export {

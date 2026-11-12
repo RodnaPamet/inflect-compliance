@@ -6,7 +6,12 @@
  * fail to give a usable verdict is enumerated below and each one is asserted
  * to reach the caller as review-required — and not blocked — under the
  * default mode. Also: the server is asked for a verdict and nothing else,
- * the content never reaches a log line, and a stopped rail is a block.
+ * the content never reaches a log line, a stopped rail is a block, and the
+ * server is reached only INSIDE the deployment (G6 as amended 2026-11-12).
+ *
+ * The network is mocked where the shared in-deployment dial reaches it —
+ * `undici` and `node:dns` — never injected: the provider has no fetch seam,
+ * so the address rule, the pin and the redirect refusal run in every test.
  */
 const appendAuditEntry = jest.fn(async (_entry: Record<string, unknown>) => undefined);
 const warn = jest.fn();
@@ -21,6 +26,16 @@ jest.mock('@/lib/audit', () => ({
 }));
 jest.mock('@/lib/observability/logger', () => ({
     logger: { error: jest.fn(), warn: (...a: unknown[]) => warn(...a), info: jest.fn(), debug: jest.fn() },
+}));
+
+const mockFetch = jest.fn<Promise<Response>, [string, RequestInit]>();
+jest.mock('undici', () => ({
+    Agent: class {},
+    fetch: (url: string, init: RequestInit) => mockFetch(url, init),
+}));
+const mockLookup = jest.fn<Promise<{ address: string; family: number }[]>, [string, unknown]>();
+jest.mock('node:dns', () => ({
+    promises: { lookup: (host: string, opts: unknown) => mockLookup(host, opts) },
 }));
 
 import { guardEgress, guardUntrustedInput } from '@/app-layer/ai/guard';
@@ -38,7 +53,9 @@ import type { GuardProvider } from '@/app-layer/ai/guard/providers/types';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
-const BASE = 'https://nemo.example.com/guard/';
+// The server on the Compose network: plaintext http by design, a private address.
+const BASE = 'http://nemo-guardrails:8000/guard/';
+const INSIDE = [{ address: '172.18.0.12', family: 4 }];
 const UNAVAILABLE = `${GUARD_PROVIDER_UNAVAILABLE_RULE}.nemo`;
 const SENSITIVE = 'the board minutes for the acquisition of Northwind';
 
@@ -52,8 +69,10 @@ function rails(...entries: { type: string; name: string; stop?: boolean }[]): Re
     return json({ messages: [{ role: 'assistant', content: 'I cannot help with that.' }], log: { activated_rails: entries } });
 }
 
+/** A provider whose server answers with `fetchImpl` — reached through the real dial. */
 function nemoWith(fetchImpl: FetchImpl, extra: { timeoutMs?: number; baseUrl?: string } = {}): GuardProvider {
-    return createNemoGuardProvider({ baseUrl: extra.baseUrl ?? BASE, fetchImpl, timeoutMs: extra.timeoutMs });
+    mockFetch.mockImplementation(fetchImpl);
+    return createNemoGuardProvider({ baseUrl: extra.baseUrl ?? BASE, timeoutMs: extra.timeoutMs });
 }
 
 async function both(nemo: GuardProvider) {
@@ -65,7 +84,12 @@ async function both(nemo: GuardProvider) {
 beforeEach(() => {
     appendAuditEntry.mockClear();
     warn.mockClear();
+    mockFetch.mockReset();
+    mockLookup.mockReset();
+    mockLookup.mockResolvedValue(INSIDE);
 });
+
+const reasons = () => warn.mock.calls.map((c) => (c[1] as { reason: string }).reason);
 
 describe('nemo outage degrades to flag, never allow', () => {
     // Every row carries all three columns: `it.each` reads a callback whose
@@ -86,6 +110,8 @@ describe('nemo outage degrades to flag, never allow', () => {
             new Promise<Response>((_resolve, reject) => {
                 init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
             }), 20],
+        ['the server answers with a redirect', () => async () =>
+            new Response(null, { status: 307, headers: { location: 'https://93.184.216.34/' } }), undefined],
     ];
 
     it.each(OUTAGES)('when %s', async (_label, make, timeoutMs) => {
@@ -104,41 +130,58 @@ describe('nemo outage degrades to flag, never allow', () => {
         expect(egress.decidedBy).toEqual(['nemo']);
     });
 
-    it('a base URL that is not https is refused before any request, and fails closed', async () => {
-        const fetchImpl = jest.fn<Promise<Response>, [string, RequestInit]>();
-        const { input, egress } = await both(nemoWith(fetchImpl, { baseUrl: 'http://nemo-guardrails:8000' }));
-        expect(fetchImpl).not.toHaveBeenCalled();
+    it('a base URL that is not http(s) is refused before any request, and fails closed', async () => {
+        const { input, egress } = await both(nemoWith(async () => rails(), { baseUrl: 'ftp://nemo-guardrails:8000' }));
+        expect(mockFetch).not.toHaveBeenCalled();
         expect(input.action).toBe('flag');
         expect(egress.action).toBe('flag');
-        expect(warn.mock.calls.map((c) => (c[1] as { reason: string }).reason)).toEqual(['SCHEME_REFUSED', 'SCHEME_REFUSED']);
+        expect(reasons()).toEqual(['SCHEME_REFUSED', 'SCHEME_REFUSED']);
     });
 
-    it('without the test seam the request goes through safeFetch, which refuses a private address — and that fails closed', async () => {
-        const provider = createNemoGuardProvider({ baseUrl: 'https://10.0.0.5:8000' });
-        const { input, egress } = await both(provider);
+    it('a PUBLIC base URL is refused before any request — a server outside the deployment is not ours', async () => {
+        const { input, egress } = await both(nemoWith(async () => rails(), { baseUrl: 'https://93.184.216.34/guard' }));
+        expect(mockLookup).not.toHaveBeenCalled();
+        expect(mockFetch).not.toHaveBeenCalled();
         expect(input.action).toBe('flag');
         expect(egress.action).toBe('flag');
-        expect(warn.mock.calls.map((c) => (c[1] as { reason: string }).reason)).toEqual(['EGRESS_REFUSED', 'EGRESS_REFUSED']);
+        expect(reasons()).toEqual(['EGRESS_REFUSED', 'EGRESS_REFUSED']);
+    });
+
+    it('a name resolving to ANY public address sends nothing, and fails closed', async () => {
+        mockLookup.mockResolvedValue([...INSIDE, { address: '8.8.8.8', family: 4 }]);
+        const { input, egress } = await both(nemoWith(async () => rails()));
+        expect(mockFetch).not.toHaveBeenCalled();
+        expect(input.action).toBe('flag');
+        expect(egress.action).toBe('flag');
+        expect(reasons()).toEqual(['EGRESS_REFUSED', 'EGRESS_REFUSED']);
+    });
+
+    it('a name that does not resolve is UNREACHABLE, and fails closed', async () => {
+        mockLookup.mockRejectedValue(Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' }));
+        const { input, egress } = await both(nemoWith(async () => rails()));
+        expect(mockFetch).not.toHaveBeenCalled();
+        expect(input.action).toBe('flag');
+        expect(egress.action).toBe('flag');
+        expect(reasons()).toEqual(['UNREACHABLE', 'UNREACHABLE']);
     });
 
     it('content too large to send is unscanned, not clean', async () => {
-        const fetchImpl = jest.fn<Promise<Response>, [string, RequestInit]>(async () => rails());
-        const nemo = nemoWith(fetchImpl);
+        const nemo = nemoWith(async () => rails());
         // Over the cap in bytes, not characters: 'é' is two bytes in UTF-8. The
         // nemo provider is asked alone, because the patterns scanner's own cost
         // on a megabyte is not what this asserts.
         const huge = 'é'.repeat(NEMO_MAX_REQUEST_BYTES / 2 + 1);
         const input = await guardUntrustedInput(ctx, huge, { source: 'nemo-test', providers: [nemo] });
-        expect(fetchImpl).not.toHaveBeenCalled();
+        expect(mockFetch).not.toHaveBeenCalled();
         expect(input.action).toBe('flag');
         expect(input.ruleIds).toContain(UNAVAILABLE);
     });
 
     it('a payload that cannot be serialised is unscanned, not clean', async () => {
-        const fetchImpl = jest.fn<Promise<Response>, [string, RequestInit]>(async () => rails());
         const big = { n: BigInt(1) };
-        const egress = await guardEgress(ctx, big, { source: 'nemo-test', providers: [patternsProvider, nemoWith(fetchImpl)] });
-        expect(fetchImpl).not.toHaveBeenCalled();
+        const nemo = nemoWith(async () => rails());
+        const egress = await guardEgress(ctx, big, { source: 'nemo-test', providers: [patternsProvider, nemo] });
+        expect(mockFetch).not.toHaveBeenCalled();
         expect(egress.action).toBe('flag');
         expect(egress.ruleIds).toContain(UNAVAILABLE);
     });
@@ -147,7 +190,7 @@ describe('nemo outage degrades to flag, never allow', () => {
         await both(nemoWith(async () => new Response('down', { status: 503 })));
         const logged = JSON.stringify(warn.mock.calls);
         expect(logged).not.toContain('Northwind');
-        expect(logged).not.toContain('nemo.example.com');
+        expect(logged).not.toContain('nemo-guardrails');
         expect(logged).toContain('HTTP_ERROR');
     });
 });
@@ -183,44 +226,51 @@ describe('a reachable server is asked for a verdict and nothing else', () => {
     });
 
     it('asks only the matching rail type of the repository config, by POST to the chat endpoint', async () => {
-        const fetchImpl = jest.fn<Promise<Response>, [string, RequestInit]>(async () => rails());
-        const nemo = nemoWith(fetchImpl);
+        const nemo = nemoWith(async () => rails());
         await guardUntrustedInput(ctx, SENSITIVE, { source: 'nemo-test', providers: [patternsProvider, nemo] });
         await guardEgress(ctx, { note: SENSITIVE }, { source: 'nemo-test', providers: [patternsProvider, nemo] });
 
-        expect(fetchImpl).toHaveBeenCalledTimes(2);
-        const [inputUrl, inputInit] = fetchImpl.mock.calls[0];
-        expect(inputUrl).toBe('https://nemo.example.com/guard/v1/chat/completions');
+        expect(mockFetch).toHaveBeenCalledTimes(2);
+        const [inputUrl, inputInit] = mockFetch.mock.calls[0];
+        expect(inputUrl).toBe('http://nemo-guardrails:8000/guard/v1/chat/completions');
         expect(inputInit.method).toBe('POST');
+        // The dial's rule, not the caller's: never follow a redirect.
+        expect(inputInit).toMatchObject({ redirect: 'manual' });
         const inputBody = JSON.parse(String(inputInit.body));
         expect(inputBody).toEqual({
             config_id: NEMO_RAILS_CONFIG_ID,
             messages: [{ role: 'user', content: SENSITIVE }],
             options: { rails: ['input'], log: { activated_rails: true } },
         });
-        const egressBody = JSON.parse(String(fetchImpl.mock.calls[1][1].body));
+        const egressBody = JSON.parse(String(mockFetch.mock.calls[1][1].body));
         expect(egressBody.options.rails).toEqual(['output']);
         expect(egressBody.messages[1]).toEqual({ role: 'assistant', content: JSON.stringify({ note: SENSITIVE }) });
     });
 
     it('nothing to scan makes no request', async () => {
-        const fetchImpl = jest.fn<Promise<Response>, [string, RequestInit]>(async () => rails());
-        const nemo = nemoWith(fetchImpl);
+        const nemo = nemoWith(async () => rails());
         for (const text of [null, undefined, '']) {
             const o = await guardUntrustedInput(ctx, text, { source: 'nemo-test', providers: [patternsProvider, nemo] });
             expect(o.verdict).toBe('clean');
         }
-        expect(fetchImpl).not.toHaveBeenCalled();
+        expect(mockFetch).not.toHaveBeenCalled();
     });
 });
 
 describe('the endpoint and rule ids carry nothing they should not', () => {
-    it('refuses credentials, a query or a fragment in the base URL, and anything but https', () => {
-        expect(nemoEndpoint('https://user:pw@nemo.example.com')).toEqual({ ok: false, reason: 'CONFIG_INVALID' });
-        expect(nemoEndpoint('https://nemo.example.com/?token=x')).toEqual({ ok: false, reason: 'CONFIG_INVALID' });
+    it('refuses credentials, a query or a fragment, anything but http(s), and a public literal', () => {
+        expect(nemoEndpoint('https://user:pw@nemo-guardrails')).toEqual({ ok: false, reason: 'CONFIG_INVALID' });
+        expect(nemoEndpoint('https://nemo-guardrails/?token=x')).toEqual({ ok: false, reason: 'CONFIG_INVALID' });
         expect(nemoEndpoint('not a url')).toEqual({ ok: false, reason: 'CONFIG_INVALID' });
-        expect(nemoEndpoint('http://nemo.example.com')).toEqual({ ok: false, reason: 'SCHEME_REFUSED' });
-        expect(nemoEndpoint('https://nemo.example.com')).toEqual({ ok: true, url: 'https://nemo.example.com/v1/chat/completions' });
+        expect(nemoEndpoint('ftp://nemo-guardrails')).toEqual({ ok: false, reason: 'SCHEME_REFUSED' });
+        expect(nemoEndpoint('http://8.8.8.8:8000')).toEqual({ ok: false, reason: 'EGRESS_REFUSED' });
+        expect(nemoEndpoint('http://169.254.169.254')).toEqual({ ok: false, reason: 'EGRESS_REFUSED' });
+        // Both schemes are admitted: on the Compose network the transport is plaintext by design.
+        expect(nemoEndpoint('http://nemo-guardrails:8000')).toEqual({
+            ok: true,
+            url: 'http://nemo-guardrails:8000/v1/chat/completions',
+        });
+        expect(nemoEndpoint('https://10.0.0.5:8443')).toEqual({ ok: true, url: 'https://10.0.0.5:8443/v1/chat/completions' });
     });
 
     it('reduces a rail name to a bounded safe token', () => {

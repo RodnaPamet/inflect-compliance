@@ -8,7 +8,8 @@
  * worst-of. A set value this module cannot use is NOT dropped back to
  * patterns-only: the operator asked for a second slice, so the provider is
  * built and reports itself unavailable on every scan (`CONFIG_INVALID` /
- * `SCHEME_REFUSED`), which flags every input and egress until it is fixed.
+ * `SCHEME_REFUSED` / `EGRESS_REFUSED` for an address outside the deployment),
+ * which flags every input and egress until it is fixed.
  * Silently scanning with less than was configured would be a fail-open.
  */
 import { env } from '@/env';

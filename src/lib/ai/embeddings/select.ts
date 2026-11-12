@@ -38,19 +38,21 @@
  *
  * `inflect-local` is a residency claim, so the URL must name an address
  * INSIDE the deployment's perimeter — the Compose network, the VPC, loopback
- * (`perimeter.ts`). Not `safeFetch`'s public-address policy: that admits only
- * the addresses that make the claim false, and a `LOCAL_ONLY` tenant's text
- * would leave under a local id. The structural half is asked here, when the
+ * — by the shared in-deployment rule (`src/lib/ai/in-deployment-service.ts`),
+ * which the Docling parser and the NeMo guard provider are held to as well.
+ * Not `safeFetch`'s public-address policy: that admits only the addresses
+ * that make the claim false, and a `LOCAL_ONLY` tenant's text would leave
+ * under a local id. The structural half is asked here, when the
  * route is chosen, so a public literal, a metadata host or a URL carrying
  * credentials is refused once, by name, before any text is queued for it. A
- * NAME is judged at use time by what it resolves to (`http.ts`), every
- * address, pinned.
+ * NAME is judged at use time by what it resolves to (the shared dial, reached
+ * through `http.ts`), every address, pinned.
  *
  * @module lib/ai/embeddings/select
  */
 import { env } from '@/env';
 
-import { checkPerimeterUrl } from './perimeter';
+import { checkPerimeterUrl } from '@/lib/ai/in-deployment-service';
 import { TeiEmbeddingProvider, TeiRerankProvider, type TeiEmbeddingRoute, type TeiRerankRoute } from './tei-provider';
 import { EMBEDDING_PROVIDER_IDS, type EmbeddingProvider, type RerankProvider } from './types';
 
@@ -71,7 +73,7 @@ export type EmbeddingRouteRefusal =
     | 'EMBED_MODEL_NOT_CONFIGURED'
     /** No dimension, or one that is not an integer in 1..MAX_EMBEDDING_DIMENSIONS. */
     | 'EMBED_DIMENSIONS_NOT_CONFIGURED'
-    /** The configured endpoint is not inside the deployment's perimeter (`perimeter.ts`). */
+    /** The configured endpoint is not inside the deployment (`in-deployment-service.ts`). */
     | 'EMBED_ENDPOINT_OUTSIDE_PERIMETER';
 
 export type RerankRouteRefusal =

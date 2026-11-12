@@ -2,7 +2,7 @@
  * The embedding / rerank seam routes by residency and refuses rather than
  * falls back (`src/lib/ai/embeddings/select.ts`).
  *
- * Only `@/env` is mocked. The perimeter check (`perimeter.ts`) is the real
+ * Only `@/env` is mocked. The perimeter check (`in-deployment-service.ts`) is the real
  * one, so "an endpoint outside the perimeter is refused up front" is asserted
  * against the rule the dial applies again at the socket.
  */

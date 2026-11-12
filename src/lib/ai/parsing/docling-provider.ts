@@ -9,22 +9,24 @@
  * nothing is kept — which is the property RAGFlow's dataset lifecycle had to
  * be made to have with a create → delete dance and a "holds nothing" test.
  *
- * ── EGRESS (G6) ─────────────────────────────────────────────────────────────
+ * ── EGRESS (G6, as amended 2026-11-12) ─────────────────────────────────────
  *
- * Every byte leaves through `wirePost` (`src/lib/mcp/wire-transport.ts`), the
- * registered SSRF sink: https only, decided from the URL; `safeFetch` (DNS
- * re-resolved and pinned, no redirects); one deadline that covers the body
- * read; and a byte cap that ABORTS the transfer rather than truncating it. This
- * file contains no fetch call of its own, and
- * `tests/guards/ssrf-egress-coverage.test.ts` holds it to that beside the MCP
- * and A2A clients. The base URL is operator config (`DOC_PARSER_BASE_URL`),
- * never a tenant column.
+ * The service runs INSIDE the deployment, so it is held to the in-deployment
+ * rule, not `safeFetch`: every byte leaves through `inDeploymentRequest`
+ * (`src/lib/ai/in-deployment-service.ts`) — http or https; every address the
+ * host resolves to inside the deployment (RFC 1918, loopback, IPv6 ULA) and
+ * the connection pinned to them; no redirect followed; one deadline that
+ * covers the body read; and a byte cap that ABORTS the transfer rather than
+ * truncating it. The base URL is operator config (`DOC_PARSER_BASE_URL`, read
+ * only by `index.ts`), never a tenant column. This file contains no fetch call
+ * of its own and has no fetch seam to inject one through;
+ * `tests/guards/ssrf-egress-coverage.test.ts` holds both.
  *
- * Consequence an operator must know: `safeFetch` refuses `http:` and private
- * addresses. A Docling container on the Compose network is reached at a
- * private address, so it needs TLS in front of it and its range in
- * `EGRESS_PRIVATE_CIDR_ALLOWLIST` (self-hosted only). Until then every parse is
- * `EGRESS_REFUSED`, loudly, and does not fall back — see `OUTAGE_REASONS`.
+ * It used to go through `wirePost` and so `safeFetch`, which admits only
+ * PUBLIC https addresses — so a Docling container on the Compose network was
+ * `EGRESS_REFUSED` on every parse until the operator put TLS and a self-hosted
+ * CIDR allowlist in front of it. A public address is now the refused one: a
+ * parser outside the deployment is a sub-processor (G2), not a configuration.
  *
  * ── UNTRUSTED OUTPUT (G4) ───────────────────────────────────────────────────
  *
@@ -32,25 +34,10 @@
  * error string from its `errors` member. Log lines carry the reason code, the
  * HTTP status and byte counts. The tenant's file name is never sent either —
  * the service is told `document.<ext>`, derived from the media type.
- *
- * `fetchImpl` is a test seam forwarded to `wirePost`; nothing under `src/`
- * originates one.
  */
 import { z } from 'zod';
 
-import {
-    RedirectNotAllowedError,
-    SsrfBlockedError,
-    SsrfUnresolvableHostError,
-} from '@/app-layer/automation/webhook-safety';
-import {
-    WireCapExceededError,
-    WireEgressError,
-    WireSchemeRefusedError,
-    WireTimeoutError,
-    wirePost,
-    type WireFetch,
-} from '@/lib/mcp/wire-transport';
+import { inDeploymentRequest, type InDeploymentFailure } from '@/lib/ai/in-deployment-service';
 import { logger } from '@/lib/observability/logger';
 
 import { baseMime } from './stub-provider';
@@ -223,8 +210,6 @@ export interface DoclingParserConfig {
     readonly baseUrl: string;
     readonly apiKey?: string;
     readonly limits?: Partial<ParserLimits>;
-    /** Test seam, forwarded to `wirePost`. */
-    readonly fetchImpl?: WireFetch;
 }
 
 function reasonForStatus(status: number): ParseRefusalReason {
@@ -233,25 +218,22 @@ function reasonForStatus(status: number): ParseRefusalReason {
     return 'UPSTREAM_REFUSED';
 }
 
-function reasonForWireError(e: unknown): ParseRefusalReason {
-    if (e instanceof WireTimeoutError) return 'TIMEOUT';
-    if (e instanceof WireCapExceededError) return 'RESPONSE_TOO_LARGE';
-    if (e instanceof WireSchemeRefusedError) return 'EGRESS_REFUSED';
-    if (e instanceof WireEgressError) {
-        const cause = e.cause;
-        // A name that does not resolve is the service not being there — a
-        // stopped container is NXDOMAIN on the Compose network, a resolver
-        // hiccup is EAI_AGAIN — so it is an outage, not a refused address.
-        // Checked BEFORE its parent class, which it is a subclass of.
-        if (cause instanceof SsrfUnresolvableHostError) return 'UNREACHABLE';
-        if (cause instanceof SsrfBlockedError || cause instanceof RedirectNotAllowedError) {
-            return 'EGRESS_REFUSED';
-        }
-        return 'UNREACHABLE';
-    }
-    // Anything else is a defect in this client, not a fact about the service.
-    throw e;
-}
+/**
+ * The dial's failure → the seam's refusal. A name that does not resolve is the
+ * service not being there — a stopped container is NXDOMAIN on the Compose
+ * network, a resolver hiccup is EAI_AGAIN — so it is an outage, not a refused
+ * address. An address outside the deployment, or a redirect, is a
+ * configuration fault that will recur on every parse: it does not fall back.
+ */
+const DIAL_REFUSAL: Record<Exclude<InDeploymentFailure, 'HTTP_STATUS'>, ParseRefusalReason> = {
+    OUTSIDE_DEPLOYMENT: 'EGRESS_REFUSED',
+    REDIRECT_REFUSED: 'EGRESS_REFUSED',
+    UNRESOLVABLE: 'UNREACHABLE',
+    NETWORK_ERROR: 'UNREACHABLE',
+    TIMEOUT: 'TIMEOUT',
+    ABORTED: 'TIMEOUT',
+    RESPONSE_TOO_LARGE: 'RESPONSE_TOO_LARGE',
+};
 
 export function createDoclingParser(config: DoclingParserConfig): DocumentParser {
     const limits: ParserLimits = { ...DEFAULT_PARSER_LIMITS, ...config.limits };
@@ -283,32 +265,30 @@ export function createDoclingParser(config: DoclingParserConfig): DocumentParser
             };
             if (config.apiKey) headers['x-api-key'] = config.apiKey;
 
-            let raw: string;
-            let status: number;
-            try {
-                const res = await wirePost({
-                    url,
-                    headers,
-                    body: buildConvertRequest(input.bytes, ext),
-                    timeoutMs: limits.timeoutMs,
-                    deadlineAt: opts.deadlineAt,
-                    fetchImpl: config.fetchImpl,
-                });
-                status = res.status;
-                if (!res.ok) {
-                    res.discard();
-                    return record(reasonForStatus(res.status), { status: res.status });
+            // The caller's deadline can only shorten the per-request ceiling.
+            const deadlineMs =
+                opts.deadlineAt === undefined
+                    ? limits.timeoutMs
+                    : Math.min(limits.timeoutMs, opts.deadlineAt - Date.now());
+
+            const res = await inDeploymentRequest(
+                'doc-parser',
+                url,
+                { method: 'POST', headers, body: buildConvertRequest(input.bytes, ext) },
+                { deadlineMs, maxResponseBytes: limits.maxResponseBytes },
+            );
+            if (!res.ok) {
+                if (res.reason === 'HTTP_STATUS') {
+                    return record(reasonForStatus(res.status ?? 0), { status: res.status });
                 }
-                const contentType = res.headers.get('content-type') ?? '';
-                if (!contentType.toLowerCase().includes('application/json')) {
-                    // A zip answer, an HTML error page from a proxy — not this contract.
-                    res.discard();
-                    return record('CONTRACT_VIOLATION', { status: res.status });
-                }
-                raw = await res.readBody(limits.maxResponseBytes);
-            } catch (e) {
-                return record(reasonForWireError(e));
+                return record(DIAL_REFUSAL[res.reason], res.refusal ? { rule: res.refusal } : {});
             }
+            const status = res.status;
+            if (!(res.contentType ?? '').toLowerCase().includes('application/json')) {
+                // A zip answer, an HTML error page from a proxy — not this contract.
+                return record('CONTRACT_VIOLATION', { status });
+            }
+            const raw = res.text;
 
             let json: unknown;
             try {

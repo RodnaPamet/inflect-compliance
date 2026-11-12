@@ -2,13 +2,23 @@
  * The DocumentParser seam (ragflow.md Phase 1, D-L4-4).
  *
  * Each `describe` names an invariant the seam holds. The Docling backend is
- * driven through `wirePost`'s test seam (`fetchImpl`), so everything above the
- * socket — scheme decision, deadline, the byte cap that aborts — is the
- * production path.
+ * driven through the shared in-deployment dial with only `undici` and
+ * `node:dns` mocked — there is no fetch seam — so everything above the socket
+ * (the address rule over every resolved address, the pin, the redirect
+ * refusal, the deadline, the byte cap that aborts) is the production path.
  */
-import { promises as dnsPromises } from 'node:dns';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+const mockFetch = jest.fn<Promise<Response>, [string, RequestInit]>();
+jest.mock('undici', () => ({
+    Agent: class {},
+    fetch: (url: string, init: RequestInit) => mockFetch(url, init),
+}));
+const mockLookup = jest.fn<Promise<{ address: string; family: number }[]>, [string, unknown]>();
+jest.mock('node:dns', () => ({
+    promises: { lookup: (host: string, opts: unknown) => mockLookup(host, opts) },
+}));
 
 const mockEnv: { DOC_PARSER_BASE_URL?: string; DOC_PARSER_API_KEY?: string } = {};
 jest.mock('@/env', () => ({ env: mockEnv }));
@@ -61,7 +71,9 @@ import { repoRelativeFiles } from '../helpers/repo-files';
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const PDF = { bytes: enc('%PDF-1.7 fake'), mime: 'application/pdf', filename: 'Board minutes – Q3 (confidential).pdf' };
-const BASE = 'https://docling.internal.example';
+// A Docling container on the Compose network: plaintext http, a private address.
+const BASE = 'http://docling:5001';
+const INSIDE = [{ address: '172.18.0.20', family: 4 }];
 
 /** A DoclingDocument the way docling-serve's json_content carries one. */
 function doclingDoc(over: Record<string, unknown> = {}) {
@@ -101,20 +113,17 @@ function jsonResponse(body: unknown, init: { status?: number; contentType?: stri
 }
 
 type Captured = { url: string; init: RequestInit };
-function fakeFetch(respond: (c: Captured) => Response | Promise<Response>) {
+
+/** A Docling backend whose service answers with `respond`, reached through the real dial. */
+function docling(respond: (c: Captured) => Response | Promise<Response>, extra: Partial<Parameters<typeof createDoclingParser>[0]> = {}) {
     const calls: Captured[] = [];
-    const impl = jest.fn(async (url: string, init: RequestInit) => {
+    mockFetch.mockImplementation(async (url: string, init: RequestInit) => {
         const c = { url, init };
         calls.push(c);
         return respond(c);
     });
-    return { impl, calls };
-}
-
-function docling(respond: (c: Captured) => Response | Promise<Response>, extra: Partial<Parameters<typeof createDoclingParser>[0]> = {}) {
-    const f = fakeFetch(respond);
-    const parser = createDoclingParser({ baseUrl: BASE, fetchImpl: f.impl, ...extra });
-    return { parser, ...f };
+    const parser = createDoclingParser({ baseUrl: BASE, ...extra });
+    return { parser, calls, impl: mockFetch };
 }
 
 function okDoc(r: ParseResult): ParsedDocument {
@@ -123,6 +132,9 @@ function okDoc(r: ParseResult): ParsedDocument {
 }
 
 beforeEach(() => {
+    mockFetch.mockReset();
+    mockLookup.mockReset();
+    mockLookup.mockResolvedValue(INSIDE);
     logCalls.length = 0;
     delete mockEnv.DOC_PARSER_BASE_URL;
     delete mockEnv.DOC_PARSER_API_KEY;
@@ -299,11 +311,29 @@ describe('a parser response over the byte cap is refused, not truncated', () => 
     });
 });
 
-describe('egress is the one wire: https only, deadline-bounded, faults named', () => {
-    it('refuses an http:// base URL before the network is touched', async () => {
-        const { parser, impl } = docling(() => jsonResponse(convertResponse(doclingDoc())), { baseUrl: 'http://docling:5001' });
-        expect(await parser.parse(PDF)).toMatchObject({ ok: false, reason: 'EGRESS_REFUSED' });
+describe('egress is the in-deployment dial: inside the deployment, deadline-bounded, faults named', () => {
+    it('reaches a service on the Compose network over http, at its private address', async () => {
+        const { parser, calls } = docling(() => jsonResponse(convertResponse(doclingDoc())));
+        expect(await parser.parse(PDF)).toMatchObject({ ok: true });
+        expect(mockLookup).toHaveBeenCalledWith('docling', { all: true });
+        expect(calls[0].init).toMatchObject({ method: 'POST', redirect: 'manual' });
+    });
+
+    it('refuses a PUBLIC base URL before the network is touched — a parser outside is a sub-processor', async () => {
+        const { parser, impl } = docling(() => jsonResponse(convertResponse(doclingDoc())), {
+            baseUrl: 'https://93.184.216.34',
+        });
+        expect(await parser.parse(PDF)).toEqual({ ok: false, backend: 'docling', reason: 'EGRESS_REFUSED' });
+        expect(mockLookup).not.toHaveBeenCalled();
         expect(impl).not.toHaveBeenCalled();
+    });
+
+    it('refuses a redirect rather than following it, and does not fall back', async () => {
+        const { parser, impl } = docling(
+            () => new Response(null, { status: 302, headers: { location: 'https://93.184.216.34/' } }),
+        );
+        expect(await parser.parse(PDF)).toEqual({ ok: false, backend: 'docling', reason: 'EGRESS_REFUSED' });
+        expect(impl).toHaveBeenCalledTimes(1);
     });
 
     it('a service that never answers is a TIMEOUT', async () => {
@@ -333,40 +363,45 @@ describe('egress is the one wire: https only, deadline-bounded, faults named', (
 });
 
 /*
- * These run through the REAL `safeFetch` (no `fetchImpl`), so the DNS step
- * the address guard takes is the production one; only the resolver answer is
- * scripted. A test seam above the socket cannot see this path at all.
+ * The DNS step is the production one inside the dial; only the resolver's
+ * answer is scripted.
  */
-describe('a name that does not resolve is an outage; a forbidden address is not', () => {
+describe('a name that does not resolve is an outage; an address outside the deployment is not', () => {
     const MD = { bytes: enc('# T\n\nbody'), mime: 'text/markdown' };
-    let lookup: jest.SpyInstance;
-    afterEach(() => lookup.mockRestore());
 
     it.each([
         ['NXDOMAIN (a stopped Compose service)', Object.assign(new Error('getaddrinfo ENOTFOUND docling'), { code: 'ENOTFOUND' })],
         ['EAI_AGAIN (a resolver hiccup)', Object.assign(new Error('getaddrinfo EAI_AGAIN docling'), { code: 'EAI_AGAIN' })],
     ])('%s is UNREACHABLE, so a text upload falls back to the stub', async (_label, err) => {
-        lookup = jest.spyOn(dnsPromises, 'lookup').mockRejectedValue(err);
+        mockLookup.mockRejectedValue(err);
         const parser = createDoclingParser({ baseUrl: BASE });
         expect(await parser.parse(PDF)).toEqual({ ok: false, backend: 'docling', reason: 'UNREACHABLE' });
-        expect(lookup).toHaveBeenCalled();
+        expect(mockLookup).toHaveBeenCalled();
         const r = await parseWithFallback(createDoclingParser({ baseUrl: BASE }), createStubParser(), MD);
         expect(r).toMatchObject({ ok: true, fallbackFrom: { backend: 'docling', reason: 'UNREACHABLE' } });
         expect(okDoc(r).backend).toBe('stub');
+        expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('an empty answer from the resolver is UNREACHABLE too', async () => {
-        lookup = jest.spyOn(dnsPromises, 'lookup').mockResolvedValue([] as never);
+        mockLookup.mockResolvedValue([]);
         expect(await createDoclingParser({ baseUrl: BASE }).parse(PDF)).toMatchObject({ reason: 'UNREACHABLE' });
     });
 
-    it('a name resolving to a private address is EGRESS_REFUSED and does not fall back', async () => {
-        lookup = jest.spyOn(dnsPromises, 'lookup').mockResolvedValue([{ address: '10.0.0.5', family: 4 }] as never);
+    it.each([
+        ['a public address', [{ address: '93.184.216.34', family: 4 }]],
+        ['one public address among private ones', [...INSIDE, { address: '8.8.8.8', family: 4 }]],
+        ['the metadata address', [{ address: '169.254.169.254', family: 4 }]],
+    ])('a name resolving to %s is EGRESS_REFUSED, sends nothing, and does not fall back', async (_label, addresses) => {
+        mockLookup.mockResolvedValue(addresses);
         expect(await createDoclingParser({ baseUrl: BASE }).parse(PDF)).toEqual({
             ok: false,
             backend: 'docling',
             reason: 'EGRESS_REFUSED',
         });
+        const r = await parseWithFallback(createDoclingParser({ baseUrl: BASE }), createStubParser(), MD);
+        expect(r).toEqual({ ok: false, backend: 'docling', reason: 'EGRESS_REFUSED' });
+        expect(mockFetch).not.toHaveBeenCalled();
     });
 });
 

@@ -1,11 +1,13 @@
 /**
  * The TEI embedding and rerank providers, and the one bounded request they
- * share (`src/lib/ai/embeddings/tei-provider.ts`, `http.ts`).
+ * share (`src/lib/ai/embeddings/tei-provider.ts`, `http.ts`, and the shared
+ * in-deployment dial `http.ts` calls).
  *
  * The network is mocked where the production module reaches it — `undici`'s
  * fetch and `node:dns` — never injected: the module has no fetch seam to
  * inject through, by design. So the perimeter resolution, the pin and the
- * redirect refusal in `http.ts` run for real in every test here.
+ * redirect refusal in the shared dial (`src/lib/ai/in-deployment-service.ts`)
+ * run for real in every test here.
  */
 const mockFetch = jest.fn<Promise<Response>, [string, (RequestInit & { dispatcher?: unknown }) | undefined]>();
 const mockAgentOptions = jest.fn();
@@ -232,6 +234,7 @@ describe('an inflect-local call reaches only an address inside the perimeter', (
 
     it('a public literal is refused before DNS is asked', async () => {
         const out = await postJsonBounded('https://93.184.216.34/v1/embeddings', '{}', {
+            service: 'embed',
             deadlineMs: 1000,
             maxResponseBytes: 1024,
         });
@@ -295,7 +298,11 @@ describe('the response is read under a byte cap that stops reading at the cap', 
     it('a declared Content-Length over the cap is refused without reading', async () => {
         const res = new Response('{}', { status: 200, headers: { 'content-length': String(10 * 1024 * 1024) } });
         mockFetch.mockResolvedValue(res);
-        const out = await postJsonBounded('http://tei-embed:8080', '{}', { deadlineMs: 1000, maxResponseBytes: 1024 });
+        const out = await postJsonBounded('http://tei-embed:8080', '{}', {
+            service: 'embed',
+            deadlineMs: 1000,
+            maxResponseBytes: 1024,
+        });
         expect(out).toEqual({ ok: false, reason: 'RESPONSE_TOO_LARGE' });
     });
 
@@ -311,7 +318,11 @@ describe('the response is read under a byte cap that stops reading at the cap', 
             },
         });
         mockFetch.mockResolvedValue(new Response(endless, { status: 200 }));
-        const out = await postJsonBounded('http://tei-embed:8080', '{}', { deadlineMs: 5000, maxResponseBytes: 4096 });
+        const out = await postJsonBounded('http://tei-embed:8080', '{}', {
+            service: 'embed',
+            deadlineMs: 5000,
+            maxResponseBytes: 4096,
+        });
         expect(out).toEqual({ ok: false, reason: 'RESPONSE_TOO_LARGE' });
         // 4096 / 512 = 8 chunks to reach the cap; a reader that buffered the
         // whole body would never return at all.
@@ -322,14 +333,22 @@ describe('the response is read under a byte cap that stops reading at the cap', 
 describe('the deadline covers the whole call, and a caller abort is told apart', () => {
     it('a service that never answers is a TIMEOUT', async () => {
         mockFetch.mockReturnValue(new Promise<Response>(() => undefined));
-        const out = await postJsonBounded('http://tei-embed:8080', '{}', { deadlineMs: 20, maxResponseBytes: 1024 });
+        const out = await postJsonBounded('http://tei-embed:8080', '{}', {
+            service: 'embed',
+            deadlineMs: 20,
+            maxResponseBytes: 1024,
+        });
         expect(out).toEqual({ ok: false, reason: 'TIMEOUT' });
     });
 
     it('a body that stalls after the head is a TIMEOUT too', async () => {
         const stalled = new ReadableStream<Uint8Array>({ pull: () => new Promise<void>(() => undefined) });
         mockFetch.mockResolvedValue(new Response(stalled, { status: 200 }));
-        const out = await postJsonBounded('http://tei-embed:8080', '{}', { deadlineMs: 20, maxResponseBytes: 1024 });
+        const out = await postJsonBounded('http://tei-embed:8080', '{}', {
+            service: 'embed',
+            deadlineMs: 20,
+            maxResponseBytes: 1024,
+        });
         expect(out).toEqual({ ok: false, reason: 'TIMEOUT' });
     });
 
@@ -337,6 +356,7 @@ describe('the deadline covers the whole call, and a caller abort is told apart',
         mockFetch.mockReturnValue(new Promise<Response>(() => undefined));
         const caller = new AbortController();
         const pending = postJsonBounded('http://tei-embed:8080', '{}', {
+            service: 'embed',
             deadlineMs: 10_000,
             maxResponseBytes: 1024,
             signal: caller.signal,
@@ -347,6 +367,7 @@ describe('the deadline covers the whole call, and a caller abort is told apart',
 
     it('an already-aborted signal sends nothing', async () => {
         const out = await postJsonBounded('http://tei-embed:8080', '{}', {
+            service: 'embed',
             deadlineMs: 1000,
             maxResponseBytes: 1024,
             signal: AbortSignal.abort(),
