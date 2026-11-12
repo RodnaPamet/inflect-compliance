@@ -6,6 +6,8 @@
  * authenticated session user — there is no userId parameter, so one
  * user can never write another's avatar. Account-level, not
  * tenant-scoped; no `requirePermission` (mirrors `/api/auth/change-password`).
+ * A session opened by one workspace's single sign-on may change it only
+ * while the account belongs to nothing else (`assertAccountWideWriteInScope`).
  *
  * The image arrives already resized + EXIF-stripped + webp-encoded by
  * the client `<canvas>` round-trip; `uploadOwnAvatar` validates the
@@ -23,10 +25,12 @@ import {
     removeOwnAvatar,
     AVATAR_MAX_BYTES,
 } from '@/lib/account/avatar';
+import { assertAccountWideWriteInScope } from '@/lib/account/sso-scope';
 
 export const POST = withApiErrorHandling(async (req: NextRequest) => {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) throw unauthorized();
+    await assertAccountWideWriteInScope({ userId: session.user.id, ssoTenantId: session.user.ssoTenantId });
 
     const formData = await req.formData();
     const file = formData.get('file');
@@ -48,6 +52,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
 export const DELETE = withApiErrorHandling(async () => {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) throw unauthorized();
+    await assertAccountWideWriteInScope({ userId: session.user.id, ssoTenantId: session.user.ssoTenantId });
 
     await removeOwnAvatar(session.user.id);
     return jsonResponse({ success: true });
