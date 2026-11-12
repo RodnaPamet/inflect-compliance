@@ -144,7 +144,11 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Updated 2026-11-10 for `vm-check.yml:vm-check`, the dispatch-only
         // read-only checks of the production VM from a fixed list. Its key
         // sorts after `vm-capacity`, so it is an append again, +5/-0.
-        keyOrderSha: 'cbbac2c896e484eb61a3c42a6994a19abda1f295260c4270fdd6677050944324',
+        //
+        // Updated 2026-11-12 for `vm-apply.yml:vm-apply`, the dispatch-only
+        // named changes to the production VM. Its key sorts between
+        // `scanner-vm` and `vm-capacity`, so it is a mid-file insert, +5/-0.
+        keyOrderSha: 'c4d13943328843a9d9b60466b19878e16ddf375330395afef75ca27e97540ce8',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
