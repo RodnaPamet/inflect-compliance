@@ -101,7 +101,7 @@ import * as approveRoute from '@/app/api/t/[tenantSlug]/agent-proposals/[id]/app
 import * as rejectRoute from '@/app/api/t/[tenantSlug]/agent-proposals/[id]/reject/route';
 import * as bulkRejectRoute from '@/app/api/t/[tenantSlug]/agent-proposals/bulk/reject/route';
 import { getPermissionsForRole, mayReadAgentActivity } from '@/lib/permissions';
-import { scopesToPermissions } from '@/lib/auth/api-key-auth';
+import { keyAuthorityFromScopes, scopesToPermissions } from '@/lib/auth/api-key-auth';
 import { resolveRoutePermission } from '@/lib/security/route-permissions';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -334,6 +334,31 @@ describe('POST /agent-runs with a bearer API key keeps the key’s own gate', ()
             expect({ route: c.name, status: res.status }).toEqual({ route: c.name, status: 403 });
             expect(c.usecase).not.toHaveBeenCalled();
         }
+    });
+
+    it('a key that PASSES the resume route is refused by the usecase, audited, before the run is read (#5368)', async () => {
+        // `admin:read` beside a write scope: the route admits it on `admin.view`
+        // and it resolves to EDITOR, so the role-tier write alone admitted it too.
+        const scopes = ['admin:read', 'risks:write'];
+        const { role, permissions, appPermissions } = keyAuthorityFromScopes(scopes);
+        const ctx = makeRequestContext(role, { apiKeyId: 'key-1', apiKeyScopes: scopes, permissions, appPermissions });
+        expect(mayReadAgentActivity(ctx.appPermissions.admin)).toBe(true);
+        expect(ctx.permissions.canWrite).toBe(true);
+
+        const res = await call(WRITES[1], ctx);
+        expect(res.status).toBe(403);
+        expect(runsSpies.resumeWorkflowRun).toHaveBeenCalledTimes(1);
+        expect(routeDenials()).toEqual([]);
+        const usecaseDenials = auditSpy.mock.calls
+            .map(([entry]) => entry as { action?: string; entity?: string; entityId?: string; detailsJson?: unknown })
+            .filter((e) => e.action === 'AUTHZ_DENIED' && e.entity === 'WorkflowRun');
+        expect(usecaseDenials).toHaveLength(1);
+        expect(usecaseDenials[0]).toMatchObject({
+            entityId: RUN,
+            detailsJson: { reason: 'agent_run_resume_human_required', callerKind: 'API_KEY' },
+        });
+        // Refused before the run is read: the database mock would have thrown.
+        expect(JSON.stringify(await res.json())).not.toContain(DB_REACHED);
     });
 });
 
