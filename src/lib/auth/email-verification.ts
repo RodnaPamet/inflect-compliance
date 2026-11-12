@@ -211,6 +211,11 @@ export type ConsumeResult =
  * useful UX message that isn't a meaningful enumeration vector (an
  * attacker guessing 256-bit tokens is already past any other control).
  */
+/** An email-verification row's identifier is an email address, never another kind's prefix. */
+export function isEmailVerificationIdentifier(identifier: string): boolean {
+    return identifier.includes('@') && !identifier.startsWith('sso-');
+}
+
 export async function consumeEmailVerification(
     rawToken: string,
 ): Promise<ConsumeResult> {
@@ -223,6 +228,13 @@ export async function consumeEmailVerification(
         where: { token: tokenHash },
     });
     if (!record) return { ok: false, reason: 'invalid' };
+
+    // `VerificationToken` also holds the SSO hand-offs and the spent SAML
+    // flow markers (src/lib/auth/sso-handoff.ts, sso-flow-spend.ts), told
+    // apart by identifier. Only an email-verification row may be consumed or
+    // deleted here: a raw string that hashes to a spent-flow marker must not
+    // remove it, or a captured SAML response could be replayed.
+    if (!isEmailVerificationIdentifier(record.identifier)) return { ok: false, reason: 'invalid' };
 
     if (record.expires.getTime() < Date.now()) {
         await prisma.verificationToken
