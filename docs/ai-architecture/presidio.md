@@ -97,7 +97,8 @@ flowchart LR
   `src/lib/ai/pii/`). It holds the D-L1-1 scope (`entities.ts`), a pure
   `redact()`, a Presidio HTTP client behind `safeFetch`, a fixture stub, the
   mount gate (`mount.ts`, a passing record under `evals/pii/records/` for
-  `AI_PII_CONFIG_HASH`), and the egress use (`egress.ts`), which blocks with
+  `AI_PII_CONFIG_HASH`, made by the Presidio provider against the committed
+  fixture set), and the egress use (`egress.ts`), which blocks with
   `PII_DETECTOR_UNAVAILABLE` when a tenant has redaction on and the detector
   is unmounted or unreachable. No record exists, no service runs, and no
   product path calls it, so no payload is checked yet.
@@ -207,7 +208,7 @@ are not optional in a BG product).
       transport (it is UNMOUNTED as `BASE_URL_NOT_HTTPS`); 1.1 decides between
       TLS plus the deployment-level egress allowlist and an operator-only
       internal dial in the `local-gateway.ts` style. The records directory
-      also has to be copied into the runtime image.
+      and the fixture set also have to be copied into the runtime image.
 - [x] 1.2 `src/lib/ai/pii/`: `types.ts` (`PiiDetector.analyze(text, locale)` →
       spans; `redact(text, spans, policy)` → `{ text, redactions }`),
       `presidio-provider.ts` (`safeFetch`, byte cap, deadline), `stub-provider.ts`
@@ -223,10 +224,20 @@ are not optional in a BG product).
       the same way; `FLAG` sends unchanged and records the outage.
 - [x] 1.4 The record from Phase 0 is the mount condition: the provider is
       registered only if a record exists for the current config hash (the
-      skills mount-gate pattern). The record shape, the four case kinds and
-      the proposed floors (recall 0.95, precision 0.80, per type per locale,
-      not yet initialled) are in `evaluation-record.ts`; Phase 0's record
-      must be written in that shape.
+      skills mount-gate pattern). The ground truth is the committed fixture
+      set (`fixture-set.ts`, read from `tests/fixtures/pii/fixture-set.json`),
+      never the record: a record whose `fixtureDigest` or cases differ from
+      the set is `SET_MISMATCH`, and the set needs at least 20 spans per type
+      per locale (proposed). The newest record for the config decides by
+      instant, a malformed one refuses the mount, and a record not made by the
+      Presidio provider (the stub's replay) is `DETECTOR_MISMATCH`. The record
+      shape, the four case kinds and the proposed floors (recall 0.95,
+      precision 0.80, per type per locale, not yet initialled) are in
+      `evaluation-record.ts` and `fixture-set.ts`; Phase 0's set and record
+      must be written in those shapes. `measure.ts` produces a record through
+      any detector; the "reproduce through HTTP" test runs it over the
+      provider's test seam until the service exists, so Phase 1's "done when"
+      is still open.
 
 **Prompt.**
 ```text

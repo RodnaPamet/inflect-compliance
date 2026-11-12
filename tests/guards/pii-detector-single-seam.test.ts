@@ -11,9 +11,17 @@
  * The provider itself may reach the network only through `safeFetch` or the
  * test seam `opts.fetchImpl`; any other fetch-shaped call (`fetch`,
  * `resilientFetch`, `boundedFetch`) is an unguarded path to the host.
+ *
+ * And the mount gate's own options are TEST SEAMS: `fetchImpl` would post every
+ * outbound prompt past `safeFetch`, and `root` would point "only a committed
+ * record mounts" at any directory. So every reference to `resolvePiiDetector`
+ * under `src/` must be a call with NO arguments (or its declaration) — read off
+ * the syntax tree, so a rename, an alias or passing the function along counts.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+import * as ts from 'typescript';
 
 import { codeOf } from '../helpers/source-blocks';
 import { repoRelativeFiles } from '../helpers/repo-files';
@@ -31,6 +39,45 @@ const providerImporters = () =>
         .filter((f) => IMPORTS_PROVIDER.test(code(f)))
         .sort();
 
+const RESOLVER = 'resolvePiiDetector';
+
+/** Every use of the resolver in `source` that is not a zero-argument call or its own declaration. */
+function resolverMisuses(file: string, source: string): string[] {
+    const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    const out: string[] = [];
+    const where = (n: ts.Node) => `${file}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`;
+    const visit = (node: ts.Node): void => {
+        if (ts.isIdentifier(node) && node.text === RESOLVER) {
+            const parent = node.parent;
+            const isDeclaration = ts.isFunctionDeclaration(parent) && parent.name === node;
+            const isCallee =
+                (ts.isCallExpression(parent) && parent.expression === node) ||
+                (ts.isPropertyAccessExpression(parent) && parent.name === node && ts.isCallExpression(parent.parent) && parent.parent.expression === parent);
+            const call = isCallee ? (ts.isCallExpression(parent) ? parent : (parent.parent as ts.CallExpression)) : null;
+            // `import { resolvePiiDetector } from …` without a rename is a binding, not a use.
+            const plainImport = ts.isImportSpecifier(parent) && !parent.propertyName;
+            if (isDeclaration || plainImport) {
+                // fine
+            } else if (call && call.arguments.length === 0) {
+                // fine: the production call
+            } else {
+                out.push(`${where(node)} ${call ? 'passes options' : 'is referenced other than by a zero-argument call'}`);
+            }
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    return out;
+}
+
+const srcResolverMisuses = () =>
+    repoRelativeFiles()
+        .filter((f) => f.startsWith('src/') && /\.tsx?$/.test(f))
+        .flatMap((f) => {
+            const source = fs.readFileSync(path.join(ROOT, f), 'utf8');
+            return source.includes(RESOLVER) ? resolverMisuses(f, source) : [];
+        });
+
 const providerFetchCalls = () => code(PROVIDER).match(/[\w.]*fetch\w*\s*\(/gi) ?? [];
 
 describe('the PII detector has one construction seam', () => {
@@ -40,6 +87,23 @@ describe('the PII detector has one construction seam', () => {
 
     it('the provider reaches the network only through safeFetch or the test seam', () => {
         expect([...new Set(providerFetchCalls())].sort()).toEqual(['opts.fetchImpl(', 'safeFetch(']);
+    });
+
+    it('no caller under src/ passes the mount gate a test seam', () => {
+        expect(srcResolverMisuses()).toEqual([]);
+    });
+
+    it('the resolver scan sees options, aliases and the function passed along', () => {
+        // Negative controls on synthetic source, so the empty list above means something.
+        const misuses = (src: string) => resolverMisuses('x.ts', src).length;
+        expect(misuses('resolvePiiDetector();')).toBe(0);
+        expect(misuses('export function resolvePiiDetector(o = {}) { return o; }')).toBe(0);
+        expect(misuses("import { resolvePiiDetector } from './mount';")).toBe(0);
+        expect(misuses('resolvePiiDetector({ fetchImpl: resilientFetch });')).toBe(1);
+        expect(misuses("resolvePiiDetector({ root: '/tmp' });")).toBe(1);
+        expect(misuses('mount.resolvePiiDetector({ root: dir });')).toBe(1);
+        expect(misuses("import { resolvePiiDetector as r } from './mount';")).toBe(1);
+        expect(misuses('const f = resolvePiiDetector; f({ root });')).toBe(1);
     });
 
     it('the import pattern sees both spellings, and the fetch pattern sees every alias', () => {
