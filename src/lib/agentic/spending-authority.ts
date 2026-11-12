@@ -14,7 +14,7 @@
  * person is enough), and the identifier shape that keeps a card number out of
  * the row (D-L1-8). The comparison mirrors the trigger
  * `agent_spending_authority_lifecycle` in migration
- * `20261111230000_agent_spending_authority`, which refuses an in-place change
+ * `20261112090100_agent_spending_authority`, which refuses an in-place change
  * to a REVIEWED envelope that is not a narrowing; the two are kept in step by
  * `tests/unit/agentic/spending-authority.test.ts` and the integration test.
  *

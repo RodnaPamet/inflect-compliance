@@ -45,7 +45,7 @@ Each rule is held twice, usecase first and database behind it:
 | File | Role |
 | --- | --- |
 | `prisma/schema/agentic.prisma`, `enums.prisma`, `auth.prisma` | The model, three enums, back-relations |
-| `prisma/migrations/20261111230000_agent_spending_authority/migration.sql` | Table, CHECKs, two triggers, grants, RLS |
+| `prisma/migrations/20261112090100_agent_spending_authority/migration.sql` | Table, CHECKs, two triggers, grants, RLS |
 | `src/lib/agentic/spending-authority.ts` | Pure: input schema, `wideningsOf`, `carriesCardNumberShape` (client-safe) |
 | `src/app-layer/usecases/agent-spending-authority.ts` | The only writer: declare, narrow, review, withdraw, list; activation read; kill hook and suspension tasks |
 | `src/app-layer/usecases/agent-registry.ts` | `assertActivatable` asks the new precondition |

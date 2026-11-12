@@ -51,7 +51,7 @@ The taxonomy, as the provider applies it:
 | `src/app-layer/usecases/vendor-monitoring.ts` | writes the two columns, emits the metric, returns `tlsGradeStale` |
 | `src/app-layer/automation/webhook-safety.ts` | `SsrfBlockedError.kind` (`REFUSED` default, `UNRESOLVED` for DNS) |
 | `src/lib/observability/integration-metrics.ts` | `recordVendorTlsFetch` → `vendor_monitor.tls_fetch` |
-| `prisma/schema/vendor.prisma`, migration `20261111230000_vendor_monitor_tls_fetch_outcome` | two nullable columns + two CHECKs |
+| `prisma/schema/vendor.prisma`, migration `20261112090000_vendor_monitor_tls_fetch_outcome` | two nullable columns + two CHECKs |
 | `VendorMonitoringPanel.tsx`, `messages/{en,bg}.json` | the stale mark and the reason |
 
 ## Decisions

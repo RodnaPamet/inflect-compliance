@@ -301,7 +301,7 @@ customer's own connection, the way directory integrations are).
       requires it) and an inventory row in the governance pack.
 
 **Where Phase 1 stands (2026-11-12).** 1.1, 1.2, 1.3 and 1.5 are built:
-`AgentSpendingAuthority` (migration `20261111230000_agent_spending_authority`),
+`AgentSpendingAuthority` (migration `20261112090100_agent_spending_authority`),
 its one writer `src/app-layer/usecases/agent-spending-authority.ts` and the pure
 comparison in `src/lib/agentic/spending-authority.ts`. The retention row of 1.6
 is written; the governance-pack inventory row is not. 1.4 (the recertification

@@ -50,7 +50,7 @@ signal for the propose path.
 | `src/app-layer/usecases/agent-behaviour-fingerprint.ts` | One tenant's pass: score, write rows, reconcile the finding, latch after commit |
 | `src/app-layer/jobs/agent-fingerprint.ts` | The sweep and the BullMQ executor body under `runJob` |
 | `src/lib/agentic/circuit-breaker{,-store}.ts` | `BEHAVIOUR_ANOMALY_TRIP` and `latchOnBehaviourAnomaly` — the same latch write as the guard-block trip |
-| `prisma/schema/agentic.prisma`, migration `20261111230000_agent_behaviour_fingerprint` | `AgentBehaviourBaseline`, `AgentBehaviourAnomaly`, RLS, CHECKs |
+| `prisma/schema/agentic.prisma`, migration `20261112090200_agent_behaviour_fingerprint` | `AgentBehaviourBaseline`, `AgentBehaviourAnomaly`, RLS, CHECKs |
 | `src/env.ts` | `AGENT_BEHAVIOUR_DETECTOR`, `_TENANTS`, `_LATCH` |
 | `src/app-layer/jobs/{types,executor-registry,schedules}.ts` | Payload, retry policy (1 attempt), registration, 01:53 UTC slot |
 | `src/lib/observability/integration-metrics.ts` | `agentic.agent_fingerprint.pass{outcome}` and `.days{verdict}` |
