@@ -1,11 +1,14 @@
-inflect · ai architecture · garak · roadmap v1 · 2026-10-29
+inflect · ai architecture · garak · roadmap v2 · 2026-11-11
 
 # garak — LLM red-teaming in CI, Security evaluation & testing
 
 > **Status: living design** — the integration roadmap for garak, the NVIDIA
 > LLM vulnerability scanner the target architecture places at the head of the
-> "Security evaluation & testing" column. The **Current state** section is
-> true today (main 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan.
+> "Security evaluation & testing" column. The owner decided its model on
+> 2026-11-11 (D-EV-1): the probes are answered by a Haiku-class external model
+> through a dedicated CI key, hard-capped at USD 5 a night, on seed and
+> fixture data only. The **Current state** section is true today (main
+> 3.365.0, `8733323f5`). The **Roadmap** section is the plan.
 > This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
 > first for the target map, the global rules **G1–G13**, and the sequencing.
@@ -18,25 +21,26 @@ inflect · ai architecture · garak · roadmap v1 · 2026-10-29
 | --- | --- |
 | Column · box | Security evaluation & testing · "Garak (security testing)" — evaluates Layer 1 and the assistant/agent surfaces |
 | Wave | 3 (with the Layer 1 additions, so it measures them as they land) — but Phase 1 can start now against the existing guard |
-| Depends on | a model to probe (the external provider with a CI key; a local model only if Layer 5 is taken up) |
+| Depends on | a model to probe: the D-EV-1 Haiku-class model on the dedicated CI key (a local model only if Layer 5 is taken up) |
 | Unblocks | an evidence line for [`nemo-guardrails.md`](./nemo-guardrails.md) and [`presidio.md`](./presidio.md): a before/after |
-| Owner decisions | **D-EV-1** (which model answers the probes in CI, and what it may cost per night) |
+| Owner decisions | **D-EV-1** decided 2026-11-11 (owner): a Haiku-class external model answers the probes, through a dedicated CI key, hard-capped at USD 5 a night, on seed and fixture data only. Open, raised in [`ragas.md`](./ragas.md): whether the USD 5 is per job or shared with Ragas (read as shared until the owner says otherwise) |
 | Complete at | Phase 3 |
 
 ## At a glance
 
-Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+Green: decided, or on `main`. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · prepare<br/>targets, probes, allowlist<br/>D-EV-1 model and budget<br/>baseline hit rates"}}:::gate
+  DEV1(["D-EV-1 decided 2026-11-11<br/>Haiku-class model, CI key<br/>USD 5 a night, seed only"]):::done
+  P0["Phase 0 · prepare<br/>targets, probes, allowlist<br/>cost meter share<br/>baseline hit rates"]:::todo
   P1["Phase 1 · nightly, non-blocking<br/>test-mode harness route<br/>dated marker a guard parses<br/>CI tenant token budget"]:::todo
   P2["Phase 2 · thresholds, then blocking<br/>assertion reads allowlisted too<br/>one record per night"]:::todo
   P3["Phase 3 · the tool boundary<br/>hostile MCP server fixture<br/>inbound A2A"]:::todo
   L1["Layer 1 additions<br/>presidio, nemo-guardrails"]:::ext
   INS["inspect P1<br/>reuses the harness route"]:::ext
   REC["Garak record<br/>hit rate per family"]:::eval
-  P0 --> P1 --> P2 --> P3
+  DEV1 --> P0 --> P1 --> P2 --> P3
   P1 -.->|before and after| L1
   P1 -.->|unblocks| INS
   P2 --- REC
@@ -71,8 +75,14 @@ flowchart LR
   MCP tool results from customer-run servers (`legacy-mcp`), questionnaire
   text, evidence documents.
 - **Spend is capped** per assistant turn (`assistant/spend-ceiling.ts`) and per
-  tenant per month (`monthly-budget-policy.ts`) — a red-team run can be
-  budgeted with mechanisms that exist.
+  tenant per month (`monthly-budget-policy.ts`), both in tokens. Nothing
+  converts tokens to US dollars or stops on a nightly amount; the cost meter
+  that does is planned in [`ragas.md`](./ragas.md) Phase 0 and shared with
+  this job.
+- **The product already runs on a Haiku-class model by default**
+  (`ANTHROPIC_MODEL` defaults to `claude-haiku-4-5` in `src/env.ts`); the
+  current Haiku, `claude-haiku-5-5`, lists at a tenth of its token price
+  ([`ragas.md`](./ragas.md) § Current state has the figures).
 
 ## Fit, and what is deliberately not adopted
 
@@ -87,6 +97,20 @@ scored per probe, published and gated exactly like DAST.
 - *Probing production or a customer tenant.* The target is a seeded test
   deployment with the seed tenant only (as DAST does); the CI model key is a
   CI secret; no customer data is in any prompt.
+- *A probe model chosen job by job, or an uncapped one.* D-EV-1 (2026-11-11):
+  the CI tenant's model, which is what answers every probe through the
+  product's own endpoint, is a **Haiku-class external model** on a
+  **dedicated CI key** used by nothing else, **hard-capped at USD 5 a night**,
+  with **seed and fixture data only**. Any garak detector that needs a model
+  judge uses the same key and the same cap. The cap is enforced the way
+  [`ragas.md`](./ragas.md) § Fit describes: a meter refuses a call before it
+  could pass the job's share, the CI tenant's monthly token budget stops the
+  product before a run starts, and the key's workspace spend limit, where the
+  account offers one, is a monthly backstop only. Until the owner says
+  otherwise the USD 5 is the night's total across this job and Ragas
+  (default USD 2.50 each). A run the meter stops ends `BUDGET_EXHAUSTED`,
+  naming how many probes ran of how many planned, and is never read as a
+  clean night.
 - *garak's `openai`/`huggingface` generators against the vendor directly.*
   That tests the model, not the product. The point is the composed system
   behind the product's own endpoint, with its guards on.
@@ -106,16 +130,19 @@ scored per probe, published and gated exactly like DAST.
 - [ ] 0.2 Choose the probe families and the detectors; write `.garak/config.yaml`
       and an empty allowlist `.garak/allowlist.tsv` with the same semantics
       note `.zap/rules.tsv` carries (an IGNORE silences at every severity).
-- [ ] 0.3 D-EV-1: the model behind CI probes — the external provider with a CI
-      key and a nightly budget, or a small local model on the CI runner (CPU,
-      slower, free). Record the sub-processor consequence: a CI key sends
-      *probe text only* to the vendor; note it on the Anthropic/OpenRouter row.
+- [x] 0.3 D-EV-1 decided by the owner on 2026-11-11: a Haiku-class external
+      model on a dedicated CI key, hard-capped at USD 5 a night, seed and
+      fixture data only (§ Fit).
 - [ ] 0.4 Baseline run locally; record hit rates per probe as the starting
       numbers.
+- [ ] 0.5 Record the sub-processor consequence on the Anthropic row: the CI key
+      sends *probe text only* to the vendor, from a workspace of its own; and
+      take this job's share in the shared cost meter
+      ([`ragas.md`](./ragas.md) Phase 0.5).
 
 **Prompt.**
 ```text
-Context (main 3.338.0): the nightly DAST job (.github/workflows/dast.yml) boots the app,
+Context (main 3.365.0): the nightly DAST job (.github/workflows/dast.yml) boots the app,
 logs in as seeded roles, scans, publishes a report and an auto-issue, and carries a dated
 DAST-NON-BLOCKING-UNTIL marker that tests/guardrails/dast-workflow-pinning.test.ts parses.
 The AI guard (src/app-layer/ai/guard/) is deterministic. The assistant endpoint streams
@@ -126,9 +153,11 @@ local test deployment through a NON-STREAMING harness route (to be added in Phas
 AUTH_TEST_MODE) for the assistant and for starting an agent run; list probe families:
 promptinject, dan, encoding, leakreplay, xss, packagehallucination; detectors per probe.
 (2) Create .garak/allowlist.tsv (empty) with a header comment copying .zap/rules.tsv's
-warning that IGNORE silences every severity. (3) Decide and document D-EV-1 (CI model +
-nightly budget) in an implementation note, including the sub-processor note for probe
-text. (4) Run locally once and record per-probe hit rates in the note as the baseline.
+warning that IGNORE silences every severity. (3) Record D-EV-1 (decided 2026-11-11: a
+Haiku-class external model on a dedicated CI key, USD 5 a night, shared with Ragas) in an
+implementation note, including the sub-processor note for probe
+text. (4) Run locally once, through the cost meter, and record per-probe hit rates and
+the night's spend in the note as the baseline.
 
 Constraints: seed tenant only; no customer content in any probe; the CI key is a CI
 secret. No workflow file yet.
@@ -158,11 +187,13 @@ ZAP one bit once).
       and fails once the date passes; pins the action/image digests.
 - [ ] 1.4 Budget: the harness route runs under a dedicated CI tenant with
       `agentMonthlyTokenBudget` set, so a probe storm halts at the product's
-      own pre-flight check rather than at the invoice.
+      own pre-flight check rather than at the invoice; and every call the
+      night makes passes the shared cost meter, which stops the run at this
+      job's share of the USD 5 cap.
 
 **Prompt.**
 ```text
-Context (main 3.338.0 + Phase 0): .garak/config.yaml and the baseline exist; DAST is the
+Context (main 3.365.0 + Phase 0): .garak/config.yaml and the baseline exist; DAST is the
 workflow pattern (boot, seed, role login, scan, report, auto-issue, dated marker parsed
 by a guard); assistant turns go through the tool loop in src/app-layer/ai/assistant/;
 runs start via startWorkflowRun and can be awaited through the run stream; AUTH_TEST_MODE
@@ -177,7 +208,9 @@ garak.yml modelled on dast.yml: services, seed, run garak (digest-pinned image) 
 the harness route for each role, upload reports, auto-issue on new hits, continue-on-
 error only alongside GARAK-NON-BLOCKING-UNTIL: <date>. (3) tests/guardrails/garak-
 workflow-pinning.test.ts parsing the marker against today. (4) The CI tenant carries a
-monthly token budget so a storm halts pre-flight.
+monthly token budget so a storm halts pre-flight, and every call passes the shared cost
+meter (evals/cost-meter/), which ends the run BUDGET_EXHAUSTED at this job's share of the
+D-EV-1 cap (USD 5 a night across garak and Ragas).
 
 Constraints: the harness route exists only under AUTH_TEST_MODE; the job is NOT added to
 the coverage partition (it runs no Jest) — say so in the workflow comment. Seed data only.
@@ -204,11 +237,14 @@ vulnerability of its own).
 - [ ] 2.3 Flip to blocking: remove `continue-on-error`, delete the marker,
       update the pinning guard to refuse a re-added one without a date.
 - [ ] 2.4 Report → an evaluation record in the house shape (G11) so the
-      before/after of a guard change is a diff of two records.
+      before/after of a guard change is a diff of two records. The record
+      carries the model id, the night's metered spend and a `status`; a
+      `BUDGET_EXHAUSTED` record names the probes that did not run and is red,
+      never a pass.
 
 **Prompt.**
 ```text
-Context (main 3.338.0 + Phase 1): the nightly garak job runs non-blocking with a dated
+Context (main 3.365.0 + Phase 1): the nightly garak job runs non-blocking with a dated
 marker; .zap/assert-no-high-risk.mjs is the pattern for a post-scan assertion that reads
 allowlisted alerts too; evaluation records recompute aggregates from raw answers.
 
