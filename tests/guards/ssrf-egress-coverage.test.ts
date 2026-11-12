@@ -35,6 +35,7 @@ import { assertPublicAddress, isPrivateAddress, SsrfBlockedError } from '@/app-l
 import { IN_DEPLOYMENT_SERVICES } from '@/lib/ai/in-deployment-service';
 import { functionBodyOf, codeOf as blankComments } from '../helpers/source-blocks';
 import { repoRelativeFiles } from '../helpers/repo-files';
+import { functionUse, functionUseIn, NON_LITERAL_LOAD_SITES, nonLiteralModuleLoads, valueImportersOf } from '../helpers/module-edges';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -358,27 +359,29 @@ const IN_DEPLOYMENT_CLIENTS: Record<string, string> = {
         "The PII detector's Presidio provider (presidio.md Phase 1): every text bound for an external model, and the spans to redact back.",
 };
 
-/** For each client module, the ONE module that imports it (step 3). */
-const CLIENT_CONSTRUCTED_BY: Record<string, { module: string; importedAs: RegExp }> = {
+/**
+ * For each client module, the ONE module that imports it (step 3).
+ *
+ * Read off the syntax tree (`valueImportersOf`): any import, re-export,
+ * `require`, `import()` or `import x = require` that RESOLVES to the client, in
+ * any spelling — a regex over `'./x'` and `'@/…/x'` let a sibling directory's
+ * `'../dir/x'` through.
+ */
+const CLIENT_CONSTRUCTED_BY: Record<string, { module: string }> = {
     'src/lib/ai/embeddings/http.ts': {
         module: 'src/lib/ai/embeddings/tei-provider.ts',
-        importedAs: /from '(\.|@\/lib\/ai\/embeddings)\/http'/,
     },
     'src/lib/ai/embeddings/tei-provider.ts': {
         module: 'src/lib/ai/embeddings/select.ts',
-        importedAs: /from '(\.|@\/lib\/ai\/embeddings)\/tei-provider'/,
     },
     'src/lib/ai/parsing/docling-provider.ts': {
         module: 'src/lib/ai/parsing/index.ts',
-        importedAs: /from '(\.|@\/lib\/ai\/parsing)\/docling-provider'/,
     },
     'src/app-layer/ai/guard/providers/nemo-provider.ts': {
         module: 'src/app-layer/ai/guard/providers/registry.ts',
-        importedAs: /from '(\.|@\/app-layer\/ai\/guard\/providers)\/nemo-provider'/,
     },
     'src/lib/ai/pii/presidio-provider.ts': {
         module: 'src/lib/ai/pii/mount.ts',
-        importedAs: /from '(\.|@\/lib\/ai\/pii)\/presidio-provider'/,
     },
 };
 
@@ -452,11 +455,45 @@ describe('SSRF — the in-deployment dial resolves inside the deployment, pins, 
 });
 
 describe('SSRF — the in-deployment clients reach the network only through the dial', () => {
-    it('exactly the registered clients call the dial', () => {
-        const callers = srcTsFiles()
-            .filter((f) => f !== IN_DEPLOYMENT_DIAL)
-            .filter((f) => /\binDeploymentRequest\s*\(/.test(codeOf(f)));
-        expect(callers.sort()).toEqual(Object.keys(IN_DEPLOYMENT_CLIENTS).sort());
+    it('exactly the registered clients call the dial, and nothing reaches it any other way', () => {
+        // Off the syntax tree, not the text `inDeploymentRequest(`: an alias
+        // (`import { inDeploymentRequest as reach }`), a namespace import
+        // (`svc['inDeploymentRequest'](…)`), a re-export, a `require`/`import()`
+        // of the dial, or the function passed along would each call the dial
+        // with no text match — and the dial admits exactly the private
+        // addresses safeFetch refuses.
+        const use = functionUse(IN_DEPLOYMENT_DIAL, 'inDeploymentRequest', srcTsFiles());
+        expect(use).toEqual({ callers: Object.keys(IN_DEPLOYMENT_CLIENTS).sort(), misuses: [] });
+    });
+
+    it('no file under src/ loads a module by a name the scan cannot read', () => {
+        const sites = srcTsFiles().filter((f) => nonLiteralModuleLoads(f, read(f)) > 0);
+        expect(sites).toEqual(Object.keys(NON_LITERAL_LOAD_SITES).sort());
+    });
+
+    it('the dial-use scan sees every way of reaching the dial', () => {
+        // Negative controls on synthetic source, so the clean result above means something.
+        const dial = (src: string) => functionUseIn('src/lib/ai/x.ts', src, IN_DEPLOYMENT_DIAL, 'inDeploymentRequest');
+        const imp = "import { inDeploymentRequest } from '@/lib/ai/in-deployment-service';";
+        expect(dial(`${imp} await inDeploymentRequest('embed', u, i, b);`)).toEqual({ calls: 1, misuses: [] });
+        expect(dial("import { inDeploymentRequest } from './in-deployment-service'; inDeploymentRequest();")).toEqual({ calls: 1, misuses: [] });
+        expect(dial("import { type InDeploymentFailure } from '@/lib/ai/in-deployment-service';")).toEqual({ calls: 0, misuses: [] });
+        const misused = [
+            "import { inDeploymentRequest as reach } from '@/lib/ai/in-deployment-service'; reach();",
+            "import * as svc from '@/lib/ai/in-deployment-service'; svc['inDeploymentRequest']();",
+            "import * as svc from './in-deployment-service'; svc.inDeploymentRequest();",
+            "import svc = require('./in-deployment-service'); svc.inDeploymentRequest();",
+            "const svc = require('@/lib/ai/in-deployment-service');",
+            "const { inDeploymentRequest } = await import('../ai/in-deployment-service');",
+            "export * from '@/lib/ai/in-deployment-service';",
+            "export { inDeploymentRequest } from '@/lib/ai/in-deployment-service';",
+            `${imp} const reach = inDeploymentRequest; reach();`,
+            `${imp} run(inDeploymentRequest);`,
+            `${imp} export { inDeploymentRequest };`,
+        ];
+        for (const src of misused) {
+            expect({ src, misused: dial(src).misuses.length > 0 }).toEqual({ src, misused: true });
+        }
     });
 
     it('no client, and no file in a client directory, makes a fetch call of its own', () => {
@@ -488,9 +525,9 @@ describe('SSRF — the in-deployment clients reach the network only through the 
 
     it('each client is imported by exactly one module, ending at the one that reads its variable', () => {
         const importers = Object.fromEntries(
-            Object.entries(CLIENT_CONSTRUCTED_BY).map(([client, { importedAs }]) => [
+            Object.keys(CLIENT_CONSTRUCTED_BY).map((client) => [
                 client,
-                srcTsFiles().filter((f) => f !== client && importedAs.test(codeOf(f))),
+                valueImportersOf(client, srcTsFiles()),
             ]),
         );
         expect(importers).toEqual(

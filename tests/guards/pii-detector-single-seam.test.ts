@@ -7,6 +7,12 @@
  * skip the record. So the importers of `presidio-provider` under `src/` are
  * read off the tree (git-backed, `repoRelativeFiles`) and asserted by exact
  * equality — a new importer fails until somebody decides it is a second seam.
+ * An importer is any module reference that RESOLVES to the provider — a static
+ * import or re-export in any spelling (`@/…`, `./…`, `../pii/…`, either quote),
+ * `import x = require(…)`, `require(…)` or `import(…)` — read off the syntax
+ * tree (`tests/helpers/module-edges.ts`). A regex over two spellings let a
+ * sibling directory's `'../pii/presidio-provider'` through. The mount gate may
+ * not re-export the provider either, or it would hand the constructor on.
  *
  * The provider itself reaches the network only through the shared
  * in-deployment dial (`inDeploymentRequest`, G6 as amended 2026-11-12) and
@@ -27,19 +33,26 @@ import * as ts from 'typescript';
 
 import { codeOf } from '../helpers/source-blocks';
 import { repoRelativeFiles } from '../helpers/repo-files';
+import { moduleEdgesOf, NON_LITERAL_LOAD_SITES, nonLiteralModuleLoads, valueImportersOf } from '../helpers/module-edges';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PROVIDER = 'src/lib/ai/pii/presidio-provider.ts';
 const code = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
-/** An import or re-export of the provider module, by alias or relative path. */
-const IMPORTS_PROVIDER = /from\s+'(?:@\/lib\/ai\/pii\/|\.\/)presidio-provider'/;
+const MOUNT = 'src/lib/ai/pii/mount.ts';
+const srcTs = () => repoRelativeFiles().filter((f) => f.startsWith('src/') && /\.tsx?$/.test(f));
+const readSrc = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-const providerImporters = () =>
-    repoRelativeFiles()
-        .filter((f) => f.startsWith('src/') && /\.tsx?$/.test(f))
-        .filter((f) => IMPORTS_PROVIDER.test(code(f)))
-        .sort();
+/** Every file under `src/` with a value edge to the provider, however it is spelled. */
+const providerImporters = () => valueImportersOf(PROVIDER, srcTs());
+
+/** Edges from the mount gate that re-export the provider. */
+const mountReExportsOfProvider = () =>
+    moduleEdgesOf(MOUNT, readSrc(MOUNT)).filter((e) => e.kind === 'export' && e.target === PROVIDER).map((e) => e.spec);
+
+/** Edges to the provider in a synthetic file, for the negative controls. */
+const edgesToProvider = (fileRel: string, src: string) =>
+    moduleEdgesOf(fileRel, src).filter((e) => !e.typeOnly && e.target === PROVIDER).map((e) => e.kind);
 
 const RESOLVER = 'resolvePiiDetector';
 
@@ -83,8 +96,33 @@ const srcResolverMisuses = () =>
 const providerFetchCalls = () => code(PROVIDER).match(/[\w.]*fetch\w*\s*\(/gi) ?? [];
 
 describe('the PII detector has one construction seam', () => {
-    it('only the mount gate imports the Presidio provider', () => {
-        expect(providerImporters()).toEqual(['src/lib/ai/pii/mount.ts']);
+    it('only the mount gate imports the Presidio provider, and it hands the provider on to nobody', () => {
+        expect(providerImporters()).toEqual([MOUNT]);
+        expect(mountReExportsOfProvider()).toEqual([]);
+    });
+
+    it('no file under src/ loads a module by a name the import scan cannot read', () => {
+        const sites = srcTs().filter((f) => nonLiteralModuleLoads(f, readSrc(f)) > 0);
+        expect(sites).toEqual(Object.keys(NON_LITERAL_LOAD_SITES).sort());
+    });
+
+    it('the importer scan resolves every spelling of a reference to the provider', () => {
+        // Negative controls on synthetic source in real directories, so the one
+        // importer above means something. Each would have passed the old regex.
+        const cases: Array<[string, string, string[]]> = [
+            ['src/lib/ai/parsing/x.ts', "import { createPresidioDetector } from '../pii/presidio-provider';", ['import']],
+            ['src/lib/ai/x.ts', 'import { createPresidioDetector } from "./pii/presidio-provider";', ['import']],
+            ['src/lib/ai/pii/x.ts', "export * from './presidio-provider';", ['export']],
+            ['src/x.ts', "const p = require('./lib/ai/pii/presidio-provider');", ['require']],
+            ['src/x.ts', "const p = await import('@/lib/ai/pii/presidio-provider');", ['dynamic-import']],
+            ['src/lib/ai/pii/x.ts', "import p = require('./presidio-provider');", ['import-equals']],
+            ['src/lib/ai/pii/x.ts', "import type { PresidioOptions } from './presidio-provider';", []],
+            ['src/lib/ai/pii/x.ts', "import { x } from './presidio-provider-types';", []],
+        ];
+        for (const [file, src, kinds] of cases) {
+            expect({ src, kinds: edgesToProvider(file, src) }).toEqual({ src, kinds });
+        }
+        expect(nonLiteralModuleLoads('src/x.ts', 'await import(`./pii/${name}`); require(name);')).toBe(2);
     });
 
     it('the provider reaches the network only through the in-deployment dial', () => {
@@ -110,11 +148,8 @@ describe('the PII detector has one construction seam', () => {
         expect(misuses('const f = resolvePiiDetector; f({ root });')).toBe(1);
     });
 
-    it('the import pattern sees both spellings, and the fetch pattern sees every alias', () => {
+    it('the fetch pattern sees every alias', () => {
         // Negative controls, on synthetic source, so a clean run above means something.
-        expect(IMPORTS_PROVIDER.test("import { x } from '@/lib/ai/pii/presidio-provider';")).toBe(true);
-        expect(IMPORTS_PROVIDER.test("export { x } from './presidio-provider';")).toBe(true);
-        expect(IMPORTS_PROVIDER.test("import { x } from './presidio-provider-types';")).toBe(false);
         for (const call of ['await fetch(u)', 'resilientFetch(u)', 'boundedFetch (u)']) {
             expect({ call, found: /[\w.]*fetch\w*\s*\(/i.test(call) }).toEqual({ call, found: true });
         }
