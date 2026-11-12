@@ -1,6 +1,7 @@
 import { RequestContext } from '../types';
 import { FindingRepository } from '../repositories/FindingRepository';
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanRead } from '../policies/common';
+import { assertCanCreateFinding, assertCanUpdateFinding } from '../policies/finding.policies';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { runInTenantContext, PrismaTx } from '@/lib/db-context';
@@ -102,7 +103,7 @@ export async function getFinding(ctx: RequestContext, id: string) {
 }
 
 export async function createFinding(ctx: RequestContext, data: CreateFindingInput) {
-    assertCanWrite(ctx);
+    assertCanCreateFinding(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const riskIds = await validateFindingRefs(db, ctx, {
@@ -166,7 +167,7 @@ export async function createFinding(ctx: RequestContext, data: CreateFindingInpu
 }
 
 export async function updateFinding(ctx: RequestContext, id: string, data: z.infer<typeof UpdateFindingSchema>) {
-    assertCanWrite(ctx);
+    assertCanUpdateFinding(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const oldFinding = await FindingRepository.getById(db, ctx, id);

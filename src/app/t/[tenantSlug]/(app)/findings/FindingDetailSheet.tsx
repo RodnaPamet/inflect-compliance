@@ -134,7 +134,7 @@ export interface FindingDetailSheetProps {
     /** The finding to show; `null` closes the panel. */
     findingId: string | null;
     onClose: () => void;
-    /** The coarse write tier — `updateFinding` asserts it and nothing more. */
+    /** May edit: `findings.edit` and the coarse write tier, both of which `updateFinding` asserts (#5369). */
     canWrite: boolean;
     tenantSlug: string;
     /** Called after a successful save, so the register can refetch. */

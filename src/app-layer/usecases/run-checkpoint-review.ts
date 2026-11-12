@@ -227,7 +227,7 @@ export async function getRunCheckpointReview(
             // this kind (#5053): a process map's approver also needs
             // `processes.edit`. Computed here, from the table the usecase
             // asserts, so the panel offers Approve only where it is taken.
-            viewerMayApprove: viewerMayApproveProposal(ctx, p.kind),
+            viewerMayApprove: viewerMayApproveProposal(ctx, p.kind, p.operation),
             // Non-null by `buildProposalDiffs`' contract (an entry per input);
             // the fallback exists so a contract change cannot render a card
             // with no diff and an approve control beside it. PAYLOAD_UNREADABLE
