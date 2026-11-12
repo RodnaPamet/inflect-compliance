@@ -69,7 +69,7 @@ import { failRun } from '@/lib/agentic/drivers/run-settlement';
 import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, notFound, forbidden } from '@/lib/errors/types';
-import { appendAuditEntry } from '@/lib/audit';
+import { appendAuditEntry, appendAuditEntryOrQueue } from '@/lib/audit';
 import { assertRunStartNotByExchangeOnlyKey, enforceMcpCapability } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
@@ -147,6 +147,7 @@ import {
     isAgenticFatal,
 } from '@/lib/agentic/failure-isolation';
 import type { A2aInboundOrigin, RequestContext } from '@/app-layer/types';
+import { isPersonContext } from '@/app-layer/request-context-kind';
 import { guardUntrustedInput, assertNoReviewRequired } from '@/app-layer/ai/guard';
 
 // ─── Public API ─────────────────────────────────────────────────────
@@ -677,6 +678,9 @@ export async function startWorkflowRun(
     return { runId: run.id, status, workflowKey, stepFailures };
 }
 
+/** The named refusal a non-person caller gets from `resumeWorkflowRun` (#5368). */
+export const RESUME_REQUIRES_PERSON = 'agent_run_resume_human_required';
+
 /**
  * Resume a paused (AWAITING_APPROVAL / PAUSED) run after a human has acted on
  * its checkpoint. A privileged human action. Marks the pending checkpoint DONE
@@ -686,6 +690,52 @@ export async function resumeWorkflowRun(
     ctx: RequestContext,
     runId: string,
 ): Promise<{ status: string; stepFailures: number }> {
+    // ═══ A CHECKPOINT IS A PERSON'S DECISION. A CREDENTIAL IS NOT A PERSON. ═══
+    //
+    // Resuming closes the run's PENDING `HUMAN_CHECKPOINT` as DONE — it IS the
+    // approval the checkpoint parked for. The route admits `admin.view` or
+    // `admin.agent_registry_view`, which a key gets from `admin:read` /
+    // `admin:agent_registry_view`, and an `admin:*` key resolves to ADMIN and so
+    // passes `assertCanWrite` below. Without this, a key — including the
+    // agent's OWN key — approved its own parked run (#5368). Same rule, same
+    // shape as `approveAgentProposal`'s `agent_proposal_human_review_required`.
+    //
+    // `isPersonContext` is the one definition of "a person" (API key, bound
+    // agent and JOB are all refused); a SYSTEM context is refused beside it.
+    // The route is this function's only caller: no job, worker or A2A path
+    // resumes a run through here — the worker continues a queued run through
+    // `executeQueuedWorkflowRun`, and a peer's reply never resumes anything
+    // (`a2a-reply-delivery.ts`) — so nothing legitimate is refused.
+    //
+    // FIRST, before the run is read: nothing about the run is disclosed to the
+    // caller, and the refusal is the same whatever its tier.
+    if (!isPersonContext(ctx) || ctx.actorType === 'SYSTEM') {
+        const callerKind = ctx.apiKeyId !== undefined
+            ? 'API_KEY'
+            : ctx.agentId !== undefined
+                ? 'AGENT'
+                : (ctx.actorType ?? 'USER');
+        await appendAuditEntryOrQueue({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            actorType: ctx.apiKeyId ? 'API_KEY' : (ctx.actorType ?? 'USER'),
+            entity: 'WorkflowRun',
+            entityId: runId,
+            action: 'AUTHZ_DENIED',
+            requestId: ctx.requestId,
+            detailsJson: {
+                category: 'access',
+                event: 'authz_denied',
+                reason: RESUME_REQUIRES_PERSON,
+                callerKind,
+            },
+            metadataJson: { role: ctx.role, apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
+        });
+        throw forbidden(
+            `${RESUME_REQUIRES_PERSON}: a paused run is resumed by a person, never by an API key, an agent or a job.`,
+            { reason: RESUME_REQUIRES_PERSON },
+        );
+    }
     assertCanWrite(ctx);
     const { run, def } = await loadRunAndDef(ctx, runId);
     if (run.status !== 'AWAITING_APPROVAL' && run.status !== 'PAUSED') {

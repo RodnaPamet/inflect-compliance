@@ -14,6 +14,11 @@ import { requirePermission } from '@/lib/security/permission-middleware';
  * and enables the button on the role-tier write, which `resumeWorkflowRun`
  * asserts itself. Neither layer alone is the page's gate: the view key confers
  * no write, and an EDITOR holds the write but is refused the page.
+ *
+ * And the act is a PERSON'S (#5368): resuming approves the run's human
+ * checkpoint, so `resumeWorkflowRun` refuses an API key, an agent-bound context
+ * and a job with an audited `agent_run_resume_human_required`, whatever scopes
+ * the key holds — a key can pass both layers above.
  */
 export const POST = withApiErrorHandling(
     requirePermission<{ tenantSlug: string; id: string }>(
