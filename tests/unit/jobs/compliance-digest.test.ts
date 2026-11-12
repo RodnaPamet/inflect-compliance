@@ -148,7 +148,13 @@ describeFn('runComplianceDigest (real DB)', () => {
     async function cleanup() {
         for (const t of [T1, T2]) {
             await prisma.complianceSnapshot.deleteMany({ where: { tenantId: t } });
-            await prisma.tenantMembership.deleteMany({ where: { tenantId: t } });
+            // The last-OWNER guard refuses an ordinary delete of a tenant's
+            // only OWNER, so memberships are removed with triggers off (the
+            // pattern the RLS suites use).
+            await prisma.$transaction(async (tx) => {
+                await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
+                await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, t);
+            });
             await prisma.tenant.deleteMany({ where: { id: t } });
         }
         await prisma.user.deleteMany({ where: { email: { contains: SUITE } } });
@@ -159,7 +165,8 @@ describeFn('runComplianceDigest (real DB)', () => {
             data: {
                 tenantId,
                 snapshotDate: date,
-                controlCoverageBps: 7530,
+                // Coverage % × 10, as the snapshot job writes it: 75.3%.
+                controlCoverageBps: 753,
                 controlsImplemented: 30,
                 controlsApplicable: 40,
                 risksTotal: 12,
@@ -186,7 +193,7 @@ describeFn('runComplianceDigest (real DB)', () => {
             data: { tenantId: T1, userId: u.id, role: 'ADMIN', status: 'ACTIVE' },
         });
         // Latest + a prior snapshot (trend delta path).
-        await makeSnapshot(T1, new Date('2026-05-20'), { controlCoverageBps: 7000, risksOpen: 7 });
+        await makeSnapshot(T1, new Date('2026-05-20'), { controlCoverageBps: 700, risksOpen: 7 });
         await makeSnapshot(T1, new Date('2026-06-01'));
 
         const { result } = await runComplianceDigest({});
@@ -197,6 +204,26 @@ describeFn('runComplianceDigest (real DB)', () => {
         const sent = stub.sentMessages.filter((m) => m.to === email);
         expect(sent).toHaveLength(1);
         expect(sent[0].subject).toContain('Snap');
+    });
+
+    // #5203 and #5091 — a sign-up workspace has only its OWNER, and the
+    // coverage column is % × 10 (753 = 75.3%), not basis points.
+    it('mails an OWNER-only workspace, with coverage and its change at the right scale', async () => {
+        await prisma.tenant.create({ data: { id: T1, name: 'OwnerOnly', slug: T1 } });
+        const email = `${SUITE}-owner@example.test`;
+        const u = await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
+        await prisma.tenantMembership.create({
+            data: { tenantId: T1, userId: u.id, role: 'OWNER', status: 'ACTIVE' },
+        });
+        await makeSnapshot(T1, new Date('2026-05-20'), { controlCoverageBps: 700 });
+        await makeSnapshot(T1, new Date('2026-06-01'));
+
+        await runComplianceDigest({});
+
+        const sent = stub.sentMessages.filter((m) => m.to === email);
+        expect(sent).toHaveLength(1);
+        expect(sent[0].text).toContain('Coverage: 75.3%');
+        expect(sent[0].text).toContain('+5.3pp');
     });
 
     it('does NOT mail a soft-deleted tenant, even with active ADMIN members (#3164)', async () => {

@@ -73,7 +73,7 @@ export class EvidenceSweepFailedError extends Error {
  * still persist their tasks after the 30-day sweep throws. That behaviour is
  * the reason this constant exists; the reporting story was fiction.
  */
-const NO_SWEEP: RetentionNotificationResult = { scanned: 0, tasksCreated: 0, skippedDuplicate: 0 };
+const NO_SWEEP: RetentionNotificationResult = { scanned: 0, tasksCreated: 0, skippedDuplicate: 0, failed: 0 };
 
 export async function runDailyEvidenceExpiryNotifications(
     options: { tenantId?: string; skipOutbox?: boolean } = {},
