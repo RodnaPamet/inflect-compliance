@@ -356,7 +356,7 @@ export async function executeFlueRun(
     //
     // The peer replies go in HERE for that reason: the digest must cover them,
     // because they are part of the prompt the model saw.
-    const message = runMessage(def, fromSeq, declared.input, peerReplies);
+    const message = runMessage(def, declared.input, peerReplies);
 
     // The SETTLED terms — membership, key scopes, policy card, autonomy
     // ceiling — resolved once, here, exactly as the static driver does.
@@ -906,7 +906,7 @@ export async function executeFlueRun(
                 // input, already stored on the decision row; recording it adds
                 // no prompt text to a ledger that deliberately holds none.
                 // `message`, the SAME local `settleTurns` passes as
-                // `sanitizedInput` — not a second `runMessage(def, fromSeq)`
+                // `sanitizedInput` — not a second `runMessage(def, …)`
                 // call. Two spellings of one value is how the step and the row
                 // drift into digesting different things while both look right.
                 decisionDigest: computeInputDigest(message),

@@ -114,8 +114,17 @@ export function generateTotpUri(secret: string, email: string, issuer: string = 
  * Supports 30-second period, 6-digit codes, SHA-1 HMAC (RFC 6238 defaults).
  */
 export function verifyTotpCode(secret: string, code: string, windowSize: number = 1): boolean {
+    return matchTotpStep(secret, code, windowSize) !== null;
+}
+
+/**
+ * The time step (RFC 6238 counter) a valid code belongs to, or null.
+ * A caller that must not accept the same code twice records the step and
+ * accepts only a later one.
+ */
+export function matchTotpStep(secret: string, code: string, windowSize: number = 1): number | null {
     if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
-        return false;
+        return null;
     }
 
     const secretBytes = base32Decode(secret);
@@ -126,11 +135,11 @@ export function verifyTotpCode(secret: string, code: string, windowSize: number 
         const counter = Math.floor((now + offset * period) / period);
         const expected = generateHotp(secretBytes, counter);
         if (expected === code) {
-            return true;
+            return counter;
         }
     }
 
-    return false;
+    return null;
 }
 
 // ─── Internal HOTP Implementation ──────────────────────────────────

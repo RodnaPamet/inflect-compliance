@@ -133,10 +133,10 @@ describe('compileFlow', () => {
             description: 'Run an agent profile.',
             steps: [{ kind: 'SYNTHESIS', label: 'answer', synthesize: () => ({ text: '' }) }],
         } as Pick<WorkflowDefinition, 'description' | 'steps'>;
-        const withFlow = runMessage({ ...def, profile: { flow } as WorkflowDefinition['profile'] }, 3);
+        const withFlow = runMessage({ ...def, profile: { flow } as WorkflowDefinition['profile'] });
         expect(withFlow).toContain('1. [READ] read a (tool: list_risks)\n2. [SYNTHESIS] answer b');
         expect(withFlow).not.toContain('[SYNTHESIS] answer\n');
-        expect(runMessage(def, 0)).toBe(
+        expect(runMessage(def)).toBe(
             'Run an agent profile.\n\nCover the following, in order. Use the tools you have been given; do not assume.\n1. [SYNTHESIS] answer',
         );
     });

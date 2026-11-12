@@ -86,6 +86,18 @@ import type { FlueModelSelection } from '@/lib/agentic/flue/model-selection';
 export const ANTHROPIC_API_BASE_URL = 'https://api.anthropic.com';
 
 /**
+ * The route a Tool Runner run's model calls take, as the external-AI transfer
+ * gate (`external-residency-gate.ts`) reads it (#5364).
+ *
+ * Its own id, not Flue's `inflect-external`: that names a provider registered
+ * in pi-ai's registry, which this engine never touches. The gate treats every
+ * id but the local gateway's as outside the deployment, and this one is
+ * outside by construction: `clientForRun` builds a client for Anthropic's API
+ * or none at all.
+ */
+export const TOOL_RUNNER_PROVIDER_ID = 'anthropic-messages-api';
+
+/**
  * The per-tenant residency terms: the same three columns, through the same
  * mapper (`residencyTermsFrom`), that the Flue engine reads.
  */
@@ -101,7 +113,7 @@ export type ToolRunnerClientRefusal =
     | 'SDK_AMBIENT_HEADERS_SET';
 
 export type ToolRunnerClientChoice =
-    | { ok: true; residency: 'EXTERNAL'; client: Anthropic }
+    | { ok: true; residency: 'EXTERNAL'; providerId: typeof TOOL_RUNNER_PROVIDER_ID; client: Anthropic }
     | { ok: false; reason: ToolRunnerClientRefusal };
 
 /** The SDK's warnings and errors, in our log, without the arguments it attaches (requests, responses). */
@@ -268,7 +280,7 @@ export function clientForRun(
         middleware: [messagesOnlyFor(opts, sent)],
     });
     LAST_REQUEST.set(client, sent);
-    return { ok: true, residency: 'EXTERNAL', client };
+    return { ok: true, residency: 'EXTERNAL', providerId: TOOL_RUNNER_PROVIDER_ID, client };
 }
 
 /** The model each profile tier runs on when the deployment names none. */

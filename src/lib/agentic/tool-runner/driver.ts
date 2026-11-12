@@ -19,6 +19,11 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { RequestContext } from '@/app-layer/types';
 import { failRun } from '@/lib/agentic/drivers/run-settlement';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
+import {
+    EXTERNAL_AI_ACK_SELECT,
+    acknowledgementFrom,
+    type ExternalAiAcknowledgement,
+} from '@/lib/agentic/external-residency-gate';
 import { RESIDENCY_SELECT, residencyTermsFrom } from '@/lib/agentic/flue/model-selection';
 import { ENGINE_CAPS, type WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
@@ -36,7 +41,7 @@ export type ToolRunnerStartRefusal =
     | 'NO_STEPS_REMAIN';
 
 export type ToolRunnerRunPlan =
-    | { ok: true; client: Anthropic }
+    | { ok: true; client: Anthropic; providerId: string }
     | { ok: false; reason: ToolRunnerStartRefusal };
 
 /** Plan a run, or refuse it. Builds the run's client and sends nothing. */
@@ -50,7 +55,7 @@ export function planToolRunnerRun(
     if (fromSeq >= ENGINE_CAPS.MAX_STEPS) return { ok: false, reason: 'NO_STEPS_REMAIN' };
     const choice = clientForRun(selection, { runId });
     if (!choice.ok) return { ok: false, reason: choice.reason };
-    return { ok: true, client: choice.client };
+    return { ok: true, client: choice.client, providerId: choice.providerId };
 }
 
 /** The sentence a refused run is settled with. */
@@ -75,12 +80,30 @@ export function refusalMessage(reason: ToolRunnerStartRefusal): string {
     }
 }
 
-/** The tenant's residency terms, read as the Flue driver reads them. */
-async function residencyTermsFor(ctx: RequestContext): Promise<ToolRunnerResidencyTerms> {
+/**
+ * The two per-tenant postures a Tool Runner run needs, read together: a named
+ * type rather than an inline literal in the signature, for the reason the Flue
+ * driver's `FlueRunPostures` gives.
+ */
+interface ToolRunnerPostures {
+    readonly residency: ToolRunnerResidencyTerms;
+    readonly acknowledgement: ExternalAiAcknowledgement;
+}
+
+/**
+ * The tenant's residency terms and its business-data transfer acknowledgement
+ * (#3872), in ONE read, as the Flue driver's `posturesFor` reads them (#5364).
+ * The acknowledgement travels with the run for the reason it does there: the
+ * question is what permitted this run, not what is set now.
+ */
+async function posturesFor(ctx: RequestContext): Promise<ToolRunnerPostures> {
     const settings = await runInTenantContext(ctx, (db) =>
-        db.tenantSecuritySettings.findUnique({ where: { tenantId: ctx.tenantId }, select: RESIDENCY_SELECT }),
+        db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: { ...RESIDENCY_SELECT, ...EXTERNAL_AI_ACK_SELECT },
+        }),
     );
-    return residencyTermsFrom(settings);
+    return { residency: residencyTermsFrom(settings), acknowledgement: acknowledgementFrom(settings) };
 }
 
 export async function runToolRunnerDriver(
@@ -90,7 +113,8 @@ export async function runToolRunnerDriver(
     fromSeq: number,
     runStartMs: number,
 ): Promise<RunDriverOutcome> {
-    const plan = planToolRunnerRun(def, fromSeq, await residencyTermsFor(ctx), runId);
+    const postures = await posturesFor(ctx);
+    const plan = planToolRunnerRun(def, fromSeq, postures.residency, runId);
     if (!plan.ok) {
         // Settled, not thrown: the run row already exists.
         const status = await failRun(ctx, runId, refusalMessage(plan.reason));
@@ -105,5 +129,8 @@ export async function runToolRunnerDriver(
         workflowKey: def.key,
     });
 
-    return executeToolRunnerRun(ctx, runId, def, fromSeq, runStartMs, plan.client);
+    return executeToolRunnerRun(ctx, runId, def, fromSeq, runStartMs, plan.client, {
+        providerId: plan.providerId,
+        externalAiAcknowledgement: postures.acknowledgement,
+    });
 }
