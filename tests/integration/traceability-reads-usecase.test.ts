@@ -9,17 +9,14 @@
  *      under RLS, so another tenant's id comes back as EMPTY lists — not an
  *      error, and never the other tenant's rows.
  *
- *   2. THE GATE IS COARSE, AND THAT IS TODAY'S BEHAVIOUR, NOT AN ENDORSEMENT.
- *      Every one of these reads gates on `assertCanRead` alone. A custom role
- *      that withholds `risks.view` still reads a control's risks through
- *      `listControlRisks` / `getControlTraceability` / `listAssetRisks`, and one
- *      that withholds `assets.view` still reads a control's assets. The graph
- *      over the same links (`getTraceabilityGraph`) DOES honour the granular
- *      keys and drops those nodes for the same caller, so the two surfaces
- *      disagree. Whether these reads should honour the view keys is an owner
- *      question raised on #5376; this test records the current answer so a
- *      change to it is a visible, deliberate diff. When the owner decides,
- *      the "pinned" assertions below flip.
+ *   2. EACH SIDE OF A LINK ANSWERS TO ITS OWN VIEW KEY (owner decision,
+ *      2026-11-12). A read whose ANCHOR — the entity in the URL — the caller
+ *      may not view is REFUSED with a 403; the linked entities of a kind the
+ *      caller may not view are OMITTED, not errored. So a custom role that
+ *      withholds `risks.view` no longer reads risk titles through a control's
+ *      traceability panel, and the reads now agree with the graph over the same
+ *      links (`getTraceabilityGraph`), which already dropped those nodes. Every
+ *      built-in role holds all four view keys, so no built-in role moves.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -40,6 +37,7 @@ import {
     getControlTraceability,
     getRiskTraceability,
     getAssetTraceability,
+    getPolicyTraceability,
 } from '@/app-layer/usecases/traceability';
 import { getTraceabilityGraph } from '@/app-layer/usecases/traceability-graph';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
@@ -67,10 +65,21 @@ const riskBlind = customRole((p) => {
 const assetBlind = customRole((p) => {
     p.assets.view = false;
 });
+const controlBlind = customRole((p) => {
+    p.controls.view = false;
+});
+const policyBlind = customRole((p) => {
+    p.policies.view = false;
+});
+
+const BUILT_IN_ROLES = ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_ADMIN'] as const;
+
+const refused = { status: 403 };
 
 let controlId = '';
 let riskId = '';
 let assetId = '';
+let policyId = '';
 
 describeFn('traceability reads (real DB)', () => {
     beforeAll(async () => {
@@ -82,6 +91,8 @@ describeFn('traceability reads (real DB)', () => {
         await prisma.riskControl.create({ data: { tenantId: A, riskId, controlId } });
         await prisma.controlAsset.create({ data: { tenantId: A, controlId, assetId } });
         await prisma.assetRiskLink.create({ data: { tenantId: A, assetId, riskId } });
+        policyId = (await prisma.policy.create({ data: { tenantId: A, slug: `${SUITE}-policy`, title: `${SUITE} policy` } })).id;
+        await prisma.policyControlLink.create({ data: { tenantId: A, policyId, controlId } });
         // Tenant B has its own linked rows, so "empty" below is isolation, not absence.
         const bc = await prisma.control.create({ data: { tenantId: B, name: 'B control' } });
         const br = await prisma.risk.create({ data: { tenantId: B, title: 'B risk', score: 3, category: 'cat' } });
@@ -95,6 +106,8 @@ describeFn('traceability reads (real DB)', () => {
             await prisma.riskControl.deleteMany({ where: { tenantId: t } });
             await prisma.controlAsset.deleteMany({ where: { tenantId: t } });
             await prisma.assetRiskLink.deleteMany({ where: { tenantId: t } });
+            await prisma.policyControlLink.deleteMany({ where: { tenantId: t } });
+            await prisma.policy.deleteMany({ where: { tenantId: t } });
             await prisma.control.deleteMany({ where: { tenantId: t } });
             await prisma.risk.deleteMany({ where: { tenantId: t } });
             await prisma.asset.deleteMany({ where: { tenantId: t } });
@@ -150,27 +163,91 @@ describeFn('traceability reads (real DB)', () => {
         });
     });
 
-    describe('PINNED, today\'s behaviour: the reads gate on assertCanRead, not on the granular view keys', () => {
-        it('a custom role without risks.view still reads a control\'s risks and an asset\'s risks', async () => {
+    describe('each side of a link answers to its own view key', () => {
+        it('every built-in role holds all four view keys, and reads every side', async () => {
+            for (const role of BUILT_IN_ROLES) {
+                const ctx = makeRequestContext(role, { tenantId: A, tenantSlug: A });
+                for (const domain of ['controls', 'risks', 'assets', 'policies'] as const) {
+                    expect([role, domain, ctx.appPermissions[domain].view]).toEqual([role, domain, true]);
+                }
+                const c = await getControlTraceability(ctx, controlId);
+                expect([role, c.risks.length, c.assets.length]).toEqual([role, 1, 1]);
+                const r = await getRiskTraceability(ctx, riskId);
+                expect([role, r.controls.length, r.assets.length]).toEqual([role, 1, 1]);
+                const a = await getAssetTraceability(ctx, assetId);
+                expect([role, a.controls.length, a.risks.length]).toEqual([role, 1, 1]);
+                const p = await getPolicyTraceability(ctx, policyId);
+                expect([role, p.controls.length, p.risks.length, p.assets.length]).toEqual([role, 1, 1, 1]);
+            }
+        });
+
+        it('without risks.view, a control\'s and an asset\'s risks are omitted — no risk title leaks', async () => {
             expect(riskBlind.appPermissions.risks.view).toBe(false);
-            expect((await listControlRisks(riskBlind, controlId)).map((l) => l.risk.id)).toEqual([riskId]);
-            expect((await listAssetRisks(riskBlind, assetId)).map((l) => l.risk.id)).toEqual([riskId]);
-            expect((await getControlTraceability(riskBlind, controlId)).risks.map((l) => l.risk.title)).toEqual([`${SUITE} risk`]);
-            // …and opens a risk's own traceability view.
-            expect((await getRiskTraceability(riskBlind, riskId)).controls.map((l) => l.control.id)).toEqual([controlId]);
+            expect(await listControlRisks(riskBlind, controlId)).toEqual([]);
+            expect(await listAssetRisks(riskBlind, assetId)).toEqual([]);
+
+            const c = await getControlTraceability(riskBlind, controlId);
+            expect(c.risks).toEqual([]);
+            expect(JSON.stringify(c)).not.toContain(`${SUITE} risk`);
+            // The sides the caller MAY view are still there.
+            expect(c.assets.map((l) => l.asset.id)).toEqual([assetId]);
+
+            const a = await getAssetTraceability(riskBlind, assetId);
+            expect(a.risks).toEqual([]);
+            expect(a.controls.map((l) => l.control.id)).toEqual([controlId]);
+
+            const p = await getPolicyTraceability(riskBlind, policyId);
+            expect(p.risks).toEqual([]);
+            expect(JSON.stringify(p)).not.toContain(`${SUITE} risk`);
+            expect(p.controls.map((l) => l.control.id)).toEqual([controlId]);
+            expect(p.assets.map((l) => l.asset.id)).toEqual([assetId]);
         });
 
-        it('a custom role without assets.view still reads a control\'s assets and a risk\'s assets', async () => {
+        it('without risks.view, a read anchored on a risk is refused', async () => {
+            await expect(getRiskTraceability(riskBlind, riskId)).rejects.toMatchObject(refused);
+            await expect(listRiskControls(riskBlind, riskId)).rejects.toMatchObject(refused);
+            await expect(listRiskAssets(riskBlind, riskId)).rejects.toMatchObject(refused);
+        });
+
+        it('without assets.view, assets are omitted and an asset-anchored read is refused', async () => {
             expect(assetBlind.appPermissions.assets.view).toBe(false);
-            expect((await listControlAssets(assetBlind, controlId)).map((l) => l.asset.id)).toEqual([assetId]);
-            expect((await listRiskAssets(assetBlind, riskId)).map((l) => l.asset.id)).toEqual([assetId]);
-            expect((await getAssetTraceability(assetBlind, assetId)).risks.map((l) => l.risk.id)).toEqual([riskId]);
+            expect(await listControlAssets(assetBlind, controlId)).toEqual([]);
+            expect(await listRiskAssets(assetBlind, riskId)).toEqual([]);
+            expect((await getControlTraceability(assetBlind, controlId)).assets).toEqual([]);
+            const r = await getRiskTraceability(assetBlind, riskId);
+            expect(r.assets).toEqual([]);
+            expect(r.controls.map((l) => l.control.id)).toEqual([controlId]);
+            expect((await getPolicyTraceability(assetBlind, policyId)).assets).toEqual([]);
+
+            await expect(getAssetTraceability(assetBlind, assetId)).rejects.toMatchObject(refused);
+            await expect(listAssetControls(assetBlind, assetId)).rejects.toMatchObject(refused);
+            await expect(listAssetRisks(assetBlind, assetId)).rejects.toMatchObject(refused);
         });
 
-        it('…while the graph over the same links drops the risk for the same caller (the disagreement)', async () => {
+        it('without controls.view, controls are omitted and a control-anchored read is refused', async () => {
+            expect(controlBlind.appPermissions.controls.view).toBe(false);
+            expect(await listRiskControls(controlBlind, riskId)).toEqual([]);
+            expect(await listAssetControls(controlBlind, assetId)).toEqual([]);
+            const r = await getRiskTraceability(controlBlind, riskId);
+            expect(r.controls).toEqual([]);
+            expect(r.assets.map((l) => l.asset.id)).toEqual([assetId]);
+            expect((await getAssetTraceability(controlBlind, assetId)).controls).toEqual([]);
+            expect((await getPolicyTraceability(controlBlind, policyId)).controls).toEqual([]);
+
+            await expect(getControlTraceability(controlBlind, controlId)).rejects.toMatchObject(refused);
+            await expect(listControlRisks(controlBlind, controlId)).rejects.toMatchObject(refused);
+            await expect(listControlAssets(controlBlind, controlId)).rejects.toMatchObject(refused);
+        });
+
+        it('without policies.view, a policy\'s traceability is refused', async () => {
+            await expect(getPolicyTraceability(policyBlind, policyId)).rejects.toMatchObject(refused);
+        });
+
+        it('the reads now agree with the graph over the same links', async () => {
             const graph = await getTraceabilityGraph(riskBlind);
             expect(graph.nodes.some((n) => n.kind === 'risk')).toBe(false);
             expect(graph.nodes.some((n) => n.kind === 'control')).toBe(true);
+            expect((await getControlTraceability(riskBlind, controlId)).risks).toEqual([]);
         });
     });
 });

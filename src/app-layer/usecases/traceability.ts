@@ -8,10 +8,39 @@ import { policyCountsWhere } from '@/lib/policy/coverage-predicate';
 // The real read gate. A file-local `assertCanRead(ctx) {}` no-op used to
 // shadow this import, silently un-gating every list*/get*Traceability read —
 // the traceability graph exposes control/risk/asset titles, so it must sit
-// behind the same canRead check as every other read surface.
+// behind the same canRead check as every other read surface. Since #5376 the
+// per-entity reads ask their anchor's own view assertion (which includes this
+// coarse check); `coverageSummary` still asks this one.
 import { assertCanRead } from '../policies/common';
-import { assertCanEditAsset } from '../policies/asset.policies';
-import { assertCanUpdateControl } from '../policies/control.policies';
+import { assertCanEditAsset, assertCanReadAssets, canReadAssets } from '../policies/asset.policies';
+import { assertCanUpdateControl, assertCanReadControls, canReadControls } from '../policies/control.policies';
+import { assertCanReadRisk, canReadRisks } from '../policies/risk.policies';
+import { assertCanReadPolicies } from '../policies/policy.policies';
+
+/**
+ * Each side of a link answers to its OWN view key (#5376, owner decision
+ * 2026-11-12).
+ *
+ * These reads gated on the coarse read tier alone, so a custom role without
+ * `risks.view` still read risk titles through a control's traceability panel,
+ * while the graph over the same links (`traceability-graph.ts`) already
+ * dropped them. Now every read decides per side:
+ *
+ *   - the ANCHOR — the entity in the URL, whose panel this is — must be
+ *     viewable, or the read is REFUSED (403), as the anchor's own detail read
+ *     is. The routes ask the same key through `requirePermission`, which is
+ *     where the `AUTHZ_DENIED` row is written; this is the usecase floor.
+ *   - a LINKED kind the caller may not view is OMITTED — an empty list, and
+ *     its query is not run — never an error: the panel still shows the sides
+ *     the caller may see.
+ *
+ * Every built-in role that can read holds all four view keys, so no built-in
+ * role moves. An entirely absent `appPermissions` honours the coarse check
+ * alone, the fallback every granular policy here uses.
+ */
+async function sideIf<T>(visible: boolean, read: () => Promise<T[]>): Promise<T[]> {
+    return visible ? read() : [];
+}
 
 /**
  * A mapping is governed by the key of the entity you edit FROM (#4413, owner
@@ -35,13 +64,15 @@ const assertCanMapFromControl = assertCanUpdateControl;
 // ─── Control ↔ Risk ───
 
 export async function listControlRisks(ctx: RequestContext, controlId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => ControlRiskRepository.listByControl(db, ctx.tenantId, controlId));
+    assertCanReadControls(ctx);
+    return sideIf(canReadRisks(ctx), () =>
+        runInTenantContext(ctx, (db) => ControlRiskRepository.listByControl(db, ctx.tenantId, controlId)));
 }
 
 export async function listRiskControls(ctx: RequestContext, riskId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => ControlRiskRepository.listByRisk(db, ctx.tenantId, riskId));
+    assertCanReadRisk(ctx);
+    return sideIf(canReadControls(ctx), () =>
+        runInTenantContext(ctx, (db) => ControlRiskRepository.listByRisk(db, ctx.tenantId, riskId)));
 }
 
 export async function mapControlToRisk(ctx: RequestContext, controlId: string, riskId: string, rationale?: string) {
@@ -74,13 +105,15 @@ export async function unmapControlFromRisk(ctx: RequestContext, controlId: strin
 // ─── Asset ↔ Control ───
 
 export async function listAssetControls(ctx: RequestContext, assetId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => AssetControlRepository.listByAsset(db, ctx.tenantId, assetId));
+    assertCanReadAssets(ctx);
+    return sideIf(canReadControls(ctx), () =>
+        runInTenantContext(ctx, (db) => AssetControlRepository.listByAsset(db, ctx.tenantId, assetId)));
 }
 
 export async function listControlAssets(ctx: RequestContext, controlId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => AssetControlRepository.listByControl(db, ctx.tenantId, controlId));
+    assertCanReadControls(ctx);
+    return sideIf(canReadAssets(ctx), () =>
+        runInTenantContext(ctx, (db) => AssetControlRepository.listByControl(db, ctx.tenantId, controlId)));
 }
 
 export async function mapAssetToControl(ctx: RequestContext, assetId: string, controlId: string, coverageType?: string, rationale?: string) {
@@ -113,13 +146,15 @@ export async function unmapAssetFromControl(ctx: RequestContext, assetId: string
 // ─── Asset ↔ Risk ───
 
 export async function listAssetRisks(ctx: RequestContext, assetId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => AssetRiskRepository.listByAsset(db, ctx.tenantId, assetId));
+    assertCanReadAssets(ctx);
+    return sideIf(canReadRisks(ctx), () =>
+        runInTenantContext(ctx, (db) => AssetRiskRepository.listByAsset(db, ctx.tenantId, assetId)));
 }
 
 export async function listRiskAssets(ctx: RequestContext, riskId: string) {
-    assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) => AssetRiskRepository.listByRisk(db, ctx.tenantId, riskId));
+    assertCanReadRisk(ctx);
+    return sideIf(canReadAssets(ctx), () =>
+        runInTenantContext(ctx, (db) => AssetRiskRepository.listByRisk(db, ctx.tenantId, riskId)));
 }
 
 export async function mapAssetToRisk(ctx: RequestContext, assetId: string, riskId: string, exposureLevel?: string, rationale?: string) {
@@ -166,11 +201,12 @@ export type TraceabilityMapPlacement = {
 };
 
 export async function getControlTraceability(ctx: RequestContext, controlId: string) {
-    assertCanRead(ctx);
+    assertCanReadControls(ctx);
+    const [seeRisks, seeAssets] = [canReadRisks(ctx), canReadAssets(ctx)];
     return runInTenantContext(ctx, async (db) => {
         const [risks, assets, edgeMaps, nodeMaps] = await Promise.all([
-            ControlRiskRepository.listByControl(db, ctx.tenantId, controlId),
-            AssetControlRepository.listByControl(db, ctx.tenantId, controlId),
+            sideIf(seeRisks, () => ControlRiskRepository.listByControl(db, ctx.tenantId, controlId)),
+            sideIf(seeAssets, () => AssetControlRepository.listByControl(db, ctx.tenantId, controlId)),
             // A control gates edges (processEdgeControl) AND/OR sits on `control`
             // nodes (ProcessNode.linkedEntityId) — union both.
             ProcessMapRepository.listMapsByControl(db, ctx, controlId),
@@ -191,11 +227,12 @@ export async function getControlTraceability(ctx: RequestContext, controlId: str
 }
 
 export async function getRiskTraceability(ctx: RequestContext, riskId: string) {
-    assertCanRead(ctx);
+    assertCanReadRisk(ctx);
+    const [seeControls, seeAssets] = [canReadControls(ctx), canReadAssets(ctx)];
     return runInTenantContext(ctx, async (db) => {
         const [controls, assets, nodeMaps] = await Promise.all([
-            ControlRiskRepository.listByRisk(db, ctx.tenantId, riskId),
-            AssetRiskRepository.listByRisk(db, ctx.tenantId, riskId),
+            sideIf(seeControls, () => ControlRiskRepository.listByRisk(db, ctx.tenantId, riskId)),
+            sideIf(seeAssets, () => AssetRiskRepository.listByRisk(db, ctx.tenantId, riskId)),
             ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'risk', riskId),
         ]);
         const processMaps: TraceabilityMapPlacement[] = nodeMaps.map((n) => ({
@@ -207,11 +244,12 @@ export async function getRiskTraceability(ctx: RequestContext, riskId: string) {
 }
 
 export async function getAssetTraceability(ctx: RequestContext, assetId: string) {
-    assertCanRead(ctx);
+    assertCanReadAssets(ctx);
+    const [seeControls, seeRisks] = [canReadControls(ctx), canReadRisks(ctx)];
     return runInTenantContext(ctx, async (db) => {
         const [controls, risks, nodeMaps] = await Promise.all([
-            AssetControlRepository.listByAsset(db, ctx.tenantId, assetId),
-            AssetRiskRepository.listByAsset(db, ctx.tenantId, assetId),
+            sideIf(seeControls, () => AssetControlRepository.listByAsset(db, ctx.tenantId, assetId)),
+            sideIf(seeRisks, () => AssetRiskRepository.listByAsset(db, ctx.tenantId, assetId)),
             ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'asset', assetId),
         ]);
         const processMaps: TraceabilityMapPlacement[] = nodeMaps.map((n) => ({
@@ -238,7 +276,11 @@ export async function getAssetTraceability(ctx: RequestContext, assetId: string)
 const POLICY_TRACE_TAKE = 200;
 
 export async function getPolicyTraceability(ctx: RequestContext, policyId: string) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
+    // The policy's controls are read even when the caller may not view
+    // controls: they are the path the inherited risks and assets are reached
+    // through. Only the OUTPUT omits them.
+    const [seeControls, seeRisks, seeAssets] = [canReadControls(ctx), canReadRisks(ctx), canReadAssets(ctx)];
     return runInTenantContext(ctx, async (db) => {
         const t = ctx.tenantId;
         const links = await db.policyControlLink.findMany({
@@ -249,32 +291,33 @@ export async function getPolicyTraceability(ctx: RequestContext, policyId: strin
             },
             take: POLICY_TRACE_TAKE,
         });
-        const controls = links
+        const linkedControls = links
             .filter((l) => l.control)
             .map((l) => ({ id: l.id, control: l.control! }));
-        const controlIds = controls.map((c) => c.control.id);
+        const controlIds = linkedControls.map((c) => c.control.id);
+        const controls = seeControls ? linkedControls : [];
 
         if (controlIds.length === 0) {
             return { policyId, controls, risks: [], assets: [] };
         }
 
         const [riskLinks, assetLinks] = await Promise.all([
-            db.riskControl.findMany({
+            sideIf(seeRisks, () => db.riskControl.findMany({
                 where: { tenantId: t, controlId: { in: controlIds } },
                 select: {
                     controlId: true,
                     risk: { select: { id: true, title: true, status: true, score: true, category: true } },
                 },
                 take: POLICY_TRACE_TAKE,
-            }),
-            db.controlAsset.findMany({
+            })),
+            sideIf(seeAssets, () => db.controlAsset.findMany({
                 where: { tenantId: t, controlId: { in: controlIds } },
                 select: {
                     controlId: true,
                     asset: { select: { id: true, name: true, type: true, criticality: true, status: true } },
                 },
                 take: POLICY_TRACE_TAKE,
-            }),
+            })),
         ]);
 
         // Dedup inherited entities by id; count the distinct policy

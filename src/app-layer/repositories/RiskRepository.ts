@@ -85,7 +85,13 @@ const riskListSelect = {
     // `createdAt` is required by the cursor-pagination helper
     // (`computePageInfo`) — it's not rendered in the table.
     createdAt: true,
+    // The Controls column is `controls.length`. A control in the trash keeps
+    // its `RiskControl` row, and the soft-delete extension filters top-level
+    // reads only — never a nested select — so without this `where` it was
+    // still counted (#5376, owner decision 2026-11-12; the Risk Register PDF
+    // follows the same rule in `ReportRepository`).
     controls: {
+        where: { control: { deletedAt: null } },
         select: {
             id: true,
             control: { select: { id: true, name: true, annexId: true, status: true } },
@@ -327,7 +333,9 @@ export class RiskRepository {
             return db.risk.findFirst({
                 where: { id, tenantId: ctx.tenantId },
                 include: {
-                    controls: { include: { control: true } },
+                    // Controls in the trash are hidden on the risk page, as in
+                    // the list's Controls column above (#5376).
+                    controls: { where: { control: { deletedAt: null } }, include: { control: true } },
                 },
             });
         });
