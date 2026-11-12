@@ -26,7 +26,7 @@ import { textContent } from 'domutils';
 import type { ChildNode, Element } from 'domhandler';
 import { runInTenantContext } from '@/lib/db-context';
 import type { RequestContext } from '@/app-layer/types';
-import { assertCanRead } from '@/app-layer/policies/common';
+import { assertCanReadPolicies } from '@/app-layer/policies/policy.policies';
 import { logEvent } from '@/app-layer/events/audit';
 import { notFound } from '@/lib/errors/types';
 import { PolicyRepository } from '@/app-layer/repositories/PolicyRepository';
@@ -162,7 +162,10 @@ export async function generatePolicyDocumentPdf(
     policyId: string,
     options?: PolicyPdfOptions,
 ): Promise<PDFKit.PDFDocument> {
-    assertCanRead(ctx);
+    // The policy reads' own gate: the coarse read tier AND the granular
+    // `policies.view` key, which a custom role or an API key's scopes can
+    // withhold while the coarse tier still reads true.
+    assertCanReadPolicies(ctx);
 
     const policy = await runInTenantContext(ctx, async (db) => {
         const p = await PolicyRepository.getById(db, ctx, policyId);
