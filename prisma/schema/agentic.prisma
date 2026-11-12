@@ -858,6 +858,10 @@ model RegisteredAgent {
   /// before it existed has none, and an absent breaker refuses nothing.
   behaviourWindows AgentBehaviourWindow[]
   circuitBreaker   AgentCircuitBreaker?
+  /// The nightly behaviour fingerprint (Morpheus roadmap Phase 1): one row per
+  /// active UTC day, and one per day that scored anomalous.
+  behaviourBaselineDays AgentBehaviourBaseline[]
+  behaviourAnomalies    AgentBehaviourAnomaly[]
   /// Harness assurance (#3665): the keys this agent signs scans with when it
   /// is a scanner, the scans it signed, and the discovered agents a scan
   /// reconciled to this register row.
@@ -2054,6 +2058,87 @@ model AgentCircuitBreaker {
   @@unique([tenantId, agentId])
   @@unique([agentId, tenantId])
   @@index([closedByUserId])
+}
+
+/// Tenant-scoped: ONE UTC DAY of one agent's behaviour fingerprint, and the
+/// verdict the nightly `agent-fingerprint` job reached on it (Morpheus roadmap
+/// Phase 1, D-L1-3). The rolling baseline IS these rows: a day is judged
+/// against the agent's most recent `BASELINE_MAX_DAYS` rows with `inBaseline`.
+///
+/// Counts only — every feature column is a count computed from the columns
+/// `FINGERPRINT_SOURCE_COLUMNS` names in `src/lib/agentic/behaviour-fingerprint.ts`,
+/// and no column here can hold content. A row exists only for an ACTIVE day:
+/// an empty day is not a sample (the `AgentBehaviourWindow` rule, one level up).
+model AgentBehaviourBaseline {
+  id       String   @id @default(cuid())
+  tenantId String
+  agentId  String
+  /// The UTC day this row counts.
+  day      DateTime @db.Date
+
+  readCalls        Int @default(0)
+  proposeCalls     Int @default(0)
+  orchestrateCalls Int @default(0)
+  activeHours      Int @default(0)
+  proposals        Int @default(0)
+  guardFlags       Int @default(0)
+  modelCalls       Int @default(0)
+  tokens           Int @default(0)
+
+  /// `LEARNING` | `STEADY` | `ANOMALOUS` — `FINGERPRINT_VERDICTS`. A String
+  /// pinned by a CHECK, not a Postgres enum, for the rolling-deploy reason
+  /// `AgentCircuitBreaker.state` gives.
+  verdict      String
+  /// The highest driving z; NULL while LEARNING, because nothing was judged.
+  score        Float?
+  /// Baseline days the verdict was reached over.
+  baselineDays Int     @default(0)
+  /// FALSE for an anomalous day: a detector must not learn from the anomaly.
+  inBaseline   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One row per (tenant, agent, day) — the nightly job's idempotency key, the
+  /// tenant-scoped lookup index and the `agentId` FK index in one.
+  @@unique([tenantId, agentId, day])
+  /// The baseline read: a tenant's in-baseline days inside the look-back.
+  @@index([tenantId, day])
+}
+
+/// Tenant-scoped: ONE anomalous agent-day — what drove it, and what it did.
+///
+/// Written by the `agent-fingerprint` job in the same transaction as the
+/// baseline row it explains. `driversJson` is the "why": feature names and
+/// numbers (`observed`, `mean`, `sd`, `z`) and nothing else. `findingId` names
+/// the finding the day raised or found open — a plain id, deliberately without
+/// a foreign key, so the finding's lifecycle never rewrites this record.
+model AgentBehaviourAnomaly {
+  id          String   @id @default(cuid())
+  tenantId    String
+  agentId     String
+  day         DateTime @db.Date
+  score       Float
+  /// `FINDING` | `LATCH` — `ANOMALY_TIERS`, pinned by a CHECK.
+  tier        String
+  driversJson Json
+  findingId   String?
+  /// When the existing circuit breaker was latched for this day. NULL when the
+  /// tier is FINDING, when the operator's latch key is off, or when the breaker
+  /// was already OPEN (the latch writes only on a CLOSED breaker).
+  latchedAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One anomaly per agent-day: a re-run of the night writes nothing new.
+  @@unique([tenantId, agentId, day])
+  @@index([tenantId, day])
 }
 
 // ═════════════════════════════════════════════════════════════════════

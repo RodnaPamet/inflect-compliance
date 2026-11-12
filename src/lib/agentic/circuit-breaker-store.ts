@@ -52,6 +52,7 @@ import {
 import type { McpCapabilityClass } from './autonomy-ceiling';
 import {
     BASELINE_WINDOW_LIMIT,
+    BEHAVIOUR_ANOMALY_TRIP,
     evaluateCircuitBreaker,
     GUARD_BLOCK_TRIP,
     shouldLatchOnGuardBlocks,
@@ -802,5 +803,55 @@ export async function latchOnGuardBlock(
             error: err instanceof Error ? err.message : 'non-Error thrown',
         });
         return { blocksInWindow: 0, latched: false };
+    }
+}
+
+/**
+ * Latch the breaker because the nightly behaviour fingerprint scored a day at
+ * threshold B (Morpheus roadmap Phase 1, `BEHAVIOUR_ANOMALY_TRIP`).
+ *
+ * The SAME write `latchOnGuardBlock` makes — insert-if-absent, then a
+ * conditional update on `state: 'CLOSED'` — so there is one breaker and one
+ * latch, a breaker already OPEN is left as it is (its first reason stands),
+ * and the meter and the bell fire only when this call actually latched. A
+ * person closes it through `closeAgentCircuitBreaker`, as every trip.
+ *
+ * Never throws: it runs after the detector's findings have committed, and a
+ * failed latch must not turn the night's record into an error. The caller
+ * records no `latchedAt` and the finding still stands.
+ */
+export async function latchOnBehaviourAnomaly(
+    tenantId: string,
+    agentId: string,
+    now: Date,
+): Promise<{ latched: boolean }> {
+    try {
+        await ensureLatchRow(tenantId, agentId);
+        const latched = await prisma.agentCircuitBreaker.updateMany({
+            where: { tenantId, agentId, state: 'CLOSED' },
+            data: {
+                state: 'OPEN',
+                trippedAt: now,
+                trippedWindow: windowKeyFor(now),
+                trippedSignals: [BEHAVIOUR_ANOMALY_TRIP],
+                lastVerdict: 'TRIP',
+                lastVerdictAt: now,
+            },
+        });
+        if (latched.count > 0) {
+            await meterBreakerTrip({ tenantId, agentId, signals: [BEHAVIOUR_ANOMALY_TRIP] });
+            await notifyBreakerTrip({ tenantId, agentId, signals: [BEHAVIOUR_ANOMALY_TRIP], now });
+        }
+        return { latched: latched.count > 0 };
+    } catch (err) {
+        // Fields named off one object so the logging rule can read them; two
+        // ids and an error message, never content.
+        const subject = { tenantId, agentId };
+        logger.warn('circuit-breaker: behaviour-anomaly latch failed', {
+            tenantId: subject.tenantId,
+            agentId: subject.agentId,
+            error: err instanceof Error ? err.message : 'non-Error thrown',
+        });
+        return { latched: false };
     }
 }

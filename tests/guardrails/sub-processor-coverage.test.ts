@@ -193,6 +193,9 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // not to this entry — so this flag must not be read as covering it.
     AGENT_INTERACTIVE_RUNS: 'operator feature flag admitting a browser-started agent run — a new starter for the existing engine, not an external endpoint, and not a sub-processor',
     AGENT_PROFILES: 'operator feature flag exposing the agent profile surface — tables and routes in this deployment, not an external endpoint, and not a sub-processor; the Tool Runner engine sends profile instructions to the Anthropic row, which names that data category since Step 2c',
+    AGENT_BEHAVIOUR_DETECTOR: 'operator switch for the nightly agent behaviour fingerprint (Morpheus Phase 1) — an in-worker computation over this deployment\'s own ledger, no external endpoint, not a sub-processor',
+    AGENT_BEHAVIOUR_DETECTOR_LATCH: 'operator switch letting that detector latch the existing circuit breaker — in-process, no external endpoint, not a sub-processor',
+    AGENT_BEHAVIOUR_DETECTOR_TENANTS: 'operator allowlist of tenant slugs the behaviour fingerprint scores — this deployment\'s own tenants, not an external endpoint, not a sub-processor',
     AGENT_PROFILES_TENANTS: 'operator allowlist of tenant slugs that opens the same agent profile surface to named tenants only — a list of this deployment\'s own tenants, not an external endpoint, and not a sub-processor',
     // Step 2a (#4148). The Tool Runner engine's two model pins and the SDK's
     // ambient-headers variable. The models are ids at the EXISTING Anthropic

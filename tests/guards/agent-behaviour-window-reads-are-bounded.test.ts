@@ -120,12 +120,20 @@ const PERIOD_BOUNDED_READERS: Readonly<Record<string, string>> = {
         'the auditor agent\'s agent.authority_conformance procedure (#3676): a scheduled ' +
         'control test that reads ONE month of one tenant\'s windows, on the index prefix, ' +
         'capped at the catalogue\'s 5000-unit population, and re-reads only the sampled ids',
+    'src/app-layer/usecases/agent-behaviour-fingerprint-ledger.ts':
+        'the nightly agent behaviour fingerprint (Morpheus Phase 1): ONE UTC day of one ' +
+        'tenant\'s windows, grouped per agent, filtered on tenantId and the register\'s own ' +
+        'agent ids (the index prefix) with a windowStart range, one group per agent, ' +
+        'take FINGERPRINT_MAX_AGENTS (2000). Runs in the worker, never on the MCP path',
 };
 
 /** The most rows a period-bounded reader may take: the catalogue's cap, read one past. */
 const PERIOD_ROW_CAP = POPULATION_CAP + 1;
 
 const KNOWN_METHODS: Readonly<Record<string, string>> = {
+    groupBy:
+        'a grouped read — one row per group, so it is ROW_MULTIPLYING and carries a ' +
+        '`take:` like a findMany; its where is held to the index prefix by check 3',
     findMany:
         'a read — must carry a `take:` at or below the cap (check 1 enforces it)',
     updateMany:
@@ -312,15 +320,19 @@ describe('AgentBehaviourWindow — the reads that make unbounded growth safe', (
         expect(SOURCES.length).toBeGreaterThan(1000);
         expect(SCANNED.map((f) => f.rel).sort()).toEqual([
             'src/app-layer/services/audit-procedures/agent-authority-conformance.ts',
+            // The behaviour fingerprint's day read (one groupBy).
+            'src/app-layer/usecases/agent-behaviour-fingerprint-ledger.ts',
             'src/app-layer/usecases/agent-circuit-breaker.ts',
             'src/app-layer/usecases/agent-recertification-evidence.ts',
             // Names the model in its docs and makes no call (zero sites).
             'src/lib/agentic/agent-recertification.ts',
             // Names it in procedure 5's population definition; no call.
             'src/lib/agentic/audit-procedure-library.ts',
+            // Names the model as a feature source in its docs; no call.
+            'src/lib/agentic/behaviour-fingerprint.ts',
             'src/lib/agentic/circuit-breaker-store.ts',
         ]);
-        expect(ALL_SITES.length).toBe(7);
+        expect(ALL_SITES.length).toBe(8);
     });
 
     it('every row-multiplying read carries a take at or below the cap', () => {
@@ -395,10 +407,12 @@ describe('AgentBehaviourWindow — the reads that make unbounded growth safe', (
         const reads = ALL_SITES.filter(
             (s) => ROW_MULTIPLYING.has(s.method) && Object.prototype.hasOwnProperty.call(PERIOD_BOUNDED_READERS, s.file),
         );
-        // The population read and the sampled re-read, and nothing else.
-        expect(reads.map((r) => `${r.file}:${r.method}`)).toEqual([
+        // The audit procedure's population read and sampled re-read, and the
+        // behaviour fingerprint's day read, and nothing else.
+        expect(reads.map((r) => `${r.file}:${r.method}`).sort()).toEqual([
             'src/app-layer/services/audit-procedures/agent-authority-conformance.ts:findMany',
             'src/app-layer/services/audit-procedures/agent-authority-conformance.ts:findMany',
+            'src/app-layer/usecases/agent-behaviour-fingerprint-ledger.ts:groupBy',
         ]);
         const offenders: string[] = [];
         for (const read of reads) {

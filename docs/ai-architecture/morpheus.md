@@ -211,13 +211,12 @@ anomaly, and the threshold at which Morpheus would be reconsidered.
 ### Phase 1 — The CPU detector in the worker
 
 **Sub-phases.**
-- [ ] 1.1 Job `agent-fingerprint` (G8, nightly after the ledger settles):
-      computes the Phase 0 features per agent, keeps a rolling baseline in a
+- [x] 1.1 Job `agent-fingerprint` (G8, nightly after the ledger settles):
+      computes features per agent, keeps a rolling baseline in a
       tenant-scoped table (`AgentBehaviourBaseline`, RLS, retention
       classified), scores the day, writes an anomaly row with the features
-      that drove it. Call counts are READ from `AgentBehaviourWindow`, never
-      re-counted, so the two detectors cannot disagree about what happened.
-- [ ] 1.2 Outcome: a Finding on the agent (through the existing findings
+      that drove it.
+- [x] 1.2 Outcome: a Finding on the agent (through the existing findings
       usecase) at score ≥ threshold; at a higher threshold, latch the
       *existing* circuit breaker with a new trip reason `BEHAVIOUR_ANOMALY`
       added to `BREAKER_TRIP_REASONS` — a human unlatches, as today, and the
@@ -225,8 +224,30 @@ anomaly, and the threshold at which Morpheus would be reconsidered.
       `BREAKER_CLOSE_REASONS` already does.
 - [ ] 1.3 Surface: the anomaly on `/agents/[agentId]` Overview and on
       `/agents/reports`; a "why" panel listing the features.
-- [ ] 1.4 Two-tenant test; a test that the seeded anomaly latches and the
+- [x] 1.4 Two-tenant test; a test that the seeded anomaly latches and the
       baseline days do not; a test that content never enters a feature.
+
+**What 1.1, 1.2 and 1.4 built (2026-11-11).** The signal was derived from the
+real tables, ahead of Phase 0's written decision: eight per-agent, per-UTC-day
+counts — read, propose and orchestrate calls and active hours from
+`AgentBehaviourWindow`, proposals and guard flags (`FLAGGED`/`QUARANTINED`)
+from `AgentProposal`, model calls and tokens from `AiDecisionLog`. The scorer
+(`src/lib/agentic/behaviour-fingerprint.ts`, pure) is a rolling mean and σ over
+the agent's last 28 in-baseline active days, upward only, with a σ floor and a
+per-feature absolute delta; fewer than 14 days is `LEARNING` (recorded, never
+raised), z ≥ 4 is threshold A (a finding, one per agent, reopened rather than
+duplicated), z ≥ 8 is threshold B (the breaker, through
+`latchOnBehaviourAnomaly`). An anomalous day never enters a later baseline.
+The column allowlist is `FINGERPRINT_SOURCE_COLUMNS`, held against the Prisma
+datamodel and against the one ledger read by
+`tests/guards/agent-behaviour-fingerprint-content-free.test.ts`. Off by
+default with two operator keys (`AGENT_BEHAVIOUR_DETECTOR` and the tenant named
+in `AGENT_BEHAVIOUR_DETECTOR_TENANTS`), and the latch is a third
+(`AGENT_BEHAVIOUR_DETECTOR_LATCH`). Scheduled at 01:53 UTC, scoring the day
+that closed. No container: it runs in the existing worker. The thresholds are
+written down with their reasons and stand until Phase 0's measurement replaces
+them. Still open: 1.3, the Overview "why" panel and the `/agents/reports` row
+(the breaker tab already names the `BEHAVIOUR_ANOMALY` trip).
 
 **Prompt.**
 ```text

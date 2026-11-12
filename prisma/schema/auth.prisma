@@ -236,6 +236,8 @@ model Tenant {
   auditWorkpaperNarratives          AuditWorkpaperNarrative[]
   agentBehaviourWindows             AgentBehaviourWindow[]
   agentCircuitBreakers              AgentCircuitBreaker[]
+  agentBehaviourBaselines           AgentBehaviourBaseline[]
+  agentBehaviourAnomalies           AgentBehaviourAnomaly[]
   agenticEvidenceArtefacts          AgenticEvidenceArtefact[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?

@@ -6339,6 +6339,7 @@
         "signalRejectionRate": "Rejection rate",
         "signalToolMix": "Tool mix",
         "signalGuardBlock": "Guard blocks",
+        "signalBehaviourAnomaly": "Behaviour anomaly (daily)",
         "anomalousBadge": "Anomalous",
         "countedYes": "Counted",
         "countedAnomalous": "Excluded — anomalous",

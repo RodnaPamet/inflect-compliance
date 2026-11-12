@@ -6339,6 +6339,7 @@
         "signalRejectionRate": "Дял на отхвърлянията",
         "signalToolMix": "Състав на инструментите",
         "signalGuardBlock": "Блокирания от пазача",
+        "signalBehaviourAnomaly": "Поведенческа аномалия (дневна)",
         "anomalousBadge": "Аномален",
         "countedYes": "Отчита се",
         "countedAnomalous": "Изключен — аномален",

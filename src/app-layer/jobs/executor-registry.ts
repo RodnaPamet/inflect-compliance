@@ -1541,6 +1541,14 @@ executorRegistry.register('agent-harness-estate-staleness', async (payload) => {
     return runHarnessEstateStalenessJob({ tenantId: payload.tenantId });
 });
 
+// agent-fingerprint (Morpheus roadmap Phase 1): the nightly behaviour
+// fingerprint. Off unless the operator's two keys admit the tenant; findings,
+// and at threshold B a latch of the EXISTING breaker only with the third key.
+executorRegistry.register('agent-fingerprint', async (payload) => {
+    const { runAgentFingerprintJob } = await import('./agent-fingerprint');
+    return runAgentFingerprintJob({ tenantId: payload.tenantId });
+});
+
 // agentic-evidence-emission: turn receipts + AI decision records into evidence
 // attached to the agentic controls they discharge. Payload passed THROUGH, both
 // fields NAMED: an absent tenantId is the scheduled sweep and an absent asOf is

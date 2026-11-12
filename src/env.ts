@@ -552,6 +552,19 @@ export const env = createEnv({
         // has run (docs/implementation-notes/2026-11-11-vector-store-seam.md);
         // until then the backend refuses PGVECTOR_NOT_INSTALLED on every call.
         VECTOR_STORE_BACKEND: z.string().optional(),
+        // THE AGENT BEHAVIOUR FINGERPRINT (Morpheus roadmap Phase 1, D-L1-3) —
+        // OFF BY DEFAULT, two keys (G9). The nightly `agent-fingerprint` job
+        // scores a tenant only when this is '1'/'true' AND the tenant's slug is
+        // named in AGENT_BEHAVIOUR_DETECTOR_TENANTS (comma-separated). Any other
+        // value of either is off. Read through `behaviourDetectorDecisionFor`
+        // in src/lib/agentic/behaviour-detector-switch.ts, never directly.
+        AGENT_BEHAVIOUR_DETECTOR: z.string().optional(),
+        AGENT_BEHAVIOUR_DETECTOR_TENANTS: z.string().optional(),
+        // Threshold B of the same detector LATCHES the agent's existing circuit
+        // breaker with reason BEHAVIOUR_ANOMALY. That stops an agent with no
+        // human in the loop, so it is a third, separate key: only '1'/'true'
+        // turns it on, and without it threshold B raises the finding only.
+        AGENT_BEHAVIOUR_DETECTOR_LATCH: z.string().optional(),
         // RUNS STARTED BY A PERSON IN A BROWSER (#3868 step 2) — opt-in.
         //
         // Every Flue run today is started by a job, a credential or an
@@ -927,6 +940,9 @@ export const env = createEnv({
         AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
         AGENT_DRIVER_TOOL_RUNNER: process.env.AGENT_DRIVER_TOOL_RUNNER,
         VECTOR_STORE_BACKEND: process.env.VECTOR_STORE_BACKEND,
+        AGENT_BEHAVIOUR_DETECTOR: process.env.AGENT_BEHAVIOUR_DETECTOR,
+        AGENT_BEHAVIOUR_DETECTOR_TENANTS: process.env.AGENT_BEHAVIOUR_DETECTOR_TENANTS,
+        AGENT_BEHAVIOUR_DETECTOR_LATCH: process.env.AGENT_BEHAVIOUR_DETECTOR_LATCH,
         AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
         AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,
