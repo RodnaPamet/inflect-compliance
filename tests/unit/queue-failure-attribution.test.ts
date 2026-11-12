@@ -61,12 +61,18 @@ describe('failingTestFiles', () => {
             'FAIL jsdom tests/rendered/b.test.tsx',
             'FAIL flue tests/flue/c.test.ts',
             'FAIL tests/unit/d.test.ts',
+            // The ratchets run under `scan` (#5092), and a project added later
+            // prints its own label.
+            'FAIL scan tests/guards/e.test.ts',
+            'FAIL some-new-project tests/unit/f.test.ts',
         ].join('\n');
         expect(failingTestFiles(log)).toEqual([
             'tests/integration/a.test.ts',
             'tests/rendered/b.test.tsx',
             'tests/flue/c.test.ts',
             'tests/unit/d.test.ts',
+            'tests/guards/e.test.ts',
+            'tests/unit/f.test.ts',
         ]);
     });
 
