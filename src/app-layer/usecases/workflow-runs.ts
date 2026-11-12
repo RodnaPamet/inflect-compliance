@@ -283,11 +283,14 @@ export async function startWorkflowRun(
          */
         readOnlyAuthority?: boolean;
         /**
-         * THE TRIGGER a profile run is started by (Step 2c, #4150). Only the
-         * Test-run usecase passes it, as `'TEST_RUN'`: it is what admits a
-         * Test-run key, a SUBMITTED version and the version's own trigger
-         * check (`resolveRunDefinition`). Every other caller leaves it out, so
-         * a Test-run key sent to the generic start route is refused.
+         * THE TRIGGER a profile run is started by (Step 2c, #4150; #5367). A
+         * profile key is admitted only when this names a trigger its version
+         * allows (`resolveRunDefinition`): `'TEST_RUN'` from the Test-run
+         * usecase (which alone also admits a Test-run key and a SUBMITTED
+         * version), `'ASK'` from `startInteractiveRun`, `'AUTOMATION'` from the
+         * `agent-invoke` dispatcher. Ignored for a registered workflow key.
+         * The generic start route passes none, so it starts no profile
+         * (`PROFILE_TRIGGER_REQUIRED`) and no Test-run key.
          */
         profileTrigger?: ProfileTrigger;
     } = {},
