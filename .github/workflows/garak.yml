@@ -20,13 +20,16 @@ name: garak (LLM red-team, nightly)
 #     the gate ADMITS fails the step (the role list would then be wrong).
 #   - MODEL (D-EV-1, owner, 2026-11-11): Haiku-class (AGENT_FLUE_MODEL below)
 #     through the DEDICATED CI key in the repository secret
-#     GARAK_CI_ANTHROPIC_KEY, capped at USD 5 per night, seed data only. With
-#     the secret absent the job SKIPS cleanly (first step) and says so.
+#     GARAK_CI_ANTHROPIC_KEY, seed data only. The USD 5 nightly cap is shared
+#     with Ragas (D-EV-2): garak meters against its SHARE (USD 2.50 by
+#     default) from the shared cost meter, evals/cost-meter/. With the secret
+#     absent the job SKIPS cleanly (first step) and says so.
 #   - SPEND, three layers, each in config: garak's own prompt cap
 #     (.garak/config.yaml), the proxy's per-role wire cap and the product's
 #     per-tenant daily AI quota (both = .garak/budget.json), and the measured
-#     breaker between roles. tests/guardrails/garak-workflow-pinning.test.ts
-#     holds every number to budget.json.
+#     breaker between roles against garak's share (priced and capped by
+#     evals/cost-meter/). tests/guardrails/garak-workflow-pinning.test.ts
+#     holds every number to budget.json and the meter.
 #   - NON-BLOCKING until the date below, under a dated marker that
 #     tests/guardrails/garak-workflow-pinning.test.ts PARSES and compares to
 #     today (the DAST lesson: a marker nobody parses never turns red).
@@ -308,7 +311,7 @@ jobs:
           read -r tin tout < <(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tA -F ' ' \
             -c 'SELECT COALESCE(SUM("tokensIn"),0), COALESCE(SUM("tokensOut"),0) FROM "AiDecisionLog" WHERE feature = '"'"'assistant'"'"'')
           usd="$(node .garak/spend.mjs usd "$tin" "$tout")"
-          echo "Measured recorded spend: \$${usd} (${tin} in / ${tout} out) against a cap of \$$(node -p 'require("./.garak/budget.json").nightlyCapUsd')" >> "$GITHUB_STEP_SUMMARY"
+          echo "Measured recorded spend: \$${usd} (${tin} in / ${tout} out) against garak's share of \$$(node .garak/spend.mjs cap) (evals/cost-meter/shares.json)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload garak reports + records
         if: always() && steps.key.outputs.present == 'true'

@@ -43,6 +43,25 @@
  * document. On a task or injection case an abstention is a false refusal, which
  * `abstention` counts for every kind.
  *
+ * ‾‾‾ SPEND, AND A RUN THE BUDGET STOPPED ‾‾‾
+ *
+ * The judge is billed (D-EV-2), so every record says what its run cost
+ * (`spendUsd`, the shared cost meter's settled sum, `evals/cost-meter/`) and
+ * names the price table it was priced under (`judgeRevision.priceTableHash`).
+ * A run the meter stopped is `status: 'BUDGET_EXHAUSTED'`: it may leave cases
+ * unanswered, its aggregates describe only what was answered, and it NEVER
+ * passes a floor (`floor.eligible` is false whatever the figures say). Only a
+ * `COMPLETE` record answers every case of its set.
+ *
+ * ‾‾‾ RETRIEVAL FLOORS, RECOMPUTED ‾‾‾
+ *
+ * The store is pgvector and dense-only (the 2026-11-11 knowledge re-plan), so
+ * the retriever revision names `dimensions` and the ANN `indexParams`, and has
+ * no hybrid `alpha`. The two retrieval floor figures — recall@10 of the ANN
+ * search against an EXACT scan, and the p95 ANN latency — are recomputed from
+ * each case's raw `retrievalProbe` (both top-10 lists and the latency sample),
+ * never stored: a record carrying `retrievalFloors` is an unknown key.
+ *
  * ‾‾‾ SEED ONLY ‾‾‾
  *
  * `corpus` is the literal `'seed'`: a record over a customer tenant is not
@@ -76,6 +95,12 @@ export type RagMetric = (typeof RAG_METRICS)[number];
 const JUDGED = [...RAG_METRICS, 'abstained'] as const;
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
+
+export const RAG_RECORD_STATUSES = ['COMPLETE', 'BUDGET_EXHAUSTED'] as const;
+export type RagRecordStatus = (typeof RAG_RECORD_STATUSES)[number];
+
+/** The decided nightly CI cap (D-EV-1, D-EV-2): no record can have cost more. */
+const MAX_SPEND_USD = 5;
 export const MAX_RAG_CASES = 200;
 const MAX_TEXT = 8_192;
 const MAX_K = 50;
@@ -197,23 +222,77 @@ export const RagEvaluationSetSchema = z
 /** A raw per-case metric: Ragas's score in [0, 1], or null where it could not compute one. */
 const MetricValue = z.number().min(0).max(1).nullable();
 
+const ChunkRef = z
+    .object({
+        sourceModel: z.string().min(1).max(64),
+        sourceKey: z.string().regex(SOURCE_KEY),
+        chunkIndex: z.number().int().min(0),
+    })
+    .strict();
+type ChunkRef = z.infer<typeof ChunkRef>;
+
+const chunkKey = (c: ChunkRef) => JSON.stringify([c.sourceModel, c.sourceKey, c.chunkIndex]);
+
+/** recall@N is measured at 10, the floor's own depth. */
+export const RECALL_AT = 10;
+
+/** At most `RECALL_AT` chunks, each named once: a repeated chunk would count twice towards recall. */
+const TopList = z
+    .array(ChunkRef)
+    .max(RECALL_AT)
+    .superRefine((list, ctx) => {
+        const seen = new Set<string>();
+        list.forEach((c, i) => {
+            const k = chunkKey(c);
+            if (seen.has(k)) ctx.addIssue({ code: 'custom', message: 'a chunk appears once in a top-10 list', path: [i] });
+            seen.add(k);
+        });
+    });
+
+const MAX_DIMENSIONS = 4_096;
+const Distance = z.enum(['cosine', 'l2', 'inner_product']);
+
+/**
+ * The ANN index the revision searched, as the store ran it. `hnsw` names every
+ * parameter that moves recall or latency; `exact` is a sequential scan (the
+ * store's small-tenant path), whose recall against exact search is 1 by
+ * construction — which is why the probe still records it rather than assuming.
+ */
+const IndexParams = z.discriminatedUnion('method', [
+    z
+        .object({
+            method: z.literal('hnsw'),
+            distance: Distance,
+            m: z.number().int().min(2).max(100),
+            efConstruction: z.number().int().min(4).max(1_000),
+            efSearch: z.number().int().min(1).max(1_000),
+            iterativeScan: z.enum(['off', 'strict_order', 'relaxed_order']),
+            maxScanTuples: z.number().int().min(1),
+        })
+        .strict(),
+    z.object({ method: z.literal('exact'), distance: Distance }).strict(),
+]);
+
 const RecordCaseSchema = z
     .object({
         caseId: z.string().regex(CASE_ID),
         /** The answer the product gave, verbatim. */
         answer: z.string().max(MAX_TEXT),
         /** What the retriever returned for the question, in rank order. */
-        retrieved: z
-            .array(
-                z
-                    .object({
-                        sourceModel: z.string().min(1).max(64),
-                        sourceKey: z.string().regex(SOURCE_KEY),
-                        chunkIndex: z.number().int().min(0),
-                    })
-                    .strict(),
-            )
-            .max(MAX_K),
+        retrieved: z.array(ChunkRef).max(MAX_K),
+        /**
+         * The retrieval floor's raw measurement for this question: the ANN
+         * top-10 under the revision's `indexParams`, the EXACT top-10 over the
+         * same rows, and the ANN query's wall time. Whatever `k` the answer path
+         * uses, the probe is always at depth 10.
+         */
+        retrievalProbe: z
+            .object({
+                ann: TopList,
+                exact: TopList,
+                latencyMs: z.number().finite().min(0).max(600_000),
+            })
+            .strict(),
         metrics: z
             .object({
                 faithfulness: MetricValue,
@@ -248,8 +327,9 @@ export const RagEvaluationRecordSchema = z
                 rerankModel: z.string().min(1).max(128).nullable(),
                 chunker: z.string().min(1).max(128),
                 k: z.number().int().min(1).max(MAX_K),
-                /** Hybrid weight between keyword and vector scores. */
-                alpha: z.number().min(0).max(1),
+                /** The embedding's dimension count, as the store holds it. */
+                dimensions: z.number().int().min(1).max(MAX_DIMENSIONS),
+                indexParams: IndexParams,
             })
             .strict(),
         judgeRevision: z
@@ -259,9 +339,18 @@ export const RagEvaluationRecordSchema = z
                 /** Ragas's `answer_relevancy` embeds; it names its own model. */
                 embeddingModel: z.string().min(1).max(128),
                 ragasVersion: z.string().min(1).max(32),
+                /** `sha256:` over the exact bytes of the price table the run was metered under. */
+                priceTableHash: z.string().regex(SHA256),
             })
             .strict(),
         ranAt: z.string().datetime(),
+        /**
+         * COMPLETE: every case answered within the job's share.
+         * BUDGET_EXHAUSTED: the cost meter refused a call; never passes a floor.
+         */
+        status: z.enum(RAG_RECORD_STATUSES),
+        /** What the run cost: the cost meter's settled sum, in USD. */
+        spendUsd: z.number().finite().min(0).max(MAX_SPEND_USD),
         cases: z.array(RecordCaseSchema).max(MAX_RAG_CASES),
     })
     .strict();
@@ -280,7 +369,10 @@ export type RagEvaluationRefusal =
     | 'SET_HASH_MISMATCH'
     | 'UNANSWERED_CASE'
     | 'UNKNOWN_CASE'
-    | 'DUPLICATE_CASE';
+    | 'DUPLICATE_CASE'
+    | 'SPEND_OVER_SHARE'
+    | 'PRICE_TABLE_MISMATCH'
+    | 'MODEL_NOT_PRICED';
 
 export type RagCheck<T> = ({ ok: true } & T) | { ok: false; reason: RagEvaluationRefusal; detail: string };
 
@@ -309,7 +401,10 @@ export interface DeclineAggregate {
 }
 
 export interface KindAggregate {
+    /** Cases of this kind the record answered. */
     cases: number;
+    /** Cases of this kind left unanswered: always 0 on a COMPLETE record. */
+    unanswered: number;
     metrics: Record<RagMetric, MetricAggregate>;
     abstention: AbstentionAggregate;
     declinedCorrectly: DeclineAggregate | null;
@@ -318,6 +413,31 @@ export interface KindAggregate {
 }
 
 export type RagAggregates = Record<RagCaseKind, KindAggregate>;
+
+/**
+ * The two retrieval floor figures, recomputed from the probes. `recallAt10VsExact`
+ * is the mean, over cases whose exact list is non-empty, of |ann ∩ exact| /
+ * |exact|; `p95LatencyMs` is the nearest-rank 95th percentile of every probe's
+ * latency. Either is `null` when there is nothing to compute it over, and a
+ * `null` figure is never a pass.
+ */
+export interface RetrievalFloorFigures {
+    recallAt10VsExact: number | null;
+    recallScored: number;
+    p95LatencyMs: number | null;
+    latencySamples: number;
+}
+
+/** Whether a record may be compared against a floor at all. */
+export type FloorEligibility = { eligible: true } | { eligible: false; reason: 'BUDGET_EXHAUSTED' };
+
+/** What the caller knows about the run's budget, from `evals/cost-meter/`. */
+export interface RagRecordCheckOptions {
+    /** The job's share in USD; a record that spent more is refused. */
+    shareUsd?: number;
+    /** The pinned price table: its hash and the models it prices. */
+    priceTable?: { hash: string; models: readonly string[] };
+}
 
 function issues(error: z.ZodError): string {
     return error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
@@ -358,6 +478,39 @@ function declinedCorrectly(setCase: RagEvaluationSet['cases'][number], recordCas
     return true;
 }
 
+/** Nearest-rank percentile: the smallest sample with at least p% of the samples at or below it. */
+function nearestRank(samples: readonly number[], p: number): number | null {
+    if (samples.length === 0) return null;
+    const sorted = [...samples].sort((a, b) => a - b);
+    return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)];
+}
+
+/** recall@10 of one probe against exact search; `null` when the exact list is empty. */
+export function recallAgainstExact(ann: readonly ChunkRef[], exact: readonly ChunkRef[]): number | null {
+    const truth = exact.slice(0, RECALL_AT);
+    if (truth.length === 0) return null;
+    const found = new Set(ann.slice(0, RECALL_AT).map(chunkKey));
+    return truth.filter((c) => found.has(chunkKey(c))).length / truth.length;
+}
+
+function retrievalFloorFigures(cases: RagEvaluationRecord['cases']): RetrievalFloorFigures {
+    const recalls = cases
+        .map((c) => recallAgainstExact(c.retrievalProbe.ann, c.retrievalProbe.exact))
+        .filter((r): r is number => r !== null);
+    const latencies = cases.map((c) => c.retrievalProbe.latencyMs);
+    return {
+        recallAt10VsExact: recalls.length === 0 ? null : recalls.reduce((s, r) => s + r, 0) / recalls.length,
+        recallScored: recalls.length,
+        p95LatencyMs: nearestRank(latencies, 95),
+        latencySamples: latencies.length,
+    };
+}
+
+/** May a record be held against a floor at all? A budget-stopped run never may. */
+export function floorEligibility(record: Pick<RagEvaluationRecord, 'status'>): FloorEligibility {
+    return record.status === 'COMPLETE' ? { eligible: true } : { eligible: false, reason: 'BUDGET_EXHAUSTED' };
+}
+
 function aggregateMetric(values: ReadonlyArray<number | null>): MetricAggregate {
     const scored = values.filter((v): v is number => v !== null);
     return {
@@ -369,16 +522,28 @@ function aggregateMetric(values: ReadonlyArray<number | null>): MetricAggregate 
 
 /**
  * Check a record against the set it names and RECOMPUTE its aggregates from
- * the raw per-case values. Every case of the set is answered exactly once; an
- * answer to a case the set does not hold is refused, never ignored.
+ * the raw per-case values. A COMPLETE record answers every case of the set
+ * exactly once; a BUDGET_EXHAUSTED one answers each case at most once and
+ * lists the rest in `unanswered`. An answer to a case the set does not hold is
+ * refused, never ignored. With `options` from the cost meter, a record priced
+ * under another table, by an unpriced judge, or over the job's share is refused.
  *
- * This says nothing about floors: whether the aggregates are good enough is
- * Phase 2's `floors.json`, read by the mount gate.
+ * Whether the figures are good enough is Phase 2's `floors.json`, read by the
+ * mount gate; this only says whether a floor may be asked at all (`floor`),
+ * and for a budget-stopped run it may not.
  */
 export function checkRagEvaluationRecord(
     rawRecord: unknown,
     rawSet: unknown,
-): RagCheck<{ record: RagEvaluationRecord; set: RagEvaluationSet; aggregates: RagAggregates }> {
+    options: RagRecordCheckOptions = {},
+): RagCheck<{
+    record: RagEvaluationRecord;
+    set: RagEvaluationSet;
+    aggregates: RagAggregates;
+    retrievalFloors: RetrievalFloorFigures;
+    unanswered: string[];
+    floor: FloorEligibility;
+}> {
     const setCheck = checkRagEvaluationSet(rawSet);
     if (!setCheck.ok) return setCheck;
     const { set, hash } = setCheck;
@@ -390,6 +555,23 @@ export function checkRagEvaluationRecord(
     if (record.setHash !== hash) {
         return { ok: false, reason: 'SET_HASH_MISMATCH', detail: `record answers ${record.setHash}, the set is ${hash}` };
     }
+    if (options.priceTable) {
+        if (record.judgeRevision.priceTableHash !== options.priceTable.hash) {
+            return {
+                ok: false,
+                reason: 'PRICE_TABLE_MISMATCH',
+                detail: `record was priced under ${record.judgeRevision.priceTableHash}, the table is ${options.priceTable.hash}`,
+            };
+        }
+        if (!options.priceTable.models.includes(record.judgeRevision.model)) {
+            return { ok: false, reason: 'MODEL_NOT_PRICED', detail: record.judgeRevision.model };
+        }
+    }
+    // Compared in whole micro-dollars (the meter's unit), so float noise is
+    // not a refusal and a micro-dollar over the share is.
+    if (options.shareUsd !== undefined && Math.round(record.spendUsd * 1_000_000) > Math.round(options.shareUsd * 1_000_000)) {
+        return { ok: false, reason: 'SPEND_OVER_SHARE', detail: `spent USD ${record.spendUsd}, the share is USD ${options.shareUsd}` };
+    }
 
     const setIds = new Set(set.cases.map((c) => c.id));
     const byCase = new Map<string, RagEvaluationRecord['cases'][number]>();
@@ -400,14 +582,22 @@ export function checkRagEvaluationRecord(
     }
 
     const aggregates = {} as RagAggregates;
+    const unanswered: string[] = [];
     for (const kind of RAG_CASE_KINDS) {
         const cases = set.cases.filter((c) => c.kind === kind);
         const answered = [];
+        let missing = 0;
         for (const c of cases) {
             const r = byCase.get(c.id);
-            // An unanswered case makes the RECORD incomplete: no aggregate over
-            // the rest would describe the set it names.
-            if (r === undefined) return { ok: false, reason: 'UNANSWERED_CASE', detail: c.id };
+            if (r === undefined) {
+                // An unanswered case makes a COMPLETE record a false claim: no
+                // aggregate over the rest would describe the set it names. A
+                // budget-stopped run says it is partial, and never passes a floor.
+                if (record.status === 'COMPLETE') return { ok: false, reason: 'UNANSWERED_CASE', detail: c.id };
+                unanswered.push(c.id);
+                missing += 1;
+                continue;
+            }
             answered.push({ setCase: c, recordCase: r });
         }
         const metrics = {} as Record<RagMetric, MetricAggregate>;
@@ -417,6 +607,7 @@ export function checkRagEvaluationRecord(
         const judged = declines?.filter((d): d is boolean => d !== null) ?? [];
         aggregates[kind] = {
             cases: answered.length,
+            unanswered: missing,
             metrics,
             abstention: {
                 abstained: verdicts.filter((v) => v === true).length,
@@ -440,5 +631,13 @@ export function checkRagEvaluationRecord(
                     : null,
         };
     }
-    return { ok: true, record, set, aggregates };
+    return {
+        ok: true,
+        record,
+        set,
+        aggregates,
+        retrievalFloors: retrievalFloorFigures(record.cases),
+        unanswered,
+        floor: floorEligibility(record),
+    };
 }

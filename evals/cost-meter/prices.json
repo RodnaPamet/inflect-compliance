@@ -1,0 +1,13 @@
+{
+    "table": "ci-eval-model-prices",
+    "version": "2026-11-12",
+    "currency": "USD",
+    "basis": "Anthropic list prices per million tokens, read 2026-11-12 (the rates .garak/budget.json carried since D-EV-1). Prompt caching and batch discounts are not modelled: a cheaper call is never charged below list here, so the meter can only over-count. A price change is a new version of this file, and every record names the table it was priced under by hash.",
+    "models": {
+        "claude-haiku-4-5": {
+            "provider": "anthropic",
+            "usdPerMillionInputTokens": 1,
+            "usdPerMillionOutputTokens": 5
+        }
+    }
+}

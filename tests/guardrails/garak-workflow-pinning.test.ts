@@ -11,9 +11,11 @@
  *      secret, every later step is conditioned on its output, and the key
  *      reaches only the app's process, never job-level env.
  *   3. The spend cap is held in config and the numbers agree (D-EV-1, USD 5 a
- *      night): garak's own request count fits the proxy's wire cap, the roles
- *      fit the night, the night fits the cap at the planned turn cost, and the
- *      product's own AI quota equals the night's request cap. garak's count is
+ *      night, shared with Ragas by D-EV-2): the price and garak's share come
+ *      from the shared cost meter (evals/cost-meter/), garak's own request
+ *      count fits the proxy's wire cap, the roles fit the night, one planned
+ *      role fits garak's share (so the measured breaker can start one), and
+ *      the product's own AI quota equals the night's request cap. garak's count is
  *      probes x cap x generations ONLY for a probe that prunes to the cap, so
  *      every configured probe must be one read, in the pinned garak's source,
  *      to do that.
@@ -83,10 +85,7 @@ interface Workflow {
     jobs?: Record<string, Job>;
 }
 interface Budget {
-    nightlyCapUsd: number;
     model: string;
-    usdPerMillionInputTokens: number;
-    usdPerMillionOutputTokens: number;
     plannedTurn: { inputTokens: number; outputTokens: number };
     roles: string[];
     maxRequestsPerRole: number;
@@ -115,6 +114,13 @@ const workflow = yaml.load(read(WORKFLOW)) as Workflow;
 const job = workflow.jobs?.garak as Job;
 const steps = job?.steps ?? [];
 const budget = JSON.parse(read(BUDGET)) as Budget;
+const shares = JSON.parse(read('evals/cost-meter/shares.json')) as {
+    nightlyCapUsd: number;
+    shares: Record<string, { usd: number; model: string }>;
+};
+const prices = JSON.parse(read('evals/cost-meter/prices.json')) as {
+    models: Record<string, { usdPerMillionInputTokens: number; usdPerMillionOutputTokens: number }>;
+};
 const config = yaml.load(read(CONFIG)) as GarakConfig;
 const probes = config.plugins.probe_spec.split(',').map((p) => p.trim()).filter(Boolean);
 
@@ -196,16 +202,24 @@ describe('garak skips cleanly without its CI key', () => {
     });
 });
 
-describe('garak spend cap (D-EV-1: USD 5 a night)', () => {
+describe('garak spend cap (D-EV-1: USD 5 a night, shared with Ragas by D-EV-2)', () => {
+    const garakShare = shares.shares.garak;
+    const price = prices.models[budget.model];
     const plannedUsdPerRequest =
-        (budget.plannedTurn.inputTokens * budget.usdPerMillionInputTokens +
-            budget.plannedTurn.outputTokens * budget.usdPerMillionOutputTokens) /
+        (budget.plannedTurn.inputTokens * price.usdPerMillionInputTokens +
+            budget.plannedTurn.outputTokens * price.usdPerMillionOutputTokens) /
         1_000_000;
 
-    it('the cap is the decided USD 5, on the decided Haiku-class model', () => {
-        expect(budget.nightlyCapUsd).toBe(5);
+    it('garak meters against its share of the decided USD 5, on the decided Haiku-class model', () => {
+        expect(shares.nightlyCapUsd).toBe(5);
+        expect(garakShare.usd).toBeLessThanOrEqual(shares.nightlyCapUsd);
+        expect(garakShare.model).toBe(budget.model);
         expect(budget.model).toMatch(/haiku/);
         expect(job.env?.AGENT_FLUE_MODEL).toBe(budget.model);
+        // budget.json carries no price and no cap of its own: a second copy
+        // would let garak's numbers drift from the meter Ragas shares.
+        expect(budget).not.toHaveProperty('nightlyCapUsd');
+        expect(JSON.stringify(budget)).not.toMatch(/usdPerMillion/);
     });
 
     it('every configured probe prunes to the prompt cap in the pinned garak', () => {
@@ -231,9 +245,12 @@ describe('garak spend cap (D-EV-1: USD 5 a night)', () => {
         expect(perRole).toBeLessThanOrEqual(budget.maxRequestsPerRole);
     });
 
-    it('the roles fit the night, and the night fits the cap at the planned turn cost', () => {
+    it('the roles fit the night, the night fits the whole cap, and one planned role fits garak\'s share', () => {
         expect(budget.roles.length * budget.maxRequestsPerRole).toBeLessThanOrEqual(budget.maxRequestsPerNight);
-        expect(budget.maxRequestsPerNight * plannedUsdPerRequest).toBeLessThanOrEqual(budget.nightlyCapUsd);
+        expect(budget.maxRequestsPerNight * plannedUsdPerRequest).toBeLessThanOrEqual(shares.nightlyCapUsd);
+        // The measured breaker admits a role only while spent + one planned
+        // role fits the share; a share below one planned role starts nothing.
+        expect(budget.maxRequestsPerRole * plannedUsdPerRequest).toBeLessThanOrEqual(garakShare.usd);
     });
 
     it("the product's own per-tenant AI quota equals the night's request cap", () => {
