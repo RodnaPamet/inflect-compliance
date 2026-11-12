@@ -274,8 +274,10 @@ export async function readPlatformKill(): Promise<{
  * EXISTING row rather than inserting a second. A partial unique index would
  * refuse the second insert anyway, and an operator hammering the stop button
  * during an incident must get "yes, it is stopped" rather than a 500. The
- * database constraint is still the authority — this is the path that makes the
- * common case pleasant, not the thing that makes it correct.
+ * database constraint is still the authority — the read is the path that makes
+ * the common case pleasant, not the thing that makes it correct — and two
+ * engages that race past the read are told the same: the one the index refuses
+ * re-reads the winner's row and returns it as `alreadyInForce`.
  */
 export async function engagePlatformKill(input: {
     reason: string;
@@ -285,11 +287,22 @@ export async function engagePlatformKill(input: {
     if (existing) {
         return { id: existing.id, alreadyInForce: true, engagedAt: existing.engagedAt };
     }
-    const row = await prisma.platformAgentKillSwitch.create({
-        data: { reason: input.reason, engagedByRef: input.engagedByRef },
-        select: { id: true, engagedAt: true },
-    });
-    return { id: row.id, alreadyInForce: false, engagedAt: row.engagedAt };
+    try {
+        const row = await prisma.platformAgentKillSwitch.create({
+            data: { reason: input.reason, engagedByRef: input.engagedByRef },
+            select: { id: true, engagedAt: true },
+        });
+        return { id: row.id, alreadyInForce: false, engagedAt: row.engagedAt };
+    } catch (err) {
+        // Two engages that both read "nothing in force" both insert, and the
+        // partial unique index refuses the loser. That loser's platform IS
+        // stopped — by the winner's row — so it gets the idempotent answer,
+        // not the unique violation as a 500 (#5376).
+        if ((err as { code?: unknown } | null)?.code !== 'P2002') throw err;
+        const winner = await readPlatformKill();
+        if (!winner) throw err;
+        return { id: winner.id, alreadyInForce: true, engagedAt: winner.engagedAt };
+    }
 }
 
 /**
