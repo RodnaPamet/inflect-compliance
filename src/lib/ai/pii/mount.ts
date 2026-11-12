@@ -128,10 +128,15 @@ export function resolvePiiDetector(opts: ResolvePiiDetectorOptions = {}): PiiDet
         return unmounted('BASE_URL_OUTSIDE_DEPLOYMENT', `the detector is an in-deployment service, and its base URL is refused: ${where.reason}`);
     }
 
-    const root = opts.root ?? process.cwd();
+    // The production read is spelled out literally so
+    // tests/guardrails/catalogue-reaches-production.test.ts can derive the
+    // directory and hold the runtime image to copying it. `opts.root` is the
+    // test seam.
+    const recordsDir =
+        opts.root !== undefined ? path.join(opts.root, PII_RECORDS_DIR) : path.join(process.cwd(), 'evals/pii/records');
     let records: { file: string; raw: unknown }[];
     try {
-        records = readRecords(path.join(root, PII_RECORDS_DIR));
+        records = readRecords(recordsDir);
     } catch (e) {
         // A record file that cannot be read cannot be ruled out as the one that
         // refuses; the mount fails rather than shopping past it.
@@ -162,7 +167,13 @@ export function resolvePiiDetector(opts: ResolvePiiDetectorOptions = {}): PiiDet
 
     let corpusText: string;
     try {
-        corpusText = fs.readFileSync(path.join(root, PII_CORPUS_FILE), 'utf-8');
+        // Literal for the same reason as the records read: the runtime image
+        // must carry this directory, and the guard derives it from here.
+        const corpusFile =
+            opts.root !== undefined
+                ? path.join(opts.root, PII_CORPUS_FILE)
+                : path.join(path.join(process.cwd(), 'tests/fixtures/pii'), 'corpus.json');
+        corpusText = fs.readFileSync(corpusFile, 'utf-8');
     } catch (e) {
         return unmounted('NO_CORPUS', `${PII_CORPUS_FILE}: ${e instanceof Error ? e.message : String(e)}`);
     }
