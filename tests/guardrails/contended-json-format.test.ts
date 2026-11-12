@@ -154,7 +154,11 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // position before `ghcr-publish.yml:build-push` ('ga' < 'gh'), +5/-0.
         // Both 2026-11-11 entries merged together: the digest is over the file
         // holding both, computed with the guard's own keyOrder.
-        keyOrderSha: '7a842d1ceab698cccf23657f85aaba67cd24d143ca1173c530d1e25cabbb5f60',
+        // Updated 2026-11-12 for `agent-evals.yml:inspect`, the nightly Inspect
+        // evaluation of the product's own engines (docs/ai-architecture/inspect.md
+        // Phase 1). Inserted in alphabetical position first, before
+        // `bundle-analyze.yml:analyze` ('ag' < 'bu'), +5/-0.
+        keyOrderSha: 'e5d44f11f81eb3a9e1371aba3db4d28308633728f5f68f0b5859f06ee599c80d',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
