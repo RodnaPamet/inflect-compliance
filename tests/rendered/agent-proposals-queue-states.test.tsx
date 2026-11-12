@@ -84,7 +84,7 @@ import {
     type ProposalRow,
 } from '@/app/t/[tenantSlug]/(app)/agents/proposals/AgentProposalsClient';
 import { computeProposalDiff } from '@/lib/agentic/proposal-diff';
-import { withheldProposalDiff } from '@/lib/agentic/proposal-kind-rollout';
+import type { ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 
 function en(dotted: string): string {
@@ -116,6 +116,7 @@ function row(overrides: Partial<ProposalRow> = {}): ProposalRow {
         windowClosed: false,
         approvalsRecorded: 0,
         signedByViewer: false,
+        viewerMayApprove: true,
         runId: null,
         stepSeq: null,
         guardVerdict: 'CLEAN',
@@ -187,11 +188,20 @@ describe('a refusal shows the server’s sentence', () => {
 
 // ─── a process-map proposal, read and not approved (#5053) ──────────────────
 
-describe('a process-map proposal in the release that only reads them', () => {
-    /** The row as the server sends it: the diff `buildProposalDiffs` gives the kind. */
+describe('a process-map proposal while the brake is off', () => {
+    /**
+     * The row as the server sends it while `PROCESS_MAP_PROPOSALS_IMPLEMENTED`
+     * is false: the diff `withheldProposalDiff` gives the kind. Written out,
+     * because with the brake on (#5053, deploy 2) nothing produces it, and the
+     * queue still has to render it the day the brake is put back.
+     */
     function processMapRow(): ProposalRow {
-        const diff = withheldProposalDiff('PROCESS_MAP');
-        if (!diff) throw new Error('PROCESS_MAP_PROPOSALS_IMPLEMENTED is true, so the kind no longer has a withheld diff');
+        const diff: ProposalDiff = {
+            status: 'KIND_NOT_APPROVABLE',
+            fields: [],
+            baseDigest: null,
+            comparedFieldCount: 0,
+        };
         return row({ kind: 'PROCESS_MAP', diff });
     }
 
@@ -238,6 +248,54 @@ describe('a process-map proposal in the release that only reads them', () => {
         const error = screen.getByTestId('proposal-action-error');
         expect(error).toHaveTextContent(en('proposals.refused.processMapNotAvailable'));
         expect(error.textContent).not.toContain('PROCESS_MAP');
+    });
+});
+
+// ─── a viewer the approve usecase would refuse for the kind (#5053) ─────────
+
+describe('a viewer the server would refuse for this kind', () => {
+    it('is not offered Approve, is told why, and can still reject', () => {
+        renderQueue([row({ kind: 'PROCESS_MAP', viewerMayApprove: false })]);
+        expect(screen.queryByTestId('proposal-approve-p1')).toBeNull();
+        expect(screen.getByTestId('proposal-approve-unavailable-p1')).toHaveTextContent(
+            en('proposals.approveNeedsKindPermission'),
+        );
+        // The sentence sits where Approve would have: inside the diff panel.
+        expect(screen.getByTestId('proposal-actions-p1')).toContainElement(
+            screen.getByTestId('proposal-approve-unavailable-p1'),
+        );
+        expect(screen.getByTestId('proposal-reject-p1')).toBeEnabled();
+    });
+
+    it('a viewer the server would take is offered Approve - the control that makes the above mean something', () => {
+        renderQueue([row({ kind: 'PROCESS_MAP', viewerMayApprove: true })]);
+        expect(screen.getByTestId('proposal-approve-p1')).toBeEnabled();
+        expect(screen.queryByTestId('proposal-approve-unavailable-p1')).toBeNull();
+    });
+
+    it('a viewer without the role-tier write keeps the existing disabled control, not the kind sentence', () => {
+        renderQueue([row({ viewerMayApprove: false })], { canOperate: false });
+        expect(screen.queryByTestId('proposal-approve-unavailable-p1')).toBeNull();
+        expect(screen.getByTestId('proposal-approve-p1')).toBeDisabled();
+    });
+
+    it.each([
+        ['PROCESS_MAP_PROPOSAL_NOT_EDITABLE', 'proposals.refused.processMapNotEditable'],
+        ['PROCESS_MAP_APPROVER_NEEDS_PROCESSES_EDIT', 'proposals.refused.processMapNeedsProcessesEdit'],
+        ['PROCESS_MAP_PROPOSAL_UNREADABLE', 'proposals.refused.processMapUnreadable'],
+    ])('a %s refusal is worded by the page, not shown as the code', async (reason, key) => {
+        mockFetch({
+            ok: false,
+            status: reason === 'PROCESS_MAP_APPROVER_NEEDS_PROCESSES_EDIT' ? 403 : 400,
+            body: { error: { code: 'REFUSED', message: `${reason}: refused`, details: { reason } } },
+        });
+        renderQueue([row()]);
+        await act(async () => {
+            screen.getByTestId('proposal-approve-p1').click();
+        });
+        const error = screen.getByTestId('proposal-action-error');
+        expect(error).toHaveTextContent(en(key));
+        expect(error.textContent).not.toContain(reason);
     });
 });
 

@@ -39,7 +39,7 @@
  */
 import { flueToolsFor } from '@/lib/agentic/flue/tools-adapter';
 import { loadableReadTools } from '@/lib/mcp/tools/registry';
-import { loadableProposeTools } from '@/lib/mcp/tools/propose-tools';
+import { PROPOSE_TOOLS, loadableProposeTools } from '@/lib/mcp/tools/propose-tools';
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import type { LoopTool } from './tool-loop';
 
@@ -116,12 +116,33 @@ export interface AssistantToolSet {
     proposals(): readonly ProposalOutcome[];
 }
 
-/** Item titles out of a propose call's arguments, defensively. */
-function titlesOf(args: unknown): string[] {
+/**
+ * The proposal kinds this turn's tool set can actually queue, in catalogue
+ * order: the kind of each propose tool among `tools`, the names the loop
+ * offers the model (#5053).
+ *
+ * Read off the OFFERED tools rather than the catalogue, because the offer is
+ * narrower than the catalogue in three ways the system prompt must not
+ * contradict: the asker's own keys (a READER holds no create permission, and
+ * no custom role without `processes.edit` is offered `propose_process_map`),
+ * the agent's grants and card, and a release brake
+ * (`PROCESS_MAP_PROPOSALS_IMPLEMENTED`) that withdraws a tool. A prompt that
+ * named a kind with no tool behind it would tell the model to call a tool it
+ * does not have.
+ */
+export function offeredProposeKinds(tools: readonly { name: string }[]): string[] {
+    const offered = new Set(tools.map((t) => t.name));
+    return PROPOSE_TOOLS.filter((t) => offered.has(t.name)).map((t) => t.kind);
+}
+
+/** Item titles out of a propose call's arguments, defensively. Exported for its test. */
+export function titlesOf(args: unknown): string[] {
     const items = (args as { items?: unknown })?.items;
     if (!Array.isArray(items)) return [];
     return items
-        .map((i) => (i as { title?: unknown })?.title)
+        // `title ?? name` (#5053): a process map and a control are named, not
+        // titled, and read "Untitled" in the outcome sentence otherwise.
+        .map((i) => (i as { title?: unknown })?.title ?? (i as { name?: unknown })?.name)
         .filter((t): t is string => typeof t === 'string');
 }
 

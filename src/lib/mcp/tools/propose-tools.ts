@@ -38,6 +38,8 @@ import { z } from 'zod';
 
 import { badRequest } from '@/lib/errors/types';
 import { pinFromCard } from '@/lib/agentic/policy-card-pin';
+import { proposalKindNoun } from '@/lib/agentic/proposal-labels';
+import { PROCESS_MAP_PROPOSALS_IMPLEMENTED } from '@/lib/agentic/proposal-kind-rollout';
 import {
     createAgentProposal,
     type AgentProposalKind,
@@ -184,7 +186,52 @@ export const PROPOSE_TOOLS: McpProposeTool[] = [
             mirrors: 'POST /api/t/:slug/findings (getTenantCtx + assertCanWrite)',
         },
     },
+    {
+        // #5053. Each item is ONE WHOLE MAP; `createAgentProposal` validates it
+        // against `ProposedProcessMapSchema` and stores it canonical. The item
+        // schema stays free-form (`{ type: 'object' }`): an item schema that
+        // declares `properties` is dropped from Flue and the in-app assistant
+        // by the valibot conversion. The description is therefore the model's
+        // only source for the shape. `processes:read` is the domain scope (a
+        // propose key must never carry `processes:write`, which could PUT maps
+        // over REST); the principal needs `processes.edit`, the key both human
+        // map routes take.
+        name: 'propose_process_map',
+        description:
+            'Propose one or more PROCESS MAPS for human approval (NOT created). ' +
+            'Each item is one whole map: name (required, max 200 characters), ' +
+            'description (optional, max 2000), nodes: [{ nodeKey, nodeType ' +
+            "'processStep' or 'decision', label (max 200), subtitle (optional, " +
+            'max 200) }] (1 to 40 steps; each nodeKey unique, letters, digits, ' +
+            "'-' or '_' only, at most 40 characters, e.g. 'review' or 's1', never " +
+            "'Step 1' or '1.1'), edges: [{ sourceKey, targetKey, labelOverride " +
+            '(optional, max 200) }] naming nodeKeys (at most 80 arrows; label the branches ' +
+            "of a decision, e.g. 'Approved'). Do not send positions, controls or " +
+            'automation: a map is laid out automatically and created as a draft ' +
+            'only after a human approves it. You cannot see existing process maps, ' +
+            'so a proposal may duplicate one. Returns the pending proposal ids.',
+        inputSchema: proposeInputSchema('process map'),
+        kind: 'PROCESS_MAP',
+        resourceScope: { resource: 'processes', action: 'read' },
+        authorize: {
+            keys: ['processes.edit'],
+            basis: 'principal',
+            mirrors: 'POST /api/t/:slug/processes + PUT /api/t/:slug/processes/:id (processes.edit)',
+        },
+    },
 ];
+
+/**
+ * Is this propose tool switched on in this release? The PROCESS_MAP brake
+ * (`PROCESS_MAP_PROPOSALS_IMPLEMENTED`) withdraws `propose_process_map` from
+ * every catalogue as well as refusing the kind, so setting it back to false
+ * stops an agent being offered a tool whose every call would be refused.
+ * Exported so the suites that walk every propose tool follow the brake rather
+ * than pin it, and setting it back stays a one-line diff.
+ */
+export function proposeToolReleased(tool: Pick<McpProposeTool, 'kind'>): boolean {
+    return tool.kind !== 'PROCESS_MAP' || PROCESS_MAP_PROPOSALS_IMPLEMENTED;
+}
 
 /**
  * The propose tools this invocation could actually LOAD: the tools offered at
@@ -214,7 +261,7 @@ export function loadableProposeTools(inv: McpInvocation): readonly McpProposeToo
         scopes.includes('mcp:*') ||
         scopes.includes('mcp:propose');
     if (!mayPropose) return [];
-    return PROPOSE_TOOLS.filter((t) => isToolLoadable(inv, t.name));
+    return PROPOSE_TOOLS.filter((t) => proposeToolReleased(t) && isToolLoadable(inv, t.name));
 }
 
 /** `tools/list` descriptors for the loadable propose surface. */
@@ -320,8 +367,8 @@ export async function runProposeTool(
     // and they are already in the audit trail where a responder can read them.
     const message =
         quarantined.length === 0
-            ? `Proposed ${queued.length} ${tool.kind.toLowerCase()}(s), pending human approval in the tenant's agent-proposals review queue. Nothing was created.`
-            : `Proposed ${queued.length} ${tool.kind.toLowerCase()}(s) for human approval; ${quarantined.length} were QUARANTINED by the content guard and did NOT enter the review queue. Nothing was created.`;
+            ? `Proposed ${queued.length} ${proposalKindNoun(tool.kind)}(s), pending human approval in the tenant's agent-proposals review queue. Nothing was created.`
+            : `Proposed ${queued.length} ${proposalKindNoun(tool.kind)}(s) for human approval; ${quarantined.length} were QUARANTINED by the content guard and did NOT enter the review queue. Nothing was created.`;
 
     return {
         content: [

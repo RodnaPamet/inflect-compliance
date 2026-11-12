@@ -39,6 +39,7 @@ export const MCP_PROPOSE_TOOL_NAMES = [
     'propose_controls',
     'draft_policy',
     'propose_finding',
+    'propose_process_map',
 ] as const;
 
 export const MCP_TOOL_NAMES: readonly string[] = [
@@ -106,6 +107,7 @@ export const MCP_TOOL_KEY_SCOPE: Readonly<
     propose_controls: 'controls:read',
     draft_policy: 'policies:read',
     propose_finding: 'audits:read',
+    propose_process_map: 'processes:read',
 };
 
 /**

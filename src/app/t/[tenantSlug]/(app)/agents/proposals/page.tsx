@@ -9,6 +9,7 @@ import {
     annotateProposalQueue,
 } from '@/app-layer/usecases/agent-proposal-queue';
 import { isProposalExpired } from '@/lib/agentic/proposal-expiry';
+import { viewerMayApproveProposal } from '@/lib/agentic/proposal-approve-permission';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 
@@ -103,6 +104,9 @@ export default async function AgentProposalsPage({
         signedByViewer: annotations.get(p.id)?.signedByViewer ?? false,
         composedByViewer:
             oversight.composeNeedsSecondApprover && p.composedByUserId !== null && p.composedByUserId === ctx.userId,
+        // Whether the approve usecase would take this viewer's approval of this
+        // kind (#5053): a process map's approver also needs `processes.edit`.
+        viewerMayApprove: viewerMayApproveProposal(ctx, p.kind),
         // WHICH STEP OF WHICH RUN produced this. `listAgentProposals` has no
         // `select`, so both columns were already arriving here and were simply
         // dropped on the floor — the projection was the only thing between the

@@ -204,6 +204,8 @@ function ProcessToolbar() {
     );
 }
 const TLDRAW_COMPONENTS: TLComponents = { Toolbar: ProcessToolbar };
+/** An embedded picture does not pan or zoom; it is fitted once, by its host. */
+const EMBEDDED_CAMERA = { isLocked: true } as const;
 
 /**
  * The freeform layer, restored into the editor.
@@ -317,6 +319,17 @@ export interface TldrawProcessCanvasProps {
      */
     onEnterGroup?: (nodeKey: string) => void;
     /**
+     * A picture of a map inside another surface, never a place to work (#5053:
+     * the read-only preview of a proposed process map on the review surfaces).
+     *
+     * tldraw's own interface is hidden, the camera is locked, the editor never
+     * takes focus and the palette drop target is not installed. Focus is the
+     * one that matters: an editor that auto-focuses takes the page's keyboard,
+     * and on the canvas page that would be a second editor answering shortcuts
+     * meant for the map being edited. Use it with `readOnly`.
+     */
+    embedded?: boolean;
+    /**
      * Test and future-slice seam. The next slice needs the editor instance to
      * wire the write path; exposing it now keeps that diff from having to
      * restructure this one.
@@ -353,6 +366,7 @@ export function TldrawProcessCanvas({
     onEnterGroup,
     onEditorReady,
     focusNodeKey = null,
+    embedded = false,
 }: TldrawProcessCanvasProps) {
     // Held in a ref so `handleMount` keeps a stable identity. `onMount` runs
     // once per editor, so a callback whose identity changed on every parent
@@ -900,9 +914,10 @@ export function TldrawProcessCanvas({
             */
             data-tldraw-process-canvas="true"
             data-process-canvas="true"
+            data-embedded={embedded ? 'true' : undefined}
             data-mobile-layout={isMobile ? 'true' : undefined}
-            onDragOverCapture={onDragOver}
-            onDropCapture={onDrop}
+            onDragOverCapture={embedded ? undefined : onDragOver}
+            onDropCapture={embedded ? undefined : onDrop}
         >
             <Tldraw
                 shapeUtils={SHAPE_UTILS}
@@ -914,6 +929,9 @@ export function TldrawProcessCanvas({
                 components={TLDRAW_COMPONENTS}
                 acceptedImageMimeTypes={NO_FILE_TYPES}
                 acceptedVideoMimeTypes={NO_FILE_TYPES}
+                hideUi={embedded}
+                autoFocus={!embedded}
+                cameraOptions={embedded ? EMBEDDED_CAMERA : undefined}
             />
         </div>
     );

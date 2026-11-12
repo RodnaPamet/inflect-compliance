@@ -11660,6 +11660,7 @@
         }
       },
       "approve": "Approve",
+      "approveNeedsKindPermission": "Your permissions do not cover approving this kind of proposal, so Approve is not offered. Somebody who has them can approve it, and you can still reject it.",
       "rationale": "Rationale: ",
       "diff": {
         "createHeading": "Full proposed content",
@@ -11684,6 +11685,24 @@
         "kindNotApprovableTitle": "This kind of proposal cannot be approved yet",
         "reasonKindNotApprovable": "This version of Inflect can show this kind of proposal but cannot approve it yet. Nothing is wrong with the proposal: you can reject it, or leave it pending until the update is complete.",
         "approveBlockedKind": "Approval is unavailable in this version."
+      },
+      "processMap": {
+        "heading": "Proposed process map",
+        "counts": "{steps, plural, one {# step} other {# steps}} · {arrows, plural, one {# arrow} other {# arrows}}",
+        "stepsHeading": "Steps",
+        "stepType": {
+          "processStep": "Step",
+          "decision": "Decision"
+        },
+        "arrowsHeading": "Arrows",
+        "arrowTo": "leads to",
+        "arrowLabel": "Label",
+        "noArrows": "No arrows",
+        "noteIsolated": "Step {step} has no arrows.",
+        "noteDecisionExits": "Decision {step} has fewer than two ways out.",
+        "canvasLabel": "Picture of the proposed map, with the steps where approval places them. The numbered list is the full proposal.",
+        "canvasUnavailable": "The picture of this map could not be shown. The numbered list above is the full proposal.",
+        "createsDraft": "Approving creates a new draft map on the Processes page, in Process map mode rather than Automation, with the steps placed as shown. Nothing is created before approval."
       },
       "signatureRecorded": "{recorded} of {required} approvals recorded — a second reviewer must sign",
       "awaitingSecond": "Awaiting a second approver",
@@ -11759,7 +11778,9 @@
         "toolName": "Tool",
         "advertisedToolName": "Tool name as advertised",
         "arguments": "Arguments",
-        "priorState": "State before the change"
+        "priorState": "State before the change",
+        "nodes": "Steps",
+        "edges": "Arrows"
       },
       "guard": {
         "flaggedBadge": "Guard flagged",
@@ -11781,7 +11802,10 @@
         "ownDissent": "You raised this finding proposal by dissenting from a sampled workpaper. Somebody else decides it.",
         "unknownDissent": "This proposal names a workpaper review this workspace does not hold, so nobody can decide it.",
         "expired": "This proposal's review window has closed, so it can no longer be approved or rejected. It is kept as the record that nobody decided it in time.",
-        "processMapNotAvailable": "Process-map proposals cannot be approved yet. You can still reject this one."
+        "processMapNotAvailable": "Process-map proposals cannot be approved yet. You can still reject this one.",
+        "processMapNotEditable": "A process map is approved exactly as proposed. To change it, reject it and propose the corrected map.",
+        "processMapNeedsProcessesEdit": "Approving a process map creates it as you, so it needs permission to edit process maps. Somebody who has it can approve this one.",
+        "processMapUnreadable": "This process map can no longer be read, so it cannot be approved. Reject it."
       }
     },
     "runs": {

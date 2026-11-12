@@ -23,21 +23,12 @@
  * rows, which a generic starter can't reference).
  */
 
-export interface TemplateNode {
-    nodeKey: string;
-    nodeType: 'processStep' | 'decision';
-    label: string;
-    subtitle?: string;
-    posX: number;
-    posY: number;
-}
-
-export interface TemplateEdge {
-    edgeKey: string;
-    sourceKey: string;
-    targetKey: string;
-    labelOverride?: string;
-}
+import type { TemplateEdge, TemplateNode } from '@/lib/processes/template-graph';
+// The graph builder and the node/edge shapes live in `src/lib/processes`, where
+// a server usecase can import them too (#5053: an approved process-map proposal
+// is created through the same PUT-ready shape). Re-exported so the template
+// modal, the clone helper and their tests keep their imports.
+export { buildTemplateGraph, type TemplateEdge, type TemplateNode } from '@/lib/processes/template-graph';
 
 export interface ProcessMapTemplate {
     /** Stable id used for selection + the clone call. */
@@ -132,51 +123,4 @@ export const PROCESS_MAP_TEMPLATES: ProcessMapTemplate[] = [
 
 export function getProcessMapTemplate(id: string): ProcessMapTemplate | undefined {
     return PROCESS_MAP_TEMPLATES.find((tpl) => tpl.id === id);
-}
-
-/**
- * PUT-ready graph for a template — the `{ nodes, edges }` shape the save
- * endpoint accepts. Edges carry `edgeKind: 'flow'` + an empty `controls`
- * array; nodes carry `dataJson: null` (label/subtitle persist as columns).
- */
-export function buildTemplateGraph(template: ProcessMapTemplate): {
-    nodes: Array<{
-        nodeKey: string;
-        nodeType: string;
-        label: string;
-        subtitle: string | null;
-        posX: number;
-        posY: number;
-        parentNodeKey: null;
-        dataJson: null;
-    }>;
-    edges: Array<{
-        edgeKey: string;
-        sourceKey: string;
-        targetKey: string;
-        edgeKind: 'flow';
-        labelOverride: string | null;
-        controls: [];
-    }>;
-} {
-    return {
-        nodes: template.nodes.map((n) => ({
-            nodeKey: n.nodeKey,
-            nodeType: n.nodeType,
-            label: n.label,
-            subtitle: n.subtitle ?? null,
-            posX: n.posX,
-            posY: n.posY,
-            parentNodeKey: null,
-            dataJson: null,
-        })),
-        edges: template.edges.map((e) => ({
-            edgeKey: e.edgeKey,
-            sourceKey: e.sourceKey,
-            targetKey: e.targetKey,
-            edgeKind: 'flow',
-            labelOverride: e.labelOverride ?? null,
-            controls: [],
-        })),
-    };
 }

@@ -137,6 +137,14 @@ export interface ProposalRow {
      * refused, so it is not offered; Reject, which withdraws it, still is.
      */
     composedByViewer?: boolean;
+    /**
+     * The approve usecase would take THIS viewer's approval of this row's
+     * kind, as far as authority goes (#5053): the role-tier write, plus the
+     * kind's extra key (`processes.edit` for a process map). Computed on the
+     * server by `viewerMayApproveProposal`, the table the usecase asserts, so
+     * Approve is offered only where the server would take it.
+     */
+    viewerMayApprove: boolean;
 }
 
 /**
@@ -843,6 +851,18 @@ export function AgentProposalsClient({
                                             className="text-xs text-content-subtle"
                                         >
                                             {t('proposals.signedByYou')}
+                                        </span>
+                                    ) : canOperate && !p.viewerMayApprove ? (
+                                        // The approve usecase would refuse this
+                                        // viewer for this KIND (#5053: a process
+                                        // map also needs permission to edit
+                                        // process maps), so it is not offered.
+                                        // Reject, which only withdraws, still is.
+                                        <span
+                                            data-testid={`proposal-approve-unavailable-${p.id}`}
+                                            className="text-xs text-content-subtle"
+                                        >
+                                            {t('proposals.approveNeedsKindPermission')}
                                         </span>
                                     ) : (
                                         <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
