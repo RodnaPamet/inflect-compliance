@@ -150,7 +150,11 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   deterministic patterns as the first provider, and a NeMo Guardrails client
   read from `AI_GUARD_NEMO_BASE_URL` (operator config, never tenant-writable),
   composed worst-of behind the unchanged `GuardOutcome` (G4). An unreachable
-  provider gives `flag` on input and `block` on egress, never `allow` (G9).
+  provider scans `suspicious` (`guard.provider_unavailable.<id>`), which is
+  `flag` in both directions under `strict` and `balanced`, never `allow` and
+  never `block` (G9): the call latches review rather than aborting, egress
+  included. A tenant in `audit` mode records it and allows, as it does every
+  verdict.
   With the URL unset the guard is byte-identical to before. No NeMo server is
   deployed (Phase 1.3, held by the capacity rule until C1), and three callers
   that scan inside a tenant transaction (A2A reply delivery, questionnaire
@@ -1022,7 +1026,7 @@ which applies only when the owner adopts it.
 | D-EV-8 | A JSON read of a run's decision rows (`AiDecisionLog`), which no REST route serves | inspect | **open.** Proposed: a read under the steps feed's gate (`admin.view` or `admin.agent_registry_view`); until then tasks 4, 7 and 8 score on step facts only |
 | D-EV-9 | Persisting a run's offered tool set, which is logged (`toolsOffered`, `toolsOmitted`) and not stored | inspect | **open.** Proposed: store the offered names on the run (a product change), so task 5 can prove a tool was never offered, not only never reached |
 | D-EV-10 | A guard verdict on the delegation step: the `task` step carries no `guardVerdict`, so a flagged answer that is not refused leaves no trace on it | inspect | **open.** Proposed: write the verdict onto the step (a product change in the Claude engines plan); task 6 then requires it and task 8 drops the `task` exclusion |
-| D-EV-11 | Whether D-EV-1's USD 5 a night is shared between garak and Ragas or is per job | garak, ragas | **open.** Proposed: shared, USD 2.50 each by default, as both children read it. The assistant's own answers to garak's probes are reserved at the route's worst case and counted against the same cap |
+| D-EV-11 | Whether D-EV-1's USD 5 a night is shared between garak and Ragas or is per job | garak, ragas | **open.** The children disagree today. `ragas.md` (D-EV-2, 0.6) reads the cap as shared and plans a cost meter that refuses shares summing above USD 5.00. `garak.md` (0.3) and the built nightly read it as garak's alone: `.garak/budget.json` has `nightlyCapUsd: 5`, pinned by `garak-workflow-pinning`. The USD 2.50 split appears only in the 2026-11-11 knowledge re-plan note. Proposed: shared, USD 2.50 each by default, and garak's `nightlyCapUsd` and breaker drop to its share in the same pull request that builds Ragas' cost meter; a Ragas share that lands while garak keeps USD 5 lets a night reach USD 7.50. Garak's worst case is not reserved: its measured breaker checks the night's spend between roles, not within one, so one role can overrun its share (garak 1.4). The invoice-level stop is the spend limit on the dedicated key's workspace, an owner action |
 
 ### How this document is updated
 
