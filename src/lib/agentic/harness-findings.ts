@@ -174,6 +174,12 @@ export function firstSecretShapedMember(body: HarnessReportBody): string | null 
  * a person or a scanner typed — the spending-authority envelope of
  * `docs/ai-architecture/mastercard-agent-pay.md` Phase 1 — refuses through this
  * rather than a copy, so the shapes stay one list.
+ *
+ * A member's NAME is content too. A strict schema fixes the names of a report
+ * body, but not of every value this walks, and a name with a secret's shape
+ * would be stored like any value. So a secret-shaped name is a hit as well,
+ * and the path says `<key>` in its place: the path is what a refusal prints,
+ * and it must not carry the secret it refuses.
  */
 export function firstSecretShapedPath(root: unknown): string | null {
     const walk = (node: unknown, path: string): string | null => {
@@ -192,6 +198,7 @@ export function firstSecretShapedPath(root: unknown): string | null {
         }
         if (node !== null && typeof node === 'object') {
             for (const [key, value] of Object.entries(node)) {
+                if (looksLikeSecret(key)) return path ? `${path}.<key>` : '<key>';
                 const hit = walk(value, path ? `${path}.${key}` : key);
                 if (hit) return hit;
             }

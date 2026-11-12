@@ -21,6 +21,7 @@ import {
     IDENTITY_BEARING_SOURCE,
     agentSdkOptionVerdicts,
     firstSecretShapedMember,
+    firstSecretShapedPath,
     intakeClaimsByDiscoveredId,
     isHarnessShortfall,
     isIdentityBearingSource,
@@ -432,6 +433,21 @@ describe('a secret-shaped value anywhere is found, and named by path', () => {
         const b = validReportBody();
         b.scan.scanner.version = secret();
         expect(firstSecretShapedMember(b)).toBe('scan.scanner.version');
+    });
+
+    it('a secret-shaped member NAME is a hit, and the path says <key> where the name would be', () => {
+        // At the root, nested, and inside an array: the path never repeats the name.
+        const root = firstSecretShapedPath({ [secret()]: 'plain' });
+        expect(root).toBe('<key>');
+        const nested = firstSecretShapedPath({ rows: [{ id: 'a' }, { labels: { [secret()]: 'plain' } }] });
+        expect(nested).toBe('rows[1].labels.<key>');
+        for (const at of [root, nested]) expect(at?.includes(secret())).toBe(false);
+        // The name is refused whatever its value holds, and before the value is looked at.
+        expect(firstSecretShapedPath({ a: { [secret()]: { deeper: secret() } } })).toBe('a.<key>');
+        // Members are read in order: an earlier secret-shaped value is still the one named.
+        expect(firstSecretShapedPath({ first: secret(), [secret()]: 'plain' })).toBe('first');
+        // A name that starts like a key and is too short to be one is not a hit.
+        expect(firstSecretShapedPath({ 'sk-short': 'plain', 'gh-label': 'plain' })).toBeNull();
     });
 });
 
