@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 import { cachedAggregationRead } from '@/lib/cache/aggregation-cache';
 import { AGGREGATIONS } from '@/lib/cache/aggregation-registry';
+import { assertCanReadTasks } from '@/app-layer/policies/task.policies';
 
 /**
  * GET — tenant task KPI aggregate.
@@ -22,6 +23,7 @@ export const GET = withApiErrorHandling(
                 aggregation: 'tasks-metrics',
                 dependsOn: AGGREGATIONS['tasks-metrics'].dependsOn,
                 ttlSeconds: AGGREGATIONS['tasks-metrics'].ttlSeconds,
+                authorize: () => assertCanReadTasks(ctx),
                 compute: () => getTaskMetrics(ctx),
             });
             return jsonResponse(metrics);
