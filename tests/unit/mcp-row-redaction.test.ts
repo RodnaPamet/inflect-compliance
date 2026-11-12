@@ -66,6 +66,27 @@ describe('applyRowRedaction — the permitted rows and no others', () => {
         expect(out.rows).toHaveLength(2);
     });
 
+    it('keeps a row needing ANY ONE of several keys when one is held, and drops it when none is (#5384)', () => {
+        // A row may name an array of keys: the agent inventory is read under
+        // the view key OR the register key (`mayReadAgentInventory`), so one
+        // key per row would refuse half of its legitimate readers.
+        const anyOf = [{ path: 'rows', keyOf: (row: unknown) => (row as { need: readonly string[] }).need }];
+        const data = { rows: [{ need: ['admin.agent_registry_view', 'admin.agent_registry'] }] };
+
+        const either: Array<Record<string, Record<string, boolean>>> = [
+            { admin: { agent_registry_view: true } },
+            { admin: { agent_registry: true } },
+        ];
+        for (const perms of either) {
+            expect((applyRowRedaction(inv(perms), anyOf, data) as { rows: unknown[] }).rows).toHaveLength(1);
+        }
+        expect((applyRowRedaction(inv({ admin: { view: true } }), anyOf, data) as { rows: unknown[] }).rows)
+            .toEqual([]);
+        // An EMPTY set is held by nobody: it fails closed, never open.
+        expect((applyRowRedaction(inv({ admin: { view: true } }), anyOf, { rows: [{ need: [] }] }) as { rows: unknown[] }).rows)
+            .toEqual([]);
+    });
+
     it('treats an absent permission DOMAIN as not granted', () => {
         // `perms[domain]?.[action]`. Without the optional chain this throws on a
         // domain the role has never heard of — a 500 instead of a redaction.

@@ -129,8 +129,14 @@ export interface McpRowRedactionRule {
      * entity kinds with no domain of their own (memberships, settings), and
      * dropping everything unrecognised would empty the feed rather than filter
      * it. Rows that DO name a governed domain must map to its key.
+     *
+     * An ARRAY means "any one of these" (#5384): a domain whose read is a
+     * disjunction — the agent inventory is the view key OR the register key
+     * (`mayReadAgentInventory`) — cannot be expressed as one key without
+     * refusing half its readers or admitting a wider set. An empty array is
+     * held by nobody, so it drops the row.
      */
-    keyOf: (row: unknown) => PermissionKey | null;
+    keyOf: (row: unknown) => PermissionKey | readonly PermissionKey[] | null;
 }
 
 /**
