@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { cn } from '@inflect/ui/lib/cn';
 import { isDiffReviewable, type ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 import { proposalFieldLabelKey } from '@/lib/agentic/proposal-labels';
+import { ProcessMapProposalPreview } from '@/components/agentic/ProcessMapProposalPreview';
 
 /**
  * A field's name as a reviewer reads it ("Treatment notes"), not as it is stored
@@ -142,6 +143,11 @@ export function ProposalDiffPanel({
                     */}
                     <ProposedOnlyList proposalId={proposalId} diff={diff} variant="orphaned" />
                 </>
+            ) : diff.status === 'CREATE' && diff.processMap ? (
+                // A process map is reviewed as its numbered steps and arrows,
+                // not as two text fields (#5053). The preview carries the name
+                // and description `fields` would have listed.
+                <ProcessMapProposalPreview proposalId={proposalId} preview={diff.processMap} />
             ) : diff.status === 'CREATE' ? (
                 <ProposedOnlyList proposalId={proposalId} diff={diff} variant="create" />
             ) : (

@@ -380,6 +380,17 @@ export function CheckpointReviewPanel() {
                                                     <InlineNotice variant="info">
                                                         {ta('runs.needsWrite')}
                                                     </InlineNotice>
+                                                ) : !p.viewerMayApprove ? (
+                                                    // The server would refuse
+                                                    // this viewer for this kind
+                                                    // (#5053), so it is not
+                                                    // offered; Reject still is.
+                                                    <InlineNotice
+                                                        variant="info"
+                                                        data-testid={`checkpoint-approve-unavailable-${p.id}`}
+                                                    >
+                                                        {ta('proposals.approveNeedsKindPermission')}
+                                                    </InlineNotice>
                                                 ) : (
                                                     <Button
                                                         variant="secondary"

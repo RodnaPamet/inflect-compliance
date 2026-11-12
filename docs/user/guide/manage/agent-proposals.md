@@ -4,7 +4,7 @@ route: /t/[tenantSlug]/agents/proposals
 
 # {{ui:agents.proposals.title}}
 
-The {{ui:agents.proposals.title}} page is the review queue for changes that agents ask to make. An agent never writes a risk, control, policy or finding itself: it proposes the change, the proposal waits here, and only a person's approval turns it into a real record.
+The {{ui:agents.proposals.title}} page is the review queue for changes that agents ask to make. An agent never writes a risk, control, policy, finding or process map itself: it proposes the change, the proposal waits here, and only a person's approval turns it into a real record.
 
 ## Where to find it
 
@@ -24,6 +24,8 @@ AI admins and Auditors see the tick boxes and the buttons greyed out. Hovering a
 
 If your workspace uses custom roles, opening the queue depends on the permissions your role was given. Approving and rejecting depend on whether the built-in role your custom role is based on can make changes.
 
+Approving a **{{ui:agents.proposals.kind.PROCESS_MAP}}** also needs permission to edit process maps, because approval creates the map in your name. If your role can approve other proposals but not that, the card says so where **{{ui:agents.proposals.approve}}** would be: {{ui:agents.proposals.approveNeedsKindPermission}}
+
 Some rules hold whatever your role:
 
 - **Whoever raised a dissent does not decide it.** When a member of internal audit disagrees with a sampled auditor workpaper, their dissent queues a finding proposal here. That person may not approve or reject it; somebody else must.
@@ -41,7 +43,7 @@ Use the queue to check what an agent wants to change before the change exists. R
 **The queue.** One card per waiting proposal, newest first. The page shows the 100 newest; when more are waiting, a notice above the cards says so. Each card shows:
 
 - **A tick box**, for rejecting several proposals at once.
-- **What it would create or change**: **{{ui:agents.proposals.kind.RISK}}**, **{{ui:agents.proposals.kind.CONTROL}}**, **{{ui:agents.proposals.kind.POLICY}}**, **{{ui:agents.proposals.kind.FINDING}}**, or **{{ui:agents.proposals.kind.EXTERNAL_WRITE}}** for a change to an outside system.
+- **What it would create or change**: **{{ui:agents.proposals.kind.RISK}}**, **{{ui:agents.proposals.kind.CONTROL}}**, **{{ui:agents.proposals.kind.POLICY}}**, **{{ui:agents.proposals.kind.FINDING}}**, **{{ui:agents.proposals.kind.PROCESS_MAP}}**, or **{{ui:agents.proposals.kind.EXTERNAL_WRITE}}** for a change to an outside system.
 - **{{ui:agents.proposals.diff.operationCreate}}** or **{{ui:agents.proposals.diff.operationUpdate}}**.
 - **The content check's verdict.** **{{ui:agents.proposals.guard.cleanBadge}}**; **{{ui:agents.proposals.guard.flaggedBadge}}**, when a rule matched the content, with the rules that fired; or **{{ui:agents.proposals.guard.unscannedBadge}}**, for a proposal made before the check existed. Content the check refuses outright never reaches this queue.
 - **A badge**, when one applies: **{{ui:agents.proposals.awaitingSecond}}** once one of two approvals is in, or **{{ui:agents.proposals.window.closed}}** once the review window has passed.
@@ -51,6 +53,7 @@ Use the queue to check what an agent wants to change before the change exists. R
 - **{{ui:agents.proposals.fromRun}}**, or the number of the step, a link to the run that produced the proposal, when a run did.
 - **The agent's rationale**, the reason it gave for the change, when it gave one.
 - **The content.** For a new record, **{{ui:agents.proposals.diff.createHeading}}** lists every field and its value. For an update, **{{ui:agents.proposals.diff.updateHeading}}** sets each field's {{ui:agents.proposals.diff.beforeColumn}} beside its {{ui:agents.proposals.diff.afterColumn}}, and marks the fields that stay {{ui:agents.proposals.diff.unchanged}}. The comparison is made against the record as it stands when the page loads. Each field is named in words, such as {{ui:agents.proposals.field.residualLikelihood}}.
+- **For a process map**, **{{ui:agents.proposals.processMap.heading}}** gives the map's name and description and how many steps and arrows it has. Under **{{ui:agents.proposals.processMap.stepsHeading}}** every step is numbered, marked as a step or a decision, and shown with its label. Under **{{ui:agents.proposals.processMap.arrowsHeading}}** every arrow names the two steps it joins, by number and label. A note points out a step no arrow touches and a decision with fewer than two ways out. Below the list, a picture shows the map with its steps where approval will place them. The numbered list is the full proposal; if the picture cannot be shown, the list is still there.
 - **{{ui:agents.proposals.approve}}**, at the foot of the content.
 
 An update that would change nothing is marked **{{ui:agents.proposals.diff.noChangesBadge}}**. One whose changes cannot be shown, because its record has been deleted or its content cannot be read, is marked **{{ui:agents.proposals.diff.blockedBadge}}** and offers no approval.
@@ -61,7 +64,7 @@ A proposal whose review window has closed shows a notice saying when it closed. 
 
 ### Approve a proposal
 
-Read the content and click **{{ui:agents.proposals.approve}}**. For a **{{ui:agents.proposals.guard.flaggedBadge}}** proposal, the **{{ui:agents.proposals.guard.confirmTitle}}** dialog repeats the rules that fired; click **{{ui:agents.proposals.guard.confirmApprove}}**, or **{{ui:agents.proposals.guard.confirmCancel}}** to step back. The page approves the content exactly as proposed; it offers no way to edit it first.
+Read the content and click **{{ui:agents.proposals.approve}}**. For a **{{ui:agents.proposals.guard.flaggedBadge}}** proposal, the **{{ui:agents.proposals.guard.confirmTitle}}** dialog repeats the rules that fired; click **{{ui:agents.proposals.guard.confirmApprove}}**, or **{{ui:agents.proposals.guard.confirmCancel}}** to step back. The page approves the content exactly as proposed; it offers no way to edit it first. To change a proposed process map, reject it and ask for the corrected map.
 
 When the proposal needs one approver, the record is created and the card leaves the queue. When it needs two, your approval is recorded, a note says how many of the required approvals are in, and the card stays for a second reviewer, marked **{{ui:agents.proposals.awaitingSecond}}**. That stays true after a reload. Where your button was, you see: {{ui:agents.proposals.signedByYou}}
 
@@ -76,6 +79,7 @@ Tick their boxes. A bar shows how many are selected. Click **{{ui:agents.proposa
 ## What happens next
 
 - An approved proposal creates its record through the same checks as a record made by hand, and the content check reads it once more first. The record is made in the approver's name, and the audit log ties it to the proposal it came from.
+- An approved **{{ui:agents.proposals.kind.PROCESS_MAP}}** becomes a new map on the [{{ui:automation.documentBar.processes}}](processes.md) page, with the status **{{ui:automation.documentBar.statusDraft}}**, as a process map rather than an automation workflow, laid out as the picture showed. Nothing in it runs until somebody converts it and builds rules from it.
 - An approved **{{ui:agents.proposals.kind.EXTERNAL_WRITE}}** is sent to the outside system within about ten minutes, after the connection's setting is checked again.
 - Every approval, signature, rejection and refused attempt is recorded in the workspace's audit log, naming who made it.
 - Some approved proposals are drawn at random for a second reviewer to re-check. How often they disagree is shown on the {{ui:agents.register.title}} and in the [{{ui:agents.reports.title}}](agent-reports.md).
@@ -92,6 +96,10 @@ Tick their boxes. A bar shows how many are selected. Click **{{ui:agents.proposa
 | **{{ui:agents.proposals.window.closed}}**, or **{{ui:agents.proposals.refused.expired}}** | The window has passed, possibly since the page loaded. It stays on the page until the overnight clean-up | Nothing; it cannot be decided |
 | **You have already approved this proposal. A second approval has to come from a different person.** | Your approval is already recorded | Ask another Owner or Admin to approve it |
 | A message that the proposal needs two independent approvers and you are the registered owner of the agent | You own the agent, so you cannot be one of the two | Ask two other Owners or Admins to approve it |
+| **{{ui:agents.proposals.approveNeedsKindPermission}}** | Your role cannot approve this kind of proposal | Ask somebody who can, or reject it |
+| **{{ui:agents.proposals.refused.processMapNeedsProcessesEdit}}** | Your permission to edit process maps was removed after the page loaded | Ask somebody who can edit process maps to approve it |
+| **{{ui:agents.proposals.refused.processMapUnreadable}}** | The stored process map no longer reads as a map | Reject it |
+| **{{ui:agents.proposals.processMap.canvasUnavailable}}** | The picture of a proposed map could not be loaded | Read the numbered list; it is the full proposal |
 | **{{ui:agents.proposals.refused.ownDissent}}** | The proposal came from your own dissent | Ask somebody else to decide it |
 | **{{ui:agents.proposals.refused.composer}}** | You wrote the request on the compose page, and the setting was turned on after the page loaded | Ask another Owner or Admin to approve it, or reject it to withdraw it |
 | **The record changed since this diff was reviewed - re-review before approving** | The record the update would change was edited after the page loaded | Reload the page and read the changes again |

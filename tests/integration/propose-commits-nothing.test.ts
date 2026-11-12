@@ -37,7 +37,7 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
-import { PROPOSE_TOOLS, runProposeTool } from '@/lib/mcp/tools/propose-tools';
+import { PROPOSE_TOOLS, proposeToolReleased, runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
@@ -54,6 +54,17 @@ jest.setTimeout(120_000);
 const TENANT = 'pcn-tenant';
 
 /**
+ * The tools this release switches on, and the ones a kind's brake withdraws
+ * (`proposeToolReleased`: `propose_process_map` while
+ * `PROCESS_MAP_PROPOSALS_IMPLEMENTED` is false). The suite FOLLOWS the brake
+ * rather than pinning it, so setting it back stays a one-line diff: a released
+ * tool must queue and commit nothing, and a withdrawn one must be refused and
+ * queue nothing either.
+ */
+const RELEASED_TOOLS = PROPOSE_TOOLS.filter((t) => proposeToolReleased(t));
+const WITHDRAWN_TOOLS = PROPOSE_TOOLS.filter((t) => !proposeToolReleased(t));
+
+/**
  * The business table each proposal kind would commit to, if it committed.
  *
  * Keyed by `AgentProposalKind` so the mapping is against the vocabulary rather
@@ -61,14 +72,36 @@ const TENANT = 'pcn-tenant';
  * kind. A `?? skip` here would let a new proposal kind arrive with no coverage
  * and a green suite, which is the exact shape of the gap this file closes.
  */
-const TABLE_FOR_KIND: Record<string, 'risk' | 'control' | 'policy' | 'finding'> = {
+type BusinessTable =
+    | 'risk'
+    | 'control'
+    | 'policy'
+    | 'finding'
+    | 'processMap'
+    | 'processNode'
+    | 'processEdge'
+    | 'automationRule';
+
+const TABLE_FOR_KIND: Record<string, BusinessTable> = {
     RISK: 'risk',
     CONTROL: 'control',
     POLICY: 'policy',
     FINDING: 'finding',
+    PROCESS_MAP: 'processMap',
 };
 
-function tableFor(kind: string): 'risk' | 'control' | 'policy' | 'finding' {
+/**
+ * Tables no kind names but a committed process map would also write: its
+ * steps, its arrows, and (were it ever an AUTOMATION map) the rules a canvas
+ * save syncs. Counted and cleared with the rest, children first.
+ */
+const DEPENDENT_TABLES: readonly BusinessTable[] = ['processEdge', 'processNode', 'automationRule'];
+
+const BUSINESS_TABLES: readonly BusinessTable[] = [
+    ...new Set<BusinessTable>([...DEPENDENT_TABLES, ...Object.values(TABLE_FOR_KIND)]),
+];
+
+function tableFor(kind: string): BusinessTable {
     const t = TABLE_FOR_KIND[kind];
     if (!t) {
         throw new Error(
@@ -81,9 +114,8 @@ function tableFor(kind: string): 'risk' | 'control' | 'policy' | 'finding' {
 
 /** Every business table any propose tool could reach, counted as one snapshot. */
 async function countBusinessRows(): Promise<Record<string, number>> {
-    const tables = [...new Set(Object.values(TABLE_FOR_KIND))];
     const entries = await Promise.all(
-        tables.map(async (t) => [
+        BUSINESS_TABLES.map(async (t) => [
             t,
             await (prisma[t] as { count: (a: unknown) => Promise<number> }).count({
                 where: { tenantId: TENANT },
@@ -126,7 +158,7 @@ async function countBusinessRows(): Promise<Record<string, number>> {
  * accumulating the one row that makes the file cry wolf.
  */
 async function clearBusinessRows(): Promise<void> {
-    for (const t of [...new Set(Object.values(TABLE_FOR_KIND))]) {
+    for (const t of BUSINESS_TABLES) {
         await (prisma[t] as { deleteMany: (a: unknown) => Promise<unknown> }).deleteMany({
             where: { tenantId: TENANT },
         });
@@ -175,6 +207,21 @@ function itemFor(kind: string): Record<string, unknown> {
                 type: 'OBSERVATION',
                 description: 'proposed, not committed',
             };
+        case 'PROCESS_MAP':
+            // One whole map: three steps, two arrows. The keys are the agent's
+            // and are re-minted on the way in.
+            return {
+                name: 'pcn process map',
+                nodes: [
+                    { nodeKey: 'a', label: 'proposed' },
+                    { nodeKey: 'b', nodeType: 'decision', label: 'not committed?' },
+                    { nodeKey: 'c', label: 'never created' },
+                ],
+                edges: [
+                    { sourceKey: 'a', targetKey: 'b' },
+                    { sourceKey: 'b', targetKey: 'c', labelOverride: 'Yes' },
+                ],
+            };
         default:
             throw new Error(`no fixture item for kind "${kind}"`);
     }
@@ -196,7 +243,7 @@ describeFn('a propose tool queues, and commits nothing', () => {
         await prisma.registeredAgentTool.deleteMany({ where: { tenantId: TENANT } });
         await prisma.registeredAgent.deleteMany({ where: { tenantId: TENANT } });
         await prisma.aiSystem.deleteMany({ where: { tenantId: TENANT } });
-        // …and the four tables the assertions are ABOUT, which is the half
+        // …and the tables the assertions are ABOUT, which is the half
         // this setup was missing. See `clearBusinessRows`.
         await clearBusinessRows();
 
@@ -271,10 +318,14 @@ describeFn('a propose tool queues, and commits nothing', () => {
             control: 0,
             policy: 0,
             finding: 0,
+            processMap: 0,
+            processNode: 0,
+            processEdge: 0,
+            automationRule: 0,
         });
     });
 
-    it.each(PROPOSE_TOOLS.map((t) => [t.name, t.kind] as const))(
+    it.each(RELEASED_TOOLS.map((t) => [t.name, t.kind] as const))(
         '%s queues a PENDING %s and writes NO business row anywhere',
         async (toolName, kind) => {
             const before = await countBusinessRows();
@@ -309,14 +360,46 @@ describeFn('a propose tool queues, and commits nothing', () => {
         },
     );
 
+    // A table `it.each` refuses when empty, so the block exists only while a
+    // brake is engaged.
+    const itWithdrawn =
+        WITHDRAWN_TOOLS.length > 0 ? it.each(WITHDRAWN_TOOLS.map((t) => [t.name, t.kind] as const)) : null;
+    itWithdrawn?.(
+        '%s is withdrawn by its brake: refused, and queues no %s and writes nothing',
+        async (toolName, kind) => {
+            const before = await countBusinessRows();
+            const proposalsBefore = await prisma.agentProposal.count({
+                where: { tenantId: TENANT, kind },
+            });
+
+            const inv = await resolveMcpInvocation(agentCtx());
+            await expect(runProposeTool(inv, toolName, { items: [itemFor(kind)] })).rejects.toThrow();
+
+            expect(await prisma.agentProposal.count({ where: { tenantId: TENANT, kind } })).toBe(
+                proposalsBefore,
+            );
+            expect(await countBusinessRows()).toEqual(before);
+        },
+    );
+
     it('and the queued rows are still the only thing there after all of them', async () => {
         // The cumulative claim. Each case above is individually green even if
         // every call wrote one row and deleted it again; this asserts the end
         // state after the whole surface has been exercised.
         const rows = await countBusinessRows();
-        expect(rows).toEqual({ risk: 0, control: 0, policy: 0, finding: 0 });
+        expect(rows).toEqual({
+            risk: 0,
+            control: 0,
+            policy: 0,
+            finding: 0,
+            processMap: 0,
+            processNode: 0,
+            processEdge: 0,
+            automationRule: 0,
+        });
+        // One per RELEASED tool: a withdrawn tool queued nothing.
         expect(await prisma.agentProposal.count({ where: { tenantId: TENANT } })).toBe(
-            PROPOSE_TOOLS.length,
+            RELEASED_TOOLS.length,
         );
     });
 });

@@ -79,6 +79,7 @@ export const PROPOSAL_KIND_BY_PROPOSE_TOOL: Readonly<Record<string, string>> = {
     propose_controls: 'CONTROL',
     draft_policy: 'POLICY',
     propose_finding: 'FINDING',
+    propose_process_map: 'PROCESS_MAP',
 };
 
 /** The observation window ending at `end` (the campaign's creation). */

@@ -98,6 +98,9 @@ jest.mock('@/app-layer/ai/assistant/tools', () => ({
         // changed.
         proposals: () => [],
     }),
+    // Read for the system prompt's proposing rule (#5053); this set offers
+    // only read tools, so it can queue nothing.
+    offeredProposeKinds: () => [],
 }));
 
 import { streamAssistant } from '@/app-layer/usecases/assistant';

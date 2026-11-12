@@ -180,6 +180,7 @@ function row(overrides: Partial<ProposalRow> = {}): ProposalRow {
         windowClosed: false,
         approvalsRecorded: 0,
         signedByViewer: false,
+        viewerMayApprove: true,
         runId: RUN_ID,
         stepSeq: 2,
         guardVerdict: 'CLEAN',

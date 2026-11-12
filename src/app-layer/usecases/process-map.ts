@@ -9,7 +9,7 @@ import { ProcessMapRepository } from '../repositories/ProcessMapRepository';
 import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound } from '@/lib/errors/types';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import {
     syncCanvasToRules,
     hydrateCanvasFromRules,
@@ -52,31 +52,58 @@ export async function createProcessMap(
 ) {
     assertCanWrite(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
-        const map = await ProcessMapRepository.create(db, ctx, {
-            name: input.name,
-            description: input.description ?? null,
-            status: input.status,
-            canvasMode: input.canvasMode,
-            createdByUserId: ctx.userId,
-        });
+    return runInTenantContext(ctx, (db) => createProcessMapInTx(db, ctx, input));
+}
 
-        await logEvent(db, ctx, {
-            action: 'CREATE',
-            entityType: 'ProcessMap',
-            entityId: map.id,
-            details: `Created process map: ${map.name}`,
-            detailsJson: {
-                category: 'entity_lifecycle',
-                entityName: 'ProcessMap',
-                operation: 'created',
-                after: { name: map.name, status: map.status },
-                summary: `Created process map: ${map.name}`,
-            },
-        });
-
-        return map;
+/**
+ * The body of {@link createProcessMap}, inside a transaction the CALLER opened.
+ *
+ * Extracted (#5053) so an approved process-map proposal can create the map AND
+ * its graph in ONE transaction (`createProcessMapWithGraph`): calling the two
+ * public usecases in sequence would commit twice, and nesting them shares no
+ * transaction (`runInTenantContext` opens a fresh one). The caller asserts the
+ * write; this asserts nothing.
+ *
+ * `sourceProposalId`, when given, is recorded on the CREATE audit row (in its
+ * `after` record), so an auditor can trace a map back to the proposal it came
+ * from.
+ */
+async function createProcessMapInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    input: CreateProcessMapInput,
+    provenance?: { sourceProposalId: string },
+) {
+    const map = await ProcessMapRepository.create(db, ctx, {
+        name: input.name,
+        description: input.description ?? null,
+        status: input.status,
+        canvasMode: input.canvasMode,
+        createdByUserId: ctx.userId,
     });
+
+    await logEvent(db, ctx, {
+        action: 'CREATE',
+        entityType: 'ProcessMap',
+        entityId: map.id,
+        details: `Created process map: ${map.name}`,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'ProcessMap',
+            operation: 'created',
+            // `sourceProposalId` rides inside `after`: the entity-lifecycle
+            // payload schema is strict at the top level (its shape is part of
+            // the hash chain), and `after` is its open record.
+            after: {
+                name: map.name,
+                status: map.status,
+                ...(provenance ? { sourceProposalId: provenance.sourceProposalId } : {}),
+            },
+            summary: `Created process map: ${map.name}`,
+        },
+    });
+
+    return map;
 }
 
 export async function saveProcessMap(
@@ -86,76 +113,130 @@ export async function saveProcessMap(
 ) {
     assertCanWrite(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
-        // Keep each step's rule link, and drop display-only rule fields; see
-        // `prepareCanvasNodesForSave` for the duplicate-rule bug this closes.
-        const nodes = await prepareCanvasNodesForSave(db, ctx, id, input.nodes);
-        const map = await ProcessMapRepository.replaceGraph(db, ctx, id, {
-            name: input.name,
-            description: input.description ?? undefined,
-            status: input.status,
-            nodes,
-            edges: input.edges,
-            // #2960 — forwarded UNDEFINED-PRESERVING. The schema makes this
-            // optional, and a client that omits it must leave the stored
-            // freeform layer alone rather than erase it; `?? undefined` would
-            // be the same value here but says the wrong thing, so the field is
-            // passed through exactly as it arrived.
-            freeformJson: input.freeformJson,
-            // Epic P1 — optimistic concurrency. Forward the
-            // client's claimed version so the repo can refuse the
-            // write on conflict (HTTP 409 / `STALE_DATA`).
-            expectedVersion: input.expectedVersion,
-        });
-        if (!map) throw notFound('Process map not found');
+    return runInTenantContext(ctx, (db) => saveProcessMapInTx(db, ctx, id, input));
+}
 
-        // VR-3 — Canvas → Rules sync (AUTOMATION maps only): create stub
-        // rules for new action nodes + wire chain topology after the graph
-        // is persisted.
-        const meta = await db.processMap.findFirst({
-            where: { id, tenantId: ctx.tenantId },
-            select: { canvasMode: true },
-        });
-        let ruleIdByNodeKey: Record<string, string> = {};
-        if (meta?.canvasMode === 'AUTOMATION') {
-            ({ ruleIdByNodeKey } = await syncCanvasToRules(db, ctx, id));
-        }
+/**
+ * The body of {@link saveProcessMap}, inside a transaction the CALLER opened.
+ * Extracted for the same reason as {@link createProcessMapInTx}; the caller
+ * asserts the write.
+ */
+async function saveProcessMapInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    id: string,
+    input: SaveProcessMapInput,
+) {
+    // Keep each step's rule link, and drop display-only rule fields; see
+    // `prepareCanvasNodesForSave` for the duplicate-rule bug this closes.
+    const nodes = await prepareCanvasNodesForSave(db, ctx, id, input.nodes);
+    const map = await ProcessMapRepository.replaceGraph(db, ctx, id, {
+        name: input.name,
+        description: input.description ?? undefined,
+        status: input.status,
+        nodes,
+        edges: input.edges,
+        // #2960 — forwarded UNDEFINED-PRESERVING. The schema makes this
+        // optional, and a client that omits it must leave the stored
+        // freeform layer alone rather than erase it; `?? undefined` would
+        // be the same value here but says the wrong thing, so the field is
+        // passed through exactly as it arrived.
+        freeformJson: input.freeformJson,
+        // Epic P1 — optimistic concurrency. Forward the
+        // client's claimed version so the repo can refuse the
+        // write on conflict (HTTP 409 / `STALE_DATA`).
+        expectedVersion: input.expectedVersion,
+    });
+    if (!map) throw notFound('Process map not found');
 
-        await logEvent(db, ctx, {
-            action: 'UPDATE',
-            entityType: 'ProcessMap',
-            entityId: id,
-            details: `Saved process map: ${map.name} (v${map.version})`,
-            detailsJson: {
-                category: 'entity_lifecycle',
-                entityName: 'ProcessMap',
-                operation: 'updated',
-                after: {
-                    name: map.name,
-                    status: map.status,
-                    version: map.version,
-                    nodeCount: map.nodes.length,
-                    edgeCount: map.edges.length,
-                },
-                summary: `Saved process map: ${map.name} (v${map.version})`,
+    // VR-3 — Canvas → Rules sync (AUTOMATION maps only): create stub
+    // rules for new action nodes + wire chain topology after the graph
+    // is persisted.
+    const meta = await db.processMap.findFirst({
+        where: { id, tenantId: ctx.tenantId },
+        select: { canvasMode: true },
+    });
+    let ruleIdByNodeKey: Record<string, string> = {};
+    if (meta?.canvasMode === 'AUTOMATION') {
+        ({ ruleIdByNodeKey } = await syncCanvasToRules(db, ctx, id));
+    }
+
+    await logEvent(db, ctx, {
+        action: 'UPDATE',
+        entityType: 'ProcessMap',
+        entityId: id,
+        details: `Saved process map: ${map.name} (v${map.version})`,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'ProcessMap',
+            operation: 'updated',
+            after: {
+                name: map.name,
+                status: map.status,
+                version: map.version,
+                nodeCount: map.nodes.length,
+                edgeCount: map.edges.length,
             },
-        });
+            summary: `Saved process map: ${map.name} (v${map.version})`,
+        },
+    });
 
-        // The rule each step is now linked to, so the canvas that saved can
-        // show a new step's rule without a reload (and send it next time).
-        if (Object.keys(ruleIdByNodeKey).length === 0) return map;
-        return {
-            ...map,
-            nodes: map.nodes.map((n) => {
-                const ruleId = ruleIdByNodeKey[n.nodeKey];
-                if (!ruleId) return n;
-                const data =
-                    n.dataJson && typeof n.dataJson === 'object' && !Array.isArray(n.dataJson)
-                        ? (n.dataJson as Record<string, unknown>)
-                        : {};
-                return { ...n, dataJson: { ...data, ruleId } };
-            }),
-        };
+    // The rule each step is now linked to, so the canvas that saved can
+    // show a new step's rule without a reload (and send it next time).
+    if (Object.keys(ruleIdByNodeKey).length === 0) return map;
+    return {
+        ...map,
+        nodes: map.nodes.map((n) => {
+            const ruleId = ruleIdByNodeKey[n.nodeKey];
+            if (!ruleId) return n;
+            const data =
+                n.dataJson && typeof n.dataJson === 'object' && !Array.isArray(n.dataJson)
+                    ? (n.dataJson as Record<string, unknown>)
+                    : {};
+            return { ...n, dataJson: { ...data, ruleId } };
+        }),
+    };
+}
+
+/**
+ * Create a DRAFT, DOCUMENT-mode map WITH its graph, in ONE transaction (#5053).
+ *
+ * The approval of an agent's process-map proposal is the caller: a failure in
+ * either half rolls both back, so no empty map is left behind. The map is
+ * created by the caller (the approver), and its CREATE audit row names the
+ * proposal. The two audit rows are the ones the two public usecases write.
+ * Canvas → Rules sync stays inert: a DOCUMENT map has no rule-owning steps.
+ */
+export async function createProcessMapWithGraph(
+    ctx: RequestContext,
+    input: {
+        name: string;
+        description: string | null;
+        nodes: SaveProcessMapInput['nodes'];
+        edges: SaveProcessMapInput['edges'];
+        sourceProposalId: string;
+    },
+): Promise<string> {
+    assertCanWrite(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const map = await createProcessMapInTx(
+            db,
+            ctx,
+            {
+                name: input.name,
+                description: input.description,
+                status: 'DRAFT',
+                canvasMode: 'DOCUMENT',
+            },
+            { sourceProposalId: input.sourceProposalId },
+        );
+        await saveProcessMapInTx(db, ctx, map.id, {
+            nodes: input.nodes,
+            edges: input.edges,
+            expectedVersion: map.version,
+        });
+        return map.id;
     });
 }
 

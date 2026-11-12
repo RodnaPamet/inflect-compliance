@@ -23,7 +23,7 @@
  */
 import type { ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 
-export const PROCESS_MAP_PROPOSALS_IMPLEMENTED: boolean = false;
+export const PROCESS_MAP_PROPOSALS_IMPLEMENTED: boolean = true;
 
 /**
  * The diff a row of a kind this release does not approve is shown with, or
@@ -38,8 +38,15 @@ export const PROCESS_MAP_PROPOSALS_IMPLEMENTED: boolean = false;
  * `ProposalDiffPanel` renders this status with its own sentence.
  * `buildProposalDiffs` is the one caller on the server.
  */
-export function withheldProposalDiff(kind: string): ProposalDiff | null {
-    if (kind === 'PROCESS_MAP' && !PROCESS_MAP_PROPOSALS_IMPLEMENTED) {
+export function withheldProposalDiff(
+    kind: string,
+    /**
+     * The brake. Defaults to the flag; a test passes `false` to hold the
+     * withheld side while the flag is released.
+     */
+    processMapImplemented: boolean = PROCESS_MAP_PROPOSALS_IMPLEMENTED,
+): ProposalDiff | null {
+    if (kind === 'PROCESS_MAP' && !processMapImplemented) {
         return { status: 'KIND_NOT_APPROVABLE', fields: [], baseDigest: null, comparedFieldCount: 0 };
     }
     return null;

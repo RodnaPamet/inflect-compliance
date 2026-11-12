@@ -103,7 +103,7 @@ import {
     useCheckpointReview,
 } from '@/lib/processes/canvas-checkpoint-review';
 import { computeProposalDiff } from '@/lib/agentic/proposal-diff';
-import { withheldProposalDiff } from '@/lib/agentic/proposal-kind-rollout';
+import type { ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 
 /** A string from the real `agents` catalogue, so a copy edit cannot break a test. */
@@ -153,9 +153,25 @@ const proposal = (over: Record<string, unknown> = {}) => ({
     expiresAt: null,
     createdAt: '2026-10-14T09:00:00.000Z',
     diff: UPDATE_DIFF,
+    // The server's answer to "would the approve usecase take this viewer's
+    // approval of this kind" (#5053). True here; the refusal has its own case.
+    viewerMayApprove: true,
     ...SCANNED_CLEAN,
     ...over,
 });
+
+/**
+ * The diff a release gives a kind it reads but does not approve: a process map
+ * while `PROCESS_MAP_PROPOSALS_IMPLEMENTED` is false (#5053). Written out,
+ * because with the brake on nothing in this release produces it, and the panel
+ * still has to render it the day the brake is put back.
+ */
+const KIND_NOT_APPROVABLE_DIFF: ProposalDiff = {
+    status: 'KIND_NOT_APPROVABLE',
+    fields: [],
+    baseDigest: null,
+    comparedFieldCount: 0,
+};
 
 const review = (over: Record<string, unknown> = {}) => ({
     runId: 'run-1',
@@ -421,12 +437,17 @@ describe('a proposal is named in words, never by its stored codes (#5053)', () =
         expect(label.textContent).not.toContain('UPDATE');
     });
 
-    it('a process-map proposal is labelled, offers no Approve, and can be rejected', () => {
-        const diff = withheldProposalDiff('PROCESS_MAP');
-        if (!diff) throw new Error('PROCESS_MAP_PROPOSALS_IMPLEMENTED is true, so the kind no longer has a withheld diff');
+    it('a process-map proposal under the brake is labelled, offers no Approve, and can be rejected', () => {
         load({
             data: review({
-                proposals: [proposal({ kind: 'PROCESS_MAP', operation: 'CREATE', targetEntityId: null, diff })],
+                proposals: [
+                    proposal({
+                        kind: 'PROCESS_MAP',
+                        operation: 'CREATE',
+                        targetEntityId: null,
+                        diff: KIND_NOT_APPROVABLE_DIFF,
+                    }),
+                ],
             }),
         });
         mount();
@@ -463,6 +484,25 @@ describe('a proposal is named in words, never by its stored codes (#5053)', () =
         });
         expect(screen.getByText(agentsEn('proposals.refused.processMapNotAvailable'))).toBeInTheDocument();
         expect(screen.queryByText(/PROCESS_MAP_PROPOSALS_NOT_AVAILABLE/)).toBeNull();
+    });
+});
+
+describe('a viewer the server would refuse for this kind (#5053)', () => {
+    it('is not offered Approve, is told why, and can still reject', () => {
+        load({ data: review({ proposals: [proposal({ kind: 'PROCESS_MAP', operation: 'CREATE', targetEntityId: null, diff: CREATE_DIFF, viewerMayApprove: false })] }) });
+        mount();
+        expect(screen.queryByTestId('checkpoint-approve-prop-1')).toBeNull();
+        expect(screen.getByTestId('checkpoint-approve-unavailable-prop-1')).toHaveTextContent(
+            agentsEn('proposals.approveNeedsKindPermission'),
+        );
+        expect(screen.getByTestId('checkpoint-reject-prop-1')).toBeInTheDocument();
+    });
+
+    it('the same row with the flag true offers Approve', () => {
+        load({ data: review({ proposals: [proposal({ kind: 'PROCESS_MAP', operation: 'CREATE', targetEntityId: null, diff: CREATE_DIFF, viewerMayApprove: true })] }) });
+        mount();
+        expect(screen.getByTestId('checkpoint-approve-prop-1')).toBeInTheDocument();
+        expect(screen.queryByTestId('checkpoint-approve-unavailable-prop-1')).toBeNull();
     });
 });
 

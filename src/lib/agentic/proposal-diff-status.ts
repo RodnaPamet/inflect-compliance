@@ -13,6 +13,7 @@
  * `tests/guards/client-reachable-modules-import-no-node-builtins.test.ts`
  * fails if it, or anything it imports, gains one.
  */
+import type { ProcessMapPreview } from '@/lib/agentic/process-map-proposal';
 
 /** What the review UI is being asked to render. See the header. */
 export type ProposalDiffStatus =
@@ -83,6 +84,13 @@ export interface ProposalDiff {
      * nothing" from "never compared" without re-deriving it from the status.
      */
     comparedFieldCount: number;
+    /**
+     * A PROCESS_MAP proposal's steps and arrows, with the per-step boxes the
+     * server layout computed (#5053) — the boxes approval creates the map at.
+     * Set only on a reviewable PROCESS_MAP diff; `fields` then carries just
+     * the name and the description.
+     */
+    processMap?: ProcessMapPreview;
 }
 
 /** Statuses whose diff is a computed, trustworthy answer. */

@@ -23,6 +23,7 @@
 import { z } from 'zod';
 import type { RequestContext } from '../types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { proposalKindNoun } from '@/lib/agentic/proposal-labels';
 import { enforceFeatureGate } from '@/app-layer/ai/risk-assessment/feature-gate';
 import { checkRateLimit, recordGeneration } from '@/app-layer/ai/risk-assessment/rate-limiter';
 import { recordAiGeneration } from '@/lib/observability/integration-metrics';
@@ -33,7 +34,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { logAiDecision } from '@/app-layer/ai/decision-log';
 import { RESIDENCY_SELECT, residencyTermsFrom, resolveFlueModel } from '@/lib/agentic/flue/model-selection';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
-import { assistantTools, type ProposalOutcome } from '@/app-layer/ai/assistant/tools';
+import { assistantTools, offeredProposeKinds, type ProposalOutcome } from '@/app-layer/ai/assistant/tools';
 import { assistantProviderFor } from '@/app-layer/ai/assistant/turn-provider';
 import { runAssistantLoop, haltNotice, DEFAULT_LOOP_BOUNDS, type LoopOutcome } from '@/app-layer/ai/assistant/tool-loop';
 import type { AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
@@ -136,7 +137,9 @@ function proposalOutcomeMessage(outcomes: readonly ProposalOutcome[]): string {
 /** The noun to use, from the funnel's own `kind`. */
 function nounFor(outcomes: readonly ProposalOutcome[]): string {
     const kinds = new Set(outcomes.map((o) => o.kind).filter((k) => k !== 'unknown'));
-    if (kinds.size === 1) return [...kinds][0].toLowerCase();
+    // `proposalKindNoun` (#5053): `PROCESS_MAP` reads "process map", never
+    // "process_map".
+    if (kinds.size === 1) return proposalKindNoun([...kinds][0]);
     // Several kinds in one turn, or none reported: a neutral noun rather than
     // a guessed one. Naming the wrong entity in a compliance record is worse
     // than naming none.
@@ -570,7 +573,7 @@ async function answerFromToolLoop(
     const result = await runAssistantLoop({
         provider,
         specifier: choice.specifier,
-        system: assistantSystemPrompt(contextBlock),
+        system: assistantSystemPrompt(contextBlock, offeredProposeKinds(set.tools)),
         question,
         tools: set.tools,
         guardTripped: set.reviewRequired,
@@ -801,6 +804,45 @@ function isGuardRefusal(err: unknown): boolean {
     return GUARD_REFUSAL_PREFIXES.some((p) => message.includes(p));
 }
 
+/** The plural each proposal kind is named by in the system prompt. */
+const PROPOSE_KIND_PLURAL: Readonly<Record<string, string>> = {
+    RISK: 'risks',
+    CONTROL: 'controls',
+    POLICY: 'policies',
+    FINDING: 'findings',
+    PROCESS_MAP: 'process maps',
+};
+
+/**
+ * The system prompt's rule about proposing, for the kinds THIS turn's tool set
+ * can queue (`offeredProposeKinds`, #5053). Exported for its test.
+ *
+ * Built from the offer, never written as a fixed sentence: a READER is offered
+ * no propose tool, a custom role without `processes.edit` is offered no
+ * `propose_process_map`, and a release brake withdraws one. A fixed sentence
+ * naming every kind would tell the model to call a tool it was not given, and
+ * it would then describe a proposal it never made. Whatever is offered, the
+ * rule says nothing is created until a reviewer approves.
+ */
+export function proposeCapabilityRule(kinds: readonly string[]): string[] {
+    if (kinds.length === 0) {
+        return [
+            '- You cannot propose or create records for this person: no propose tool is offered to them.',
+            '  If they ask for one, say you cannot, and never describe anything as queued or created.',
+        ];
+    }
+    const nouns = kinds.map((k) => PROPOSE_KIND_PLURAL[k] ?? `${proposalKindNoun(k)} records`);
+    const list = nouns.length === 1 ? nouns[0] : `${nouns.slice(0, -1).join(', ')} and ${nouns[nouns.length - 1]}`;
+    return [
+        `- You can PROPOSE ${list} with the propose tools, and nothing else.`,
+        '  Nothing is created until a reviewer approves the proposal. When someone asks for one of these,',
+        '  call the propose tool rather than describing it in prose, and never say it was created.',
+        ...(kinds.includes('PROCESS_MAP')
+            ? ['  You cannot see existing process maps, so a proposed map may duplicate one.']
+            : []),
+    ];
+}
+
 /**
  * The system prompt, per turn.
  *
@@ -821,7 +863,7 @@ function isGuardRefusal(err: unknown): boolean {
  * way out by `checkGuidanceRoutes`, because a prompt is an instruction and
  * not a guarantee.
  */
-function assistantSystemPrompt(contextBlock: string | null): string {
+function assistantSystemPrompt(contextBlock: string | null, proposeKinds: readonly string[]): string {
     return [
         'You are a compliance assistant inside the Inflect platform, answering about THIS tenant only.',
         '',
@@ -832,6 +874,7 @@ function assistantSystemPrompt(contextBlock: string | null): string {
         '  state totals or conclusions about the full set.',
         '- If a tool result says an item was QUARANTINED, say exactly that it did NOT enter the review',
         '  queue and nothing was created. Never describe a quarantined item as queued or pending.',
+        ...proposeCapabilityRule(proposeKinds),
         '- Be concise. Give the number or the fact first.',
         '',
         'NAVIGATION. You may refer to a page ONLY if its path appears in the list below. If the page',

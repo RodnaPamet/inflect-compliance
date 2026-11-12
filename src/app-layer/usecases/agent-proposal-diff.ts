@@ -35,9 +35,13 @@ import {
     type ProposalDiff,
 } from '@/lib/agentic/proposal-diff';
 import { withheldProposalDiff } from '@/lib/agentic/proposal-kind-rollout';
+import { previewStoredProcessMap } from '@/lib/processes/proposed-map-read';
 import type { RequestContext } from '@/app-layer/types';
 
-/** The four kinds a proposal can name, matching `AgentProposalKind`. */
+/**
+ * The kinds an UPDATE proposal can name a target of. `EXTERNAL_WRITE` and
+ * `PROCESS_MAP` are CREATE-only and name no record of ours.
+ */
 export type ProposalTargetKind = 'RISK' | 'CONTROL' | 'POLICY' | 'FINDING';
 
 /** The minimum of an `AgentProposal` row the diff builder needs. */
@@ -153,6 +157,17 @@ export async function buildProposalDiffs(
             out.set(p.id, withheld);
             continue;
         }
+        // ═══ A PROCESS MAP IS REVIEWED AS A MAP, NOT AS JSON (#5053) ═══
+        //
+        // The fields are the name and description; the steps and arrows travel
+        // as `processMap`, with the per-step boxes the server layout computes
+        // (the same ones approval creates the map at). A stored map that no
+        // longer reads is PAYLOAD_UNREADABLE, which withdraws Approve, and
+        // approval refuses it through the same reader.
+        if (p.kind === 'PROCESS_MAP') {
+            out.set(p.id, processMapDiff(p.operation, p.payloadJson));
+            continue;
+        }
         const isUpdate = p.operation === 'UPDATE';
         // `?? null` and not `|| undefined`: for an UPDATE, "no row came back"
         // must reach `computeProposalDiff` as an explicit null (TARGET_MISSING),
@@ -170,6 +185,31 @@ export async function buildProposalDiffs(
         );
     }
     return out;
+}
+
+/**
+ * The review diff of a PROCESS_MAP proposal. Always CREATE-shaped:
+ * `createAgentProposal` refuses any other operation, so an UPDATE-shaped row
+ * was not written by it and is not reviewable.
+ */
+function processMapDiff(operation: string, payloadJson: string): ProposalDiff {
+    const read = operation === 'UPDATE' ? null : previewStoredProcessMap(payloadJson);
+    if (!read || !read.ok) {
+        return { status: 'PAYLOAD_UNREADABLE', fields: [], baseDigest: null, comparedFieldCount: 0 };
+    }
+    const { preview } = read;
+    return {
+        status: 'CREATE',
+        fields: [
+            { field: 'name', before: null, after: preview.name, changed: true, baseHasField: true },
+            ...(preview.description !== null
+                ? [{ field: 'description', before: null, after: preview.description, changed: true, baseHasField: true }]
+                : []),
+        ],
+        baseDigest: null,
+        comparedFieldCount: 0,
+        processMap: preview,
+    };
 }
 
 /** Single-proposal convenience over {@link buildProposalDiffs}. */

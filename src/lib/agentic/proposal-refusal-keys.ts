@@ -17,7 +17,10 @@ export type ProposalRefusalKey =
     | 'ownDissent'
     | 'unknownDissent'
     | 'expired'
-    | 'processMapNotAvailable';
+    | 'processMapNotAvailable'
+    | 'processMapNotEditable'
+    | 'processMapNeedsProcessesEdit'
+    | 'processMapUnreadable';
 
 const REFUSAL_KEY: Readonly<Record<string, ProposalRefusalKey>> = {
     COMPOSER_MAY_NOT_APPROVE: 'composer',
@@ -26,6 +29,11 @@ const REFUSAL_KEY: Readonly<Record<string, ProposalRefusalKey>> = {
     agent_proposal_expired: 'expired',
     // #5053: a process-map proposal is read, and not yet approved.
     PROCESS_MAP_PROPOSALS_NOT_AVAILABLE: 'processMapNotAvailable',
+    // #5053, deploy 2: a map is approved exactly as proposed, by somebody who
+    // may edit process maps, and only while its stored payload still reads.
+    PROCESS_MAP_PROPOSAL_NOT_EDITABLE: 'processMapNotEditable',
+    PROCESS_MAP_APPROVER_NEEDS_PROCESSES_EDIT: 'processMapNeedsProcessesEdit',
+    PROCESS_MAP_PROPOSAL_UNREADABLE: 'processMapUnreadable',
 };
 
 /** The worded refusal for an error response body, or null when it is not one of ours. */

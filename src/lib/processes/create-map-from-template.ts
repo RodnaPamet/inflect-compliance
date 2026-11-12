@@ -11,7 +11,8 @@
  * the new map. Returns the created map's summary for the caller to splice into
  * its list + select.
  */
-import { buildTemplateGraph, type ProcessMapTemplate } from '@/components/processes/process-map-templates';
+import type { ProcessMapTemplate } from '@/components/processes/process-map-templates';
+import { buildTemplateGraph } from '@/lib/processes/template-graph';
 import type { ProcessMapSummary } from '@/lib/processes/process-map-summary';
 import { refusalReason } from '@/lib/api-error';
 
