@@ -84,6 +84,7 @@ const SHOWN: AgentCanvasProjection['profile'] = {
     version: 3,
     status: 'SUBMITTED',
     inForce: false,
+    runAs: null,
     modelTier: 'balanced',
     effort: 'medium',
     maxTurns: 8,

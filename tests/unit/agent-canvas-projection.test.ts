@@ -125,8 +125,9 @@ describe('projectAgentForCanvas', () => {
         const ctx = makeRequestContext('ADMIN');
         const p = await projectAgentForCanvas(ctx, AGENT.id);
 
-        // The invocation a run of this agent started by this viewer gets.
-        expect(mockResolveInvocation).toHaveBeenCalledWith({ ...ctx, agentId: AGENT.id });
+        // The invocation a run of this agent started by this viewer gets, with
+        // no external catalogue read (no credential exchange, no third party).
+        expect(mockResolveInvocation).toHaveBeenCalledWith({ ...ctx, agentId: AGENT.id }, { externalCatalogues: 'NOT_READ' });
         // The options a profile run passes: the version's tools, and read-only
         // exactly when the version answers only.
         expect(mockOfferToolSet).toHaveBeenCalledWith(
@@ -137,6 +138,7 @@ describe('projectAgentForCanvas', () => {
         if (p.profile.state !== 'SHOWN') throw new Error('profile layer expected');
         expect(p.profile.version).toBe(2);
         expect(p.profile.inForce).toBe(true);
+        expect(p.profile.runAs).toBe('RUN');
         expect(p.profile.tools).toEqual([
             { name: 'get_compliance_posture', offered: true },
             { name: 'propose_controls', offered: false, reason: 'AUTONOMY' },
@@ -157,6 +159,79 @@ describe('projectAgentForCanvas', () => {
             expect.any(Function),
             expect.objectContaining({ readOnly: true }),
         );
+    });
+
+    it('a version submitted for review is probed as its Test run, which is read-only whatever its output kind', async () => {
+        mockOfferToolSet.mockImplementation((_inv, build: (o: { tool: { name: string } }) => string) => ({
+            tools: [build({ tool: { name: 'get_compliance_posture' } })],
+            omitted: [
+                { name: 'propose_controls', reason: 'READ_ONLY_WORKFLOW' },
+                { name: 'revoked_tool', reason: 'PROFILE_TOOL_NOT_GRANTED' },
+            ],
+            externalConnections: [],
+            review: {},
+        }));
+        const submitted = version({ id: 'v-3', version: 3, status: 'SUBMITTED', allowedTriggers: ['ASK', 'TEST_RUN'] });
+        profileView = { ...(profileView as object), versions: [submitted, version()] };
+        const p = await projectAgentForCanvas(makeRequestContext('ADMIN'), AGENT.id, { versionId: 'v-3' });
+
+        // ANSWER_AND_PROPOSALS, yet probed read-only: its only run is a Test run.
+        expect(mockOfferToolSet).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.any(Function),
+            expect.objectContaining({ readOnly: true }),
+        );
+        if (p.profile.state !== 'SHOWN') throw new Error('profile layer expected');
+        expect(p.profile.inForce).toBe(false);
+        expect(p.profile.runAs).toBe('TEST_RUN');
+        expect(p.profile.readOnly).toBe(true);
+        expect(p.profile.tools.find((t) => t.name === 'propose_controls')).toEqual({
+            name: 'propose_controls',
+            offered: false,
+            reason: 'TEST_RUN_READ_ONLY',
+        });
+    });
+
+    it.each([
+        ['a draft', { status: 'DRAFT' }],
+        ['a rejected version', { status: 'REJECTED' }],
+        ['a submitted version that does not allow a Test run', { status: 'SUBMITTED', allowedTriggers: ['ASK'] }],
+        ['an approved version no longer in force', { status: 'APPROVED', version: 1 }],
+    ])('%s has no run, so nothing is offered and no run is probed', async (_label, overrides) => {
+        profileView = { ...(profileView as object), versions: [version({ id: 'v-x', ...overrides }), version()] };
+        const p = await projectAgentForCanvas(makeRequestContext('ADMIN'), AGENT.id, { versionId: 'v-x' });
+        expect(mockResolveInvocation).not.toHaveBeenCalled();
+        if (p.profile.state !== 'SHOWN') throw new Error('profile layer expected');
+        expect(p.profile.runAs).toBeNull();
+        expect(p.profile.tools.length).toBe(3);
+        expect(p.profile.tools.every((t) => !t.offered && t.reason === 'VERSION_NOT_RUNNABLE')).toBe(true);
+    });
+
+    it('an external tool the agent is granted is reported as not checked, never as offered or lost', async () => {
+        const ext = 'mcp__cmconn__list_alerts';
+        const gone = 'mcp__cmconn__list_incidents';
+        mockResolveInvocation.mockResolvedValue({ grantedTools: new Set(['get_compliance_posture', ext]) });
+        mockOfferToolSet.mockImplementation((_inv, build: (o: { tool: { name: string } }) => string) => ({
+            tools: [build({ tool: { name: 'get_compliance_posture' } })],
+            omitted: [
+                { name: ext, reason: 'PROFILE_TOOL_NOT_GRANTED' },
+                { name: gone, reason: 'PROFILE_TOOL_NOT_GRANTED' },
+            ],
+            externalConnections: [],
+            review: {},
+        }));
+        profileView = {
+            ...(profileView as object),
+            versions: [version({ toolNames: ['get_compliance_posture', ext, gone] })],
+        };
+        const p = await projectAgentForCanvas(makeRequestContext('ADMIN'), AGENT.id);
+        if (p.profile.state !== 'SHOWN') throw new Error('profile layer expected');
+        expect(p.profile.tools).toEqual([
+            { name: 'get_compliance_posture', offered: true },
+            { name: ext, offered: false, reason: 'EXTERNAL_NOT_PROBED' },
+            // No longer granted: the grant list is read, so a lost external tool still says so.
+            { name: gone, offered: false, reason: 'PROFILE_TOOL_NOT_GRANTED' },
+        ]);
     });
 
     it('an agent that is not active offers nothing, and no run is probed for it', async () => {

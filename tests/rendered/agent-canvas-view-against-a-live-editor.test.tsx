@@ -41,6 +41,7 @@ const PROJECTION: AgentCanvasProjection = {
         version: 1,
         status: 'APPROVED',
         inForce: true,
+        runAs: 'RUN',
         modelTier: 'balanced',
         effort: 'medium',
         maxTurns: 8,

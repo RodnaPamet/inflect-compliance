@@ -34,7 +34,25 @@ export type AgentCanvasNarrowingReason =
      * whose runs admission refuses, because its answer would describe a run
      * that cannot exist.
      */
-    | 'AGENT_NOT_ACTIVE';
+    | 'AGENT_NOT_ACTIVE'
+    /**
+     * The version shown has no run: only the approved version in force runs,
+     * and a version submitted for review only as a Test run. Not probed, for
+     * the reason above.
+     */
+    | 'VERSION_NOT_RUNNABLE'
+    /**
+     * The version can run only as a Test run, which is read-only whatever its
+     * output kind: `offerToolSet`'s `READ_ONLY_WORKFLOW`, with its cause named.
+     */
+    | 'TEST_RUN_READ_ONLY'
+    /**
+     * An external server's tool the agent is still granted. A run offers it
+     * only after a live `tools/list` matches its pin; the view makes no such
+     * call (it would exchange a credential and reach a third party on every
+     * open), so it says the tool was not checked rather than guess either way.
+     */
+    | 'EXTERNAL_NOT_PROBED';
 
 /** One profile tool, as a run of this agent started by the viewer would see it. */
 export type AgentCanvasProfileToolState =
@@ -65,11 +83,16 @@ export interface AgentCanvasProfileLayer {
     status: string;
     /** True when this version is the approved one in force. */
     inForce: boolean;
+    /**
+     * The one run this version can have, and so the run its tool states
+     * describe: itself (in force), a Test run (submitted for review), or none.
+     */
+    runAs: 'RUN' | 'TEST_RUN' | null;
     modelTier: string;
     effort: string;
     maxTurns: number;
     outputKind: string;
-    /** A run of this version is offered the read surface only. */
+    /** The run this version can have is offered the read surface only. */
     readOnly: boolean;
     allowedTriggers: string[];
     tools: AgentCanvasProfileToolState[];

@@ -35,6 +35,7 @@ const formBuiltProfile: AgentCanvasProjection['profile'] = {
     version: 2,
     status: 'APPROVED',
     inForce: true,
+    runAs: 'RUN',
     modelTier: 'balanced',
     effort: 'medium',
     maxTurns: 8,
@@ -88,6 +89,19 @@ describe('the agent view graph', () => {
         expect(byId.get('tool:list_risks')?.badges.map((b) => b.key)).toEqual(['read', 'notInProfile']);
         expect(byId.get('skill:tenant:house-style')?.reason).toBe('SKILL_NOT_MOUNTABLE');
         expect(byId.get('skill:repository:posture-review')?.reason).toBeNull();
+    });
+
+    it('an external tool the view did not check is drawn as not checked, never as narrowed or offered', () => {
+        if (formBuiltProfile.state !== 'SHOWN') throw new Error('fixture');
+        const ext = 'mcp__cmconn__list_alerts';
+        const g = buildAgentViewGraph(
+            projection({
+                profile: { ...formBuiltProfile, tools: [{ name: ext, offered: false, reason: 'EXTERNAL_NOT_PROBED' }] },
+            }),
+        );
+        const node = g.nodes.find((n) => n.id === `tool:${ext}`);
+        expect(node?.reason).toBe('EXTERNAL_NOT_PROBED');
+        expect(node?.badges.map((b) => b.key)).toEqual(['notProbed']);
     });
 
     it('a grant the ceiling cannot reach is drawn as unreachable, and an unscored agent says so', () => {

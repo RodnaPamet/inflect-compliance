@@ -45,6 +45,10 @@ export function AgentCanvasClient({
 
     return (
         <EntityDetailLayout<TabKey>
+            // `smart`, as on the agent page: it goes back to wherever the
+            // viewer came from (normally the agent page's "Open on canvas"),
+            // and a cold load falls back to the canonical parent, `/agents`.
+            back={{ smart: true }}
             // The agent's own page is the parent: the canvas is one view of it.
             breadcrumbs={[
                 { label: tAdmin('crumb.dashboard'), href: `/t/${tenantSlug}/dashboard` },

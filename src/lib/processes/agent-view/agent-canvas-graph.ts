@@ -30,7 +30,7 @@
  * component; names (tools, skills, maps) are drawn verbatim. The graph carries
  * no English sentence a Bulgarian reader would then see.
  */
-import type { AgentCanvasProjection } from '@/lib/agentic/agent-canvas-projection';
+import type { AgentCanvasProfileToolState, AgentCanvasProjection } from '@/lib/agentic/agent-canvas-projection';
 import { computeAutoLayout } from '@/lib/processes/canvas-auto-layout';
 
 export type AgentViewNodeKind = 'hub' | 'trigger' | 'tool' | 'skill' | 'output' | 'step' | 'map';
@@ -94,6 +94,16 @@ function hubBadges(p: AgentCanvasProjection): AgentViewBadge[] {
 }
 
 /**
+ * Where a tool stands in the profile. An external tool the view did not check
+ * is neither offered nor narrowed, and is not drawn as either.
+ */
+function profileBadge(t: AgentCanvasProfileToolState | undefined): string {
+    if (!t) return 'notInProfile';
+    if (t.offered) return 'offered';
+    return t.reason === 'EXTERNAL_NOT_PROBED' ? 'notProbed' : 'narrowed';
+}
+
+/**
  * One tool node per tool name, whichever layer names it: a grant, a profile
  * tool, or both. Its reason is the first that applies — what a run would be
  * refused for, then what the ceiling refuses — so the node says the binding
@@ -108,7 +118,7 @@ function toolNodes(p: AgentCanvasProjection): AgentViewNode[] {
         const inProfile = profileTools?.get(name);
         const badges: AgentViewBadge[] = [];
         if (grant) badges.push({ key: grant.capability === 'propose' ? 'propose' : 'read' });
-        if (profileTools) badges.push({ key: inProfile ? (inProfile.offered ? 'offered' : 'narrowed') : 'notInProfile' });
+        if (profileTools) badges.push({ key: profileBadge(inProfile) });
         let reason: string | null = null;
         if (inProfile && !inProfile.offered) reason = inProfile.reason;
         else if (grant && !grant.withinCeiling) reason = 'BEYOND_CEILING';

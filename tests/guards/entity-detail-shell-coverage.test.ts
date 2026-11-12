@@ -64,6 +64,10 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   // A2A peer (#3679) — server page delegates to PeerDetailClient, which mounts
   // <EntityDetailLayout>, the same pattern as the register's detail page.
   { page: "src/app/t/[tenantSlug]/(app)/agents/peers/[peerId]/PeerDetailClient.tsx", entity: "A2A peer" },
+  // One agent, read-only, on the process canvas (Phase 2 of
+  // docs/ai-architecture/langflow.md). Server page delegates to
+  // AgentCanvasClient, which mounts <EntityDetailLayout>.
+  { page: "src/app/t/[tenantSlug]/(app)/processes/agents/[agentId]/AgentCanvasClient.tsx", entity: "Agent on the canvas" },
   // Business Continuity (BIA) — server page delegates to BiaDetailClient
   // which mounts <EntityDetailLayout> (same pattern as access-reviews).
   { page: "src/app/t/[tenantSlug]/(app)/audits/business-continuity/[id]/BiaDetailClient.tsx", entity: "Business impact analysis" },

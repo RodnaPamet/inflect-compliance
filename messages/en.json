@@ -16611,6 +16611,7 @@
     "tabElements": "Elements",
     "legend": "What defines this agent, drawn from its register entry and its profile. A solid line is a relation; a dashed line is a step order the engine may deviate from. Nothing here can be changed.",
     "instructions": "Profile instructions",
+    "loadingAria": "Loading the agent on the canvas",
     "versionNotInForce": "Showing version {version} ({status}), which is not the approved version in force.",
     "forbiddenTitle": "Agent canvas unavailable",
     "forbiddenMessage": "Opening an agent on the canvas needs the same access as its page in the agent register.",
@@ -16643,6 +16644,7 @@
       "offered": "Offered to a run",
       "narrowed": "Narrowed away",
       "notInProfile": "Granted, not in the profile",
+      "notProbed": "Not checked by this view",
       "invokes": "Invokes this agent",
       "tenantSkill": "Workspace skill",
       "shippedSkill": "Built-in skill",
@@ -16658,7 +16660,10 @@
       "CONNECTION_READ_ONLY": "Not offered: the tool writes and its connection takes no writes.",
       "AGENT_NOT_ACTIVE": "Not offered: the agent is not active, so none of its runs are admitted.",
       "BEYOND_CEILING": "Unreachable: the tool needs a higher autonomy rung than this agent’s ceiling.",
-      "SKILL_NOT_MOUNTABLE": "Not mounted: no run can mount this skill as it stands."
+      "SKILL_NOT_MOUNTABLE": "Not mounted: no run can mount this skill as it stands.",
+      "VERSION_NOT_RUNNABLE": "Not offered: no run of this version is admitted. Only the approved version in force runs, and a version submitted for review only as a Test run.",
+      "TEST_RUN_READ_ONLY": "Not offered: this version can run only as a Test run, which gets no propose tools.",
+      "EXTERNAL_NOT_PROBED": "Not checked: a run offers an external server’s tool only after a live check of that server’s catalogue, which this view does not make."
     }
   }
 }

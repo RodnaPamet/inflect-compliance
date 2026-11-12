@@ -13,7 +13,8 @@
         │                                           ├─ listAgentTools          grants vs effective ceiling
         │                                           ├─ policy card / breaker / kill switch (one column each)
         │                                           ├─ getAgentProfile         profile layer, its own gate
-        │                                           │     └─ offerToolSet(resolveMcpInvocation({...ctx, agentId}))
+        │                                           │     └─ offerToolSet(resolveMcpInvocation({...ctx, agentId},
+        │                                           │                     { externalCatalogues: 'NOT_READ' }))
         │                                           └─ INVOKE_AGENT rules → maps + registry workflows
         ▼
   AgentCanvasClient (EntityDetailLayout: Canvas | Elements)
@@ -39,7 +40,8 @@ the definition asks for a reasoning engine (the order is advisory there).
 | `src/components/processes/agent-view/AgentViewNodeShapeUtil.tsx` | tldraw shape util for an agent-view node; reason in a Tooltip |
 | `src/components/processes/agent-view/AgentCanvasView.tsx` | Mounts tldraw read-only, draws nodes and arrows |
 | `src/components/processes/agent-view/agent-view-text.ts` | One translator for both tabs |
-| `src/app/t/[tenantSlug]/(app)/processes/agents/[agentId]/` | The route: server page and client |
+| `src/app/t/[tenantSlug]/(app)/processes/agents/[agentId]/` | The route: server page, client (smart back) and loading skeleton |
+| `src/lib/mcp/auth.ts` | `externalCatalogues: 'NOT_READ'`: an invocation that describes a run without reading external catalogues |
 | `src/app/t/[tenantSlug]/(app)/agents/[agentId]/{page,AgentDetailClient}.tsx` | "Open on canvas" link |
 | `eslint.config.mjs` | `@xyflow/*` refused at error level over every agent-flow file |
 | `messages/{en,bg}.json` | `agentCanvas` namespace |
@@ -50,11 +52,25 @@ the definition asks for a reasoning engine (the order is advisory there).
   404 `PROFILES_DISABLED` or a 403; the projection maps those to `OFF` and
   `NOT_PERMITTED` and re-throws anything else. A second copy of the gate would
   be the one that drifts.
-- **Tool states are the probe's, against a run's invocation.** The view calls
-  `offerToolSet` with the options a profile run passes (`profileTools`, and
-  `readOnly` for `ANSWER_ONLY`) on `resolveMcpInvocation({ ...ctx, agentId })`.
-  The cost is that building the invocation lists the tools of every external
-  connection the agent holds a grant on, as a run does. Paid once per open.
+- **Tool states are the probe's, against the run the version can have.** The
+  view calls `offerToolSet` with the options that run passes (`profileTools`,
+  and `readOnly` as `compileProfileDefinition` sets it) on
+  `resolveMcpInvocation({ ...ctx, agentId })`. Which run is admission's rule
+  (`runOf`): the approved version in force runs as itself; a SUBMITTED version
+  only as a Test run, which is read-only whatever its output kind (a propose
+  tool reads `TEST_RUN_READ_ONLY`); a draft, a rejected version or an approved
+  one no longer in force has no run, and its tools read `VERSION_NOT_RUNNABLE`
+  without a probe. `inForce` is APPROVED and current, as admission reads it.
+- **No external catalogue on a page view.** A run's invocation reads them by
+  decrypting each granted connection's secret, minting a credential (an Entra
+  exchange can rotate the refresh token and UPDATE the connection row, which
+  the audit extension records) and sending a live `tools/list` under a 30 s
+  timeout. A GET of a read-only page must do none of that, so the invocation is
+  built with `externalCatalogues: 'NOT_READ'` (a new `BuildInvocationOptions`
+  member that can only narrow: no external tools, the same grant list). An
+  external tool the agent is still granted reads `EXTERNAL_NOT_PROBED`, drawn as
+  "not checked", neither offered nor narrowed; a lost one still reads
+  `PROFILE_TOOL_NOT_GRANTED`, because the grant list is read.
 - **No probe for an agent that is not ACTIVE.** Admission refuses its runs, and
   for a DRAFT agent the invocation's exposure term is absent (no governed agent),
   so the probe would answer about a run that cannot exist. Its tools read

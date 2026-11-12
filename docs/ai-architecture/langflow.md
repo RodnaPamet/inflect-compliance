@@ -400,8 +400,16 @@ as a node that renders and does nothing.
         boundary), `listAgentTools`, and `getAgentProfile`, whose gate is
         caught and named (`OFF`, `NOT_PERMITTED`), never copied. The probe runs
         against `resolveMcpInvocation({ ...ctx, agentId })`, the invocation a
-        run of the agent started by the viewer gets, and only for an ACTIVE
-        agent; any other agent's profile tools read `AGENT_NOT_ACTIVE`.
+        run of the agent started by the viewer gets, with the options of the
+        ONE run the shown version can have: the version in force as itself, a
+        submitted version as its Test run (read-only whatever its output kind),
+        any other version not at all (`VERSION_NOT_RUNNABLE`). It runs only for
+        an ACTIVE agent; any other agent's profile tools read
+        `AGENT_NOT_ACTIVE`. The invocation is built with
+        `externalCatalogues: 'NOT_READ'`, so a page view decrypts no secret,
+        exchanges no credential (an Entra exchange can rewrite the connection
+        row) and calls no third-party server; a granted external tool reads
+        `EXTERNAL_NOT_PROBED` rather than a guess.
 - [x] 2.2 Read-only rendering on **tldraw**.
       - Agent node kinds (hub, trigger, tool, skill, output) join
         `node-taxonomy.ts` and are drawn by tldraw shape utils beside
