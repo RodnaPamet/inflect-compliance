@@ -57,8 +57,11 @@ flowchart LR
   and no vector exists.** `src/lib/ai/embeddings/` holds the
   `EmbeddingProvider` / `RerankProvider` contracts, the residency routing
   (`select.ts`, `inflect-local/<model>` only), a TEI client for
-  `/v1/embeddings` and `/rerank` that reaches the network through `safeFetch`
-  alone (`http.ts`: deadline over the whole call, byte-capped body), a
+  `/v1/embeddings` and `/rerank` that refuses an answer from any model but the
+  configured one (the embeddings response's `model`, the reranker's `/info`),
+  one transport that dials only addresses inside the deployment's perimeter
+  (`perimeter.ts`, `http.ts`: every resolved address, pinned, no redirects,
+  deadline over the whole call, byte-capped body), a
   deterministic stub the factory never chooses, the retriever revision key
   and the `embeddings.requests` metric. With `AI_EMBED_LOCAL_*` /
   `AI_RERANK_LOCAL_*` unset — every deployment today — the factory refuses
@@ -216,12 +219,15 @@ backend inside the perimeter and a stub for tests; no sub-processor touched.
 - [ ] 1.1 `deploy/docker-compose.prod.yml`: `tei-embed` service (TEI CPU image,
       digest-pinned, model volume, no published port, `app`/`worker` network
       only). Applied with `deploy/apply.sh`. Held by the capacity budget's C1
-      (G5). **Open before it lands:** `safeFetch` refuses `http:` and private
-      addresses, so a Compose-network address (`http://tei-embed:80`) is
-      refused by the egress policy — at route selection, by name
-      (`EMBED_ENDPOINT_REFUSED_BY_EGRESS_POLICY`). The service needs an
-      address the policy admits (TLS plus the self-hosted CIDR allowlist), or
-      an owner decision on a transport for operator-held in-network hosts.
+      (G5). The client already admits the Compose-network address
+      (`http://tei-embed:8080`): `inflect-local` dials only addresses INSIDE
+      the perimeter (RFC 1918, loopback, IPv6 ULA, every resolved address,
+      pinned), and refuses a public one by name
+      (`EMBED_ENDPOINT_OUTSIDE_PERIMETER`, `ENDPOINT_OUTSIDE_PERIMETER`).
+      `safeFetch` is the wrong test here: it admits only public addresses,
+      which are exactly the ones that make the residency claim false — the
+      local AI gateway's reason (`tests/guards/ssrf-egress-coverage.test.ts`).
+      `AI_EMBED_LOCAL_MODEL` must equal the container's `--model-id`.
 - [x] 1.2 `src/env.ts`: `AI_EMBED_LOCAL_BASE_URL`, `AI_EMBED_LOCAL_MODEL`
       (optional; absent = no local embedding provider constructed), plus
       `AI_EMBED_LOCAL_DIMENSIONS` (required with them) and
@@ -232,9 +238,11 @@ backend inside the perimeter and a stub for tests; no sub-processor touched.
       `dimensions`), `select.ts` (residency routing copied from
       `model-selection.ts`: `inflect-local/<model>` only for now; a
       `LOCAL_ONLY` tenant with no local embed route is **refused**, never
-      routed elsewhere), `tei-provider.ts` (OpenAI-compatible `/v1/embeddings`
-      through `safeFetch`), `stub-provider.ts` (deterministic hashed vectors
-      for tests). The transport is `http.ts`, the directory's only fetch.
+      routed elsewhere), `tei-provider.ts` (OpenAI-compatible `/v1/embeddings`;
+      the served model must be the configured one), `stub-provider.ts`
+      (deterministic hashed vectors for tests). The transport is `http.ts`,
+      the directory's only fetch, held to the perimeter rule in `perimeter.ts`
+      rather than `safeFetch`.
 - [x] 1.4 The factory returns before constructing anything external
       (residency is structural — the `identity-match/index.ts` pattern); the
       residency guard's constructor pin gains the new set.
@@ -272,8 +280,9 @@ egress guard sees the new sink, and the two-tenant job test in weaviate.md Phase
 against the real provider in the integration project.
 ```
 
-**Hardening.** G1 (residency first, structural), G6 (`safeFetch`, egress
-population), G5 (image + volume, no Python in the app image), G9 (absent
+**Hardening.** G1 (residency first, structural), G6 (hosts are config, reads
+bounded, the SSRF guard's population; the address test is the perimeter's,
+not `safeFetch`'s — see 1.1), G5 (image + volume, no Python in the app image), G9 (absent
 config = no provider), checklist §3/§4 (runtime wiring, outcome metric). The
 `inputType` mapping is not cosmetic: asymmetric retrieval models score query
 and passage differently, and mixing them silently degrades recall.
@@ -292,7 +301,9 @@ the mount gate can see.
       seam, same residency routing, TEI `/rerank` backend on the same service
       (second model on the same container or a sibling `tei-rerank`). The
       route is `AI_RERANK_LOCAL_BASE_URL` / `AI_RERANK_LOCAL_MODEL`; the
-      service itself waits with 1.1. `rerankOrKeepHybridOrder` bounds the pool
+      service itself waits with 1.1. Each call reads `/info` first and sends
+      no passage to a reranker whose `model_id` is not the configured one.
+      `rerankOrKeepHybridOrder` bounds the pool
       to 50 and returns the hybrid order, with the reason, on any failure.
 - [ ] 2.2 `VectorRepository.search` gains `rerank: true` → hybrid top-50 then
       rerank to k; the revision key for the mount gate includes the rerank

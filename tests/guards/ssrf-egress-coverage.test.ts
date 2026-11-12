@@ -119,14 +119,6 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
         noBareFetchOf: 'fetchWithRetry(',
     },
     {
-        file: 'src/lib/ai/embeddings/http.ts',
-        reason:
-            'The embedding and rerank seam (Layer 4): an operator-configured ' +
-            'TEI base URL. Not tenant-writable, but G6 puts every new outbound ' +
-            'host behind safeFetch regardless — config is typed by a person too.',
-        noBareFetchOf: 'fetch(url',
-    },
-    {
         file: 'src/lib/security/oidc-client.ts',
         reason:
             'SSO sign-in: a workspace administrator types the OIDC issuer, and the ' +
@@ -298,12 +290,32 @@ describe('SSRF — the OIDC client reaches the identity provider only through sa
 });
 
 /**
- * The embedding seam has ONE network call, in `http.ts`, and the SINKS entry
- * above holds that it is `safeFetch`. That is only the whole story while no
- * other file in the directory fetches — a provider that grew its own call would
- * reach the network beside the registered sink, so the directory is scanned
- * with the name-agnostic pattern the MCP clients are held to. The population is
- * git's, so a new file in the directory is in it the day it lands.
+ * ══════════════════════════════════════════════════════════════════════════
+ *  THE EMBEDDING SEAM — the second sink that must NOT route through safeFetch
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `src/lib/ai/embeddings/` dials a TEI service named by OPERATOR config
+ * (`AI_EMBED_LOCAL_BASE_URL`, `AI_RERANK_LOCAL_BASE_URL`), under the provider
+ * id `inflect-local` — a residency claim. It is not in `SINKS`, for the local
+ * AI gateway's reason below: `safeFetch` admits only PUBLIC addresses, which
+ * are exactly the addresses that make the claim false. It was in `SINKS` once,
+ * and the only base URLs it could then reach were off-perimeter ones, so a
+ * `LOCAL_ONLY` tenant's passages could leave under a local id.
+ *
+ * So its dial asks the INVERSE question (`perimeter.ts`): every address the
+ * host resolves to must be inside the perimeter, the connection is pinned to
+ * them, redirects are refused. This section holds the shape that makes that
+ * the only way out:
+ *
+ *   • no file in the directory but the transport makes a fetch call;
+ *   • the transport's only network call is undici's fetch, inside
+ *     `perimeterFetch`, after the perimeter resolution and pinned to it;
+ *   • every request goes through `perimeterFetch`;
+ *   • no injectable fetch.
+ *
+ * The population is git's, so a new file in the directory is in it the day it
+ * lands. The address rule itself is exercised in
+ * `tests/unit/ai/embedding-perimeter.test.ts`.
  */
 const EMBEDDINGS_DIR = 'src/lib/ai/embeddings/';
 const EMBEDDINGS_TRANSPORT = 'src/lib/ai/embeddings/http.ts';
@@ -313,25 +325,59 @@ const embeddingProviderFiles = () =>
 
 const embeddingFilesWithTheirOwnFetch = () => embeddingProviderFiles().filter((f) => ANY_FETCH_CALL.test(codeOf(f)));
 
-const embeddingTransportFetchCallsOtherThanSafeFetch = () =>
-    (codeOf(EMBEDDINGS_TRANSPORT).match(/\w*fetch\s*\(/gi) ?? []).filter((call) => !/^safeFetch\s*\($/.test(call));
+/** Every fetch-shaped call in the transport, by the function that makes it. */
+function transportFetchCallsByFunction(): Record<string, string[]> {
+    const code = codeOf(EMBEDDINGS_TRANSPORT);
+    const out: Record<string, string[]> = {};
+    for (const fn of ['perimeterFetch', 'requestJsonBounded']) {
+        const calls = (functionBodyOf(code, fn).match(/\w*fetch\s*\(/gi) ?? []).map((c) => c.replace(/\s+/g, ''));
+        // The extracted block starts at the signature, so `perimeterFetch(`
+        // names itself first; that is the declaration, not a call.
+        out[fn] = calls[0] === `${fn}(` ? calls.slice(1) : calls;
+    }
+    return out;
+}
 
-describe('SSRF — the embedding seam reaches the network only through its transport', () => {
+describe('SSRF — the embedding seam reaches the network only through its perimeter dial', () => {
     it('no other file in the directory contains a fetch call', () => {
         // The denominator first: the scan must cover the providers it guards.
         expect(embeddingProviderFiles()).toEqual(
-            expect.arrayContaining([`${EMBEDDINGS_DIR}tei-provider.ts`, `${EMBEDDINGS_DIR}select.ts`]),
+            expect.arrayContaining([
+                `${EMBEDDINGS_DIR}tei-provider.ts`,
+                `${EMBEDDINGS_DIR}select.ts`,
+                `${EMBEDDINGS_DIR}perimeter.ts`,
+            ]),
         );
         expect(embeddingFilesWithTheirOwnFetch()).toEqual([]);
     });
 
-    it('the transport makes no fetch call other than safeFetch', () => {
-        expect(embeddingTransportFetchCallsOtherThanSafeFetch()).toEqual([]);
+    it('the only network call is undici fetch inside perimeterFetch, and every request dials through it', () => {
+        expect(transportFetchCallsByFunction()).toEqual({
+            perimeterFetch: ['undiciFetch('],
+            requestJsonBounded: ['perimeterFetch('],
+        });
+        // And nothing else in the file makes one: the two calls above plus
+        // `perimeterFetch`'s own declaration are the whole file's.
+        expect((codeOf(EMBEDDINGS_TRANSPORT).match(/\w*fetch\s*\(/gi) ?? []).length).toBe(3);
     });
 
-    it('the transport has no injectable fetch to route around safeFetch', () => {
-        // A `fetchImpl` option on a production module is a path around the SSRF
-        // defence that reads as dependency injection (the MCP client's rule).
+    it('perimeterFetch resolves inside the perimeter before it dials, pins the connection, and refuses redirects', () => {
+        const body = functionBodyOf(codeOf(EMBEDDINGS_TRANSPORT), 'perimeterFetch');
+        const resolveAt = body.indexOf('resolvePerimeterAddresses(');
+        const dialAt = body.indexOf('undiciFetch(');
+        const spreadAt = body.indexOf('...init');
+        const manualAt = body.indexOf("redirect: 'manual'");
+        expect({
+            resolvesFirst: resolveAt > -1 && resolveAt < dialAt,
+            pinned: body.includes('dispatcher,'),
+            // After the spread, so no caller can opt back into following.
+            manualAfterSpread: spreadAt > -1 && manualAt > spreadAt,
+        }).toEqual({ resolvesFirst: true, pinned: true, manualAfterSpread: true });
+    });
+
+    it('the transport has no injectable fetch to route around the perimeter check', () => {
+        // A `fetchImpl` option on a production module is a path around the
+        // address check that reads as dependency injection (the MCP client's rule).
         expect(codeOf(EMBEDDINGS_TRANSPORT).includes('fetchImpl')).toBe(false);
     });
 });

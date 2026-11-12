@@ -55,8 +55,13 @@ export type EmbeddingFailure =
     | 'BATCH_TOO_LARGE'
     /** The request body would exceed its byte cap. Nothing was sent. */
     | 'INPUT_TOO_LARGE'
-    /** `safeFetch` refused the destination (scheme, address, redirect). */
-    | 'EGRESS_REFUSED'
+    /**
+     * The endpoint is, or resolves to, an address outside the deployment's
+     * perimeter (`perimeter.ts`). Nothing was sent.
+     */
+    | 'ENDPOINT_OUTSIDE_PERIMETER'
+    /** The service answered with a redirect, which is never followed. */
+    | 'REDIRECT_REFUSED'
     /** The deadline passed before the whole body was read. */
     | 'TIMEOUT'
     /** The caller's own signal aborted the call. */
@@ -71,6 +76,13 @@ export type EmbeddingFailure =
     | 'COUNT_MISMATCH'
     /** A vector of a different length than the configured dimension. */
     | 'DIMENSION_MISMATCH'
+    /**
+     * The service did not report serving the configured model — it named
+     * another, or none. TEI serves one model per process whatever a request
+     * asks for, so what it SAYS it served is the only binding between the
+     * model id on a result (and on the revision key) and the vectors.
+     */
+    | 'SERVED_MODEL_MISMATCH'
     /** The connection failed before an answer. */
     | 'NETWORK_ERROR';
 

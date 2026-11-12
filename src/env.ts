@@ -324,9 +324,14 @@ export const env = createEnv({
         // docs/ai-architecture/nemotron-retriever.md). OPERATOR config only —
         // no tenant column reaches these. Absent base URL = no provider is
         // constructed and every request is refused by name
-        // (src/lib/ai/embeddings/select.ts). The model, its dimension and its
-        // query/passage prefixes are configuration, not code, until the
-        // Phase 0 benchmark decides them (D-L4-3).
+        // (src/lib/ai/embeddings/select.ts). A base URL must name an address
+        // INSIDE the deployment (RFC 1918, loopback, IPv6 ULA; every resolved
+        // address), or it is refused — `inflect-local` is a residency claim.
+        // The model must be named exactly as the TEI process reports it
+        // (`--model-id`): a result whose served model differs is refused. The
+        // model, its dimension and its query/passage prefixes are
+        // configuration, not code, until the Phase 0 benchmark decides them
+        // (D-L4-3).
         AI_EMBED_LOCAL_BASE_URL: z.string().optional(),
         AI_EMBED_LOCAL_MODEL: z.string().optional(),
         AI_EMBED_LOCAL_DIMENSIONS: z.string().optional(),

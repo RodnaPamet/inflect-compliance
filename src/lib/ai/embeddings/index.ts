@@ -1,6 +1,6 @@
 /**
  * The embedding and rerank seam (Layer 4). Server-only: the providers dial
- * through `safeFetch`.
+ * addresses inside the deployment's perimeter, and nowhere else.
  *
  * @module lib/ai/embeddings
  */
@@ -29,6 +29,8 @@ export {
     STUB_DEFAULT_DIMENSIONS,
     stubVector,
 } from './stub-provider';
+export { checkPerimeterUrl, isPerimeterAddress } from './perimeter';
+export type { PerimeterRefusal } from './perimeter';
 export { rerankOrKeepHybridOrder } from './rerank-fallback';
 export type { RerankOrder } from './rerank-fallback';
 export {

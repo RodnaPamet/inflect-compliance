@@ -2,9 +2,9 @@
  * The embedding / rerank seam routes by residency and refuses rather than
  * falls back (`src/lib/ai/embeddings/select.ts`).
  *
- * Only `@/env` is mocked. The egress policy (`checkWebhookUrl`) is the real
- * one, so "the endpoint the policy refuses is refused up front" is asserted
- * against the policy that will refuse it at the socket.
+ * Only `@/env` is mocked. The perimeter check (`perimeter.ts`) is the real
+ * one, so "an endpoint outside the perimeter is refused up front" is asserted
+ * against the rule the dial applies again at the socket.
  */
 const mutableEnv: Record<string, string | undefined> = {};
 jest.mock('@/env', () => ({ env: mutableEnv }));
@@ -38,12 +38,12 @@ import {
 } from '@/lib/ai/embeddings/select';
 
 const CONFIGURED = {
-    AI_EMBED_LOCAL_BASE_URL: 'https://tei-embed.internal-ops.example.com',
+    AI_EMBED_LOCAL_BASE_URL: 'http://tei-embed:8080',
     AI_EMBED_LOCAL_MODEL: 'nemotron-embed-under-evaluation',
     AI_EMBED_LOCAL_DIMENSIONS: '1024',
     AI_EMBED_LOCAL_QUERY_PREFIX: 'query: ',
     AI_EMBED_LOCAL_PASSAGE_PREFIX: 'passage: ',
-    AI_RERANK_LOCAL_BASE_URL: 'https://tei-rerank.internal-ops.example.com',
+    AI_RERANK_LOCAL_BASE_URL: 'http://tei-rerank:8080',
     AI_RERANK_LOCAL_MODEL: 'nemotron-rerank-under-evaluation',
 };
 
@@ -136,18 +136,35 @@ describe('absent configuration is a named refusal, never a guess', () => {
     });
 });
 
-describe('the egress policy is asked when the route is chosen', () => {
+describe('inflect-local routes only to an address inside the perimeter', () => {
     it.each([
-        ['plain http on the compose network', 'http://tei-embed:80'],
-        ['loopback', 'https://127.0.0.1:8080'],
-        ['cloud metadata', 'https://169.254.169.254'],
-    ])('%s is refused by name before any text is queued', (_label, url) => {
+        ['a public literal', 'https://93.184.216.34', 'ADDRESS_OUTSIDE_PERIMETER'],
+        ['a public IPv6 literal', 'https://[2606:4700::1111]', 'ADDRESS_OUTSIDE_PERIMETER'],
+        ['cloud metadata by address', 'http://169.254.169.254', 'ADDRESS_OUTSIDE_PERIMETER'],
+        ['cloud metadata by name', 'http://metadata.google.internal', 'METADATA_HOST'],
+        ['CGNAT space', 'http://100.64.0.9:8080', 'ADDRESS_OUTSIDE_PERIMETER'],
+        ['a scheme that is not http', 'ftp://tei-embed', 'SCHEME_NOT_HTTP'],
+        ['credentials in the URL', 'http://user:pw@tei-embed:8080', 'CREDENTIALS_IN_URL'],
+        ['a URL that does not parse', 'http://', 'MALFORMED_URL'],
+    ])('%s is refused by name before any text is queued', (_label, url, detail) => {
         configure({ AI_EMBED_LOCAL_BASE_URL: url, AI_RERANK_LOCAL_BASE_URL: url });
         const embed = getEmbeddingProvider({ residency: 'LOCAL_ONLY' });
         const rerank = getRerankProvider({ residency: 'LOCAL_ONLY' });
-        expect(embed.ok ? null : embed.reason).toBe('EMBED_ENDPOINT_REFUSED_BY_EGRESS_POLICY');
-        expect(rerank.ok ? null : rerank.reason).toBe('RERANK_ENDPOINT_REFUSED_BY_EGRESS_POLICY');
+        expect(embed).toEqual({ ok: false, reason: 'EMBED_ENDPOINT_OUTSIDE_PERIMETER', detail });
+        expect(rerank).toEqual({ ok: false, reason: 'RERANK_ENDPOINT_OUTSIDE_PERIMETER', detail });
         expect(teiEmbeddingCtor).not.toHaveBeenCalled();
         expect(teiRerankCtor).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['the compose network, plain http', 'http://tei-embed:8080'],
+        ['an RFC 1918 literal', 'http://10.0.4.12:8080'],
+        ['loopback', 'http://127.0.0.1:8080'],
+        ['an IPv6 unique-local literal', 'https://[fd00::5]:8443'],
+    ])('%s is admitted for a LOCAL_ONLY tenant', (_label, url) => {
+        configure({ AI_EMBED_LOCAL_BASE_URL: url, AI_RERANK_LOCAL_BASE_URL: url });
+        const embed = resolveEmbeddingRoute({ residency: 'LOCAL_ONLY' });
+        const rerank = resolveRerankRoute({ residency: 'LOCAL_ONLY' });
+        expect([embed.ok && embed.baseUrl, rerank.ok && rerank.baseUrl]).toEqual([url, url]);
     });
 });

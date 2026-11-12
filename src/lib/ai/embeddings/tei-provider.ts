@@ -3,9 +3,10 @@
  * the `inflect-local` embedding and rerank providers.
  *
  *   embed  → POST <base>/v1/embeddings   (TEI's OpenAI-compatible route)
- *   rerank → POST <base>/rerank          (TEI's cross-encoder route)
+ *   rerank → GET  <base>/info, then POST <base>/rerank (TEI's cross-encoder route)
  *
- * Both through {@link postJsonBounded}: `safeFetch`, a deadline, a byte cap.
+ * All through {@link requestJsonBounded}: an address inside the perimeter,
+ * a deadline, a byte cap.
  * The base URL is OPERATOR configuration read in `select.ts`; nothing a tenant
  * writes reaches it. Neither provider names a model in code — the model, its
  * dimension and its query/passage prefixes are configuration until the Phase 0
@@ -18,7 +19,24 @@
  * `assistant/turn-provider.ts` re-checks a Flue specifier. A specifier
  * addressed to another provider sends NOTHING and returns
  * `SPECIFIER_NOT_THIS_PROVIDER`. The model on the wire is always the
- * specifier's model part, so no other model can be asked for either.
+ * specifier's model part, so no other model can be ASKED for.
+ *
+ * ── AND THE MODEL THAT ANSWERED IS CHECKED ──────────────────────────────────
+ *
+ * Asking is not the same as being answered. TEI serves ONE model per process:
+ * `/v1/embeddings` ignores the request's `model` and `/rerank` takes none. A
+ * container moved to another model of the same dimension would answer every
+ * call `ok`, under the configured id, and the retriever revision key — which
+ * names that id — would still match an evaluation record made with the old
+ * model. So the id a result carries must be the id the SERVICE reports:
+ *
+ *   • embed  — the response's own `model` (TEI writes its `model_id` there);
+ *   • rerank — `/info`'s `model_id`, read BEFORE any passage is sent, so no
+ *     passage reaches a reranker that is not the configured one.
+ *
+ * Absent or different is `SERVED_MODEL_MISMATCH`, and the answer is refused
+ * whole. The comparison is exact: the operator names the model as TEI's
+ * `--model-id` names it.
  *
  * Texts are never logged; a failure logs its reason, the provider and the
  * model, and the count of texts.
@@ -29,7 +47,7 @@ import { z } from 'zod';
 
 import { logger } from '@/lib/observability';
 
-import { postJsonBounded, type BoundedPostFailure } from './http';
+import { getJsonBounded, postJsonBounded, type BoundedPostFailure } from './http';
 import { outcomeOf, recordEmbeddingRequest, type EmbeddingOperation } from './metrics';
 import {
     EMBEDDING_PROVIDER_IDS,
@@ -55,6 +73,8 @@ export const TEI_MAX_REQUEST_BYTES = 1024 * 1024;
 export const TEI_MAX_EMBED_RESPONSE_BYTES = 8 * 1024 * 1024;
 /** 50 `{index, score}` pairs are a few KiB. */
 export const TEI_MAX_RERANK_RESPONSE_BYTES = 256 * 1024;
+/** TEI's `/info` is a small object; a megabyte would be a different service. */
+export const TEI_MAX_INFO_RESPONSE_BYTES = 64 * 1024;
 
 export interface TeiEmbeddingRoute {
     readonly specifier: string;
@@ -70,6 +90,9 @@ export interface TeiRerankRoute {
 }
 
 const embeddingsResponseSchema = z.object({
+    // Optional in the SCHEMA so its absence is reported as the model question
+    // it is (SERVED_MODEL_MISMATCH), not as a malformed body.
+    model: z.string().optional(),
     data: z.array(
         z.object({
             index: z.number().int().nonnegative(),
@@ -77,6 +100,8 @@ const embeddingsResponseSchema = z.object({
         }),
     ),
 });
+
+const infoResponseSchema = z.object({ model_id: z.string().optional() });
 
 const rerankResponseSchema = z.array(
     z.object({
@@ -170,6 +195,8 @@ export class TeiEmbeddingProvider implements EmbeddingProvider {
 
         const parsed = embeddingsResponseSchema.safeParse(res.json);
         if (!parsed.success) return done({ ok: false, reason: 'MALFORMED_RESPONSE' });
+        // The model that ANSWERED, not the one asked for (module header).
+        if (parsed.data.model !== this.model) return done({ ok: false, reason: 'SERVED_MODEL_MISMATCH' });
 
         // Exactly one vector per text, each index once, each of the configured
         // dimension. A short answer is not a partial success: a missing vector
@@ -212,10 +239,20 @@ export class TeiRerankProvider implements RerankProvider {
         if (passages.length === 0) return done({ ok: false, reason: 'EMPTY_INPUT' });
         if (passages.length > MAX_RERANK_PASSAGES) return done({ ok: false, reason: 'BATCH_TOO_LARGE' });
 
-        // TEI serves one reranker per process and takes no model field; the
-        // specifier check above is what binds the call to the configured one.
         const body = JSON.stringify({ query, texts: passages, raw_scores: false, return_text: false, truncate: true });
         if (byteLength(body) > TEI_MAX_REQUEST_BYTES) return done({ ok: false, reason: 'INPUT_TOO_LARGE' });
+
+        // TEI serves one reranker per process and takes no model field, so the
+        // served model is read from /info BEFORE any passage is sent.
+        const info = await getJsonBounded(endpoint(this.route.baseUrl, '/info'), {
+            deadlineMs: TEI_DEADLINE_MS,
+            maxResponseBytes: TEI_MAX_INFO_RESPONSE_BYTES,
+            signal: opts.signal,
+        });
+        if (!info.ok) return done(transportFailure(info));
+        const served = infoResponseSchema.safeParse(info.json);
+        if (!served.success) return done({ ok: false, reason: 'MALFORMED_RESPONSE' });
+        if (served.data.model_id !== this.model) return done({ ok: false, reason: 'SERVED_MODEL_MISMATCH' });
 
         const res = await postJsonBounded(endpoint(this.route.baseUrl, '/rerank'), body, {
             deadlineMs: TEI_DEADLINE_MS,
