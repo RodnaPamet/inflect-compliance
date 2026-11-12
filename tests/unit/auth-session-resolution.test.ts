@@ -29,6 +29,8 @@ type SessionUserLike = {
     role?: Role | null;
     ssoTenantId?: string | null;
     entraGateDeniedTenantIds?: string[];
+    memberships?: Array<{ tenantId: string; slug: string; role: string }>;
+    mfaPendingTenantIds?: string[];
 };
 type SessionLike = { user?: SessionUserLike | null } | null;
 
