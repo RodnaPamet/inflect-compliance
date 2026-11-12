@@ -83,10 +83,40 @@ twice after tuning.
 - **Floors before measurements for the parser.** "RAGFlow only if Docling
   fails the fidelity eval" is only checkable if the floors are committed before
   either backend runs; the Phase 0 done-when requires that commit order.
-- **"Hard-capped" is enforced before the call.** The shared cost meter refuses
-  a call whose counted input plus `max_tokens`, at list price, would pass the
-  job's share; a stopped run is `BUDGET_EXHAUSTED` and never a pass. The
-  vendor's workspace spend limit is monthly and is only a backstop.
+- **"Hard-capped" is enforced before the call, for both clients.** The shared
+  cost meter refuses a judge call whose counted input plus `max_tokens`, at
+  list price, would pass the job's share. The product's answers are made by
+  the app process's own Anthropic client, which the harness cannot
+  pre-check, and nearly all of garak's spend is of that kind; so each
+  harness-route call is RESERVED at the route's stated worst case first and
+  settled to the usage the route reports (kept at the worst case when none
+  comes back), and the record's spend is that sum. The in-app bounds are a
+  second layer only: `assistant/spend-ceiling.ts` is "Not a limiter",
+  assistant turns are not counted against `agentMonthlyTokenBudget` (#3833),
+  and the AI daily quota counts successful turns only. A stopped run is
+  `BUDGET_EXHAUSTED` and never a pass. The vendor's workspace spend limit is
+  monthly and is only a backstop.
+- **The parser is not called through `safeFetch`.** `safeFetch` refuses http
+  and every private address, and the parser is an http service on the
+  Compose network; behind it, every parse would fall back to the stub
+  forever. The house pattern for an in-deployment endpoint is
+  `src/lib/ai/local-gateway.ts`'s: the URL is operator config read by one
+  module, never tenant-writable. A configured parser that keeps failing is a
+  counted fallback outcome, so it cannot look healthy. The master's G6 says
+  "egress is `safeFetch`" without an in-deployment carve-out; that wording is
+  the coordinator's to amend.
+- **The self-built Postgres image stays on the tag.** The owner decided on
+  2026-10-10 that `postgres` is baselined by tag so the alpine tag keeps
+  delivering security patches. A self-built pgvector image would freeze them
+  unless rebuilt, so it is rebuilt on a schedule and when the upstream digest
+  moves, and referenced by a moving line tag. Digest pins with a bump pull
+  request would reverse that decision, so they are raised for the owner in
+  `weaviate.md`, not taken.
+- **Each HNSW index is schema-drift residue.** Prisma cannot declare a partial
+  expression index, so `prisma migrate diff` proposes dropping each one, and
+  the fresh-DB schema-drift gate fails on an unlisted statement. Phase 1 adds
+  each `DROP INDEX` to the residue file and signs it off in group 2 beside the
+  `pg_trgm` indexes, and indexes only the adopted embedding model.
 - **One cap for both jobs, until the owner says otherwise.** D-EV-1 and D-EV-2
   name the same key class and the same USD 5. The conservative reading — USD 5
   a night in total, USD 2.50 per job by default — cannot exceed the owner's

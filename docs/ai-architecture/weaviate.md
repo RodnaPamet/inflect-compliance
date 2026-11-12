@@ -26,7 +26,7 @@ inflect · ai architecture · vector store · roadmap v2 · 2026-11-11
 | Wave | 1 (the first Layer 4 wave, zero-GPU) — see master § Sequencing. Phase 4 (Weaviate) is conditional and has no wave until a floor is missed |
 | Depends on | a Postgres image that carries the pgvector extension (Phase 1.1 — the image on the VM today does not); **an embedding provider to be useful** → [`nemotron-retriever.md`](./nemotron-retriever.md) |
 | Unblocks | [`ragflow.md`](./ragflow.md) (somewhere for parsed chunks to go), [`ragas.md`](./ragas.md) / [`ares.md`](./ares.md) (something to evaluate), the assistant's `search_knowledge` tool |
-| Owner decisions | **D-L4-1** decided 2026-11-11 (owner): pgvector first, in the existing Postgres under RLS; Weaviate only later, if a measured recall/latency floor is not met. **D-L4-2** decided 2026-11-11 (owner): vectors-only — no chunk text outside Postgres. Open, raised here: the floor values (Phase 3.6) and the lexical arm (§ Fit) |
+| Owner decisions | **D-L4-1** decided 2026-11-11 (owner): pgvector first, in the existing Postgres under RLS; Weaviate only later, if a measured recall/latency floor is not met. **D-L4-2** decided 2026-11-11 (owner): vectors-only — no chunk text outside Postgres. Open, raised here: the floor values (Phase 3.6), the lexical arm (§ Fit), and the patch cadence of the self-built Postgres image (Phase 1.1): proposed default, keep the 2026-10-10 tag rule with a scheduled rebuild; the alternative, digest pins with a scheduled bump pull request, reverses that decision and is the owner's to take |
 | Complete at | Phase 3. Phase 4 runs only if Phase 3's record misses a floor; until then it is not part of completion |
 
 ## At a glance
@@ -197,21 +197,35 @@ vector column.
 
 **Sub-phases.**
 - [ ] 1.1 **The image.** `deploy/postgres/Dockerfile`: `FROM
-      postgres:16-alpine@sha256:<digest>`, compiling pgvector at a pinned
-      tag (`v0.8.7` today) against the image's own server headers, the build
-      toolchain removed in the same layer. Same base, same musl, same
-      collation, so the existing `pgdata` volume mounts unchanged. Built and
-      published to GHCR by a workflow, referenced everywhere by digest (G5),
-      never `latest`. Watchtower does not manage `postgres`, so a rebuild is
-      a reviewed Compose change applied with `deploy/apply.sh`. The fallback,
-      `pgvector/pgvector:0.8.7-pg16-bookworm` by digest, is taken only with a
-      planned `REINDEX DATABASE` (or dump and restore) window, written into
-      the pull request's rollback plan.
+      postgres:16-alpine`, compiling pgvector at a pinned tag (`v0.8.7`
+      today) against the image's own server headers, the build toolchain
+      removed in the same layer. Same base, same musl, same collation, so the
+      existing `pgdata` volume mounts unchanged. **The base stays on the tag,
+      not a digest, on purpose:** the owner decided on 2026-10-10 that the
+      production database is baselined by tag because "a digest pin would
+      freeze security patches that the alpine tag delivers"
+      (`tests/guardrails/runtime-image-pinning.test.ts`, the `postgres`
+      entry). A self-built image would freeze them anyway unless it is
+      rebuilt, so the workflow that publishes it to GHCR runs **on a
+      schedule** (weekly) and whenever the upstream `16-alpine` digest
+      changes, republishing a moving line tag (`…/postgres-pgvector:16-alpine`)
+      plus an immutable per-build tag for rollback. Compose and CI reference
+      the line tag, never `latest`, and the new repository gets its own
+      `BASELINE` entry in that guard with the same reason as `postgres`. A
+      patch then reaches the VM the way it does today, on a pull and
+      `deploy/apply.sh` (Watchtower does not manage `postgres`). Pinning the
+      base and the references by digest instead, with a bump pull request on
+      the same cadence, would reverse the 2026-10-10 decision, so it is raised
+      for the owner (§ Owner decisions) rather than taken here. The fallback,
+      `pgvector/pgvector:0.8.7-pg16-bookworm`, is taken only with a planned
+      `REINDEX DATABASE` (or dump and restore) window, written into the pull
+      request's rollback plan.
 - [ ] 1.2 **Every Postgres moves together.** The production Compose file, the
       four root Compose files and the five workflows' service containers all
-      reference the same digest, or the fresh-DB migration gate fails in CI the
-      day the first `CREATE EXTENSION vector` lands. A guard pins that every
-      Postgres image reference in the repository is that one digest.
+      reference the same image and line tag, or the fresh-DB migration gate
+      fails in CI the day the first `CREATE EXTENSION vector` lands. A guard
+      pins that every Postgres image reference in the repository is that one
+      image.
 - [ ] 1.3 **The extension.** A migration runs `CREATE EXTENSION IF NOT EXISTS
       vector`. Because the extension is not trusted, the role that runs
       `prisma migrate deploy` must be a superuser, or the operator creates the
@@ -243,7 +257,25 @@ vector column.
       emitting 2,048 (Nemotron embed's default) is either truncated to a
       supported Matryoshka size or stored as `halfvec`; the D-L4-3 benchmark
       names which. `CREATE INDEX` runs in the migration's transaction, so not
-      `CONCURRENTLY` (the `pg_trgm` migration's note says why).
+      `CONCURRENTLY` (the `pg_trgm` migration's note says why). **The CI
+      fresh-DB schema-drift gate sees each of these indexes.** Prisma cannot
+      declare a partial expression index with an operator class, so
+      `prisma migrate diff` proposes `DROP INDEX "<name>";` for every one, and
+      "Gate: fresh-DB schema drift" fails on any statement not in
+      `prisma/fresh-db-schema-drift.expected.sql`. The same pull request adds
+      each statement there, verbatim, and signs it off in `SIGNED_OFF` in
+      `tests/guardrails/schema-drift-gate-runs-in-ci.test.ts`, which holds the
+      file to set equality. The `pg_trgm` indexes are the precedent (group 2,
+      PERMANENT): the new members join that group, renamed to cover indexes
+      Prisma cannot declare, because the header-count check counts every
+      `DROP INDEX` statement as group 2; the header's group-2 count and the
+      CURRENT STATE row move in the same commit. Each further embedding model
+      that gets an index adds a member, so the D-L4-3 benchmark's candidates
+      are measured against exact search without an index, and only the
+      adopted model's index lands in a migration. Any other residue the new
+      tables produce (the `Unsupported("vector")` column, the extension) is
+      measured with `npm run db:check-schema-drift` and reconciled or signed
+      off the same way, never pasted in unsigned.
 - [ ] 1.7 **The two-tenant behavioural test** (G7, checklist §2), in the
       integration project as `app_user` with RLS live: A inserts chunks and
       embeddings; a nearest-neighbour query under B returns nothing; B asking
@@ -259,20 +291,31 @@ Context (main 3.365.0): decisions D-L4-1 (pgvector first, in the existing Postgr
 RLS) and D-L4-2 (vectors-only: chunk text only in Postgres, encrypted) are taken. Every
 Postgres in the repo is postgres:16-alpine, whose official build carries no pgvector; the
 production Compose file is repo-canonical (deploy/docker-compose.prod.yml, applied by
-deploy/apply.sh) and runtime images are pinned by digest. pgvector's vector.control is not
+deploy/apply.sh); runtime images are pinned by digest EXCEPT the Docker Official Images in
+tests/guardrails/runtime-image-pinning.test.ts's BASELINE, where postgres is baselined by tag
+by owner decision (2026-10-10) so the alpine tag keeps delivering security patches. pgvector's vector.control is not
 trusted, so CREATE EXTENSION vector needs a superuser. Repositories take RequestContext and
 filter by tenantId; tenant tables carry RLS (tests/guardrails/rls-coverage.test.ts).
 
-Task: (1) deploy/postgres/Dockerfile FROM postgres:16-alpine@<digest> building pgvector at a
-pinned tag, toolchain removed in the same layer; a workflow publishing it to GHCR; every
-Postgres reference (prod Compose, root Compose files, workflow service containers) moved to
-that digest, with a guard pinning it. (2) A migration creating the extension, and the note
+Task: (1) deploy/postgres/Dockerfile FROM postgres:16-alpine (by tag, keeping the
+2026-10-10 decision) building pgvector at a pinned tag, toolchain removed in the same layer; a
+workflow publishing it to GHCR weekly and whenever the upstream 16-alpine digest changes, as a
+moving line tag plus an immutable per-build tag; a BASELINE entry for the new repository in
+runtime-image-pinning.test.ts; every Postgres reference (prod Compose, root Compose files,
+workflow service containers) moved to that line tag, with a guard pinning it. Do NOT pin the
+base or the references by digest unless the owner has decided to (weaviate.md § Owner
+decisions). (2) A migration creating the extension, and the note
 on which role runs migrations in production. (3) prisma/schema/knowledge.prisma with
 KnowledgeChunk (text in the encryption manifest) and KnowledgeChunkEmbedding (embedding
 Unsupported("vector"), cascade from the chunk), RLS policies, tenantId-leading indexes,
 data-retention rows. (4) VectorRepository.ts as the only module touching the embedding
 column: parameterised $queryRaw inside runInTenantContext, ctx-first methods, plus a lint
-rule refusing SQL on that table elsewhere. (5) One partial HNSW index per embedding model.
+rule refusing SQL on that table elsewhere. (5) One partial HNSW index per embedding model,
+and for each the DROP INDEX statement prisma migrate diff will propose added verbatim to
+prisma/fresh-db-schema-drift.expected.sql and signed off in SIGNED_OFF in
+tests/guardrails/schema-drift-gate-runs-in-ci.test.ts (join group 2, the pg_trgm precedent,
+and update the header counts); run npm run db:check-schema-drift to see the residue rather
+than guessing it.
 
 Constraints: no text column on the embedding table; no $queryRawUnsafe; readyz does not gate
 on the index. Integration test (tests/integration/vector-tenant-isolation.test.ts): A
@@ -282,17 +325,18 @@ with the rollback plan and risk assessment a SIGNIFICANT change carries (schema 
 image change).
 
 Done when: typecheck, lint, the new integration test and the existing ratchets (rls-coverage,
-schema-index-coverage, retention-policy-coverage, docs-accuracy) are green; CI's fresh-DB
-migration gate passes on the new image; deploy/check-drift.sh reports no drift after apply.
+schema-index-coverage, retention-policy-coverage, docs-accuracy, schema-drift-gate-runs-in-ci)
+are green; CI's fresh-DB migration gate and its schema-drift gate pass on the new image; deploy/check-drift.sh reports no drift after apply.
 ```
 
-**Hardening.** G5 (a digest-pinned image the repository builds), G7 (RLS
+**Hardening.** G5 (an image the repository builds, on a patch-delivering
+rebuild schedule rather than a frozen digest, by the 2026-10-10 decision), G7 (RLS
 inherited, the two-tenant test at the repository layer, no plain-tenant-id
 method), G9 (no embedding provider configured = nothing indexed, nothing
 offered), checklist §4 (outcome metric). The lint rule is the structural guard
 and the integration test the conduct guard — both, per the checklist's "shape
 and conduct". The image move is a SIGNIFICANT change under
-`docs/change-management-policy.md`: a rollback plan (the previous digest, and
+`docs/change-management-policy.md`: a rollback plan (the previous per-build tag, and
 for the Debian fallback the reindex) and a risk assessment go in the pull
 request.
 
