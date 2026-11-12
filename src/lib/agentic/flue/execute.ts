@@ -10,7 +10,7 @@ import {
     externalResidencyRefusal,
     type ExternalAiAcknowledgement,
 } from '../external-residency-gate';
-import { providerIdOf } from './model-selection';
+import { onSameRoute, providerIdOf, type FlueModelRole } from './model-selection';
 import {
     updateRun,
     failRun,
@@ -180,6 +180,21 @@ interface TurnRecord {
     tokensOut: number;
     /** The call's own wall clock. `null` on the aggregate fallback below. */
     durationMs: number | null;
+    /**
+     * WHICH ROLE made the call (D-L3-1). A `turn` event emitted inside a
+     * delegation carries the runtime's `taskId`; the parent's own calls carry
+     * none. So `taskId` present is a WORKER call and absent is the
+     * SUPERVISOR's. The aggregate fallback is labelled supervisor: it is the
+     * parent response's own roll-up.
+     */
+    role: FlueModelRole;
+}
+
+/** A dispatch's tokens split by the role that spent them. Sums to the total. */
+function tokensByRole(turns: readonly TurnRecord[]): Record<FlueModelRole, number> {
+    const out: Record<FlueModelRole, number> = { supervisor: 0, worker: 0 };
+    for (const t of turns) out[t.role] += t.totalTokens;
+    return out;
 }
 
 // `recordModelDecision` and `aiSystemIdFor` USED TO LIVE HERE. #2791 moved
@@ -210,8 +225,17 @@ export async function executeFlueRun(
      * Optional so every existing caller and test compiles unchanged; absent
      * reads as unacknowledged, which is the refusing direction.
      */
-    postures: { externalAiAcknowledgement?: ExternalAiAcknowledgement } = {},
+    postures: {
+        externalAiAcknowledgement?: ExternalAiAcknowledgement;
+        /**
+         * The WORKER role's specifier (D-L3-1): the model the run's subagents
+         * ask for. Absent means the supervisor's, which is every caller that
+         * predates the role axis — so their runs are unchanged.
+         */
+        workerModelSpecifier?: string;
+    } = {},
 ): Promise<RunDriverOutcome> {
+    const workerModelSpecifier = postures.workerModelSpecifier ?? modelSpecifier;
     // BOOT FIRST, and check the specifier against what actually got
     // registered. An unregistered model would otherwise surface from inside pi
     // as a stream error, mid-run, with the run row already created and an
@@ -246,8 +270,23 @@ export async function executeFlueRun(
         return { status, stepFailures: 0 };
     }
 
+    // THE ROLE NEVER CHOOSES THE ROUTE (D-L3-1, G1). Both specifiers were
+    // resolved under one set of residency terms and `resolveFlueModel` never
+    // gives them different providers; this is the engine's own check of that,
+    // before the runtime boots, so a worker can never be the way a run's
+    // content reaches a provider its supervisor could not.
+    if (!onSameRoute(workerModelSpecifier, modelSpecifier)) {
+        const status = await failRun(ctx, runId, refusalMessage('WORKER_ROUTE_MISMATCH'));
+        return { status, stepFailures: 0 };
+    }
+
     const providers = await ensureFlueRuntime();
-    if (!flueModelIsRegistered(modelSpecifier, providers)) {
+    // BOTH ROLES must be registered: a worker model the runtime does not carry
+    // would otherwise fail inside pi on the first delegation, mid-run.
+    if (
+        !flueModelIsRegistered(modelSpecifier, providers) ||
+        !flueModelIsRegistered(workerModelSpecifier, providers)
+    ) {
         const status = await failRun(ctx, runId, refusalMessage('MODEL_NOT_REGISTERED'));
         return { status, stepFailures: 0 };
     }
@@ -420,6 +459,7 @@ export async function executeFlueRun(
             tokensIn: usage.input,
             tokensOut: usage.output,
             durationMs: event.durationMs,
+            role: event.taskId ? 'worker' : 'supervisor',
         });
     };
     /**
@@ -468,7 +508,10 @@ export async function executeFlueRun(
                 // THIS call's tokens, not the dispatch aggregate — the whole
                 // point of reading the event stream.
                 { tokensIn: turn.tokensIn, tokensOut: turn.tokensOut },
-                modelSpecifier,
+                // THE ROLE'S model, not the run's: a worker call recorded
+                // under the supervisor's model would put the wrong model on
+                // the Art 12 row the moment the two differ (D-L3-1).
+                turn.role === 'worker' ? workerModelSpecifier : modelSpecifier,
                 turn.durationMs,
             );
         }
@@ -703,6 +746,7 @@ export async function executeFlueRun(
     bindRun(runId, {
         tools,
         modelSpecifier,
+        workerModelSpecifier,
         skills,
         maxSubagentsPerTurn,
         // THE DELEGATE'S ANSWER, SCANNED ON RE-ENTRY (#3473, applying #3468's
@@ -814,6 +858,7 @@ export async function executeFlueRun(
                 tokensIn: usage.tokensIn,
                 tokensOut: usage.tokensOut,
                 durationMs: null,
+                role: 'supervisor',
             });
         }
 
@@ -837,6 +882,11 @@ export async function executeFlueRun(
                 // the dispatch, and its seq feeds the step caps — but a reader
                 // must not have to assume that meant one call.
                 modelCalls: turns.length,
+                // THE SAME SPEND, BY ROLE (D-L3-1). Labels only: the run's
+                // `costTokens`, its caps and the monthly budget are charged
+                // the total exactly as before — a worker's tokens are the
+                // parent run's tokens.
+                tokensByRole: tokensByRole(turns),
                 // THE KEY TO THIS STEP'S ART 12 ROWS.
                 //
                 // `AiDecisionLog` carries no `runId` — deliberately, it is the

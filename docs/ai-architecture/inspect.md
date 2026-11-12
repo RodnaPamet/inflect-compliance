@@ -20,16 +20,16 @@ inflect · ai architecture · inspect · roadmap v1 · 2026-10-29
 | Wave | 2 (its tasks need only what exists today; model selection compares models available by API key) |
 | Depends on | the harness route from [`garak.md`](./garak.md) Phase 1 (or a sibling) |
 | Unblocks | a record behind every engine that is on — Flue, and the Tool Runner, which Claude engines Step 2c turned on (#4512) before any record existed; worker-model selection in [`nemotron-reasoning.md`](./nemotron-reasoning.md) |
-| Owner decisions | **D-EV-4** (the first ten tasks, and that the product scores its own agents on its own ladder) |
+| Owner decisions | **D-EV-4** — decided 2026-11-11 (owner): adopt. The product scores its own agents on its own ladder, and the Inspect records are the evidence. Source: the owner's decision batch of 2026-11-11 (with D-L4-1..4, D-EV-1/2, D-L3-1, D-L1-1/2/5/6/7), as relayed to this work. It is not in force until the owner initials its row in the master roadmap's D-* table. Open from Phase 0: D-EV-6 (budget), D-EV-7 (Tool Runner missing-input arm), D-EV-8 (a JSON read of a run's decision rows), D-EV-9 (persisting the offered tool set), D-EV-10 (a guard verdict on the delegation step) |
 | Complete at | Phase 3, comparing worker candidates available by API key |
 
 ## At a glance
 
-Purple hexagon: the Phase 0 decision. Green: on `main`. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+Purple hexagon: the Phase 0 decision, now taken. Green: on `main`. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · ten tasks<br/>one per governed-run invariant<br/>mapped to H3-H5<br/>D-EV-4"}}:::gate
+  P0{{"Phase 0 · ten tasks<br/>one per governed-run invariant<br/>mapped to H2-H4<br/>D-EV-4 decided"}}:::done
   P1["Phase 1 · harness<br/>solver starts a run, awaits it<br/>scorers read the ledger<br/>mutation check"]:::todo
   P2["Phase 2 · evidence and gate<br/>Coverage tab cites records<br/>an engine on needs a record"]:::todo
   P3["Phase 3 · choose models<br/>comparison records"]:::todo
@@ -76,7 +76,10 @@ flowchart LR
   decision-log rows per model and tool call, proposals with `runId`/`stepSeq`,
   receipts, the run stream (`/agent-runs/[id]/stream`). Everything a scorer
   needs is already written down.
-- **No Inspect, no `inspect_evals`.**
+- **No Inspect, no `inspect_evals`.** The task set is defined (Phase 0):
+  [`2026-11-11-inspect-first-tasks.md`](../implementation-notes/2026-11-11-inspect-first-tasks.md)
+  holds the ten tasks, their H-criteria, the four case kinds, the deployment
+  and the record shape. No harness runs them.
 
 ## Fit, and what is deliberately not adopted
 
@@ -112,15 +115,34 @@ Local candidates join only if Layer 5 is taken up.
 ### Phase 0 — The first ten tasks
 
 **Sub-phases.**
-- [ ] 0.1 D-EV-4: the owner confirms the principle — Inflect's own agents are
+**Done 2026-11-11**, in
+[`2026-11-11-inspect-first-tasks.md`](../implementation-notes/2026-11-11-inspect-first-tasks.md).
+
+- [x] 0.1 D-EV-4: the owner confirms the principle — Inflect's own agents are
       scored on Inflect's ladder, and the Inspect records are the evidence.
-- [ ] 0.2 Write the ten tasks as a table (input, workflow, expected ledger
+      **Decided 2026-11-11 (owner): adopt**, in the owner's decision batch of
+      that day. The record of the act is the owner's initial on the D-EV-4 row
+      of the master roadmap's D-* table, which this pull request must carry.
+      If that row is not initialled, this item is open, and Phase 0 is too.
+- [x] 0.2 Write the ten tasks as a table (input, workflow, expected ledger
       facts, scorer), one per invariant the guards already name plus the three
       the guards cannot: injected tool result → step halted; kill mid-run →
       no further model call; LOCAL_ONLY tenant → no external socket opened.
-- [ ] 0.3 Map each task to the H-criterion it evidences.
-- [ ] 0.4 Decide the deployment the tasks run against: the CI test deployment
-      (as DAST and garak) with the seed tenant and a `LOCAL_ONLY` seed tenant.
+      Each task has a non-vacuity condition (PASS / FAIL / VACUOUS), and
+      applicability per engine is decided in the set, never by a run.
+- [x] 0.3 Map each task to the H-criterion it evidences: eight criteria from
+      H2 to H4, with `H3.payloads_guarded` evidenced twice (both guard slices).
+- [x] 0.4 Decide the deployment the tasks run against: the CI test deployment
+      (as DAST and garak), with four seed tenants (EXTERNAL and `LOCAL_ONLY`,
+      once per engine) kept apart from `acme-corp`, because the injection and
+      secret fixtures and the kill switch must not reach other jobs.
+
+Phase 0 leaves five questions for the owner, listed in the note: D-EV-6 (the
+nightly budget, since Inspect runs each engine's own model), D-EV-7 (the Tool
+Runner covers three case kinds, because profile runs take no caller input),
+D-EV-8 (no REST route returns a run's decision rows), D-EV-9 (the offered
+tool set is logged, not stored) and D-EV-10 (the delegation step records no
+guard verdict). They belong in the master roadmap's D-* table beside D-EV-4.
 
 **Prompt.**
 ```text
@@ -161,8 +183,9 @@ is named for the invariant it proves, like the guards).
 - [ ] 1.3 Deterministic scorers per Phase 0 task; the kill task uses the
       product's kill-switch API mid-run.
 - [ ] 1.4 `src/lib/ai/evals/inspect-record.ts`: the record shape (task set
-      hash, engine + model revision, per-task raw ledger facts and verdicts),
-      recompute, strict.
+      hash, engine + model revision, per-sample raw ledger facts), strict.
+      Verdicts are recomputed from the facts and never stored. The shape and
+      its rules are in the Phase 0 note.
 - [ ] 1.5 `.github/workflows/agent-evals.yml`: nightly, test deployment,
       record validated and proposed as a PR, dated `AGENT-EVAL-NON-BLOCKING-UNTIL:`
       marker parsed by a guard.
@@ -184,8 +207,11 @@ AGENT-EVAL-NON-BLOCKING-UNTIL: <date> and a pinning guard; records proposed by P
 evals/inspect/records/.
 
 Constraints: the harness reads through APIs, never Prisma; seed tenants only; no judge.
-The LOCAL_ONLY task must assert on the absence of an external socket via the product's
-own metric/log (e.g. the provider outcome counter), not by network sniffing in CI.
+The LOCAL_ONLY task must assert on the absence of an external socket via the run's own
+ledger rows (no MODEL_CALL step, no decision digest; the decision rows once D-EV-8 lands),
+not by network sniffing in CI. No scorer reads a metric: the provider and cap counters
+carry no run or tenant label. Samples run one at a time on the deployment (the Phase 0
+note says why), and the record refuses overlapping samples.
 
 Done when: all ten tasks produce verdicts on the nightly, the record validates, and a
 deliberately broken invariant (e.g. a test build with the review latch disabled) turns

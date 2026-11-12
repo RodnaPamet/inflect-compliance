@@ -320,6 +320,9 @@ export function CircuitBreakerTab({
                 // writes itself.
                 case 'GUARD_BLOCK':
                     return t('agentDetail.breaker.signalGuardBlock');
+                // The nightly behaviour fingerprint's latch (threshold B).
+                case 'BEHAVIOUR_ANOMALY':
+                    return t('agentDetail.breaker.signalBehaviourAnomaly');
                 default:
                     return code;
             }

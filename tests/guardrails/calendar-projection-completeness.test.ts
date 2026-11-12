@@ -59,6 +59,8 @@ const isDeadlineName = (n: string) =>
  * projection gap gets laundered into a documented decision.
  */
 const EXCLUSIONS: Record<string, string> = {
+    'AgentSpendingAuthority.expiresAt':
+        'The end of an agent\'s declared spending envelope (Agent Pay Phase 1). Excluded for the reason `AgentProposal.expiresAt` and `LegacyIdentityAlias.expiresAt` are: lapsing IS the designed outcome. An expired envelope authorises nothing, so the agent fails closed, and the remedy is a new declaration that a second person reviews against the facts of the day. A reminder to renew before the date would turn a deliberate bound on spending authority into a prompt to re-approve it, which is the rubber-stamping the four-eyes review exists to prevent. The expiry is shown on the agent\'s register page, where the declaration is made and reviewed.',
     'PeerInvitation.expiresAt':
         'The lifetime of a single-use A2A invitation code (#3752), a credential lifetime like `TenantApiKey.expiresAt`. An invitation nobody accepted is meant to lapse; the remedy is a new invitation, not a reminder to hurry the other workspace. Shown on the invitation itself.',
     'LegacyIdentityAlias.expiresAt':

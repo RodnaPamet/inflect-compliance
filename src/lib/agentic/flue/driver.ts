@@ -121,6 +121,8 @@ export async function runFlueDriver(
         // The SPECIFIER, which names the provider id and therefore the
         // residency decision. Not a credential, and not the prompt.
         model: plan.modelSpecifier,
+        workerModel: plan.workerModelSpecifier,
+        workerBasis: plan.workerBasis,
     });
 
     const { executeFlueRun } = await import('./execute');
@@ -130,5 +132,8 @@ export async function runFlueDriver(
         // question is "what permitted this run", not "what is set now", and
         // between the two an admin can have withdrawn it mid-run.
         externalAiAcknowledgement: postures.acknowledgement,
+        // The WORKER's specifier (D-L3-1), resolved under the same residency
+        // terms as the supervisor's above.
+        workerModelSpecifier: plan.workerModelSpecifier,
     });
 }

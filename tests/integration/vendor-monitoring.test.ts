@@ -50,7 +50,7 @@ const breachSig: BreachSignal = {
     latestBreachAt: '2026-06-15',
     breaches: [{ name: 'Acme exposure', date: '2026-06-15' }],
 };
-const cleanTls = { source: 'stub', grade: 'A', checkedAt: NOW.toISOString(), presentHeaders: [], missingHeaders: [] };
+const cleanTls = { source: 'stub', outcome: 'GRADED' as const, grade: 'A', checkedAt: NOW.toISOString(), presentHeaders: [], missingHeaders: [] };
 
 describeFn('vendor continuous-monitoring (integration)', () => {
     let prisma: PrismaClient;
@@ -152,6 +152,31 @@ describeFn('vendor continuous-monitoring (integration)', () => {
         expect(await prisma.vendorPostureEvent.count({ where: { tenantId } })).toBe(eventsBefore);
         expect(await prisma.finding.count({ where: { tenantId, sourceKind: { in: [VENDOR_BREACH_KIND, VENDOR_ATTESTATION_EXPIRED_KIND] } } })).toBe(findingsBefore);
         expect(await prisma.notification.count({ where: { tenantId, type: 'VENDOR_POSTURE_ALERT' } })).toBe(notifsBefore);
+    });
+
+    it('a refused TLS fetch keeps the grade, records the refusal and marks the grade stale', async () => {
+        const graded = await prisma.vendorMonitor.findFirst({ where: { tenantId, vendorId } });
+        expect(graded).toMatchObject({ tlsGrade: 'A', tlsCheckedAt: NOW, tlsFetchOutcome: 'GRADED' });
+        const tlsEventsBefore = await prisma.vendorPostureEvent.count({ where: { tenantId, eventType: 'TLS_GRADE' } });
+
+        const refusedAt = '2026-07-02T02:00:00.000Z';
+        const refused = { source: 'header-grade', outcome: 'REFUSED' as const, grade: null, checkedAt: refusedAt, presentHeaders: [], missingHeaders: [] };
+        const res = await runVendorMonitor(ctx, { vendorId, now: new Date(refusedAt), breachSignal: breachSig, tlsSignal: refused });
+        expect(res.tlsGrade).toBe('A');
+
+        const after = await prisma.vendorMonitor.findFirst({ where: { tenantId, vendorId } });
+        expect(after).toMatchObject({
+            tlsGrade: 'A',
+            tlsCheckedAt: NOW,
+            tlsFetchOutcome: 'REFUSED',
+            tlsFetchOutcomeAt: new Date(refusedAt),
+        });
+        expect((await getVendorPosture(ctx, vendorId)).tlsGradeStale).toBe(true);
+        expect(await prisma.vendorPostureEvent.count({ where: { tenantId, eventType: 'TLS_GRADE' } })).toBe(tlsEventsBefore);
+
+        // The next fetch that grades clears it.
+        await runVendorMonitor(ctx, { vendorId, now: NOW, breachSignal: breachSig, tlsSignal: cleanTls });
+        expect((await getVendorPosture(ctx, vendorId)).tlsGradeStale).toBe(false);
     });
 
     it('disabling the monitor short-circuits the run', async () => {

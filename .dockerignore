@@ -17,6 +17,9 @@ out
 
 # Tests
 tests/
+# Re-included: the PII mount gate (src/lib/ai/pii/mount.ts) reads this corpus
+# at runtime to check a record is bound to it. Seeded, synthetic data.
+!tests/fixtures/pii
 test-results/
 playwright-report/
 coverage/

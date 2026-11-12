@@ -81,6 +81,26 @@ export function providerIdOf(specifier: string): string {
     return slash === -1 ? specifier : specifier.slice(0, slash);
 }
 
+/**
+ * WHICH ROLE a model call plays in a run (D-L3-1, owner decision 2026-11-11).
+ *
+ * The parent run is the SUPERVISOR: it plans, validates and synthesises under
+ * the policy card. Its subagents (`flue/subagents/`) are WORKERS. The two may
+ * run on different models — a smaller worker makes fan-out cheaper — and they
+ * obey the tenant's residency by the SAME rules (G1): the role chooses a model
+ * id, never a route.
+ */
+export type FlueModelRole = 'supervisor' | 'worker';
+
+/**
+ * Do two specifiers route to the same provider? The engine's check that a
+ * run's worker is on its supervisor's route (D-L3-1): the role chooses a model
+ * id, never a route, so any other answer is a configuration to refuse.
+ */
+export function onSameRoute(a: string, b: string): boolean {
+    return providerIdOf(a) === providerIdOf(b);
+}
+
 /** The per-tenant terms, mirroring `ProviderSelection` in `ai/risk-assessment`. */
 export interface FlueModelSelection {
     residency?: 'EXTERNAL' | 'LOCAL_ONLY' | null;
@@ -88,6 +108,13 @@ export interface FlueModelSelection {
     localBaseUrl?: string | null;
     /** Per-tenant model override; else `AI_LOCAL_MODEL`. */
     localModel?: string | null;
+    /**
+     * The role the model is asked for. Absent reads as `supervisor`, which is
+     * every caller that predates the role axis — so their answer is unchanged.
+     * Deliberately NOT part of `residencyTermsFrom`: a role is the caller's
+     * question, not a tenant posture.
+     */
+    role?: FlueModelRole;
 }
 
 /**
@@ -160,7 +187,18 @@ export type FlueModelRefusal =
     | 'LOCAL_GATEWAY_NOT_SERVED';
 
 export type FlueModelChoice =
-    | { ok: true; specifier: string; residency: 'EXTERNAL' | 'LOCAL_ONLY' }
+    | {
+          ok: true;
+          specifier: string;
+          residency: 'EXTERNAL' | 'LOCAL_ONLY';
+          /**
+           * Present ONLY on a worker answer that is the supervisor's model,
+           * because no worker model applies on this route. Absent on every
+           * supervisor answer, so a supervisor choice is the exact object it
+           * was before the role axis existed.
+           */
+          fallback?: 'worker_fallback';
+      }
     | { ok: false; reason: FlueModelRefusal };
 
 /**
@@ -203,10 +241,15 @@ export function resolveFlueModel(sel?: FlueModelSelection): FlueModelChoice {
         }
         const model = sel.localModel || env.AI_LOCAL_MODEL;
         if (!model) return { ok: false, reason: 'LOCAL_MODEL_NOT_CONFIGURED' };
+        // BOTH ROLES, ONE RULE. The local route has no worker pin of its own
+        // (that is Layer 5, optional and last), so a worker is served the same
+        // local model and says so. It never reaches the external branch below:
+        // this return is above it, for the role as for the residency.
         return {
             ok: true,
             residency: 'LOCAL_ONLY',
             specifier: `${FLUE_PROVIDER_IDS.local}/${model}`,
+            ...(sel.role === 'worker' ? { fallback: 'worker_fallback' as const } : {}),
         };
     }
 
@@ -219,9 +262,91 @@ export function resolveFlueModel(sel?: FlueModelSelection): FlueModelChoice {
     if (!env.ANTHROPIC_API_KEY) {
         return { ok: false, reason: 'EXTERNAL_CREDENTIAL_NOT_CONFIGURED' };
     }
+    // THE WORKER ROLE (D-L3-1). Its own pin when the deployment names one —
+    // on the SAME external provider and key, so it is a model that provider
+    // serves and the sub-processor register does not move — else the
+    // supervisor's model, recorded as a fallback rather than passed off as a
+    // choice. Trimmed so a blank variable is unset, not a model named "".
+    if (sel?.role === 'worker') {
+        const worker = env.AGENT_FLUE_WORKER_MODEL?.trim();
+        if (worker) {
+            return { ok: true, residency: 'EXTERNAL', specifier: `${FLUE_PROVIDER_IDS.external}/${worker}` };
+        }
+        return {
+            ok: true,
+            residency: 'EXTERNAL',
+            specifier: `${FLUE_PROVIDER_IDS.external}/${env.AGENT_FLUE_MODEL}`,
+            fallback: 'worker_fallback',
+        };
+    }
     return {
         ok: true,
         residency: 'EXTERNAL',
         specifier: `${FLUE_PROVIDER_IDS.external}/${env.AGENT_FLUE_MODEL}`,
+    };
+}
+
+/** Both roles' answers for one run, resolved under one set of terms. */
+export type FlueRoleModels =
+    | {
+          ok: true;
+          residency: 'EXTERNAL' | 'LOCAL_ONLY';
+          supervisor: string;
+          worker: string;
+          /** `CONFIGURED` when the worker has its own model; else the fallback. */
+          workerBasis: 'CONFIGURED' | 'worker_fallback';
+      }
+    | { ok: false; reason: FlueModelRefusal };
+
+/**
+ * WHAT A FLUE RUN OPENED UNDER, model-wise — for its opening audit entry.
+ *
+ * Both roles' specifiers, and why the worker's is what it is, or the named
+ * reason neither resolved (the driver will refuse the run with the same one).
+ * Every field is a closed value or a `<provider-id>/<model-id>` specifier —
+ * deployment configuration, never tenant content. Written into the
+ * hash-chained `WORKFLOW_RUN_STARTED` row BEFORE the walk, because that row
+ * cannot be corrected afterwards (the opening-entry rule).
+ */
+export interface FlueOpeningModels {
+    readonly modelSupervisor: string | null;
+    readonly modelWorker: string | null;
+    readonly modelWorkerBasis: 'CONFIGURED' | 'worker_fallback' | null;
+    readonly modelRefusal: FlueModelRefusal | null;
+}
+
+export function flueOpeningModels(sel?: FlueModelSelection): FlueOpeningModels {
+    const models = resolveFlueRoleModels(sel);
+    if (!models.ok) {
+        return { modelSupervisor: null, modelWorker: null, modelWorkerBasis: null, modelRefusal: models.reason };
+    }
+    return {
+        modelSupervisor: models.supervisor,
+        modelWorker: models.worker,
+        modelWorkerBasis: models.workerBasis,
+        modelRefusal: null,
+    };
+}
+
+/**
+ * Resolve the supervisor AND the worker for one run.
+ *
+ * ONE set of residency terms for both, so the two cannot be answered against
+ * different postures. The supervisor is asked first and its refusal is the
+ * run's: a run with no supervisor cannot start, whatever its worker would be.
+ * The two refusals coincide anyway — the role chooses a model id, never the
+ * route — and that is asserted rather than assumed in the tests.
+ */
+export function resolveFlueRoleModels(sel?: FlueModelSelection): FlueRoleModels {
+    const supervisor = resolveFlueModel({ ...sel, role: 'supervisor' });
+    if (!supervisor.ok) return supervisor;
+    const worker = resolveFlueModel({ ...sel, role: 'worker' });
+    if (!worker.ok) return worker;
+    return {
+        ok: true,
+        residency: supervisor.residency,
+        supervisor: supervisor.specifier,
+        worker: worker.specifier,
+        workerBasis: worker.fallback ?? 'CONFIGURED',
     };
 }

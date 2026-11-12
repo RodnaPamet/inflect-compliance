@@ -147,6 +147,33 @@ export function runsProfiles(driver: AgentDriver): boolean {
     return RUNS_PROFILES[driver];
 }
 
+/**
+ * DOES THIS ENGINE PERFORM A PROFILE VERSION'S DRAWN FLOW — every step of it,
+ * including a `subagent` step, which hands work to another profile?
+ *
+ * FALSE FOR EVERY ENGINE until Phase 5 of `docs/ai-architecture/langflow.md`.
+ * No engine has a delegation tool, so a `subagent` step would reach the model
+ * as a line it cannot act on, and the run would settle COMPLETED with the
+ * delegation recorded as drawn and never performed: a step that looks enforced
+ * and is not, the rule `agent-flow.ts` refuses a checkpoint by. So admission
+ * refuses a flow version (`PROFILE_FLOW_NOT_RUNNABLE`) on every engine, before
+ * the run row exists, and a version with a flow is created, approved and
+ * resolved but never run. Turning an entry on is Phase 5's diff, beside the
+ * engine support that makes every node kind real.
+ *
+ * A `Record<AgentDriver, boolean>`, as `RUNS_PROFILES` is, so a new driver is
+ * a compile error until it is classified here.
+ */
+const RUNS_FLOWS: Readonly<Record<AgentDriver, boolean>> = {
+    static: false,
+    flue: false,
+    'tool-runner': false,
+};
+
+export function runsFlows(driver: AgentDriver): boolean {
+    return RUNS_FLOWS[driver];
+}
+
 /*
  * Whether the profile surface is on for a workspace is no longer read here.
  * Since #4557 an organization can decide it when the deployment leaves

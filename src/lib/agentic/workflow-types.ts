@@ -23,6 +23,7 @@ import type {
 } from './agent-profile';
 import type { AgentDriver } from './agent-driver';
 import type { ApprovalWindow } from './approval-window';
+import type { CompiledFlow } from './agent-flow';
 
 /** Accumulated run state. `outputs` is keyed by each step's `label`. */
 export interface WorkflowContext {
@@ -277,6 +278,15 @@ export interface ProfileRunSpec {
     readonly maxTurns: number;
     readonly outputKind: ProfileOutputKind;
     readonly allowedTriggers: readonly ProfileTrigger[];
+    /**
+     * The version's drawn flow, compiled (Phase 1 of
+     * `docs/ai-architecture/langflow.md`), or ABSENT for a version with none.
+     * A specification the run message lists in order, never a walk: the
+     * model may deviate from the order, and the tools it may call are
+     * `toolNames` (which, with a flow, IS the flow's tools) intersected with
+     * the grants, whatever the order says.
+     */
+    readonly flow?: CompiledFlow;
 }
 
 /**

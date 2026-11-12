@@ -145,10 +145,21 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // read-only checks of the production VM from a fixed list. Its key
         // sorts after `vm-capacity`, so it is an append again, +5/-0.
         //
+        // Updated 2026-11-11 for `retriever-benchmark.yml:bench` and
+        // `retriever-benchmark.yml:summary`, the dispatch-only benchmark that
+        // decides D-L4-3 on a GitHub runner. Inserted in ALPHABETICAL position
+        // before `secret-rotation.yml`, so no neighbour's brace moved, +10/-0.
+        // Updated 2026-11-11 for `garak.yml:garak`, the nightly LLM red-team
+        // (docs/ai-architecture/garak.md Phase 1). Inserted in alphabetical
+        // position before `ghcr-publish.yml:build-push` ('ga' < 'gh'), +5/-0.
+        // Both 2026-11-11 entries merged together: the digest is over the file
+        // holding both, computed with the guard's own keyOrder.
         // Updated 2026-11-12 for `vm-apply.yml:vm-apply`, the dispatch-only
         // named changes to the production VM. Its key sorts between
         // `scanner-vm` and `vm-capacity`, so it is a mid-file insert, +5/-0.
-        keyOrderSha: 'c4d13943328843a9d9b60466b19878e16ddf375330395afef75ca27e97540ce8',
+        // Merged 2026-11-12: the digest is over the file holding the
+        // 2026-11-11 entries and `vm-apply.yml:vm-apply` together.
+        keyOrderSha: '7305be5b379e60d79c21d937a39d785b9c6884629172eeb906aa878e23707555',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

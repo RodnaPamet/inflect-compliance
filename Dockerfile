@@ -210,6 +210,19 @@ COPY --from=builder /app/src/lib/agentic/flue/skills ./src/lib/agentic/flue/skil
 # tests/guardrails/catalogue-reaches-production.test.ts derives this directory
 # from that read and fails until this line exists.
 COPY --from=builder /app/vendor/openshell-proto ./vendor/openshell-proto
+# The PII detector's evaluation records, read from disk by `resolvePiiDetector`
+# in src/lib/ai/pii/mount.ts at `process.cwd()` whenever AI_PII_BASE_URL is set.
+# The record is the mount condition (Presidio Phase 1.4): without this copy the
+# gate finds no record and the detector never mounts, which fails closed and so
+# would read as an unconfigured detector rather than a missing file.
+# tests/guardrails/catalogue-reaches-production.test.ts derives this directory
+# from that read and fails until this line exists.
+COPY --from=builder /app/evals/pii/records ./evals/pii/records
+# The fixture corpus the PII records are scored against, read by the same gate:
+# a record mounts only when it is bound to this exact corpus (its hash), so
+# without it the gate refuses NO_CORPUS. `.dockerignore` excludes tests/ and
+# re-includes this one directory for that reason. It is seeded, synthetic data.
+COPY --from=builder /app/tests/fixtures/pii ./tests/fixtures/pii
 # Prisma 7 — connection URL config moved out of `datasource db {}`
 # in `prisma/schema/base.prisma` into `prisma.config.ts`. The CLI
 # (`prisma migrate deploy` from the entrypoint) reads URLs from

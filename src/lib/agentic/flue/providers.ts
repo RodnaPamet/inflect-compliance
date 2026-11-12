@@ -80,6 +80,15 @@ export interface FlueProviderModels {
     /** `AGENT_FLUE_MODEL` — the id an EXTERNAL run may name. */
     externalModel?: string | null;
     /**
+     * `AGENT_FLUE_WORKER_MODEL` — the WORKER role's id on the same external
+     * provider (D-L3-1). Registered BESIDE the supervisor's, never instead of
+     * it, and only when the supervisor's route exists: a worker is a model on
+     * the provider the run already uses, not a route of its own. Absent or
+     * equal to `externalModel`, the provider carries exactly the one model it
+     * always did.
+     */
+    externalWorkerModel?: string | null;
+    /**
      * Every local model id this runtime may serve.
      *
      * ── A CEILING WORTH NAMING ──────────────────────────────────────────────
@@ -102,7 +111,7 @@ export { takesAdaptiveThinking } from './thinking-shape';
 
 function externalProvider(
     apiKey: string,
-    modelId: string,
+    modelIds: readonly string[],
     workspaceId: string | null | undefined,
 ): Provider {
     const baseUrl = 'https://api.anthropic.com';
@@ -116,7 +125,7 @@ function externalProvider(
     // caller takes. Absent when no workspace id is configured, which leaves the
     // model — and so the request — exactly as it was.
     const workspaceHeaders = anthropicWorkspaceHeaders(workspaceId);
-    const model: Model<'anthropic-messages'> = {
+    const models = modelIds.map((modelId): Model<'anthropic-messages'> => ({
         id: modelId,
         name: modelId,
         api: 'anthropic-messages',
@@ -131,7 +140,7 @@ function externalProvider(
         // Adaptive thinking plus an effort level, rather than a budget, for
         // every model that is not on the closed pre-4.6 list above.
         ...(takesAdaptiveThinking(modelId) ? { compat: { forceAdaptiveThinking: true } } : {}),
-    };
+    }));
     return createProvider<'anthropic-messages'>({
         id: FLUE_PROVIDER_IDS.external,
         name: 'Inflect (external)',
@@ -149,7 +158,7 @@ function externalProvider(
                 resolve: async () => ({ auth: { apiKey }, source: 'ANTHROPIC_API_KEY' }),
             },
         },
-        models: [model],
+        models,
         api: anthropicMessagesApi(),
     });
 }
@@ -208,9 +217,13 @@ export function buildFlueProviders(
         );
     }
     if (terms.externalApiKey && models.externalModel) {
-        providers.push(
-            externalProvider(terms.externalApiKey, models.externalModel, terms.externalWorkspaceId),
-        );
+        // The supervisor first, so the provider's first model is the one it
+        // always carried; the worker only when it is a DIFFERENT id.
+        const worker = models.externalWorkerModel?.trim();
+        const ids = worker && worker !== models.externalModel
+            ? [models.externalModel, worker]
+            : [models.externalModel];
+        providers.push(externalProvider(terms.externalApiKey, ids, terms.externalWorkspaceId));
     }
     return providers;
 }

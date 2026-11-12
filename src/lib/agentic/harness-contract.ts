@@ -88,6 +88,7 @@ import {
 } from './harness-ladder';
 
 export {
+    containsCardNumber,
     HARNESS_CONTRACT_IDS,
     HARNESS_CONTRACT_V1,
     HARNESS_CONTRACT_V2,

@@ -20,7 +20,8 @@ import { AgentKillSwitchAction, AgentKillSwitchBanner } from './AgentKillSwitchA
 import { AgentAmendModal } from './AgentAmendModal';
 import { ConnectAgentSheet } from './ConnectAgentSheet';
 import { InteractiveAgentAction } from './InteractiveAgentAction';
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
 
 export interface AgentSummary {
@@ -181,6 +182,7 @@ export function AgentDetailClient({
     vendors,
     viewerUserId,
     profilesEnabled = false,
+    canvasHref = null,
 }: {
     tenantSlug: string;
     agent: AgentSummary;
@@ -194,8 +196,17 @@ export function AgentDetailClient({
      * is no Behaviour tab at all, as the profile routes answer 404.
      */
     profilesEnabled?: boolean;
+    /**
+     * Where this agent opens on the process canvas, or null where the tenant
+     * does not have the process-canvas module (Phase 2.3 of
+     * `docs/ai-architecture/langflow.md`). A plain link into the processes
+     * segment: this page imports nothing from the canvas, so the licensed
+     * editor stays out of its bundle.
+     */
+    canvasHref?: string | null;
 }) {
     const t = useTranslations('admin');
+    const tCanvas = useTranslations('agentCanvas');
     // The register's copy lives in the top-level `agents` namespace now that
     // the subtree is no longer under `/admin` (#2426); `admin.agentDetail.*`
     // — this page's own ~90 keys — deliberately stayed put, so the page reads
@@ -323,6 +334,15 @@ export function AgentDetailClient({
                         data-testid="agent-connect-action"
                         text={t('agentDetail.connect.action')}
                     />
+                    {canvasHref !== null && (
+                        <Link
+                            href={canvasHref}
+                            id="agent-open-on-canvas"
+                            className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                        >
+                            {tCanvas('openOnCanvas')}
+                        </Link>
+                    )}
                     <AgentKillSwitchAction
                         agentId={agent.id}
                         canKill={perms.canKill}

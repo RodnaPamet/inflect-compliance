@@ -26,7 +26,14 @@
  * and only by calling `safeFetch` again on the new URL. The redirect target
  * gets the same checks as the first URL. The request is a GET with no body
  * and no credential, so a public hop leaks nothing. A hop to http, or to a
- * private address, ends the grade with nothing graded.
+ * private address, ends the grade with nothing graded, as `BLOCKED`.
+ *
+ * ── A fetch that does not grade says why ──
+ *
+ * Every signal carries an outcome (`TlsFetchOutcome`): GRADED, REFUSED,
+ * UNREACHABLE or BLOCKED. The sweep keeps the last grade on anything but
+ * GRADED and records the outcome, so a site that starts refusing the monitor
+ * shows as a stale grade rather than an unchanged one.
  */
 import {
     RedirectNotAllowedError,
@@ -35,7 +42,7 @@ import {
 } from '@/app-layer/automation/webhook-safety';
 import { logger } from '@/lib/observability';
 import { gradeSecurityHeaders } from './evaluate';
-import type { TlsProvider, TlsSignal } from './types';
+import type { TlsFetchOutcome, TlsProvider, TlsSignal } from './types';
 
 /**
  * Deterministic stub — grades from the domain hash, no network. A given
@@ -54,6 +61,7 @@ export class TestModeTlsProvider implements TlsProvider {
         const g = gradeSecurityHeaders(headers);
         return {
             source: this.name,
+            outcome: 'GRADED',
             grade: g.grade,
             checkedAt: new Date(0).toISOString(),
             presentHeaders: g.presentHeaders,
@@ -97,6 +105,32 @@ export function vendorHomepageUrl(domain: string): string | null {
     return url.href;
 }
 
+/**
+ * A recognised bot-challenge response, read from the headers alone (the body
+ * is never read). Each entry is a header the vendor documents as marking a
+ * challenge, whatever status it rides on: Cloudflare sends a challenge as a
+ * 403 or 503 with `cf-mitigated: challenge`, and AWS WAF answers a challenge
+ * with a 202 and a CAPTCHA with a 405, each with `x-amzn-waf-action`. A 202
+ * challenge page would otherwise be graded as the vendor's homepage, and a
+ * 503 one retried and reported as an outage.
+ */
+export function recognisedChallenge(headers: Headers): string | null {
+    if (headers.get('cf-mitigated')?.trim().toLowerCase() === 'challenge') return 'cloudflare';
+    const waf = headers.get('x-amzn-waf-action')?.trim().toLowerCase();
+    if (waf === 'challenge' || waf === 'captcha') return 'aws-waf';
+    return null;
+}
+
+/** A fetch that ended without a page to grade. */
+interface Ungraded {
+    outcome: Exclude<TlsFetchOutcome, 'GRADED'>;
+    /** For the log line only: an HTTP status, a challenge vendor, a cause. */
+    detail: string;
+}
+
+type HomepageRead = { headers: Record<string, string> } | Ungraded;
+type AttemptResult = { res: Response } | Ungraded;
+
 /** Real provider — GET the homepage through the SSRF guard, grade its headers. */
 export class HeaderGradeTlsProvider implements TlsProvider {
     readonly name = 'header-grade';
@@ -105,78 +139,96 @@ export class HeaderGradeTlsProvider implements TlsProvider {
 
     async grade(domain: string): Promise<TlsSignal> {
         const now = new Date().toISOString();
-        // Unreachable, refused or invalid → ungraded (null), not a failing
-        // grade: we don't punish a vendor for a transient network error.
-        const ungraded: TlsSignal = { source: this.name, grade: null, checkedAt: now, presentHeaders: [], missingHeaders: [] };
+        // A fetch that does not grade is never a failing grade: we don't
+        // punish a vendor for a refusal or an outage. It is reported as what
+        // it was, so the sweep can mark the last grade stale.
+        const ungraded = (u: Ungraded): TlsSignal => {
+            logger.info('Vendor monitor could not grade a homepage', {
+                component: 'vendor-monitoring',
+                outcome: u.outcome,
+                detail: u.detail,
+            });
+            return { source: this.name, outcome: u.outcome, grade: null, checkedAt: now, presentHeaders: [], missingHeaders: [] };
+        };
 
         const start = vendorHomepageUrl(domain);
         if (!start) {
             logger.warn('Vendor monitor skipped a domain that is not a bare host name', { component: 'vendor-monitoring' });
-            return ungraded;
+            return ungraded({ outcome: 'BLOCKED', detail: 'not a bare host name' });
         }
+        let read: HomepageRead;
         try {
-            const headers = await this.fetchHomepageHeaders(start);
-            if (!headers) return ungraded;
-            const g = gradeSecurityHeaders(headers);
-            return {
-                source: this.name,
-                grade: g.grade,
-                checkedAt: now,
-                presentHeaders: g.presentHeaders,
-                missingHeaders: g.missingHeaders,
-            };
+            read = await this.fetchHomepageHeaders(start);
         } catch (err) {
             if (err instanceof SsrfBlockedError) {
-                // The reason names the cause: an unresolvable name, a private
-                // address, a hop to http. Each leaves the vendor ungraded.
+                // The reason names the cause: a private address, a hop to
+                // http, or a name that did not resolve. Only the last is not
+                // the guard's decision about the destination.
                 logger.warn('Vendor monitor did not request a URL the SSRF guard refused', {
                     component: 'vendor-monitoring',
                     reason: err.message,
                 });
+                return ungraded(
+                    err.kind === 'UNRESOLVED'
+                        ? { outcome: 'UNREACHABLE', detail: 'name did not resolve' }
+                        : { outcome: 'BLOCKED', detail: 'ssrf guard refused' },
+                );
             }
-            return ungraded;
+            return ungraded({ outcome: 'UNREACHABLE', detail: 'unexpected error' });
         }
+        if (!('headers' in read)) return ungraded(read);
+        const g = gradeSecurityHeaders(read.headers);
+        return {
+            source: this.name,
+            outcome: 'GRADED',
+            grade: g.grade,
+            checkedAt: now,
+            presentHeaders: g.presentHeaders,
+            missingHeaders: g.missingHeaders,
+        };
     }
 
     /**
      * The headers of the first 2xx answer, following redirects one checked hop
-     * at a time. Null when the homepage cannot be read within the bounds.
-     * Throws `SsrfBlockedError` when the start URL or any hop is refused.
+     * at a time, or what stopped the read. Throws `SsrfBlockedError` when the
+     * start URL or any hop is refused.
      */
-    private async fetchHomepageHeaders(startUrl: string): Promise<Record<string, string> | null> {
+    private async fetchHomepageHeaders(startUrl: string): Promise<HomepageRead> {
         const deadline = Date.now() + HOMEPAGE_FETCH_LIMITS.deadlineMs;
         let url = startUrl;
         for (let hop = 0; hop <= HOMEPAGE_FETCH_LIMITS.maxRedirects; hop++) {
-            let res: Response | null;
+            let attempt: AttemptResult;
             try {
-                res = await this.getWithRetry(url, deadline);
+                attempt = await this.getWithRetry(url, deadline);
             } catch (err) {
                 if (!(err instanceof RedirectNotAllowedError)) throw err;
-                if (!err.location) return null;
+                if (!err.location) return { outcome: 'UNREACHABLE', detail: `${err.status} redirect without a location` };
                 // Resolved against the URL that answered, then checked like
                 // the first one by the next `safeFetch`.
                 url = new URL(err.location, url).href;
                 continue;
             }
-            if (!res) return null;
+            if (!('res' in attempt)) return attempt;
             const headers: Record<string, string> = {};
-            res.headers.forEach((v, k) => { headers[k] = v; });
-            await discardBody(res);
-            return headers;
+            attempt.res.headers.forEach((v, k) => { headers[k] = v; });
+            await discardBody(attempt.res);
+            return { headers };
         }
-        return null;
+        return { outcome: 'UNREACHABLE', detail: 'redirect limit reached' };
     }
 
     /**
      * One URL, up to `maxAttempts` tries inside the deadline. Returns the 2xx
-     * response, or null for any other answer. A redirect and a refused address
-     * propagate as `safeFetch` throws them; neither is retried.
+     * response, or what the last try came to. A redirect and a refused address
+     * propagate as `safeFetch` throws them; neither is retried. Only a network
+     * failure, a 429 and a 5xx are retried; a challenge never is.
      */
-    private async getWithRetry(url: string, deadline: number): Promise<Response | null> {
+    private async getWithRetry(url: string, deadline: number): Promise<AttemptResult> {
         const retryDelayMs = this.opts.retryDelayMs ?? 1_000;
+        let last: Ungraded = { outcome: 'UNREACHABLE', detail: 'deadline reached' };
         for (let attempt = 1; attempt <= HOMEPAGE_FETCH_LIMITS.maxAttempts; attempt++) {
             const remaining = deadline - Date.now();
-            if (remaining <= 0) return null;
+            if (remaining <= 0) return last;
             let res: Response;
             try {
                 res = await safeFetch(url, {
@@ -187,15 +239,24 @@ export class HeaderGradeTlsProvider implements TlsProvider {
             } catch (err) {
                 if (err instanceof SsrfBlockedError || err instanceof RedirectNotAllowedError) throw err;
                 // Network failure or timeout: retry while time and attempts remain.
+                last = { outcome: 'UNREACHABLE', detail: 'network failure or timeout' };
                 if (attempt < HOMEPAGE_FETCH_LIMITS.maxAttempts) await sleep(retryDelayMs);
                 continue;
             }
-            if (res.ok) return res;
+            // Before `ok`: a challenge can ride on a 2xx, and must never be
+            // graded as the homepage or retried as an outage.
+            const challenge = recognisedChallenge(res.headers);
+            if (challenge) {
+                await discardBody(res);
+                return { outcome: 'REFUSED', detail: `${res.status} ${challenge} challenge` };
+            }
+            if (res.ok) return { res };
             await discardBody(res);
-            if (res.status !== 429 && res.status < 500) return null;
+            if (res.status !== 429 && res.status < 500) return { outcome: 'REFUSED', detail: String(res.status) };
+            last = { outcome: res.status === 429 ? 'REFUSED' : 'UNREACHABLE', detail: String(res.status) };
             if (attempt < HOMEPAGE_FETCH_LIMITS.maxAttempts) await sleep(retryDelayMs);
         }
-        return null;
+        return last;
     }
 }
 

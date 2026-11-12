@@ -201,8 +201,11 @@ function emitTurn(
     runId: string,
     usage: { input: number; output: number } | null,
     durationMs = 0,
+    /** Present on a call a DELEGATE made — the runtime's `taskId` (D-L3-1). */
+    taskId?: string,
 ): void {
     const event = {
+        ...(taskId ? { taskId } : {}),
         type: 'turn',
         turnId: `turn-${Math.random()}`,
         purpose: 'agent',
@@ -599,5 +602,83 @@ describe('the origin resolver is BUILT, and answers about real calls only', () =
         await executeFlueRun(CTX, 'run-origin', DEF, 0, Date.now(), 'anthropic/claude');
 
         expect(mockOriginFor?.('never-registered')).toBeUndefined();
+    });
+});
+
+describe('a worker\'s call is recorded as the worker\'s (D-L3-1)', () => {
+    const SUPERVISOR = 'inflect-external/claude-sonnet-5-5';
+    const WORKER = 'inflect-external/claude-haiku-4-5';
+
+    /** The MODEL_CALL ledger row's input. */
+    function modelCallInput(): Record<string, unknown> | undefined {
+        const call = stepped.mock.calls.find(([, , , kind]) => kind === 'MODEL_CALL');
+        return call ? ((call[4] as { input: Record<string, unknown> }).input) : undefined;
+    }
+
+    it('records a delegate\'s call under the worker model, and the parent\'s under the supervisor', async () => {
+        mockRead = async () => {
+            emitTurn('run-1', { input: 100, output: 10 });
+            emitTurn('run-1', { input: 40, output: 4 }, 0, 'task-1');
+            emitTurn('run-1', { input: 200, output: 20 });
+            return { text: 'done', metadata: {} };
+        };
+
+        await executeFlueRun(CTX, 'run-1', DEF, 0, Date.now(), SUPERVISOR, { workerModelSpecifier: WORKER });
+
+        expect(decisionRows().map((r) => `${r.provider}/${r.model}`)).toEqual([SUPERVISOR, WORKER, SUPERVISOR]);
+    });
+
+    it('labels the dispatch\'s tokens by role, and still charges the run the whole', async () => {
+        mockRead = async () => {
+            emitTurn('run-1', { input: 100, output: 10 });
+            emitTurn('run-1', { input: 40, output: 4 }, 0, 'task-1');
+            return { text: 'done', metadata: {} };
+        };
+
+        await executeFlueRun(CTX, 'run-1', DEF, 0, Date.now(), SUPERVISOR, { workerModelSpecifier: WORKER });
+
+        expect(modelCallInput()?.tokensByRole).toEqual({ supervisor: 110, worker: 44 });
+        expect(persistedCostTokens()).toBe(154);
+    });
+
+    it('records every call under the supervisor\'s model when no worker model is given', async () => {
+        mockRead = async () => {
+            emitTurn('run-1', { input: 100, output: 10 });
+            emitTurn('run-1', { input: 40, output: 4 }, 0, 'task-1');
+            return { text: 'done', metadata: {} };
+        };
+
+        await executeFlueRun(CTX, 'run-1', DEF, 0, Date.now(), SUPERVISOR);
+
+        expect(decisionRows().map((r) => `${r.provider}/${r.model}`)).toEqual([SUPERVISOR, SUPERVISOR]);
+    });
+
+    it('refuses a worker on another provider before anything is sent', async () => {
+        mockRead = async () => {
+            throw new Error('dispatched');
+        };
+
+        const outcome = await executeFlueRun(CTX, 'run-1', DEF, 0, Date.now(), SUPERVISOR, {
+            workerModelSpecifier: 'inflect-local/llama-3.1-70b',
+        });
+
+        expect(outcome.status).toBe('FAILED');
+        expect(String(failed.mock.calls[0]?.[2])).toMatch(/^flue_worker_route_mismatch: /);
+        expect(logged).not.toHaveBeenCalled();
+    });
+
+    it('refuses a run whose worker model the runtime did not register', async () => {
+        const registered = jest.requireMock('@/lib/agentic/flue/providers').flueModelIsRegistered as jest.Mock;
+        registered.mockImplementation((specifier: string) => specifier !== WORKER);
+        mockRead = async () => {
+            throw new Error('dispatched');
+        };
+        try {
+            await executeFlueRun(CTX, 'run-1', DEF, 0, Date.now(), SUPERVISOR, { workerModelSpecifier: WORKER });
+        } finally {
+            registered.mockImplementation(() => true);
+        }
+
+        expect(String(failed.mock.calls[0]?.[2])).toMatch(/^flue_model_not_registered: /);
     });
 });

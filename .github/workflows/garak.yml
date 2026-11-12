@@ -1,0 +1,347 @@
+name: garak (LLM red-team, nightly)
+
+# The LLM red-team of the COMPOSED system: guard + prompt + model + tools,
+# probed the way an attacker reaches them, through the product's own
+# endpoint. Modelled on dast.yml (boot app + Postgres + Redis, seed, log in
+# as seeded roles, scan, report, auto-issue, a dated deferral a guard
+# parses). Roadmap: docs/ai-architecture/garak.md, Phases 0 and 1.
+#
+#   - TARGET: POST /api/t/acme-corp/assistant/ask, the assistant's own
+#     NON-STREAMING route (feature gate -> rate limit -> input guard -> model
+#     + tool loop -> egress guard -> decision log). No test-only route is
+#     needed for it, so none exists. garak reaches it only through
+#     .garak/target-proxy.mjs, which holds the session cookie and the wire cap.
+#   - ROLES: owner and editor, SEQUENTIALLY in one job (not a matrix like
+#     DAST) because they share ONE nightly budget: the measured spend is read
+#     before each role starts (.garak/spend.mjs). The reader is NOT probed:
+#     the AI feature gate refuses a principal without canWrite with a plain
+#     403 before any guard or model call, so there is nothing behind it for
+#     garak to measure. One request checks that refusal instead, and a reader
+#     the gate ADMITS fails the step (the role list would then be wrong).
+#   - MODEL (D-EV-1, owner, 2026-11-11): Haiku-class (AGENT_FLUE_MODEL below)
+#     through the DEDICATED CI key in the repository secret
+#     GARAK_CI_ANTHROPIC_KEY, capped at USD 5 per night, seed data only. With
+#     the secret absent the job SKIPS cleanly (first step) and says so.
+#   - SPEND, three layers, each in config: garak's own prompt cap
+#     (.garak/config.yaml), the proxy's per-role wire cap and the product's
+#     per-tenant daily AI quota (both = .garak/budget.json), and the measured
+#     breaker between roles. tests/guardrails/garak-workflow-pinning.test.ts
+#     holds every number to budget.json.
+#   - NON-BLOCKING until the date below, under a dated marker that
+#     tests/guardrails/garak-workflow-pinning.test.ts PARSES and compares to
+#     today (the DAST lesson: a marker nobody parses never turns red).
+#     GARAK-NON-BLOCKING-UNTIL: 2027-02-28
+#     Phase 2 replaces the deferral with .garak/thresholds.json and
+#     .garak/assert-thresholds.mjs and deletes this marker.
+#   - Runs no Jest, so it is NOT in the coverage partition
+#     (tests/guardrails/coverage-gate-population.test.ts) and uploads no
+#     coverage artifact.
+#   - Unreachable from a pull request by design (schedule + dispatch only);
+#     registered in tests/guardrails/ci-checks-unreachable-before-merge.json.
+on:
+  workflow_dispatch:
+  schedule:
+    # 01:15 UTC daily: clear of the 03:30 load test and the 04:00 DAST
+    # baseline, so three full-app boots never compete for a runner.
+    - cron: '15 1 * * *'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  garak:
+    name: garak (assistant, owner/editor)
+    runs-on: ubuntu-latest
+    # ~25 min boot and build, then two roles under `timeout 55m` each.
+    timeout-minutes: 150
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: ci_testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # The dast.yml boot, plus the model and the product's own AI quota.
+    env:
+      DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public&pgbouncer=true
+      DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      REDIS_URL: redis://localhost:6379
+      AUTH_TEST_MODE: '1'
+      # Same exemption as dast.yml: a PRODUCTION build booted with
+      # AUTH_TEST_MODE=1 on a CI runner (src/instrumentation.ts + src/env.ts).
+      SYNTHETIC_TEST_HARNESS: '1'
+      RATE_LIMIT_ENABLED: '0'
+      AUTH_SECRET: ci-garak-secret-do-not-use-in-prod
+      NEXTAUTH_URL: http://localhost:3006
+      NEXTAUTH_SECRET: ci-garak-secret-do-not-use-in-prod
+      DATA_ENCRYPTION_KEY: ci-garak-data-encryption-key-32bytes
+      PORT: '3006'
+      SKIP_ENV_VALIDATION: '1'
+      # D-EV-1: the Haiku-class model the assistant runs on for this job.
+      AGENT_FLUE_MODEL: claude-haiku-4-5
+      # The product's own pre-flight cap on assistant generations per tenant
+      # per day (src/app-layer/ai/risk-assessment/rate-limiter.ts) =
+      # budget.json maxRequestsPerNight. The per-user burst limit is raised so
+      # garak is not throttled into retries.
+      AI_RISK_DAILY_QUOTA: '100'
+      AI_RISK_USER_RPM: '60'
+      TENANT_SLUG: acme-corp
+
+    steps:
+      # ── Skip cleanly without the CI key ──
+      # Secrets cannot be read in a job-level `if:`, so the first step decides
+      # and every later step reads its output. Absent key: a notice, a green
+      # job, nothing booted and nothing sent anywhere.
+      - name: Check for the garak CI key
+        id: key
+        env:
+          KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::notice::GARAK_CI_ANTHROPIC_KEY is not set; the garak nightly is skipped (owner action in docs/ai-architecture/garak.md)."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.key.outputs.present == 'true'
+
+      - name: Setup Node + Prisma client
+        if: steps.key.outputs.present == 'true'
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: '24'
+
+      - name: Create PostgreSQL roles for RLS
+        if: steps.key.outputs.present == 'true'
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;
+          END $$;
+          GRANT app_user TO ci;
+          GRANT app_user TO postgres;
+          SQL
+
+      - name: Apply migrations + seed
+        if: steps.key.outputs.present == 'true'
+        run: |
+          npx prisma migrate deploy
+          npm run db:seed
+
+      - name: Build app
+        if: steps.key.outputs.present == 'true'
+        env:
+          NODE_ENV: production
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: npm run build
+
+      - name: Start app (background)
+        if: steps.key.outputs.present == 'true'
+        env:
+          NODE_ENV: production
+          ANTHROPIC_API_KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY }}
+        run: |
+          npm start > /tmp/app.log 2>&1 &
+          echo $! > /tmp/app.pid
+
+      - name: Wait for /api/health
+        if: steps.key.outputs.present == 'true'
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3006/api/health > /dev/null 2>&1; then
+              echo "App is up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "App failed to start within 60s."; tail -n 100 /tmp/app.log || true; exit 1
+
+      # The scanner image: python:3.12-slim BY DIGEST + garak by exact version
+      # (.garak/Dockerfile). Python never enters the app (G5).
+      - name: Build the garak image
+        if: steps.key.outputs.present == 'true'
+        run: docker build -t inflect-garak:ci .garak
+
+      # A probe name garak does not know would be skipped with a warning and
+      # the night would quietly probe less. Refuse instead. The parser of
+      # garak's `--list_probes` format is .garak/verify-probes.mjs, tested
+      # against that format (a coloured `probes: ` label, then the name with
+      # its `probes.` prefix stripped).
+      - name: Verify every configured probe exists in this garak
+        if: steps.key.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          docker run --rm inflect-garak:ci --list_probes > /tmp/probes.txt
+          node .garak/verify-probes.mjs /tmp/probes.txt .garak/config.yaml
+
+      # ── The scan, one role at a time, one budget ──
+      # NON-BLOCKING: continue-on-error is allowed here ONLY beside the dated
+      # GARAK-NON-BLOCKING-UNTIL marker in this file's header, which
+      # tests/guardrails/garak-workflow-pinning.test.ts parses. The step still
+      # exits non-zero when any role's scan failed, so a scan that never ran
+      # shows as an orange step, not a quiet green one.
+      - name: Run garak against the assistant (owner, editor)
+        id: scan
+        if: steps.key.outputs.present == 'true'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          MAX_PER_ROLE="$(node -p 'require("./.garak/budget.json").maxRequestsPerRole')"
+          mkdir -p garak-out
+          chmod 777 garak-out
+          status=0
+          refused_output=0
+
+          # NextAuth credentials login (dast.yml's flow); prints the session token.
+          login() {
+            local jar csrf
+            jar="$(mktemp)"
+            csrf="$(curl -fsS -c "$jar" http://localhost:3006/api/auth/csrf | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(JSON.parse(d).csrfToken))')"
+            curl -fsS -c "$jar" -b "$jar" -X POST http://localhost:3006/api/auth/callback/credentials \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode "csrfToken=$csrf" --data-urlencode "email=$1" \
+              --data-urlencode "password=password123" --data-urlencode "callbackUrl=http://localhost:3006/" \
+              --data-urlencode "json=true" -o /dev/null
+            awk '$6=="next-auth.session-token"{print $7}' "$jar"
+            rm -f "$jar"
+          }
+
+          # The reader: one request, expected to be refused by the feature gate
+          # (403, no ai_guard_ in the body) before any guard or model call.
+          READER_SESSION="$(login viewer@acme.com)"
+          if [ -z "$READER_SESSION" ]; then
+            echo "::error::login failed for reader"; status=1; gate=UNKNOWN; code=0
+          else
+            echo "::add-mask::$READER_SESSION"
+            code="$(curl -sS -o /tmp/reader.body -w '%{http_code}' -X POST "http://localhost:3006/api/t/${TENANT_SLUG}/assistant/ask" \
+              -H 'Content-Type: application/json' -H 'Origin: http://localhost:3006' \
+              -b "next-auth.session-token=${READER_SESSION}" --data '{"question":"What can you help me with?"}')"
+            if [ "$code" = "403" ] && ! grep -q 'ai_guard_' /tmp/reader.body; then gate=REFUSED
+            else gate=ADMITTED; status=1
+              echo "::error::the AI feature gate did not refuse the reader (HTTP ${code}); add the reader to the probed roles and the budget"
+            fi
+          fi
+          echo "{\"role\":\"reader\",\"probed\":false,\"featureGate\":\"${gate}\",\"httpStatus\":\"${code:-none}\"}" > garak-out/reader.gate.json
+
+          for pair in owner:admin@acme.com editor:editor@acme.com; do
+            role="${pair%%:*}"; email="${pair#*:}"
+
+            # Measured breaker: what tonight has cost so far, read from the
+            # product's own decision log, plus the turns the egress guard
+            # withheld (no row) at the planned cost.
+            read -r tin tout < <(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tA -F ' ' \
+              -c 'SELECT COALESCE(SUM("tokensIn"),0), COALESCE(SUM("tokensOut"),0) FROM "AiDecisionLog" WHERE feature = '"'"'assistant'"'"'')
+            echo "Spent before ${role}: \$$(node .garak/spend.mjs usd "$tin" "$tout") (${tin} in / ${tout} out)"
+            if ! node .garak/spend.mjs may-continue "$tin" "$tout" "$refused_output"; then
+              echo "::warning::garak: the night's budget cannot fit role ${role}; stopping before it."
+              echo "{\"role\":\"${role}\",\"skipped\":\"BUDGET\"}" > "garak-out/${role}.skipped.json"
+              continue
+            fi
+
+            SESSION="$(login "$email")"
+            if [ -z "$SESSION" ]; then echo "::error::login failed for ${role}"; status=1; continue; fi
+            echo "::add-mask::$SESSION"
+
+            mkdir -p "garak-out/${role}"; chmod 777 "garak-out/${role}"
+            GARAK_TARGET_URL="http://localhost:3006/api/t/${TENANT_SLUG}/assistant/ask" \
+            GARAK_SESSION_COOKIE="next-auth.session-token=${SESSION}" \
+            GARAK_MAX_REQUESTS="$MAX_PER_ROLE" \
+            GARAK_LEDGER="garak-out/${role}/ledger.json" \
+              node .garak/target-proxy.mjs & proxy=$!
+            sleep 1
+
+            # The exit code is part of the record: a run the timeout killed
+            # (124) or garak abandoned is never a complete night.
+            garak_exit=0
+            timeout 55m docker run --rm --network host \
+              -e XDG_DATA_HOME=/work/data \
+              -v "$PWD/.garak:/cfg:ro" -v "$PWD/garak-out/${role}:/work/data" \
+              inflect-garak:ci --config /cfg/config.yaml --report_prefix "garak-${role}" \
+              || garak_exit=$?
+            echo "$garak_exit" > "garak-out/${role}/garak-exit"
+            if [ "$garak_exit" != "0" ]; then echo "::error::garak exited ${garak_exit} for ${role}"; status=1; fi
+
+            kill "$proxy" 2>/dev/null || true
+            wait "$proxy" 2>/dev/null || true
+            refused_output=$(( refused_output + $(node -p "require('./garak-out/${role}/ledger.json').guardRefusedOutput") ))
+          done
+          exit "$status"
+
+      - name: Summarise per role (record + job summary)
+        if: always() && steps.key.outputs.present == 'true'
+        run: |
+          set -uo pipefail
+          mkdir -p garak-records
+          spec="$(node --input-type=module -e 'import { load } from "js-yaml"; import { readFileSync } from "node:fs"; process.stdout.write(load(readFileSync(".garak/config.yaml","utf8")).plugins.probe_spec)')"
+          for role in owner editor; do
+            if [ ! -f "garak-out/${role}/ledger.json" ]; then
+              echo "### garak — ${role}: not run" >> "$GITHUB_STEP_SUMMARY"; continue
+            fi
+            report="$(find "garak-out/${role}" -name '*.report.jsonl' | head -n 1)"
+            node .garak/summarise.mjs "${report:-/nonexistent}" "garak-out/${role}/ledger.json" .garak/allowlist.tsv "$role" \
+              --probes "$spec" --garak-exit "$(cat "garak-out/${role}/garak-exit" 2>/dev/null || echo unknown)" \
+              --md "garak-records/${role}.md" > "garak-records/${role}.json"
+            cat "garak-records/${role}.md" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "### garak — reader: not probed (feature gate: $(node -p 'require("./garak-out/reader.gate.json").featureGate' 2>/dev/null || echo 'not checked'))" >> "$GITHUB_STEP_SUMMARY"
+          read -r tin tout < <(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tA -F ' ' \
+            -c 'SELECT COALESCE(SUM("tokensIn"),0), COALESCE(SUM("tokensOut"),0) FROM "AiDecisionLog" WHERE feature = '"'"'assistant'"'"'')
+          usd="$(node .garak/spend.mjs usd "$tin" "$tout")"
+          echo "Measured recorded spend: \$${usd} (${tin} in / ${tout} out) against a cap of \$$(node -p 'require("./.garak/budget.json").nightlyCapUsd')" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload garak reports + records
+        if: always() && steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: garak-nightly
+          path: |
+            garak-out/**/*.report.jsonl
+            garak-out/**/*.report.html
+            garak-out/**/ledger.json
+            garak-out/*.skipped.json
+            garak-out/reader.gate.json
+            garak-out/**/garak-exit
+            garak-records/
+          if-no-files-found: warn
+          retention-days: 14
+
+      # ── Auto-issue on hits (dast.yml's issue_title pattern, by hand) ──
+      # One open issue, updated nightly while anything hits. Counts only;
+      # probe text and model answers stay in the artifact.
+      - name: Open or update the garak findings issue
+        if: always() && steps.key.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: 'garak nightly findings (LLM red-team)'
+        run: |
+          set -euo pipefail
+          hits="$(node -e 'const fs=require("fs");let n=0;for(const f of fs.readdirSync("garak-records").filter(f=>f.endsWith(".json"))){const r=JSON.parse(fs.readFileSync("garak-records/"+f,"utf8"));for(const x of r.raw)n+=x.hits}console.log(n)')"
+          if [ "$hits" = "0" ]; then echo "No hits tonight; no issue written."; exit 0; fi
+          body="$(cat garak-records/*.md)"$'\n\n'"Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          existing="$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number,title --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -n 1)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$TITLE" --body "$body"
+          fi

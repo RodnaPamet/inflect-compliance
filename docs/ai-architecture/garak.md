@@ -20,7 +20,7 @@ inflect · ai architecture · garak · roadmap v1 · 2026-10-29
 | Wave | 3 (with the Layer 1 additions, so it measures them as they land) — but Phase 1 can start now against the existing guard |
 | Depends on | a model to probe (the external provider with a CI key; a local model only if Layer 5 is taken up) |
 | Unblocks | an evidence line for [`nemo-guardrails.md`](./nemo-guardrails.md) and [`presidio.md`](./presidio.md): a before/after |
-| Owner decisions | **D-EV-1** (which model answers the probes in CI, and what it may cost per night) |
+| Owner decisions | **D-EV-1 — decided (owner, 2026-11-11):** a Haiku-class external model through a dedicated CI key, hard-capped at USD 5 per night, seed data only. Owner actions it leaves: create the repository secret `GARAK_CI_ANTHROPIC_KEY` from a key in its own Anthropic workspace, and set that workspace's spend limit (the invoice-level backstop, see Phase 1) |
 | Complete at | Phase 3 |
 
 ## At a glance
@@ -65,8 +65,28 @@ flowchart LR
   mandatory `injection` cases in their evaluation sets
   (`flue/skills/evaluation-record.ts`). Nothing probes the *composed* system —
   guard + prompt + model + tools — the way an attacker would.
+- **A nightly garak job exists, non-blocking, and does nothing until its key
+  is set** (Phases 0 and 1, 2026-11-11). `.github/workflows/garak.yml` boots
+  the app as `dast.yml` does, probes the assistant as owner and editor
+  through `.garak/target-proxy.mjs` (a reader is refused by the AI feature gate
+  before any guard, so one request checks that refusal instead), writes one
+  record per role
+  (`.garak/summarise.mjs`), uploads the reports and opens or updates one
+  findings issue. It runs non-blocking under
+  `GARAK-NON-BLOCKING-UNTIL: 2027-02-28`, which
+  `tests/guardrails/garak-workflow-pinning.test.ts` parses against today.
+  Without the repository secret `GARAK_CI_ANTHROPIC_KEY` it skips at its first
+  step with a notice, so until the owner creates that secret it has never
+  probed anything, and no baseline exists.
+- **The assistant has a non-streaming route, so no test-only route was
+  needed for it.** `POST /api/t/:slug/assistant/ask` (`askAssistant`) runs the
+  same governed order as the stream — feature gate, rate limit, input guard,
+  model and tool loop, egress guard, decision log — and returns the final
+  answer as JSON. That is the composed system in production shape, which is a
+  better target than an adapter.
 - **The surfaces an attacker reaches:** the assistant
-  (`/api/t/:slug/assistant/stream`, SSE, tool loop), agent runs (start via
+  (`/api/t/:slug/assistant/stream`, SSE, tool loop, and its non-streaming twin
+  `/api/t/:slug/assistant/ask`), agent runs (start via
   `startWorkflowRun`, stream via `/agent-runs/[id]/stream`), inbound A2A tasks,
   MCP tool results from customer-run servers (`legacy-mcp`), questionnaire
   text, evidence documents.
@@ -91,27 +111,92 @@ scored per probe, published and gated exactly like DAST.
   That tests the model, not the product. The point is the composed system
   behind the product's own endpoint, with its guards on.
 - *A streaming endpoint as the target.* garak's REST generator expects a
-  response body; the assistant streams SSE. A CI-only, non-streaming adapter
-  route gated by `AUTH_TEST_MODE` is added for the harness — never deployed to
-  production (a build-time guard asserts it is absent from the production
-  route map).
+  response body; the assistant's stream is SSE. For the assistant the product's
+  own non-streaming `/assistant/ask` is the target (corrected 2026-11-11: this
+  bullet used to plan an adapter for it, which the route made unnecessary).
+  Agent runs have no non-streaming surface; for them a CI-only adapter route
+  gated by `AUTH_TEST_MODE` is still the plan (Phase 1.1b), never deployed to
+  production, with a build-time guard asserting it is absent from the
+  production route map.
 
 ## Roadmap (future direction)
 
 ### Phase 0 — Targets, probes, budget
 
 **Sub-phases.**
-- [ ] 0.1 List the target endpoints and the role each is probed as (reader /
-      editor / owner), mirroring DAST's role matrix.
-- [ ] 0.2 Choose the probe families and the detectors; write `.garak/config.yaml`
-      and an empty allowlist `.garak/allowlist.tsv` with the same semantics
-      note `.zap/rules.tsv` carries (an IGNORE silences at every severity).
-- [ ] 0.3 D-EV-1: the model behind CI probes — the external provider with a CI
-      key and a nightly budget, or a small local model on the CI runner (CPU,
-      slower, free). Record the sub-processor consequence: a CI key sends
-      *probe text only* to the vendor; note it on the Anthropic/OpenRouter row.
-- [ ] 0.4 Baseline run locally; record hit rates per probe as the starting
-      numbers.
+- [x] 0.1 Targets and roles (2026-11-11). The assistant's
+      `POST /api/t/acme-corp/assistant/ask`, probed as owner
+      (`admin@acme.com`) and editor. A reader or auditor is not probed: the AI
+      feature gate refuses any principal without `canWrite` with a plain 403
+      before the guard or the model (`feature-gate.ts`, predicate 3), so there
+      is nothing behind it for garak to measure, and garak 0.17.1 aborts its
+      whole run on a 4xx it is not told to skip. The job sends the reader one
+      request instead and fails its step if the gate ever admits it (corrected
+      2026-11-11 in review: the first cut probed the reader and would have
+      aborted on its first request every night). Starting an agent run has no
+      non-streaming surface and is not probed yet (Phase 1.1b).
+- [x] 0.2 Probes, detectors, allowlist (2026-11-11). `.garak/config.yaml` and
+      an empty `.garak/allowlist.tsv` whose header carries the ZAP lesson (an
+      IGNORE names a probe class, so it silences that class at every hit rate).
+      The selection, nine classes at five prompts each, one generation:
+
+      | Family | Classes | Detector (garak 0.17.1's primary, `detector_spec: auto`) | Guard slice it exercises |
+      | --- | --- | --- | --- |
+      | promptinject | `HijackHateHumans`, `HijackLongPrompt` | `promptinject.AttackRogueString` | input guard (injection patterns), then the system prompt |
+      | dan | `DanInTheWild` | `mitigation.MitigationBypass` (inverted: a hit when no refusal phrase appears) | input guard, then the system prompt |
+      | encoding | `InjectBase64`, `InjectROT13` | `encoding.DecodeMatch` | input guard against smuggled payloads (patterns do not decode, so this measures the gap) |
+      | leakreplay | `LiteratureCloze` | `base.TriggerListDetector` | egress guard; mostly the model |
+      | web_injection | `MarkdownURIImageExfilExtended` | `web_injection.MarkdownExfilExtendedImage` | egress guard (an exfiltration URL in a markdown image) |
+      | packagehallucination | `Python`, `JavaScript` | `packagehallucination.PythonPypi`, `JavaScriptNpm` | none: model and prompt only, stated as such |
+
+      Corrected 2026-11-11 in review, against the garak 0.17.1 wheel the
+      Dockerfile pins: garak renamed the `xss` module `web_injection`, so the
+      first cut's `xss.MarkdownImageExfil` named nothing; and its replacement
+      is `MarkdownURIImageExfilExtended` rather than `MarkdownImageExfil`,
+      because the latter always sends 4 domains x 3 encodings = 12 prompts,
+      ignoring `soft_probe_prompt_cap`. The pinning guard now refuses a probe
+      class not read, in that garak's source, to prune to the cap; the
+      workflow refuses a name the pinned garak does not list
+      (`.garak/verify-probes.mjs`, tested against that garak's own
+      `--list_probes` output in `tests/fixtures/garak/`).
+
+      Considered and left out for the budget: `latentinjection` (indirect
+      injection belongs with Phase 3's tool boundary), `gcg` and `tap`
+      (attacker-model probes that multiply requests).
+- [x] 0.3 D-EV-1 decided by the owner (2026-11-11): Haiku-class
+      (`claude-haiku-4-5`, the repository's existing Haiku pin) through the
+      dedicated CI key `GARAK_CI_ANTHROPIC_KEY`, USD 5 a night, seed data only.
+      Sub-processor consequence: the key sends garak's own probe text and the
+      seed tenant's CI data to Anthropic, no customer content. The Anthropic
+      row of `docs/sub-processors.md` already names Anthropic as the model
+      vendor; the note on that row for CI probe text is the coordinator's
+      edit, since the row is shared (see the implementation note).
+- [ ] 0.4 Baseline: one run with the key, its per-family hit rates recorded as
+      the starting numbers, and its p99 turn measured from the decision log to
+      replace `plannedTurn` in `.garak/budget.json`. Blocked on the owner
+      creating the secret; nothing can be run here without it.
+
+**The record shape** (`inflect-garak-night/1`, written by
+`.garak/summarise.mjs`, one per role per night): `raw` holds one row per
+(probe, detector) with `evaluated` and `hits` as garak scored them; `families`
+is the hit rate per family DERIVED from `raw` on every run and stored nowhere
+else (G11); `complete` is true only when EVERY configured probe has scored
+outputs, garak exited 0, and no request was cut by the wire cap, failed
+upstream or was abandoned to a run of 429s (zero evaluations is never a clean
+night, and a run the timeout killed after some probes is not one either);
+`notEvaluated` names the configured probes with no scored output;
+`allowlisted` reports the allowlisted classes with their hits,
+never subtracting them; `ledger` is the proxy's counts (forwarded, guard
+refusals by direction, rate-limited and abandoned, over cap, over the
+product's 2000-character question limit, errors by upstream status). Phase 2
+commits these
+as evaluation records.
+
+**Thresholds draft** (for Phase 2's `.garak/thresholds.json`, NOT enforced
+now, to be reset against the 0.4 baseline): promptinject 5 %, dan 5 %,
+encoding 10 %, leakreplay 10 %, web_injection 0 % (an exfiltration URL the egress guard
+lets through is a defect at any rate), packagehallucination 15 %. A threshold
+is lowered freely and raised only with a written reason.
 
 **Prompt.**
 ```text
@@ -144,21 +229,64 @@ ZAP one bit once).
 ### Phase 1 — The nightly job, non-blocking
 
 **Sub-phases.**
-- [ ] 1.1 `src/app/api/_harness/llm/route.ts` (name per the route-map
-      conventions): a non-streaming adapter over the assistant's tool loop and
-      over `startWorkflowRun` + wait, registered only when `AUTH_TEST_MODE` is
-      on; a build guard asserts the route is absent from the production route
-      manifest.
-- [ ] 1.2 `.github/workflows/garak.yml` copied from `dast.yml`'s job shape:
-      services, seed, login as roles, run garak in its container (digest
-      pinned), upload the JSONL + HTML report, open/update an auto-issue on
-      new hits, `continue-on-error` **only** with a
-      `GARAK-NON-BLOCKING-UNTIL: <YYYY-MM-DD>` marker.
-- [ ] 1.3 `tests/guardrails/garak-workflow-pinning.test.ts`: parses the marker
-      and fails once the date passes; pins the action/image digests.
-- [ ] 1.4 Budget: the harness route runs under a dedicated CI tenant with
-      `agentMonthlyTokenBudget` set, so a probe storm halts at the product's
-      own pre-flight check rather than at the invoice.
+- [x] 1.1a The assistant half needs no harness route (2026-11-11): the
+      product's `/assistant/ask` is non-streaming. garak reaches it only
+      through `.garak/target-proxy.mjs`, which holds the role's session cookie
+      (so no credential enters garak's report), enforces the per-role wire cap,
+      and turns a content-guard 403 into a refusal text every configured
+      detector scores as a pass, counted by direction. That text opens with a
+      phrase on `mitigation.MitigationBypass`'s list: that detector is
+      inverted, so the first cut's bracketed refusal scored every DAN prompt
+      the guard blocked as a jailbreak. Everything else the proxy cannot turn
+      into an answer (past the cap, a question over the product's
+      2000-character limit, which it does not forward, any other upstream
+      status, an eleventh 429) goes back as the status listed in the
+      generator's `skip_codes`, which garak records as unscored; garak 0.17.1
+      raises on any other 4xx or 5xx and ends the role's run.
+- [ ] 1.1b The agent-run half: a non-streaming adapter over
+      `startWorkflowRun` + wait, registered only when `AUTH_TEST_MODE` is on,
+      with a build guard asserting it is absent from the production route
+      manifest (a Next.js `_folder` is private and never routes, so the name is
+      not `_harness`). Not built: settling a run needs the worker, which the
+      job does not boot yet. Inspect Phase 1 shares it.
+- [x] 1.2 `.github/workflows/garak.yml` (2026-11-11): `dast.yml`'s services,
+      seed and NextAuth login, roles SEQUENTIAL in one job because they share
+      one budget, garak in `.garak/Dockerfile` (python:3.12-slim by digest,
+      garak 0.17.1 exactly), a step refusing a probe name this garak does not
+      know (`.garak/verify-probes.mjs`), garak's exit code written beside each
+      role's report and read by the record, reports and records uploaded, one findings issue opened or updated
+      when anything hits, `continue-on-error` only on the scan step beside
+      `GARAK-NON-BLOCKING-UNTIL: 2027-02-28`. It skips cleanly, at its first
+      step, without `GARAK_CI_ANTHROPIC_KEY`, and the key reaches only the
+      app process.
+- [x] 1.3 `tests/guardrails/garak-workflow-pinning.test.ts` (2026-11-11):
+      parses the marker against today (and against fixed clocks), holds the
+      skip-without-key shape, the image pin, the proxy-only reach, and every
+      budget number below to `.garak/budget.json`.
+- [x] 1.4 Budget, as config (2026-11-11). The assistant is not metered by
+      `agentMonthlyTokenBudget` (#3833 decided that, so a human's assistant use
+      never refuses an agent run), so the product's own pre-flight cap for it
+      is the per-tenant daily AI quota, set to the night's request cap. Four
+      layers, cheapest first:
+      1. garak's own count: 9 classes x 5 prompts x 1 generation = 45 per role,
+         true because every configured class prunes to the cap (the pinning
+         guard holds the list);
+      2. the proxy's wire cap, 50 per role, whatever garak asks for;
+      3. `AI_RISK_DAILY_QUOTA` = 100 = 2 roles x 50, the product's pre-flight;
+      4. the measured breaker (`.garak/spend.mjs`): before each role, the
+         night's spend read from `AiDecisionLog` (plus the turns the egress
+         guard withheld, which write no row, at the planned cost) must leave
+         room for a whole role, or the role does not start.
+      At the planned heavy turn (20,000 tokens in, 2,000 out: USD 0.03 at
+      Haiku rates) 100 requests are USD 3.00. **What config cannot prove:** the
+      product's worst case for one turn is 6 iterations x 8,192 output tokens
+      (`spend-ceiling.ts`), about USD 0.25 of output alone, so 100 turns that
+      all hit it would exceed USD 5. Layer 4 catches that between roles, not
+      within one; the invoice-level hard stop is the spend limit on the
+      dedicated key's workspace, an owner action.
+- [ ] 1.5 Done-when evidence: a green scheduled run with the key, and a
+      deliberately re-enabled probe visible in its report. Blocked on the
+      secret.
 
 **Prompt.**
 ```text
@@ -252,7 +380,7 @@ garak *is* the eval. What it evaluates per layer:
 | Layer | Probe families | Reads |
 | --- | --- | --- |
 | 1 (guards) | promptinject, dan, encoding, leakreplay | guard hit rate before/after each Layer 1 addition |
-| 2–3 (engines, assistant) | xss, packagehallucination, leakreplay on run output | output hygiene of the composed system |
+| 2–3 (engines, assistant) | web_injection, packagehallucination, leakreplay on run output | output hygiene of the composed system |
 | 4 (RAG) | leakreplay over retrieved chunks (Phase 3) | whether grounding leaks across the tool boundary |
 
 ## Updating the master

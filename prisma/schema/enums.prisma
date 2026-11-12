@@ -2126,6 +2126,38 @@ enum AgentProfileOutputKind {
   ANSWER_AND_PROPOSALS
 }
 
+/// The payment rail an agent's declared spending authority runs on
+/// (docs/ai-architecture/mastercard-agent-pay.md, D-L1-9). AGENT_PAY_TOKEN is a
+/// Mastercard Agentic Token, AP4M is Agent Pay for Machines (x402), OTHER is any
+/// rail Inflect has no name for yet.
+enum AgentSpendingRail {
+  AGENT_PAY_TOKEN
+  AP4M
+  OTHER
+}
+
+/// Lifecycle of one declared spending authority (Phase 1 of the Agent Pay
+/// roadmap). DECLARED is unreviewed: a declaration or a widening nobody else has
+/// looked at, and an agent holding one cannot be activated. REVIEWED is a second
+/// person's review of exactly that envelope. SUSPENDED_REQUESTED is set by an
+/// AGENT-scope kill or an orphan containment: a person has been asked to suspend
+/// the token at its requestor, and lifting the kill does not reverse it.
+/// WITHDRAWN is a declaration taken away. Re-declaring from SUSPENDED_REQUESTED
+/// or WITHDRAWN is a widening and starts at DECLARED again.
+enum AgentSpendingAuthorityStatus {
+  DECLARED
+  REVIEWED
+  SUSPENDED_REQUESTED
+  WITHDRAWN
+}
+
+/// The window an agent's period budget covers.
+enum AgentSpendingBudgetPeriod {
+  DAY
+  WEEK
+  MONTH
+}
+
 /// Lifecycle of one version of a tenant-authored skill (#3680, step 4c). A
 /// version's text never changes: an edit is a NEW version, which starts here at
 /// DRAFT. DRAFT → IN_REVIEW (submitted, with a passing evaluation record) →
