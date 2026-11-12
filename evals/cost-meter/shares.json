@@ -1,5 +1,5 @@
 {
-    "decision": "D-EV-1 and D-EV-2 (owner, 2026-11-11): one USD 5 nightly CI cap on the dedicated CI key, shared by garak and Ragas. The SPLIT below (USD 2.50 each) is NOT an owner decision: it is the proposed default of D-EV-11, which docs/ai-architecture-roadmap.md lists as open until the owner initials it. A share moves only by an edit here, which the guard re-checks: the shares never sum above the cap, and the cap is never above USD 5.00.",
+    "decision": "D-EV-1 and D-EV-2 (owner, 2026-11-11): one USD 5 nightly CI cap on the dedicated CI key, shared by garak and Ragas. The SPLIT below (USD 2.50 each) is D-EV-11 (owner, 2026-11-12). A share moves only by an edit here, which the guard re-checks: the shares never sum above the cap, and the cap is never above USD 5.00.",
     "nightlyCapUsd": 5,
     "shares": {
         "garak": {

@@ -5,8 +5,8 @@
  *
  * One USD 5 nightly cap on the dedicated CI key (decided: D-EV-1, D-EV-2),
  * split into per-job SHARES (`shares.json`). The split itself — USD 2.50 each
- * — is D-EV-11's PROPOSED default, open in the master roadmap until the owner
- * initials it; the meter enforces whatever split the file states. Every number that turns tokens
+ * — is D-EV-11 (owner, 2026-11-12); the meter enforces whatever split the
+ * file states. Every number that turns tokens
  * into dollars comes from ONE pinned price table (`prices.json`), keyed by
  * model id, and a record names the table it was priced under by
  * `priceTableHash` — the SHA-256 of the file's exact bytes, so a reformatted
@@ -39,7 +39,7 @@ import { pathToFileURL } from 'node:url';
 /**
  * The owner's decided ceiling (D-EV-1, D-EV-2: USD 5 a night, one shared
  * cap). `shares.json` may state a LOWER nightly cap; nothing in a file can
- * raise this one. How it is split between jobs is NOT decided (D-EV-11).
+ * raise this one. How it is split between jobs is D-EV-11 (`shares.json`).
  */
 export const DECIDED_NIGHTLY_CAP_USD = 5;
 

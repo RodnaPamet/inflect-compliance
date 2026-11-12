@@ -87,8 +87,8 @@ flowchart LR
   its `status` and the hash of the price table it was metered under, and the
   retrieval floor figures are recomputed from per-case probes.
   `evals/cost-meter/` holds the pinned price table, the per-job shares
-  (garak and Ragas, USD 2.50 each: D-EV-11's proposed default split, open in
-  the master roadmap until the owner initials it) and the meter garak's between-role breaker
+  (garak and Ragas, USD 2.50 each: the split the owner decided under D-EV-11
+  on 2026-11-12) and the meter garak's between-role breaker
   already reads; `tests/guardrails/eval-cost-meter-shares.test.ts` refuses
   shares above USD 5.00 and an unpriced model.
 - **Python runs nowhere in the app image** (G5). An eval harness in Python is
@@ -184,9 +184,8 @@ shape so the mount gate can consume it.
       (`MODEL_NOT_PRICED`) or over the job's share (`SPEND_OVER_SHARE`).
       `evals/cost-meter/`, shared with [`garak.md`](./garak.md): a pinned
       price table keyed by model id (`prices.json`), the shares
-      (`shares.json`, garak and Ragas USD 2.50 each, the proposed default of
-      D-EV-11, which is open: the shared USD 5 cap is decided, the split is
-      not), and `meter.mjs`, which
+      (`shares.json`, garak and Ragas USD 2.50 each, the split the owner
+      decided under D-EV-11 on 2026-11-12), and `meter.mjs`, which
       reserves each call at counted input plus `max_tokens` before it is sent,
       refuses the call that could pass the share, settles to reported usage
       (keeping the worst case when none comes back or it cannot be read), and refuses shares that

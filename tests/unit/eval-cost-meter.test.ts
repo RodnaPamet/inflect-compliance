@@ -140,7 +140,7 @@ describe('cost meter: shares never pass the decided USD 5', () => {
     const problems = (shares: string) => inMeter<string[]>(`return m.shareProblems(${shares}, ${TABLE});`);
     const share = (usd: number, model = 'claude-haiku-4-5') => `{ usd: ${usd}, model: '${model}' }`;
 
-    it('accepts the proposed default split (D-EV-11, open: USD 2.50 each)', () => {
+    it('accepts the decided split (D-EV-11: USD 2.50 each)', () => {
         expect(problems(`{ nightlyCapUsd: 5, shares: { garak: ${share(2.5)}, ragas: ${share(2.5)} } }`)).toEqual([]);
     });
 

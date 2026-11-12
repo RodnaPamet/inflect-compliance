@@ -280,7 +280,7 @@ ZAP one bit once).
       At the planned heavy turn (20,000 tokens in, 2,000 out: USD 0.03 at
       Haiku rates) 80 requests are USD 2.40, inside garak's USD 2.50 share of
       the USD 5 cap it shares with Ragas (`evals/cost-meter/`; the split is
-      D-EV-11's proposed default, open). The prompt cap was 5 (45, 50 and 100,
+      D-EV-11, decided 2026-11-12). The prompt cap was 5 (45, 50 and 100,
       USD 3.00) until the shared meter (Ragas 0.6, 2026-11-12): the planned
       night must fit the share the breaker enforces, or the editor role is
       skipped on a night that costs what was planned. **What config cannot
