@@ -83,8 +83,29 @@ flowchart LR
   engine, nested payload, clean control) and
   `tests/integration/run-input-scan-precedes-every-engine.test.ts` (Flue and
   Tool Runner, and the strict/audit arms).
-- **No NeMo Guardrails, no Colang, no model-based rail.** The scanners are
-  pattern sets; nothing asks a model "is this a jailbreak".
+- **The verdict comes through a `GuardProvider` seam** (Phase 1.1, 1.2, 1.4,
+  1.5; 2026-11-11). `src/app-layer/ai/guard/providers/`: `patterns-provider.ts`
+  is the scanners above, unchanged; `compose.ts` composes worst-of, and a
+  provider that throws, returns a malformed result, or an empty provider list
+  is unavailable (`guard.provider_unavailable.<id>`: `suspicious` on input,
+  `malicious` on egress), never `clean`; `nemo-provider.ts` is an HTTP client
+  for a NeMo Guardrails server (`safeFetch`, https only, 3 s deadline over
+  request and body, 64 KiB response cap that aborts the read, 1 MiB request
+  cap) that reads only whether an activated rail of the matching type stopped,
+  and fails closed on every other answer; `registry.ts` is the only reader of
+  `AI_GUARD_NEMO_BASE_URL`. Unset, the guard is the patterns provider alone,
+  nothing else is constructed, and every outcome and audit row is
+  byte-identical to the pre-seam guard. Set, `GuardOutcome.decidedBy` and the
+  audit row's `decidedBy` name the deciding provider, and a nemo rule id is
+  namespaced `nemo.rail.<name>`, which is how the decision log's
+  `guardRuleIds` already names the provider.
+- **No NeMo Guardrails server runs, and no rail config exists.** Phase 1.3 is
+  held by the capacity rule (master § Capacity budget, C1). `safeFetch`
+  refuses `http:` and private addresses, so a server on the Compose network
+  is reachable only over https and, on a self-hosted deployment, through the
+  egress allowlist; with the URL set to anything else the guard flags every
+  input and blocks every egress, which is the outage rule working. Nothing
+  asks a model "is this a jailbreak".
 
 ## Fit, and what is deliberately not adopted
 
@@ -170,23 +191,29 @@ anything), G11 (a baseline before a change).
 ### Phase 1 — The `GuardProvider` seam and LLM-free rails
 
 **Sub-phases.**
-- [ ] 1.1 `src/app-layer/ai/guard/providers/`: `types.ts`
+- [x] 1.1 `src/app-layer/ai/guard/providers/`: `types.ts`
       (`GuardProvider.scan(kind: 'input' | 'egress', text, ctx) →
       GuardOutcome`), `patterns-provider.ts` (today's scanners, unchanged
       behaviour), `nemo-provider.ts` (HTTP to the NeMo server via `safeFetch`,
       byte-capped, deadline, degrade to `flag` on outage — never to `allow`),
       `compose.ts` (worst-of).
-- [ ] 1.2 `guardUntrustedInput` / `guardEgress` call the composed provider;
+- [x] 1.2 `guardUntrustedInput` / `guardEgress` call the composed provider;
       every verdict row records which provider decided (the decision-log
-      already records the verdict; add the provider).
+      already records the verdict; add the provider). Done as
+      `GuardOutcome.decidedBy` and the audit row's `decidedBy`, both present
+      only when more than one provider was asked, plus namespaced rule ids,
+      which the decision log's `guardRuleIds` already stores.
 - [ ] 1.3 NeMo Guardrails server as a Compose service (digest), worker/app
       network only; rails config in `guards/nemo/config/` mounted read-only;
       LLM-free rails only in this phase.
-- [ ] 1.4 Env `AI_GUARD_NEMO_BASE_URL` optional; absent = patterns only
+- [x] 1.4 Env `AI_GUARD_NEMO_BASE_URL` optional; absent = patterns only
       (G9).
-- [ ] 1.5 Tests: "nemo outage degrades to flag, never allow"; "composition is
+- [x] 1.5 Tests: "nemo outage degrades to flag, never allow"; "composition is
       worst-of" (table over the nine arm pairs); "patterns provider is
       byte-identical to the previous scanners" (fixture set).
+      `tests/unit/ai/guard-provider-seam.test.ts`,
+      `tests/unit/ai/guard-nemo-provider.test.ts`. The "garak before/after"
+      half of done waits for 1.3.
 
 **Prompt.**
 ```text

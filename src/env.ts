@@ -351,6 +351,13 @@ export const env = createEnv({
         AI_EMBED_LOCAL_PASSAGE_PREFIX: z.string().optional(),
         AI_RERANK_LOCAL_BASE_URL: z.string().optional(),
         AI_RERANK_LOCAL_MODEL: z.string().optional(),
+        // NeMo Guardrails server for the AI guard's second provider (NeMo
+        // Guardrails roadmap, Phase 1.4). Operator config only, never a tenant
+        // setting. Unset or blank = the deterministic `patterns` provider alone,
+        // and nothing else is constructed. Set = patterns + nemo, composed
+        // worst-of; an unreachable or unusable server flags input and blocks
+        // egress (never allows). Read only by src/app-layer/ai/guard/providers/registry.ts.
+        AI_GUARD_NEMO_BASE_URL: z.string().optional(),
         AI_RISK_DAILY_QUOTA: z.string().optional(),
         AI_RISK_USER_RPM: z.string().optional(),
         // Global AI kill switch. 'false' disables EVERY AI feature
@@ -841,6 +848,7 @@ export const env = createEnv({
         AI_EMBED_LOCAL_PASSAGE_PREFIX: process.env.AI_EMBED_LOCAL_PASSAGE_PREFIX,
         AI_RERANK_LOCAL_BASE_URL: process.env.AI_RERANK_LOCAL_BASE_URL,
         AI_RERANK_LOCAL_MODEL: process.env.AI_RERANK_LOCAL_MODEL,
+        AI_GUARD_NEMO_BASE_URL: process.env.AI_GUARD_NEMO_BASE_URL,
         AI_RISK_DAILY_QUOTA: process.env.AI_RISK_DAILY_QUOTA,
         AI_RISK_USER_RPM: process.env.AI_RISK_USER_RPM,
         AI_RISK_ENABLED: process.env.AI_RISK_ENABLED,

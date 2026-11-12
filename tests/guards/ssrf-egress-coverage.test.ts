@@ -125,6 +125,13 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
             "issuer's discovery document names the token endpoint and the key set.",
         noBareFetchOf: 'fetch(discoveryUrl',
     },
+    {
+        file: 'src/app-layer/ai/guard/providers/nemo-provider.ts',
+        reason:
+            "The AI guard's NeMo Guardrails provider: an operator-configured base URL " +
+            '(AI_GUARD_NEMO_BASE_URL) that receives tenant text on every guarded call.',
+        noBareFetchOf: 'fetch(endpoint.url',
+    },
 ];
 
 /**

@@ -17,6 +17,13 @@
  * `GuardOutcome` with the resolved enforcement `action`. Callers apply the
  * invariant: a `block` outcome must abort the model call / the commit; a
  * `flag` outcome forces human review and NEVER auto-commits.
+ *
+ * The verdict comes from the `GuardProvider` seam (`providers/`): the
+ * deterministic `patterns` provider always, plus `nemo` when the operator sets
+ * `AI_GUARD_NEMO_BASE_URL`, composed WORST-OF so a second slice can only
+ * tighten. Patterns alone is byte-identical to the guard before the seam. The
+ * mode, enforcement and audit stay HERE, decided once over the composed
+ * verdict — a provider never sees the tenant's mode.
  */
 import type { RequestContext } from '@/app-layer/types';
 import type { PrismaTx } from '@/lib/db-context';
@@ -24,8 +31,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { appendAuditEntry } from '@/lib/audit';
 import { forbidden } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
-import { scanInjection, type GuardVerdict, type ScanResult } from './injection-scanner';
-import { scanEgress } from './egress-scanner';
+import type { GuardVerdict, ScanResult } from './injection-scanner';
 import {
     resolveGuardMode,
     resolveEnforcement,
@@ -33,6 +39,9 @@ import {
     type GuardAction,
     type GuardDirection,
 } from './policy';
+import { scanWithProviders, type ComposedScan } from './providers/compose';
+import { activeGuardProviders } from './providers/registry';
+import type { GuardProvider } from './providers/types';
 
 export { normalizeForScan } from './normalize';
 export { scanInjection } from './injection-scanner';
@@ -45,6 +54,14 @@ export {
 } from './policy';
 export type { GuardMode, GuardAction, GuardDirection } from './policy';
 export { INJECTION_RULES, EGRESS_RULES } from './patterns';
+export {
+    GUARD_PROVIDER_UNAVAILABLE_RULE,
+    providerUnavailable,
+    scanWithProviders,
+    worstOf,
+} from './providers/compose';
+export type { ComposedScan } from './providers/compose';
+export type { GuardProvider, GuardProviderContext, GuardScanKind } from './providers/types';
 
 export interface GuardOutcome {
     verdict: GuardVerdict;
@@ -58,6 +75,15 @@ export interface GuardOutcome {
     reviewRequired: boolean;
     source: string;
     direction: GuardDirection;
+    /**
+     * The provider(s) whose verdict the outcome's verdict is (NeMo Guardrails
+     * roadmap, Phase 1.2). Present ONLY when more than one provider was
+     * consulted: a patterns-only guard (no `AI_GUARD_NEMO_BASE_URL`) returns
+     * exactly the outcome it returned before the provider seam, field for
+     * field. Rule ids say the same thing at finer grain — a non-patterns
+     * provider's ids are namespaced by its id (`nemo.rail.…`).
+     */
+    decidedBy?: readonly string[];
 }
 
 export interface GuardOptions {
@@ -65,6 +91,12 @@ export interface GuardOptions {
     source: string;
     /** An open tenant tx to reuse for the settings read (avoids nesting). */
     db?: PrismaTx;
+    /**
+     * The providers to consult, in place of the deployment's
+     * (`activeGuardProviders()`). For tests and for a caller that must pin the
+     * slice set; no production caller passes it today.
+     */
+    providers?: readonly GuardProvider[];
 }
 
 async function resolveModeForTenant(ctx: RequestContext, db?: PrismaTx): Promise<GuardMode> {
@@ -118,6 +150,9 @@ async function emitGuardAudit(
             mode: outcome.mode,
             ruleIds: outcome.ruleIds,
             source: outcome.source,
+            // Only when more than one provider was asked, so a patterns-only
+            // guard writes the same row it wrote before the provider seam.
+            ...(outcome.decidedBy ? { decidedBy: [...outcome.decidedBy] } : {}),
         },
         metadataJson: {
             ruleCount: outcome.ruleIds.length,
@@ -135,11 +170,18 @@ async function emitGuardAudit(
 
 async function compose(
     ctx: RequestContext,
-    scan: ScanResult,
+    content: unknown,
     direction: GuardDirection,
     opts: GuardOptions,
 ): Promise<GuardOutcome> {
     const mode = await resolveModeForTenant(ctx, opts.db);
+    const composed: ComposedScan = await scanWithProviders(
+        opts.providers ?? activeGuardProviders(),
+        direction,
+        content,
+        { requestId: ctx.requestId, tenantId: ctx.tenantId },
+    );
+    const scan: ScanResult = composed.scan;
     const action = resolveEnforcement(mode, scan.verdict, direction);
     const outcome: GuardOutcome = {
         verdict: scan.verdict,
@@ -150,6 +192,7 @@ async function compose(
         reviewRequired: action === 'flag' || action === 'block',
         source: opts.source,
         direction,
+        ...(composed.providerCount > 1 ? { decidedBy: composed.decidedBy } : {}),
     };
     if (scan.verdict !== 'clean') {
         await emitGuardAudit(ctx, outcome);
@@ -168,7 +211,7 @@ export async function guardUntrustedInput(
     text: string | null | undefined,
     opts: GuardOptions,
 ): Promise<GuardOutcome> {
-    return compose(ctx, scanInjection(text), 'input', opts);
+    return compose(ctx, text, 'input', opts);
 }
 
 /**
@@ -182,7 +225,7 @@ export async function guardEgress(
     payload: unknown,
     opts: GuardOptions,
 ): Promise<GuardOutcome> {
-    return compose(ctx, scanEgress(payload), 'egress', opts);
+    return compose(ctx, payload, 'egress', opts);
 }
 
 /**
