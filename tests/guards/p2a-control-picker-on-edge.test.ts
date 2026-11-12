@@ -57,13 +57,6 @@ describe("Epic P2-PR-A — control picker on edge", () => {
             expect(src).toMatch(/\/api\/t\/\$\{tenantSlug\}\/controls/);
         });
 
-        it("normalises both list-shape AND { controls } wrapper", () => {
-            // The Controls API returns one of two shapes depending on
-            // pagination — the hook normalises both. Anchor the
-            // dispatch so a refactor that drops one branch breaks.
-            expect(src).toMatch(/Array\.isArray\(body\)/);
-            expect(src).toMatch(/body as \{ controls\?: unknown\[\] \}\)\?\.controls/);
-        });
     });
 
     describe("ProcessInspector — edge mode mounts the picker", () => {

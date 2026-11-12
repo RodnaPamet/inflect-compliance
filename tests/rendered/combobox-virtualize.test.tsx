@@ -378,3 +378,43 @@ describe("Combobox — virtualized vs non-virtualized parity", () => {
         expect(first51.querySelector("svg")).toBeInTheDocument();
     });
 });
+
+// ─── #5286 — search still filters past the threshold ────────────────
+
+describe("Combobox — virtualized branch filters on search", () => {
+    function NamedHarness() {
+        const options = React.useMemo<ComboboxOption[]>(
+            () => [
+                ...makeOptions(80),
+                { value: "special", label: "Payroll database" },
+            ],
+            [],
+        );
+        const [selected, setSelected] = React.useState<ComboboxOption | null>(null);
+        return (
+            <Combobox
+                options={options}
+                selected={selected}
+                setSelected={(opt) => setSelected(opt)}
+                placeholder="Pick an option"
+                searchPlaceholder="Search…"
+                forceDropdown
+            />
+        );
+    }
+
+    it("typing narrows the virtualized list to the matching options", async () => {
+        const user = userEvent.setup();
+        render(<NamedHarness />);
+        await user.click(screen.getByRole("combobox"));
+        expect(document.querySelector("[data-virtualized-combobox]")).toBeInTheDocument();
+
+        await user.type(screen.getByPlaceholderText("Search…"), "Payroll");
+
+        const rendered = Array.from(
+            document.querySelectorAll("[data-virtualized-option-index]"),
+        ).map((el) => el.textContent);
+        expect(rendered).toHaveLength(1);
+        expect(rendered[0]).toContain("Payroll database");
+    });
+});

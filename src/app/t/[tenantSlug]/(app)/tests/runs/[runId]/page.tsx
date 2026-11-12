@@ -37,6 +37,7 @@ import { Heading } from '@/components/ui/typography';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { Card, cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 
 const buildEvKindOptions = (t: (key: string) => string): ComboboxOption[] => [
     { value: 'FILE_UPLOAD', label: t('evKind.fileUpload') },
@@ -242,12 +243,14 @@ export default function TestRunPage() {
 
     // Evidence library for the EVIDENCE-kind picker — read via SWR and
     // derived to options, replacing the old fetch-into-setState effect.
-    // The endpoint may return a bare array or a `{ items }` envelope.
+    // GET /evidence returns the capped `{ rows, truncated }` envelope. This
+    // read `.items`, which it never carries, so the picker was always empty
+    // (#5126).
     const { data: evidenceData } = useTenantSWR<
-        { id: string; title: string }[] | { items?: { id: string; title: string }[] }
+        CappedList<{ id: string; title: string }> | { id: string; title: string }[]
     >('/evidence');
     const evidenceOptions = useMemo<ComboboxOption[]>(() => {
-        const items = Array.isArray(evidenceData) ? evidenceData : (evidenceData?.items ?? []);
+        const items = unwrapCappedList(evidenceData);
         return items.map((e) => ({ value: e.id, label: e.title }));
     }, [evidenceData]);
 

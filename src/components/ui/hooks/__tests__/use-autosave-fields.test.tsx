@@ -392,6 +392,43 @@ describe('re-seeding', () => {
         expect(result.current.fields.name).toBe('Renamed ');
     });
 
+    it('keeps what the user typed after a save when that save\'s echo arrives (#5186)', async () => {
+        // Type, the debounce sends "Renamed", keep typing, THEN the refetch
+        // hands back "Renamed". The fields now differ from that seed, but it
+        // is our own echo, not a different row.
+        const save = jest.fn().mockResolvedValue(undefined);
+        const { result, rerender } = renderHook(
+            ({ seed }: { seed: Fields }) =>
+                useAutosaveFields<Fields>({ seed, save, networkErrorMessage: 'offline' }),
+            { initialProps: { seed: SEED } },
+        );
+
+        act(() => result.current.update({ name: 'Renamed' }));
+        await flushDebounce();
+        act(() => result.current.update({ name: 'Renamed again' }));
+
+        rerender({ seed: { name: 'Renamed', category: 'ORGANIZATIONAL' } });
+        expect(result.current.fields.name).toBe('Renamed again');
+
+        // And the newer value is still the one the next save sends.
+        await flushDebounce();
+        expect(save).toHaveBeenLastCalledWith({ name: 'Renamed again', category: 'ORGANIZATIONAL' });
+    });
+
+    it('still adopts a different row after a save', async () => {
+        const save = jest.fn().mockResolvedValue(undefined);
+        const { result, rerender } = renderHook(
+            ({ seed }: { seed: Fields }) =>
+                useAutosaveFields<Fields>({ seed, save, networkErrorMessage: 'offline' }),
+            { initialProps: { seed: SEED } },
+        );
+
+        act(() => result.current.update({ name: 'Renamed' }));
+        await flushDebounce();
+        rerender({ seed: { name: 'Backup policy', category: 'TECHNOLOGICAL' } });
+        expect(result.current.fields.name).toBe('Backup policy');
+    });
+
     it('resets a stale error when a different row is seeded in', async () => {
         const save = jest.fn().mockResolvedValue('Server said no');
         const { result, rerender } = renderHook(

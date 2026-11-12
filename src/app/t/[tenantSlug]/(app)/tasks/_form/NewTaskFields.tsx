@@ -31,7 +31,7 @@ import {
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import {
-    LINK_ENTITY_TYPES,
+    SELECTABLE_LINK_ENTITY_TYPES,
     type NewTaskFormFields,
     type NewTaskFormReturn,
 } from './useNewTaskForm';
@@ -47,7 +47,7 @@ const buildSeverityOptions = (t: Tr): ComboboxOption[] =>
 const buildPriorityOptions = (t: Tr): ComboboxOption[] =>
     optsFrom(t, 'priorityLabels', ['P0', 'P1', 'P2', 'P3']);
 const buildLinkEntityOptions = (t: Tr): ComboboxOption[] =>
-    optsFrom(t, 'linkEntity', LINK_ENTITY_TYPES);
+    optsFrom(t, 'linkEntity', SELECTABLE_LINK_ENTITY_TYPES);
 const buildFindingOptions = (t: Tr): ComboboxOption[] =>
     optsFrom(t, 'findingSourceLabels', ['INTERNAL', 'EXTERNAL_AUDITOR', 'PEN_TEST', 'INCIDENT']);
 const buildGapTypeOptions = (t: Tr): ComboboxOption[] =>
