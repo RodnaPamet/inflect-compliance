@@ -53,7 +53,7 @@ import {
     CreateRiskSchema,
     CreateControlSchema,
     CreatePolicySchema,
-    CreateFindingSchema,
+    ProposedFindingSchema,
     UpdateRiskSchema,
     UpdateControlSchema,
     UpdateFindingSchema,
@@ -134,7 +134,7 @@ const SCHEMA_BY_KIND = {
     RISK: CreateRiskSchema,
     CONTROL: CreateControlSchema,
     POLICY: CreatePolicySchema,
-    FINDING: CreateFindingSchema,
+    FINDING: ProposedFindingSchema,
 } as const;
 
 /**
@@ -1918,7 +1918,7 @@ export async function approveAgentProposal(
                     break;
                 }
                 case 'FINDING': {
-                    const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
+                    const finding = await createFinding(ctx, ProposedFindingSchema.parse(merged));
                     createdEntityId = finding.id;
                     break;
                 }

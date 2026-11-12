@@ -518,7 +518,7 @@ export const LinkEvidenceControlSchema = z.object({
 
 // ─── Findings ───
 
-export const CreateFindingSchema = z.object({
+const FindingCreateFieldsSchema = z.object({
     auditId: z.string().optional().nullable(),
     severity: z.string().min(1, 'Severity is required'),
     type: z.string().min(1, 'Type is required'),
@@ -538,14 +538,38 @@ export const CreateFindingSchema = z.object({
     // Risks this finding implicates (many-to-many).
     riskIds: z.array(z.string()).max(100).optional(),
     dueDate: z.string().optional().nullable(),
-    // Generic provenance tag for auto-materialized findings (e.g.
-    // sourceKind='NIS2_SELF_ASSESSMENT', sourceRef=<questionId>) — lets a
-    // materializer dedupe + reconcile. Omitted for hand-raised findings.
+});
+
+/**
+ * Creating a finding over HTTP. It carries NO provenance (`sourceKind` /
+ * `sourceRef`): those tag findings a system materializer raises, and the
+ * materializers dedupe on the pair, so a person who could set it could
+ * pre-empt the finding a scanner would raise. A body that sends them has them
+ * stripped. Materializers pass provenance to `createFinding` in code.
+ */
+export const CreateFindingSchema = FindingCreateFieldsSchema.strip().openapi('FindingCreateRequest', {
+    description: 'Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId / riskIds are validated against the tenant.',
+});
+
+/**
+ * Provenance a system materializer stamps on the finding it raises (e.g.
+ * sourceKind='NIS2_SELF_ASSESSMENT', sourceRef=<questionId>), so it can dedupe
+ * and reconcile. Never accepted from an HTTP body.
+ */
+export const FindingProvenanceSchema = z.object({
     sourceKind: z.string().max(64).optional().nullable(),
     sourceRef: z.string().max(256).optional().nullable(),
-}).strip().openapi('FindingCreateRequest', {
-    description: 'Create an audit finding. auditId is optional — findings can be raised independently of an audit cycle. description, rootCause + analysis are encrypted at rest. assigneeUserId / controlId / compensatingControlId / riskIds are validated against the tenant. sourceKind/sourceRef tag auto-materialized findings.',
 });
+
+/**
+ * A FINDING agent proposal's payload: the create fields plus provenance. The
+ * auditor's procedures and a dissenting workpaper review raise their findings
+ * as proposals, and a person approves each one, so the payload keeps the tag.
+ */
+export const ProposedFindingSchema = FindingCreateFieldsSchema.extend(FindingProvenanceSchema.shape).strip();
+
+/** What `createFinding` accepts: the create fields and, from code, provenance. */
+export type CreateFindingInput = z.infer<typeof ProposedFindingSchema>;
 
 export const UpdateFindingSchema = z.object({
     severity: z.string().optional(),
