@@ -348,6 +348,19 @@ interface JobOutcome {
     noRetry?: boolean;
 }
 
+/** The outcome of a master-KEK rotation sweep (#5299). */
+export function keyRotationOutcome(
+    totalErrors: number,
+    dekRewrapped: boolean,
+    dekRewrapError: string | undefined,
+): JobOutcome {
+    if (totalErrors === 0 && dekRewrapped) return { status: 'PASSED' };
+    const parts: string[] = [];
+    if (!dekRewrapped) parts.push(`DEK not re-wrapped${dekRewrapError ? ` (${dekRewrapError})` : ''}`);
+    if (totalErrors > 0) parts.push(`${totalErrors} error(s)`);
+    return { status: 'ERROR', errorMessage: `key-rotation: ${parts.join('; ')}` };
+}
+
 // ── health-check ─────────────────────────────────────────────────────
 
 executorRegistry.register('health-check', async (payload) => {
@@ -904,6 +917,12 @@ executorRegistry.register('key-rotation', async (payload) => {
             totalErrors: r.totalErrors,
             jobRunId: r.jobRunId,
         },
+        // A sweep with errors — a DEK that failed to re-wrap, a row that
+        // failed to re-encrypt — is a FAILED job, so BullMQ retries it and
+        // the job history stops reading green while the tenant still
+        // depends on the previous KEK (#5299). The sweep is idempotent, so
+        // a retry is safe.
+        keyRotationOutcome(r.totalErrors, r.dekRewrapped, r.dekRewrapError),
     );
 });
 
@@ -938,6 +957,14 @@ executorRegistry.register('tenant-dek-rotation', async (payload, ctx) => {
             totalErrors: r.totalErrors,
             jobRunId: r.jobRunId,
         },
+        // Errors leave previousEncryptedDek set, which blocks every later
+        // rotation; that is a failed job, retried, not a green one (#5299).
+        r.totalErrors > 0
+            ? {
+                  status: 'ERROR',
+                  errorMessage: `tenant-dek-rotation: ${r.totalErrors} row(s) not re-encrypted; previous DEK kept`,
+              }
+            : { status: 'PASSED' },
     );
 });
 

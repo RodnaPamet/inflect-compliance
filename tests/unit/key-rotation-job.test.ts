@@ -95,6 +95,7 @@ import {
     runKeyRotation,
     _resetKeyRotationForTests,
 } from '@/app-layer/jobs/key-rotation';
+import { keyRotationOutcome } from '@/app-layer/jobs/executor-registry';
 import {
     encryptField,
     isEncryptedValue,
@@ -215,7 +216,8 @@ describe('runKeyRotation — v1 ciphertext re-encrypt', () => {
             }
             // SELECT of v1 ciphertexts for this tenant + field.
             // First batch: 2 rows of v1 data. Subsequent batches empty.
-            if (sql.includes("LIKE 'v1:%'") && args.length === 2) {
+            // First page: the keyset cursor is null.
+            if (sql.includes("LIKE 'v1:%'") && args[2] === null) {
                 const v1a = encryptField('legacy-one');
                 const v1b = encryptField('legacy-two');
                 const rows = [
@@ -446,5 +448,83 @@ describe('runKeyRotation — the key that requested it is re-checked', () => {
         // worse than one that did not start.
         expect(tenantUpdate).not.toHaveBeenCalled();
         expect(appendAuditEntryMock).not.toHaveBeenCalled();
+    });
+});
+
+describe('runKeyRotation — audit 2026-11 fixes', () => {
+    test('pages by id, so a field with more v1 rows than one batch finishes (#5099)', async () => {
+        tenantFindUnique.mockResolvedValueOnce({ encryptedDek: wrapDek(generateDek()) });
+        // A table whose rewritten rows stay `v1:` — exactly what the sweep
+        // writes. The select honours the cursor; ignoring it returns the
+        // first page for ever, which the call cap turns into a failure
+        // instead of a hung test.
+        const table = ['r1', 'r2', 'r3'].map((id) => ({ id, value: encryptField(`plain-${id}`) }));
+        let selects = 0;
+        queryRawUnsafe.mockImplementation(async (sql: string, ...args: unknown[]) => {
+            if (sql.includes('LIMIT 0')) return [];
+            if (!sql.includes('"Risk"') || !sql.includes("LIKE 'v1:%'")) return [];
+            if (++selects > 20) throw new Error('select called too often: the sweep is not advancing');
+            const [, limit, cursor] = args as [string, number, string | null];
+            return table.filter((r) => cursor === null || r.id > cursor).slice(0, limit);
+        });
+
+        const result = await runKeyRotation({ tenantId: 'tenant-A', initiatedByUserId: 'admin', batchSize: 2 });
+
+        const risk = result.perField.filter((f) => f.model === 'Risk');
+        expect(risk.reduce((n, f) => n + f.errors, 0)).toBe(0);
+        // Every Risk field that reads the table scans each row once.
+        for (const f of risk) expect(f.scanned).toBe(3);
+    });
+
+    test('a probe that fails for any reason but a missing column fails the run (#5108)', async () => {
+        tenantFindUnique.mockResolvedValueOnce({ encryptedDek: wrapDek(generateDek()) });
+        queryRawUnsafe.mockImplementation(async (sql: string) => {
+            if (sql.includes('LIMIT 0')) throw new Error('Connection terminated unexpectedly');
+            return [];
+        });
+
+        await expect(
+            runKeyRotation({ tenantId: 'tenant-A', initiatedByUserId: 'admin' }),
+        ).rejects.toThrow(/Connection terminated/);
+    });
+
+    test('the rewrite is conditional on the value read, and a row that moved on is not counted (#5109)', async () => {
+        tenantFindUnique.mockResolvedValueOnce({ encryptedDek: wrapDek(generateDek()) });
+        const old = encryptField('stale');
+        let served = false;
+        queryRawUnsafe.mockImplementation(async (sql: string) => {
+            if (sql.includes('LIMIT 0')) return [];
+            if (!served && sql.includes("LIKE 'v1:%'")) {
+                served = true;
+                return [{ id: 'edited', value: old }];
+            }
+            return [];
+        });
+        // The user saved a new value after the SELECT: the guarded UPDATE
+        // matches no row.
+        executeRawUnsafe.mockResolvedValue(0);
+
+        const result = await runKeyRotation({ tenantId: 'tenant-A', initiatedByUserId: 'admin' });
+
+        const update = executeRawUnsafe.mock.calls.find(
+            (c) => typeof c[0] === 'string' && c[0].includes('UPDATE'),
+        )!;
+        expect(update[0]).toMatch(/WHERE id = \$2 AND "\w+" = \$3$/);
+        expect(update[3]).toBe(old);
+        expect(result.totalRewritten).toBe(0);
+        expect(result.totalErrors).toBe(0);
+    });
+});
+
+describe('keyRotationOutcome (#5299)', () => {
+    test('a clean sweep passes', () => {
+        expect(keyRotationOutcome(0, true, undefined)).toEqual({ status: 'PASSED' });
+    });
+
+    test('row errors or a failed re-wrap fail the job', () => {
+        expect(keyRotationOutcome(2, true, undefined)).toMatchObject({ status: 'ERROR' });
+        const failedWrap = keyRotationOutcome(1, false, 'bad wrap');
+        expect(failedWrap.status).toBe('ERROR');
+        expect(failedWrap.errorMessage).toContain('bad wrap');
     });
 });

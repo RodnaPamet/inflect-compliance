@@ -11,12 +11,11 @@
  *
  * ## Concrete steps
  *
- *   1. Resolve both DEKs:
- *      - new primary via `getTenantDek` (the one that was just written)
- *      - old previous via direct `unwrapDek(Tenant.previousEncryptedDek)`
- *        (we deliberately do NOT route through the manager's lazy
- *        cache for the previous DEK — the previous-DEK negative cache
- *        could mask a fresh rotation, and we want a hard read here.)
+ *   1. Resolve both DEKs by unwrapping `Tenant.encryptedDek` and
+ *      `Tenant.previousEncryptedDek` from the row, after dropping this
+ *      process's DEK caches. Never through `getTenantDek`: the rotation
+ *      was primed in the web process, and this worker's cache may still
+ *      hold the OLD key as the current one (#5057).
  *
  *   2. For each (model, field) in the encrypted-fields manifest that
  *      has a `tenantId` column, walk rows carrying a v2 ciphertext:
@@ -69,7 +68,6 @@ import {
     unwrapDek,
 } from '@/lib/security/tenant-keys';
 import {
-    getTenantDek,
     clearTenantDekCache,
     clearTenantPreviousDekCache,
 } from '@/lib/security/tenant-key-manager';
@@ -163,7 +161,9 @@ function assertIdentifier(name: string, kind: string): void {
 //
 // The encrypted-fields manifest doesn't expose which models have a
 // tenantId column, so we probe each manifest model once via a
-// zero-row SELECT. Cached for the job's lifetime.
+// zero-row SELECT. Only a definite answer is cached (for the process's
+// lifetime, which is safe because the schema cannot change under a
+// running process); a probe that fails for any other reason throws.
 
 const _modelHasTenantIdCache = new Map<string, boolean>();
 
@@ -178,22 +178,43 @@ async function modelHasTenantIdColumn(model: string): Promise<boolean> {
         _modelHasTenantIdCache.set(model, true);
         return true;
     } catch (err) {
-        const isColumnMissing =
-            err instanceof Prisma.PrismaClientKnownRequestError ||
-            (err instanceof Error && /column.*does not exist/i.test(err.message));
-        _modelHasTenantIdCache.set(model, false);
-        if (!isColumnMissing) {
-            logger.warn('tenant-dek-rotation.model_probe_failed', {
-                component: 'tenant-dek-rotation',
-                model,
-                error: err instanceof Error ? err.message : String(err),
-            });
+        // ONLY Postgres' undefined_column (42703) means "this model has no
+        // tenantId". Any other failure — a dropped connection, a pool or
+        // statement timeout — is thrown, never cached as false: a model
+        // skipped on a transient error contributed no errors to the sweep,
+        // so the run reported clean while that model's rows were never
+        // touched (#5108).
+        if (isUndefinedColumnError(err)) {
+            _modelHasTenantIdCache.set(model, false);
+            return false;
         }
-        return false;
+        logger.error('tenant-dek-rotation.model_probe_failed', {
+            component: 'tenant-dek-rotation',
+            model,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
     }
 }
 
+function isUndefinedColumnError(err: unknown): boolean {
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        const meta = err.meta as { code?: unknown } | undefined;
+        if (meta?.code === '42703') return true;
+    }
+    return err instanceof Error && /column "?tenantId"? does not exist/i.test(err.message);
+}
+
 // ─── Per-field sweep ────────────────────────────────────────────────
+
+function readsUnder(key: Buffer, value: string): boolean {
+    try {
+        decryptWithKey(key, value);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 async function sweepV2Field(
     tenantId: string,
@@ -283,7 +304,23 @@ async function sweepV2Field(
             try {
                 plaintext = decryptWithKey(previousDek, row.value);
             } catch {
-                out.skipped++;
+                // Skipped only when the row provably reads under the NEW
+                // DEK. A row that reads under neither key is an error, so
+                // the previous DEK is kept: clearing it on a row we could
+                // not account for is how a sweep turns an anomaly into
+                // permanent loss (#5057).
+                if (readsUnder(newDek, row.value)) {
+                    out.skipped++;
+                } else {
+                    out.errors++;
+                    logger.error('tenant-dek-rotation.row_unreadable', {
+                        component: 'tenant-dek-rotation',
+                        tenantId,
+                        model,
+                        field,
+                        id: row.id,
+                    });
+                }
                 continue;
             }
 
@@ -304,12 +341,38 @@ async function sweepV2Field(
             }
 
             try {
-                await prisma.$executeRawUnsafe(
-                    `UPDATE "${model}" SET "${field}" = $1 WHERE id = $2`,
+                // Conditional on the ciphertext read, so a user edit that
+                // landed after the SELECT is not reverted to the old
+                // plaintext (#5109).
+                const updated = await prisma.$executeRawUnsafe(
+                    `UPDATE "${model}" SET "${field}" = $1 WHERE id = $2 AND "${field}" = $3`,
                     fresh,
                     row.id,
+                    row.value,
                 );
-                out.rewritten++;
+                if (updated > 0) {
+                    out.rewritten++;
+                } else {
+                    // The row moved on. It is settled only if its current
+                    // value reads under the new DEK (or the row is gone or
+                    // cleared); otherwise keep the previous DEK.
+                    const current = await prisma.$queryRawUnsafe<
+                        Array<{ value: string | null }>
+                    >(`SELECT "${field}" AS value FROM "${model}" WHERE id = $1`, row.id);
+                    const value = current[0]?.value ?? null;
+                    if (value === null || !value.startsWith('v2:') || readsUnder(newDek, value)) {
+                        out.skipped++;
+                    } else {
+                        out.errors++;
+                        logger.error('tenant-dek-rotation.concurrent_write_unreadable', {
+                            component: 'tenant-dek-rotation',
+                            tenantId,
+                            model,
+                            field,
+                            id: row.id,
+                        });
+                    }
+                }
             } catch (err) {
                 out.errors++;
                 logger.error('tenant-dek-rotation.update_failed', {
@@ -415,7 +478,7 @@ export async function runTenantDekRotation(
             // sibling process recently saw NULL.
             const tenant = await prisma.tenant.findUnique({
                 where: { id: tenantId },
-                select: { previousEncryptedDek: true },
+                select: { encryptedDek: true, previousEncryptedDek: true },
             });
             if (!tenant) {
                 throw new Error(
@@ -452,8 +515,27 @@ export async function runTenantDekRotation(
                 };
             }
 
+            // BOTH keys come from the row, never from this process's DEK
+            // cache (#5057). The rotation was primed in the WEB process;
+            // this worker may hold the tenant's OLD DEK in its cache from
+            // any job it ran before. Resolving the new key through that
+            // cache re-encrypted every row under the old key and then
+            // cleared the only wrapped copy of it. Dropping both caches
+            // also stops this process writing new rows under the old key.
+            clearTenantDekCache(tenantId);
+            clearTenantPreviousDekCache(tenantId);
+            if (!tenant.encryptedDek) {
+                throw new Error(
+                    `tenant-dek-rotation: tenant ${tenantId} has a previous DEK but no current DEK`,
+                );
+            }
             const previousDek = unwrapDek(tenant.previousEncryptedDek);
-            const newDek = await getTenantDek(tenantId);
+            const newDek = unwrapDek(tenant.encryptedDek);
+            if (crypto.timingSafeEqual(previousDek, newDek)) {
+                throw new Error(
+                    `tenant-dek-rotation: tenant ${tenantId} current and previous DEK are the same key`,
+                );
+            }
 
             // Sweep every (model, field) whose model carries a tenantId.
             const perField: TenantDekRotationPerFieldResult[] = [];
@@ -544,8 +626,9 @@ export async function runTenantDekRotation(
                     data: { previousEncryptedDek: null },
                 });
                 clearTenantPreviousDekCache(tenantId);
-                // The primary cache is unchanged — the new DEK has
-                // been live since rotateTenantDek primed it.
+                // Every row either was rewritten under the new DEK or
+                // was verified to read under it, so the previous DEK is
+                // no longer needed by any row this sweep saw.
                 previousEncryptedDekCleared = true;
             } else {
                 // Drop the in-process previous-DEK cache anyway so a
@@ -577,7 +660,7 @@ export async function runTenantDekRotation(
                 requestId: options.requestId ?? null,
             });
 
-            logger.info('tenant-dek-rotation.complete', {
+            (totalErrors > 0 ? logger.error : logger.info)('tenant-dek-rotation.complete', {
                 component: 'tenant-dek-rotation',
                 tenantId,
                 jobRunId,

@@ -196,22 +196,31 @@ async function rewriteV1Field(
     // Read raw SQL — bypass the encryption middleware so we see the
     // actual v1 ciphertext (not a decrypted plaintext from the
     // middleware's read path).
+    //
+    // Keyset pagination on `id` is mandatory (#5099): a rewritten row is
+    // STILL `v1:` (now under the new primary KEK), so the prefix cannot
+    // mark progress, and re-reading from the top returned the same first
+    // batch for ever once a field held `batchSize` rows. The cursor also
+    // moves past a row that failed, so a batch of undecryptable rows
+    // cannot loop either.
     const selectSql = `
         SELECT id, "${field}" AS value
         FROM "${model}"
         WHERE "tenantId" = $1
           AND "${field}" IS NOT NULL
           AND "${field}" LIKE 'v1:%'
+          AND ($3::text IS NULL OR id > $3)
         ORDER BY id
         LIMIT $2
     `;
+    let lastId: string | null = null;
 
     while (true) {
         let rows: Array<{ id: string; value: string }>;
         try {
             rows = await prisma.$queryRawUnsafe<
                 Array<{ id: string; value: string }>
-            >(selectSql, tenantId, batchSize);
+            >(selectSql, tenantId, batchSize, lastId);
         } catch (err) {
             logger.error('key-rotation.select_failed', {
                 component: 'key-rotation',
@@ -263,12 +272,18 @@ async function rewriteV1Field(
             }
 
             try {
-                await prisma.$executeRawUnsafe(
-                    `UPDATE "${model}" SET "${field}" = $1 WHERE id = $2`,
+                // Conditional on the value read: a user edit that landed
+                // after the SELECT is newer than our plaintext and must
+                // not be overwritten with it (#5109). A row that moved on
+                // was written by the middleware under the current key, so
+                // it needs nothing from this sweep.
+                const updated = await prisma.$executeRawUnsafe(
+                    `UPDATE "${model}" SET "${field}" = $1 WHERE id = $2 AND "${field}" = $3`,
                     fresh,
                     row.id,
+                    row.value,
                 );
-                out.rewritten++;
+                if (updated > 0) out.rewritten++;
             } catch (err) {
                 out.errors++;
                 logger.error('key-rotation.update_failed', {
@@ -282,6 +297,7 @@ async function rewriteV1Field(
             }
         }
 
+        lastId = rows[rows.length - 1].id;
         if (rows.length < batchSize) break;
     }
 
@@ -414,7 +430,7 @@ export async function runKeyRotation(
                 requestId: options.requestId ?? null,
             });
 
-            logger.info('key-rotation.complete', {
+            (totalErrors > 0 ? logger.error : logger.info)('key-rotation.complete', {
                 component: 'key-rotation',
                 tenantId: options.tenantId,
                 jobRunId,
@@ -456,20 +472,31 @@ async function modelHasTenantIdColumn(model: string): Promise<boolean> {
         _modelHasTenantIdCache.set(model, true);
         return true;
     } catch (err) {
-        // UndefinedColumn — no tenantId on this model.
-        const isColumnMissing =
-            err instanceof Prisma.PrismaClientKnownRequestError ||
-            (err instanceof Error && /column.*does not exist/i.test(err.message));
-        _modelHasTenantIdCache.set(model, false);
-        if (!isColumnMissing) {
-            logger.warn('key-rotation.model_probe_failed', {
-                component: 'key-rotation',
-                model,
-                error: err instanceof Error ? err.message : String(err),
-            });
+        // ONLY Postgres' undefined_column (42703) means "this model has no
+        // tenantId". Any other failure — a dropped connection, a pool or
+        // statement timeout — is thrown, never cached as false: a model
+        // skipped on a transient error contributed no errors to the sweep,
+        // so the run reported clean while that model's rows were never
+        // touched (#5108).
+        if (isUndefinedColumnError(err)) {
+            _modelHasTenantIdCache.set(model, false);
+            return false;
         }
-        return false;
+        logger.error('key-rotation.model_probe_failed', {
+            component: 'key-rotation',
+            model,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
     }
+}
+
+function isUndefinedColumnError(err: unknown): boolean {
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        const meta = err.meta as { code?: unknown } | undefined;
+        if (meta?.code === '42703') return true;
+    }
+    return err instanceof Error && /column "?tenantId"? does not exist/i.test(err.message);
 }
 
 /** @internal — expose for tests that need to reset cross-run state. */
