@@ -197,6 +197,7 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     AGENT_BEHAVIOUR_DETECTOR_LATCH: 'operator switch letting that detector latch the existing circuit breaker — in-process, no external endpoint, not a sub-processor',
     AGENT_BEHAVIOUR_DETECTOR_TENANTS: 'operator allowlist of tenant slugs the behaviour fingerprint scores — this deployment\'s own tenants, not an external endpoint, not a sub-processor',
     AGENT_PROFILES_TENANTS: 'operator allowlist of tenant slugs that opens the same agent profile surface to named tenants only — a list of this deployment\'s own tenants, not an external endpoint, and not a sub-processor',
+    EVALS_CARD_HIDDEN_ORG_SLUGS: 'operator opt-out list of organization slugs whose org admins do not see the static Evaluations card on the org settings page — this deployment\'s own organizations, read by no request to anywhere, not an external endpoint, and not a sub-processor',
     // Step 2a (#4148). The Tool Runner engine's two model pins and the SDK's
     // ambient-headers variable. The models are ids at the EXISTING Anthropic
     // row, the same kind of value as AGENT_FLUE_MODEL, named in that row's (d)
