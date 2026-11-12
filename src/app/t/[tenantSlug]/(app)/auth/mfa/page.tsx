@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { refreshSessionCookie } from '@/lib/auth/refresh-session-cookie';
+import { sanitizeRedirectPath } from '@/lib/auth/redirect-path';
 
 /**
  * MFA Challenge Page — shown when mfaPending is true.
@@ -36,7 +37,10 @@ export default function MfaChallengePage() {
     // Default to /dashboard, not /, because `/t/<slug>/` has no
     // page.tsx (404) and post-MFA navigation would land on a broken
     // route if the URL didn't carry an explicit `next`.
-    const next = searchParams.get('next') || tenantHref('/dashboard');
+    // Only a path on this site: `next` comes from the URL, which anybody can
+    // write, and the browser is sent there after the code is accepted.
+    const safeNext = sanitizeRedirectPath(searchParams.get('next'));
+    const next = safeNext === '/' ? tenantHref('/dashboard') : safeNext;
 
     const [code, setCode] = useState('');
     const [error, setError] = useState<string | null>(null);
