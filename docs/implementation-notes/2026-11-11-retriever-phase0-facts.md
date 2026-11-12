@@ -225,19 +225,49 @@ model that wins the first.
 - *Engine.* The reference implementation in a pinned CI image (Python stays in
   CI, never the app image — G5), the same weights revision the VM would pull. The
   quality numbers do not depend on TEI vs ORT vs vLLM beyond float noise.
-- *Uncertainty.* A paired bootstrap over the 200 queries (10,000 resamples, fixed
-  seed) gives a 95% interval on each difference. With 200 queries a single
-  model's recall@10 has a standard error of about 2.5 points near 0.85, so a
-  margin smaller than that cannot be told from noise.
+- *Uncertainty.* A paired bootstrap over the queries (10,000 resamples, fixed
+  seed) gives a 95% interval on each difference Δ = recall@10(Nemotron) −
+  recall@10(small), overall and on the Bulgarian slice. Near 0.85 one model's
+  recall@10 has a standard error of about 2.5 points at 200 queries and about 5
+  at 50. The paired interval depends on how strongly the two models agree query
+  by query; for a per-query correlation between 0.8 and 0.5 its half-width is
+  about 0.03–0.05 overall and 0.06–0.10 on the 50-query Bulgarian slice
+  (derived estimates, not measured). Both are as wide as the margins below or
+  wider, so the rule must say what an undecided interval means rather than wait
+  for one that is not.
 
 **Proposed margin (owner to agree): 0.03 absolute recall@10 overall, and 0.05 on
-the 50-query Bulgarian slice.** Rule: keep the smallest candidate whose overall
-recall@10 is within 0.03 of the best Nemotron result **and** whose BG-slice
-recall@10 is within 0.05. Prefer the larger model only when the paired 95%
-interval of (Nemotron − small) lies wholly above the margin. When the interval
-straddles the margin the result is *inconclusive*: the seed set grows to 400
-pairs before a decision, it is never resolved towards the larger model by
-default. Same rule, separately, for the reranker on the fixed pool.
+the 50-query Bulgarian slice.** The rule puts the burden of proof on the larger
+model, as D-L4-3 does ("keep the smaller unless recall@10 drops by more than the
+margin"), and always ends in a verdict:
+
+1. **Nemotron displaces a small candidate only on shown evidence**: the lower
+   bound of the paired 95% interval of Δ exceeds the margin overall (> 0.03)
+   **or** on the Bulgarian slice (> 0.05).
+2. **Otherwise the small candidate stands.** A point Δ within the margin keeps
+   it at once, however wide the interval.
+3. **One growth step, and only one.** When a point Δ exceeds the margin on a
+   slice but the interval's lower bound does not, the set grows once to 400
+   pairs at the same composition (300 EN → EN, 50 BG → BG, 50 BG → EN; the
+   Bulgarian slice becomes 100) and rule 1 is applied to the 400. That verdict
+   is final: if the lower bound still does not clear the margin, the small
+   candidate stands, and the record says the drop was not shown to exceed it.
+4. **The pick.** Keep the smallest candidate (by parameters) that Nemotron does
+   not displace; on a tie, the higher overall recall@10. Nemotron is chosen
+   only if it displaces every small candidate, and only then does Q2 need a
+   Nemotron engine.
+5. **The record states the smallest drop the set could have shown**: the margin
+   plus the interval's half-width, per slice. At 200 pairs that is about
+   0.06–0.08 overall and 0.11–0.15 on the Bulgarian slice; at 400 about
+   0.05–0.07 and 0.09–0.12 (derived estimates).
+
+Rule 5 is the cost of a decision rule that always terminates: **a Bulgarian drop
+between 0.05 and roughly 0.1 can go unseen and the small model kept.** If the
+owner wants the Bulgarian margin closer to enforceable, the Bulgarian slice
+needs about 200 queries of its own (a 350-pair set at the same EN size), which
+brings the smallest drop it can show to about 0.08–0.10; that size is the
+owner's call alongside the margin. The same rule applies,
+separately, to the reranker on the fixed pool.
 
 **Q2 — CPU latency and memory on the production VM (only for the candidates Q1
 keeps, plus the Nemotron model only if it won Q1).**
@@ -273,6 +303,12 @@ keeps, plus the Nemotron model only if it won Q1).**
 - **The comparison runs quality first and latency second.** Under D-L4-3's rule
   the Nemotron engine question is moot unless Nemotron wins on recall, so the
   protocol does not pay for a CPU engine it may never ship.
+- **The decision rule always terminates.** The first draft kept the small model
+  on a point difference within the margin and also called any interval that
+  straddled the margin inconclusive, growing the set to 400 with no step after
+  that; at these set sizes nearly every outcome would have been both. Now the
+  larger model must show its drop exceeds the margin, the set grows at most
+  once, and the record states what size of drop it could have seen.
 - **The candidates are multilingual.** An English-only small model would win the
   EN slice and fail the product's Bulgarian tenants; the BG slice has its own
   margin because it is a quarter of the set and noisier.
@@ -285,3 +321,20 @@ keeps, plus the Nemotron model only if it won Q1).**
   does not hold for any current Nemotron model on TEI's native CPU backend; this
   note changes Phase 1's target from "Nemotron on TEI CPU" to "the D-L4-3 winner
   on TEI CPU", which is what D-L4-3 already implies.
+
+## Master roadmap cells this note leaves stale
+
+The master roadmap is edited by the coordinating change, not by this one, so
+four of its cells still read as they did before the owner's decisions of
+2026-11-11. Until that change lands they contradict the child document:
+
+| Master cell | Reads | Should read |
+| --- | --- | --- |
+| Decision table, D-L4-1 | Weaviate (the target) | **decided 2026-11-11** (owner): pgvector first, in the existing Postgres under RLS; Weaviate only if a measured recall or latency floor is not met |
+| Decision table, D-L4-2 | adopt | **decided 2026-11-11** (owner): vectors-only, no chunk text outside Postgres |
+| Decision table, D-L4-3 | De-NIM retriever: open weights on CPU TEI … adopt | **decided 2026-11-11** (owner): benchmark Nemotron 1B embed/rerank against a small open model on CPU, keep the smaller unless recall@10 drops by more than the agreed margin; open weights on an open engine, never NIM. No current Nemotron model runs on TEI's CPU build (0.2) |
+| Status board, Nemotron Retriever, completeness | 2, CPU TEI | 2, the D-L4-3 winner on CPU |
+
+[`weaviate.md`](../ai-architecture/weaviate.md)'s Phase 0 boxes and its later
+prompt ("decision D-L4-1 chose Weaviate") are rewritten by the knowledge-stack
+re-plan of the same day, which owns that document.

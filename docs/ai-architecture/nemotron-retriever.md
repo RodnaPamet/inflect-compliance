@@ -140,8 +140,10 @@ the measurements are still to run.
       each embedder alone, then each reranker on a fixed top-50 pool, against
       the 200-pair seed set, with a paired bootstrap interval. The decision rule
       is D-L4-3's; **the margin is proposed, not agreed**: 0.03 absolute
-      overall and 0.05 on the Bulgarian slice, inconclusive results growing the
-      set to 400 rather than defaulting to the larger model.
+      overall and 0.05 on the Bulgarian slice. Nemotron displaces a small model
+      only when the interval's lower bound clears the margin; a suggestive but
+      unproven drop grows the set once, to 400, and that verdict is final. The
+      record states the smallest drop the set could have shown.
 - [ ] 0.4 The 200-pair seed set: seeded questionnaire questions and authored
       questions → chunks of the content the product ships (policy templates,
       control and framework texts), 150 EN, 25 BG → BG, 25 BG → EN; seed data
@@ -179,8 +181,10 @@ dispatch-only workflow modelled on vm-capacity.yml, for the candidates Q1 keeps.
 (4) Record every number, digest and weights checksum in a new implementation note.
 
 Constraints: no production change beyond the temporary benchmark container, no
-dependency added to the app. Never resolve an inconclusive result towards the larger
-model. Read each kept model's licence file in its repository before recording it.
+dependency added to the app. Apply the note's decision rule as written: the larger
+model wins only when its paired interval's lower bound clears the margin; grow the set
+at most once, to 400 pairs, and treat that verdict as final; record the smallest drop
+each slice could have shown. Read each kept model's licence file in its repository before recording it.
 
 Done when: the record answers 0.3-0.5 with numbers and the seed set is in the repo with
 a content hash.
