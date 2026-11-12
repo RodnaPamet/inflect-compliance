@@ -75,6 +75,23 @@ describe('buildFlueProviders — which routes a deployment has', () => {
         expect(buildFlueProviders({}, { externalModel: 'claude-x' }).map((p) => p.id)).toEqual([]);
     });
 
+    it('registers the WORKER model beside the supervisor\'s on the one external route (D-L3-1)', () => {
+        const built = buildFlueProviders(
+            { externalApiKey: 'sk-test' },
+            { externalModel: 'claude-sup', externalWorkerModel: 'claude-work' },
+        );
+        expect(built.map((p) => p.id)).toEqual([FLUE_PROVIDER_IDS.external]);
+        expect(built[0].getModels().map((m) => m.id)).toEqual(['claude-sup', 'claude-work']);
+        expect(flueModelIsRegistered(`${FLUE_PROVIDER_IDS.external}/claude-work`, built)).toBe(true);
+        // Unset, blank or equal to the supervisor's: the one model it always carried.
+        for (const externalWorkerModel of [undefined, '  ', 'claude-sup']) {
+            const one = buildFlueProviders({ externalApiKey: 'sk-test' }, { externalModel: 'claude-sup', externalWorkerModel });
+            expect(one[0].getModels().map((m) => m.id)).toEqual(['claude-sup']);
+        }
+        // And a worker model alone is no route: it rides on the supervisor's.
+        expect(buildFlueProviders({ externalApiKey: 'sk-test' }, { externalWorkerModel: 'claude-work' })).toEqual([]);
+    });
+
     it('orders local first, external second — the order the docstring pins', () => {
         const built = buildFlueProviders(
             { localBaseUrl: LOCAL_URL, externalApiKey: 'sk-test' },

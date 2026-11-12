@@ -425,6 +425,25 @@ export interface BuildInvocationOptions {
      * call has nothing before it and correctly starts at zero.
      */
     actionsAlready?: number;
+    /**
+     * Whether the external catalogues are read: `'LIVE'` (the default, and what
+     * every run and every MCP call uses) or `'NOT_READ'`.
+     *
+     * Reading them is not a read of our own tables. For each connection the
+     * agent holds a grant on it decrypts the secret, mints a credential (an
+     * Entra exchange can rotate the refresh token, which is WRITTEN back to the
+     * connection row, and audited), and sends a live `tools/list` to a third
+     * party's server under that server's timeout. A run needs that; a page that
+     * only DESCRIBES what a run would be offered must not pay it, or every view
+     * becomes a credential exchange and an outbound call.
+     *
+     * `'NOT_READ'` can only narrow: the invocation carries no external tools,
+     * so nothing external is offered, and the grant list is untouched. An
+     * invocation built this way is a description, never a run's: its caller
+     * must say that external tools were not probed rather than report them as
+     * unoffered (`agent-canvas-projection.ts`).
+     */
+    externalCatalogues?: 'LIVE' | 'NOT_READ';
 }
 
 export async function buildMcpInvocation(
@@ -536,7 +555,10 @@ export async function buildMcpInvocation(
     // feature and most that follow it.
     // The pin travels WITH the tools, resolved from the card already in scope
     // above rather than re-read later — see `resolveExternalReadTools`.
-    const externalTools = await resolveExternalReadTools(ctx, grantedTools, pinFromCard(inForce));
+    const externalTools =
+        options.externalCatalogues === 'NOT_READ'
+            ? []
+            : await resolveExternalReadTools(ctx, grantedTools, pinFromCard(inForce));
 
     return {
         ctx,
@@ -603,7 +625,7 @@ export async function buildMcpInvocation(
  */
 export async function resolveMcpInvocation(
     ctx: RequestContext,
-    options: { now?: Clock; actionsAlready?: number } = {},
+    options: { now?: Clock; actionsAlready?: number; externalCatalogues?: 'LIVE' | 'NOT_READ' } = {},
 ): Promise<McpInvocation> {
     const verdict = await evaluateAgentRegistration(ctx);
     return buildMcpInvocation(
@@ -622,6 +644,9 @@ export async function resolveMcpInvocation(
             // action budget would reset at every human checkpoint, and a run
             // with three checkpoints would get four budgets.
             actionsAlready: options.actionsAlready,
+            // See `BuildInvocationOptions.externalCatalogues`: only a
+            // description of a run (the agent canvas) passes `'NOT_READ'`.
+            externalCatalogues: options.externalCatalogues,
         },
     );
 }

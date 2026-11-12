@@ -165,3 +165,22 @@ export function narrowSkills<T extends { name: string }>(
     const wanted = new Set(spec.skills);
     return parentSkills.filter((s) => wanted.has(s.name));
 }
+
+/**
+ * THE MODEL A DELEGATE IS GIVEN, or `undefined` to inherit (D-L3-1).
+ *
+ * Subagents are the WORKER role; the parent run is the SUPERVISOR. The driver
+ * resolves both specifiers under one set of residency terms, so the worker's
+ * is never a route the supervisor's is not. This answers only whether the
+ * delegate needs an override at all: `undefined` when the run has no worker
+ * specifier, or when it equals the parent's — which leaves `defineSubagent`
+ * without a `model`, the definition delegates had before the role axis, so a
+ * deployment with no worker model configured builds exactly what it built.
+ */
+export function workerModelOverride(binding: {
+    readonly modelSpecifier: string;
+    readonly workerModelSpecifier?: string;
+}): string | undefined {
+    const worker = binding.workerModelSpecifier;
+    return worker && worker !== binding.modelSpecifier ? worker : undefined;
+}

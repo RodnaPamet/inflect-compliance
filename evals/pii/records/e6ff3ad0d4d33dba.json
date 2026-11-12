@@ -1,0 +1,1120 @@
+{
+  "schema": "inflect-pii-record/1",
+  "corpusDigest": "sha256:71478f356959983aabd64308dc085c62e9b34b35b4111c2ac2066ce00ac2161b",
+  "detector": {
+    "name": "presidio",
+    "version": "2.2.366",
+    "configHash": "sha256:e6ff3ad0d4d33dbad78c1447137734013a8ff70d0d3a3ef880e774d94b222751",
+    "models": {
+      "en": "en_core_web_sm@3.8.0",
+      "bg": "xx_ent_wiki_sm@3.8.0"
+    }
+  },
+  "ranAt": "2026-11-11T23:43:10.580Z",
+  "answers": [
+    {
+      "caseId": "en-task-001",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 15,
+          "end": 28,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 32,
+          "end": 61,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-002",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 15,
+          "end": 29,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 33,
+          "end": 63,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-003",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 15,
+          "end": 32,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 36,
+          "end": 62,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-004",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 0,
+          "end": 14,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 27,
+          "end": 43,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-005",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 0,
+          "end": 14,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 27,
+          "end": 43,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-006",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 0,
+          "end": 13,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 26,
+          "end": 39,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-007",
+      "spans": [
+        {
+          "type": "IBAN_CODE",
+          "start": 15,
+          "end": 37,
+          "score": 1.0
+        },
+        {
+          "type": "PERSON",
+          "start": 54,
+          "end": 68,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-008",
+      "spans": [
+        {
+          "type": "IBAN_CODE",
+          "start": 15,
+          "end": 37,
+          "score": 1.0
+        },
+        {
+          "type": "PERSON",
+          "start": 54,
+          "end": 67,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-009",
+      "spans": [
+        {
+          "type": "IBAN_CODE",
+          "start": 15,
+          "end": 42,
+          "score": 1.0
+        },
+        {
+          "type": "PERSON",
+          "start": 59,
+          "end": 74,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-010",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 17,
+          "end": 30,
+          "score": 0.85
+        },
+        {
+          "type": "BG_EGN",
+          "start": 36,
+          "end": 46,
+          "score": 1.0
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 54,
+          "end": 67,
+          "score": 0.75
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-011",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 17,
+          "end": 30,
+          "score": 0.85
+        },
+        {
+          "type": "PERSON",
+          "start": 32,
+          "end": 46,
+          "score": 0.85
+        },
+        {
+          "type": "BG_EGN",
+          "start": 36,
+          "end": 46,
+          "score": 1.0
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 54,
+          "end": 67,
+          "score": 0.75
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-012",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 17,
+          "end": 32,
+          "score": 0.85
+        },
+        {
+          "type": "BG_EGN",
+          "start": 38,
+          "end": 48,
+          "score": 1.0
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 56,
+          "end": 68,
+          "score": 0.75
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-013",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 29,
+          "end": 44,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 46,
+          "end": 73,
+          "score": 0.5
+        },
+        {
+          "type": "PERSON",
+          "start": 46,
+          "end": 73,
+          "score": 0.85
+        },
+        {
+          "type": "PERSON",
+          "start": 107,
+          "end": 117,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-014",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 29,
+          "end": 45,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 47,
+          "end": 68,
+          "score": 0.5
+        },
+        {
+          "type": "PERSON",
+          "start": 102,
+          "end": 112,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-015",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 12,
+          "end": 26,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 92,
+          "end": 108,
+          "score": 0.75
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-016",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 12,
+          "end": 25,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 90,
+          "end": 106,
+          "score": 0.75
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-017",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 22,
+          "end": 35,
+          "score": 0.85
+        },
+        {
+          "type": "IBAN_CODE",
+          "start": 52,
+          "end": 74,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-018",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 22,
+          "end": 35,
+          "score": 0.5
+        },
+        {
+          "type": "IBAN_CODE",
+          "start": 52,
+          "end": 74,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-019",
+      "spans": [
+        {
+          "type": "BG_EGN",
+          "start": 19,
+          "end": 29,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-020",
+      "spans": [
+        {
+          "type": "BG_EGN",
+          "start": 19,
+          "end": 29,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-021",
+      "spans": [
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 23,
+          "end": 50,
+          "score": 0.5
+        },
+        {
+          "type": "PERSON",
+          "start": 60,
+          "end": 74,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-task-022",
+      "spans": [
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 23,
+          "end": 49,
+          "score": 0.5
+        },
+        {
+          "type": "PERSON",
+          "start": 59,
+          "end": 73,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-refusal-001",
+      "spans": []
+    },
+    {
+      "caseId": "en-refusal-002",
+      "spans": []
+    },
+    {
+      "caseId": "en-refusal-003",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 0,
+          "end": 16,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-refusal-004",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 0,
+          "end": 16,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-refusal-005",
+      "spans": []
+    },
+    {
+      "caseId": "en-refusal-006",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 0,
+          "end": 15,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-refusal-007",
+      "spans": []
+    },
+    {
+      "caseId": "en-refusal-008",
+      "spans": []
+    },
+    {
+      "caseId": "en-refusal-009",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 27,
+          "end": 37,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-refusal-010",
+      "spans": []
+    },
+    {
+      "caseId": "en-refusal-011",
+      "spans": []
+    },
+    {
+      "caseId": "en-refusal-012",
+      "spans": []
+    },
+    {
+      "caseId": "en-injection-001",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 92,
+          "end": 107,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 109,
+          "end": 137,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "en-injection-002",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 92,
+          "end": 106,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 108,
+          "end": 130,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "en-injection-003",
+      "spans": [
+        {
+          "type": "BG_EGN",
+          "start": 70,
+          "end": 80,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "en-injection-004",
+      "spans": [
+        {
+          "type": "BG_EGN",
+          "start": 70,
+          "end": 80,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "en-injection-005",
+      "spans": [
+        {
+          "type": "IBAN_CODE",
+          "start": 63,
+          "end": 85,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "en-missing-input-001",
+      "spans": []
+    },
+    {
+      "caseId": "en-missing-input-002",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 16,
+          "end": 21,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "en-missing-input-003",
+      "spans": []
+    },
+    {
+      "caseId": "bg-task-001",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 20,
+          "end": 34,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 38,
+          "end": 60,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-002",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 20,
+          "end": 34,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 38,
+          "end": 71,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-003",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 20,
+          "end": 34,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 38,
+          "end": 65,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-004",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 0,
+          "end": 14,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 27,
+          "end": 40,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-005",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 0,
+          "end": 17,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 30,
+          "end": 43,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-006",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 0,
+          "end": 24,
+          "score": 0.6
+        },
+        {
+          "type": "PERSON",
+          "start": 7,
+          "end": 24,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 37,
+          "end": 49,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-007",
+      "spans": [
+        {
+          "type": "IBAN_CODE",
+          "start": 23,
+          "end": 50,
+          "score": 1.0
+        },
+        {
+          "type": "PERSON",
+          "start": 60,
+          "end": 78,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-008",
+      "spans": [
+        {
+          "type": "IBAN_CODE",
+          "start": 23,
+          "end": 50,
+          "score": 1.0
+        },
+        {
+          "type": "PERSON",
+          "start": 60,
+          "end": 78,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-009",
+      "spans": [
+        {
+          "type": "IBAN_CODE",
+          "start": 23,
+          "end": 45,
+          "score": 1.0
+        },
+        {
+          "type": "PERSON",
+          "start": 55,
+          "end": 82,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-010",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 16,
+          "end": 34,
+          "score": 0.85
+        },
+        {
+          "type": "BG_EGN",
+          "start": 40,
+          "end": 50,
+          "score": 1.0
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 60,
+          "end": 76,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-011",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 16,
+          "end": 39,
+          "score": 0.85
+        },
+        {
+          "type": "BG_EGN",
+          "start": 45,
+          "end": 55,
+          "score": 1.0
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 65,
+          "end": 77,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-012",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 16,
+          "end": 31,
+          "score": 0.85
+        },
+        {
+          "type": "BG_EGN",
+          "start": 37,
+          "end": 47,
+          "score": 1.0
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 57,
+          "end": 73,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-013",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 26,
+          "end": 40,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 42,
+          "end": 68,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-014",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 26,
+          "end": 39,
+          "score": 0.85
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 41,
+          "end": 68,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-015",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 64,
+          "end": 81,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 100,
+          "end": 113,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-016",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 61,
+          "end": 75,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 94,
+          "end": 106,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-017",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 29,
+          "end": 42,
+          "score": 0.85
+        },
+        {
+          "type": "IBAN_CODE",
+          "start": 69,
+          "end": 96,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-018",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 29,
+          "end": 41,
+          "score": 0.85
+        },
+        {
+          "type": "IBAN_CODE",
+          "start": 68,
+          "end": 90,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-019",
+      "spans": [
+        {
+          "type": "BG_EGN",
+          "start": 38,
+          "end": 48,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-020",
+      "spans": [
+        {
+          "type": "BG_EGN",
+          "start": 38,
+          "end": 48,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-021",
+      "spans": [
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 45,
+          "end": 72,
+          "score": 0.5
+        },
+        {
+          "type": "PERSON",
+          "start": 84,
+          "end": 98,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-022",
+      "spans": [
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 45,
+          "end": 73,
+          "score": 0.5
+        },
+        {
+          "type": "PERSON",
+          "start": 85,
+          "end": 99,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-023",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 9,
+          "end": 24,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "bg-task-024",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 9,
+          "end": 25,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "bg-refusal-001",
+      "spans": []
+    },
+    {
+      "caseId": "bg-refusal-002",
+      "spans": []
+    },
+    {
+      "caseId": "bg-refusal-003",
+      "spans": []
+    },
+    {
+      "caseId": "bg-refusal-004",
+      "spans": []
+    },
+    {
+      "caseId": "bg-refusal-005",
+      "spans": []
+    },
+    {
+      "caseId": "bg-refusal-006",
+      "spans": []
+    },
+    {
+      "caseId": "bg-refusal-007",
+      "spans": []
+    },
+    {
+      "caseId": "bg-refusal-008",
+      "spans": []
+    },
+    {
+      "caseId": "bg-refusal-009",
+      "spans": []
+    },
+    {
+      "caseId": "bg-refusal-010",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 29,
+          "end": 34,
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "caseId": "bg-refusal-011",
+      "spans": []
+    },
+    {
+      "caseId": "bg-injection-001",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 67,
+          "end": 84,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 86,
+          "end": 99,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "bg-injection-002",
+      "spans": [
+        {
+          "type": "PERSON",
+          "start": 67,
+          "end": 88,
+          "score": 0.85
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "start": 90,
+          "end": 101,
+          "score": 0.4
+        }
+      ]
+    },
+    {
+      "caseId": "bg-injection-003",
+      "spans": [
+        {
+          "type": "BG_EGN",
+          "start": 74,
+          "end": 84,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "bg-injection-004",
+      "spans": [
+        {
+          "type": "BG_EGN",
+          "start": 74,
+          "end": 84,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "caseId": "bg-injection-005",
+      "spans": [
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 66,
+          "end": 97,
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "caseId": "bg-missing-input-001",
+      "spans": []
+    },
+    {
+      "caseId": "bg-missing-input-002",
+      "spans": []
+    },
+    {
+      "caseId": "bg-missing-input-003",
+      "spans": []
+    }
+  ]
+}

@@ -95,6 +95,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     AgentKillSwitch: "tests/integration/agent-kill-switch.test.ts",
     AgentKillSwitchDrill: "tests/integration/kill-switch-drill.test.ts",
     AgentBehaviourWindow: "tests/integration/agent-circuit-breaker-isolation.test.ts",
+    AgentBehaviourBaseline: "tests/integration/agent-behaviour-fingerprint.test.ts",
+    AgentBehaviourAnomaly: "tests/integration/agent-behaviour-fingerprint.test.ts",
     AgentCircuitBreaker: "tests/integration/agent-circuit-breaker-isolation.test.ts",
     AgenticEvidenceArtefact: "tests/integration/agentic-evidence-isolation.test.ts",
     AgentHarnessScannerKey: "tests/integration/agent-harness-ingest.test.ts",
@@ -122,6 +124,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     TenantA2aSigningKey: "tests/integration/a2a-peer-messaging.test.ts",
     PeerAgentInboundCredential: "tests/integration/a2a-peer-messaging.test.ts",
     PeerInvitation: "tests/integration/peer-invitations.test.ts",
+    AgentSpendingAuthority: "tests/integration/agent-spending-authority.test.ts",
 };
 
 /**

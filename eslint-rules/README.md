@@ -396,3 +396,22 @@ call that needs a different budget still passes its own.
 received from somewhere else, is not a `new PrismaClient` in the file and is
 not checked. An argument passed by name, or an object built only from a
 spread, is flagged rather than trusted, because the rule cannot see inside it.
+
+### `vector-store-single-seam`
+
+Under `src/`, no file but `src/app-layer/repositories/VectorRepository.ts` and
+the backends beside it in `repositories/vector/` loads a module from
+`repositories/vector/` — by the `@/` alias or a relative path, type-only imports
+included — and no string or template literal outside them names the store's
+table, `KnowledgeVector`.
+
+**Why.** The repository is where the vector store's guarantees live: the tenant
+comes from the request context, a record carrying anything but a key, a content
+hash and a vector is refused (the vectors-only rule, D-L4-2), every read is
+bounded, and every outcome is counted. A backend reached directly, or a raw
+query against its table, skips all of it and looks like ordinary code in
+review. Policing the table NAME as well as the import is what closes the second
+route, which needs no import at all.
+
+**What it cannot see.** A computed module specifier, and a table name assembled
+from pieces at run time. Comments are not literals, so prose may name the table.

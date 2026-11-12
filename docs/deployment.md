@@ -63,6 +63,7 @@ curl http://localhost:3000/api/health | jq .
 | `NOTIFICATIONS_TZ` | Optional (default `Europe/London`) | IANA timezone (DST-aware) for the daily task-due deadline notification cron. Sets **both** the 08:00 firing time **and** the "due today / tomorrow / in a week" calendar-day classification — one zone, so a task due near local midnight is bucketed by the local calendar day rather than the UTC one. Must be a valid IANA zone name (`src/env.ts` rejects an invalid zone at startup). |
 | `ANTHROPIC_WORKSPACE_ID` | Optional | Only for an **organisation-level** `ANTHROPIC_API_KEY` — a key created inside a workspace needs nothing here. Anthropic refuses an organisation-level key's requests with HTTP 400 unless each names its workspace, so when this is set (a `wrkspc_…` identifier, not a secret) every request to the Anthropic API — the posture summary, AI risk suggestions and the Flue runtime's external provider — carries `anthropic-workspace-id: <id>`; unset, none does. It reaches the `app` and `worker` containers the way `ANTHROPIC_API_KEY` does: through the service's `env_file:` (`/opt/inflect/.env.prod` on the production VM). No Compose file lists either key under `environment:`, and none should — a service-level `environment:` entry overrides the env file, so an empty interpolation there would blank the value the container was given. |
 | `AGENT_FLUE_MODEL` | Optional (default `claude-sonnet-5-5`) | The model the Flue agent runtime's external provider names, and the default model `npm run skills:evaluate` records skill evaluations against. Its own variable on purpose: the compliance-posture summary and the AI risk suggestions keep `ANTHROPIC_MODEL` (default `claude-haiku-4-5`), and setting one never moves the other. The credential and workspace are still the shared `ANTHROPIC_API_KEY` and `ANTHROPIC_WORKSPACE_ID`. A `LOCAL_ONLY` tenant's run never reads it; its model is `AI_LOCAL_MODEL`. It reaches the `app` and `worker` containers through the service's `env_file:`, like `ANTHROPIC_API_KEY`. |
+| `AGENT_FLUE_WORKER_MODEL` | Optional (unset) | The WORKER role's model (D-L3-1): the model a Flue run's subagents run on, on the same external provider, key and workspace as `AGENT_FLUE_MODEL`. Registered beside it at boot, never instead of it. Unset, blank or equal to `AGENT_FLUE_MODEL`, subagents run on the run's own model, which is the behaviour before the variable existed; each run's opening audit entry records both models and whether the worker's was configured or a fallback. A `LOCAL_ONLY` tenant's run never reads it; both its roles use `AI_LOCAL_MODEL` or are refused. |
 
 ## Docker Compose (Self-hosted / VPS)
 
@@ -351,6 +352,58 @@ validates syntax and `env_file:` presence and says nothing about bind-mount
 sources, so the service passed every check short of actually starting it.
 Enabling pipelock means satisfying the preconditions listed in that file's
 header and adding a second `-f` flag.
+
+### The other overlays, and what is not an overlay any more
+
+Two more opt-in overlays add services to the same Compose project on the VM.
+Neither is in the canonical set: `apply.sh` does not push them and
+`check-drift.sh` does not check them.
+
+| overlay | services | how it reaches the VM |
+| --- | --- | --- |
+| `deploy/docker-compose.harness-scanner.yml` | `harness-scanner`, `harness-egress` | the `Scanner VM` workflow's `configure` action copies it; `start` runs it |
+| `deploy/docker-compose.legacy-mcp-proving.yml` | `legacy-mcp-proving` | copied by hand, then `up -d legacy-mcp-proving` with both `-f` files |
+
+The OrangeHRM lab overlay (`docker-compose.orangehrm-lab.yml`: `orangehrm`,
+`orangehrm-db`, `orangehrm-mcp`) was **retired by owner decision on
+2026-11-12** and removed from the repo-canonical set, with its two Caddy vhosts.
+Removing it from the running VM is the operator runbook's steps 1–2; until they
+run, the three containers and both vhosts keep serving there (the `VM check`
+workflow's `containers` check shows which). The repository no longer carries
+the overlay; the adapter's source stays in
+`deploy/orangehrm-mcp/` for a non-production instance. The operator runbook,
+including how to bring it back, is in
+[`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md).
+
+A Caddyfile push that stops serving a hostname is refused unless the hostname
+is named in `CADDY_RETIRE_HOSTS` (space-separated, exact names). A lost
+hostname the list does not name is still refused.
+
+### Every service declares a memory limit and a CPU cap
+
+Every service in the canonical file and in the two overlays above declares
+`mem_limit` and `cpus` — the service-level keys plain `docker compose` honours,
+not `deploy.resources`, which is for swarm. The memory limits together stay at
+or under 14.5 GB (host memory minus 1.5 GB), and the batch-shaped services
+(`clamav`, `worker`, `harness-scanner`) are capped at one CPU with half the CPU
+weight, so the request path keeps a core. `tests/guards/deploy-compose-canonical.test.ts`
+holds all of it. The figures, their basis and the risk of an out-of-memory kill
+are in [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md);
+the `app` and `worker` limits are provisional until a re-measurement that spans
+the nightly jobs. The `VM capacity` workflow (below) prints each container's
+configured limit, its peak memory and its out-of-memory kills.
+
+`app` and `worker` also state their V8 heap ceiling
+(`NODE_OPTIONS: "--max-old-space-size=1024"`), because a memory limit moves
+Node's default heap ceiling to about half the limit. A heap overrun is then a
+restart with exit code 134 and `Reached heap limit` in the log, which no
+out-of-memory counter records. The guard holds the heap between half and three
+quarters of `mem_limit`, so the two move together.
+
+A limit change is a structural change: it reaches the VM through
+`CONFIRM=1 deploy/apply.sh` for the canonical file, and through each overlay's
+own path for the overlays. A container keeps the limits it was created with
+until it is recreated.
 
 ### `deploy/.env.prod.example` describes a different deployment
 

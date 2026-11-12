@@ -144,7 +144,17 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Updated 2026-11-10 for `vm-check.yml:vm-check`, the dispatch-only
         // read-only checks of the production VM from a fixed list. Its key
         // sorts after `vm-capacity`, so it is an append again, +5/-0.
-        keyOrderSha: 'cbbac2c896e484eb61a3c42a6994a19abda1f295260c4270fdd6677050944324',
+        //
+        // Updated 2026-11-11 for `retriever-benchmark.yml:bench` and
+        // `retriever-benchmark.yml:summary`, the dispatch-only benchmark that
+        // decides D-L4-3 on a GitHub runner. Inserted in ALPHABETICAL position
+        // before `secret-rotation.yml`, so no neighbour's brace moved, +10/-0.
+        // Updated 2026-11-11 for `garak.yml:garak`, the nightly LLM red-team
+        // (docs/ai-architecture/garak.md Phase 1). Inserted in alphabetical
+        // position before `ghcr-publish.yml:build-push` ('ga' < 'gh'), +5/-0.
+        // Both 2026-11-11 entries merged together: the digest is over the file
+        // holding both, computed with the guard's own keyOrder.
+        keyOrderSha: '7a842d1ceab698cccf23657f85aaba67cd24d143ca1173c530d1e25cabbb5f60',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

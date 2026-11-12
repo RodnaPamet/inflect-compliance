@@ -132,6 +132,11 @@ const AGENTIC_ROUTES: readonly string[] = [
     // inbound link is now the agent-run start form's ad-hoc question
     // (`workflow-start-plan.ts`).
     '/agents/ask',
+    // One agent, read-only, on the process canvas (Phase 2 of
+    // docs/ai-architecture/langflow.md). Inside the processes segment so its
+    // layout's module gate covers it; linked from the agent's own page, and
+    // only where the tenant has the process-canvas module.
+    '/processes/agents/[agentId]',
 ] as const;
 
 /**

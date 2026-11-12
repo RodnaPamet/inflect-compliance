@@ -19,10 +19,17 @@
  * `<pre>` (and as text inside the diff), so `<img onerror>` in them is
  * characters on the screen and no element.
  *
+ * A version's drawn flow (Phase 1 of `docs/ai-architecture/langflow.md`) is
+ * covered by the same hash as its instructions, so it is shown and diffed the
+ * same way: `describeFlowForReview` renders every step, tool, profile reference
+ * and connection as text. An approver is never sent a hash over content the
+ * tab did not show them. A flow version does not run before Phase 5, so its
+ * Test run is disabled and says so.
+ *
  * The four-eyes affordance is the server's (`canDecide`: a SUBMITTED version,
  * a signed-in person, never its author), and the usecase refuses the author
  * again if a request is crafted by hand. Approve sends the hash on screen, so
- * what is approved is the text the reviewer read.
+ * what is approved is the text, and the flow, the reviewer read.
  *
  * Test run is offered on a SUBMITTED or APPROVED version (Step 2c). It starts a
  * read-only run of that version as the agent, on the Tool Runner engine, and
@@ -47,6 +54,7 @@ import { VersionDiff } from '@/components/ui/VersionDiff';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { describeFlowForReview } from '@/lib/agentic/agent-flow';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 
@@ -156,9 +164,11 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
             ? state.reason === 'ENGINE_DOES_NOT_RUN_PROFILES'
                 ? t('testRun.reason.ENGINE_DOES_NOT_RUN_PROFILES', { engine: t(`testRun.engine.${state.engine}`) })
                 : t(`testRun.reason.${state.reason}`)
-            : !v.allowedTriggers.includes('TEST_RUN')
-              ? t('testRun.reason.TRIGGER_NOT_ALLOWED')
-              : null;
+            : v.flow !== null
+              ? t('testRun.reason.FLOW_NOT_RUNNABLE')
+              : !v.allowedTriggers.includes('TEST_RUN')
+                ? t('testRun.reason.TRIGGER_NOT_ALLOWED')
+                : null;
         return (
             <div className="space-y-tight" data-testid={`behaviour-test-run-${v.version}`}>
                 <Button
@@ -253,12 +263,29 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                                 toVersionId={open.id}
                                 data-testid="behaviour-review-diff"
                             />
+                            {inForce.flow !== null || open.flow !== null ? (
+                                <>
+                                    <p className="text-xs text-content-muted">
+                                        {t('review.flowDiffIntro', { from: inForce.version, to: open.version })}
+                                    </p>
+                                    <VersionDiff
+                                        versions={[
+                                            { id: inForce.id, versionNumber: inForce.version, text: flowText(inForce) },
+                                            { id: open.id, versionNumber: open.version, text: flowText(open) },
+                                        ]}
+                                        fromVersionId={inForce.id}
+                                        toVersionId={open.id}
+                                        data-testid="behaviour-review-flow-diff"
+                                    />
+                                </>
+                            ) : null}
                         </div>
                     ) : null}
                     <VersionBody v={open} />
                     {open.status === 'SUBMITTED' && open.canDecide ? (
                         <p className="text-xs text-content-muted">
-                            {t('review.hashNote')} <code className="break-all">{open.instructionsHash}</code>
+                            {open.flow !== null ? t('review.hashNoteWithFlow') : t('review.hashNote')}{' '}
+                            <code className="break-all">{open.instructionsHash}</code>
                         </p>
                     ) : null}
                     {open.status === 'SUBMITTED' && open.author.isViewer ? (
@@ -395,7 +422,12 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
     );
 }
 
-/** One version's instructions, as text, and the settings it runs with. */
+/** A version's flow as the reviewer reads it, or empty for a version with none. */
+function flowText(v: ProfileVersionView): string {
+    return v.flow !== null ? describeFlowForReview(v.flow) : '';
+}
+
+/** One version's instructions and flow, as text, and the settings it runs with. */
 function VersionBody({ v }: { v: ProfileVersionView }) {
     const t = useTranslations('agents.behaviour');
     return (
@@ -407,6 +439,17 @@ function VersionBody({ v }: { v: ProfileVersionView }) {
             >
                 {v.instructions}
             </pre>
+            {v.flow !== null ? (
+                <>
+                    <p className="text-xs text-content-muted">{t('field.flow')}</p>
+                    <pre
+                        className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle p-2 text-xs text-content-default"
+                        data-testid={`behaviour-version-${v.version}-flow`}
+                    >
+                        {flowText(v)}
+                    </pre>
+                </>
+            ) : null}
             <dl className="grid grid-cols-2 gap-x-default gap-y-tight text-xs text-content-muted">
                 <dt>{t('field.tools')}</dt>
                 <dd data-testid={`behaviour-version-${v.version}-tools`}>{v.toolNames.join(', ')}</dd>

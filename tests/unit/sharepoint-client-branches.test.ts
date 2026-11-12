@@ -14,6 +14,7 @@ import {
     SharePointClient,
     type SharePointConnectionConfig,
 } from '@/app-layer/integrations/providers/sharepoint/client';
+import { withApprovedDrives } from '../helpers/sharepoint-approved-drives';
 
 const jsonRes = (body: unknown, ok = true, status = 200): Response =>
     ({ ok, status, json: async () => body, arrayBuffer: async () => new ArrayBuffer(8) }) as unknown as Response;
@@ -27,6 +28,10 @@ function client(fetchImpl: any, over: Partial<SharePointConnectionConfig> = {}) 
     };
     return new SharePointClient(config, fetchImpl as typeof fetch);
 }
+
+/** A client whose approved site holds drives `drv1` and `d1` (reads check it). */
+const reader = (fetchImpl: any, over: Partial<SharePointConnectionConfig> = {}) =>
+    client(withApprovedDrives(fetchImpl), over);
 
 describe('testConnection — the branches Graph reaches when it is unhappy', () => {
     it('reports an unmapped status verbatim rather than swallowing it', async () => {
@@ -76,13 +81,13 @@ describe('generic CRUD projection', () => {
 
     it('leaves remoteUpdatedAt undefined when Graph omits lastModifiedDateTime', async () => {
         const f = jest.fn().mockResolvedValue(jsonRes({ id: 'i1', name: 'doc.pdf' }));
-        const obj = await client(f).getRemoteObject('drv1:i1');
+        const obj = await reader(f).getRemoteObject('drv1:i1');
         expect(obj?.remoteUpdatedAt).toBeUndefined();
     });
 
     it('parses lastModifiedDateTime into a Date when Graph supplies it', async () => {
         const f = jest.fn().mockResolvedValue(jsonRes({ id: 'i1', lastModifiedDateTime: '2026-01-02T03:04:05Z' }));
-        const obj = await client(f).getRemoteObject('drv1:i1');
+        const obj = await reader(f).getRemoteObject('drv1:i1');
         expect(obj?.remoteUpdatedAt).toEqual(new Date('2026-01-02T03:04:05Z'));
     });
 
@@ -107,7 +112,7 @@ describe('collection endpoints tolerate an absent `value` array', () => {
 
     it('listChildren returns an empty page with no cursor', async () => {
         const f = jest.fn().mockResolvedValue(jsonRes({}));
-        expect(await client(f).listChildren('drv1')).toEqual({ items: [], nextLink: undefined });
+        expect(await reader(f).listChildren('drv1')).toEqual({ items: [], nextLink: undefined });
     });
 });
 
@@ -115,7 +120,7 @@ describe('listChildren cursor handling', () => {
     it('follows a cursor that belongs to the requested drive, verbatim', async () => {
         const cursor = 'https://graph.microsoft.com/v1.0/drives/drv1/root/children?$skiptoken=abc';
         const f = jest.fn().mockResolvedValue(jsonRes({ value: [{ id: 'z' }] }));
-        const page = await client(f).listChildren('drv1', undefined, cursor);
+        const page = await reader(f).listChildren('drv1', undefined, cursor);
         // The cursor is used AS the URL — not re-derived, or the skiptoken is lost
         // and the caller pages forever over the first page.
         expect(f.mock.calls[0][0]).toBe(cursor);
@@ -125,7 +130,7 @@ describe('listChildren cursor handling', () => {
     it('a cursor wins over itemId when both are supplied', async () => {
         const cursor = 'https://graph.microsoft.com/v1.0/drives/drv1/items/f1/children?$skiptoken=abc';
         const f = jest.fn().mockResolvedValue(jsonRes({ value: [] }));
-        await client(f).listChildren('drv1', 'f1', cursor);
+        await reader(f).listChildren('drv1', 'f1', cursor);
         expect(f.mock.calls[0][0]).toBe(cursor);
     });
 });
@@ -135,7 +140,7 @@ describe('downloadItemContent', () => {
         // A silent empty ArrayBuffer would be AV-scanned, stored, and become a
         // zero-byte Evidence row that looks like a successful import.
         const f = jest.fn().mockResolvedValue(jsonRes({}, false, 404));
-        await expect(client(f).downloadItemContent('drv1', 'item1')).rejects.toThrow('Graph download item1 → 404');
+        await expect(reader(f).downloadItemContent('drv1', 'item1')).rejects.toThrow('Graph download item1 → 404');
     });
 });
 
@@ -144,7 +149,7 @@ describe('getDelta — walk termination', () => {
         // Returning a token for a walk that never reached the deltaLink would
         // silently skip every change after the cut-off.
         const f = jest.fn().mockResolvedValue(
-            jsonRes({ value: [{ id: 'a' }], '@odata.nextLink': 'https://graph/next' }),
+            jsonRes({ value: [{ id: 'a' }], '@odata.nextLink': 'https://graph.microsoft.com/v1.0/drives/drv1/root/delta?page=next' }),
         );
         const res = await client(f).getDelta('drv1', undefined, 2);
         expect(f).toHaveBeenCalledTimes(2);

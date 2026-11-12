@@ -55,6 +55,13 @@ const SEAMS = {
     // rows that carry the text, the review stamps and the pointer in force.
     agentProfile: { table: 'AgentProfile', seam: 'src/app-layer/usecases/agent-profiles.ts' },
     agentProfileVersion: { table: 'AgentProfileVersion', seam: 'src/app-layer/usecases/agent-profiles.ts' },
+    // Spending authority (Agent Pay Phase 1, D-L1-9). The review stamp is what
+    // lets an agent with an envelope go into service, so exactly one file may
+    // write the rows that carry the envelope, its declaration and its review.
+    agentSpendingAuthority: {
+        table: 'AgentSpendingAuthority',
+        seam: 'src/app-layer/usecases/agent-spending-authority.ts',
+    },
     // A2A messaging (#3679). A receipt is evidence of what crossed the
     // boundary, a kill is evidence of a stop, and a credential decides which
     // agent a peer reaches: one writer each, so none can be written by a path
@@ -142,6 +149,7 @@ describe('the harness tables have one write seam each', () => {
             'src/app-layer/usecases/agent-harness-scanner-keys.ts',
             'src/app-layer/usecases/agent-harness-scans.ts',
             'src/app-layer/usecases/agent-profiles.ts',
+            'src/app-layer/usecases/agent-spending-authority.ts',
             'src/app-layer/usecases/peer-agents.ts',
             'src/app-layer/usecases/peer-invitations.ts',
             'src/app-layer/usecases/tenant-skills.ts',

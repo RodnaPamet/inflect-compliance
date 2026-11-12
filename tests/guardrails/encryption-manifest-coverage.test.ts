@@ -141,6 +141,7 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         "One of two fixed codes ('PRINCIPAL_RELINKED' | 'AGENT_RELINKED'), CHECK-constrained in the migration and written only by our own harness ingest (#3671) — never user text.",
     'AgentKillSwitchDrill.boundaryRefusalReason': "One of three fixed literals ('agent_killed' | 'refused_for_another_reason' | 'not_refused') written by the drill, never by a user.",
     'AgentKillSwitchDrill.findingId': 'A cuid pointing at the Finding this drill raised. An identifier, not content.',
+    'AgentBehaviourAnomaly.findingId': 'A cuid pointing at the Finding the behaviour fingerprint raised or found open for this agent-day. An identifier, not content.',
 
     'AgentActionReceipt.toolDescriptionHash': 'A SHA-256 DIGEST of the MCP tool description in force when the mediated action happened — never the description itself, and the description is our own published tool documentation carrying no tenant data. It exists so an audit can tell WHICH definition produced an action after a poisoned one is found; encrypting it would defeat the equality comparison that is its only use.',
     'McpToolManifestPin.descriptionHash': 'A SHA-256 DIGEST of an MCP tool s description, never the description itself — the description is our own published tool documentation and carries no tenant data at all. The column exists so the boundary can detect that the text CHANGED, which is an equality comparison; encrypting it would defeat the comparison and protect a value that is already public in the tool catalogue.',

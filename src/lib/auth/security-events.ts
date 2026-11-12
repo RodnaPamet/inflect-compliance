@@ -50,6 +50,7 @@ export const AUTH_ACTIONS = {
     PASSWORD_RESET_REQUESTED: 'AUTH_PASSWORD_RESET_REQUESTED',
     PASSWORD_RESET_COMPLETED: 'AUTH_PASSWORD_RESET_COMPLETED',
     PASSWORD_CHANGED: 'AUTH_PASSWORD_CHANGED',
+    UNVERIFIED_ACCOUNT_CLAIMED: 'AUTH_UNVERIFIED_ACCOUNT_CLAIMED',
 } as const;
 
 export type AuthActionValue = (typeof AUTH_ACTIONS)[keyof typeof AUTH_ACTIONS];
@@ -343,5 +344,45 @@ export async function recordPasswordChanged(params: {
         email: params.email,
         method: 'credentials',
         requestId: params.requestId,
+    });
+}
+
+/**
+ * A trusted OAuth sign-in claimed an account whose email had never been
+ * verified, removing the credentials anybody else could hold
+ * (`src/lib/auth/oauth-email-trust.ts`). Counts only; no identifiers beyond
+ * the user id and the email hash.
+ */
+export async function recordUnverifiedAccountClaimed(params: {
+    userId: string;
+    email: string;
+    method: 'google' | 'microsoft-entra-id';
+    removedPassword: boolean;
+    removedProviderLinks: number;
+    requestId?: string;
+}): Promise<void> {
+    logger.warn('auth unverified account claimed by verified sign-in', {
+        component: 'auth',
+        event: 'unverified_account_claimed',
+        userId: params.userId,
+        identifierHash: hashEmailForLog(params.email),
+        method: params.method,
+        removedPassword: params.removedPassword,
+        removedProviderLinks: params.removedProviderLinks,
+        requestId: params.requestId,
+    });
+    const tenantId = await resolvePrimaryTenantId(params.userId);
+    if (!tenantId) return;
+    await writeAudit({
+        action: AUTH_ACTIONS.UNVERIFIED_ACCOUNT_CLAIMED,
+        userId: params.userId,
+        tenantId,
+        email: params.email,
+        method: params.method,
+        requestId: params.requestId,
+        extra: {
+            removedPassword: params.removedPassword,
+            removedProviderLinks: params.removedProviderLinks,
+        },
     });
 }

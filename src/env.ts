@@ -10,6 +10,7 @@ import { parseCidr } from "@/lib/security/cidr";
 import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 import { DEV_FALLBACK_DATA_ENCRYPTION_KEY } from '@/lib/security/encryption-constants';
+import { checkWebBotAuthSeed, seedRefusalMessage } from '@/lib/web-bot-auth/seed';
 
 /**
  * Treat an EMPTY value as absent — #4564, and it is load-bearing rather than
@@ -276,6 +277,60 @@ export const env = createEnv({
         // remaining v1 rows under the previous key.
         DATA_ENCRYPTION_KEY_PREVIOUS: z.string().min(32).optional(),
 
+        // Web Bot Auth (docs/ai-architecture/web-bot-auth.md Phase 1, D-L1-5):
+        // ONE Ed25519 signing seed for the DEPLOYMENT, never per tenant — a
+        // monitored vendor must not learn which customer monitors it. Both are
+        // optional: absent, no key is built and the key directory at
+        // /.well-known/http-message-signatures-directory answers 404. A 32-byte
+        // seed as 64 hex characters (`openssl rand -hex 32`) or base64(url).
+        // Refused at startup when malformed, equal to a DATA_ENCRYPTION_KEY
+        // (a key reused across purposes spreads its compromise), the previous
+        // equal to the current, or — in production — a published test seed.
+        // PREVIOUS is published beside the current key during a rotation's
+        // grace; unset it to end the grace. Cross-field values are read from
+        // process.env directly, as the DATA_ENCRYPTION_KEY refinement does.
+        WEB_BOT_AUTH_SIGNING_KEY: z
+            .string()
+            .optional()
+            .superRefine((val, ctx) => {
+                if (!val) return;
+                const refusal = checkWebBotAuthSeed({
+                    seed: val,
+                    dataEncryptionKeys: [
+                        process.env.DATA_ENCRYPTION_KEY,
+                        process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
+                    ],
+                    refusePublishedTestSeeds: process.env.NODE_ENV === 'production',
+                });
+                if (refusal) {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        message: seedRefusalMessage('WEB_BOT_AUTH_SIGNING_KEY', refusal),
+                    });
+                }
+            }),
+        WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY: z
+            .string()
+            .optional()
+            .superRefine((val, ctx) => {
+                if (!val) return;
+                const refusal = checkWebBotAuthSeed({
+                    seed: val,
+                    dataEncryptionKeys: [
+                        process.env.DATA_ENCRYPTION_KEY,
+                        process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
+                    ],
+                    currentSigningKey: process.env.WEB_BOT_AUTH_SIGNING_KEY,
+                    refusePublishedTestSeeds: process.env.NODE_ENV === 'production',
+                });
+                if (refusal) {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        message: seedRefusalMessage('WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY', refusal),
+                    });
+                }
+            }),
+
         // Security / CORS
         CORS_ALLOWED_ORIGINS: z.string().default(""),
 
@@ -304,6 +359,20 @@ export const env = createEnv({
         // Unset outside a published image; read through `buildVersion()`.
         BUILD_SHA: z.string().optional(),
 
+        // The DocumentParser seam's backend (ragflow.md Phase 1, D-L4-4: a
+        // Docling-class parsing-only service run by the OPERATOR inside the
+        // deployment). Operator config only — no tenant column reaches it, and
+        // it is read only by src/lib/ai/parsing/index.ts (G6). http or https;
+        // it must name an address INSIDE the deployment (RFC 1918, loopback,
+        // IPv6 ULA; every resolved address — src/lib/ai/in-deployment-service.ts),
+        // or every parse is refused. Absent (or empty) = no backend is
+        // constructed and the deterministic paragraph stub parses text
+        // documents only. A host OUTSIDE the deployment would be a
+        // sub-processor (G2) — a register change, not a configuration change.
+        DOC_PARSER_BASE_URL: emptyToUndefined(z.string().url().optional()),
+        // Sent as `X-Api-Key` (docling-serve's DOCLING_SERVE_API_KEY). Optional.
+        DOC_PARSER_API_KEY: emptyToUndefined(z.string().optional()),
+
         // AI Risk Assessment. 'stub' (default, no network/key) | 'anthropic'
         // (direct Claude API — reuses ANTHROPIC_API_KEY / ANTHROPIC_MODEL
         // below, the SAME credential as the posture summary) | 'openrouter' |
@@ -320,6 +389,50 @@ export const env = createEnv({
         AI_LOCAL_BASE_URL: z.string().optional(),
         AI_LOCAL_MODEL: z.string().optional(),
         AI_LOCAL_API_KEY: z.string().optional(),
+        // Embeddings and reranking inside the deployment (Layer 4,
+        // docs/ai-architecture/nemotron-retriever.md). OPERATOR config only —
+        // no tenant column reaches these. Absent base URL = no provider is
+        // constructed and every request is refused by name
+        // (src/lib/ai/embeddings/select.ts). A base URL must name an address
+        // INSIDE the deployment (RFC 1918, loopback, IPv6 ULA; every resolved
+        // address; src/lib/ai/in-deployment-service.ts), or it is refused —
+        // `inflect-local` is a residency claim. Read only by
+        // src/lib/ai/embeddings/select.ts.
+        // The model must be named exactly as the TEI process reports it
+        // (`--model-id`): a result whose served model differs is refused. The
+        // model, its dimension and its query/passage prefixes are
+        // configuration, not code, until the Phase 0 benchmark decides them
+        // (D-L4-3).
+        AI_EMBED_LOCAL_BASE_URL: z.string().optional(),
+        AI_EMBED_LOCAL_MODEL: z.string().optional(),
+        AI_EMBED_LOCAL_DIMENSIONS: z.string().optional(),
+        AI_EMBED_LOCAL_QUERY_PREFIX: z.string().optional(),
+        AI_EMBED_LOCAL_PASSAGE_PREFIX: z.string().optional(),
+        AI_RERANK_LOCAL_BASE_URL: z.string().optional(),
+        AI_RERANK_LOCAL_MODEL: z.string().optional(),
+        // NeMo Guardrails server for the AI guard's second provider (NeMo
+        // Guardrails roadmap, Phase 1.4). Operator config only, never a tenant
+        // setting. Unset or blank = the deterministic `patterns` provider alone,
+        // and nothing else is constructed. Set = patterns + nemo, composed
+        // worst-of; an unreachable or unusable server flags (never allows).
+        // A server WE operate inside the deployment: http or https, and it must
+        // resolve INSIDE the deployment (src/lib/ai/in-deployment-service.ts),
+        // or every scan flags — a third party's host would be a sub-processor
+        // change. Read only by src/app-layer/ai/guard/providers/registry.ts.
+        AI_GUARD_NEMO_BASE_URL: z.string().optional(),
+        // PII detector (docs/ai-architecture/presidio.md, Phase 1). The base
+        // URL of the in-deployment Presidio analyzer — operator configuration,
+        // never a tenant value (G6). Absent = no detector is constructed (G9).
+        // A server WE operate inside the deployment: http or https, and it must
+        // resolve INSIDE the deployment (src/lib/ai/in-deployment-service.ts),
+        // or the detector is unmounted / every call fails — and the egress use
+        // then BLOCKS for a tenant with redaction on. Read only by
+        // src/lib/ai/pii/mount.ts.
+        // The config hash names the recogniser configuration the deployed
+        // service image was built from; the detector mounts only when a
+        // committed record under evals/pii/records/ answered exactly it.
+        AI_PII_BASE_URL: z.string().url().optional(),
+        AI_PII_CONFIG_HASH: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional(),
         AI_RISK_DAILY_QUOTA: z.string().optional(),
         AI_RISK_USER_RPM: z.string().optional(),
         // Global AI kill switch. 'false' disables EVERY AI feature
@@ -449,6 +562,28 @@ export const env = createEnv({
         // set on the org Settings page), and a workspace with no organization
         // stays off. A workspace owner still chooses the engine.
         AGENT_DRIVER_TOOL_RUNNER: z.string().optional(),
+        // The vector store's backend (Layer 4; D-L4-1, pgvector first). Only the
+        // exact value 'pgvector' turns it on; unset or anything else is OFF and
+        // constructs nothing (`getVectorRepository()` returns null). A plain
+        // string for the reason AGENT_DRIVER_FLUE above carries: a typo is "off",
+        // never a process that will not boot. Set it ONLY after the Postgres
+        // image carries the `vector` extension and the KnowledgeVector migration
+        // has run (docs/implementation-notes/2026-11-11-vector-store-seam.md);
+        // until then the backend refuses PGVECTOR_NOT_INSTALLED on every call.
+        VECTOR_STORE_BACKEND: z.string().optional(),
+        // THE AGENT BEHAVIOUR FINGERPRINT (Morpheus roadmap Phase 1, D-L1-3) —
+        // OFF BY DEFAULT, two keys (G9). The nightly `agent-fingerprint` job
+        // scores a tenant only when this is '1'/'true' AND the tenant's slug is
+        // named in AGENT_BEHAVIOUR_DETECTOR_TENANTS (comma-separated). Any other
+        // value of either is off. Read through `behaviourDetectorDecisionFor`
+        // in src/lib/agentic/behaviour-detector-switch.ts, never directly.
+        AGENT_BEHAVIOUR_DETECTOR: z.string().optional(),
+        AGENT_BEHAVIOUR_DETECTOR_TENANTS: z.string().optional(),
+        // Threshold B of the same detector LATCHES the agent's existing circuit
+        // breaker with reason BEHAVIOUR_ANOMALY. That stops an agent with no
+        // human in the loop, so it is a third, separate key: only '1'/'true'
+        // turns it on, and without it threshold B raises the finding only.
+        AGENT_BEHAVIOUR_DETECTOR_LATCH: z.string().optional(),
         // RUNS STARTED BY A PERSON IN A BROWSER (#3868 step 2) — opt-in.
         //
         // Every Flue run today is started by a job, a credential or an
@@ -533,6 +668,16 @@ export const env = createEnv({
         // one key to rotate, two model pins. A LOCAL_ONLY tenant's run never
         // reads it — that route is AI_LOCAL_MODEL.
         AGENT_FLUE_MODEL: z.string().default('claude-sonnet-5-5'),
+        // The WORKER role's model (D-L3-1, 2026-11-11): the model a Flue run's
+        // subagents run on, on the same EXTERNAL provider and key as
+        // AGENT_FLUE_MODEL — so it must be a model that provider serves, and
+        // no new sub-processor is involved. UNSET means the worker runs on the
+        // supervisor's model (`worker_fallback`), which is today's behaviour
+        // exactly. A LOCAL_ONLY tenant's run never reads it: both roles take
+        // the local route or are refused. See
+        // src/lib/agentic/flue/model-selection.ts and
+        // docs/ai-architecture/nemotron-reasoning.md Phase 1.
+        AGENT_FLUE_WORKER_MODEL: z.string().optional(),
         // The models the Tool Runner engine runs an agent profile's two tiers
         // on (Step 2a, docs/claude-tool-runner-design.md). A profile names a
         // TIER, never a model id, so these two are the deployment's whole
@@ -768,6 +913,8 @@ export const env = createEnv({
 
         DATA_ENCRYPTION_KEY: process.env.DATA_ENCRYPTION_KEY,
         DATA_ENCRYPTION_KEY_PREVIOUS: process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
+        WEB_BOT_AUTH_SIGNING_KEY: process.env.WEB_BOT_AUTH_SIGNING_KEY,
+        WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY: process.env.WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY,
 
         CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
         EGRESS_PRIVATE_CIDR_ALLOWLIST: process.env.EGRESS_PRIVATE_CIDR_ALLOWLIST,
@@ -783,6 +930,8 @@ export const env = createEnv({
         STRIPE_PRICE_ID_ENTERPRISE: process.env.STRIPE_PRICE_ID_ENTERPRISE,
         APP_URL: process.env.APP_URL,
         BUILD_SHA: process.env.BUILD_SHA,
+        DOC_PARSER_BASE_URL: process.env.DOC_PARSER_BASE_URL,
+        DOC_PARSER_API_KEY: process.env.DOC_PARSER_API_KEY,
 
         AI_RISK_PROVIDER: process.env.AI_RISK_PROVIDER,
         AI_QUESTIONNAIRE_PROVIDER: process.env.AI_QUESTIONNAIRE_PROVIDER,
@@ -791,6 +940,16 @@ export const env = createEnv({
         AI_LOCAL_BASE_URL: process.env.AI_LOCAL_BASE_URL,
         AI_LOCAL_MODEL: process.env.AI_LOCAL_MODEL,
         AI_LOCAL_API_KEY: process.env.AI_LOCAL_API_KEY,
+        AI_EMBED_LOCAL_BASE_URL: process.env.AI_EMBED_LOCAL_BASE_URL,
+        AI_EMBED_LOCAL_MODEL: process.env.AI_EMBED_LOCAL_MODEL,
+        AI_EMBED_LOCAL_DIMENSIONS: process.env.AI_EMBED_LOCAL_DIMENSIONS,
+        AI_EMBED_LOCAL_QUERY_PREFIX: process.env.AI_EMBED_LOCAL_QUERY_PREFIX,
+        AI_EMBED_LOCAL_PASSAGE_PREFIX: process.env.AI_EMBED_LOCAL_PASSAGE_PREFIX,
+        AI_RERANK_LOCAL_BASE_URL: process.env.AI_RERANK_LOCAL_BASE_URL,
+        AI_RERANK_LOCAL_MODEL: process.env.AI_RERANK_LOCAL_MODEL,
+        AI_GUARD_NEMO_BASE_URL: process.env.AI_GUARD_NEMO_BASE_URL,
+        AI_PII_BASE_URL: process.env.AI_PII_BASE_URL,
+        AI_PII_CONFIG_HASH: process.env.AI_PII_CONFIG_HASH,
         AI_RISK_DAILY_QUOTA: process.env.AI_RISK_DAILY_QUOTA,
         AI_RISK_USER_RPM: process.env.AI_RISK_USER_RPM,
         AI_RISK_ENABLED: process.env.AI_RISK_ENABLED,
@@ -801,10 +960,15 @@ export const env = createEnv({
         A2A_HOST_CONSUMER_TOKEN_SECRET: process.env.A2A_HOST_CONSUMER_TOKEN_SECRET,
         AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
         AGENT_DRIVER_TOOL_RUNNER: process.env.AGENT_DRIVER_TOOL_RUNNER,
+        VECTOR_STORE_BACKEND: process.env.VECTOR_STORE_BACKEND,
+        AGENT_BEHAVIOUR_DETECTOR: process.env.AGENT_BEHAVIOUR_DETECTOR,
+        AGENT_BEHAVIOUR_DETECTOR_TENANTS: process.env.AGENT_BEHAVIOUR_DETECTOR_TENANTS,
+        AGENT_BEHAVIOUR_DETECTOR_LATCH: process.env.AGENT_BEHAVIOUR_DETECTOR_LATCH,
         AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
         AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
+        AGENT_FLUE_WORKER_MODEL: process.env.AGENT_FLUE_WORKER_MODEL,
         AGENT_TOOL_RUNNER_MODEL_BALANCED: process.env.AGENT_TOOL_RUNNER_MODEL_BALANCED,
         AGENT_TOOL_RUNNER_MODEL_DEEP: process.env.AGENT_TOOL_RUNNER_MODEL_DEEP,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,

@@ -71,6 +71,7 @@
  */
 
 import type { LucideIcon } from 'lucide-react';
+import type { AgentViewNodeKind } from '@/lib/processes/agent-view/agent-canvas-graph';
 import {
     Box,
     FileText,
@@ -501,4 +502,28 @@ export const NODE_ACCENT_ICON_TONE: Record<NodeAccent, string> = {
     success: 'text-[color:var(--content-success)]',
     neutral: 'text-content-muted',
     subtle: 'text-content-subtle',
+};
+
+/**
+ * THE AGENT VIEW'S NODE KINDS (Phase 2 of `docs/ai-architecture/langflow.md`).
+ *
+ * A separate record, not new members of `ProcessNodeKind`. An agent view is a
+ * read-only projection that stores nothing, so its kinds are never persisted in
+ * `ProcessNode.nodeType`, never offered by a palette and never taken by the
+ * process-map serializer. Joining the process union would have put seven kinds
+ * a map must never hold into every `Record<ProcessNodeKind, …>` the palette,
+ * inspector and serializer key on.
+ *
+ * Same visual language as the process kinds (an accent and an icon from the
+ * tables above), so an agent opened from a map's `agent` node reads as the same
+ * canvas.
+ */
+export const AGENT_VIEW_NODE_TAXONOMY: Record<AgentViewNodeKind, { icon: LucideIcon; accent: NodeAccent }> = {
+    hub: { icon: Bot, accent: 'brand-secondary' },
+    trigger: { icon: Zap, accent: 'neutral' },
+    tool: { icon: Play, accent: 'brand' },
+    skill: { icon: FileText, accent: 'success' },
+    output: { icon: StickyNote, accent: 'neutral' },
+    step: { icon: Box, accent: 'brand' },
+    map: { icon: GroupIcon, accent: 'subtle' },
 };

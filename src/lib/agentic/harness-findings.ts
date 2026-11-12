@@ -151,7 +151,7 @@ import type {
     HarnessUnboundCredential,
     SOURCE_KINDS,
 } from './harness-contract';
-import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
+import { containsCardNumber, isScanComplete, looksLikeSecret } from './harness-contract-rules';
 
 /**
  * The path of the first string member of a verified body whose value is
@@ -165,8 +165,24 @@ import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
  * line, and repeating the secret there would be the leak it prevents.
  */
 export function firstSecretShapedMember(body: HarnessReportBody): string | null {
+    return firstSecretShapedPath(body);
+}
+
+/**
+ * The same walk over any JSON-shaped value: the path of its first secret-shaped
+ * string, card numbers included (D-L1-8), or null. A writer that stores values
+ * a person or a scanner typed — the spending-authority envelope of
+ * `docs/ai-architecture/mastercard-agent-pay.md` Phase 1 — refuses through this
+ * rather than a copy, so the shapes stay one list.
+ */
+export function firstSecretShapedPath(root: unknown): string | null {
     const walk = (node: unknown, path: string): string | null => {
         if (typeof node === 'string') return looksLikeSecret(node) ? path : null;
+        // A card number fits in a JSON number (sixteen digits are below 2^53),
+        // so a numeric member is read as its digits too.
+        if (typeof node === 'number' || typeof node === 'bigint') {
+            return containsCardNumber(String(node)) ? path : null;
+        }
         if (Array.isArray(node)) {
             for (let i = 0; i < node.length; i++) {
                 const hit = walk(node[i], `${path}[${i}]`);
@@ -182,7 +198,7 @@ export function firstSecretShapedMember(body: HarnessReportBody): string | null 
         }
         return null;
     };
-    return walk(body, '');
+    return walk(root, '');
 }
 
 // ─── Agent SDK options, as the scanner reads them from code (#4156) ─────────

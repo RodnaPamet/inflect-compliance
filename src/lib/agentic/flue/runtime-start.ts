@@ -54,6 +54,10 @@ function deploymentProviders(): readonly Provider[] {
             // summary and the risk suggestions keep that one (owner decision,
             // 2026-10-18). Same key, different model.
             externalModel: env.AGENT_FLUE_MODEL,
+            // The WORKER role's pin (D-L3-1), registered beside it on the same
+            // provider. Unset, the worker runs on the supervisor's model and
+            // nothing extra is registered.
+            externalWorkerModel: env.AGENT_FLUE_WORKER_MODEL,
             // Deployment-wide only. A per-tenant `localModel` override is not
             // served — see `FlueProviderModels.localModels` for why, and for
             // the upgrade path.

@@ -65,6 +65,11 @@ import {
     resolveAgenticRecipients,
 } from '../notifications/agentic';
 import type { RequestContext } from '../types';
+import {
+    openSpendingSuspensionTasks,
+    requestSpendingSuspensionInTx,
+    type SpendingSuspensionRequest,
+} from './agent-spending-authority';
 
 /** How a kill row is reported to an operator surface. */
 export interface KillSwitchRecord {
@@ -205,11 +210,12 @@ export async function engageKillSwitch(
         );
     }
 
-    return runInTenantContext(ctx, async (db) => {
+    const engaged = await runInTenantContext(ctx, async (db) => {
+        let agent: SuspensionAgent | null = null;
         if (agentId !== null) {
-            const agent = await db.registeredAgent.findFirst({
+            agent = await db.registeredAgent.findFirst({
                 where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
-                select: { id: true },
+                select: { id: true, name: true, ownerUserId: true },
             });
             // Same shape whether absent or foreign, so a caller learns nothing
             // about another tenant's id space.
@@ -224,7 +230,7 @@ export async function engageKillSwitch(
         // must get "yes, it is stopped" rather than a unique-violation 500. The
         // partial unique index is still the authority; this is what makes the
         // common case pleasant, not what makes it correct.
-        if (existing) return toRecord(existing);
+        if (existing) return { record: toRecord(existing), agent, suspensions: [] };
 
         const row = await db.agentKillSwitch.create({
             data: {
@@ -242,6 +248,13 @@ export async function engageKillSwitch(
         // never reach the source. A scalar computed one line earlier is a name
         // the rule can see, and it is computed once instead of twice.
         const scope = killScopeOf(agentId);
+        // SPENDING AUTHORITY (Agent Pay Phase 1.5). An AGENT-scope kill asks
+        // for every live envelope of the agent to be suspended at its token
+        // requestor, in this transaction, so the request and the kill stand or
+        // fall together. A TENANT-scope kill does not: it names no agent, and
+        // fanning it out to every envelope in the workspace is a decision
+        // nobody has taken.
+        const suspensions = agentId !== null ? await requestSpendingSuspensionInTx(db, ctx, agentId, row) : [];
         await logEvent(db, ctx, {
             action: 'AGENT_KILL_ENGAGED',
             entityType: 'AgentKillSwitch',
@@ -368,8 +381,29 @@ export async function engageKillSwitch(
             });
         }
 
-        return toRecord(row);
+        return { record: toRecord(row), agent, suspensions };
     });
+
+    await openSuspensionTasksAfterCommit(ctx, engaged.agent, engaged.suspensions, engaged.record.id);
+    return engaged.record;
+}
+
+/** The agent fields the spending suspension task names. */
+type SuspensionAgent = { id: string; name: string; ownerUserId: string };
+
+/**
+ * After the kill's transaction commits, open the spending suspension tasks.
+ * Never throws: `openSpendingSuspensionTasks` reports each failure, and a stop
+ * control must not fail because a follow-up task could not be written.
+ */
+async function openSuspensionTasksAfterCommit(
+    ctx: RequestContext,
+    agent: SuspensionAgent | null,
+    suspensions: readonly SpendingSuspensionRequest[],
+    killSwitchId: string,
+): Promise<void> {
+    if (!agent || suspensions.length === 0) return;
+    await openSpendingSuspensionTasks(ctx, agent, suspensions, killSwitchId);
 }
 
 /**
@@ -558,10 +592,10 @@ export async function engageOwnerDepartedKill(
         throw badRequest('An OWNER_DEPARTED kill needs the departure signal that caused it.');
     }
 
-    return runInTenantContext(ctx, async (db) => {
+    const engaged = await runInTenantContext(ctx, async (db) => {
         const agent = await db.registeredAgent.findFirst({
             where: { id: input.agentId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true },
+            select: { id: true, name: true, ownerUserId: true },
         });
         if (!agent) throw notFound('Registered agent not found');
 
@@ -569,7 +603,7 @@ export async function engageOwnerDepartedKill(
             where: { tenantId: ctx.tenantId, agentId: input.agentId, liftedAt: null },
             select: KILL_ROW_SELECT,
         });
-        if (existing) return { record: toRecord(existing), created: false };
+        if (existing) return { record: toRecord(existing), created: false, agent, suspensions: [] };
 
         const row = await db.agentKillSwitch.create({
             data: {
@@ -604,8 +638,14 @@ export async function engageOwnerDepartedKill(
             },
         });
 
-        return { record: toRecord(row), created: true };
+        // The orphan containment reaches spending authority exactly as a
+        // person's AGENT-scope kill does (Agent Pay Phase 1.5).
+        const suspensions = await requestSpendingSuspensionInTx(db, ctx, input.agentId, row);
+        return { record: toRecord(row), created: true, agent, suspensions };
     });
+
+    await openSuspensionTasksAfterCommit(ctx, engaged.agent, engaged.suspensions, engaged.record.id);
+    return { record: engaged.record, created: engaged.created };
 }
 
 /**

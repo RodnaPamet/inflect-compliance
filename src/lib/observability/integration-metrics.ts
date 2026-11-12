@@ -1623,6 +1623,57 @@ export function recordHarnessEstateStaleness(attrs: {
     }
 }
 
+// ── The agent behaviour fingerprint (Morpheus roadmap Phase 1) ─────────────
+
+let _fingerprintPass: Counter | null = null;
+let _fingerprintDays: Counter | null = null;
+
+/**
+ * One tenant's nightly behaviour-fingerprint pass, by how it ended, and the
+ * agent-days it judged, by verdict.
+ *
+ *   agentic.agent_fingerprint.pass{outcome}  every terminal path:
+ *       `evaluated`    — the tenant's active agent-days were judged
+ *       `no_activity`  — no agent was active on the day: nothing measured,
+ *                        never a clean result
+ *       `disabled`     — the sweep ran and the operator's two keys (G9) are
+ *                        not both on: nothing was read
+ *       `error`        — the pass threw; its execution row says why
+ *   agentic.agent_fingerprint.days{verdict}  agent-days judged, by `learning`,
+ *       `steady`, `anomalous_finding`, `anomalous_latch`, and `latched` for a
+ *       threshold-B day that actually latched the breaker.
+ *
+ * ALERT ON — any `verdict="anomalous_latch"` (an agent was, or would have been,
+ * stopped); any `outcome="error"`; and, on a deployment that turned the
+ * detector on, the ABSENCE of any pass outcome for two days. A long run of
+ * `learning` with no `steady` is a baseline that never forms — an agent active
+ * on fewer than `BASELINE_MIN_DAYS` days of `BASELINE_LOOKBACK_DAYS`.
+ *
+ * No tenant or agent label: which agent is the finding's to say.
+ */
+export function recordAgentFingerprintPass(attrs: {
+    outcome: 'evaluated' | 'no_activity' | 'disabled' | 'error';
+    days?: Partial<Record<'learning' | 'steady' | 'anomalous_finding' | 'anomalous_latch' | 'latched', number>>;
+}): void {
+    if (!_fingerprintPass) {
+        _fingerprintPass = getMeter().createCounter('agentic.agent_fingerprint.pass', {
+            description: 'Agent behaviour-fingerprint passes, by terminal outcome',
+            unit: '1',
+        });
+    }
+    _fingerprintPass.add(1, { outcome: attrs.outcome });
+    for (const [verdict, count] of Object.entries(attrs.days ?? {})) {
+        if (!count || count <= 0) continue;
+        if (!_fingerprintDays) {
+            _fingerprintDays = getMeter().createCounter('agentic.agent_fingerprint.days', {
+                description: 'Agent-days judged by the behaviour fingerprint, by verdict',
+                unit: '1',
+            });
+        }
+        _fingerprintDays.add(count, { verdict });
+    }
+}
+
 // ── Internal audit's sampling of the auditor's workpapers (#3677) ──────────
 
 let _workpaperReviewSweep: Counter | null = null;
@@ -1842,4 +1893,35 @@ export function recordIntegrationPassportSweep(attrs: { outcome: string }): void
         });
     }
     _passportSweep.add(1, { outcome: attrs.outcome });
+}
+
+// ── Vendor monitor TLS-grade fetches (Web Bot Auth Phase 0.4) ──────────────
+
+let _vendorTlsFetch: Counter | null = null;
+
+/**
+ * One vendor homepage fetch for the TLS / security-header grade, by outcome
+ * (`GRADED`, `REFUSED`, `UNREACHABLE`, `BLOCKED`).
+ *
+ * Before this, every fetch that did not grade was a null grade the sweep read
+ * as "nothing observed", so a site that began refusing the monitor looked
+ * identical to one whose grade had not changed. The `REFUSED` share measured
+ * here before the monitor signs anything is the baseline Web Bot Auth Phase 2
+ * is judged against. No vendor or tenant label: four outcomes times a handful
+ * of providers.
+ *
+ * ALERT ON — a rising `REFUSED` share (sites challenging the monitor) and any
+ * sustained `BLOCKED` (vendor records that name a host the guard refuses).
+ */
+export function recordVendorTlsFetch(attrs: {
+    provider: string;
+    outcome: 'GRADED' | 'REFUSED' | 'UNREACHABLE' | 'BLOCKED';
+}): void {
+    if (!_vendorTlsFetch) {
+        _vendorTlsFetch = getMeter().createCounter('vendor_monitor.tls_fetch', {
+            description: 'Vendor homepage fetches for the TLS / security-header grade, by outcome',
+            unit: '1',
+        });
+    }
+    _vendorTlsFetch.add(1, { provider: attrs.provider, outcome: attrs.outcome });
 }

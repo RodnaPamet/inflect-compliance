@@ -9,8 +9,10 @@ import {
     encodeRemoteId,
     decodeRemoteId,
     extractDeltaToken,
+    graphUrl,
     type SharePointConnectionConfig,
 } from '@/app-layer/integrations/providers/sharepoint/client';
+import { withApprovedDrives } from '../helpers/sharepoint-approved-drives';
 
 const jsonRes = (body: unknown, ok = true, status = 200): Response =>
     ({ ok, status, json: async () => body, arrayBuffer: async () => new ArrayBuffer(8) }) as unknown as Response;
@@ -24,6 +26,10 @@ function client(fetchImpl: any, over: Partial<SharePointConnectionConfig> = {}) 
     };
     return new SharePointClient(config, fetchImpl as typeof fetch);
 }
+
+/** A client whose approved site holds drives `drv1` and `d1` (reads check it). */
+const reader = (fetchImpl: any, over: Partial<SharePointConnectionConfig> = {}) =>
+    client(withApprovedDrives(fetchImpl), over);
 
 describe('remoteId codec + delta token', () => {
     it('encodes/decodes driveId:itemId', () => {
@@ -66,19 +72,19 @@ describe('SharePointClient — auth + endpoints', () => {
         const f = jest
             .fn()
             .mockResolvedValueOnce(jsonRes({ value: [{ id: 'a' }], '@odata.nextLink': 'https://graph/next' }));
-        const page = await client(f).listChildren('drv1');
+        const page = await reader(f).listChildren('drv1');
         expect(f.mock.calls[0][0]).toContain('/drives/drv1/root/children');
         expect(page.items.map((i) => i.id)).toEqual(['a']);
         expect(page.nextLink).toBe('https://graph/next');
 
         const f2 = jest.fn().mockResolvedValue(jsonRes({ value: [] }));
-        await client(f2).listChildren('drv1', 'item9');
+        await reader(f2).listChildren('drv1', 'item9');
         expect(f2.mock.calls[0][0]).toContain('/drives/drv1/items/item9/children');
     });
 
     it('downloadItemContent returns the file bytes', async () => {
         const f = jest.fn().mockResolvedValue(jsonRes({}, true));
-        const buf = await client(f).downloadItemContent('drv1', 'item1');
+        const buf = await reader(f).downloadItemContent('drv1', 'item1');
         expect(f.mock.calls[0][0]).toContain('/drives/drv1/items/item1/content');
         expect(buf.byteLength).toBe(8);
     });
@@ -86,9 +92,9 @@ describe('SharePointClient — auth + endpoints', () => {
     it('getDelta follows nextLink to the deltaLink and returns the new token', async () => {
         const f = jest
             .fn()
-            .mockResolvedValueOnce(jsonRes({ value: [{ id: 'a' }], '@odata.nextLink': 'https://graph/p2' }))
+            .mockResolvedValueOnce(jsonRes({ value: [{ id: 'a' }], '@odata.nextLink': 'https://graph.microsoft.com/v1.0/drives/drv1/root/delta?page=2' }))
             .mockResolvedValueOnce(jsonRes({ value: [{ id: 'b' }], '@odata.deltaLink': 'https://graph/delta?token=TK9' }));
-        const res = await client(f).getDelta('drv1');
+        const res = await reader(f).getDelta('drv1');
         expect(res.items.map((i) => i.id)).toEqual(['a', 'b']);
         expect(res.deltaToken).toBe('TK9');
         expect(f).toHaveBeenCalledTimes(2);
@@ -103,7 +109,7 @@ describe('SharePointClient — auth + endpoints', () => {
     it('listChildren rejects a pageUrl that points at a different drive (cross-drive guard)', async () => {
         const f = jest.fn().mockResolvedValue(jsonRes({ value: [] }));
         await expect(
-            client(f).listChildren('drv1', undefined, 'https://graph.microsoft.com/v1.0/drives/OTHER/root/children?$skiptoken=x'),
+            reader(f).listChildren('drv1', undefined, 'https://graph.microsoft.com/v1.0/drives/OTHER/root/children?$skiptoken=x'),
         ).rejects.toThrow(/does not belong/i);
         expect(f).not.toHaveBeenCalled();
     });
@@ -149,10 +155,10 @@ describe('SharePointClient — testConnection branches', () => {
 describe('SharePointClient — generic CRUD contract', () => {
     it('getRemoteObject resolves a DriveItem and null on failure', async () => {
         const f = jest.fn().mockResolvedValue(jsonRes({ id: 'i1', name: 'doc.pdf', lastModifiedDateTime: '2026-01-01T00:00:00Z' }));
-        const obj = await client(f).getRemoteObject('drv1:i1');
+        const obj = await reader(f).getRemoteObject('drv1:i1');
         expect(obj?.remoteId).toBe('drv1:i1');
         const bad = jest.fn().mockResolvedValue(jsonRes({}, false, 404));
-        expect(await client(bad).getRemoteObject('drv1:i1')).toBeNull();
+        expect(await reader(bad).getRemoteObject('drv1:i1')).toBeNull();
     });
     it('create/update throw (use SP-4 upload)', async () => {
         const c = client(jest.fn());
@@ -248,5 +254,55 @@ describe('SharePointClient — drive allowlist on writes', () => {
         await expect(
             client(f).uploadNewFile('any', 'root', 'r.pdf', new Uint8Array([1]), 'application/pdf'),
         ).rejects.toThrow(/not in an approved site/);
+    });
+});
+
+// ── Where the bearer token may go, and which drives may be read ──────────
+//
+// Every request carries the connection's Graph token, so its host is an
+// authorization decision. A paging cursor is a whole URL a caller hands back,
+// and a cursor that merely CONTAINS "/drives/<id>" can sit on any host.
+describe('SharePointClient — reads stay on Microsoft Graph and on approved drives', () => {
+    it.each([
+        ['another host', 'https://example.test/v1.0/drives/drv1/root/children'],
+        ['a lookalike host', 'https://graph.microsoft.com.example.test/v1.0/drives/drv1/root/children'],
+        ['plain http', 'http://graph.microsoft.com/v1.0/drives/drv1/root/children'],
+        ['credentials in the URL', 'https://user:pw@graph.microsoft.com/v1.0/drives/drv1/root/children'],
+        ['another port', 'https://graph.microsoft.com:8443/v1.0/drives/drv1/root/children'],
+        ['a beta path', 'https://graph.microsoft.com/beta/drives/drv1/root/children'],
+        ['the drive id in the query only', 'https://graph.microsoft.com/v1.0/me/drive/root/children?x=/drives/drv1/'],
+    ])('refuses a cursor on %s and sends nothing', async (_label, cursor) => {
+        const f = jest.fn().mockResolvedValue(jsonRes({ value: [] }));
+        await expect(reader(f).listChildren('drv1', undefined, cursor)).rejects.toThrow(/does not belong/i);
+        expect(f).not.toHaveBeenCalled();
+    });
+
+    it('graphUrl refuses any absolute URL off Graph v1.0', () => {
+        expect(() => graphUrl('https://example.test/v1.0/sites')).toThrow(/outside Microsoft Graph/);
+        expect(graphUrl('/sites/x').toString()).toBe('https://graph.microsoft.com/v1.0/sites/x');
+    });
+
+    it('getDelta does not follow a paging link off Graph', async () => {
+        const f = jest
+            .fn()
+            .mockResolvedValueOnce(jsonRes({ value: [{ id: 'a' }], '@odata.nextLink': 'https://example.test/next' }));
+        await expect(reader(f).getDelta('drv1')).rejects.toThrow(/outside Microsoft Graph/);
+        expect(f).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ['listChildren', (c: SharePointClient) => c.listChildren('drive-elsewhere')],
+        ['getItem', (c: SharePointClient) => c.getItem('drive-elsewhere', 'i1')],
+        ['downloadItemContent', (c: SharePointClient) => c.downloadItemContent('drive-elsewhere', 'i1')],
+    ])('%s refuses a drive outside every approved site', async (_n, call) => {
+        const f = jest.fn().mockResolvedValue(jsonRes({ id: 'i1', value: [] }));
+        await expect(call(reader(f))).rejects.toThrow(/not in an approved site/);
+        expect(f).not.toHaveBeenCalled();
+    });
+
+    it('reads nothing while no site is approved', async () => {
+        const f = jest.fn().mockResolvedValue(jsonRes({ value: [] }));
+        await expect(reader(f, { allowedSiteIds: [] }).getItem('drv1', 'i1')).rejects.toThrow(/no approved sites/);
+        expect(f).not.toHaveBeenCalled();
     });
 });

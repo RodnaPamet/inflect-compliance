@@ -96,11 +96,43 @@ export function checkWebhookUrl(rawUrl: string): WebhookUrlVerdict {
     return { ok: true, host };
 }
 
-/** Thrown when a tenant-controlled URL fails the SSRF egress guard. */
+/**
+ * Thrown when a tenant-controlled URL fails the SSRF egress guard.
+ *
+ * `kind` separates the guard's refusals from a name the resolver could not
+ * answer for. Both stop the request; they mean different things to whoever
+ * reads the outcome. `REFUSED` is a decision about the destination (a scheme,
+ * a host, a private address) and holds until the URL changes. `UNRESOLVED` is
+ * DNS saying nothing, which may be a typo and may be a resolver having a bad
+ * night, so the vendor monitor reports it as unreachable rather than blocked.
+ */
+export type SsrfBlockKind = 'REFUSED' | 'UNRESOLVED';
+
 export class SsrfBlockedError extends Error {
-    constructor(message: string) {
+    constructor(
+        message: string,
+        readonly kind: SsrfBlockKind = 'REFUSED',
+    ) {
         super(message);
         this.name = 'SsrfBlockedError';
+    }
+}
+
+/**
+ * The host did not resolve, so no address was checked and none was refused.
+ *
+ * A subclass, so every existing `instanceof SsrfBlockedError` still refuses
+ * it: nothing was sent, and a caller that does not care why keeps refusing.
+ * A caller that DOES care — a client of an operator-run service, where a
+ * stopped container is an NXDOMAIN on the Compose network and a resolver
+ * hiccup is EAI_AGAIN — can tell "the service is not there right now" apart
+ * from "the configured destination is forbidden", which is a configuration
+ * fault and must not be treated as an outage.
+ */
+export class SsrfUnresolvableHostError extends SsrfBlockedError {
+    constructor(readonly host: string) {
+        super(`cannot resolve ${host}`, 'UNRESOLVED');
+        this.name = 'SsrfUnresolvableHostError';
     }
 }
 
@@ -129,10 +161,10 @@ export async function assertPublicAddress(rawUrl: string): Promise<PublicAddress
     try {
         addresses = await dnsPromises.lookup(host, { all: true });
     } catch {
-        throw new SsrfBlockedError(`cannot resolve ${host}`);
+        throw new SsrfUnresolvableHostError(host);
     }
     if (addresses.length === 0) {
-        throw new SsrfBlockedError(`no addresses for ${host}`);
+        throw new SsrfUnresolvableHostError(host);
     }
     for (const a of addresses) {
         // Still EVERY address, and still at use time. The allowlist widens

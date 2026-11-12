@@ -36,8 +36,30 @@ export interface BreachProvider {
     check(domain: string): Promise<BreachSignal>;
 }
 
+/**
+ * What one TLS-grade fetch came to. Recorded on the monitor, never folded
+ * into the grade: a fetch that did not grade leaves the last grade in place,
+ * and this is what says the grade is now stale and why.
+ *
+ *   GRADED      — a 2xx homepage answered; its headers were graded.
+ *   REFUSED     — the site answered and declined: any 4xx (403 above all, a
+ *                 429 that outlasted the retry) or a recognised bot-challenge
+ *                 response, whatever its status.
+ *   UNREACHABLE — no answer to grade: a network failure, a timeout, a name
+ *                 that did not resolve, a 5xx that outlasted the retry, or a
+ *                 redirect chain that never reached a page.
+ *   BLOCKED     — nothing was requested, or a hop was not followed: the domain
+ *                 is not a bare host name, or the SSRF guard refused it or a
+ *                 redirect target. The vendor record needs correcting, not
+ *                 the vendor's site.
+ */
+export const TLS_FETCH_OUTCOMES = ['GRADED', 'REFUSED', 'UNREACHABLE', 'BLOCKED'] as const;
+export type TlsFetchOutcome = (typeof TLS_FETCH_OUTCOMES)[number];
+
 export interface TlsSignal {
     source: string;
+    /** What the fetch came to. `grade` is non-null exactly when this is GRADED. */
+    outcome: TlsFetchOutcome;
     /** Letter grade A..F, or null when the domain couldn't be graded. */
     grade: string | null;
     /** ISO timestamp of the grade. */

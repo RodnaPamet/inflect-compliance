@@ -56,6 +56,7 @@ import {
     type ContextIntegrityCode,
 } from '@/lib/agentic/context-integrity';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
+import { renderFlowStep } from '@/lib/agentic/agent-flow';
 import {
     A2A_PEER_REPLY_SOURCE,
     peerReplyLines,
@@ -187,7 +188,7 @@ export function openDeclaredRunInput(params: {
  * and the only text in the message that is.
  */
 export function runMessage(
-    def: Pick<WorkflowDefinition, 'description' | 'steps'>,
+    def: Pick<WorkflowDefinition, 'description' | 'steps' | 'profile'>,
     fromSeq: number,
     input: DeclaredRunInput = [],
     /**
@@ -204,8 +205,16 @@ export function runMessage(
      */
     peerReplies: readonly PeerReplyEnvelope[] = [],
 ): string {
-    const remaining = def.steps.slice(fromSeq);
-    const lines = remaining.map((step, i) => `${fromSeq + i + 1}. [${step.kind}] ${step.label}`);
+    // A profile version with a drawn flow (Phase 1 of
+    // `docs/ai-architecture/langflow.md`): its steps, in topological order,
+    // WHOLE. A reasoning engine's `fromSeq` counts ledger steps (model and tool
+    // calls), not specification steps, so slicing a flow by it would drop
+    // steps the run has not covered. Every other definition is listed exactly
+    // as before, so no existing digest moves.
+    const flowSteps = def.profile?.flow?.stepsSpec;
+    const lines = flowSteps
+        ? flowSteps.map((step, i) => renderFlowStep(step, i + 1))
+        : def.steps.slice(fromSeq).map((step, i) => `${fromSeq + i + 1}. [${step.kind}] ${step.label}`);
     const parts = [
         def.description,
         '',
