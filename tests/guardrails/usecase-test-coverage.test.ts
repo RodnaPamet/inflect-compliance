@@ -48,8 +48,6 @@ const TEST_DIRS = [
  */
 const EXEMPTIONS: Record<string, string> = {
     // Q3 — Reports + cross-domain
-    'src/app-layer/usecases/report.ts':
-        'Roadmap Q3 — report rendering orchestration; covered indirectly by PDF/export integration suites.',
     'src/app-layer/usecases/notification.ts':
         'Roadmap Q3 — notification dispatch; covered indirectly by deadline-monitor + automation tests.',
 };
@@ -163,7 +161,10 @@ describe('every usecase file has an importing test', () => {
         // them — and, worse, deleting those tests would have gone
         // unnoticed. The stale-exemption test below is the half that
         // was missing.
-        const BASELINE = 2;
+        //
+        // 2 → 1 on 2026-11-12: `report.ts` earned an integration test
+        // (tests/integration/report-risk-register-usecase.test.ts, #5376).
+        const BASELINE = 1;
         expect(EXEMPTION_COUNT).toBeLessThanOrEqual(BASELINE);
     });
 
