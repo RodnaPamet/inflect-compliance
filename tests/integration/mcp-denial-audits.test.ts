@@ -280,7 +280,7 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
             });
         }
 
-        const wide = ['mcp:read', 'mcp:propose', 'risks:read', 'controls:read', 'audits:read'];
+        const wide = ['mcp:read', 'mcp:propose', 'risks:read', 'controls:read', 'findings:read'];
         keyUngranted = await mintKey(ownerId, wide, agentId);
         keyLowAutonomy = await mintKey(ownerId, wide, lowAgentId);
 
@@ -299,8 +299,8 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
             audience: ['list_risks'],
         }).token;
         keyNoScope = await mintKey(ownerId, ['mcp:read'], agentId);
-        keyNoCapability = await mintKey(ownerId, ['mcp:read', 'audits:read'], agentId);
-        keyReaderPropose = await mintKey(readerId, ['mcp:propose', 'audits:read'], agentId);
+        keyNoCapability = await mintKey(ownerId, ['mcp:read', 'findings:read'], agentId);
+        keyReaderPropose = await mintKey(readerId, ['mcp:propose', 'findings:read'], agentId);
         keyRiskBlind = await mintKey(blindId, wide, agentId);
         keyDeadPrincipal = await mintKey(deactivatedId, wide, agentId);
 

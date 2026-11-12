@@ -68,10 +68,10 @@ export interface McpToolAuthorization {
     keys?: readonly PermissionKey[];
     /**
      * The shared `assertCanRead` / `assertCanWrite` policy the equivalent human
-     * route's usecase applies, for a domain `PermissionSet` has no key for.
-     * Findings are the live example: the human `POST /findings` gate is
-     * `assertCanWrite`, and there is no `findings.*` key to name instead.
-     * Applied IN ADDITION to `keys` when both are present.
+     * route's usecase applies, for a domain `PermissionSet` has no key for, or
+     * behind the key where the usecase still asserts the coarse tier
+     * (`list_findings`: `findings.view` at the route, `assertCanRead` in
+     * `listFindings`). Applied IN ADDITION to `keys` when both are present.
      */
     policy?: 'read' | 'write';
     basis: McpAuthorizationBasis;

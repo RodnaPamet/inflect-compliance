@@ -3,8 +3,9 @@
  * `list_tasks` (over `listTasks`, filterable). RLS + permission in the
  * usecases; MCP adds the resource-scope gate + audit.
  *
- * Findings map to the `audits:read` scope (findings are audit-domain artefacts);
- * tasks map to `tasks:read`.
+ * Findings map to the `findings:read` scope, the findings register's own domain
+ * since #4535 (#5409 moved this tool off `audits:read`); tasks map to
+ * `tasks:read`.
  */
 import { z } from 'zod';
 
@@ -33,19 +34,19 @@ export const listFindingsTool: McpReadTool<z.infer<typeof findingsArgs>> = {
         additionalProperties: false,
     },
     argsSchema: findingsArgs,
-    resourceScope: { resource: 'audits', action: 'read' },
-    // `GET /api/t/:slug/findings` carries no permission key — `PermissionSet`
-    // has no `findings` domain, and findings are audit-domain artefacts (which
-    // is why the resource scope above is `audits:read`). So the gate is the
-    // domain key that DOES exist plus the shared policy the route's usecase
-    // actually applies. Adding a `findings.*` domain is the right fix and is
-    // deliberately not smuggled in here: it would change what every existing
-    // custom role resolves to.
+    resourceScope: { resource: 'findings', action: 'read' },
+    // The key `GET /api/t/:slug/findings` takes (#4535), plus the coarse read
+    // its usecase still asserts. `basis: 'effective'`, as for every read tool:
+    // the principal must hold `findings.view` AND so must the key, which it
+    // does through `findings:read`. Until #5409 this asked `audits.view` and
+    // `audits:read`; a data migration gave `findings:read` to every live key
+    // holding `audits:read` or `audits:*` before the move, and again in the
+    // deploy that made it, so no key minted for this tool was cut off.
     authorize: {
-        keys: ['audits.view'],
+        keys: ['findings.view'],
         policy: 'read',
         basis: 'effective',
-        mirrors: 'GET /api/t/:slug/findings (getTenantCtx + assertCanRead)',
+        mirrors: 'GET /api/t/:slug/findings (requirePermission findings.view + assertCanRead)',
     },
     run: async (ctx: RequestContext, args) => {
         return listFindings(ctx, { take: args.limit ?? 50 });
