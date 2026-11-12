@@ -54,6 +54,7 @@ export const TOOL_RUNNER_GUARD_SOURCE = 'tool-runner';
 export type RunStop =
     | { readonly kind: 'CAP'; readonly halt: RunCapHalt }
     | { readonly kind: 'KILL' }
+    | { readonly kind: 'OPERATOR_ABORT' }
     | { readonly kind: 'GUARD' };
 
 /** What a run's tools share with the loop that drives them. */
@@ -67,7 +68,10 @@ export interface ToolRunBinding {
     stopped(): RunStop | null;
     /** Latch a cap halt and abort the request in flight, if any. */
     stopAtCap(halt: RunCapHalt): void;
-    /** Read the kill switch; latch and abort when it is engaged. */
+    /**
+     * Read the kill switch, and the run's status for an operator's Abort
+     * (#5366); latch and abort when either has stopped the run.
+     */
     checkKill(): Promise<boolean>;
     /** The guard's verdict for one call, taken (removed) once its step is written. */
     takeVerdict(toolCallId: string): StepGuardObservation | undefined;
@@ -85,6 +89,8 @@ export function stoppedMessage(stop: RunStop): string {
             return stop.halt.message;
         case 'KILL':
             return 'This run was stopped by a kill switch.';
+        case 'OPERATOR_ABORT':
+            return 'This run was aborted by an operator.';
         case 'GUARD':
             return 'This run is stopped for review by the AI guard.';
     }
@@ -177,8 +183,8 @@ async function ledgeredCall(
         throw err;
     } finally {
         binding.forgetOrigin(toolCallId);
-        // A kill engaged while this call ran stops the run here, before the
-        // runner sends the next model call.
+        // A kill engaged, or an operator's Abort, while this call ran stops the
+        // run here, before the runner sends the next model call.
         await binding.checkKill();
     }
 }

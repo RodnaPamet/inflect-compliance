@@ -38,6 +38,8 @@ const mockState = {
     alreadyTokens: 0,
     toolCallLimit: null as number | null,
     killAfterModelCalls: null as number | null,
+    /** An operator aborts the run once this many model calls are answered (#5366). */
+    abortAfterModelCalls: null as number | null,
     /** Engage the kill once the funnel has answered this many calls: a kill engaged WHILE a tool runs. */
     killAfterFunnelCalls: null as number | null,
     /** Make the kill-switch read throw once this many model calls are answered. */
@@ -60,6 +62,10 @@ const mockState = {
 
 function recordedSettlement(): MockSettlement | null {
     return mockState.settlement;
+}
+
+function mockAborted(): boolean {
+    return mockState.abortAfterModelCalls !== null && mockState.modelCalls >= mockState.abortAfterModelCalls;
 }
 
 function mockKilled(): boolean {
@@ -107,12 +113,17 @@ jest.mock('@/lib/agentic/drivers/run-settlement', () => {
         return status;
     };
     return {
+        // As the real one does (#5366): a write that settles does not land on
+        // a row an operator aborted, and says so.
         updateRun: jest.fn(async (_c: unknown, _r: string, data: Record<string, unknown>) => {
             mockState.updates.push(data);
             if (typeof data.status === 'string') {
+                if (mockAborted()) return false;
                 settle(data.status, typeof data.errorMessage === 'string' ? data.errorMessage : null);
             }
+            return true;
         }),
+        isRunAborted: jest.fn(async () => mockAborted()),
         failRun: jest.fn(async (_c: unknown, _r: string, message: string) => settle('FAILED', message)),
         haltRunAtKill: jest.fn(async (_c: unknown, _r: string, _kill: unknown, message: string, _beside: unknown, prefix?: string) =>
             settle('ABORTED', `${prefix ?? 'flue'}_run_agent_killed: ${message}`),
@@ -332,7 +343,7 @@ function pinsAdmissionRecords(skills: ConformanceRun['skills']): unknown[] {
 }
 
 function reset(
-    run: Pick<ConformanceRun, 'tools' | 'residency' | 'alreadySpent' | 'toolCallLimit' | 'killAfterModelCalls' | 'skills'>,
+    run: Pick<ConformanceRun, 'tools' | 'residency' | 'alreadySpent' | 'toolCallLimit' | 'killAfterModelCalls' | 'abortAfterModelCalls' | 'skills'>,
     turns: readonly FauxTurn[],
 ): void {
     mockState.skills = run.skills;
@@ -342,6 +353,7 @@ function reset(
     mockState.alreadyTokens = run.alreadySpent?.tokens ?? 0;
     mockState.toolCallLimit = run.toolCallLimit ?? null;
     mockState.killAfterModelCalls = run.killAfterModelCalls ?? null;
+    mockState.abortAfterModelCalls = run.abortAfterModelCalls ?? null;
     mockState.killAfterFunnelCalls = null;
     mockState.killReadFailsAfterModelCalls = null;
     mockState.modelCalls = 0;

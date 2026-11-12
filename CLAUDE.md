@@ -3018,6 +3018,19 @@ the operation object, because the runtime intercepts every streamed chunk of
 one call with the same object. Do not move the check to the tool boundary or
 the agent render: the tool boundary is too late, and the render cannot await.
 
+**An operator's Abort stops every engine, and stays the run's status** (#5366).
+Every engine reads the run row where it reads the kill switch (`isRunAborted`
+in `run-settlement.ts`: after each model and tool call on the Tool Runner,
+before each model call on Flue, between steps on the static driver) and stops
+without settling. `updateRun` never lands a write carrying `status` on an
+ABORTED row, so a late COMPLETED or FAILED is a no-op and the settle helpers
+write no audit row for it. `executeFrom` reports the operator's ABORTED
+whatever the engine returned and REJECTS the decision rows written after the
+abort, telling it from an engine's own ABORTED (a kill, a guard block) by
+`OPERATOR_ABORT_MESSAGE`, which only `abortWorkflowRun` writes. EMPTY_CATALOGUE
+is terminal: the abort refuses it (`isLiveRunStatus`), and its decision rows
+and metric settle as a FAILED run's.
+
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
 backed by a `Record<AgentDriver, boolean>`, so a driver added to `AGENT_DRIVERS`

@@ -13,8 +13,9 @@
  *      and step count persisted. The row's output summary is the call's text
  *      only when the scan was clean, so a secret in model output never reaches
  *      the stored summary;
- *   3. the kill switch, uncached; a kill breaks the loop, so the turn's tools
- *      never run;
+ *   3. the kill switch, uncached, and then the run's own status: a kill, or an
+ *      operator's Abort (#5366), breaks the loop, so the turn's tools never
+ *      run;
  *   4. a stop latched while the previous turn's tools ran (a cap, a kill, a
  *      guard verdict);
  *   5. the token and wall-clock caps;
@@ -35,8 +36,9 @@
  *
  * ── SETTLEMENT ──────────────────────────────────────────────────────────────
  *
- * In the order the Flue engine settles, for the reasons it gives (#4230): a
- * kill, then a cap, then a guard verdict, then the named stop reasons, then the
+ * An operator's Abort first, and it writes no settlement: the operator's
+ * ABORTED stands (#5366). Then, in the order the Flue engine settles, for the
+ * reasons it gives (#4230): a kill, then a cap, then a guard verdict, then the named stop reasons, then the
  * iteration bound, then the empty catalogue, then COMPLETED. Model text is
  * never written to the step ledger: it reaches only the decision row's bounded,
  * sanitised summary.
@@ -53,6 +55,7 @@ import {
     haltRunAtCap,
     haltRunAtGuard,
     haltRunAtKill,
+    isRunAborted,
     updateRun,
     type CapBesideKill,
 } from '@/lib/agentic/drivers/run-settlement';
@@ -215,9 +218,18 @@ export async function executeToolRunnerRun(
         killVerdict: KillVerdict | null;
         killAfterCap: boolean;
         killUnreadable: boolean;
+        operatorAborted: boolean;
         worst: StepGuardObservation['verdict'];
         worstRuleIds: readonly string[];
-    } = { capHalt: null, killVerdict: null, killAfterCap: false, killUnreadable: false, worst: 'CLEAN', worstRuleIds: [] };
+    } = {
+        capHalt: null,
+        killVerdict: null,
+        killAfterCap: false,
+        killUnreadable: false,
+        operatorAborted: false,
+        worst: 'CLEAN',
+        worstRuleIds: [],
+    };
     const seen = new Map<string, StepGuardObservation>();
     const origins = new Map<string, number>();
     let seq = fromSeq;
@@ -225,6 +237,7 @@ export async function executeToolRunnerRun(
     let lastActivityAt = Date.now();
 
     const stopped = (): RunStop | null => {
+        if (state.operatorAborted) return { kind: 'OPERATOR_ABORT' };
         if (state.killVerdict || state.killUnreadable) return { kind: 'KILL' };
         if (state.capHalt) return { kind: 'CAP', halt: state.capHalt };
         if (state.worst !== 'CLEAN') return { kind: 'GUARD' };
@@ -246,7 +259,18 @@ export async function executeToolRunnerRun(
             controller.abort();
             return true;
         }
-        if (!found) return false;
+        if (!found) {
+            // AN OPERATOR'S ABORT STOPS THE RUN WHERE A KILL DOES (#5366). The
+            // run row is the switch here: `abortWorkflowRun` wrote ABORTED, and
+            // without this read the loop called the model again and settled
+            // over it. One indexed read of two columns, beside the kill read.
+            // A read that throws is not caught: the loop's failure path stops
+            // the run.
+            if (!(await isRunAborted(ctx, runId))) return false;
+            state.operatorAborted = true;
+            controller.abort();
+            return true;
+        }
         recordAgentKillRefusal({ scope: found.scope, drill: ctx.agentId === KILL_SWITCH_DRILL_AGENT_ID });
         if (state.killVerdict === null) state.killAfterCap = state.capHalt !== null;
         state.killVerdict = found;
@@ -312,13 +336,16 @@ export async function executeToolRunnerRun(
     // an empty catalogue and then settles; this engine settles first, so no
     // tenant content goes out for a run that can do nothing with the answer.
     if (offered.tools.length === 0) {
-        await updateRun(ctx, runId, {
+        const settled = await updateRun(ctx, runId, {
             status: 'EMPTY_CATALOGUE',
             completedAt: new Date(),
             stepCount: seq,
             costTokens,
             errorMessage: EMPTY_TOOLSET_MESSAGE,
         });
+        // Not written over an operator's abort (#5366), and not reported as
+        // though it had been.
+        if (!settled) return { status: 'ABORTED', stepFailures: 0 };
         return { status: 'EMPTY_CATALOGUE', stepFailures: 1 };
     }
 
@@ -438,6 +465,10 @@ export async function executeToolRunnerRun(
     // ── Settlement ──────────────────────────────────────────────────────────
     await updateRun(ctx, runId, { costTokens, stepCount: seq });
 
+    // The operator's ABORTED is the settlement (#5366). The tokens and steps
+    // above are accounting and land; no status, reason or audit row follows.
+    if (state.operatorAborted) return { status: 'ABORTED', stepFailures };
+
     if (state.killVerdict) {
         const beside: CapBesideKill | null = state.capHalt
             ? { halt: state.capHalt, observedFirst: state.killAfterCap ? 'CAP' : 'KILL' }
@@ -480,6 +511,8 @@ export async function executeToolRunnerRun(
         return { status, stepFailures: stepFailures + 1 };
     }
 
-    await updateRun(ctx, runId, { status: 'COMPLETED', completedAt: new Date(), stepCount: seq, costTokens });
+    const completed = await updateRun(ctx, runId, { status: 'COMPLETED', completedAt: new Date(), stepCount: seq, costTokens });
+    // Aborted after the last check: the operator's ABORTED stands (#5366).
+    if (!completed) return { status: 'ABORTED', stepFailures };
     return { status: 'COMPLETED', stepFailures };
 }
