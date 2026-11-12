@@ -89,7 +89,7 @@ const USER = `u-${SUITE}`;
 const AGENT_OWNER = `u2-${SUITE}`;
 const VENDOR = `v-${SUITE}`;
 
-const SCOPES = ['mcp:read', 'mcp:propose', 'risks:read', 'audits:read', 'findings:write'];
+const SCOPES = ['mcp:read', 'mcp:propose', 'risks:read', 'findings:read', 'findings:write'];
 
 const ctx = () =>
     makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: USER });

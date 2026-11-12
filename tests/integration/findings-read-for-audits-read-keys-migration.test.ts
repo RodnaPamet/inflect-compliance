@@ -19,6 +19,11 @@
  * with no audits read, and a key that already reaches findings are not touched;
  * the scope is appended once and is one `validateScopes` accepts; and a second
  * run changes nothing anywhere in the table.
+ *
+ * Step 2 runs the same statement again (`…_again`), because the connect wizard
+ * went on minting `audits:read` keys for these tools until step 2's code
+ * deployed. Pinned for it: the statement is step 1's exactly, it migrates a key
+ * minted after step 1 ran, and it moves nothing step 1 already migrated.
  */
 import { readFileSync } from 'fs';
 import * as path from 'path';
@@ -34,14 +39,17 @@ import { enforceApiKeyScope, scopesToPermissions, validateScopes } from '@/lib/a
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(30_000);
 
-const MIGRATION = path.resolve(
-    __dirname,
-    '../../prisma/migrations/20261112180000_findings_read_for_audits_read_api_keys/migration.sql',
+const MIGRATIONS = path.resolve(__dirname, '../../prisma/migrations');
+const MIGRATION = path.join(MIGRATIONS, '20261112180000_findings_read_for_audits_read_api_keys/migration.sql');
+/** Step 2's re-run, in the deploy that moves the tools (#5409). */
+const MIGRATION_AGAIN = path.join(
+    MIGRATIONS,
+    '20261112230000_findings_read_for_audits_read_api_keys_again/migration.sql',
 );
 
-/** The migration's statements, comments stripped. Asserted to be exactly one. */
-function migrationStatements(): string[] {
-    const statements = readFileSync(MIGRATION, 'utf8')
+/** A migration's statements, comments stripped. Asserted to be exactly one. */
+function migrationStatements(file: string = MIGRATION): string[] {
+    const statements = readFileSync(file, 'utf8')
         .replace(/--[^\n]*/g, '')
         .split(';')
         .map((s) => s.trim())
@@ -168,6 +176,44 @@ describeFn('findings:read for keys holding audits:read (migration, real DB)', ()
         for (const statement of statements) {
             expect(await prisma.$executeRawUnsafe(statement)).toBe(0);
         }
+    });
+
+    it('step 2 runs the same statement again: it migrates a key minted after step 1, and moves nothing else', async () => {
+        const again = migrationStatements(MIGRATION_AGAIN);
+        expect(again).toEqual(migrationStatements());
+
+        // Runs after the case above, so step 1 has already run over the seeds.
+        // A key the connect wizard minted for the findings tools between the
+        // two deploys holds `audits:read` and not `findings:read`.
+        const between = await prisma.tenantApiKey.create({
+            data: {
+                tenantId,
+                name: `${tag} minted-between`,
+                keyPrefix: 'between',
+                keyHash: `${tag}-minted-between`,
+                scopes: ['mcp:read', 'mcp:propose', 'audits:read'],
+                createdById: userId,
+            },
+        });
+        const tenantScopes = async () =>
+            Object.fromEntries(
+                (await prisma.tenantApiKey.findMany({ where: { tenantId }, select: { id: true, scopes: true } }))
+                    .map((r) => [r.id, r.scopes]),
+            );
+        const before = await tenantScopes();
+        expect(reachesFindingsToolsAfterStep2(before[between.id] as string[])).toBe(false);
+
+        for (const statement of again) await prisma.$executeRawUnsafe(statement);
+
+        const after = await tenantScopes();
+        expect(after[between.id]).toEqual(['mcp:read', 'mcp:propose', 'audits:read', 'findings:read']);
+        expect(reachesFindingsToolsAfterStep2(after[between.id] as string[])).toBe(true);
+        // Every other key, step 1's migrated ones included, is as step 1 left it.
+        expect({ ...after, [between.id]: null }).toEqual({ ...before, [between.id]: null });
+
+        // And a second run moves nothing here either.
+        for (const statement of again) await prisma.$executeRawUnsafe(statement);
+        expect(await tenantScopes()).toEqual(after);
     });
 
     it('the untouched live keys need nothing: each already reaches findings, or never reached the findings tools', () => {

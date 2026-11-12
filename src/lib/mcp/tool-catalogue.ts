@@ -97,7 +97,7 @@ export const MCP_TOOL_KEY_SCOPE: Readonly<
     find_coverage_gaps: 'frameworks:read',
     get_framework_status: 'frameworks:read',
     list_evidence_expiring: 'evidence:read',
-    list_findings: 'audits:read',
+    list_findings: 'findings:read',
     list_tasks: 'tasks:read',
     get_discovered_agent: 'admin:agent_registry_view',
     get_harness_register: 'admin:harness_ingest',
@@ -106,7 +106,7 @@ export const MCP_TOOL_KEY_SCOPE: Readonly<
     propose_risks: 'risks:read',
     propose_controls: 'controls:read',
     draft_policy: 'policies:read',
-    propose_finding: 'audits:read',
+    propose_finding: 'findings:read',
     propose_process_map: 'processes:read',
 };
 

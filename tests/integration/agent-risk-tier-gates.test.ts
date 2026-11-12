@@ -63,7 +63,7 @@ const SUITE = `atier-${randomUUID().slice(0, 8)}`;
 const TENANT = `t-${SUITE}`;
 const USER = `u-${SUITE}`;
 
-const SCOPES = ['mcp:read', 'mcp:propose', 'risks:read', 'audits:read'];
+const SCOPES = ['mcp:read', 'mcp:propose', 'risks:read', 'findings:read'];
 const GRANTED_TOOLS = ['list_risks', 'propose_finding'];
 
 const ctx = () =>
