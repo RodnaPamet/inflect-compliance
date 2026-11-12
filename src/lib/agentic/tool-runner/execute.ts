@@ -13,12 +13,14 @@
  *      and step count persisted. The row's output summary is the call's text
  *      only when the scan was clean, so a secret in model output never reaches
  *      the stored summary;
- *   3. the kill switch, uncached; a kill breaks the loop, so the turn's tools
+ *   3. the scan's verdict, noted: anything but CLEAN settles the run at the
+ *      guard. Noted before the caps (#5372), so a blocked answer that also
+ *      crossed a cap still latches the breaker and writes the guard's row;
+ *   4. the kill switch, uncached; a kill breaks the loop, so the turn's tools
  *      never run;
- *   4. a stop latched while the previous turn's tools ran (a cap, a kill, a
- *      guard verdict);
- *   5. the token and wall-clock caps;
- *   6. the scan's verdict: anything but CLEAN settles the run at the guard;
+ *   5. a stop latched by now (a cap, a kill, a guard verdict, this answer's
+ *      included);
+ *   6. the token and wall-clock caps;
  *   7. the stop reason: `refusal`, `max_tokens` and a full context window each
  *      settle the run with a named reason, and run no tool from that turn.
  *
@@ -169,7 +171,7 @@ export async function executeToolRunnerRun(
         const status = await failRun(ctx, runId, declared.message);
         return { status, stepFailures: 0 };
     }
-    const message = runMessage(def, fromSeq, declared.input);
+    const message = runMessage(def, declared.input);
 
     // ── The run's skills (Step 2d) ──────────────────────────────────────────
     // Through the ONE resolver every reasoning engine uses, so the gate, the
@@ -429,6 +431,24 @@ export async function executeToolRunnerRun(
             );
             await updateRun(ctx, runId, { costTokens, stepCount: seq });
 
+            // The answer's verdict is NOTED FIRST (#5372), before the caps
+            // below can latch. It used to be noted after them, so a
+            // QUARANTINED answer that also crossed the token or wall-clock cap
+            // settled as a cap halt: no breaker latch and no guard audit row
+            // for content the guard had blocked. Noting it here makes
+            // `stopped()` answer GUARD, so the loop leaves before any cap is
+            // charged. The kill is still read: an operator's kill outranks the
+            // verdict at settlement, as it does on Flue.
+            if (outcome && textVerdict !== 'CLEAN') {
+                noteVerdict({
+                    toolCallId: `model-output:${calls}`,
+                    tool: 'model-output',
+                    slice: 'result',
+                    verdict: textVerdict,
+                    ruleIds: outcome.ruleIds,
+                });
+            }
+
             if (await checkKill()) break;
             if (stopped()) break;
 
@@ -440,17 +460,6 @@ export async function executeToolRunnerRun(
             const runtimeHalt = budget.charge('RUNTIME_MS', 0);
             if (runtimeHalt) {
                 binding.stopAtCap(runtimeHalt);
-                break;
-            }
-
-            if (outcome && textVerdict !== 'CLEAN') {
-                noteVerdict({
-                    toolCallId: `model-output:${calls}`,
-                    tool: 'model-output',
-                    slice: 'result',
-                    verdict: textVerdict,
-                    ruleIds: outcome.ruleIds,
-                });
                 break;
             }
 
@@ -498,7 +507,7 @@ export async function executeToolRunnerRun(
         if (state.worst === 'QUARANTINED' && ctx.agentId) {
             await latchOnGuardBlock(ctx.tenantId, ctx.agentId, new Date());
         }
-        const status = await haltRunAtGuard(ctx, runId, state.worst, state.worstRuleIds);
+        const status = await haltRunAtGuard(ctx, runId, state.worst, state.worstRuleIds, 'tool_runner');
         return { status, stepFailures };
     }
     if (failure !== null) {

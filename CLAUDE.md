@@ -3051,6 +3051,13 @@ that are easy to undo:
     (`business-data-transfer-*` in `tests/helpers/driver-conformance.ts`), so a
     new engine fails its suite until it asks.
 
+**A reasoning run's specification is the definition's WHOLE step list**
+(#5372). `runMessage` takes no `fromSeq`: on a reasoning engine that number is
+a LEDGER position (committed model and tool calls), not a declared step, so
+slicing by it gave a resumed run a partial or empty specification. Do not add a
+resume offset back: nothing records which declared steps a reasoning run has
+covered.
+
 **The scanner finds Agent SDK agents customers run, and code only ever counts
 against them** (Step 3b, #4156). The `code` source recognises `query` /
 `ClaudeSDKClient` from the SDK, and its options become ladder verdicts through
