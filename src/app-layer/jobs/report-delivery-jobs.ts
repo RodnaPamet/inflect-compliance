@@ -12,6 +12,7 @@ import type { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { generateReport, deliverReportByEmail, deliverReportToSharePoint, computeNextRun, type ReportFormat } from '@/app-layer/usecases/risk-report';
 import { logger } from '@/lib/observability/logger';
+import { currentlyDeliverableRecipients } from '@/app-layer/usecases/report-recipients';
 import type { ReportDeliveryPayload } from './types';
 
 const asRecipients = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
@@ -86,7 +87,9 @@ function buildSystemCtx(tenantId: string): RequestContext {
 export async function runReportDelivery(_payload: ReportDeliveryPayload) {
     const now = new Date();
     const due = await prisma.reportSchedule.findMany({
-        where: { isActive: true, nextRunAt: { lte: now } },
+        // A removed workspace's reports do not keep leaving the platform for
+        // the 90-day grace period (#5296).
+        where: { isActive: true, nextRunAt: { lte: now }, tenant: { deletedAt: null } },
         // Most-overdue first. There was no ordering at all, so which 1000 of a
         // larger backlog got picked was whatever the planner returned — and any
         // schedule outside that arbitrary window could be skipped repeatedly
@@ -143,7 +146,16 @@ export async function runReportDelivery(_payload: ReportDeliveryPayload) {
             );
             generated++;
             const label = s.template?.name ?? 'Risk report';
-            const sent = await deliverReportByEmail(ctx, run, asRecipients(s.recipientsJson), label);
+            // Re-resolved now, not trusted from the save (#5213): a member who
+            // left, or an address whose domain was removed from the allowlist,
+            // is dropped rather than sent the report.
+            const { deliverable, dropped } = await currentlyDeliverableRecipients(ctx, asRecipients(s.recipientsJson));
+            if (dropped > 0) {
+                logger.warn('report-delivery: recipients no longer eligible were dropped', {
+                    component: 'report-delivery', tenantId: s.tenantId, scheduleId: s.id, dropped,
+                });
+            }
+            const sent = await deliverReportByEmail(ctx, run, deliverable, label);
             if (sent > 0) delivered++;
             const spItemId = await deliverReportToSharePoint(ctx, run, s.sharePointDriveId, s.sharePointFolderId, label);
             if (spItemId) pushed++;
