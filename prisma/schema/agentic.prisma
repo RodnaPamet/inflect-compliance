@@ -3245,13 +3245,23 @@ model AgentProfileVersion {
   /// What the agent should do, in the tenant's words. Sanitised and scanned at
   /// the write seam, and encrypted at rest (Epic B).
   instructions     String
-  /// Hex SHA-256 of `instructions` as stored in plaintext. A run recomputes it
-  /// from the decrypted text and refuses a version whose text no longer
-  /// matches, whoever changed it.
+  /// The version's content hash. Hex SHA-256 of `instructions` as stored in
+  /// plaintext, or, when the version has a `flowJson`, of the instructions and
+  /// the flow together (`profileContentHash`). A run recomputes it from the
+  /// decrypted columns and refuses a version whose text or flow no longer
+  /// matches, whoever changed it. The name predates the flow.
   instructionsHash String
   /// The MCP tools the profile uses: a subset of the agent's grants when it
-  /// was saved, and intersected with the grants again at run time.
+  /// was saved, and intersected with the grants again at run time. With a
+  /// `flowJson` it is DERIVED from the flow's nodes, never entered beside it.
   toolNames        String[]
+  /// What the agent does, as a drawn flow (Phase 1 of
+  /// `docs/ai-architecture/langflow.md`): canonical JSON of a checked
+  /// `AgentFlow` (`src/lib/agentic/agent-flow.ts`), or NULL for a version with
+  /// no flow. A specification for a reasoning engine, never executable. Frozen
+  /// with the rest of the version (trigger), covered by the content hash, and
+  /// encrypted at rest (Epic B): its labels are the tenant's own words.
+  flowJson         String?
   /// The skills the profile mounts, as a JSON array of `{ origin, name }`.
   skillRefs        Json
   /// A deployment tier, never a model id (`PROFILE_MODEL_TIERS`; CHECK).

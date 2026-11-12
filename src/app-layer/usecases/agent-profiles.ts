@@ -46,8 +46,19 @@
  * With `AGENT_PROFILES` off every act answers 404 (`PROFILES_DISABLED`), before
  * any read, so the surface is absent rather than refused.
  *
+ * ── THE FLOW (Phase 1 of `docs/ai-architecture/langflow.md`) ───────────────
+ *
+ * A version may carry a drawn flow (`src/lib/agentic/agent-flow.ts`): data,
+ * checked by `checkAgentFlow`, its labels sanitised and scanned with the
+ * instructions, stored canonical and encrypted in `flowJson`, and covered by
+ * the content hash (`profileContentHash`) the approver names and the resolver
+ * recomputes. With a flow the version's `toolNames` is DERIVED from it and
+ * never entered beside it, so the existing grant check is the flow's grant
+ * check; a `subagent` node must name an APPROVED profile in the caller's
+ * tenant. No new route and no new permission: the version routes take `flow`.
+ *
  * Audit rows carry hashes, version numbers, tool names and rule ids, never the
- * instructions.
+ * instructions or a flow's labels.
  */
 import { createHash } from 'crypto';
 import { Prisma } from '@prisma/client';
@@ -72,6 +83,17 @@ import {
 } from '@/lib/agentic/agent-profile';
 import type { AgentProfileVersionInput } from '../schemas/agent-profile.schemas';
 import { getAgentDriverSetting } from './agent-driver-setting';
+import {
+    checkAgentFlow,
+    flowLabels,
+    flowSubagentRefs,
+    flowToolNames,
+    flowToolsAgree,
+    parseStoredAgentFlow,
+    serializeAgentFlow,
+    type AgentFlow,
+    type AgentFlowRefusal,
+} from '@/lib/agentic/agent-flow';
 import { isPersonContext } from '../request-context-kind';
 import { resolveKillState } from '@/lib/agentic/kill-switch';
 import { readBreakerLatch } from '@/lib/agentic/circuit-breaker-store';
@@ -105,7 +127,14 @@ export type AgentProfileRefusal =
     | 'TEST_RUN_VERSION_NOT_ELIGIBLE'
     | 'TEST_RUN_TRIGGER_NOT_ALLOWED'
     | 'AGENT_KILL_SWITCHED'
-    | 'AGENT_BREAKER_LATCHED';
+    | 'AGENT_BREAKER_LATCHED'
+    | AgentFlowRefusal
+    | 'FLOW_LABEL_EMPTY'
+    | 'FLOW_OUTPUT_KIND_CONFLICT'
+    | 'FLOW_SUBAGENT_SELF'
+    | 'FLOW_SUBAGENT_NOT_APPROVED'
+    | 'FLOW_UNREADABLE'
+    | 'FLOW_TOOLS_DIVERGED';
 
 const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     PROFILES_DISABLED: 404,
@@ -135,6 +164,22 @@ const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     TEST_RUN_TRIGGER_NOT_ALLOWED: 409,
     AGENT_KILL_SWITCHED: 409,
     AGENT_BREAKER_LATCHED: 409,
+    FLOW_INVALID: 400,
+    FLOW_CHECKPOINT_UNENFORCED: 400,
+    FLOW_TOO_MANY_NODES: 400,
+    FLOW_DUPLICATE_KEY: 400,
+    FLOW_UNKNOWN_EDGE_END: 400,
+    FLOW_SELF_EDGE: 400,
+    FLOW_DUPLICATE_EDGE: 400,
+    FLOW_CYCLE: 400,
+    FLOW_TOOL_KIND_MISMATCH: 400,
+    FLOW_NAMES_NO_TOOL: 400,
+    FLOW_LABEL_EMPTY: 400,
+    FLOW_OUTPUT_KIND_CONFLICT: 400,
+    FLOW_SUBAGENT_SELF: 400,
+    FLOW_SUBAGENT_NOT_APPROVED: 400,
+    FLOW_UNREADABLE: 409,
+    FLOW_TOOLS_DIVERGED: 409,
 };
 
 /** A refusal carrying its reason as `details.reason`, beside a sentence for the person who asked. */
@@ -175,10 +220,38 @@ export function profileInstructionsHash(instructions: string): string {
     return createHash('sha256').update(instructions, 'utf8').digest('hex');
 }
 
+/** Names the flow-bearing form of the content hash, so it is never the bare-text form. */
+const FLOW_CONTENT_HASH_DOMAIN = 'inflect-agent-profile-content/1';
+
+/**
+ * THE VERSION'S CONTENT HASH, stored in `instructionsHash`: what the approver
+ * names and what a run pins and recomputes.
+ *
+ *   - No flow: the hash of the instructions alone, byte for byte what it has
+ *     always been, so every version and every run pin written before flows
+ *     existed still verifies.
+ *   - A flow: the hash of `[domain, instructions, flowJson]` as JSON, an
+ *     unambiguous encoding of both columns, so a changed flow is a changed
+ *     hash exactly as changed instructions are (`PROFILE_HASH_MISMATCH` at the
+ *     resolver, `HASH_CHANGED` at approval).
+ */
+export function profileContentHash(instructions: string, flowJson: string | null): string {
+    if (flowJson === null) return profileInstructionsHash(instructions);
+    return createHash('sha256')
+        .update(JSON.stringify([FLOW_CONTENT_HASH_DOMAIN, instructions, flowJson]), 'utf8')
+        .digest('hex');
+}
+
 interface PreparedVersion {
     readonly instructions: string;
     readonly instructionsHash: string;
     readonly toolNames: string[];
+    /** Canonical JSON of the checked flow, or null for a version with none. */
+    readonly flowJson: string | null;
+    /** The profiles the flow's `subagent` nodes hand work to. */
+    readonly subagentRefs: string[];
+    /** Node count, the only fact about a flow an audit row carries. */
+    readonly flowNodeCount: number | null;
     readonly skillRefs: ProfileSkillRef[];
     /** `origin:name` per skill, the form an audit row carries. */
     readonly skillRefKeys: string[];
@@ -205,8 +278,13 @@ function prepareVersion(input: AgentProfileVersionInput): PreparedVersion {
             { maxChars: PROFILE_INSTRUCTIONS_MAX_CHARS },
         );
     }
-    const toolNames = [...new Set(input.toolNames.map((t) => t.trim()))].sort();
-    const scan = scanSkillText({ description: '', instructions, declaredTools: toolNames });
+    const flow = input.flow === undefined || input.flow === null ? null : prepareFlow(input.flow, input.outputKind);
+    // With a flow the tools are the flow's, never a list entered beside it.
+    const toolNames = flow ? flowToolNames(flow) : [...new Set((input.toolNames ?? []).map((t) => t.trim()))].sort();
+    // A flow's labels reach the run message beside the instructions, so they
+    // are scanned with them: one scan, one set of rule ids.
+    const scannedText = flow ? [instructions, ...flowLabels(flow)].join('\n') : instructions;
+    const scan = scanSkillText({ description: '', instructions: scannedText, declaredTools: toolNames });
     if (scan.rules.length > 0) {
         throw refuse(
             'INSTRUCTIONS_REFUSED',
@@ -224,10 +302,14 @@ function prepareVersion(input: AgentProfileVersionInput): PreparedVersion {
         skillRefs.push({ origin: ref.origin, name: ref.name.trim() });
     }
     skillRefs.sort((a, b) => (a.origin + a.name < b.origin + b.name ? -1 : 1));
+    const flowJson = flow ? serializeAgentFlow(flow) : null;
     return {
         instructions,
-        instructionsHash: profileInstructionsHash(instructions),
+        instructionsHash: profileContentHash(instructions, flowJson),
         toolNames,
+        flowJson,
+        subagentRefs: flow ? flowSubagentRefs(flow) : [],
+        flowNodeCount: flow ? flow.nodes.length : null,
         skillRefs,
         skillRefKeys: skillRefs.map((r) => `${r.origin}:${r.name}`),
         modelTier: input.modelTier,
@@ -236,6 +318,77 @@ function prepareVersion(input: AgentProfileVersionInput): PreparedVersion {
         outputKind: input.outputKind,
         allowedTriggers: [...new Set(input.allowedTriggers)].sort(),
     };
+}
+
+/**
+ * Check a flow from a request body: its shape and graph rules, then every label
+ * sanitised (`sanitizePlainText`) and the result checked AGAIN, so what is
+ * stored and hashed is the sanitised, canonical flow. A propose node in a
+ * version that answers only would be a step the run withholds, so it is
+ * refused rather than silently ignored.
+ */
+function prepareFlow(raw: unknown, outputKind: AgentProfileVersionInput['outputKind']): AgentFlow {
+    const first = checkAgentFlow(raw);
+    if (!first.ok) throw refuse(first.reason, first.message, first.detail ? { detail: [...first.detail] } : {});
+    const sanitised = {
+        nodes: first.flow.nodes.map((n) => ({ ...n, label: sanitizePlainText(n.label).trim() })),
+        edges: first.flow.edges,
+    };
+    const blank = sanitised.nodes.filter((n) => n.label === '').map((n) => n.key);
+    if (blank.length > 0) throw refuse('FLOW_LABEL_EMPTY', 'Every step of a flow says what it does.', { detail: blank });
+    const second = checkAgentFlow(sanitised);
+    if (!second.ok) throw refuse(second.reason, second.message, second.detail ? { detail: [...second.detail] } : {});
+    if (outputKind === 'ANSWER_ONLY' && second.flow.nodes.some((n) => n.kind === 'propose')) {
+        throw refuse(
+            'FLOW_OUTPUT_KIND_CONFLICT',
+            'This version answers only, so a propose step in its flow would never run. Remove the step, or let ' +
+                'the version propose.',
+        );
+    }
+    return second.flow;
+}
+
+/**
+ * Every `subagent` node must name an APPROVED profile in the caller's tenant,
+ * never its own (a profile handing work to itself is a loop the graph check
+ * cannot see). Read through the tenant filter and RLS both, so another
+ * tenant's profile is indistinguishable from none: refused by reference, all
+ * missing ones at once.
+ */
+async function assertSubagentRefsApproved(
+    db: PrismaTx,
+    ctx: RequestContext,
+    refs: readonly string[],
+    ownProfileId: string | null,
+): Promise<void> {
+    if (refs.length === 0) return;
+    if (ownProfileId !== null && refs.includes(ownProfileId)) {
+        throw refuse('FLOW_SUBAGENT_SELF', 'A profile cannot hand its own work to itself.', { profiles: [ownProfileId] });
+    }
+    const found = await db.agentProfile.findMany({
+        where: { tenantId: ctx.tenantId, id: { in: [...refs] }, currentApprovedVersion: { not: null } },
+        select: {
+            id: true,
+            currentApprovedVersion: true,
+            agent: { select: { status: true, deletedAt: true } },
+            versions: { where: { status: 'APPROVED' }, select: { version: true }, take: 1 },
+        },
+        take: refs.length,
+    });
+    const approved = new Set(
+        found
+            .filter((p) => p.agent.status !== 'RETIRED' && p.agent.deletedAt === null)
+            .filter((p) => p.versions.length === 1 && p.versions[0].version === p.currentApprovedVersion)
+            .map((p) => p.id),
+    );
+    const missing = refs.filter((r) => !approved.has(r));
+    if (missing.length > 0) {
+        throw refuse(
+            'FLOW_SUBAGENT_NOT_APPROVED',
+            'A subagent step names a profile that is not an approved profile of an agent in this workspace.',
+            { profiles: missing },
+        );
+    }
 }
 
 interface AgentRow {
@@ -379,6 +532,7 @@ async function insertVersion(db: PrismaTx, ctx: RequestContext, profileId: strin
             instructions: v.instructions,
             instructionsHash: v.instructionsHash,
             toolNames: v.toolNames,
+            flowJson: v.flowJson,
             skillRefs: v.skillRefs.map((r) => ({ origin: r.origin, name: r.name })),
             modelTier: v.modelTier,
             effort: v.effort,
@@ -421,6 +575,7 @@ export async function createAgentProfile(
             if (existing) throw refuse('PROFILE_EXISTS', 'This agent already has a profile; edit it to write a new version.');
             await assertToolsGranted(db, ctx, agentId, prepared.toolNames);
             await assertSkillsKnownAndWithinBudget(db, ctx, prepared.skillRefs);
+            await assertSubagentRefsApproved(db, ctx, prepared.subagentRefs, null);
             const profile = await db.agentProfile.create({
                 data: { tenantId: ctx.tenantId, agentId, createdByUserId: ctx.userId },
                 select: { id: true },
@@ -442,6 +597,7 @@ export async function createAgentProfile(
                         version: 1,
                         instructionsHash: prepared.instructionsHash,
                         toolNames: prepared.toolNames,
+                        flowNodeCount: prepared.flowNodeCount,
                         skillRefs: prepared.skillRefKeys,
                         modelTier: prepared.modelTier,
                         effort: prepared.effort,
@@ -494,6 +650,7 @@ export async function createAgentProfileVersion(
             const profile = await findProfile(db, ctx, agentId);
             await assertToolsGranted(db, ctx, agentId, prepared.toolNames);
             await assertSkillsKnownAndWithinBudget(db, ctx, prepared.skillRefs);
+            await assertSubagentRefsApproved(db, ctx, prepared.subagentRefs, profile.id);
             const latest = await db.agentProfileVersion.findFirst({
                 where: { tenantId: ctx.tenantId, profileId: profile.id },
                 orderBy: { version: 'desc' },
@@ -527,6 +684,7 @@ export async function createAgentProfileVersion(
                         version: created.version,
                         instructionsHash: prepared.instructionsHash,
                         toolNames: prepared.toolNames,
+                        flowNodeCount: prepared.flowNodeCount,
                         skillRefs: prepared.skillRefKeys,
                         modelTier: prepared.modelTier,
                         effort: prepared.effort,
@@ -560,6 +718,8 @@ const VERSION_SELECT = {
     instructions: true,
     instructionsHash: true,
     toolNames: true,
+    // Read so approval can re-check the flow the version carries (Phase 1).
+    flowJson: true,
     // Read so approval can price the catalogue the version names (#4523).
     skillRefs: true,
     authoredByUserId: true,
@@ -605,6 +765,21 @@ export async function submitAgentProfileVersion(ctx: RequestContext, agentId: st
     });
 }
 
+/**
+ * A stored flow, read back for approval. Unreadable is refused rather than
+ * approved as "no flow", and the stored `toolNames` must be exactly what the
+ * flow derives: the two lists are one fact, and a row where they disagree was
+ * not written by the writer.
+ */
+function readStoredFlow(flowJson: string, toolNames: readonly string[]): AgentFlow {
+    const flow = parseStoredAgentFlow(flowJson);
+    if (!flow) throw refuse('FLOW_UNREADABLE', 'This version\'s flow cannot be read by this build; write a new version.');
+    if (!flowToolsAgree(flow, toolNames)) {
+        throw refuse('FLOW_TOOLS_DIVERGED', 'This version\'s tools are not the tools its flow uses; write a new version.');
+    }
+    return flow;
+}
+
 /** The four-eyes rule, for approval and rejection alike. */
 function assertMayDecide(ctx: RequestContext, authoredByUserId: string): void {
     if (ctx.apiKeyId) {
@@ -636,10 +811,12 @@ export async function approveAgentProfileVersion(
         const v = await findVersion(db, ctx, profile.id, version);
         if (v.status !== 'SUBMITTED') throw refuse('NOT_SUBMITTED', 'Only a submitted version can be approved.');
         assertMayDecide(ctx, v.authoredByUserId);
-        if (input.instructionsHash !== v.instructionsHash || profileInstructionsHash(v.instructions) !== v.instructionsHash) {
+        if (input.instructionsHash !== v.instructionsHash || profileContentHash(v.instructions, v.flowJson) !== v.instructionsHash) {
             throw refuse('HASH_CHANGED', 'The instructions you read are not this version\'s; read the version again before approving.');
         }
-        const scan = scanSkillText({ description: '', instructions: v.instructions, declaredTools: v.toolNames });
+        const flow = v.flowJson === null ? null : readStoredFlow(v.flowJson, v.toolNames);
+        const scannedText = flow ? [v.instructions, ...flowLabels(flow)].join('\n') : v.instructions;
+        const scan = scanSkillText({ description: '', instructions: scannedText, declaredTools: v.toolNames });
         if (scan.rules.length > 0) {
             throw refuse(
                 'INSTRUCTIONS_REFUSED',
@@ -653,6 +830,9 @@ export async function approveAgentProfileVersion(
         // skill does not consider the profiles that name it. The reviewer is the
         // last person who can act on it before a run is refused.
         await assertSkillsKnownAndWithinBudget(db, ctx, viewSkillRefs(v.skillRefs));
+        // A subagent's profile can be retired, or its agent retired, while this
+        // version waits: asked again, as the grants are.
+        if (flow) await assertSubagentRefsApproved(db, ctx, flowSubagentRefs(flow), profile.id);
 
         const now = new Date();
         const inForce = await db.agentProfileVersion.findFirst({
@@ -815,6 +995,8 @@ export interface AgentProfileVersionView {
     instructions: string;
     instructionsHash: string;
     toolNames: string[];
+    /** The drawn flow, or null. Read back for the reviewer; never in an audit row. */
+    flow: AgentFlow | null;
     skillRefs: ProfileSkillRef[];
     modelTier: string;
     effort: string;
@@ -989,6 +1171,7 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
                 instructions: true,
                 instructionsHash: true,
                 toolNames: true,
+                flowJson: true,
                 skillRefs: true,
                 modelTier: true,
                 effort: true,
@@ -1013,6 +1196,7 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
             instructions: r.instructions,
             instructionsHash: r.instructionsHash,
             toolNames: r.toolNames,
+            flow: r.flowJson === null ? null : parseStoredAgentFlow(r.flowJson),
             skillRefs: viewSkillRefs(r.skillRefs),
             modelTier: r.modelTier,
             effort: r.effort,

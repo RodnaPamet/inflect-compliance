@@ -34,7 +34,14 @@ export const AgentProfileVersionSchema = z
         // Characters before sanitising; the usecase holds the sanitised text to
         // the same cap.
         instructions: z.string().min(1).max(PROFILE_INSTRUCTIONS_MAX_CHARS),
-        toolNames: z.array(z.string().min(1).max(100)).min(1).max(PROFILE_MAX_TOOLS),
+        // Entered for a version with no flow. With a `flow` the tools are
+        // DERIVED from its nodes and never entered beside it (Phase 1 of
+        // `docs/ai-architecture/langflow.md`), so naming both is a 400.
+        toolNames: z.array(z.string().min(1).max(100)).min(1).max(PROFILE_MAX_TOOLS).optional(),
+        // The drawn flow, as data. Its SHAPE is checked by the usecase with
+        // `checkAgentFlow`, which names each refusal (a cycle, a checkpoint, a
+        // tool of the wrong kind); here it is only bounded.
+        flow: z.unknown().optional(),
         skillRefs: z
             .array(
                 z
@@ -51,7 +58,20 @@ export const AgentProfileVersionSchema = z
         outputKind: z.enum(PROFILE_OUTPUT_KINDS),
         allowedTriggers: z.array(z.enum(PROFILE_TRIGGERS)).min(1).max(PROFILE_TRIGGERS.length),
     })
-    .strict();
+    .strict()
+    .superRefine((v, issue) => {
+        const hasFlow = v.flow !== undefined && v.flow !== null;
+        if (hasFlow && v.toolNames !== undefined) {
+            issue.addIssue({
+                code: 'custom',
+                path: ['toolNames'],
+                message: 'FLOW_TOOLS_ARE_DERIVED: a version with a flow takes its tools from the flow; do not list them.',
+            });
+        }
+        if (!hasFlow && v.toolNames === undefined) {
+            issue.addIssue({ code: 'custom', path: ['toolNames'], message: 'A version with no flow lists its tools.' });
+        }
+    });
 
 export type AgentProfileVersionInput = z.infer<typeof AgentProfileVersionSchema>;
 

@@ -26,6 +26,11 @@
  * a profile (`runsProfiles`). Admission refuses it on any other engine before
  * the run row exists.
  *
+ * A version carrying a FLOW (Phase 1 of `docs/ai-architecture/langflow.md`) is
+ * compiled with it: the content hash recomputed covers the flow, a stored flow
+ * this build cannot read or whose tools disagree with `toolNames` resolves to
+ * nothing, and a flow with no propose node makes the definition read-only.
+ *
  * THE WORKER does not resolve by approval: it executes what admission PINNED.
  * `resolvePinnedRunDefinition` rebuilds the definition from the run's own
  * `profileVersionId` and checks the instructions still hash to
@@ -49,7 +54,8 @@ import {
     type ProfileSkillRef,
     type ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
-import { agentProfilesOn, profileInstructionsHash } from './agent-profiles';
+import { compileFlow, flowToolsAgree, parseStoredAgentFlow, type CompiledFlow } from '@/lib/agentic/agent-flow';
+import { agentProfilesOn, profileContentHash } from './agent-profiles';
 
 export type ProfileRunRefusal =
     | 'PROFILES_DISABLED'
@@ -107,6 +113,7 @@ const VERSION_SELECT = {
     instructions: true,
     instructionsHash: true,
     toolNames: true,
+    flowJson: true,
     skillRefs: true,
     modelTier: true,
     effort: true,
@@ -123,6 +130,7 @@ interface VersionRow {
     instructions: string;
     instructionsHash: string;
     toolNames: string[];
+    flowJson: string | null;
     skillRefs: unknown;
     modelTier: string;
     effort: string;
@@ -149,6 +157,15 @@ function compileProfileDefinition(
     const triggers = row.allowedTriggers.map((t) => oneOf(t, PROFILE_TRIGGERS));
     const skillRefs = readSkillRefs(row.skillRefs);
     if (!modelTier || !effort || !outputKind || triggers.some((t) => t === null) || !skillRefs) return null;
+    // A stored flow is read back strictly: one this build cannot read, or whose
+    // tools are not the version's tools, runs nothing rather than running as a
+    // version with no flow.
+    let flow: CompiledFlow | undefined;
+    if (row.flowJson !== null) {
+        const parsed = parseStoredAgentFlow(row.flowJson);
+        if (!parsed || !flowToolsAgree(parsed, row.toolNames)) return null;
+        flow = compileFlow(parsed);
+    }
 
     const profile: ProfileRunSpec = {
         profileId: row.profile.id,
@@ -164,6 +181,7 @@ function compileProfileDefinition(
         maxTurns: row.maxTurns,
         outputKind,
         allowedTriggers: triggers.filter((t): t is NonNullable<typeof t> => t !== null),
+        ...(flow ? { flow } : {}),
     };
 
     return {
@@ -178,7 +196,9 @@ function compileProfileDefinition(
         driver: 'tool-runner',
         // A Test run is read-only whatever the profile would do in force: it
         // is how a person tries a version, and a try must not queue proposals.
-        ...(opts.testRun || outputKind === 'ANSWER_ONLY' ? { readOnly: true as const } : {}),
+        // So is a flow with no propose node: what the person drew proposes
+        // nothing, so the run is offered the read surface only.
+        ...(opts.testRun || outputKind === 'ANSWER_ONLY' || flow?.readOnly ? { readOnly: true as const } : {}),
         steps: [
             {
                 kind: 'SYNTHESIS',
@@ -243,10 +263,10 @@ export async function resolveRunDefinition(
     if (ctx.agentId && ctx.agentId !== row.profile.agentId) {
         throw refuse('PROFILE_AGENT_MISMATCH', "A profile runs as its own agent, and this caller speaks for another.");
     }
-    if (profileInstructionsHash(row.instructions) !== row.instructionsHash) {
+    if (profileContentHash(row.instructions, row.flowJson) !== row.instructionsHash) {
         throw refuse(
             'PROFILE_HASH_MISMATCH',
-            'The stored instructions no longer match the hash their approval pinned. The version cannot run.',
+            'The stored instructions or flow no longer match the hash their approval pinned. The version cannot run.',
         );
     }
     if (opts.trigger && !row.allowedTriggers.includes(opts.trigger)) {
@@ -287,7 +307,7 @@ export async function resolvePinnedRunDefinition(
         }),
     );
     if (!row || row.profile.id !== parsed.profileId || row.version !== parsed.version) return undefined;
-    if (profileInstructionsHash(row.instructions) !== run.profileInstructionsHash) return undefined;
+    if (profileContentHash(row.instructions, row.flowJson) !== run.profileInstructionsHash) return undefined;
     return compileProfileDefinition(run.workflowKey, row, { testRun: parsed.testRun }) ?? undefined;
 }
 

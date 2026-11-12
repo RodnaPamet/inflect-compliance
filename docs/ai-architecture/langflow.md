@@ -38,7 +38,7 @@ evaluation record. Grey dashed: refused.
 ```mermaid
 flowchart LR
   P0(["Phase 0 · decided<br/>2026-10-29<br/>in-product canvas on tldraw<br/>Langflow not adopted"]):::done
-  P1["Phase 1 · the flow inside the profile<br/>data-only flow, hashed and frozen<br/>tools only narrow<br/>acyclic and bounded"]:::todo
+  P1["Phase 1 · done<br/>the flow inside the profile<br/>data-only flow, hashed and frozen<br/>tools only narrow<br/>acyclic and bounded"]:::done
   P2["Phase 2 · view every agent<br/>registration form, profile form,<br/>drawn flow, registry workflow<br/>read-only, no invented order"]:::todo
   P3["Phase 3 · the canvas editor<br/>agent-flow document kind<br/>layout and logic kept apart<br/>no second write path"]:::todo
   P4["Phase 4 · preview<br/>the exact run message<br/>enforced or advisory, per node<br/>visual diff for the approver"]:::todo
@@ -253,8 +253,25 @@ offered.
 frozen with the rest of the version, and compiled into the specification a
 reasoning engine receives. No UI yet.
 
+**Status: done** (branch `wf/agent-flow-phase1`; implementation note
+`docs/implementation-notes/2026-11-11-agent-flow-phase1.md`). Four facts the
+build settled that the sub-phases below did not say:
+- The content hash keeps its column name, `instructionsHash`. With no flow it
+  is the instructions' hash byte for byte, so every existing version and run pin
+  still verifies; with a flow it covers both (`profileContentHash`).
+- A step's tool must be of the step's kind (`FLOW_TOOL_KIND_MISMATCH`), a flow
+  names at least one tool (`FLOW_NAMES_NO_TOOL`, as the `toolNames` CHECK
+  requires), and a propose step in an `ANSWER_ONLY` version is refused
+  (`FLOW_OUTPUT_KIND_CONFLICT`): each is a step the engine would otherwise
+  ignore.
+- Labels are scanned with the instructions by the skill text scan, because they
+  reach the run message beside them.
+- `profileRef` is an `AgentProfile` id. A profile naming itself is refused
+  (`FLOW_SUBAGENT_SELF`); a longer loop through another profile's flow is not
+  yet detected, and nothing runs a `subagent` node before Phase 5.
+
 **Sub-phases.**
-- [ ] 1.1 `src/lib/agentic/agent-flow.ts`: a strict zod schema for a flow.
+- [x] 1.1 `src/lib/agentic/agent-flow.ts`: a strict zod schema for a flow.
       - Nodes: `{ key, kind: 'read' | 'propose' | 'synthesis' | 'subagent',
         label, tool?, profileRef? }`.
       - Edges: `{ from, to }`.
@@ -262,23 +279,23 @@ reasoning engine receives. No UI yet.
       - Acyclic: a cycle is refused, as the canvas cycle guard already does for
         rule chains.
       - No `checkpoint` kind until Phase 5.1.
-- [ ] 1.2 Migration: `AgentProfileVersion.flowJson` (nullable).
+- [x] 1.2 Migration: `AgentProfileVersion.flowJson` (nullable).
       - The freeze trigger covers it.
       - It is in the hash the resolver recomputes, so a tampered flow is
         `PROFILE_HASH_MISMATCH` exactly as tampered instructions are.
       - Labels pass `sanitizePlainText`.
       - The column joins the encrypted-field manifest (labels are business
         content) and is classified in `sanitize-rich-text-coverage`.
-- [ ] 1.3 One source of truth for tools: when a version has a flow, its
+- [x] 1.3 One source of truth for tools: when a version has a flow, its
       `toolNames` is derived from the flow's nodes, never entered separately.
       Save and approval refuse an ungranted tool by name (`TOOL_NOT_GRANTED`),
       and a `subagent` node's `profileRef` must name an APPROVED profile in the
       caller's tenant.
-- [ ] 1.4 `compileFlow(flow) → { stepsSpec, readOnly }`: a topological order of
+- [x] 1.4 `compileFlow(flow) → { stepsSpec, readOnly }`: a topological order of
       the nodes rendered as the step specification `run-message.ts` already
       consumes. `readOnly` is true when no propose node exists. It is a pure
       function with no I/O.
-- [ ] 1.5 The existing profile-version routes accept `flow` — **no new
+- [x] 1.5 The existing profile-version routes accept `flow` — **no new
       route**, so the permission (`admin.agent_registry` via
       `requirePermission`), the audit rows and the 404-when-switched-off
       behaviour are unchanged.
@@ -327,9 +344,12 @@ rls-coverage, schema-index-coverage) and the fresh-DB migration gate are green.
   hand.
 
 **Done when.** A version with a flow can be created, approved by a second
-person and resolved through `agent-profile:<id>@v<n>`. Admission still refuses
-it on every engine, because `runsProfiles` is false. That is correct until
-Phase 5.
+person and resolved through `agent-profile:<id>@v<n>`. Met. The roadmap
+expected admission to refuse it on every engine, but the Tool Runner has run
+profiles since Step 2c, so a flow version runs there today: its steps are
+listed, in order and whole, in the run message, its tools are the flow's tools
+intersected with the grants, and a flow with no propose node runs read-only.
+Order stays advice until Phase 5.
 
 ### Phase 2 — View every agent on the canvas
 
