@@ -95,6 +95,13 @@ describe('2. the record is a population, not a sample of one', () => {
         expect(byName.get('imports-never-calls')?.expect).toEqual({ status: 'COMPLETE', capabilities: [] });
         expect(byName.get('hidden-import-ts')?.expect.status).toBe('INCOMPLETE');
         expect(byName.get('hidden-import-python')?.expect.status).toBe('INCOMPLETE');
+        // The reviewed evasions (2026-11-12): a bare import_module, getattr, a value use.
+        expect(byName.get('import-module-imported-by-name')?.expect.status).toBe('INCOMPLETE');
+        expect(byName.get('getattr-computed')?.expect.status).toBe('INCOMPLETE');
+        expect(byName.get('non-literal-dynamic-import-in-an-agent-file')?.expect.status).toBe('INCOMPLETE');
+        expect(byName.get('getattr-literal')?.expect.capabilities).toHaveLength(1);
+        expect(byName.get('entry-point-in-an-object')?.expect.capabilities).toHaveLength(1);
+        expect(byName.get('entry-point-passed-as-an-argument')?.expect.capabilities).toHaveLength(1);
     });
 });
 

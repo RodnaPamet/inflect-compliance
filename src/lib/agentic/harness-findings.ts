@@ -142,11 +142,16 @@
  *
  *   • IT OPENS when a linked agent's code calls a payment client and the
  *     register row holds no spending authority that is not WITHDRAWN.
- *   • IT CLOSES on positive evidence only: an envelope a second person
- *     REVIEWED (`spendingAuthority` reads `REVIEWED`), or a COMPLETE `code`
- *     read that reported the agent with `paymentCapabilities: []`. An absent
- *     member (no code read of the agent), an incomplete code read, or an
- *     agent absent from the scan closes nothing.
+ *   • IT CLOSES on positive evidence only, and the scan holds none: an
+ *     envelope a second person REVIEWED (`spendingAuthority` reads
+ *     `REVIEWED`) is the one close the planner makes. A code read reporting
+ *     `paymentCapabilities: []` closes NOTHING, complete or not: `[]` is "the
+ *     reader saw no payment client called in the agent's own file", and the
+ *     reader cannot see a client wrapped in a helper module, reached through a
+ *     name it cannot resolve, or loaded by a dynamic import elsewhere. Absence
+ *     a static, one-file reader cannot vouch for is not evidence. A team that
+ *     removed the client closes the finding itself, on the finding; the next
+ *     scan reopens it only if it sees the client again.
  *   • AN UNREVIEWED ENVELOPE HOLDS IT: neither opened nor closed. The
  *     declaration exists, and its review is the register's own rule —
  *     activation refuses `SPENDING_AUTHORITY_UNREVIEWED` until it lands.
@@ -697,7 +702,9 @@ function spendingUndeclaredFinding(where: string, registeredAgentId: string, pay
             + 'The register holds no spending authority for the agent, so nobody has declared, or a second person '
             + 'reviewed, how much it may spend, where, or until when. Declare the envelope on the register for '
             + 'review, or remove the payment client from the agent. This finding closes when a reviewed envelope '
-            + 'is in force, or when a complete read of the code no longer shows the payment client.',
+            + 'is in force. A scan that no longer sees the payment client does not close it, because a static read '
+            + 'cannot show an agent has no other way to pay: if the client was removed, close the finding yourself; '
+            + 'a later scan reopens it only if it sees the client again.',
     };
 }
 
@@ -820,30 +827,24 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
     });
 
     // SPENDING AUTHORITY THE REGISTER DOES NOT KNOW (`/4`). Per register row:
-    // any linked agent paying opens; only when none does may a complete code
-    // read that reported each linked agent empty close.
-    const codeReadInFull = readInFull.has('code');
-    const paymentByRow = new Map<string, { paying: PlannedAgent[]; allReadEmpty: boolean }>();
+    // any linked agent paying opens. Only a reviewed envelope closes; a read
+    // reporting `[]` is not evidence the agent cannot pay, so it closes nothing.
+    const payingByRow = new Map<string, PlannedAgent[]>();
     for (const p of agents) {
         if (p.registeredAgentId === null) continue;
-        const row = paymentByRow.get(p.registeredAgentId) ?? { paying: [], allReadEmpty: true };
         const caps = p.paymentCapabilities;
-        if (caps !== null && caps.length > 0) row.paying.push(p);
-        if (caps === null || caps.length > 0) row.allReadEmpty = false;
-        paymentByRow.set(p.registeredAgentId, row);
+        const row = payingByRow.get(p.registeredAgentId) ?? [];
+        if (caps !== null && caps.length > 0) row.push(p);
+        payingByRow.set(p.registeredAgentId, row);
     }
-    for (const [rowId, row] of paymentByRow) {
+    for (const [rowId, paying] of payingByRow) {
         const ref = spendingUndeclaredRefOf(rowId);
         const standing = prior.spendingAuthority.get(rowId);
         if (standing === 'REVIEWED') {
             resolve.push(ref);
             continue;
         }
-        if (row.paying.length > 0) {
-            if (standing === undefined) assert.push(spendingUndeclaredFinding(where, rowId, row.paying));
-            continue;
-        }
-        if (row.allReadEmpty && codeReadInFull) resolve.push(ref);
+        if (paying.length > 0 && standing === undefined) assert.push(spendingUndeclaredFinding(where, rowId, paying));
     }
 
     // ZERO IS NEVER CLEAN. A scan that found nothing evidences nothing.

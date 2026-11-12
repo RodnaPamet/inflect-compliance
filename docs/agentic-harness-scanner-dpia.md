@@ -64,6 +64,7 @@ pointers. Exactly one member is personal data by design:
 | `unboundCredentials[]` (`/2` only) | `ref`, a `scheme://locator` reference to a credential no discovered agent holds, and the source kind that saw it | No by design; the same caveat as an agent's credential locator |
 | `agents[].tools[].calls`, `windowDays` (`/2` only, optional) | How many times the agent called the tool, and over how many days | No: a count of an agent's calls, carrying nothing of what it sent or received |
 | `agents[].models[]` (`/2` only, optional) | `endpoint`, a `scheme://locator` or a host, and the model's id | No by design; the same caveat as a locator. Verified with the report and kept on the agent's scan item since #3759 |
+| `agents[].paymentCapabilities[]` (`/4` only, optional; Agent Pay Phase 2) | `protocol` (`x402`), `library` (a closed list of payment client packages) and `at`, the `code://` locator where the agent's code calls that client; only on an agent discovered via `code` | No by design; the same caveat as a locator: a `code://` locator is built from the client's repository and file paths, and carries a person's name only if those do. No amount, wallet, key or token: the contract has no field for one, and a secret-shaped `at` is refused. Verified with the report and not stored as a column; a finding derived from it names the library and locator |
 | `agents[].verdicts[].evidence`, `findings[].evidence` | A pointer of at most 512 characters | No by design; the same caveat as a locator |
 | `scan.scanner` | The scanner's own register id, version and manifest hash | No |
 | `signature` | Algorithm, public key, signature | No |
@@ -809,3 +810,18 @@ read tool, which is a `tools/call`. Condition 2 now says the scanner never calls
 dates and flags, and the owner it reports is an Inflect user id, already a
 member this assessment classifies. The merge of the pull request that carries
 this paragraph signs the amendment.
+
+Agent Pay Phase 2 (`docs/ai-architecture/mastercard-agent-pay.md`) reopens it
+on the contract ids the ingest accepts: `HARNESS_CONTRACT_IDS` gains
+`inflect-agent-harness/4`, which is `/3` plus one optional per-agent member,
+`paymentCapabilities[]`, classified in the table under
+[Personal data](#personal-data) above. Each entry is a protocol, a
+library from a closed list and a `code://` locator of the call, so it adds no
+data category and carries no content; the `code` source that produces it reads
+code statically under condition 15, as it already did. The ingest verifies it
+with the report and does not keep it as a column; what reaches storage is the
+`SPENDING_AGENT_UNDECLARED` finding it derives, which names the library and the
+locator, about a REGISTERED agent and keyed by the register row, so no person is
+profiled by it and no column that names a person is added. **This amendment awaits the
+owner's signature**: the reference scanner ships `/4` to a client estate only
+after the merge of the pull request carrying a signed version of this paragraph.

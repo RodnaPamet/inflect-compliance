@@ -40,8 +40,10 @@
  *                 `/4`'s member: each place the agent's FILE calls a
  *                 recognised payment client (`code/payment.ts`, Agent Pay
  *                 Phase 2.1), by protocol, library and `code://` locator —
- *                 `[]` when it calls none, which is what lets a complete read
- *                 close SPENDING_AGENT_UNDECLARED. Never an amount, a wallet or
+ *                 `[]` when the file shows none. `[]` is what this reader saw,
+ *                 not that the agent cannot pay (a helper module is not
+ *                 followed), so the planner never closes
+ *                 SPENDING_AGENT_UNDECLARED on it. Never an amount, a wallet or
  *                 a key
  *
  *   models        the model endpoints it calls (`/2`'s optional `models[]`):
@@ -109,7 +111,7 @@ export async function scanLangChainCode(
         try {
             const facts = /\.py$/i.test(file.path) ? readPython(file.text) : readJavaScript(file.path, file.text);
             const found = recognizeAgents(facts, file);
-            const payments = recognizePaymentCalls(facts, file);
+            const payments = recognizePaymentCalls(facts, file, { definesAgent: found.agents.length > 0 });
             agents.push(...found.agents.map((a) => ({ ...a, paymentCalls: payments.calls })));
             for (const at of [...found.unresolved, ...payments.unresolved]) parseProblems.push({ reason: 'UNPARSEABLE', at });
         } catch (err) {

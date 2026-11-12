@@ -6,9 +6,10 @@
  *     row holds no live spending authority — the register decides, never the
  *     report, so an unregistered paying agent raises SHADOW_AGENT alone;
  *   • an envelope awaiting review holds it: neither opened nor closed;
- *   • it closes on positive evidence only — a reviewed envelope, or a COMPLETE
- *     code read that reported the agent with `[]`. An absent member, an
- *     incomplete code read, or an agent absent from the scan closes nothing;
+ *   • it closes on positive evidence only — a reviewed envelope. A code read
+ *     reporting `[]` closes nothing, complete or not: a static one-file reader
+ *     cannot show the agent has no other way to pay (a helper module, a name it
+ *     cannot resolve). An absent member or an absent agent closes nothing;
  *   • it names where the code pays, and never a value.
  */
 import {
@@ -122,8 +123,33 @@ describe('it closes only on positive evidence', () => {
         (p as { paymentCapabilities?: unknown[] }).paymentCapabilities = [];
     };
 
-    it('a complete code read that reports the agent with [] closes it', () => {
-        expect(planHarnessScan(body(noLongerPays), prior()).resolve).toContain(REF);
+    it('a complete code read that reports the agent with [] closes nothing: absence is not evidence', () => {
+        const plan = planHarnessScan(body(noLongerPays), prior());
+        expect(plan.resolve).not.toContain(REF);
+        expect(plan.assert.map((x) => x.sourceRef)).not.toContain(REF);
+    });
+
+    it('a register-source agent on the same row changes nothing: it neither opens nor closes', () => {
+        // The reference scanner's `inflect-register` source reports each row as
+        // `inflect:agent:<rowId>` with no member: it cannot read code.
+        const registerAgent = (b: HarnessReportBodyV4) => {
+            const sdk = b.agents.find((a) => a.discoveredId === SDK_AGENT_ID)!;
+            sdk.registeredAgentId = ROW;
+            delete (sdk as { paymentCapabilities?: unknown }).paymentCapabilities;
+        };
+        const paying = planHarnessScan(body((_p, b) => registerAgent(b)), prior());
+        expect(paying.assert.filter((x) => x.sourceRef === REF)).toHaveLength(1);
+        const quiet = planHarnessScan(body((p, b) => {
+            noLongerPays(p);
+            registerAgent(b);
+        }), prior('REVIEWED'));
+        expect(quiet.resolve).toContain(REF);
+    });
+
+    it('the description tells a person the scan will not close it, and that they may', () => {
+        const f = planHarnessScan(body(), prior()).assert.find((x) => x.sourceRef === REF)!;
+        expect(f.description).toContain('does not close it');
+        expect(f.description).toContain('close the finding yourself');
     });
 
     it('an incomplete code read that reports [] closes nothing', () => {

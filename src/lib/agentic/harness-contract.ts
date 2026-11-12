@@ -348,8 +348,10 @@ const AgentSchemaV3 = z
 /**
  * `/4`'s agent: `/3`'s, and the optional `paymentCapabilities[]`. THREE STATES,
  * as `models[]` has: absent is NOT REPORTED (no source read this agent's code);
- * `[]` is a code read that saw no payment client called; entries are what it
- * saw. Each (library, locator) once.
+ * `[]` is a code read that saw no payment client called in the agent's own
+ * file — what that reader saw, never evidence the agent cannot pay, so the
+ * planner closes nothing on it; entries are what it saw. Each (library,
+ * locator) once.
  */
 const AgentSchemaV4 = z
     .object({

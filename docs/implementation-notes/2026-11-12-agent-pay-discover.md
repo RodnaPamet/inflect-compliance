@@ -78,15 +78,24 @@ scanned file ──► code/payment.ts ─────► CodeAgent.paymentCalls
   wrapped `fetch` is handed to needs data flow the reader does not model; per
   file errs toward reporting a capability, which is the side that asks a person
   to look.
-- **Opens on any read, closes only on a complete one.** What was read is real,
-  so an incomplete `code` read that saw a payment still opens the finding; only
-  a complete read that reports `[]` may close it. An absent member never closes
-  it (the agent's code was not read).
+- **Opens on any read; no read closes it.** What was read is real, so an
+  incomplete `code` read that saw a payment still opens the finding. A read
+  that reports `[]` closes nothing, complete or not (review, 2026-11-12): the
+  reader reports `[]` for a client wrapped in a helper module in another file,
+  so `[]` is what the reader saw, not evidence the agent cannot pay. Only a
+  reviewed envelope closes it; a person who removed the client closes it on the
+  finding, and the ingest reopens it only when a scan sees the client again.
+  This narrows the roadmap's 2.3, which also let a clean complete read close.
+- **Value uses count, and what the reader cannot follow is held.** An entry
+  point anywhere a call or binding reads it (an argument, an object's value, a
+  literal `getattr` or subscript) is a capability at that line. A non-literal
+  dynamic import in a file that defines an agent, `import_module` however it
+  was imported, and a computed `getattr` or subscript on a payment module make
+  the read `UNPARSEABLE`. Six cases in the record hold these.
 - **An unreviewed envelope holds the finding.** Its declaration exists, and
   Phase 1's activation precondition already refuses the agent until a second
   person reviews it; raising a second finding for the same gap would duplicate
-  the register's own rule. A review, or a withdrawal followed by a clean
-  complete read, ends it.
+  the register's own rule. A review ends it.
 - **Rail-agnostic.** A reviewed envelope on any rail closes the finding. The
   register declares an envelope per token rail, and the code fact names a
   protocol, not a token; matching them would need a mapping (x402 ↔ AP4M or
@@ -102,6 +111,14 @@ accepting `/2` and `/3`, so a scanner not yet upgraded is unaffected, and a
 nothing (the scanner image ships after the app). One more indexed read per
 ingest (`AgentSpendingAuthority` by tenant and agent), bounded by linkable rows
 × rails.
+
+## DPIA
+
+`/4` changes `HARNESS_CONTRACT_IDS`, which reopens
+`docs/agentic-harness-scanner-dpia.md`. The amendment paragraph and the
+`paymentCapabilities[]` row are written there, marked as awaiting the owner's
+signature; the scanner should not ship `/4` to a client estate until it is
+signed.
 
 ## Not built
 

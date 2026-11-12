@@ -354,8 +354,11 @@ agentic IAM rule that a later break is a finding.
       stated: the libraries are NOT in `FRAMEWORK_MARKERS`, because the
       capability is attributed to an agent the same file defines, which
       already carries a framework marker; a payment helper in another file is
-      a stated limit, not "no capability". Agent Pay tokens wait for a
-      confirmed package.
+      a stated limit, not "no capability". An entry point used as a value
+      (an alias, an argument, an object's value, a literal `getattr` or
+      subscript) is a capability; a dynamic import in an agent file, a bare
+      `import_module` and a computed `getattr` on a payment module are
+      `UNPARSEABLE`. Agent Pay tokens wait for a confirmed package.
 - [x] 2.2 A new fact needs a new contract id: `inflect-agent-harness/4` is
       `/3` plus the payment-capability fact and nothing else, a strict schema
       beside the others, produced by the reference scanner and the fake
@@ -364,9 +367,14 @@ agentic IAM rule that a later break is a finding.
       states as `models[]` has; the scanner speaks `/4` (0.13.0).*
 - [x] 2.3 The pure planner raises `SPENDING_AGENT_UNDECLARED` when a scan
       links a payment-capable agent to a register row with no envelope, and
-      closes it only on positive evidence: an envelope reviewed, or a
-      complete `code` read that no longer shows the capability. *Built
-      2026-11-12; an envelope awaiting review holds the finding.*
+      closes it only on positive evidence: an envelope reviewed. *Built
+      2026-11-12; an envelope awaiting review holds the finding.* Deviation,
+      stated: the design also let a complete `code` read that no longer shows
+      the capability close it. Review found the reader reports `[]` where it
+      cannot see (a helper module, a value it cannot resolve), so that close
+      was on absence, not evidence, and it is not built. A person who removed
+      the client closes the finding; a later scan reopens it only if it sees
+      the client again. A narrowing, for the owner to confirm.
 - [ ] 2.4 *Blocked on* [`web-bot-auth.md`](./web-bot-auth.md) *Phase 3.1–3.2,
       whose verifier and cached directory reader are not built.* Know Your Agent cross-check: the register records the agent's Web
       Bot Auth key directory URL; Inflect fetches and validates it with
@@ -383,7 +391,9 @@ agentic IAM rule that a later break is a finding.
       `tests/unit/agent-harness-scanner/payment-capability-code-source.test.ts`.*
 
 **Where Phase 2 stands (2026-11-12).** 2.1, 2.2, 2.3 and 2.5 are built; 2.4
-waits for Web Bot Auth Phase 3's verifier. Phase 3 is not started: 3.1 needs
+waits for Web Bot Auth Phase 3's verifier. `/4` widens what the ingest
+accepts, so the scanner DPIA carries an amendment awaiting the owner's
+signature before the scanner ships `/4`. Phase 3 is not started: 3.1 needs
 a CHECK widening on `AgenticEvidenceArtefact.kind` and the per-agent emitter
 path, 3.2 a governance-pack report, and 3.3 the recertification pack section
 of 1.4. See

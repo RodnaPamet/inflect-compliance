@@ -49,11 +49,15 @@ from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onbo
 calls that payment client. It says the agent CAN pay, never what or with what:
 no amount, wallet, key or token, and a secret-shaped `at` is refused like any
 reference. It has three states, as `models[]` has: absent is not reported, `[]`
-is a `code` read that saw no payment client called, entries are what it saw.
+is a `code` read that saw no payment client called in the agent's own file,
+entries are what it saw. `[]` is what that reader saw, not evidence that the
+agent cannot pay: a static reader of one file does not see a client wrapped in a
+helper module, so the receiving side closes nothing on it.
 Only an agent discovered via `code` MAY carry it, and each (library, `at`)
 appears once. A `/3` report carrying the member is refused as `SCHEMA`. The
 receiving side derives `SPENDING_AGENT_UNDECLARED` from it for a REGISTERED
-agent whose register row holds no spending authority.
+agent whose register row holds no spending authority, and closes it only when a
+reviewed spending authority is in force.
 
 - A scanner SHOULD emit `/4`; the reference scanner does. `/2` and `/3` reports
   stay accepted.

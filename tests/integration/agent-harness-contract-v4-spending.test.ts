@@ -6,8 +6,10 @@
  *      SPENDING_AGENT_UNDECLARED end to end, keyed by the register row.
  *   2. AN ENVELOPE AWAITING REVIEW HOLDS IT: a later scan neither closes nor
  *      re-raises it while the declaration waits for its second person.
- *   3. A COMPLETE CODE READ THAT NO LONGER SHOWS THE PAYMENT CLIENT closes it,
- *      once the declaration is withdrawn.
+ *   3. A COMPLETE CODE READ THAT NO LONGER SHOWS THE PAYMENT CLIENT CLOSES
+ *      NOTHING: a static read cannot show the agent has no other way to pay.
+ *      A person closes it; a later scan that sees nothing leaves it closed,
+ *      and one that sees the client again reopens it.
  *   4. TWO TENANTS: the finding is invisible to the other tenant.
  */
 import { MembershipStatus, PrismaClient, Role } from '@prisma/client';
@@ -156,12 +158,25 @@ describe('SPENDING_AGENT_UNDECLARED through the real ingest', () => {
         expect(await finding(T1)).toEqual(before);
     });
 
-    it('3. a complete code read that no longer shows the client closes it', async () => {
+    it('3. a complete code read that no longer shows the client closes nothing; a person does', async () => {
         await withdrawAgentSpendingAuthority(ctxAs(T1, seeded[T1].declarerUserId), seeded[T1].payingAgentId, 'AP4M');
-        await ingest(T1, pointed(T1, (p) => {
+        const noLongerPays = (p: HarnessReportBodyV4['agents'][number]) => {
             (p as { paymentCapabilities?: unknown[] }).paymentCapabilities = [];
-        }));
+        };
+        await ingest(T1, pointed(T1, noLongerPays));
+        expect((await finding(T1))?.status).not.toBe('CLOSED');
+
+        // The team removed the client and closes the finding itself.
+        await prisma.finding.updateMany({
+            where: { tenantId: T1, sourceKind: HARNESS_FINDING_SOURCE_KIND, sourceRef: spendingUndeclaredRefOf(seeded[T1].payingAgentId) },
+            data: { status: 'CLOSED' },
+        });
+        await ingest(T1, pointed(T1, noLongerPays));
         expect((await finding(T1))?.status).toBe('CLOSED');
+
+        // A scan that sees the client again reopens it.
+        await ingest(T1, pointed(T1));
+        expect((await finding(T1))?.status).toBe('OPEN');
     });
 
     it('4. the other tenant sees none of it', async () => {
