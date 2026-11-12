@@ -28,9 +28,14 @@ jest.mock('@/app-layer/ai/risk-assessment/rate-limiter', () => ({
     recordGeneration: jest.fn(),
 }));
 const appendAuditEntryMock = jest.fn(async (_entry: unknown) => undefined);
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntry: (entry: unknown) => appendAuditEntryMock(entry),
-}));
+jest.mock('@/lib/audit', () => {
+    // strictMock, not a subset factory: an export this test does not supply
+    // throws by name instead of resolving to undefined (#2897).
+    const { strictMock } = jest.requireActual('../../helpers/strict-mock');
+    return strictMock('@/lib/audit', jest.requireActual('@/lib/audit'), {
+        appendAuditEntry: (entry: unknown) => appendAuditEntryMock(entry),
+    });
+});
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: async (_c: unknown, fn: (db: unknown) => unknown) =>
         fn({ tenantSecuritySettings: { findUnique: async () => null } }),
