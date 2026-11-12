@@ -80,6 +80,18 @@ curl -fsS https://app.example.com/api/t/<tenantSlug>/risks \
 In Swagger UI (dev/staging), click **Authorize → BearerAuth** and paste
 the key (no `Bearer ` prefix — Swagger adds it).
 
+A key reaches only the endpoints its scopes name. Each endpoint under
+`/api/t/{tenantSlug}/` belongs to one resource (`/risks/…` to `risks`,
+`/vendor-assessment-templates/…` to `vendors`, `/admin/…` to `admin`), and:
+
+- a `GET` needs a scope on that resource (`risks:read`, `risks:write`, `risks:*`, …);
+- any other method needs a scope on it other than `<resource>:read`;
+- an endpoint that belongs to no resource (the dashboard, search, the calendar,
+  onboarding, the assistant) is reachable only by a `*` key.
+
+A request outside the key's scopes is refused with a 403 and recorded in the
+audit log. The endpoint's own permission check still applies after this one.
+
 A key bound to a registered agent stops working while that agent is stopped.
 Every request with it is refused with a 403 while a kill switch covers the agent,
 or while the agent is anything but ACTIVE in the register (draft, suspended,
