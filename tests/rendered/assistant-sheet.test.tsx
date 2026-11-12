@@ -137,6 +137,18 @@ afterEach(() => {
     searchParamsValue = new URLSearchParams();
 });
 
+// The launcher loads the sheet the first time the assistant opens (#5054).
+// Load it once before any test, so every test below sees the sheet mount
+// synchronously on open, as a person does once the chunk is cached, whichever
+// test happens to run first.
+beforeAll(async () => {
+    stubStream([]);
+    const { unmount } = mount();
+    fireEvent.click(screen.getByTestId('assistant-launcher'));
+    await screen.findByTestId('assistant-empty');
+    unmount();
+});
+
 /** The JSON body of the single `fetch` the turn made. */
 function sentBody(): { question: string; pageContext?: Record<string, unknown> } {
     const mock = global.fetch as unknown as jest.Mock;

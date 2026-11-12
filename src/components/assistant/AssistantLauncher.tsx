@@ -33,7 +33,8 @@
  * the numbers are read off those two files rather than picked to look low.
  */
 
-import { useCallback, useEffect, useId, useRef } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
 // Nucleo is the canonical icon family — `tests/guards/no-lucide.test.ts`
 // treats a new lucide import site as a regression and says so: "Migrate the
@@ -46,7 +47,24 @@ import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import { useTenantContext } from '@/lib/tenant-context-provider';
 
 import { useAssistantOpen } from './assistant-open-context';
-import { AssistantSheet } from './AssistantSheet';
+
+/**
+ * The sheet loads on first use, not with the page (#5054).
+ *
+ * This launcher is mounted by the tenant layout, so whatever it imports
+ * statically is First Load JS on EVERY tenant page, whether or not the person
+ * ever opens the assistant. The sheet (the textarea, the stream reducer, the
+ * history window) is most of that, and adding the multi-line input and
+ * history to it put the heaviest tenant page over its bundle budget. So it is
+ * fetched the first time the assistant opens, warmed when the pointer reaches
+ * the launcher or it takes focus, and then stays mounted: closing and
+ * reopening keeps the conversation exactly as before.
+ */
+const loadAssistantSheet = () => import('./AssistantSheet');
+const AssistantSheet = dynamic(() => loadAssistantSheet().then((m) => m.AssistantSheet), {
+    ssr: false,
+    loading: () => null,
+});
 
 export function AssistantLauncher() {
     const t = useTranslations('assistant');
@@ -81,6 +99,14 @@ export function AssistantLauncher() {
     const { open, setOpen, setAvailable } = useAssistantOpen();
     const launcherRef = useRef<HTMLButtonElement>(null);
     const labelId = useId();
+    // Once opened, by the button, the shortcut or the command palette, the
+    // sheet stays mounted for the rest of the visit. Set during render, the
+    // documented way to derive state from a prop change.
+    const [sheetMounted, setSheetMounted] = useState(false);
+    if (open && !sheetMounted) setSheetMounted(true);
+    const warmSheet = useCallback(() => {
+        void loadAssistantSheet();
+    }, []);
 
     // Tell the palette the assistant exists. This component only mounts when
     // the kill switch is on, so registering here means the palette entry
@@ -147,6 +173,8 @@ export function AssistantLauncher() {
                     type="button"
                     variant="primary"
                     onClick={toggle}
+                    onPointerEnter={warmSheet}
+                    onFocus={warmSheet}
                     // While the window is open this button IS the close
                     // affordance, rather than a second control competing with
                     // the sheet's own dismissal.
@@ -183,7 +211,7 @@ export function AssistantLauncher() {
                 </Button>
             </div>
 
-            <AssistantSheet open={open} onClose={close} titleId={labelId} />
+            {sheetMounted && <AssistantSheet open={open} onClose={close} titleId={labelId} />}
         </>
     );
 }
