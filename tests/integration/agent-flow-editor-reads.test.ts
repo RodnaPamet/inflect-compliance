@@ -183,7 +183,7 @@ describeFn('the flow editor’s reads, and its one write (real DB)', () => {
         for (const driver of AGENT_DRIVERS) {
             expect(() => assertEngineRunsProfiles(driver, def.profile!)).toThrow();
         }
-        expect(preview.message).toBe(runMessage(def, 0));
+        expect(preview.message).toBe(runMessage(def));
         // And it is the flow's specification, steps in run order.
         expect(preview.message).toContain('1. [READ] Gather the open risks (tool: list_risks)');
         expect(preview.message).toContain('3. [SYNTHESIS] Summarise by owner');

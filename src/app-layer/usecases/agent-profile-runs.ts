@@ -437,7 +437,7 @@ export async function previewProfileRunMessage(
         version: row.version,
         runAs,
         runRefused: refusedOnEveryEngine(def.profile),
-        message: runMessage(def, 0),
+        message: runMessage(def),
         readOnly: def.readOnly === true,
     };
 }
