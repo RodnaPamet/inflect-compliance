@@ -147,6 +147,37 @@ describe('a redirect to another origin has that origin judged by its own robots.
     });
 });
 
+describe('every hop is judged by its own path, a same-origin redirect included', () => {
+    it('refuses a same-origin redirect to a disallowed path without requesting it', async () => {
+        routes['https://acme.example.com/robots.txt'] = robots('User-agent: *\nDisallow: /en/\n');
+        routes['https://acme.example.com/'] = () => new Response(null, { status: 301, headers: { location: '/en/' } });
+        routes['https://acme.example.com/en/'] = () => new Response('home', { status: 200, headers: ALL_HEADERS });
+        const s = await grade();
+        expect(s).toMatchObject({ outcome: 'REFUSED', refusalReason: 'ROBOTS', grade: null });
+        expect(requested()).toEqual(['https://acme.example.com/robots.txt', 'https://acme.example.com/']);
+    });
+
+    it('refuses under `Allow: /$` + `Disallow: /` once the redirect leaves the allowed root', async () => {
+        routes['https://acme.example.com/robots.txt'] = robots('User-agent: *\nAllow: /$\nDisallow: /\n');
+        routes['https://acme.example.com/'] = () => new Response(null, { status: 301, headers: { location: 'https://acme.example.com/en/' } });
+        routes['https://acme.example.com/en/'] = () => new Response('home', { status: 200, headers: ALL_HEADERS });
+        expect((await grade()).refusalReason).toBe('ROBOTS');
+        expect(requested()).not.toContain('https://acme.example.com/en/');
+    });
+
+    it('follows an allowed same-origin redirect, reading robots.txt once', async () => {
+        routes['https://acme.example.com/robots.txt'] = robots('User-agent: *\nDisallow: /private\n');
+        routes['https://acme.example.com/'] = () => new Response(null, { status: 301, headers: { location: '/en/' } });
+        routes['https://acme.example.com/en/'] = () => new Response('home', { status: 200, headers: ALL_HEADERS });
+        expect((await grade()).outcome).toBe('GRADED');
+        expect(requested()).toEqual([
+            'https://acme.example.com/robots.txt',
+            'https://acme.example.com/',
+            'https://acme.example.com/en/',
+        ]);
+    });
+});
+
 describe('every request is the deployment bot', () => {
     it('signs robots.txt and the homepage, each on its own, when a key is configured', async () => {
         configure(true);

@@ -33,8 +33,10 @@ the `VendorMonitor` row:
    address must be public and is pinned, and a redirect is followed only by
    checking its target the same way (https, public, at most five hops). The
    origin's `robots.txt` is read first, and again for any other origin a
-   redirect leads to; a site that disallows the monitor is recorded
-   `REFUSED` with reason `ROBOTS` and its homepage is not requested. A
+   redirect leads to, and every URL requested (each redirect hop included) is
+   judged against its origin's rules by its own path; a site that disallows
+   the monitor is recorded `REFUSED` with reason `ROBOTS` and the disallowed
+   URL is not requested. A
    refused, unreachable or invalid domain is left ungraded and its outcome
    recorded.
 
@@ -98,7 +100,8 @@ and, when `WEB_BOT_AUTH_SIGNING_KEY` is set and `APP_URL` is a bare https
 origin, an HTTP Message Signature naming the deployment's key directory
 (`<APP_URL>/.well-known/http-message-signatures-directory`). Without a key the
 requests go out unsigned, exactly as before. The public page at
-`/bots/vendor-monitor` states what the monitor fetches, its schedule, its key
+`/bots/vendor-monitor` states what the monitor fetches, when (the daily sweep
+and on-demand checks, once per monitoring organisation), its key
 directory and how a site opts out; its User-Agent links there. The breach
 check sends the same User-Agent to HIBP, unsigned. The identity is the
 deployment's: nothing in a request names a tenant.

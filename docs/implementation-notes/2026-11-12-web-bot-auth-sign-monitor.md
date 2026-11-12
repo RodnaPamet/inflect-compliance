@@ -63,17 +63,26 @@ The sweep passes `refusalReason` and `signed` to
 - **The product token stayed `InflectCompliance-VendorMonitor`**, the string
   the monitor already sent, so a vendor that allowlisted it keeps working and
   its robots.txt group is the same; the version moved to 1.1 for the page link.
-- **robots.txt is read once per ORIGIN per grade, not once per domain.** A
-  homepage that redirects to `www.` is judged by `www.`'s robots.txt too,
-  because RFC 9309 scopes a robots.txt to its origin.
+- **robots.txt is read once per ORIGIN per grade, not once per domain, and
+  every hop is judged by its own path.** A homepage that redirects to `www.`
+  is judged by `www.`'s robots.txt too, because RFC 9309 scopes a robots.txt
+  to its origin. The text read for an origin is kept for the grade, and each
+  URL about to be requested (a same-origin redirect to `/en/` included) is
+  matched against it; judging only the first path on each origin, as the
+  first cut did, followed `/` → `/en/` under `Disallow: /en/`.
 - **Unreachable robots.txt requests nothing** (RFC 9309 §2.3.1.4) and records
   `UNREACHABLE`; a 429 on it is `REFUSED`; a recognised challenge on it is
   `REFUSED` without the ROBOTS reason, because a challenge is a door, not a
   policy.
 - **`crawl-delay` is not honoured.** The decisions note put it to the owner as
   a proposal; it was not adopted, and the doc does not adopt it. The monitor
-  sends at most a robots.txt and one homepage request (plus redirect hops) per
-  vendor per day.
+  sends one robots.txt and one homepage request (plus redirect hops) per
+  check. A check is one monitor row in the 02:00 UTC sweep, or one on-demand
+  `POST …/monitor/run` by a member with `vendors.edit`; two tenants
+  monitoring one domain check it twice. The bot page says exactly that rather
+  than "once per domain per day", which neither path keeps. Deduplicating by
+  domain across tenants, or a per-domain floor on the on-demand run, is left
+  open (below).
 - **The reason is not a column.** It reaches the metric and the audit row; a
   migration for the vendor page was left out of this slice (below).
 - **The breach check stays on `fetchWithRetry`, unsigned.** It is a fixed API
@@ -100,7 +109,7 @@ a devDependency. No migration.
   every request is still `safeFetch`, and the tests prove the headers carry no
   tenant value under different tenant contexts.
 - **Risk — robots.txt.** The monitor now makes one extra request per origin
-  per day, and a vendor that disallows it stops being graded. That is the
+  per check, and a vendor that disallows it stops being graded. That is the
   conduct D-L1-6 adopted; the outcome says why.
 - **Risk — the allowlist.** One exact path is opened; the page reads no row.
 - **Rollback.** Unset `WEB_BOT_AUTH_SIGNING_KEY` to stop signing at once.
@@ -108,6 +117,11 @@ a devDependency. No migration.
   the page; nothing persisted depends on it.
 
 ## Open
+
+- **Fewer requests per domain.** Deduplicating checks of one domain across
+  tenants in the sweep, and a per-domain floor on the on-demand run, so a site
+  sees fewer requests than one pair per monitoring customer per check. The bot
+  page states the current behaviour, not this.
 
 - **The directory proof must also cover `content-digest`** before
   registration: Cloudflare's `http-signature-directory` validator requires it

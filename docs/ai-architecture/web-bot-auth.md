@@ -428,14 +428,16 @@ it left open is named on each line.
       fixed HIBP host.
 - [x] 2.2 The public page `/bots/vendor-monitor` (exact path in
       `PUBLIC_PATH_EXACT`, en and bg): what the monitor fetches (robots.txt,
-      one homepage GET, the HIBP query), its schedule, the User-Agent, the key
+      one homepage GET, the HIBP query), its schedule (the daily sweep, plus
+      on-demand checks, once per monitoring organisation), the User-Agent, the key
       directory and current `keyid` when the deployment signs, and the
       robots.txt opt-out. Every fact is read from the seam. It names no
       tenant and reads no row. **Open:** a contact address of the operator's
       own; the page points to the site's published contact details.
 - [x] 2.3 `robots.txt` per D-L1-6, RFC 9309 (`robots.ts`): read through the
       seam before the homepage, once per origin per grade (a redirect to
-      another origin reads that origin's too); groups by the product token,
+      another origin reads that origin's too), and every URL requested — each
+      redirect hop, same-origin ones included — is judged by its own path; groups by the product token,
       falling back to `*`; longest match wins, allow wins a tie; 500 KiB read.
       A disallow is `REFUSED` with `refusalReason: 'ROBOTS'` and no homepage
       request; a 4xx restricts nothing; a 5xx or network failure requests

@@ -39,10 +39,12 @@
  * ── robots.txt is honoured before the homepage is requested ──
  *
  * Once per origin per grade (the start origin, and the origin of any redirect
- * target), `https://<origin>/robots.txt` is read through the same seam and
- * judged for the bot's product token (RFC 9309, `src/lib/web-bot-auth/robots.ts`).
- * A disallowed path is REFUSED with reason ROBOTS and the homepage is never
- * requested. A robots.txt that is missing or "unavailable" (a 4xx) restricts
+ * target), `https://<origin>/robots.txt` is read through the same seam, and
+ * EVERY URL requested, each redirect hop included, is judged against its
+ * origin's rules for the bot's product token by its own path (RFC 9309,
+ * `src/lib/web-bot-auth/robots.ts`). A disallowed path is REFUSED with reason
+ * ROBOTS and is never requested — a same-origin redirect to a disallowed path
+ * too. A robots.txt that is missing or "unavailable" (a 4xx) restricts
  * nothing; one that is "unreachable" (a 5xx or a network failure) means
  * complete disallow (RFC 9309 §2.3.1.4), so nothing is requested and the
  * grade is UNREACHABLE.
@@ -147,6 +149,8 @@ interface Ungraded {
 
 type HomepageRead = { headers: Record<string, string> } | Ungraded;
 type AttemptResult = { res: Response } | Ungraded;
+/** An origin's robots.txt text (`null`: unavailable, restricts nothing), or what stops the origin. */
+type RobotsRules = { text: string | null } | Ungraded;
 
 /** Real provider — GET the homepage through the SSRF guard, grade its headers. */
 export class HeaderGradeTlsProvider implements TlsProvider {
@@ -222,14 +226,22 @@ export class HeaderGradeTlsProvider implements TlsProvider {
      */
     private async fetchHomepageHeaders(startUrl: string): Promise<HomepageRead> {
         const deadline = Date.now() + HOMEPAGE_FETCH_LIMITS.deadlineMs;
-        const robotsRead = new Set<string>();
+        // The robots.txt read per origin, kept for the whole grade: every hop
+        // is judged against its origin's rules by ITS OWN path, so a redirect
+        // that stays on the origin but moves to a disallowed path is refused
+        // rather than followed. `null` text is "unavailable": nothing restricted.
+        const robotsByOrigin = new Map<string, RobotsRules>();
         let url = startUrl;
         for (let hop = 0; hop <= HOMEPAGE_FETCH_LIMITS.maxRedirects; hop++) {
             const target = new URL(url);
-            if (!robotsRead.has(target.origin)) {
-                robotsRead.add(target.origin);
-                const refusal = await this.robotsRefusal(target, deadline);
-                if (refusal) return refusal;
+            let rules = robotsByOrigin.get(target.origin);
+            if (!rules) {
+                rules = await this.readRobots(target.origin, deadline);
+                robotsByOrigin.set(target.origin, rules);
+            }
+            if (!('text' in rules)) return rules;
+            if (rules.text !== null && !robotsAllows(rules.text, VENDOR_MONITOR_BOT_TOKEN, `${target.pathname}${target.search}`)) {
+                return { outcome: 'REFUSED', detail: 'robots.txt disallows the monitor', reason: 'ROBOTS' };
             }
             let attempt: AttemptResult;
             try {
@@ -252,13 +264,16 @@ export class HeaderGradeTlsProvider implements TlsProvider {
     }
 
     /**
-     * What the origin's robots.txt says about requesting `target`, or null when
-     * it may be requested. One request (plus redirect hops), never retried: a
-     * robots.txt that cannot be read today is read again tomorrow. Throws
+     * The origin's robots.txt: its text, `{ text: null }` when it is
+     * "unavailable" and restricts nothing, or what stops the origin being
+     * requested at all. Judging a path against the text is the caller's, once
+     * per hop. One request (plus redirect hops), never retried: a robots.txt
+     * that cannot be read now is read again on the next check. Throws
      * `SsrfBlockedError` when the robots URL or a hop is refused.
      */
-    private async robotsRefusal(target: URL, deadline: number): Promise<Ungraded | null> {
-        let robotsUrl = `${target.origin}/robots.txt`;
+    private async readRobots(origin: string, deadline: number): Promise<RobotsRules> {
+        const unavailable = { text: null };
+        let robotsUrl = `${origin}/robots.txt`;
         for (let hop = 0; hop <= HOMEPAGE_FETCH_LIMITS.maxRedirects; hop++) {
             const remaining = deadline - Date.now();
             if (remaining <= 0) return { outcome: 'UNREACHABLE', detail: 'deadline reached before robots.txt' };
@@ -272,7 +287,7 @@ export class HeaderGradeTlsProvider implements TlsProvider {
                 if (err instanceof RedirectNotAllowedError) {
                     // RFC 9309 §2.3.1.2: a redirect without a target leaves
                     // robots.txt "unavailable", which restricts nothing.
-                    if (!err.location) return null;
+                    if (!err.location) return unavailable;
                     robotsUrl = new URL(err.location, robotsUrl).href;
                     continue;
                 }
@@ -285,20 +300,16 @@ export class HeaderGradeTlsProvider implements TlsProvider {
                 return { outcome: 'REFUSED', detail: `robots.txt ${res.status} ${challenge} challenge` };
             }
             if (res.ok) {
-                const text = await readTextCapped(res, ROBOTS_MAX_BYTES);
-                const path = `${target.pathname}${target.search}`;
-                return robotsAllows(text, VENDOR_MONITOR_BOT_TOKEN, path)
-                    ? null
-                    : { outcome: 'REFUSED', detail: 'robots.txt disallows the monitor', reason: 'ROBOTS' };
+                return { text: await readTextCapped(res, ROBOTS_MAX_BYTES) };
             }
             await discardBody(res);
             if (res.status === 429) return { outcome: 'REFUSED', detail: 'robots.txt 429' };
             if (res.status >= 500) return { outcome: 'UNREACHABLE', detail: `robots.txt ${res.status}` };
             // §2.3.1.3: any other 4xx is "unavailable" and restricts nothing.
-            return null;
+            return unavailable;
         }
         // §2.3.1.2: past the redirect limit robots.txt MAY be treated as unavailable.
-        return null;
+        return unavailable;
     }
 
     /**

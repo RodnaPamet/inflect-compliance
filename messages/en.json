@@ -16500,7 +16500,7 @@
       "fetchesRobots": "https://<your domain>/robots.txt, read first. If it disallows the monitor, nothing else on that origin is requested.",
       "fetchesHomepage": "One GET of your homepage, following at most five redirects, to read its response headers (HSTS, CSP and similar). The page body is never read or stored.",
       "fetchesBreach": "One query to the public Have I Been Pwned breach catalogue about your domain. Your own site is not contacted for this.",
-      "schedule": "It runs once a day, at about 02:00 UTC, and requests each monitored domain at most once per run, retrying a failed request once.",
+      "schedule": "It runs once a day, at about 02:00 UTC, and also whenever an organisation that monitors your domain asks for a fresh check. Each organisation's check is separate, so a domain monitored by several organisations is checked once for each. A check reads robots.txt and then the homepage, retrying a failed request once.",
       "origin": "Requests come from the servers of the deployment that operates this page. Which organisation monitors a vendor is never disclosed in a request.",
       "signaturesHeading": "Signed requests",
       "signaturesOn": "Requests to your site are signed with HTTP Message Signatures under the Web Bot Auth protocol, with an Ed25519 key that belongs to this deployment. The public keys are published at:",
@@ -16508,7 +16508,7 @@
       "directoryLabel": "Key directory:",
       "keyidLabel": "Current key id:",
       "optOutHeading": "Opting out",
-      "optOutBody": "Add this to your robots.txt. It is read at the start of every run, so the monitor stops at its next run:",
+      "optOutBody": "Add this to your robots.txt. It is read again at the start of every check, so the monitor stops at its next check:",
       "contact": "To reach the operator of this deployment about the monitor, use the contact details published on this site."
     }
   },
