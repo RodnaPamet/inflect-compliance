@@ -40,9 +40,24 @@ export class ReportRepository {
             include: {
                 controls: {
                     where: { control: { deletedAt: null } },
-                    include: { control: { select: { name: true, annexId: true } } },
+                    include: { control: { select: { name: true, annexId: true, code: true } } },
                 },
             },
+        });
+    }
+
+    /**
+     * The assigned users behind the Owner column's fallback (#5376, owner
+     * decision 2026-11-12): a risk with no named `treatmentOwner` reads as its
+     * `ownerUserId`. `Risk` carries no relation to `User`, so the names are one
+     * batched read over the ids, never a read per row.
+     */
+    static async getOwnerUsers(db: PrismaTx, userIds: string[]) {
+        if (userIds.length === 0) return [];
+        return db.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, name: true, email: true },
+            take: userIds.length,
         });
     }
 }

@@ -11,13 +11,15 @@
  *   - TREATMENT. The persisted `TreatmentDecision` is relabelled to the
  *     canonical strategy wording (TREAT → Mitigate, TOLERATE → Accept, …); no
  *     decision reads "Untreated".
- *   - OWNER. The free-text `treatmentOwner`, else "Unassigned". `ownerUserId`
- *     is NOT consulted: a risk with an owning user and no treatment-owner text
- *     reads "Unassigned" (pinned as today's behaviour; see the report on #5376).
- *   - CONTROLS. Each linked control by its `annexId`, else its name, joined
- *     with ", "; `Control.code` is not consulted (pinned likewise). No linked
- *     control is the empty string, which the PDF renders as "—". A control
- *     in the trash is not listed: it mitigates nothing.
+ *   - OWNER. The free-text `treatmentOwner`; when none is named, the assigned
+ *     user (`ownerUserId`) by name — or the e-mail's local part when the user
+ *     has no name, as the risk list shows it; "Unassigned" only when neither
+ *     exists (owner decision, 2026-11-12, #5376).
+ *   - CONTROLS. Each linked control code first — its `annexId`, else its
+ *     `code` — then its name (`A.5.1 Policies for information security`), the
+ *     name alone when it has no code, joined with ", " (owner decision,
+ *     2026-11-12). No linked control is the empty string, which the PDF renders
+ *     as "—". A control in the trash is not listed: it mitigates nothing.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -38,6 +40,7 @@ const SUITE = `rpt-${randomUUID().slice(0, 8)}`;
 const A = `a-${SUITE}`;
 const B = `b-${SUITE}`;
 const OWNER_USER = `u-${SUITE}`;
+const NAMELESS_USER = `n-${SUITE}`;
 
 const ctxA = makeRequestContext('READER', { tenantId: A, tenantSlug: A });
 const ctxB = makeRequestContext('READER', { tenantId: B, tenantSlug: B });
@@ -59,7 +62,9 @@ describeFn('getReports — the Risk Register projection (real DB)', () => {
         await prisma.$connect();
         for (const t of [A, B]) await prisma.tenant.create({ data: { id: t, name: t, slug: t } });
         const email = `${SUITE}@example.test`;
-        await prisma.user.create({ data: { id: OWNER_USER, email, emailHash: hashForLookup(email) } });
+        await prisma.user.create({ data: { id: OWNER_USER, email, emailHash: hashForLookup(email), name: 'Dana Petrova' } });
+        const namelessEmail = `nameless.${SUITE}@example.test`;
+        await prisma.user.create({ data: { id: NAMELESS_USER, email: namelessEmail, emailHash: hashForLookup(namelessEmail) } });
         await prisma.tenantMembership.create({ data: { tenantId: A, userId: OWNER_USER, role: 'EDITOR', status: 'ACTIVE' } });
 
         const annexControl = await prisma.control.create({
@@ -67,6 +72,9 @@ describeFn('getReports — the Risk Register projection (real DB)', () => {
         });
         const codedControl = await prisma.control.create({
             data: { tenantId: A, name: 'Quarterly access recertification', code: 'CUST-2' },
+        });
+        const uncodedControl = await prisma.control.create({
+            data: { tenantId: A, name: 'Clean desk' },
         });
 
         const treated = await risk(A, 'treated', {
@@ -78,11 +86,14 @@ describeFn('getReports — the Risk Register projection (real DB)', () => {
         await risk(A, 'avoided', { inherentScore: 10, score: 10, treatment: 'AVOID' });
         await risk(A, 'untreated', { inherentScore: 6, score: 6 });
         await risk(A, 'userOwned', { inherentScore: 4, score: 4, ownerUserId: OWNER_USER });
+        await risk(A, 'namedAndUser', { inherentScore: 3, score: 3, ownerUserId: OWNER_USER, treatmentOwner: 'Risk committee' });
+        await risk(A, 'namelessUser', { inherentScore: 2, score: 2, ownerUserId: NAMELESS_USER });
         await risk(A, 'deleted', { inherentScore: 25, score: 25, deletedAt: new Date() });
         await risk(B, 'foreign', { inherentScore: 25, score: 25, treatment: 'TREAT', treatmentOwner: 'B owner' });
 
         await prisma.riskControl.create({ data: { tenantId: A, riskId: treated, controlId: annexControl.id } });
         await prisma.riskControl.create({ data: { tenantId: A, riskId: treated, controlId: codedControl.id } });
+        await prisma.riskControl.create({ data: { tenantId: A, riskId: treated, controlId: uncodedControl.id } });
         // A control in the trash, still linked: soft delete keeps the join row.
         const trashed = await prisma.control.create({
             data: { tenantId: A, name: 'Retired network control', annexId: 'A.8.20', deletedAt: new Date() },
@@ -102,7 +113,7 @@ describeFn('getReports — the Risk Register projection (real DB)', () => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, [A, B]);
         });
-        await prisma.user.deleteMany({ where: { id: OWNER_USER } });
+        await prisma.user.deleteMany({ where: { id: { in: [OWNER_USER, NAMELESS_USER] } } });
         await prisma.tenant.deleteMany({ where: { id: { in: [A, B] } } });
         await prisma.$disconnect();
     });
@@ -110,9 +121,10 @@ describeFn('getReports — the Risk Register projection (real DB)', () => {
     it('holds exactly this tenant\'s live risks, highest inherent score first', async () => {
         const { riskRegister } = await getReports(ctxA);
         expect(riskRegister.map((r) => r.title)).toEqual(
-            ['treated', 'tolerated', 'transferred', 'avoided', 'untreated', 'userOwned'].map((k) => `${SUITE}-${k}`),
+            ['treated', 'tolerated', 'transferred', 'avoided', 'untreated', 'userOwned', 'namedAndUser', 'namelessUser']
+                .map((k) => `${SUITE}-${k}`),
         );
-        expect(riskRegister.map((r) => r.score)).toEqual([20, 15, 12, 10, 6, 4]);
+        expect(riskRegister.map((r) => r.score)).toEqual([20, 15, 12, 10, 6, 4, 3, 2]);
     });
 
     it('a soft-deleted risk is not in the register, though the row is still there', async () => {
@@ -139,28 +151,38 @@ describeFn('getReports — the Risk Register projection (real DB)', () => {
             avoided: 'Avoid',
             untreated: 'Untreated',
             userOwned: 'Untreated',
+            namedAndUser: 'Untreated',
+            namelessUser: 'Untreated',
         });
     });
 
-    it('the owner is the treatment-owner text, else "Unassigned" — ownerUserId is not consulted', async () => {
+    it('the owner is the treatment-owner text, else the assigned user, else "Unassigned"', async () => {
         const { riskRegister } = await getReports(ctxA);
         expect(byTitle(riskRegister, 'treated')?.owner).toBe('Head of IT');
         expect(byTitle(riskRegister, 'tolerated')?.owner).toBe('CFO');
+        // Neither a named owner nor an assigned user.
         expect(byTitle(riskRegister, 'untreated')?.owner).toBe('Unassigned');
-        // TODAY'S BEHAVIOUR, pinned: an owning user without treatment-owner text
-        // reads "Unassigned". Raised as an owner question on #5376.
-        expect(byTitle(riskRegister, 'userOwned')?.owner).toBe('Unassigned');
+        // No named owner: the assigned user's name.
+        expect(byTitle(riskRegister, 'userOwned')?.owner).toBe('Dana Petrova');
+        // A named owner wins over the assigned user.
+        expect(byTitle(riskRegister, 'namedAndUser')?.owner).toBe('Risk committee');
+        // An assigned user with no name reads as the e-mail's local part, never the full address.
+        expect(byTitle(riskRegister, 'namelessUser')?.owner).toBe(`nameless.${SUITE}`);
     });
 
-    it('linked controls read as annexId, else name, joined with ", "; none is the empty string', async () => {
+    it('linked controls read code first, then name; the name alone when there is no code', async () => {
         const { riskRegister } = await getReports(ctxA);
         const treated = byTitle(riskRegister, 'treated');
         // The join order is not specified by the query, so compare the set.
         expect(treated?.controls.split(', ').sort()).toEqual(
-            ['A.5.1', 'Quarterly access recertification'].sort(),
+            [
+                // annexId wins over `code` where a control carries both.
+                'A.5.1 Policies for information security',
+                'CUST-2 Quarterly access recertification',
+                'Clean desk',
+            ].sort(),
         );
-        // `code` is not consulted: CUST-1 and CUST-2 appear nowhere.
-        expect(treated?.controls).not.toMatch(/CUST-/);
+        expect(treated?.controls).not.toMatch(/CUST-1/);
         expect(byTitle(riskRegister, 'untreated')?.controls).toBe('');
     });
 

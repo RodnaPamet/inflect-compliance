@@ -11,9 +11,15 @@ export class ControlRiskRepository {
         });
     }
 
+    /**
+     * A risk's linked controls — the risk page's traceability panel. A control
+     * in the trash keeps its join row and the soft-delete extension does not
+     * reach a relation filter, so it is excluded here (#5376, owner decision
+     * 2026-11-12: risk pages hide controls in the trash).
+     */
     static async listByRisk(db: PrismaTx, tenantId: string, riskId: string) {
         return db.riskControl.findMany({
-            where: { tenantId, riskId },
+            where: { tenantId, riskId, control: { deletedAt: null } },
             include: { control: { select: { id: true, code: true, name: true, status: true, category: true } }, createdBy: { select: { id: true, name: true } } },
             orderBy: { createdAt: 'desc' },
         });
