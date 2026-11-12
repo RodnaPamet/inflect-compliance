@@ -6,7 +6,9 @@
  *
  *   1. read the day's counts per agent (`readLedgerDay` — the one read of the
  *      ledger, held to a column allowlist by a guard);
- *   2. read each active agent's in-baseline days from `AgentBehaviourBaseline`;
+ *   2. read each active agent's in-baseline days from `AgentBehaviourBaseline`,
+ *      less any day before a re-baseline a PERSON accepted on the agent's
+ *      breaker (`ACCEPTED_NEW_BASELINE` advances `baselineEpoch`);
  *   3. score the day with `scoreDay` (pure; rolling mean and floored σ);
  *   4. write the day's baseline row — LEARNING, STEADY or ANOMALOUS — and, for
  *      an anomalous day, an `AgentBehaviourAnomaly` row with the features that
@@ -53,12 +55,14 @@ import {
     anomalyFindingText,
     BEHAVIOUR_ANOMALY_FINDING_SOURCE_KIND,
     behaviourAnomalySourceRef,
+    baselineDaysSinceEpoch,
     baselineLookbackStart,
     dayKeyFor,
     driversForStorage,
     FINGERPRINT_AUTOMATION_KEY,
     FINGERPRINT_FEATURES,
     isActiveDay,
+    personSetBaselineEpoch,
     previousUtcDay,
     round2,
     scoreDay,
@@ -207,6 +211,23 @@ export async function runAgentBehaviourFingerprint(input: {
                 historyByAgent.set(h.agentId, list);
             }
 
+            // A person's re-baseline. Closing the breaker ACCEPTED_NEW_BASELINE
+            // advances its epoch; days before it leave this baseline too, or a
+            // deliberate, lasting change would be re-raised (and, with the latch
+            // key, re-latched) every night until its old days aged out of the
+            // look-back. Only an epoch a person MOVED counts — see
+            // `personSetBaselineEpoch` for why the creation default does not.
+            const breakers = toScoreIds.length === 0
+                ? []
+                : await db.agentCircuitBreaker.findMany({
+                      where: { tenantId: ctx.tenantId, agentId: { in: toScoreIds } },
+                      select: { agentId: true, baselineEpoch: true, createdAt: true },
+                      take: toScoreIds.length,
+                  });
+            const epochByAgent = new Map<string, Date | null>(
+                breakers.map((b) => [b.agentId, personSetBaselineEpoch(b)]),
+            );
+
             // Every behaviour-anomaly finding on these agents, CLOSED included:
             // an anomalous agent reopens its own rather than opening a second.
             const refs = toScoreIds.map(behaviourAnomalySourceRef);
@@ -244,7 +265,10 @@ export async function runAgentBehaviourFingerprint(input: {
             const results: AgentDayOutcome[] = [];
             for (const agent of toScore) {
                 const features = todayByAgent.get(agent.id)!;
-                const score = scoreDay({ today: features, baseline: historyByAgent.get(agent.id) ?? [] });
+                const score = scoreDay({
+                    today: features,
+                    baseline: baselineDaysSinceEpoch(historyByAgent.get(agent.id) ?? [], epochByAgent.get(agent.id) ?? null),
+                });
                 await db.agentBehaviourBaseline.create({
                     data: {
                         tenantId: ctx.tenantId,

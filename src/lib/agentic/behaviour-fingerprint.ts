@@ -52,6 +52,11 @@
  * a later day's baseline — otherwise the first tripled day makes tripling
  * normal and the second one scores nothing. A LEARNING day does enter it: it is
  * the baseline being built.
+ *
+ * A change a PERSON accepted is the exception, and it is the breaker's own:
+ * closing it `ACCEPTED_NEW_BASELINE` advances `baselineEpoch`, and days before
+ * that epoch leave the fingerprint's baseline too (`personSetBaselineEpoch`,
+ * `baselineDaysSinceEpoch`), so the agent re-learns from LEARNING.
  */
 
 // ─── Vocabulary ─────────────────────────────────────────────────────
@@ -317,6 +322,56 @@ export function previousUtcDay(now: Date): { day: string; start: Date; end: Date
 /** The first day a baseline may reach back to, for a scored day starting at `start`. */
 export function baselineLookbackStart(start: Date): Date {
     return new Date(start.getTime() - BASELINE_LOOKBACK_DAYS * DAY_MS);
+}
+
+// ─── A person's re-baseline ─────────────────────────────────────────
+//
+// An anomalous day never enters a later baseline (header), so a DELIBERATE,
+// lasting change — an owner doubling an agent's workload — would be scored
+// against the pre-change days every night until they aged out of the 90-day
+// look-back: about 76 nights of re-raised findings and, with the latch key on,
+// a breaker re-latched every night a person closed it. The breaker already has
+// the answer, `ACCEPTED_NEW_BASELINE`, which advances
+// `AgentCircuitBreaker.baselineEpoch`. The fingerprint honours that same epoch,
+// so one decision re-baselines both detectors and there is no second control.
+
+/**
+ * The re-baseline instant a PERSON set on this agent's breaker, or `null`.
+ *
+ * `baselineEpoch` defaults to the row's creation time, and the row is created by
+ * whatever touches the breaker first — including a latch (`ensureLatchRow`), the
+ * fingerprint's own among them. An epoch at the creation instant is that
+ * default, not a decision, and honouring it would let the act of latching wipe
+ * the baseline the latch was judged against: a later `RESOLVED` close would
+ * then re-learn from the anomaly. Only an epoch AFTER creation was moved, and
+ * the one writer that moves it is `closeAgentCircuitBreaker` on
+ * `ACCEPTED_NEW_BASELINE`. (The row has a single insert site, raw SQL, where
+ * both columns take `CURRENT_TIMESTAMP` from one statement, so a defaulted epoch
+ * equals `createdAt` exactly.)
+ *
+ * `RESOLVED` leaves the epoch where it was, so the old baseline keeps judging:
+ * "I fixed the agent" means the agent should look like it did before.
+ */
+export function personSetBaselineEpoch(
+    breaker: { readonly baselineEpoch: Date; readonly createdAt: Date } | null | undefined,
+): Date | null {
+    if (!breaker) return null;
+    return breaker.baselineEpoch.getTime() > breaker.createdAt.getTime() ? breaker.baselineEpoch : null;
+}
+
+/**
+ * Keep only the baseline days that began at or after `epoch`. A day that began
+ * before it holds behaviour from before the change a person accepted, even if
+ * the change came at 10:00 that day, so it is discarded whole. `null` keeps
+ * everything.
+ */
+export function baselineDaysSinceEpoch<T extends { readonly day: string }>(
+    baseline: readonly T[],
+    epoch: Date | null,
+): T[] {
+    if (epoch === null) return [...baseline];
+    const from = epoch.getTime();
+    return baseline.filter((b) => Date.parse(`${b.day}T00:00:00.000Z`) >= from);
 }
 
 // ─── Findings ───────────────────────────────────────────────────────

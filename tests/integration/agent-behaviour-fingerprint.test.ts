@@ -13,7 +13,10 @@
  *     and cannot read the first tenant's rows (RLS, as app_user);
  *   - a second run of the same night writes nothing;
  *   - without the operator's keys nothing is read or written (G9), and
- *     without the latch key threshold B raises the finding and stops nothing.
+ *     without the latch key threshold B raises the finding and stops nothing;
+ *   - a person closing the breaker RESOLVED keeps the old baseline (the same
+ *     behaviour latches again), and ACCEPTED_NEW_BASELINE re-baselines the
+ *     fingerprint too, so a lasting change is not re-latched every night.
  */
 import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -21,6 +24,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { runAgentBehaviourFingerprint } from '@/app-layer/usecases/agent-behaviour-fingerprint';
 import { runAgentFingerprintSweep } from '@/app-layer/jobs/agent-fingerprint';
 import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
+import { closeAgentCircuitBreaker } from '@/app-layer/usecases/agent-circuit-breaker';
 import { buildSystemContext } from '@/app-layer/context-system';
 import { runInTenantContext } from '@/lib/db-context';
 import {
@@ -228,6 +232,32 @@ describeFn('the agent behaviour fingerprint', () => {
         expect(await prisma.agentCircuitBreaker.count({ where: { tenantId: T2, state: 'OPEN' } })).toBe(0);
         const anomaly = await prisma.agentBehaviourAnomaly.findFirst({ where: { tenantId: T2 } });
         expect(anomaly?.latchedAt).toBeNull();
+    });
+
+    it('a breaker closed RESOLVED keeps the old baseline; ACCEPTED_NEW_BASELINE re-baselines the fingerprint', async () => {
+        const owner = makeRequestContext('OWNER', { tenantId: T1, tenantSlug: T1, userId: seeded[T1].ownerUserId });
+        const agentId = seeded[T1].agentId;
+        const breakerState = async () =>
+            (await prisma.agentCircuitBreaker.findFirst({ where: { tenantId: T1, agentId }, select: { state: true } }))?.state;
+        expect(await breakerState()).toBe('OPEN');
+
+        // "I fixed the agent" — but it keeps tripling: the next night latches again.
+        await closeAgentCircuitBreaker(owner, agentId, 'RESOLVED');
+        await seedDay(T1, BASELINE_DAYS + 1, readsOn(BASELINE_DAYS + 1) * 3);
+        const resolved = await runAgentBehaviourFingerprint({ tenantId: T1, tenantSlug: T1, latch: true, now: runAt(BASELINE_DAYS + 1) });
+        expect(resolved.agents[0]).toMatchObject({ verdict: 'ANOMALOUS', tier: 'LATCH', latched: true });
+        expect(await breakerState()).toBe('OPEN');
+
+        // "Yes, I changed this agent" — the tripled load is the new normal. The
+        // fingerprint discards its pre-change days with the breaker's epoch and
+        // re-learns, rather than re-latching the breaker every night.
+        const findingsBefore = await prisma.finding.count({ where: { tenantId: T1 } });
+        await closeAgentCircuitBreaker(owner, agentId, 'ACCEPTED_NEW_BASELINE');
+        await seedDay(T1, BASELINE_DAYS + 2, readsOn(BASELINE_DAYS + 2) * 3);
+        const accepted = await runAgentBehaviourFingerprint({ tenantId: T1, tenantSlug: T1, latch: true, now: runAt(BASELINE_DAYS + 2) });
+        expect(accepted.agents[0]).toMatchObject({ verdict: 'LEARNING', baselineDays: 0, latched: false, findingAction: null });
+        expect(await breakerState()).toBe('CLOSED');
+        expect(await prisma.finding.count({ where: { tenantId: T1 } })).toBe(findingsBefore);
     });
 
     it('a day with no activity is not a sample: NOT_APPLICABLE, never PASSED', async () => {

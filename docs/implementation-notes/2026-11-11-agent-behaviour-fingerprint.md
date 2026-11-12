@@ -87,6 +87,20 @@ signal for the propose path.
   agents, one past the cap so truncation is recorded (`registerTruncated`), and
   anchors all three ledger reads on those ids — which also drops decision-log
   rows naming an agent id the register never issued.
+- **A person's `ACCEPTED_NEW_BASELINE` re-baselines the fingerprint too.**
+  Because an anomalous day never enters the baseline, a deliberate, lasting
+  step change would otherwise be scored against the pre-change days every
+  night until they aged out of the 90-day look-back (about 76 nights for a
+  daily agent), re-latching the breaker each night a person closed it. The
+  pass reads each agent's `AgentCircuitBreaker.baselineEpoch` and drops every
+  baseline day that began before it, so the agent re-learns from LEARNING —
+  the same decision, read by both detectors, and no second control. Only an
+  epoch a person MOVED counts (`baselineEpoch > createdAt`): the row's single
+  insert site defaults both columns to one `CURRENT_TIMESTAMP`, and that
+  default is written by whatever touched the breaker first, a latch included,
+  so honouring it would let the act of latching wipe the baseline the latch
+  was judged against. `RESOLVED` leaves the epoch alone and the old baseline
+  keeps judging, so the same behaviour latches again.
 - **No new container** (capacity rule): the job runs in the existing worker.
 - **No new notification type.** The latch already rings
   `AGENT_CIRCUIT_BREAKER_TRIPPED`; a finding-level bell would need a
@@ -101,7 +115,10 @@ signal for the propose path.
   above until Phase 0 replaces them.
 - **When the latch key is on:** a false positive stops an agent until a person
   closes the breaker — the same recovery path as every existing trip. This is
-  why the latch is a separate key.
+  why the latch is a separate key. Closing it `ACCEPTED_NEW_BASELINE`
+  re-baselines this detector as it does the hourly one, so an accepted change
+  is not re-latched the next night; `RESOLVED` keeps the old baseline, so a
+  behaviour that did not go away is latched again.
 - **Migration:** additive only — two new tables, no change to an existing table
   or type, so a rolling deploy's old containers are unaffected.
 - **Reads:** three `groupBy`s per tenant per night on tenant-leading
@@ -113,7 +130,8 @@ signal for the propose path.
 1. Immediate: unset `AGENT_BEHAVIOUR_DETECTOR_LATCH` (stops latching) or
    `AGENT_BEHAVIOUR_DETECTOR` (stops the job reading anything). No redeploy.
 2. A latched agent: close its breaker on the agent's Circuit breaker tab, as
-   for any trip.
+   for any trip — `ACCEPTED_NEW_BASELINE` when the change was intended, which
+   also restarts this detector's baseline for that agent.
 3. Code: redeploy the prior image. The two tables are unread by the old code.
 4. Schema: forward-fix only, per the change-management policy. The tables can
    stay empty indefinitely; dropping them is a later, separate migration.

@@ -11,13 +11,17 @@
  *   - a quiet agent's tripling is not an anomaly (absolute delta);
  *   - only upward departures score;
  *   - the detector does not learn from the anomaly (inBaseline=false);
- *   - only the most recent BASELINE_MAX_DAYS judge, whatever order they arrive in.
+ *   - only the most recent BASELINE_MAX_DAYS judge, whatever order they arrive in;
+ *   - a change a person ACCEPTED on the breaker re-baselines the fingerprint, and
+ *     only a person's epoch does — a latch's row-creation default does not.
  */
 import {
     BASELINE_MAX_DAYS,
     BASELINE_MIN_DAYS,
+    baselineDaysSinceEpoch,
     buildFeatures,
     FINGERPRINT_FEATURES,
+    personSetBaselineEpoch,
     previousUtcDay,
     scoreDay,
     Z_FINDING,
@@ -181,5 +185,78 @@ describe('features are counts', () => {
         expect(d.day).toBe('2026-11-11');
         expect(d.start.toISOString()).toBe('2026-11-11T00:00:00.000Z');
         expect(d.end.toISOString()).toBe('2026-11-12T00:00:00.000Z');
+    });
+});
+
+describe('a re-baseline a person accepted on the breaker', () => {
+    /**
+     * Walk the nightly job with a breaker beside it: a night that scores LATCH
+     * opens the breaker (when it is closed), and `closeOn[i]` closes it on the
+     * morning of day i with the given reason, as `closeAgentCircuitBreaker`
+     * would — ACCEPTED_NEW_BASELINE moves the epoch to that instant.
+     */
+    function walkWithBreaker(series: FingerprintFeatures[], closeOn: Record<number, 'ACCEPTED_NEW_BASELINE' | 'RESOLVED'>) {
+        const createdAt = new Date(Date.parse(`${dayKey(0)}T00:00:00.000Z`));
+        const breaker = { state: 'CLOSED' as 'CLOSED' | 'OPEN', baselineEpoch: createdAt, createdAt };
+        const stored: { day: string; features: FingerprintFeatures; inBaseline: boolean }[] = [];
+        const latchedOn: number[] = [];
+        const verdicts = series.map((today, i) => {
+            const reason = closeOn[i];
+            if (reason && breaker.state === 'OPEN') {
+                breaker.state = 'CLOSED';
+                if (reason === 'ACCEPTED_NEW_BASELINE') {
+                    breaker.baselineEpoch = new Date(Date.parse(`${dayKey(i)}T10:00:00.000Z`));
+                }
+            }
+            const r = scoreDay({
+                today,
+                baseline: baselineDaysSinceEpoch(stored.filter((s) => s.inBaseline), personSetBaselineEpoch(breaker)),
+            });
+            stored.push({ day: dayKey(i), features: today, inBaseline: r.inBaseline });
+            if (r.tier === 'LATCH' && breaker.state === 'CLOSED') {
+                breaker.state = 'OPEN';
+                latchedOn.push(i);
+            }
+            return r;
+        });
+        return { verdicts, latchedOn };
+    }
+
+    const rand = lcg(2026);
+    const before = Array.from({ length: 30 }, () => normalDay(rand));
+    // A deliberate, lasting step change: reads go from ~120 to ~400 a day.
+    const after = Array.from({ length: 40 }, () => ({ ...normalDay(rand), readCalls: 400 + Math.round(rand() * 20) }));
+    const series = [...before, ...after];
+
+    it('ACCEPTED_NEW_BASELINE stops the nightly re-latch: the agent re-learns, then judges against its new normal', () => {
+        const { verdicts, latchedOn } = walkWithBreaker(series, { 31: 'ACCEPTED_NEW_BASELINE' });
+        expect(latchedOn).toEqual([30]);
+        // Day 31 began before the epoch (10:00), so it is scored on nothing and
+        // later discarded; from day 31 the agent is LEARNING, never ANOMALOUS.
+        expect(verdicts.slice(31, 31 + BASELINE_MIN_DAYS + 1).every((v) => v.verdict === 'LEARNING')).toBe(true);
+        expect(verdicts.slice(31).filter((v) => v.verdict === 'ANOMALOUS')).toEqual([]);
+        expect(verdicts[31 + BASELINE_MIN_DAYS + 1].verdict).toBe('STEADY');
+    });
+
+    it('RESOLVED keeps the old baseline: the same behaviour latches again the next night', () => {
+        const { latchedOn } = walkWithBreaker(series, { 31: 'RESOLVED' });
+        expect(latchedOn).toEqual([30, 31]);
+    });
+
+    it('a breaker row whose epoch is still its creation default re-baselines nothing', () => {
+        const created = new Date('2026-10-20T03:00:00.000Z');
+        expect(personSetBaselineEpoch({ baselineEpoch: created, createdAt: created })).toBeNull();
+        expect(personSetBaselineEpoch(null)).toBeNull();
+        const moved = new Date('2026-10-21T09:30:00.000Z');
+        expect(personSetBaselineEpoch({ baselineEpoch: moved, createdAt: created })).toBe(moved);
+    });
+
+    it('a day that began before the epoch is discarded whole; a day beginning at it is kept', () => {
+        const days = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22'].map((day) => ({ day }));
+        expect(baselineDaysSinceEpoch(days, new Date('2026-10-20T10:00:00.000Z')).map((d) => d.day))
+            .toEqual(['2026-10-21', '2026-10-22']);
+        expect(baselineDaysSinceEpoch(days, new Date('2026-10-21T00:00:00.000Z')).map((d) => d.day))
+            .toEqual(['2026-10-21', '2026-10-22']);
+        expect(baselineDaysSinceEpoch(days, null)).toHaveLength(4);
     });
 });
