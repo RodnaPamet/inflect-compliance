@@ -212,22 +212,46 @@ makes a refusal visible either way.
 ### Phase 0 — Read the standard, decide, and make refusals visible
 
 **Sub-phases.**
-- [ ] 0.1 Read the primary texts: the current revision of
-      `draft-ietf-webbotauth-httpsig-protocol` and Cloudflare's Web Bot Auth
-      verifier documentation. Record, in the implementation note: the
-      `Signature-Agent` form each accepts (string or Dictionary), the
-      required covered components, the `created`/`expires` window limits,
-      whether a `nonce` is required, the directory media type and response
-      signing, and the `keyid` derivation. Where the two disagree, the
-      verifiers in use win, and the note says which form is sent and why.
-- [ ] 0.2 D-L1-5, D-L1-6 and D-L1-7 initialled (master decisions table).
-- [ ] 0.3 Library decision, by risk review (G5): Cloudflare's `web-bot-auth`
-      as a runtime dependency, or an in-house signer on `node:crypto` (the A2A
-      precedent) with the reference library as a devDependency test oracle.
-      Default: in-house for signing, which is a few dozen lines over code
-      the repository already trusts; the inbound verifier's structured-field
-      parser is attacker-facing, and is decided with Phase 3 on the same
-      review.
+- [x] 0.1 Read the primary texts (2026-11-11,
+      [`2026-11-11-web-bot-auth-decisions.md`](../implementation-notes/2026-11-11-web-bot-auth-decisions.md)):
+      `draft-ietf-webbotauth-httpsig-protocol-01` (submitted 2026-10-29) and
+      its editor's copy of 2026-11-10, read from the working group's source
+      repository; Cloudflare's Web Bot Auth and Verified Bots documentation,
+      read from its source repository; Cloudflare's directory validator
+      `http-signature-directory` 0.8.0. The IETF and Cloudflare sites
+      themselves were refused by the session's network, and the note lists
+      exactly what was not read. **The conflict is real**: the draft says a
+      signer MUST send the Dictionary form, and Cloudflare's verifier fails
+      it (and the `key` parameter covering a member needs). Inflect sends the
+      legacy String form carrying the full well-known directory URL, the one
+      value correct under every text read, with the switch to the Dictionary
+      form held as one named choice. Covered components `("@method"
+      "@authority" "@path" "signature-agent")`, falling back to the draft's
+      minimum `("@authority" "signature-agent")` only on a measured refusal;
+      `created`, `expires = created + 60` s, `keyid`, `alg="ed25519"`, a
+      64-byte random `nonce` (required by neither verifier, sent anyway),
+      `tag="web-bot-auth"`. `keyid` is the base64url RFC 7638 thumbprint over
+      `{"crv","kty","x"}`. The directory is served as
+      `application/http-message-signatures-directory+json`, 200 only and never
+      a redirect, with one response signature per key over
+      `("@authority";req "content-digest")`, made only for the operator's own
+      authority. The draft's four Ed25519 vectors (thumbprint, both request
+      forms, the signed directory) reproduce byte for byte on `node:crypto`.
+- [x] 0.2 D-L1-5, D-L1-6 and D-L1-7 adopted by the owner on 2026-11-11 at
+      their defaults: the deployment's identity, never a tenant's; honest
+      conduct (named User-Agent, bot page, robots.txt and crawl directives,
+      the operator's registration after Phase 2); inbound a label only, with
+      an open directory fetch, cached and capped. The note records what the
+      draft adds to D-L1-7 for Phase 3 (lookup on the URL-and-key pair, three
+      distinct outcomes, a failed fetch never evicts a cached directory).
+- [x] 0.3 Library decision, by risk review (G5), 2026-11-11: **sign in-house
+      on `node:crypto`**; `web-bot-auth@0.2.0` (Apache-2.0, 0.x, one npm
+      maintainer, "not audited") is an exactly pinned devDependency used only
+      as the conformance oracle, and Cloudflare's Rust validator runs in CI
+      as a tool, not an app dependency. The inbound parser stays a Phase 3
+      decision on the same review, with an exact-pinned `structured-headers`
+      (MIT, no dependencies, the parser the reference library uses) as the
+      default carried there.
 - [ ] 0.4 Make the monitor's refusals visible **before** signing anything.
       The TLS provider returns an outcome: `GRADED`, `REFUSED` (403, a 429
       that outlasted the retries, or a recognised challenge response),
