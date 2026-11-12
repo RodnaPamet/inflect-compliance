@@ -458,3 +458,55 @@ describe('audit-stream — delivery metrics', () => {
         await flushAllAuditStreams();
     });
 });
+
+describe('audit-stream — the timer survives a slow flush (#5247)', () => {
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    function slowPost() {
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((r) => { release = r; });
+        __setStreamPost(async (url, body, headers) => {
+            capturedPosts.push({ url, body, headers });
+            if (capturedPosts.length === 1) await gate;
+            return { ok: true, status: 200 };
+        });
+        return () => release();
+    }
+
+    it('an event buffered during a slow flush is still sent after it', async () => {
+        jest.useFakeTimers();
+        const release = slowPost();
+
+        streamAuditEvent(makeEvent({ id: 'first' }));
+        await jest.advanceTimersByTimeAsync(5_000);
+        expect(capturedPosts).toHaveLength(1); // first flush, still in flight
+
+        // Buffered during the flush; its timer fires while the flush is
+        // still in flight and joins it.
+        streamAuditEvent(makeEvent({ id: 'second' }));
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        release();
+        await jest.advanceTimersByTimeAsync(0);
+        // A quiet tenant: no further event arrives. The second still goes.
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        expect(capturedPosts).toHaveLength(2);
+        const ids = (JSON.parse(capturedPosts[1].body) as AuditStreamPayload).events.map((e) => e.id);
+        expect(ids).toEqual(['second']);
+    });
+
+    it('a shutdown drain also sends what arrived during an in-flight flush', async () => {
+        const release = slowPost();
+        streamAuditEvent(makeEvent({ id: 'first' }));
+        const drain = flushAllAuditStreams();
+        streamAuditEvent(makeEvent({ id: 'late' }));
+        const second = flushAllAuditStreams();
+        release();
+        await Promise.all([drain, second]);
+        const sent = capturedPosts.flatMap((p) => (JSON.parse(p.body) as AuditStreamPayload).events.map((e) => e.id));
+        expect(sent).toEqual(['first', 'late']);
+    });
+});

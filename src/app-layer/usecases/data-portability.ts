@@ -18,6 +18,7 @@
 
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
+import { logEvent } from '../events/audit';
 import { logger } from '@/lib/observability/logger';
 import {
     assertCanExport,
@@ -118,27 +119,28 @@ export async function exportBundle(
         compress: request.compress ?? true,
     });
 
-    // Audit log via tenant context
+    // Through `logEvent`, so the row is hash-chained and streamed to the
+    // tenant's SIEM (#5262). A direct `auditLog.create` wrote an unchained
+    // row that could be altered or removed unseen, for the bulk export a
+    // SIEM most needs to see.
     await runInTenantContext(ctx, async (db) => {
-        await db.auditLog.create({
-            data: {
-                tenantId: ctx.tenantId,
-                userId: ctx.userId,
-                entity: 'DataPortability',
-                entityId: ctx.tenantId,
-                action: 'DATA_EXPORT',
-                details: `Exported ${result.stats.entityCount} entities across domains: ${result.stats.domains.join(', ')}`,
-                detailsJson: {
-                    domains: result.stats.domains,
-                    entityCount: result.stats.entityCount,
-                    relationshipCount: result.stats.relationshipCount,
-                    durationMs: result.stats.durationMs,
-                    description: request.description,
-                    compressed: serialized.compressed,
-                    rawSize: serialized.rawSize,
-                    outputSize: serialized.outputSize,
-                    compressionRatio: serialized.compressionRatio,
-                },
+        await logEvent(db, ctx, {
+            action: 'DATA_EXPORT',
+            entityType: 'DataPortability',
+            entityId: ctx.tenantId,
+            details: `Exported ${result.stats.entityCount} entities across domains: ${result.stats.domains.join(', ')}`,
+            detailsJson: {
+                category: 'data_lifecycle',
+                operation: 'export',
+                domains: result.stats.domains,
+                entityCount: result.stats.entityCount,
+                relationshipCount: result.stats.relationshipCount,
+                durationMs: result.stats.durationMs,
+                description: request.description,
+                compressed: serialized.compressed,
+                rawSize: serialized.rawSize,
+                outputSize: serialized.outputSize,
+                compressionRatio: serialized.compressionRatio,
             },
         });
     });
@@ -227,29 +229,28 @@ export async function importBundle(
 
     const result = await importTenantData(request.envelope, options);
 
-    // Audit log via tenant context (even for dry runs)
+    // Through `logEvent` (even for dry runs), so the row is hash-chained and
+    // streamed (#5262).
     await runInTenantContext(ctx, async (db) => {
-        await db.auditLog.create({
-            data: {
-                tenantId: targetTenantId,
-                userId: ctx.userId,
-                entity: 'DataPortability',
-                entityId: targetTenantId,
-                action: dryRun ? 'DATA_IMPORT_DRYRUN' : 'DATA_IMPORT',
-                details: `${dryRun ? '[DRY RUN] ' : ''}Import from ${request.envelope.metadata.tenantId}: ` +
-                    `${Object.values(result.imported).reduce((s, n) => s + (n ?? 0), 0)} imported, ` +
-                    `${Object.values(result.skipped).reduce((s, n) => s + (n ?? 0), 0)} skipped, ` +
-                    `${result.errors.length} errors`,
-                detailsJson: {
-                    sourceTenant: request.envelope.metadata.tenantId,
-                    conflictStrategy: request.conflictStrategy,
-                    dryRun,
-                    imported: result.imported,
-                    skipped: result.skipped,
-                    conflicts: result.conflicts,
-                    errorCount: result.errors.length,
-                    durationMs: result.durationMs,
-                },
+        await logEvent(db, ctx, {
+            action: dryRun ? 'DATA_IMPORT_DRYRUN' : 'DATA_IMPORT',
+            entityType: 'DataPortability',
+            entityId: targetTenantId,
+            details: `${dryRun ? '[DRY RUN] ' : ''}Import from ${request.envelope.metadata.tenantId}: ` +
+                `${Object.values(result.imported).reduce((s, n) => s + (n ?? 0), 0)} imported, ` +
+                `${Object.values(result.skipped).reduce((s, n) => s + (n ?? 0), 0)} skipped, ` +
+                `${result.errors.length} errors`,
+            detailsJson: {
+                category: 'data_lifecycle',
+                operation: dryRun ? 'import_dry_run' : 'import',
+                sourceTenant: request.envelope.metadata.tenantId,
+                conflictStrategy: request.conflictStrategy,
+                dryRun,
+                imported: result.imported,
+                skipped: result.skipped,
+                conflicts: result.conflicts,
+                errorCount: result.errors.length,
+                durationMs: result.durationMs,
             },
         });
     });

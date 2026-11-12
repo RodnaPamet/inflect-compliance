@@ -178,6 +178,11 @@ describe('Data portability RBAC: tenant context', () => {
 
 const createSpy = jest.fn();
 const auditCreateSpy = jest.fn();
+// Audit rows go through `logEvent` (hash chain + SIEM stream, #5262).
+const logEventSpy = jest.fn();
+jest.mock('@/app-layer/events/audit', () => ({
+    logEvent: (...args: unknown[]) => logEventSpy(...args),
+}));
 
 jest.mock('@/lib/prisma', () => {
     const models = [
@@ -261,14 +266,13 @@ describe('Data portability: usecase entrypoints', () => {
         expect(result.serialized).toBeDefined();
         expect(result.serialized.compressed).toBe(true);
         expect(result.serialized.outputSize).toBeGreaterThan(0);
-        expect(auditCreateSpy).toHaveBeenCalledWith(
-            expect.objectContaining({
-                data: expect.objectContaining({
-                    action: 'DATA_EXPORT',
-                    tenantId: 'tenant-1',
-                }),
-            }),
+        expect(logEventSpy).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ tenantId: 'tenant-1' }),
+            expect.objectContaining({ action: 'DATA_EXPORT', entityType: 'DataPortability' }),
         );
+        // Never a direct write outside the hash chain.
+        expect(auditCreateSpy).not.toHaveBeenCalled();
     });
 
     test('exportBundle rejects non-admin/non-export user', async () => {
@@ -301,14 +305,13 @@ describe('Data portability: usecase entrypoints', () => {
         expect(result.imported.controlTestPlan).toBe(1);
 
         // Audit log created
-        expect(auditCreateSpy).toHaveBeenCalledWith(
-            expect.objectContaining({
-                data: expect.objectContaining({
-                    action: 'DATA_IMPORT',
-                    tenantId: 'tenant-1',
-                }),
-            }),
+        expect(logEventSpy).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ tenantId: 'tenant-1' }),
+            expect.objectContaining({ action: 'DATA_IMPORT', entityType: 'DataPortability' }),
         );
+        // Never a direct write outside the hash chain.
+        expect(auditCreateSpy).not.toHaveBeenCalled();
     });
 
     test('importBundle dry-run creates audit log with DRYRUN action', async () => {
@@ -322,13 +325,13 @@ describe('Data portability: usecase entrypoints', () => {
         });
 
         expect(result.dryRun).toBe(true);
-        expect(auditCreateSpy).toHaveBeenCalledWith(
-            expect.objectContaining({
-                data: expect.objectContaining({
-                    action: 'DATA_IMPORT_DRYRUN',
-                }),
-            }),
+        expect(logEventSpy).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ tenantId: 'tenant-1' }),
+            expect.objectContaining({ action: 'DATA_IMPORT_DRYRUN', entityType: 'DataPortability' }),
         );
+        // Never a direct write outside the hash chain.
+        expect(auditCreateSpy).not.toHaveBeenCalled();
     });
 
     test('importBundle rejects non-admin user', async () => {
