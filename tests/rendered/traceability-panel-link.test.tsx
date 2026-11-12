@@ -22,6 +22,12 @@ import userEvent from "@testing-library/user-event";
 import { SWRConfig } from "swr";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+const toastError = jest.fn();
+jest.mock("@inflect/ui/components/ui/hooks/use-toast", () => ({
+    ...jest.requireActual("@inflect/ui/components/ui/hooks/use-toast"),
+    useToast: () => ({ error: toastError, success: jest.fn(), warning: jest.fn(), info: jest.fn() }),
+}));
+
 import TraceabilityPanel from "@/components/TraceabilityPanel";
 
 // ─── jsdom — pin to desktop so Combobox uses Popover, not Drawer ────
@@ -114,7 +120,8 @@ function mountPanel() {
                     apiBase="/api/t/acme/"
                     entityType="asset"
                     entityId="asset-1"
-                    canWrite
+                    canLinkControlRisk
+                    canLinkAsset
                     tenantHref={(p) => p}
                     tenantSlug="acme"
                 />
@@ -201,5 +208,70 @@ describe("TraceabilityPanel — link form regressions", () => {
         );
         expect(labelNode.className).not.toMatch(/\btruncate\b/);
         expect(screen.getByText("Status: APPROVED")).toBeInTheDocument();
+    });
+});
+
+describe("TraceabilityPanel — each section follows the key its route takes (#5227)", () => {
+    function mountControl(flags: { canLinkControlRisk: boolean; canLinkAsset: boolean }) {
+        fetchMock.mockImplementation(() => Promise.resolve(ok(EMPTY_TRACE)));
+        return render(
+            <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+                <TooltipProvider delayDuration={0}>
+                    <TraceabilityPanel
+                        apiBase="/api/t/acme/"
+                        entityType="control"
+                        entityId="ctrl-9"
+                        {...flags}
+                        tenantHref={(p) => p}
+                        tenantSlug="acme"
+                    />
+                </TooltipProvider>
+            </SWRConfig>,
+        );
+    }
+
+    it("controls.edit without assets.edit offers risk links, not asset links", async () => {
+        mountControl({ canLinkControlRisk: true, canLinkAsset: false });
+        await waitFor(() => expect(screen.getByText("No risks linked")).toBeInTheDocument());
+        expect(screen.getByRole("button", { name: "Link Risk" })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Link Asset" })).toBeNull();
+    });
+
+    it("assets.edit without controls.edit offers asset links, not risk links", async () => {
+        mountControl({ canLinkControlRisk: false, canLinkAsset: true });
+        await waitFor(() => expect(screen.getByText("No risks linked")).toBeInTheDocument());
+        expect(screen.getByRole("button", { name: "Link Asset" })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Link Risk" })).toBeNull();
+    });
+
+    it("a refused link says why", async () => {
+        toastError.mockReset();
+        const user = userEvent.setup();
+        mountPanel();
+        fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === "string" ? input : (input as URL).toString();
+            if (init?.method === "POST") {
+                return Promise.resolve({
+                    ok: false,
+                    status: 403,
+                    json: async () => ({ error: { code: "FORBIDDEN", message: "You cannot edit assets." } }),
+                } as unknown as Response);
+            }
+            if (url.endsWith("/assets/asset-1/traceability")) return Promise.resolve(ok(EMPTY_TRACE));
+            if (url.endsWith("/controls")) return Promise.resolve(ok(AVAILABLE_CONTROLS));
+            return Promise.resolve(ok([]));
+        });
+        await waitFor(() => expect(screen.getByText("No risks linked")).toBeInTheDocument());
+        await user.click(screen.getByRole("button", { name: "Link Control" }));
+        await user.click(document.getElementById("control-select") as HTMLButtonElement);
+        await user.click(await screen.findByText("AC-3 — Account management"));
+        const confirm = document.getElementById("confirm-control-link") as HTMLButtonElement;
+        await waitFor(() => expect(confirm).not.toBeDisabled());
+        await act(async () => {
+            await user.click(confirm);
+        });
+        await waitFor(() => expect(toastError).toHaveBeenCalledWith("You cannot edit assets."));
+        // The form stays open for another try.
+        expect(document.getElementById("control-select")).toBeInTheDocument();
     });
 });

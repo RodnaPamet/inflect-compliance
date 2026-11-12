@@ -148,7 +148,13 @@ export default function AssetDetailPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { permissions, appPermissions, tenantSlug } = useTenantContext();
-    const canConvertVuln = permissions.canWrite && appPermissions.assets.edit;
+    // Each control follows the route behind it, coarse tier AND key, as the
+    // list page does (#5160): PATCH /assets/:id and /vulnerabilities/:id take
+    // `assets.edit`, DELETE /assets/:id takes `admin.manage`. The coarse tier
+    // alone offered a custom role without the key buttons it was refused.
+    const canEditAsset = permissions.canWrite && appPermissions.assets.edit;
+    const canDeleteAsset = permissions.canAdmin && appPermissions.admin.manage;
+    const canConvertVuln = canEditAsset;
     const canConvertToRisk = canConvertVuln && appPermissions.risks.create;
     const canConvertToFinding = canConvertVuln && appPermissions.findings.create;
     const t = useTranslations('assets');
@@ -507,7 +513,7 @@ export default function AssetDetailPage() {
                     >
                         {tWhereUsed('button')}
                     </Button>
-                    {permissions.canWrite && (
+                    {canEditAsset && (
                         <Combobox
                             hideSearch
                             id="asset-status-select"
@@ -522,7 +528,7 @@ export default function AssetDetailPage() {
                             buttonProps={{ variant: 'primary', className: 'text-sm' }}
                         />
                     )}
-                    {permissions.canAdmin && (
+                    {canDeleteAsset && (
                         <Tooltip content={t('detail.deleteAsset')}>
                             <Button
                                 variant="secondary"
@@ -584,7 +590,7 @@ export default function AssetDetailPage() {
 
             {/* Edit modal — modal-form P2. Always mounted so the
                 modal's own open/close state survives tab switches. */}
-            {permissions.canWrite && (
+            {canEditAsset && (
                 <EditAssetModal
                     key={`edit-${assetId}-${editSeed}`}
                     open={editing}
@@ -675,7 +681,7 @@ export default function AssetDetailPage() {
                                 header: t('detail.vuln.status'),
                                 cell: ({ row }) => {
                                     const r = row.original;
-                                    if (!permissions.canWrite) {
+                                    if (!canEditAsset) {
                                         return (
                                             <StatusBadge variant={vulnStatusVariant(r.status)} size="sm">
                                                 {labelFor(tVuln, 'filterEnums.status', r.status)}
@@ -704,7 +710,7 @@ export default function AssetDetailPage() {
                                 header: t('detail.vuln.owner'),
                                 cell: ({ row }) => {
                                     const r = row.original;
-                                    if (!permissions.canWrite) {
+                                    if (!canEditAsset) {
                                         return (
                                             <span className="text-sm text-content-muted">
                                                 {r.ownerUser?.name || r.ownerUser?.email || t('detail.vuln.unassigned')}
@@ -737,7 +743,7 @@ export default function AssetDetailPage() {
                                 header: t('detail.vuln.due'),
                                 cell: ({ row }) => {
                                     const r = row.original;
-                                    if (!permissions.canWrite) {
+                                    if (!canEditAsset) {
                                         return (
                                             <span className="text-sm text-content-muted">
                                                 {r.remediationDueAt ? formatDate(r.remediationDueAt) : t('detail.vuln.none')}
@@ -765,7 +771,7 @@ export default function AssetDetailPage() {
                                 cell: ({ row }) => (
                                     <VulnNoteCell
                                         row={row.original}
-                                        canWrite={permissions.canWrite}
+                                        canWrite={canEditAsset}
                                         onSave={(id, note) => patchVulnRow(id, { note }, { note })}
                                         emptyLabel={t('detail.vuln.addNote')}
                                         editLabel={t('detail.vuln.editNote')}
@@ -874,7 +880,8 @@ export default function AssetDetailPage() {
                         apiBase={apiUrl('')}
                         entityType="asset"
                         entityId={assetId}
-                        canWrite={permissions.canWrite}
+                        canLinkControlRisk={permissions.canWrite && appPermissions.controls.edit}
+                        canLinkAsset={canEditAsset}
                         tenantHref={tenantHref}
                     />
                     <div className="border-t border-border-subtle pt-default">
@@ -1013,7 +1020,7 @@ export default function AssetDetailPage() {
                         <p className="text-sm font-medium text-content-default">{t('detail.identityHintTitle')}</p>
                         <p className="text-xs text-content-muted">{t('detail.identityHintBody')}</p>
                     </div>
-                    {permissions.canWrite && (
+                    {canEditAsset && (
                         <Button
                             variant="secondary"
                             size="sm"
@@ -1028,7 +1035,7 @@ export default function AssetDetailPage() {
 
             {/* Detail card — read-only view; edits flow through EditAssetModal. */}
             <div className={cn(cardVariants(), 'space-y-default')} id="asset-detail">
-                {permissions.canWrite && (
+                {canEditAsset && (
                     <div className="flex justify-end -mt-1 -mb-2">
                         {/* B2 — icon-only edit affordance; opens the Edit
                             Asset modal, mirroring the control overview. */}

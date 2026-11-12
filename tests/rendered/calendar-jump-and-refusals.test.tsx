@@ -107,10 +107,10 @@ afterEach(() => {
     delete (global as unknown as { fetch?: unknown }).fetch;
 });
 
-function mount() {
+function mount(ctx: typeof TENANT_CTX = TENANT_CTX) {
     return render(
         <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}>
-            <TenantProvider value={TENANT_CTX}>
+            <TenantProvider value={ctx}>
                 <TooltipProvider>
                     <CalendarClient tenantSlug="acme-corp" />
                 </TooltipProvider>
@@ -184,6 +184,36 @@ describe('calendar — refusals say why (#4628)', () => {
         await act(async () => { fireEvent.click(complete); });
         await waitFor(() => expect(toastError).toHaveBeenCalled());
         expect(toastError.mock.calls[0][0]).toBe('This task has a reviewer, so it must be In review before it can be closed.');
+    });
+});
+
+describe('calendar — task actions follow the server (#5127)', () => {
+    it('a custom role with the task keys but no write tier is offered no task action', async () => {
+        const day = '2026-11-10';
+        currentSearch = 'month=2026-11';
+        route = () => ({
+            ok: true, status: 200,
+            json: async () => respond([{
+                id: 'ev-t1', date: `${day}T09:00:00.000Z`, title: 'Rotate keys', type: 'task-due',
+                category: 'task', status: 'upcoming', entityType: 'TASK', entityId: 't-1',
+                href: '/tasks/t-1', source: 'task', ownerUserId: 'user-1',
+            }]),
+        });
+        // A READER-based custom role granted tasks.edit and tasks.create: the
+        // task writes also ask the coarse write tier, which it does not hold.
+        const reader = getPermissionsForRole('READER');
+        const ctx = {
+            ...TENANT_CTX,
+            role: 'READER' as const,
+            permissions: { canRead: true, canWrite: false, canAdmin: false, canAudit: false, canExport: false },
+            appPermissions: { ...reader, tasks: { ...reader.tasks, edit: true, create: true } },
+        } as unknown as typeof TENANT_CTX;
+        const { container, findAllByText, queryByText } = mount(ctx);
+        await waitFor(() => expect(container.querySelector(`[data-ymd="${day}"]`)).toBeTruthy());
+        await act(async () => { fireEvent.click(container.querySelector(`[data-ymd="${day}"]`) as Element); });
+        expect((await findAllByText('Rotate keys')).length).toBeGreaterThan(1);
+        expect(queryByText('Complete')).toBeNull();
+        expect(queryByText('Reschedule')).toBeNull();
     });
 });
 

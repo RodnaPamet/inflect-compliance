@@ -554,7 +554,8 @@ export default function RiskDetailPage() {
                         apiBase={apiUrl('')}
                         entityType="risk"
                         entityId={riskId}
-                        canWrite={canWrite}
+                        canLinkControlRisk={canWrite && tenant.appPermissions.controls.edit}
+                        canLinkAsset={canWrite && tenant.appPermissions.assets.edit}
                         tenantHref={href}
                     />
                     {/* RQ2-4 — the former Mappings + Tests tabs were

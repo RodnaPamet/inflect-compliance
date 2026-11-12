@@ -14451,6 +14451,7 @@
       "undo": "Undo",
       "loading": "Loading traceability…",
       "failed": "Failed to load traceability data",
+      "linkFailed": "The link could not be saved.",
       "coverageType": "Coverage type",
       "coverageFull": "Full",
       "coveragePartial": "Partial",
@@ -14474,7 +14475,8 @@
       "emptyRelatedAssets": "No related assets",
       "emptyRelatedAssetsDesc": "None of this policy's controls protect an asset yet.",
       "viaOne": "via {count} control",
-      "viaMany": "via {count} controls"
+      "viaMany": "via {count} controls",
+      "linkFailed": "The control could not be linked."
     },
     "inherited": {
       "entityAsset": "asset",
