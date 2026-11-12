@@ -56,6 +56,7 @@ import {
 } from '@/lib/auth/workspace-mfa';
 import { SessionRevokedError } from '@/lib/auth/session-revoked';
 import { isTenantSystemUserId } from '@/lib/tenant-system-user';
+import { claimAccountForVerifiedEmail, oauthEmailIsVerified } from '@/lib/auth/oauth-email-trust';
 
 // ─── Type augmentation ──────────────────────────────────────────────
 //
@@ -555,9 +556,9 @@ async function ensureTenantMembershipFromInvite(
  * whose email matches the just-signed-in user's OAuth-verified email,
  * so "add the role, they sign in, they're in" works without the email.
  *
- * OAuth-only by construction: the caller gates this to
- * `account.provider !== 'credentials'` and the signIn callback already
- * rejects `email_verified === false`, so the email is IdP-verified.
+ * Only for an email the provider vouches for: the callers gate this on
+ * `oauthEmailIsVerified` (Google's `email_verified`, Microsoft's `xms_edov`),
+ * never on the credentials provider.
  * Best-effort — a failure logs and never blocks sign-in.
  */
 async function ensureTenantMembershipsFromPendingInvites(
@@ -745,13 +746,34 @@ export const authOptions: NextAuthOptions = {
 
             const inviteTokens = await readInviteTokenFromCookies();
 
+            // Whether this provider vouches that the person owns the email it
+            // reports (src/lib/auth/oauth-email-trust.ts). Only a vouched
+            // email links an existing account, claims one nobody verified, or
+            // redeems an invite by address.
+            const isOAuth = account.provider !== 'credentials';
+            const emailVouched = isOAuth && oauthEmailIsVerified(account.provider, profile as Record<string, unknown> | undefined);
+            const claimMethod = account.provider === 'google' ? 'google' : 'microsoft-entra-id';
+
             // 1. Account linking for OAuth (not credentials).
-            if (account.provider !== 'credentials' && user.email) {
+            if (isOAuth && user.email) {
                 const existingUser = await prisma.user.findUnique({
                     where: { emailHash: hashForLookup(user.email) },
                 });
 
                 if (existingUser && user.id !== existingUser.id) {
+                    if (!emailVouched) {
+                        edgeLogger.warn('signIn refused: email not vouched by provider, not linking', {
+                            component: 'auth',
+                            provider: account.provider,
+                        });
+                        return '/login?error=OAuthAccountNotLinked';
+                    }
+                    await claimAccountForVerifiedEmail({
+                        userId: existingUser.id,
+                        email: user.email,
+                        keep: { provider: account.provider, providerAccountId: account.providerAccountId },
+                        method: claimMethod,
+                    });
                     const existingAccount = await prisma.account.findUnique({
                         where: {
                             provider_providerAccountId: {
@@ -810,10 +832,21 @@ export const authOptions: NextAuthOptions = {
                     user.email,
                     inviteTokens.orgToken,
                 );
-                // Email-verified provisioning (OAuth only — the credentials
-                // provider's email is not IdP-verified). Redeems any pending
-                // invite matching the verified email; no invite ⇒ no-op.
-                if (account.provider !== 'credentials') {
+                // A returning sign-in whose provider vouches for the email
+                // claims the account if its address was never verified and
+                // somebody else could hold a credential on it.
+                if (emailVouched) {
+                    await claimAccountForVerifiedEmail({
+                        userId: user.id,
+                        email: user.email,
+                        keep: { provider: account.provider, providerAccountId: account.providerAccountId },
+                        method: claimMethod,
+                    });
+                }
+                // Email-verified provisioning: only an email the provider
+                // vouches for (never the credentials provider's) redeems a
+                // pending invite by address; no invite ⇒ no-op.
+                if (emailVouched) {
                     await ensureTenantMembershipsFromPendingInvites(
                         user.id,
                         user.email,

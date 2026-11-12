@@ -1005,6 +1005,19 @@ sent to the primary's own challenge page. Sign-in used to ask only the primary, 
 workspace that required MFA but was joined later let its members in on a password alone.
 Do not narrow it back to the primary.
 
+**An OAuth email counts only when its provider vouches for it** (`src/lib/auth/oauth-email-trust.ts`,
+owner decisions 2026-11-12). The `signIn` callback links a Google or Microsoft sign-in to an
+existing account, and redeems pending invites by address, only on Google's `email_verified ===
+true` or Microsoft's `xms_edov` claim (an optional claim the app registration must emit; on the
+multi-tenant endpoint any directory's admin can set the plain `email`). Otherwise an existing
+account is not linked (`OAuthAccountNotLinked`) and only the emailed invite link redeems. A
+vouched sign-in CLAIMS an account whose `emailVerified` is NULL and that carries a competing
+credential (a password or another provider link): the password and the other links are removed,
+every session is revoked and reset links are spent, audited `AUTH_UNVERIFIED_ACCOUNT_CLAIMED`. An
+account with no competing credential is only stamped verified. MFA enrolments are kept. Do not
+widen the trusted providers or drop the claim: an unverified registration is somebody else's
+address until proved.
+
 **SSO sign-in goes through NextAuth, and its session reaches one workspace.**
 The SAML and OIDC callbacks do not mint a session. They verify the identity
 provider's answer and issue a single-use, 60-second hand-off
