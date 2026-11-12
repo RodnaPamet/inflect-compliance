@@ -10,13 +10,14 @@
  */
 const upsertMock = jest.fn();
 const appendAuditEntryMock = jest.fn();
+const findUniqueMock = jest.fn(async () => ({ agentMaxConcurrentRuns: 3 }) as unknown);
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         tenantSecuritySettings: {
             upsert: (...a: unknown[]) => upsertMock(...a),
-            findUnique: async () => ({ agentMaxConcurrentRuns: 3 }),
+            findUnique: (...a: unknown[]) => findUniqueMock(...(a as [])),
         },
     },
 }));
@@ -48,5 +49,24 @@ describe('setConcurrencyCap', () => {
     it('stores the limit itself', async () => {
         await expect(setConcurrencyCap(makeRequestContext('ADMIN'), 1000)).resolves.toEqual({ cap: 1000 });
         expect(upsertMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('records the previous cap it read in the audit row', async () => {
+        await setConcurrencyCap(makeRequestContext('ADMIN'), 5);
+        expect(appendAuditEntryMock).toHaveBeenCalledWith(
+            expect.objectContaining({ detailsJson: { previousCap: 3, cap: 5 } }),
+        );
+    });
+
+    // The run-start read treats an unreadable settings row as "no cap", so an
+    // outage never stops agents. The setter must not borrow that: an audit row
+    // saying `previousCap: null` reads as "there was no cap", which is false
+    // when the truth is "we could not read it". The setter fails instead, and
+    // writes neither the cap nor a row that misstates the previous one.
+    it('refuses when the previous cap cannot be read, and writes nothing', async () => {
+        findUniqueMock.mockRejectedValueOnce(new Error('connection reset'));
+        await expect(setConcurrencyCap(makeRequestContext('ADMIN'), 5)).rejects.toThrow('connection reset');
+        expect(upsertMock).not.toHaveBeenCalled();
+        expect(appendAuditEntryMock).not.toHaveBeenCalled();
     });
 });
