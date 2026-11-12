@@ -69,6 +69,7 @@ jest.mock('next/navigation', () => ({
 // from its `agent` prop alone.
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/OverviewTab', () => ({ OverviewTab: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/ServicePrincipalLinkCard', () => ({ ServicePrincipalLinkCard: () => null }));
+jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/BehaviourFingerprintCard', () => ({ BehaviourFingerprintCard: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/RiskAssessmentTab', () => ({ RiskAssessmentTab: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/PolicyCardTab', () => ({ PolicyCardTab: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/ToolsTab', () => ({ ToolsTab: () => null }));

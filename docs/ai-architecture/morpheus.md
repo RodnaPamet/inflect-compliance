@@ -222,7 +222,7 @@ anomaly, and the threshold at which Morpheus would be reconsidered.
       added to `BREAKER_TRIP_REASONS` — a human unlatches, as today, and the
       close's reason decides what happens to the baseline, as
       `BREAKER_CLOSE_REASONS` already does.
-- [ ] 1.3 Surface: the anomaly on `/agents/[agentId]` Overview and on
+- [x] 1.3 Surface: the anomaly on `/agents/[agentId]` Overview and on
       `/agents/reports`; a "why" panel listing the features.
 - [x] 1.4 Two-tenant test; a test that the seeded anomaly latches and the
       baseline days do not; a test that content never enters a feature.
@@ -246,8 +246,27 @@ in `AGENT_BEHAVIOUR_DETECTOR_TENANTS`), and the latch is a third
 (`AGENT_BEHAVIOUR_DETECTOR_LATCH`). Scheduled at 01:53 UTC, scoring the day
 that closed. No container: it runs in the existing worker. The thresholds are
 written down with their reasons and stand until Phase 0's measurement replaces
-them. Still open: 1.3, the Overview "why" panel and the `/agents/reports` row
-(the breaker tab already names the `BEHAVIOUR_ANOMALY` trip).
+them.
+
+**What 1.3 built (2026-11-12).** A "Behaviour fingerprint" card on the agent's
+Overview tab and a "Behaviour anomalies" view on `/agents/reports`
+(`?tab=behaviour`), both over `usecases/agent-behaviour-fingerprint-read.ts`
+and read under `admin.agent_registry`, the circuit-breaker read's key. Each
+anomaly shows its "why": every driving feature with its count, the agent's own
+mean and σ, and the z. An empty card or view says which of three facts it is
+— detector off, on but never scored, or scored with nothing found — because
+"no anomalies" from a detector nobody turned on is a claim about an agent
+nobody watched. The re-baseline question the 1.x pass left is resolved by the
+narrowest control rather than none: closing the breaker
+`ACCEPTED_NEW_BASELINE` covers only an anomaly that LATCHED, so a deliberate
+change at threshold A, or at any tier while the latch key is off, was re-scored
+anomalous every night with no exit but switching the detector off. A person
+can now "accept as new normal" from the card: it moves the SAME
+`AgentCircuitBreaker.baselineEpoch` the close moves (one decision, one column,
+both detectors), only on a CLOSED breaker (an open one is decided by its close),
+only after an anomaly since the last acceptance, never for an API key or an
+agent, and audited `AGENT_BEHAVIOUR_BASELINE_ACCEPTED`. It closes no finding.
+Note `docs/implementation-notes/2026-11-12-agent-behaviour-fingerprint-surface.md`.
 
 **Prompt.**
 ```text

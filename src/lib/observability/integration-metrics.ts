@@ -1674,6 +1674,26 @@ export function recordAgentFingerprintPass(attrs: {
     }
 }
 
+let _fingerprintBaselineAccepted: Counter | null = null;
+
+/**
+ * A person accepted an agent's changed behaviour as its new normal from the
+ * fingerprint panel (Morpheus 1.3) — `agentic.agent_fingerprint.baseline_accepted`.
+ * Read beside `agentic.agent_fingerprint.days{verdict="anomalous"}`: a
+ * deployment that accepts nearly every anomaly has thresholds tuned to fire on
+ * ordinary work, which is how this control would die, and it is measured
+ * rather than assumed (the breaker's close counter makes the same argument).
+ */
+export function recordAgentFingerprintBaselineAccepted(): void {
+    if (!_fingerprintBaselineAccepted) {
+        _fingerprintBaselineAccepted = getMeter().createCounter('agentic.agent_fingerprint.baseline_accepted', {
+            description: 'Agent behaviour-fingerprint anomalies a person accepted as the new normal',
+            unit: '1',
+        });
+    }
+    _fingerprintBaselineAccepted.add(1);
+}
+
 // ── Internal audit's sampling of the auditor's workpapers (#3677) ──────────
 
 let _workpaperReviewSweep: Counter | null = null;

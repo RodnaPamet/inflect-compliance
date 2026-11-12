@@ -6499,7 +6499,53 @@
         }
       },
       "autonomyLevel": "Level {level}",
-      "viewOnlyTabs": "You can read this agent's Overview and Runs. The other tabs need the agent register permission, which Owners, Admins and AI admins have."
+      "viewOnlyTabs": "You can read this agent's Overview and Runs. The other tabs need the agent register permission, which Owners, Admins and AI admins have.",
+      "fingerprint": {
+        "heading": "Behaviour fingerprint",
+        "intro": "A nightly detector compares each day of this agent’s activity — counts only, never content — with its own previous days. A feature at z {finding} or above raises a finding; at z {latch} the circuit breaker can be latched. Judgement starts after {days} active days.",
+        "offDeployment": "The behaviour detector is not turned on for this deployment, so nothing is being compared. No anomalies here means nobody looked, not that the agent is steady.",
+        "offTenant": "The behaviour detector is on for this deployment but not for this workspace, so nothing is being compared. No anomalies here means nobody looked, not that the agent is steady.",
+        "unscored": "The detector is on, but this agent has not been scored yet: it has had no activity on a day the detector has scored.",
+        "lastScored": "Last scored day: {day} (UTC).",
+        "lastLearning": "Last scored day: {day} (UTC). Still learning — {have} of {need} baseline days.",
+        "epoch": "A person accepted a new baseline on {at}; days before it are not compared.",
+        "anomalyOn": "Anomaly on {day} · score {score}",
+        "latched": "Breaker latched",
+        "whyHeading": "Why",
+        "whyAria": "The features that drove the anomaly",
+        "whyLine": "{observed} against a baseline mean of {mean} (σ {sd}, z {z})",
+        "whyUnreadable": "The features that drove this anomaly could not be read.",
+        "moreAnomalies": "{count, plural, one {# earlier anomaly is} other {# earlier anomalies are}} listed on Agent reports → Behaviour anomalies.",
+        "noAnomalies": "No anomalies on the days scored.",
+        "breakerOpen": "The agent’s circuit breaker is open. Close it on the Circuit breaker tab, choosing whether the change was intended — that choice also decides this detector’s baseline.",
+        "acceptAction": "Accept as new normal",
+        "acceptTitle": "Accept this behaviour as the agent’s new normal?",
+        "acceptBody": "Both behaviour detectors — this nightly fingerprint and the hourly circuit breaker — discard the agent’s earlier baseline and re-learn from today. Until they have learned again, neither judges the agent. Use this only when the change was intended. The finding stays open until you close it.",
+        "acceptConfirm": "Accept new baseline",
+        "cancel": "Cancel",
+        "accepted": "New baseline accepted. Both detectors re-learn from today.",
+        "acceptFailed": "The new baseline could not be accepted.",
+        "loadError": "The behaviour fingerprint could not be loaded.",
+        "verdict": {
+          "LEARNING": "Learning",
+          "STEADY": "Steady",
+          "ANOMALOUS": "Anomalous"
+        },
+        "tier": {
+          "FINDING": "Finding",
+          "LATCH": "Latch threshold"
+        },
+        "feature": {
+          "readCalls": "Read calls",
+          "proposeCalls": "Propose calls",
+          "orchestrateCalls": "Orchestrate calls",
+          "activeHours": "Active hours",
+          "proposals": "Proposals",
+          "guardFlags": "Guard flags",
+          "modelCalls": "Model calls",
+          "tokens": "Tokens"
+        }
+      }
     },
     "mcp": {
       "title": "Agent credentials",
@@ -11439,7 +11485,13 @@
       "tabPack": "Assessor pack",
       "tabHarness": "Harness matrix",
       "workpaperReviewHeading": "Internal audit’s re-performance of the auditor",
-      "workpaperReviewScope": "Internal audit re-performs {percent}% of the auditor agent’s workpapers. The agreement and disagreement rates count concluded reviews only: an unreviewed, indeterminate or unassigned workpaper is shown beside them and never counted as agreement."
+      "workpaperReviewScope": "Internal audit re-performs {percent}% of the auditor agent’s workpapers. The agreement and disagreement rates count concluded reviews only: an unreviewed, indeterminate or unassigned workpaper is shown beside them and never counted as agreement.",
+      "tabBehaviour": "Behaviour anomalies",
+      "behaviourHeading": "Behaviour anomalies",
+      "behaviourScope": "Every agent-day the nightly fingerprint judged unlike the agent’s own baseline in the last {days} days (since {since}, UTC). Finding at z {finding}; latch threshold at z {latch}. Counts only, never content.",
+      "behaviourUnscored": "The detector is on, but it has not scored any agent in this workspace yet.",
+      "behaviourTruncated": "Only the newest {count} anomalies are shown; there are more in the window.",
+      "behaviourNone": "No anomalies in the window. The detector last scored a day on {day} (UTC)."
     },
     "crumbDashboard": "Dashboard",
     "crumbAdmin": "Admin",

@@ -16,6 +16,7 @@ import { SkillsTab } from './tabs/SkillsTab';
 import { BehaviourTab } from './tabs/BehaviourTab';
 import { RunsTab } from './tabs/RunsTab';
 import { CircuitBreakerTab } from './tabs/CircuitBreakerTab';
+import { BehaviourFingerprintCard } from './tabs/BehaviourFingerprintCard';
 import { AgentKillSwitchAction, AgentKillSwitchBanner } from './AgentKillSwitchAction';
 import { AgentAmendModal } from './AgentAmendModal';
 import { ConnectAgentSheet } from './ConnectAgentSheet';
@@ -428,6 +429,11 @@ export function AgentDetailClient({
                     {/* The register key, which the link route takes for its
                         read and its confirm alike (#3807). */}
                     {perms.canReadRegistry && <ServicePrincipalLinkCard {...props} />}
+                    {/* The breaker's read key, which the fingerprint route
+                        takes for its read and its acceptance (Morpheus 1.3). */}
+                    {perms.canReadRegistry && (
+                        <BehaviourFingerprintCard {...props} onChanged={refresh} />
+                    )}
                     {perms.canTransferOwnership && viewerUserId && (
                         <OwnershipTransferCard
                             {...props}
