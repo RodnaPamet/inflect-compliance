@@ -30,6 +30,48 @@
  * hypothetical: one workflow asks for an engine it cannot have, and the run
  * records the request, the refusal and the engine that really ran.
  */
+/**
+ * ── THE FLUE CASES, AND WHAT THEY MOCK ──────────────────────────────────────
+ *
+ * The opening entry's role models (D-L3-1) are resolved only when the CHOSEN
+ * engine is Flue, and that branch is wiring a pure-function test cannot see: a
+ * start path that wrote null, or swapped the two roles, would leave every
+ * resolver test green. So two cases below start a real Flue run on the real
+ * start path and read the hash-chained row back.
+ *
+ * Three module boundaries are switched for those cases only — the deployment
+ * permitting Flue, the register vouching for the caller, the worker hand-off —
+ * exactly as `workflow-run-skill-pin.test.ts` does. Each mock passes through
+ * to the real module by default, so every static case above is unchanged.
+ *
+ * The deployment's model variables are overridden through `envOverrides`, and
+ * the worker is given a model DIFFERENT from the supervisor's: with the
+ * fallback (worker = supervisor), a start path that swapped the two keys would
+ * record the same row and pass.
+ */
+const envOverrides: Record<string, string | undefined> = {};
+jest.mock('@/env', () => {
+    const actual = jest.requireActual('@/env');
+    return {
+        ...actual,
+        env: new Proxy(actual.env, {
+            get: (target, key) => (typeof key === 'string' && key in envOverrides ? envOverrides[key] : Reflect.get(target, key)),
+        }),
+    };
+});
+jest.mock('@/lib/agentic/agent-driver-policy', () => {
+    const actual = jest.requireActual('@/lib/agentic/agent-driver-policy');
+    return { ...actual, resolveDriverForRun: jest.fn(actual.resolveDriverForRun) };
+});
+jest.mock('@/lib/agentic/agent-registration-gate', () => {
+    const actual = jest.requireActual('@/lib/agentic/agent-registration-gate');
+    return { ...actual, evaluateAgentRegistration: jest.fn(actual.evaluateAgentRegistration) };
+});
+jest.mock('@/app-layer/jobs/queue', () => ({
+    ...jest.requireActual('@/app-layer/jobs/queue'),
+    enqueue: jest.fn(async () => undefined),
+}));
+
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
@@ -41,6 +83,10 @@ import { startWorkflowRun, resumeWorkflowRun } from '@/app-layer/usecases/workfl
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
+import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
+import { evaluateAgentRegistration } from '@/lib/agentic/agent-registration-gate';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { FLUE_PROVIDER_IDS } from '@/lib/agentic/flue/model-selection';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -201,6 +247,86 @@ describeFn('a run records which engine walked it (real DB, real engine)', () => 
             modelRefusal: details.modelRefusal,
         }).toEqual({ modelSupervisor: null, modelWorker: null, modelWorkerBasis: null, modelRefusal: null });
         expect(Object.keys(details)).toEqual(expect.arrayContaining(['modelSupervisor', 'modelWorker']));
+    });
+
+    // ── A FLUE RUN'S OPENING ENTRY CARRIES BOTH SPECIFIERS (D-L3-1) ─────────
+    //
+    // The roadmap's test (nemotron-reasoning.md 1.2 / 1.5): the supervisor's
+    // and the worker's model, each under its own key, in the row written
+    // before the walk.
+    describe("a run's opening entry carries both specifiers", () => {
+        const SUPERVISOR = 'claude-supervisor-test';
+        const WORKER = 'claude-worker-test';
+
+        /** Start one run the real start path routes to Flue, and hand it to no worker. */
+        async function startFlueRun(): Promise<string> {
+            jest.mocked(resolveDriverForRun).mockResolvedValueOnce({ driver: 'flue', reason: null });
+            jest.mocked(evaluateAgentRegistration).mockResolvedValueOnce(
+                { standing: 'vouched' } as Awaited<ReturnType<typeof evaluateAgentRegistration>>,
+            );
+            const { runId, status } = await startWorkflowRun(ctx(), WF_ASKS_FLUE, {});
+            // It went to the worker queue, so it really was walked as Flue.
+            expect(status).toBe('RUNNING');
+            expect(jest.mocked(enqueue)).toHaveBeenCalledWith('agent-run-execute', { tenantId: TENANT, runId });
+            return runId;
+        }
+
+        beforeEach(() => {
+            for (const k of Object.keys(envOverrides)) delete envOverrides[k];
+            Object.assign(envOverrides, {
+                ANTHROPIC_API_KEY: 'sk-test', // only its presence is read; nothing is sent
+                AGENT_FLUE_MODEL: SUPERVISOR,
+                AGENT_FLUE_WORKER_MODEL: WORKER,
+                AI_LOCAL_BASE_URL: undefined,
+            });
+        });
+
+        afterAll(() => {
+            for (const k of Object.keys(envOverrides)) delete envOverrides[k];
+        });
+
+        it('records the supervisor and the worker, each under its own key, for an EXTERNAL tenant', async () => {
+            const runId = await startFlueRun();
+
+            const details = await auditDetails(runId, 'WORKFLOW_RUN_STARTED');
+            expect(details.driver).toBe('flue');
+            expect({
+                modelSupervisor: details.modelSupervisor,
+                modelWorker: details.modelWorker,
+                modelWorkerBasis: details.modelWorkerBasis,
+                modelRefusal: details.modelRefusal,
+            }).toEqual({
+                modelSupervisor: `${FLUE_PROVIDER_IDS.external}/${SUPERVISOR}`,
+                modelWorker: `${FLUE_PROVIDER_IDS.external}/${WORKER}`,
+                modelWorkerBasis: 'CONFIGURED',
+                modelRefusal: null,
+            });
+        });
+
+        it("reads the TENANT's residency: a LOCAL_ONLY tenant with no gateway records the refusal, not the external models", async () => {
+            // The same deployment variables as the case above. Only the
+            // tenant's posture differs, so a start path that resolved without
+            // reading the tenant row would record the external specifiers here.
+            await prisma.tenantSecuritySettings.create({ data: { tenantId: TENANT, aiResidency: 'LOCAL_ONLY' } });
+            try {
+                const runId = await startFlueRun();
+
+                const details = await auditDetails(runId, 'WORKFLOW_RUN_STARTED');
+                expect({
+                    modelSupervisor: details.modelSupervisor,
+                    modelWorker: details.modelWorker,
+                    modelWorkerBasis: details.modelWorkerBasis,
+                    modelRefusal: details.modelRefusal,
+                }).toEqual({
+                    modelSupervisor: null,
+                    modelWorker: null,
+                    modelWorkerBasis: null,
+                    modelRefusal: 'LOCAL_GATEWAY_NOT_CONFIGURED',
+                });
+            } finally {
+                await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId: TENANT } });
+            }
+        });
     });
 
     it('a RESUME names its own engine — it used to name none at all', async () => {

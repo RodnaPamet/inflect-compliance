@@ -230,8 +230,12 @@ Nemotron revision, and D-L3-2 is initialled.
       the opening record), `tests/unit/flue-per-turn-accounting.test.ts`
       (worker calls recorded and labelled as the worker's),
       `tests/flue/delegate-runs-on-the-worker-model.test.ts` (the delegate is
-      served on the worker model on the wire), and the opening entry's keys in
-      `tests/integration/workflow-run-records-its-engine.test.ts`.
+      served on the worker model on the wire), and, in
+      `tests/integration/workflow-run-records-its-engine.test.ts`, the case
+      "a run's opening entry carries both specifiers": a real Flue start whose
+      hash-chained row names a configured worker distinct from the supervisor
+      under its own key, and a LOCAL_ONLY tenant's row naming the refusal; a
+      static run's row records all four keys as null.
 
 **Prompt.**
 ```text
