@@ -29,6 +29,7 @@
  *
  * Both stay in the modal. The hook owns the risk payload and nothing else.
  */
+import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useZodForm } from '@/lib/hooks/use-zod-form';
 import {
@@ -123,7 +124,10 @@ export function useNewRiskForm({
                 // Server messages are already localised and specific (plan
                 // limits, duplicate key, validation) — prefer them, and fall
                 // back to the caller's translated string.
-                throw new Error(data.message || data.error || fallbackErrorMessage);
+                // `apiErrorMessage` reads the server's reason out of its error
+                // envelope; `data.error` is an OBJECT there, so it used to
+                // render as "[object Object]" (#5222).
+                throw new Error(apiErrorMessage(data, fallbackErrorMessage));
             }
             const risk = await res.json();
             await onCreated(risk);

@@ -9219,7 +9219,8 @@
       "bestValueError": "Couldn't load the best-value controls.",
       "loadErrorTitle": "Couldn't load the board",
       "loadError": "The risk figures didn't load.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "sectionUnavailable": "This section could not be computed."
     },
     "dash": {
       "statusAria": "Risk status breakdown",
