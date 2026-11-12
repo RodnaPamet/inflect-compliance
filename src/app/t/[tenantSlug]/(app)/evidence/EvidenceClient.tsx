@@ -1370,9 +1370,9 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                 // An expired row is listed under Archived with or without the
                 // flag, and unarchiving clears both, so it offers Unarchive.
                 const archived = !!ev.isArchived || !!ev.expiredAt;
-                // Archive's route requires `evidence.edit` on top of the
-                // usecase's write tier; unarchive asks the write tier alone.
-                if (archived ? !permissions.canWrite : !canEditEvidence) return null;
+                // Archive and unarchive both require `evidence.edit` on top
+                // of the usecase's write tier.
+                if (!canEditEvidence) return null;
                 return (
                     <Tooltip content={archived ? tx('list.unarchiveEvidence') : tx('list.archiveEvidence')}>
                         <button
