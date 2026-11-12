@@ -322,6 +322,13 @@ assertion.
   > honours nothing yet and is not counted among the five
   > (`docs/ai-architecture/nemotron-retriever.md`).
   >
+  > A ninth file branches on residency to SCORE it, not to honour it:
+  > `src/lib/ai/evals/inspect-record.ts` holds the Inspect harness's task
+  > scorers, and task `local-only-opens-no-external-socket` reads the residency a
+  > run was RECORDED under and passes only when a `LOCAL_ONLY` run made no model
+  > call. It constructs no provider, so it is not counted among the five
+  > (`docs/ai-architecture/inspect.md`).
+  >
   > The last two features arrived with steps 6c and 3b and the
   > bullet was not updated, which is criterion 11 unmet for those steps — the
   > same silent-staleness this section suffered in #3480, in the opposite

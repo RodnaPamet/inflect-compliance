@@ -24,7 +24,7 @@ import type { RunStepFeed } from '@/app-layer/usecases/workflow-run-steps';
 import type { RiskKpiCounts } from '@/app-layer/repositories/RiskRepository';
 import type { RunStepFeedRow } from '@/lib/agentic/run-step-projection';
 import { assertRequiredInputPresent } from '@/app-layer/usecases/workflow-runs';
-import { functionBodyOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -104,7 +104,7 @@ describe('each field the harness reads is in the product type and in the fixture
         expect(R.listRisks.path).toBe('/risks');
         expect(keysOf(body.kpiCounts)).toEqual(expect.arrayContaining([...READS.riskKpi]));
         expect(R.listRisks.route).toBe('src/app/api/t/[tenantSlug]/risks/route.ts');
-        expect(read('src/app/api/t/[tenantSlug]/risks/route.ts')).toContain('return jsonResponse({ ...result, kpiCounts });');
+        expect(codeOf(read('src/app/api/t/[tenantSlug]/risks/route.ts'))).toContain('return jsonResponse({ ...result, kpiCounts });');
     });
 
     it('residency, grants, proposals and the kill switch', () => {
