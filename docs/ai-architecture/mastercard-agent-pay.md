@@ -282,10 +282,11 @@ customer's own connection, the way directory integrations are).
       owner (the profile-approval and recertification precedents). A CHECK
       backs the usecase. Narrowing needs one person.
 - [x] 1.3 Activation: `assertActivatable` refuses `SPENDING_AUTHORITY_UNREVIEWED`
-      for an agent with a declared envelope nobody has reviewed. A later
-      widening on an ACTIVE agent raises a HIGH finding rather than
-      suspending it (the auditor-independence precedent: a later break is a
-      finding, not a refusal).
+      for an agent with an envelope nobody has reviewed: DECLARED, or
+      SUSPENDED_REQUESTED by a kill before any review. A later widening on an
+      ACTIVE agent raises a HIGH finding rather than suspending it (the
+      auditor-independence precedent: a later break is a finding, not a
+      refusal); a review or a withdrawal closes it.
 - [ ] 1.4 Recertification: an AGENT campaign's pack gains a spending-authority
       section, and a narrowing may propose reducing or withdrawing the
       envelope. Accepting it writes the declaration and opens a task for the

@@ -527,3 +527,208 @@ describe('one tenant never reaches another tenant’s spending authority', () =>
         );
     });
 });
+
+describe('a review approves exactly the declaration it read', () => {
+    /**
+     * Wait until some session in this database is blocked on a lock, or the
+     * given promise settles first (then there is nothing to wait for).
+     */
+    async function untilBlockedOnALock(settled: Promise<unknown>): Promise<boolean> {
+        let done = false;
+        void settled.then(
+            () => (done = true),
+            () => (done = true),
+        );
+        for (let i = 0; i < 200 && !done; i += 1) {
+            const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
+                SELECT count(*) AS n FROM pg_stat_activity
+                 WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+            if (Number(rows[0].n) > 0) return true;
+            await new Promise((r) => setTimeout(r, 50));
+        }
+        return false;
+    }
+
+    it('a re-declaration committed while the review waits on the row lock makes the review write nothing', async () => {
+        const agent = await makeAgent(T1);
+        const { authority } = await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+
+        // A third person re-declares the envelope far wider, and holds the
+        // row lock until the reviewer's write is queued behind it.
+        let release!: () => void;
+        const held = new Promise<void>((r) => (release = r));
+        let written!: () => void;
+        const redeclaredInTx = new Promise<void>((r) => (written = r));
+        const redeclaration = prisma.$transaction(
+            async (tx) => {
+                await tx.agentSpendingAuthority.update({
+                    where: { id: authority.id },
+                    data: {
+                        periodBudgetMinor: BigInt(10_000_000),
+                        declaredByUserId: users[T1].owner,
+                        declaredAt: new Date(Date.parse(authority.declaredAt) + 1),
+                    },
+                });
+                written();
+                await held;
+            },
+            { timeout: 60_000 },
+        );
+        await redeclaredInTx;
+
+        // The reviewer read the 50,000 envelope before that commit.
+        const review = reviewAgentSpendingAuthority(ctxAs(T1, 'reviewer'), agent.id, 'AGENT_PAY_TOKEN', {
+            declaredAt: authority.declaredAt,
+        });
+        expect(await untilBlockedOnALock(review)).toBe(true);
+        release();
+        await redeclaration;
+
+        expect((await refusal(review)).reason).toBe('DECLARATION_CHANGED');
+        const row = await prisma.agentSpendingAuthority.findUniqueOrThrow({ where: { id: authority.id } });
+        expect(row).toMatchObject({ status: 'DECLARED', reviewedByUserId: null, periodBudgetMinor: BigInt(10_000_000) });
+        expect((await refusal(activateRegisteredAgent(ctxAs(T1, 'owner'), agent.id))).reason).toBe(
+            'SPENDING_AUTHORITY_UNREVIEWED',
+        );
+    });
+
+    it('an unrestricted merchant scope is reviewed like any other: the swap matches empty lists', async () => {
+        const agent = await makeAgent(T1);
+        const { authority } = await declareAgentSpendingAuthority(
+            ctxAs(T1, 'declarer'),
+            agent.id,
+            envelope(T1, { merchantDomains: [], merchantCategoryCodes: [] }),
+        );
+        const reviewed = await reviewAgentSpendingAuthority(ctxAs(T1, 'reviewer'), agent.id, 'AGENT_PAY_TOKEN', {
+            declaredAt: authority.declaredAt,
+        });
+        expect(reviewed).toMatchObject({ status: 'REVIEWED', merchantScopeUnrestricted: true });
+    });
+});
+
+describe('no merchant domain can carry a card number (D-L1-8)', () => {
+    it.each(['4111111111111111.example.com', '4111-1111-1111-1111.shop.io', 'pay.5555555555554444.example.com'])(
+        'the usecase refuses %s and writes nothing',
+        async (domain) => {
+            const agent = await makeAgent(T1);
+            const r = await refusal(
+                declareAgentSpendingAuthority(
+                    ctxAs(T1, 'declarer'),
+                    agent.id,
+                    envelope(T1, { merchantDomains: ['shop.example.com', domain] }),
+                ),
+            );
+            expect(r.reason).toBe('IDENTIFIER_CARRIES_CARD_NUMBER');
+            expect(await prisma.agentSpendingAuthority.count({ where: { agentId: agent.id } })).toBe(0);
+        },
+    );
+
+    it('a narrowing cannot bring one in either', async () => {
+        const agent = await makeAgent(T1);
+        await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+        const r = await refusal(
+            narrowAgentSpendingAuthority(
+                ctxAs(T1, 'declarer'),
+                agent.id,
+                envelope(T1, { merchantDomains: ['4111111111111111.example.com'] }),
+            ),
+        );
+        expect(r.reason).toBe('IDENTIFIER_CARRIES_CARD_NUMBER');
+    });
+
+    it('the CHECK refuses one written around the usecase', async () => {
+        const agent = await makeAgent(T1);
+        const { authority } = await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+        await expect(
+            prisma.agentSpendingAuthority.update({
+                where: { id: authority.id },
+                data: { merchantDomains: ['shop.example.com', '4111-1111-1111-1111.shop.io'] },
+            }),
+        ).rejects.toThrow(/AgentSpendingAuthority_merchant_domains_carry_no_card_number/);
+    });
+
+    it('digits split across two domains are not read as one run', async () => {
+        const agent = await makeAgent(T1);
+        const { authority } = await declareAgentSpendingAuthority(
+            ctxAs(T1, 'declarer'),
+            agent.id,
+            envelope(T1, { merchantDomains: ['shop.example.com'] }),
+        );
+        await prisma.agentSpendingAuthority.update({
+            where: { id: authority.id },
+            data: { merchantDomains: ['x.1234567', '8901234.example.com'] },
+        });
+    });
+});
+
+describe('the widened-on-active finding closes when unreviewed authority ends', () => {
+    it('withdrawing the envelope closes it', async () => {
+        const agent = await makeAgent(T1, 'ACTIVE');
+        const { findingId } = await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+        await withdrawAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, 'AGENT_PAY_TOKEN');
+        expect((await prisma.finding.findUniqueOrThrow({ where: { id: findingId! } })).status).toBe('CLOSED');
+    });
+
+    it('a kill leaves it open, and withdrawing the suspended envelope closes it', async () => {
+        const agent = await makeAgent(T1, 'ACTIVE');
+        const { findingId } = await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+        await engageKillSwitch(ctxAs(T1, 'owner'), { agentId: agent.id, reason: 'incident drill' });
+        // Still unreviewed authority: the token may be live until a person suspends it.
+        expect((await prisma.finding.findUniqueOrThrow({ where: { id: findingId! } })).status).toBe('OPEN');
+
+        await withdrawAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, 'AGENT_PAY_TOKEN');
+        expect((await prisma.finding.findUniqueOrThrow({ where: { id: findingId! } })).status).toBe('CLOSED');
+    });
+
+    it('a narrowing of a declared envelope leaves it open', async () => {
+        const agent = await makeAgent(T1, 'ACTIVE');
+        const { findingId } = await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+        await narrowAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1, { perTransactionLimitMinor: 100 }));
+        expect((await prisma.finding.findUniqueOrThrow({ where: { id: findingId! } })).status).toBe('OPEN');
+    });
+});
+
+describe('a kill does not launder an unreviewed envelope into service', () => {
+    async function declaredKilledAndLifted() {
+        const agent = await makeAgent(T1);
+        const { authority } = await declareAgentSpendingAuthority(ctxAs(T1, 'owner'), agent.id, envelope(T1));
+        const kill = await engageKillSwitch(ctxAs(T1, 'owner'), { agentId: agent.id, reason: 'one person' });
+        await liftKillSwitch(ctxAs(T1, 'owner'), kill.id, { liftReason: 'same person' });
+        const row = await prisma.agentSpendingAuthority.findUniqueOrThrow({ where: { id: authority.id } });
+        expect(row).toMatchObject({ status: 'SUSPENDED_REQUESTED', reviewedAt: null });
+        return { agent, authority };
+    }
+
+    it('declare, kill, lift, activate: the usecase refuses SPENDING_AUTHORITY_UNREVIEWED', async () => {
+        const { agent } = await declaredKilledAndLifted();
+        const r = await refusal(activateRegisteredAgent(ctxAs(T1, 'owner'), agent.id));
+        expect(r.reason).toBe('SPENDING_AUTHORITY_UNREVIEWED');
+        expect((await prisma.registeredAgent.findUniqueOrThrow({ where: { id: agent.id } })).status).toBe('DRAFT');
+    });
+
+    it('the trigger refuses the same move for a writer that skips the usecase', async () => {
+        const { agent } = await declaredKilledAndLifted();
+        await expect(
+            prisma.registeredAgent.update({ where: { id: agent.id }, data: { status: 'ACTIVE' } }),
+        ).rejects.toThrow(/SPENDING_AUTHORITY_UNREVIEWED/);
+    });
+
+    it('withdrawing it lets the agent activate', async () => {
+        const { agent } = await declaredKilledAndLifted();
+        await withdrawAgentSpendingAuthority(ctxAs(T1, 'owner'), agent.id, 'AGENT_PAY_TOKEN');
+        await activateRegisteredAgent(ctxAs(T1, 'owner'), agent.id);
+        expect((await prisma.registeredAgent.findUniqueOrThrow({ where: { id: agent.id } })).status).toBe('ACTIVE');
+    });
+
+    it('a REVIEWED envelope a kill suspended does not hold activation back', async () => {
+        const agent = await makeAgent(T1);
+        const { authority } = await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+        await reviewAgentSpendingAuthority(ctxAs(T1, 'reviewer'), agent.id, 'AGENT_PAY_TOKEN', {
+            declaredAt: authority.declaredAt,
+        });
+        const kill = await engageKillSwitch(ctxAs(T1, 'owner'), { agentId: agent.id, reason: 'drill' });
+        await liftKillSwitch(ctxAs(T1, 'owner'), kill.id, { liftReason: 'drill over' });
+        await activateRegisteredAgent(ctxAs(T1, 'owner'), agent.id);
+        expect((await prisma.registeredAgent.findUniqueOrThrow({ where: { id: agent.id } })).status).toBe('ACTIVE');
+    });
+});

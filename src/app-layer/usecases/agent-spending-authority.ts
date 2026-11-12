@@ -19,24 +19,38 @@
  *     `AgentSpendingAuthority_not_self_reviewed` refuses the same for any
  *     writer, and the lifecycle trigger refuses an in-place change to a
  *     REVIEWED envelope that is not a narrowing.
- *   * **No payment credential, ever (D-L1-8).** The two identifiers are refused
- *     here when they carry a 13-digit run or a credential shape
- *     (`looksLikeSecret`, the harness contract's own check), and the CHECK
- *     `AgentSpendingAuthority_identifiers_carry_no_card_number` refuses the
- *     digit run below. The card-number shape inside `looksLikeSecret` is Phase
- *     0's, not this file's.
+ *   * **The review approves what the reviewer read.** The review's write is a
+ *     compare-and-swap on the whole declaration — status, stamps and every
+ *     envelope field as read — so a re-declaration committed while the review
+ *     waited on the row lock makes it write nothing and refuse
+ *     `DECLARATION_CHANGED`. The agent lock is FOR SHARE and does not
+ *     serialise two writers of one envelope; the row's own lock and the
+ *     re-evaluated predicate do.
+ *   * **No payment credential, ever (D-L1-8).** Every free-text value — the
+ *     two identifiers and each merchant domain — is refused here when it
+ *     carries a 13-digit run, and the identifiers also when they carry a
+ *     credential shape (`looksLikeSecret`, the harness contract's own check).
+ *     The CHECKs `AgentSpendingAuthority_identifiers_carry_no_card_number` and
+ *     `AgentSpendingAuthority_merchant_domains_carry_no_card_number` refuse
+ *     the digit run below. The card-number shape inside `looksLikeSecret` is
+ *     Phase 0's, not this file's.
  *   * **Activation.** `readUnreviewedSpendingAuthority` is what
  *     `assertActivatable` asks (`SPENDING_AUTHORITY_UNREVIEWED`); the trigger
  *     `registered_agent_spending_authority_reviewed` refuses the same move for
- *     any writer. A declaration on an agent that is ALREADY ACTIVE is a HIGH
- *     finding, not a suspension: the agentic IAM rule that a later break is a
- *     finding, never a refusal of an act two people may have agreed.
+ *     any writer. "Unreviewed" is DECLARED, AND a SUSPENDED_REQUESTED envelope
+ *     that was never reviewed: a kill moves an unreviewed envelope out of
+ *     DECLARED without anybody reviewing it, and lifting the kill must not
+ *     leave a one-person route into service. A declaration on an agent that is
+ *     ALREADY ACTIVE is a HIGH finding, not a suspension: the agentic IAM rule
+ *     that a later break is a finding, never a refusal of an act two people may
+ *     have agreed. The finding closes when the envelope is reviewed or
+ *     withdrawn — the two acts that end unreviewed authority.
  *   * **The kill reaches it.** `requestSpendingSuspensionInTx` runs inside an
  *     AGENT-scope kill's transaction, and `openSpendingSuspensionTasks` opens a
  *     task for a person to suspend the token at its requestor once that
  *     transaction commits, because Inflect cannot (Phase 4 is conditional).
  *     Lifting the kill does not reverse it: a person re-declares, and a second
- *     person reviews.
+ *     person reviews; or withdraws it.
  *
  * Every write is audited; no audit row carries the token reference, which is
  * an identifier at a third party and the audit trail streams to the tenant's
@@ -149,47 +163,37 @@ function toView(r: AgentSpendingAuthority): SpendingAuthorityView {
     };
 }
 
-/**
- * The envelope as an audit row may carry it: no token reference (an identifier
- * at a third party, and the trail streams to the SIEM), merchant scope as
- * counts, amounts as strings.
+/*
+ * Audit rows name every field at the sink (`local/no-raw-prompt-logging`): the
+ * envelope is written out field by field rather than spread from a helper, so
+ * the names reaching the hash-chained trail are in this source. No audit row
+ * carries the token reference (an identifier at a third party, and the trail
+ * streams to the SIEM); merchant scope goes as counts, amounts as strings.
  */
-function auditEnvelope(e: {
-    rail: string;
-    perTransactionLimitMinor: bigint | number;
-    periodBudgetMinor: bigint | number;
-    budgetPeriod: string;
-    currency: string;
-    merchantDomains: readonly string[];
-    merchantCategoryCodes: readonly string[];
-    expiresAt: Date;
-    consentedByUserId: string;
-}) {
-    return {
-        rail: e.rail,
-        perTransactionLimitMinor: e.perTransactionLimitMinor.toString(),
-        periodBudgetMinor: e.periodBudgetMinor.toString(),
-        budgetPeriod: e.budgetPeriod,
-        currency: e.currency,
-        merchantDomainCount: e.merchantDomains.length,
-        merchantCategoryCodeCount: e.merchantCategoryCodes.length,
-        merchantScopeUnrestricted: e.merchantDomains.length === 0 && e.merchantCategoryCodes.length === 0,
-        expiresAt: e.expiresAt.toISOString(),
-        consentedByUserId: e.consentedByUserId,
-    };
-}
 
-/** D-L1-8: neither identifier may carry a card number or a credential. */
+/**
+ * D-L1-8: no free-text value may carry a card number, and neither identifier a
+ * credential. The merchant domains are free text too — a host label may be all
+ * digits — so each is held to the same digit-run rule as the identifiers.
+ */
 function assertIdentifiersCarryNoCredential(e: SpendingEnvelopeInput): void {
-    for (const field of ['tokenRequestor', 'tokenReference'] as const) {
-        if (carriesCardNumberShape(e[field])) {
+    const freeText: ReadonlyArray<{ field: string; value: string }> = [
+        { field: 'tokenRequestor', value: e.tokenRequestor },
+        { field: 'tokenReference', value: e.tokenReference },
+        ...e.merchantDomains.map((value) => ({ field: 'merchantDomains', value })),
+    ];
+    for (const { field, value } of freeText) {
+        if (carriesCardNumberShape(value)) {
             throw refuse(
                 'IDENTIFIER_CARRIES_CARD_NUMBER',
                 'That value looks like a card number. Inflect never stores a card number or a token ' +
-                    'value; record the agent platform by name and its own reference for the token.',
+                    'value; record the agent platform by name, its own reference for the token, and ' +
+                    'merchants by their host name.',
                 { field },
             );
         }
+    }
+    for (const field of ['tokenRequestor', 'tokenReference'] as const) {
         if (looksLikeSecret(e[field])) {
             throw refuse(
                 'IDENTIFIER_CARRIES_CREDENTIAL',
@@ -244,24 +248,27 @@ async function findRow(db: PrismaTx, ctx: RequestContext, agentId: string, rail:
     });
 }
 
+/** The widened-on-active finding's key: one per agent and rail. */
+const widenedFindingRef = (agentId: string, rail: AgentSpendingRail) => `${agentId}:${rail}`;
+
 /**
  * The HIGH finding a declaration on an ACTIVE agent raises (1.3): the agent is
  * in service with an envelope nobody else has reviewed. Opened, or reopened if
- * a previous one was closed, keyed `<agentId>:<rail>`. Closed by the review.
+ * a previous one was closed, keyed `<agentId>:<rail>`. Closed by
+ * `closeWidenedOnActiveFinding` when the envelope is reviewed or withdrawn.
  */
 async function raiseWidenedOnActiveFinding(
     db: PrismaTx,
     ctx: RequestContext,
     agent: { id: string; name: string },
-    rail: AgentSpendingRail,
-    widenedFields: readonly string[],
+    widening: { rail: AgentSpendingRail; fields: readonly string[] },
 ): Promise<string> {
-    const sourceRef = `${agent.id}:${rail}`;
+    const rail = widening.rail;
     const prior = await db.finding.findFirst({
         where: {
             tenantId: ctx.tenantId,
             sourceKind: SPENDING_AUTHORITY_WIDENED_FINDING_SOURCE_KIND,
-            sourceRef,
+            sourceRef: widenedFindingRef(agent.id, rail),
             deletedAt: null,
         },
         select: { id: true, status: true },
@@ -295,13 +302,13 @@ async function raiseWidenedOnActiveFinding(
         title: sanitizePlainText(`Unreviewed spending authority on active agent "${agent.name}" (${rail})`),
         description: sanitizePlainText(
             `The spending authority of the active agent "${agent.name}" on the ${rail} rail was declared ` +
-                `or widened (${widenedFields.join(', ') || 'a new declaration'}) and nobody else has reviewed ` +
+                `or widened (${widening.fields.join(', ') || 'a new declaration'}) and nobody else has reviewed ` +
                 'it yet. The agent stays in service; a second person, neither the declarer nor the ' +
-                "agent's owner, reviews the envelope, or it is narrowed or withdrawn.",
+                "agent's owner, reviews the envelope, or it is withdrawn. Either closes this finding.",
         ),
         status: 'OPEN',
         sourceKind: SPENDING_AUTHORITY_WIDENED_FINDING_SOURCE_KIND,
-        sourceRef,
+        sourceRef: widenedFindingRef(agent.id, rail),
     });
     await logEvent(db, ctx, {
         action: 'SPENDING_AUTHORITY_FINDING_RAISED',
@@ -312,13 +319,40 @@ async function raiseWidenedOnActiveFinding(
             entityName: 'Finding',
             operation: 'created',
             after: {
-                sourceRef,
-                severity: SPENDING_AUTHORITY_WIDENED_FINDING_SEVERITY,
-                widenedFields: [...widenedFields],
+                sourceRef: created.sourceRef,
+                severity: created.severity,
+                widenedFields: [...widening.fields],
             },
         },
     });
     return created.id;
+}
+
+/**
+ * Close the open widened-on-active finding for one envelope, if any. Called by
+ * the two acts that END unreviewed authority: a second person's review, and a
+ * withdrawal. A narrowing does not close it (a narrowed DECLARED envelope is
+ * still unreviewed), and neither does a kill: a SUSPENDED_REQUESTED envelope
+ * that was never reviewed is still unreviewed authority until a person
+ * suspends the token, and it is withdrawn or re-declared and reviewed.
+ */
+async function closeWidenedOnActiveFinding(
+    db: PrismaTx,
+    ctx: RequestContext,
+    envelope: { agentId: string; rail: AgentSpendingRail },
+    note: string,
+): Promise<number> {
+    const closed = await db.finding.updateMany({
+        where: {
+            tenantId: ctx.tenantId,
+            sourceKind: SPENDING_AUTHORITY_WIDENED_FINDING_SOURCE_KIND,
+            sourceRef: widenedFindingRef(envelope.agentId, envelope.rail),
+            status: { not: 'CLOSED' },
+            deletedAt: null,
+        },
+        data: { status: 'CLOSED', verificationNotes: sanitizePlainText(note) },
+    });
+    return closed.count;
 }
 
 /**
@@ -382,6 +416,7 @@ export async function declareAgentSpendingAuthority(
                   data: { tenantId: ctx.tenantId, agentId, rail: e.rail, ...envelope, ...declaration },
               });
 
+        const widening = { rail: e.rail, fields: widenedFields };
         await logEvent(db, ctx, {
             action: prior ? 'SPENDING_AUTHORITY_REDECLARED' : 'SPENDING_AUTHORITY_DECLARED',
             entityType: 'AgentSpendingAuthority',
@@ -390,16 +425,39 @@ export async function declareAgentSpendingAuthority(
                 category: 'entity_lifecycle',
                 entityName: 'AgentSpendingAuthority',
                 operation: prior ? 'update' : 'create',
-                summary: `Spending authority DECLARED on ${e.rail} for agent ${agentId}; awaiting a second person's review`,
-                before: prior ? { status: prior.status, ...auditEnvelope(prior) } : undefined,
-                after: { status: 'DECLARED', agentId, widenedFields, ...auditEnvelope({ ...envelope, rail: e.rail }) },
+                summary: `Spending authority DECLARED on ${row.rail} for agent ${row.agentId}; awaiting a second person's review`,
+                before: prior
+                    ? {
+                          status: prior.status,
+                          rail: prior.rail,
+                          perTransactionLimitMinor: prior.perTransactionLimitMinor.toString(),
+                          periodBudgetMinor: prior.periodBudgetMinor.toString(),
+                          budgetPeriod: prior.budgetPeriod,
+                          currency: prior.currency,
+                          merchantDomainCount: prior.merchantDomains.length,
+                          merchantCategoryCodeCount: prior.merchantCategoryCodes.length,
+                          expiresAt: prior.expiresAt.toISOString(),
+                          consentedByUserId: prior.consentedByUserId,
+                      }
+                    : undefined,
+                after: {
+                    status: row.status,
+                    agentId: row.agentId,
+                    widenedFields: [...widening.fields],
+                    rail: row.rail,
+                    perTransactionLimitMinor: row.perTransactionLimitMinor.toString(),
+                    periodBudgetMinor: row.periodBudgetMinor.toString(),
+                    budgetPeriod: row.budgetPeriod,
+                    currency: row.currency,
+                    merchantDomainCount: row.merchantDomains.length,
+                    merchantCategoryCodeCount: row.merchantCategoryCodes.length,
+                    expiresAt: row.expiresAt.toISOString(),
+                    consentedByUserId: row.consentedByUserId,
+                },
             },
         });
 
-        const findingId =
-            agent.status === 'ACTIVE'
-                ? await raiseWidenedOnActiveFinding(db, ctx, agent, e.rail, widenedFields)
-                : null;
+        const findingId = agent.status === 'ACTIVE' ? await raiseWidenedOnActiveFinding(db, ctx, agent, widening) : null;
 
         return { authority: toView(row), widenedFields, findingId };
     });
@@ -458,9 +516,31 @@ export async function narrowAgentSpendingAuthority(
                 category: 'entity_lifecycle',
                 entityName: 'AgentSpendingAuthority',
                 operation: 'update',
-                summary: `Spending authority NARROWED on ${e.rail} for agent ${agentId}`,
-                before: { status: prior.status, ...auditEnvelope(prior) },
-                after: { status: row.status, ...auditEnvelope(row) },
+                summary: `Spending authority NARROWED on ${row.rail} for agent ${row.agentId}`,
+                before: {
+                    status: prior.status,
+                    rail: prior.rail,
+                    perTransactionLimitMinor: prior.perTransactionLimitMinor.toString(),
+                    periodBudgetMinor: prior.periodBudgetMinor.toString(),
+                    budgetPeriod: prior.budgetPeriod,
+                    currency: prior.currency,
+                    merchantDomainCount: prior.merchantDomains.length,
+                    merchantCategoryCodeCount: prior.merchantCategoryCodes.length,
+                    expiresAt: prior.expiresAt.toISOString(),
+                    consentedByUserId: prior.consentedByUserId,
+                },
+                after: {
+                    status: row.status,
+                    rail: row.rail,
+                    perTransactionLimitMinor: row.perTransactionLimitMinor.toString(),
+                    periodBudgetMinor: row.periodBudgetMinor.toString(),
+                    budgetPeriod: row.budgetPeriod,
+                    currency: row.currency,
+                    merchantDomainCount: row.merchantDomains.length,
+                    merchantCategoryCodeCount: row.merchantCategoryCodes.length,
+                    expiresAt: row.expiresAt.toISOString(),
+                    consentedByUserId: row.consentedByUserId,
+                },
             },
         });
         return toView(row);
@@ -508,10 +588,41 @@ export async function reviewAgentSpendingAuthority(
         if (prior.ownerUserIdAtDeclaration === ctx.userId || agent.ownerUserId === ctx.userId) {
             throw refuse('REVIEWER_IS_OWNER', "The agent's owner cannot review its spending authority.");
         }
-        const row = await db.agentSpendingAuthority.update({
-            where: { id: prior.id },
+        // COMPARE-AND-SWAP on everything the reviewer read. The agent lock is
+        // FOR SHARE, which a concurrent re-declaration also takes, so it does
+        // not serialise the two. A re-declaration that committed while this
+        // UPDATE waited on the envelope's row lock is re-evaluated against
+        // this predicate under READ COMMITTED, matches nothing, and the review
+        // writes nothing: a reviewer never approves an envelope they did not
+        // read, even one re-declared within the same millisecond.
+        const swapped = await db.agentSpendingAuthority.updateMany({
+            where: {
+                id: prior.id,
+                tenantId: ctx.tenantId,
+                status: 'DECLARED',
+                declaredAt: prior.declaredAt,
+                declaredByUserId: prior.declaredByUserId,
+                ownerUserIdAtDeclaration: prior.ownerUserIdAtDeclaration,
+                perTransactionLimitMinor: prior.perTransactionLimitMinor,
+                periodBudgetMinor: prior.periodBudgetMinor,
+                budgetPeriod: prior.budgetPeriod,
+                currency: prior.currency,
+                merchantDomains: { equals: prior.merchantDomains },
+                merchantCategoryCodes: { equals: prior.merchantCategoryCodes },
+                expiresAt: prior.expiresAt,
+                consentedByUserId: prior.consentedByUserId,
+                tokenRequestor: prior.tokenRequestor,
+                tokenReference: prior.tokenReference,
+            },
             data: { status: 'REVIEWED', reviewedByUserId: ctx.userId, reviewedAt: new Date() },
         });
+        if (swapped.count !== 1) {
+            throw refuse(
+                'DECLARATION_CHANGED',
+                'The envelope was declared again while you were reviewing it; read it again before reviewing.',
+            );
+        }
+        const row = await db.agentSpendingAuthority.findUniqueOrThrow({ where: { id: prior.id } });
         await logEvent(db, ctx, {
             action: 'SPENDING_AUTHORITY_REVIEWED',
             entityType: 'AgentSpendingAuthority',
@@ -524,19 +635,7 @@ export async function reviewAgentSpendingAuthority(
                 reason: `reviewed by a second person; declared by ${prior.declaredByUserId}`,
             },
         });
-        await db.finding.updateMany({
-            where: {
-                tenantId: ctx.tenantId,
-                sourceKind: SPENDING_AUTHORITY_WIDENED_FINDING_SOURCE_KIND,
-                sourceRef: `${agentId}:${rail}`,
-                status: { not: 'CLOSED' },
-                deletedAt: null,
-            },
-            data: {
-                status: 'CLOSED',
-                verificationNotes: sanitizePlainText('Closed: a second person reviewed the declared envelope'),
-            },
-        });
+        await closeWidenedOnActiveFinding(db, ctx, row, 'Closed: a second person reviewed the declared envelope');
         return toView(row);
     });
 }
@@ -571,6 +670,9 @@ export async function withdrawAgentSpendingAuthority(
                 reason: 'withdrawn on the register',
             },
         });
+        // Withdrawal ends the authority, reviewed or not, so it ends the
+        // finding about unreviewed authority too.
+        await closeWidenedOnActiveFinding(db, ctx, row, 'Closed: the spending authority was withdrawn');
         return toView(row);
     });
 }
@@ -594,8 +696,17 @@ export async function listAgentSpendingAuthorities(ctx: RequestContext, agentId:
 // ─── Read by the activation precondition ─────────────────────────────
 
 /**
- * The rails on which `agentId` holds a DECLARED (unreviewed) envelope. What
- * `assertActivatable` asks before a move to ACTIVE.
+ * The rails on which `agentId` holds UNREVIEWED spending authority. What
+ * `assertActivatable` asks before a move to ACTIVE, and what the trigger
+ * `registered_agent_spending_authority_reviewed` asks for any writer.
+ *
+ * Unreviewed is DECLARED, and also SUSPENDED_REQUESTED with no review stamp:
+ * an AGENT-scope kill moves a DECLARED envelope out of DECLARED without anybody
+ * reviewing it, and lifting the kill reverses nothing, so reading DECLARED
+ * alone would let one person declare, kill, lift and activate. Such an
+ * envelope is withdrawn, or re-declared and reviewed, before the agent goes
+ * into service. A SUSPENDED_REQUESTED envelope that WAS reviewed does not
+ * hold activation: two people agreed to it, and its suspension is the kill's.
  */
 export async function readUnreviewedSpendingAuthority(
     db: PrismaTx,
@@ -603,7 +714,11 @@ export async function readUnreviewedSpendingAuthority(
     agentId: string,
 ): Promise<AgentSpendingRail[]> {
     const rows = await db.agentSpendingAuthority.findMany({
-        where: { tenantId: ctx.tenantId, agentId, status: 'DECLARED' },
+        where: {
+            tenantId: ctx.tenantId,
+            agentId,
+            OR: [{ status: 'DECLARED' }, { status: 'SUSPENDED_REQUESTED', reviewedAt: null }],
+        },
         select: { rail: true },
         orderBy: { rail: 'asc' },
         take: SPENDING_RAILS.length,
@@ -633,8 +748,9 @@ export async function requestSpendingSuspensionInTx(
     db: PrismaTx,
     ctx: RequestContext,
     agentId: string,
-    killSwitchId: string,
+    kill: { id: string },
 ): Promise<SpendingSuspensionRequest[]> {
+    const killSwitchId = kill.id;
     const rows = await db.agentSpendingAuthority.findMany({
         where: { tenantId: ctx.tenantId, agentId, status: { in: ['DECLARED', 'REVIEWED'] } },
         select: { id: true, rail: true, status: true, tokenRequestor: true, tokenReference: true },
@@ -657,7 +773,7 @@ export async function requestSpendingSuspensionInTx(
                 entityName: 'AgentSpendingAuthority',
                 fromStatus: r.status,
                 toStatus: 'SUSPENDED_REQUESTED',
-                reason: `agent kill switch ${killSwitchId} engaged`,
+                reason: `agent kill switch ${kill.id} engaged`,
             },
         });
     }
@@ -719,14 +835,18 @@ export async function openSpendingSuspensionTasks(
             const task = await open(agent.ownerUserId).catch(() => open(null));
             out.push({ status: 'OPENED', authorityId: req.id, taskId: task.id });
         } catch (err) {
-            const error = err instanceof Error ? err.message : 'non-Error thrown';
+            const failed = {
+                status: 'FAILED' as const,
+                authorityId: req.id,
+                error: err instanceof Error ? err.message : 'non-Error thrown',
+            };
             logger.warn('spending authority: failed to open the suspension task', {
                 requestId: ctx.requestId,
                 tenantId: ctx.tenantId,
-                spendingAuthorityId: req.id,
-                error,
+                spendingAuthorityId: failed.authorityId,
+                error: failed.error,
             });
-            out.push({ status: 'FAILED', authorityId: req.id, error });
+            out.push(failed);
         }
     }
     return out;

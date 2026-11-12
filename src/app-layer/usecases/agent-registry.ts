@@ -1421,8 +1421,9 @@ export type AgentActivationRefusal =
  *      an existing entry makes is OUT of the value.
  *   2. A SCORED operational tier — see `activateRegisteredAgent`.
  *   2a. No UNREVIEWED spending authority (Agent Pay Phase 1, D-L1-9): an agent
- *      holding a DECLARED envelope that no second person has reviewed is
- *      refused `SPENDING_AUTHORITY_UNREVIEWED`, naming the rails. Asked after
+ *      holding an envelope that no second person has reviewed — DECLARED, or
+ *      SUSPENDED_REQUESTED by a kill before anybody reviewed it — is refused
+ *      `SPENDING_AUTHORITY_UNREVIEWED`, naming the rails. Asked after
  *      the score because it, too, is a fact about the agent; the trigger
  *      `registered_agent_spending_authority_reviewed` refuses the same move for
  *      any writer. An agent with no envelope is unaffected.

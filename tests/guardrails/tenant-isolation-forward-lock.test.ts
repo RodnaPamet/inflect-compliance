@@ -122,6 +122,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     TenantA2aSigningKey: "tests/integration/a2a-peer-messaging.test.ts",
     PeerAgentInboundCredential: "tests/integration/a2a-peer-messaging.test.ts",
     PeerInvitation: "tests/integration/peer-invitations.test.ts",
+    AgentSpendingAuthority: "tests/integration/agent-spending-authority.test.ts",
 };
 
 /**

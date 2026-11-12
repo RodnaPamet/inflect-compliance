@@ -16,13 +16,15 @@
 --   * a REVIEWED envelope changes only by narrowing; anything wider must move
 --     the row back to DECLARED with fresh declaration stamps (trigger);
 --   * a row is born DECLARED, and never for a RETIRED agent (trigger);
---   * an agent with a DECLARED (unreviewed) envelope never moves to ACTIVE
---     (trigger on RegisteredAgent; the usecase refuses
---     SPENDING_AUTHORITY_UNREVIEWED first).
+--   * no merchant domain can carry a card number either (CHECK; D-L1-8);
+--   * an agent with an UNREVIEWED envelope (DECLARED, or SUSPENDED_REQUESTED
+--     with no review stamp) never moves to ACTIVE (trigger on
+--     RegisteredAgent; the usecase refuses SPENDING_AUTHORITY_UNREVIEWED
+--     first).
 --
 -- ROLLING-DEPLOY SAFETY. Forward-only and additive: three NEW enum types, one
 -- NEW table, and one NEW trigger on "RegisteredAgent" that refuses only a move
--- to ACTIVE while a row of the new table is DECLARED. The previous image never
+-- to ACTIVE while a row of the new table is unreviewed. The previous image never
 -- writes the new table, so for it the trigger can never fire. A new enum type is
 -- a single deploy; only a value added to an existing enum needs two.
 --
@@ -117,6 +119,16 @@ ALTER TABLE "AgentSpendingAuthority" ADD CONSTRAINT "AgentSpendingAuthority_iden
         AND char_length(btrim("tokenRequestor")) BETWEEN 1 AND 80
         AND regexp_replace("tokenReference", '[^0-9A-Za-z]+', '', 'g') !~ '[0-9]{13,}'
         AND regexp_replace("tokenRequestor", '[^0-9A-Za-z]+', '', 'g') !~ '[0-9]{13,}'
+    );
+
+-- The merchant domains are free text too (a host label may be all digits), so
+-- they are held to the same rule. Joined with a LETTER, which the
+-- regexp_replace keeps, so digits at the end of one domain and the start of the
+-- next never read as one run. Postgres allows no subquery in a CHECK, so the
+-- array is checked as one string rather than per element.
+ALTER TABLE "AgentSpendingAuthority" ADD CONSTRAINT "AgentSpendingAuthority_merchant_domains_carry_no_card_number"
+    CHECK (
+        regexp_replace(array_to_string("merchantDomains", 'x'), '[^0-9A-Za-z]+', '', 'g') !~ '[0-9]{13,}'
     );
 
 -- FOUR EYES (D-L1-9). The reviewer is never the person who declared the
@@ -251,8 +263,12 @@ CREATE TRIGGER agent_spending_authority_lifecycle_trg
     BEFORE INSERT OR UPDATE ON "AgentSpendingAuthority"
     FOR EACH ROW EXECUTE FUNCTION agent_spending_authority_lifecycle();
 
--- ACTIVATION, for every writer of "RegisteredAgent": an agent holding a
--- DECLARED (unreviewed) envelope never moves to ACTIVE. `assertActivatable`
+-- ACTIVATION, for every writer of "RegisteredAgent": an agent holding an
+-- UNREVIEWED envelope never moves to ACTIVE. Unreviewed is DECLARED, and also
+-- SUSPENDED_REQUESTED with no review stamp: a kill moves a DECLARED envelope
+-- out of DECLARED without a review, and lifting it reverses nothing, so
+-- DECLARED alone would let one person declare, kill, lift and activate.
+-- `assertActivatable`
 -- refuses SPENDING_AUTHORITY_UNREVIEWED first with a sentence for the
 -- operator; this is the backstop, and it closes the race with a declaration in
 -- flight: the declaration takes FOR SHARE on the agent row, so this UPDATE
@@ -265,7 +281,10 @@ BEGIN
            SELECT 1 FROM "AgentSpendingAuthority" asa
             WHERE asa."agentId" = NEW."id"
               AND asa."tenantId" = NEW."tenantId"
-              AND asa."status" = 'DECLARED'
+              AND (
+                  asa."status" = 'DECLARED'
+                  OR (asa."status" = 'SUSPENDED_REQUESTED' AND asa."reviewedAt" IS NULL)
+              )
        ) THEN
         RAISE EXCEPTION
             'SPENDING_AUTHORITY_UNREVIEWED: this agent has a declared spending authority '

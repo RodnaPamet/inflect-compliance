@@ -254,7 +254,7 @@ export async function engageKillSwitch(
         // fall together. A TENANT-scope kill does not: it names no agent, and
         // fanning it out to every envelope in the workspace is a decision
         // nobody has taken.
-        const suspensions = agentId !== null ? await requestSpendingSuspensionInTx(db, ctx, agentId, row.id) : [];
+        const suspensions = agentId !== null ? await requestSpendingSuspensionInTx(db, ctx, agentId, row) : [];
         await logEvent(db, ctx, {
             action: 'AGENT_KILL_ENGAGED',
             entityType: 'AgentKillSwitch',
@@ -640,7 +640,7 @@ export async function engageOwnerDepartedKill(
 
         // The orphan containment reaches spending authority exactly as a
         // person's AGENT-scope kill does (Agent Pay Phase 1.5).
-        const suspensions = await requestSpendingSuspensionInTx(db, ctx, input.agentId, row.id);
+        const suspensions = await requestSpendingSuspensionInTx(db, ctx, input.agentId, row);
         return { record: toRecord(row), created: true, agent, suspensions };
     });
 
