@@ -93,6 +93,12 @@ export interface RiskMatrixCellProps {
      * compact € line under the count and joins the tooltip.
      */
     aleOverlay?: boolean;
+    /**
+     * Formats a money amount in the tenant's currency (#5281). The matrix
+     * page passes `useMoneyFormatter()`; without it the cell fell back to the
+     * '€' default, so a '$' tenant saw its heatmap in euros.
+     */
+    formatMoney?: (v: number) => string;
     /** Summed ALE of this cell's risks (currency). */
     totalAle?: number;
     /** This cell's ALE ÷ the max cell ALE (0..1). */
@@ -173,6 +179,7 @@ export function RiskMatrixCell({
     onClick,
     selected = false,
     aleOverlay = false,
+    formatMoney,
     totalAle,
     aleShare,
     collisionRatio,
@@ -188,6 +195,7 @@ export function RiskMatrixCell({
     );
     const { score, band, likelihoodLabel, impactLabel } = resolved;
     const isEmpty = count <= 0;
+    const money = formatMoney ?? ((v: number) => formatCompactCurrency(v));
 
     const hasAle = typeof totalAle === 'number' && totalAle > 0;
     const hasCollision = typeof collisionRatio === 'number' && collisionRatio > 1;
@@ -196,7 +204,7 @@ export function RiskMatrixCell({
         `${config.axisImpactLabel} ${impactLabel} = ${score} (${band.name})` +
         ` — ${count} ${pluralize(count, 'risk')}` +
         (aleOverlay && hasAle
-            ? ` — annualised loss expectancy ${formatCompactCurrency(totalAle)}`
+            ? ` — annualised loss expectancy ${money(totalAle)}`
             : '') +
         (hasCollision
             ? ` — warning: same-cell loss estimates differ ~${Math.round(collisionRatio)}×`
@@ -215,7 +223,7 @@ export function RiskMatrixCell({
             </p>
             {hasAle && (
                 <p className="text-content-default">
-                    ALE {formatCompactCurrency(totalAle)}
+                    ALE {money(totalAle)}
                 </p>
             )}
             {hasCollision && (
@@ -244,7 +252,13 @@ export function RiskMatrixCell({
         </div>
     );
 
+    // `interactive`: clicking / Enter opens the cell — only when it has risks.
+    // `navigable`: the cell belongs to an interactive grid, so it takes the
+    // roving tab stop and arrow keys whether or not it is empty (#5280). An
+    // empty cell used to be neither, so an empty default cell left the grid
+    // with no tab stop at all, and arrowing onto an empty cell stranded focus.
     const interactive = Boolean(onClick) && !isEmpty;
+    const navigable = Boolean(onClick);
     const fg = readableTextOnHex(band.color);
 
     const cell = (
@@ -256,7 +270,7 @@ export function RiskMatrixCell({
             // others stay at `-1` until they become the active cell.
             // Non-interactive cells stay at `-1` regardless (a focused
             // empty cell with no callbacks would be a dead-end stop).
-            tabIndex={interactive ? (tabbable ? 0 : -1) : -1}
+            tabIndex={navigable ? (tabbable ? 0 : -1) : -1}
             aria-label={ariaLabel}
             data-testid={dataTestId ?? `risk-matrix-cell-${likelihood}-${impact}`}
             data-empty={isEmpty ? 'true' : 'false'}
@@ -268,11 +282,11 @@ export function RiskMatrixCell({
             data-collision-ratio={hasCollision ? Math.round(collisionRatio) : undefined}
             onClick={interactive ? onClick : undefined}
             onKeyDown={
-                interactive
+                navigable
                     ? (e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
-                              onClick?.();
+                              if (interactive) onClick?.();
                               return;
                           }
                           // RQ3-OB-E — arrow / Home / End route to the
@@ -363,7 +377,7 @@ export function RiskMatrixCell({
                             className="text-[9px] font-medium"
                             data-testid="risk-matrix-cell-ale"
                         >
-                            {formatCompactCurrency(totalAle)}
+                            {money(totalAle)}
                         </span>
                     )}
                 </span>

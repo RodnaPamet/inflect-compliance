@@ -218,6 +218,22 @@ describe('useNewRiskForm — gating and failure', () => {
         );
     });
 
+    // #5222 — the server's error envelope is `{ error: { code, message } }`;
+    // the hook rendered the object, so every refusal read "[object Object]".
+    it('surfaces the message inside the server\u2019s error envelope', async () => {
+        global.fetch = jest.fn(async () => ({
+            ok: false, status: 403,
+            json: async () => ({ error: { code: 'FORBIDDEN', message: 'plan_limit_exceeded: risks' } }),
+        })) as unknown as typeof fetch;
+        const { result } = setup();
+
+        act(() => result.current.setField('title', 'Over the limit'));
+        await act(async () => { await result.current.submit(); });
+
+        await waitFor(() => expect(result.current.error).toBe('plan_limit_exceeded: risks'));
+        expect(result.current.error).not.toContain('[object Object]');
+    });
+
     it('falls back to the caller-supplied localised message when the server sends none', async () => {
         global.fetch = jest.fn(async () => ({
             ok: false, status: 500, json: async () => ({}),

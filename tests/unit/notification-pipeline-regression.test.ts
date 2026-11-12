@@ -115,7 +115,9 @@ beforeEach(() => {
         user:             { findMany: (...a: unknown[]) => spies.user(...a) },
         tenantMembership: { findMany: (...a: unknown[]) => spies.membership(...a) },
         tenant:           { findUnique: (...a: unknown[]) => spies.tenant(...a) },
-        notificationOutbox: { create: (...a: unknown[]) => spies.outbox(...a) },
+        notificationOutbox: jest.requireActual('../helpers/outbox-double').withSkipDuplicates(
+            (...a: unknown[]) => spies.outbox(...a),
+        ),
         tenantNotificationSettings: { findUnique: jest.fn().mockResolvedValue(null) },
     };
 
@@ -146,12 +148,14 @@ describe('REGRESSION: query budget per notification-dispatch run', () => {
      *
      * If any of these double, someone reintroduced a second scan path.
      */
+    // The deadline monitor reads each source in two bounded passes, upcoming
+    // and overdue (#5202), so its tables are 2: a constant, not a per-row read.
     const QUERY_BUDGET: Record<string, { spy: keyof typeof spies; maxCalls: number; source: string }> = {
-        control:         { spy: 'control',         maxCalls: 1, source: 'deadline-monitor' },
-        policy:          { spy: 'policy',          maxCalls: 1, source: 'deadline-monitor' },
-        task:            { spy: 'task',            maxCalls: 1, source: 'deadline-monitor' },
-        risk:            { spy: 'risk',            maxCalls: 1, source: 'deadline-monitor' },
-        controlTestPlan: { spy: 'controlTestPlan', maxCalls: 1, source: 'deadline-monitor' },
+        control:         { spy: 'control',         maxCalls: 2, source: 'deadline-monitor' },
+        policy:          { spy: 'policy',          maxCalls: 2, source: 'deadline-monitor' },
+        task:            { spy: 'task',            maxCalls: 2, source: 'deadline-monitor' },
+        risk:            { spy: 'risk',            maxCalls: 2, source: 'deadline-monitor' },
+        controlTestPlan: { spy: 'controlTestPlan', maxCalls: 2, source: 'deadline-monitor' },
         evidence:        { spy: 'evidence',        maxCalls: 2, source: 'evidence-expiry-monitor' },
         vendor:          { spy: 'vendor',          maxCalls: 4, source: 'vendor-renewal-check' },
         auditCycle:      { spy: 'auditCycle',      maxCalls: 1, source: 'calendar-deadlines' },
@@ -181,11 +185,11 @@ describe('REGRESSION: query budget per notification-dispatch run', () => {
     });
 
     test.each(Object.entries({
-        control:         { spy: 'control' as const,         maxCalls: 1 },
-        policy:          { spy: 'policy' as const,          maxCalls: 1 },
-        task:            { spy: 'task' as const,            maxCalls: 1 },
-        risk:            { spy: 'risk' as const,            maxCalls: 1 },
-        controlTestPlan: { spy: 'controlTestPlan' as const, maxCalls: 1 },
+        control:         { spy: 'control' as const,         maxCalls: 2 },
+        policy:          { spy: 'policy' as const,          maxCalls: 2 },
+        task:            { spy: 'task' as const,            maxCalls: 2 },
+        risk:            { spy: 'risk' as const,            maxCalls: 2 },
+        controlTestPlan: { spy: 'controlTestPlan' as const, maxCalls: 2 },
         evidence:        { spy: 'evidence' as const,        maxCalls: 2 },
         vendor:          { spy: 'vendor' as const,          maxCalls: 4 },
         auditCycle:      { spy: 'auditCycle' as const,      maxCalls: 1 },

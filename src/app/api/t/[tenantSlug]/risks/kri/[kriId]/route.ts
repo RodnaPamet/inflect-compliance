@@ -8,6 +8,8 @@ import { jsonResponse } from '@/lib/api-response';
 /** RQ-6 — single KRI: PATCH update, DELETE. */
 const PatchSchema = z.object({
     name: z.string().min(1).max(200).optional(),
+    // null unlinks the KRI from its risk (#5167).
+    riskId: z.string().min(1).nullable().optional(),
     description: z.string().max(2000).nullable().optional(),
     unit: z.string().max(20).nullable().optional(),
     direction: z.enum(['HIGHER_IS_WORSE', 'LOWER_IS_WORSE']).optional(),

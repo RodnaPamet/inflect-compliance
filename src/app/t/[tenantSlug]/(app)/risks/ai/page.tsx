@@ -1,4 +1,5 @@
 'use client';
+import { unwrapCappedList } from '@/lib/list-backfill-cap';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -148,7 +149,9 @@ export default function AIRiskAssessmentPage() {
             const res = await fetch(apiUrl('/assets'));
             if (!res.ok) throw new Error(String(res.status));
             const data = await res.json();
-            const list = Array.isArray(data) ? data : data.data ?? [];
+            // GET /assets returns the capped envelope `{ rows, truncated }`;
+            // reading `data.data` found nothing, so no asset was ever offered (#5221).
+            const list = unwrapCappedList<AssetOption>(data);
             setAssets(list.map((a: AssetOption) => ({ id: a.id, name: a.name, type: a.type, criticality: a.criticality })));
             setAssetsLoaded(true);
         } catch {

@@ -22,7 +22,7 @@ const mockedOutbox = processOutbox as jest.MockedFunction<typeof processOutbox>;
 describe('runDailyEvidenceExpiryNotifications', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        mockedRetention.mockResolvedValue({ scanned: 0, tasksCreated: 0, skippedDuplicate: 0 });
+        mockedRetention.mockResolvedValue({ scanned: 0, tasksCreated: 0, skippedDuplicate: 0, failed: 0 });
         mockedOutbox.mockResolvedValue({ sent: 0, failed: 0, skipped: 0 });
     });
 
@@ -69,9 +69,9 @@ describe('runDailyEvidenceExpiryNotifications', () => {
 
     it('returns aggregate results', async () => {
         mockedRetention
-            .mockResolvedValueOnce({ scanned: 10, tasksCreated: 2, skippedDuplicate: 1 })
-            .mockResolvedValueOnce({ scanned: 5, tasksCreated: 1, skippedDuplicate: 0 })
-            .mockResolvedValueOnce({ scanned: 2, tasksCreated: 0, skippedDuplicate: 0 });
+            .mockResolvedValueOnce({ scanned: 10, tasksCreated: 2, skippedDuplicate: 1, failed: 0 })
+            .mockResolvedValueOnce({ scanned: 5, tasksCreated: 1, skippedDuplicate: 0, failed: 0 })
+            .mockResolvedValueOnce({ scanned: 2, tasksCreated: 0, skippedDuplicate: 0, failed: 0 });
         mockedOutbox.mockResolvedValue({ sent: 3, failed: 0, skipped: 0 });
 
         const result = await runDailyEvidenceExpiryNotifications();
@@ -84,11 +84,11 @@ describe('runDailyEvidenceExpiryNotifications', () => {
 
     it('is idempotent — duplicate sweeps do not create extra tasks', async () => {
         // First run creates tasks
-        mockedRetention.mockResolvedValue({ scanned: 5, tasksCreated: 3, skippedDuplicate: 0 });
+        mockedRetention.mockResolvedValue({ scanned: 5, tasksCreated: 3, skippedDuplicate: 0, failed: 0 });
         await runDailyEvidenceExpiryNotifications();
 
         // Second run — existing tasks are skipped
-        mockedRetention.mockResolvedValue({ scanned: 5, tasksCreated: 0, skippedDuplicate: 3 });
+        mockedRetention.mockResolvedValue({ scanned: 5, tasksCreated: 0, skippedDuplicate: 3, failed: 0 });
         const result = await runDailyEvidenceExpiryNotifications();
 
         expect(result.sweeps.days30.tasksCreated).toBe(0);
@@ -123,14 +123,14 @@ describe('a failing evidence sweep does not withhold the outbox', () => {
         // later reordering look like a real regression.
         mockedRetention.mockReset();
         mockedOutbox.mockReset();
-        mockedRetention.mockResolvedValue({ scanned: 0, tasksCreated: 0, skippedDuplicate: 0 });
+        mockedRetention.mockResolvedValue({ scanned: 0, tasksCreated: 0, skippedDuplicate: 0, failed: 0 });
         mockedOutbox.mockResolvedValue({ sent: 0, failed: 0, skipped: 0 });
     });
 
     it('flushes the outbox even though the 30-day sweep threw', async () => {
         mockedRetention
             .mockRejectedValueOnce(new Error('evidence scan exploded'))
-            .mockResolvedValue({ scanned: 0, tasksCreated: 0, skippedDuplicate: 0 });
+            .mockResolvedValue({ scanned: 0, tasksCreated: 0, skippedDuplicate: 0, failed: 0 });
         mockedOutbox.mockResolvedValue({ sent: 4, failed: 0, skipped: 0 });
 
         await expect(runDailyEvidenceExpiryNotifications()).rejects.toBeInstanceOf(EvidenceSweepFailedError);
@@ -177,9 +177,9 @@ describe('a failing evidence sweep does not withhold the outbox', () => {
         // they actually have is "did the 05:00 leaver mail go out?", so the
         // error answers it instead of only naming the sweep.
         mockedRetention
-            .mockResolvedValueOnce({ scanned: 1, tasksCreated: 0, skippedDuplicate: 0 })
+            .mockResolvedValueOnce({ scanned: 1, tasksCreated: 0, skippedDuplicate: 0, failed: 0 })
             .mockRejectedValueOnce(new Error('7d scan timed out'))
-            .mockResolvedValueOnce({ scanned: 1, tasksCreated: 0, skippedDuplicate: 0 });
+            .mockResolvedValueOnce({ scanned: 1, tasksCreated: 0, skippedDuplicate: 0, failed: 0 });
         mockedOutbox.mockResolvedValue({ sent: 9, failed: 0, skipped: 1 });
 
         const thrown = await runDailyEvidenceExpiryNotifications().catch((e: unknown) => e);
@@ -215,7 +215,7 @@ describe('a failing evidence sweep does not withhold the outbox', () => {
         mockedRetention
             .mockRejectedValueOnce(new Error('30d blew up'))
             .mockRejectedValueOnce(new Error('7d blew up'))
-            .mockResolvedValueOnce({ scanned: 5, tasksCreated: 2, skippedDuplicate: 1 });
+            .mockResolvedValueOnce({ scanned: 5, tasksCreated: 2, skippedDuplicate: 1, failed: 0 });
 
         const thrown = await runDailyEvidenceExpiryNotifications()
             .catch((e: unknown) => e) as EvidenceSweepFailedError;
@@ -226,7 +226,7 @@ describe('a failing evidence sweep does not withhold the outbox', () => {
     it('a clean run still resolves — the guards did not make failure the norm', async () => {
         // Positive control. Every assertion above is about a rejection, and a
         // function that ALWAYS rejected would satisfy all of them.
-        mockedRetention.mockResolvedValue({ scanned: 3, tasksCreated: 1, skippedDuplicate: 0 });
+        mockedRetention.mockResolvedValue({ scanned: 3, tasksCreated: 1, skippedDuplicate: 0, failed: 0 });
         mockedOutbox.mockResolvedValue({ sent: 2, failed: 0, skipped: 0 });
 
         const result = await runDailyEvidenceExpiryNotifications();

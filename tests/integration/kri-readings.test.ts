@@ -143,6 +143,22 @@ describeFn('RQ-6 — KRI readings (integration)', () => {
         expect(row!.description).toMatch(/key risk indicator breached/);
     });
 
+    // #5167 — the PATCH schema dropped riskId, so re-linking a KRI was
+    // discarded while the edit reported success.
+    it('re-links a KRI to another risk of this tenant, unlinks it, and refuses a risk it does not hold', async () => {
+        const a = await globalPrisma.risk.create({ data: { tenantId: TENANT_ID, title: 'Risk A' } });
+        const b = await globalPrisma.risk.create({ data: { tenantId: TENANT_ID, title: 'Risk B' } });
+        const kri = await createKri(ctx, { name: 'Linked', riskId: a.id, greenMax: 5, amberMax: 10 });
+
+        await updateKri(ctx, kri.id, { riskId: b.id });
+        expect((await globalPrisma.keyRiskIndicator.findUniqueOrThrow({ where: { id: kri.id } })).riskId).toBe(b.id);
+
+        await updateKri(ctx, kri.id, { riskId: null });
+        expect((await globalPrisma.keyRiskIndicator.findUniqueOrThrow({ where: { id: kri.id } })).riskId).toBeNull();
+
+        await expect(updateKri(ctx, kri.id, { riskId: 'not-a-risk-here' })).rejects.toThrow(/Risk not found/);
+    });
+
     it('refuses a KRI owner who is not an active member of this tenant, on create and update', async () => {
         const outsiderEmail = `${TAG}-outsider@example.test`;
         const outsider = await globalPrisma.user.create({ data: { email: outsiderEmail, emailHash: hashForLookup(outsiderEmail) } });

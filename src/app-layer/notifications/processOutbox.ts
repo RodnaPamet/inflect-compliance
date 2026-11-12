@@ -78,8 +78,18 @@ export async function processOutbox(
             }
             const settings = settingsCache.get(row.tenantId)!;
 
-            // Skip if tenant disabled notifications after enqueue
+            // The tenant disabled notifications after this row was queued.
+            // SETTLE the row rather than leave it PENDING (#5237): a PENDING
+            // row is selected again by every pass, so 200 of them at the head
+            // of the queue filled each batch and stopped every other tenant's
+            // email, and each one counted as overdue to the work-overdue
+            // reporter for ever. Conditional on PENDING so a concurrent pass
+            // that already claimed it is not overwritten.
             if (!settings.enabled) {
+                await prisma.notificationOutbox.updateMany({
+                    where: { id: row.id, status: 'PENDING' },
+                    data: { status: 'FAILED', lastError: 'notifications disabled for tenant' },
+                });
                 skipped++;
                 continue;
             }

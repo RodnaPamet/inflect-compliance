@@ -33,6 +33,16 @@ const riskReport = {
 };
 jest.mock('@/app-layer/usecases/risk-report', () => riskReport);
 
+// Delivery re-resolves the stored recipients (#5213). By default every stored
+// address is still eligible; a test that needs a drop overrides it.
+const mockDeliverable = jest.fn(async (_ctx: unknown, recipients: string[]) => ({
+    deliverable: recipients,
+    dropped: 0,
+}));
+jest.mock('@/app-layer/usecases/report-recipients', () => ({
+    currentlyDeliverableRecipients: (...a: [unknown, string[]]) => mockDeliverable(...a),
+}));
+
 // Spread the real module. A partial factory throws on every export it does not
 // list, the moment that export is reached -- and a hand-rolled return value
 // makes the ARGUMENT untestable besides, which is how a job's permission
@@ -202,3 +212,32 @@ it('filters non-string recipients via asRecipients', async () => {
         expect.anything(), { id: 'run1' }, ['ok@x.io', 'two@x.io'], 'Weekly',
     );
 });
+
+describe('runReportDelivery — who still receives it', () => {
+    it('does not run a removed workspace\u2019s schedules (#5296)', async () => {
+        prismaMock.reportSchedule.findMany.mockResolvedValue([]);
+        await runReportDelivery(payload);
+        const where = prismaMock.reportSchedule.findMany.mock.calls[0][0].where;
+        expect(where.tenant).toEqual({ deletedAt: null });
+    });
+
+    it('sends only to the recipients who are still eligible now (#5213)', async () => {
+        prismaMock.reportSchedule.findMany.mockResolvedValue([
+            schedule({ recipientsJson: ['still@acme.io', 'left@acme.io'] }),
+        ]);
+        riskReport.generateReport.mockResolvedValue({ id: 'run1', status: 'COMPLETED', outputPath: 'p', format: 'PDF' });
+        riskReport.deliverReportByEmail.mockResolvedValue(1);
+        mockDeliverable.mockResolvedValueOnce({ deliverable: ['still@acme.io'], dropped: 1 });
+
+        await runReportDelivery(payload);
+
+        expect(mockDeliverable).toHaveBeenCalledWith(expect.anything(), ['still@acme.io', 'left@acme.io']);
+        expect(riskReport.deliverReportByEmail).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            ['still@acme.io'],
+            expect.anything(),
+        );
+    });
+});
+

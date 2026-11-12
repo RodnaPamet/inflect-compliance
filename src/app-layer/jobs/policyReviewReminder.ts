@@ -156,6 +156,8 @@ export async function processOverdueReminders(
     const where: Prisma.PolicyWhereInput = {
         nextReviewAt: { not: null, lte: horizon },
         status: { not: 'ARCHIVED' },
+        // A removed workspace's policies are not reviewed by anybody (#5297).
+        tenant: { deletedAt: null },
     };
     if (tenantId) where.tenantId = tenantId;
 
@@ -202,8 +204,29 @@ export async function processOverdueReminders(
         for (const l of openLinks) policiesWithOpenTask.add(l.entityId);
     }
 
+    // Owners who still hold an ACTIVE membership in the policy's tenant, in
+    // ONE batched read (#5059, #5297). A departed owner is neither emailed
+    // about the tenant's content nor made the assignee of its review task:
+    // `createTask` refuses a non-member assignee, and that refusal used to
+    // abort the run for every policy after it, across all tenants.
+    const ownerPairs = policies.filter((p) => p.ownerUserId);
+    const activeOwners = new Set<string>();
+    if (ownerPairs.length) {
+        const memberships = await db.tenantMembership.findMany({ // guardrail-allow: unbounded -- bounded by the scanned policies (take:1000)
+            where: {
+                status: 'ACTIVE',
+                OR: ownerPairs.map((p) => ({ tenantId: p.tenantId, userId: p.ownerUserId! })),
+            },
+            select: { tenantId: true, userId: true },
+        });
+        for (const m of memberships) activeOwners.add(`${m.tenantId}:${m.userId}`);
+    }
+    let taskFailures = 0;
+
     for (const policy of policies) {
         if (!policy.nextReviewAt) continue;
+        const ownerActive =
+            !!policy.ownerUserId && activeOwners.has(`${policy.tenantId}:${policy.ownerUserId}`);
         const reminderDays = policy.tenant?.reminderDaysBefore ?? DEFAULT_REMINDER_DAYS_BEFORE;
         const dueThreshold = new Date(now.getTime() + reminderDays * 86_400_000);
         // Skip policies not yet inside their reminder window.
@@ -246,7 +269,7 @@ export async function processOverdueReminders(
         // Notify the policy owner (deduped per day). Skipped when the owner
         // has no resolvable email — the audit + automation + detail-page
         // overdue flag still surface the deadline.
-        const ownerEmail = policy.owner?.email;
+        const ownerEmail = ownerActive ? policy.owner?.email : undefined;
         if (ownerEmail && db.notificationOutbox?.create) {
             // Respect the tenant's notification eligibility (single source of
             // truth — settings.ts), cached per tenant for this run.
@@ -270,36 +293,50 @@ export async function processOverdueReminders(
         }
 
         // TP-5 — raise a Task for the review, linked to the policy and
-        // assigned to its owner. Requires an owner: `Task.createdByUserId`
-        // is NOT NULL and the reminder is only actionable by someone, so a
-        // policy with no owner keeps the audit + email + automation signals
-        // but no task. Idempotent via `policiesWithOpenTask` (batched
-        // above), and de-duped within this run as new ids are added.
-        if (policy.ownerUserId && !policiesWithOpenTask.has(policy.id)) {
-            const dueStr = policy.nextReviewAt.toISOString().slice(0, 10);
-            // TP-1 — route through the canonical createTask so the reminder
-            // task carries a TSK-N key + TASK_CREATED audit/automation event
-            // + owner bell/email, same as every other task (was a raw
-            // db.task.create that produced a keyless, unaudited task).
-            // Written as the tenant's SYSTEM user (#4400). It used to borrow
-            // the owner's id because `Task.createdByUserId` is a NOT NULL
-            // foreign key to `User`, which named the owner as the author of a
-            // reminder they did not raise, under an ADMIN-shaped context. The
-            // owner is still the assignee, resolved against an ACTIVE
-            // membership by `createTask`.
-            const ctx = await buildTenantSystemJobContext({ tenantId: policy.tenantId, job: 'policy-review-reminder' });
-            const task = await createTask(ctx, {
-                source: 'POLICY_REVIEW',
-                type: 'TASK',
-                title: `Review policy: ${policy.title}`,
-                description: overdue
-                    ? `Policy "${policy.title}" is ${dOver} day(s) overdue for review. Review the content and mark it reviewed to reset the review cycle.`
-                    : `Policy "${policy.title}" is due for review on ${dueStr}. Review the content and mark it reviewed to reset the review cycle.`,
-                priority: overdue ? 'P1' : 'P2',
-                assigneeUserId: policy.ownerUserId,
-            });
-            await addTaskLink(ctx, task.id, 'POLICY', policy.id);
-            policiesWithOpenTask.add(policy.id);
+        // assigned to its owner when the owner still holds an ACTIVE
+        // membership; otherwise unassigned, so the review still reaches the
+        // /tasks inbox (the author is the tenant's system user, so no owner
+        // is needed to write it). Idempotent via `policiesWithOpenTask`
+        // (batched above), and de-duped within this run as new ids are added.
+        if (!policiesWithOpenTask.has(policy.id)) {
+            // One policy's task failure is counted and logged, never
+            // allowed to abort the run for every policy after it (#5059).
+            try {
+                const dueStr = policy.nextReviewAt.toISOString().slice(0, 10);
+                // TP-1 — route through the canonical createTask so the reminder
+                // task carries a TSK-N key + TASK_CREATED audit/automation event
+                // + owner bell/email, same as every other task (was a raw
+                // db.task.create that produced a keyless, unaudited task).
+                // Written as the tenant's SYSTEM user (#4400). It used to borrow
+                // the owner's id because `Task.createdByUserId` is a NOT NULL
+                // foreign key to `User`, which named the owner as the author of a
+                // reminder they did not raise, under an ADMIN-shaped context. The
+                // owner is still the assignee, resolved against an ACTIVE
+                // membership by `createTask`.
+                const ctx = await buildTenantSystemJobContext({ tenantId: policy.tenantId, job: 'policy-review-reminder' });
+                const task = await createTask(ctx, {
+                    source: 'POLICY_REVIEW',
+                    type: 'TASK',
+                    title: `Review policy: ${policy.title}`,
+                    description: overdue
+                        ? `Policy "${policy.title}" is ${dOver} day(s) overdue for review. Review the content and mark it reviewed to reset the review cycle.`
+                        : `Policy "${policy.title}" is due for review on ${dueStr}. Review the content and mark it reviewed to reset the review cycle.`,
+                    priority: overdue ? 'P1' : 'P2',
+                    // A departed owner leaves the task unassigned rather than
+                    // refused, so it still reaches the /tasks inbox (#5059).
+                    ...(ownerActive ? { assigneeUserId: policy.ownerUserId! } : {}),
+                });
+                await addTaskLink(ctx, task.id, 'POLICY', policy.id);
+                policiesWithOpenTask.add(policy.id);
+            } catch (err) {
+                taskFailures++;
+                logger.error('policy review task creation failed', {
+                    component: 'policy-review-reminder',
+                    tenantId: policy.tenantId,
+                    policyId: policy.id,
+                    error: err instanceof Error ? err.message : String(err),
+                });
+            }
         }
 
         out.push({ id: policy.id, tenantId: policy.tenantId, title: policy.title, daysOverdue: dOver });
@@ -310,6 +347,7 @@ export async function processOverdueReminders(
         scope: tenantId ? 'tenant-scoped' : 'system-wide',
         ...(tenantId ? { tenantId } : {}),
         processed: out.length,
+        taskFailures,
     });
 
     return { processed: out.length, policies: out };

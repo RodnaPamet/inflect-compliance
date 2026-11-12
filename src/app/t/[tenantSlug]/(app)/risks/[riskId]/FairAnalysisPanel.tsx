@@ -150,11 +150,19 @@ export function FairAnalysisPanel({
     riskId,
     initial,
     category = null,
+    onSaved,
 }: {
     riskId: string;
     initial: FairInitial;
     /** RQ2-7 — drives the per-category calibration prior hints. */
     category?: string | null;
+    /**
+     * Called after a successful save so the parent re-reads the risk (#5224).
+     * The panel re-seeds from `initial` when it mounts again; without this a
+     * tab switch re-seeded from the pre-save values, and a second save wrote
+     * those back over the analysis just saved.
+     */
+    onSaved?: () => void | Promise<unknown>;
 }) {
     const t = useTranslations('risks');
     const apiUrl = useTenantApiUrl();
@@ -226,6 +234,7 @@ export function FairAnalysisPanel({
             });
             if (res.ok) {
                 setMsg(t('fair.saved'));
+                await onSaved?.();
             } else {
                 // Say why (#4692): the server's reason, else the panel's sentence.
                 const err = await res.json().catch(() => ({}));
@@ -238,7 +247,7 @@ export function FairAnalysisPanel({
         } finally {
             setSaving(false);
         }
-    }, [apiUrl, riskId, triples, conf, secondary, t]);
+    }, [apiUrl, riskId, triples, conf, secondary, t, onSaved]);
 
     // RQ2-7 → RQ3-2 — warn-only range checks + category anchors.
     const warnings = useMemo(() => validateFairTriples(triples), [triples]);

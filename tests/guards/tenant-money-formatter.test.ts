@@ -43,7 +43,7 @@ const SCAN_DIRS = ['src/app/t', 'src/app/org'];
  */
 const ALLOWED: Record<string, string> = {
     'src/components/risks/RiskMatrixCell.tsx':
-        'presentational primitive — takes the formatter via props from its matrix parent',
+        'presentational primitive — takes the tenant formatter via the `formatMoney` prop its matrix parent passes (#5281); the import is only the fallback for a preview with no ALE overlay',
     'src/components/ui/charts/loss-exceedance-curve.tsx':
         'chart primitive — axis tick formatter supplied by the calling page',
     'src/components/ui/charts/ale-histogram.tsx':

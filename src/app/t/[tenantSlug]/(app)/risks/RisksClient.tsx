@@ -1444,6 +1444,7 @@ function RisksPageInner({
                     </div>
                 ) : view === 'heatmap' ? (
                     <RiskMatrix
+                        formatMoney={money}
                         config={matrixConfig}
                         cells={matrixCells}
                         movements={matrixMovements}

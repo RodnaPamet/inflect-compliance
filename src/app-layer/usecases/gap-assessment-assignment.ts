@@ -158,17 +158,25 @@ export async function dispatchAssignments(
                     },
                 });
                 tasksCreated += 1;
-                await db.notification.create({
-                    data: {
-                        tenantId: ctx.tenantId,
-                        userId: assigneeUserId,
-                        type: 'GENERAL',
-                        title: 'NIS2 gap assessment assigned',
-                        message: `You have ${questionCount(questionIds.length)} to answer in the NIS2 gap assessment, for ${respondentLabel(role)}.`,
-                        linkUrl: tenantPageLink(tenantSlug, `/audits/nis2-gap/respond/${assignment.id}`),
-                        dedupeKey: `NIS2_GAP_ASSIGNMENT:${assignment.id}:${assigneeUserId}`,
-                    },
-                }).catch(() => { /* dedupe/notification failure must not fail dispatch */ });
+                // ON CONFLICT DO NOTHING (#5257). A re-dispatch back to an
+                // earlier assignee meets the dedupe key from the first
+                // dispatch; a caught unique violation here aborted this
+                // interactive transaction, so the next statement failed and
+                // every assignment in the dispatch rolled back.
+                await db.notification.createMany({
+                    data: [
+                        {
+                            tenantId: ctx.tenantId,
+                            userId: assigneeUserId,
+                            type: 'GENERAL',
+                            title: 'NIS2 gap assessment assigned',
+                            message: `You have ${questionCount(questionIds.length)} to answer in the NIS2 gap assessment, for ${respondentLabel(role)}.`,
+                            linkUrl: tenantPageLink(tenantSlug, `/audits/nis2-gap/respond/${assignment.id}`),
+                            dedupeKey: `NIS2_GAP_ASSIGNMENT:${assignment.id}:${assigneeUserId}`,
+                        },
+                    ],
+                    skipDuplicates: true,
+                });
             }
         }
 

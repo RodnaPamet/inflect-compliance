@@ -133,6 +133,11 @@ export interface RiskMovement {
 export interface RiskMatrixProps {
     /** Effective config for this tenant. */
     config: RiskMatrixConfigShape;
+    /**
+     * Formats ALE amounts in the tenant's currency (#5281). Pass
+     * `useMoneyFormatter()`; the cells otherwise print the '€' default.
+     */
+    formatMoney?: (v: number) => string;
     /** Sparse list of cells with risks. Cells absent from the list render as empty (count=0). */
     cells: ReadonlyArray<RiskMatrixDataCell>;
     /**
@@ -188,6 +193,7 @@ export function RiskMatrix({
     showHeader = true,
     title: titleProp,
     onCellClick,
+    formatMoney,
     selectedKey = null,
     storageKey,
     className = '',
@@ -496,6 +502,7 @@ export function RiskMatrix({
                                                     : undefined
                                             }
                                             aleOverlay={aleOverlayActive}
+                                            formatMoney={formatMoney}
                                             totalAle={cell.totalAle}
                                             collisionRatio={cell.collisionRatio}
                                             aleShare={
