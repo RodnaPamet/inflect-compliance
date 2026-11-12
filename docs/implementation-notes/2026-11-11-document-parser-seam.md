@@ -54,6 +54,15 @@ document that looks complete.
   That is an open question for the operator when the container lands. The
   alternative is a separate operator-host rule for in-deployment services,
   which needs a security review and was not invented here.
+- **A host that does not resolve is an outage, not an egress refusal.**
+  `assertPublicAddress` used to throw a plain `SsrfBlockedError` for a failed
+  lookup, so a stopped container (NXDOMAIN on the Compose network) or a
+  resolver hiccup (EAI_AGAIN) read as `EGRESS_REFUSED` and never fell back. It
+  now throws `SsrfUnresolvableHostError`, a subclass, so every other caller's
+  `instanceof SsrfBlockedError` still refuses it, and this client maps it to
+  `UNREACHABLE` before the parent class. The tests for it run through the real
+  `safeFetch` with the resolver scripted, because a `fetchImpl` seam sits
+  above the DNS step and cannot see it.
 - **Only an outage falls back.** `TIMEOUT`, `UNREACHABLE` and
   `UPSTREAM_UNAVAILABLE` fall back with a WARN and a `fallbackFrom` label, so
   Phase 2 can record that the index came from the stub. A partial parse, a

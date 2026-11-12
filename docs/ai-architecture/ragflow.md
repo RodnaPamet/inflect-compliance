@@ -169,7 +169,8 @@ runs on the VM, reachable only from `worker`.
       conversion is `PARTIAL_PARSE`, never a smaller complete-looking document.
       An outage (`TIMEOUT`, `UNREACHABLE`, `UPSTREAM_UNAVAILABLE`) falls back to
       the stub with a WARN and a `fallbackFrom` label; every other refusal,
-      `EGRESS_REFUSED` included, stands.
+      `EGRESS_REFUSED` included, stands. A host that does not resolve is
+      `UNREACHABLE`, not `EGRESS_REFUSED`: nothing was refused.
 - [ ] 1.3 Compose service for the backend, digest-pinned, worker-network only,
       no published ports; secrets in `.env.prod`. Held by the capacity rule
       (no new container before the capacity budget's C1). Note for it:

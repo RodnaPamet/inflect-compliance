@@ -270,6 +270,20 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // restriction that makes the Jev host a code constant. Jev itself is NOT here:
     // TYPESAFE_API_KEY names a real sub-processor and is covered by the
     // docs/sub-processors.md row that Step 6a added.
+    // ragflow.md Phase 1 (D-L4-4) — the Docling-class parsing service. The
+    // owner's decision is that it is a service WE run inside the deployment,
+    // and Phase 1.3 lands it as a worker-network container. Phase 1.5 adds the
+    // inventory row then, describing the shipped deployment rather than a plan.
+    DOC_PARSER_BASE_URL:
+        'base URL of the Docling-class parsing-only service the OPERATOR runs ' +
+        'inside the deployment (D-L4-4): stateless, keeps nothing, deployment ' +
+        'config never reachable from a tenant setting. Pointing it at a host ' +
+        'OUTSIDE the deployment makes that host a sub-processor (G2) — an ' +
+        'inventory entry and a register change, not an allowlist one.',
+    DOC_PARSER_API_KEY:
+        'credential for that same operator-run parsing service (sent as ' +
+        'X-Api-Key); names no service of its own and is sent only to ' +
+        'DOC_PARSER_BASE_URL.',
     LAYA_BASE_URL: "base URL of a Laya System One server WE operate (open weights, Apache-2.0); no data leaves our infrastructure, so not a sub-processor — deployment config, unreachable from any tenant setting",
     LAYA_API_KEY: 'optional bearer for our own Laya server; most deployments sit behind a network boundary instead — our infrastructure, not a third party, so not a sub-processor',
 };

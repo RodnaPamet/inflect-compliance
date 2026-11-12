@@ -104,6 +104,24 @@ export class SsrfBlockedError extends Error {
     }
 }
 
+/**
+ * The host did not resolve, so no address was checked and none was refused.
+ *
+ * A subclass, so every existing `instanceof SsrfBlockedError` still refuses
+ * it: nothing was sent, and a caller that does not care why keeps refusing.
+ * A caller that DOES care — a client of an operator-run service, where a
+ * stopped container is an NXDOMAIN on the Compose network and a resolver
+ * hiccup is EAI_AGAIN — can tell "the service is not there right now" apart
+ * from "the configured destination is forbidden", which is a configuration
+ * fault and must not be treated as an outage.
+ */
+export class SsrfUnresolvableHostError extends SsrfBlockedError {
+    constructor(readonly host: string) {
+        super(`cannot resolve ${host}`);
+        this.name = 'SsrfUnresolvableHostError';
+    }
+}
+
 export interface PublicAddressResult {
     url: URL;
     host: string;
@@ -129,10 +147,10 @@ export async function assertPublicAddress(rawUrl: string): Promise<PublicAddress
     try {
         addresses = await dnsPromises.lookup(host, { all: true });
     } catch {
-        throw new SsrfBlockedError(`cannot resolve ${host}`);
+        throw new SsrfUnresolvableHostError(host);
     }
     if (addresses.length === 0) {
-        throw new SsrfBlockedError(`no addresses for ${host}`);
+        throw new SsrfUnresolvableHostError(host);
     }
     for (const a of addresses) {
         // Still EVERY address, and still at use time. The allowlist widens

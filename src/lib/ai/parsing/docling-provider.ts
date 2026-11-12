@@ -41,6 +41,7 @@ import { z } from 'zod';
 import {
     RedirectNotAllowedError,
     SsrfBlockedError,
+    SsrfUnresolvableHostError,
 } from '@/app-layer/automation/webhook-safety';
 import {
     WireCapExceededError,
@@ -238,6 +239,11 @@ function reasonForWireError(e: unknown): ParseRefusalReason {
     if (e instanceof WireSchemeRefusedError) return 'EGRESS_REFUSED';
     if (e instanceof WireEgressError) {
         const cause = e.cause;
+        // A name that does not resolve is the service not being there — a
+        // stopped container is NXDOMAIN on the Compose network, a resolver
+        // hiccup is EAI_AGAIN — so it is an outage, not a refused address.
+        // Checked BEFORE its parent class, which it is a subclass of.
+        if (cause instanceof SsrfUnresolvableHostError) return 'UNREACHABLE';
         if (cause instanceof SsrfBlockedError || cause instanceof RedirectNotAllowedError) {
             return 'EGRESS_REFUSED';
         }

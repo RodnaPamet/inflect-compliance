@@ -102,11 +102,15 @@ export type ParseRefusalReason =
     | 'AUTH_FAILED'
     /** Another 4xx: the backend refused this request. */
     | 'UPSTREAM_REFUSED'
-    /** `safeFetch` refused the configured URL (scheme, address, redirect). A configuration fault. */
+    /**
+     * `safeFetch` refused the configured URL (scheme, an address it resolved
+     * to, redirect). A configuration fault. A name that does not resolve at
+     * all is NOT this: nothing was refused, so it is `UNREACHABLE`.
+     */
     | 'EGRESS_REFUSED'
     /** 5xx or 429: the backend is up but cannot serve. */
     | 'UPSTREAM_UNAVAILABLE'
-    /** The socket failed: nothing answered at the configured address. */
+    /** The socket failed, or the host did not resolve (NXDOMAIN, EAI_AGAIN): nothing answered. */
     | 'UNREACHABLE'
     /** The deadline passed before the answer was read in full. */
     | 'TIMEOUT';

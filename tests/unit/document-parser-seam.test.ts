@@ -6,6 +6,7 @@
  * socket — scheme decision, deadline, the byte cap that aborts — is the
  * production path.
  */
+import { promises as dnsPromises } from 'node:dns';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -327,6 +328,45 @@ describe('egress is the one wire: https only, deadline-bounded, faults named', (
             throw new TypeError('fetch failed');
         });
         expect(await parser.parse(PDF)).toMatchObject({ ok: false, reason: 'UNREACHABLE' });
+    });
+
+});
+
+/*
+ * These run through the REAL `safeFetch` (no `fetchImpl`), so the DNS step
+ * the address guard takes is the production one; only the resolver answer is
+ * scripted. A test seam above the socket cannot see this path at all.
+ */
+describe('a name that does not resolve is an outage; a forbidden address is not', () => {
+    const MD = { bytes: enc('# T\n\nbody'), mime: 'text/markdown' };
+    let lookup: jest.SpyInstance;
+    afterEach(() => lookup.mockRestore());
+
+    it.each([
+        ['NXDOMAIN (a stopped Compose service)', Object.assign(new Error('getaddrinfo ENOTFOUND docling'), { code: 'ENOTFOUND' })],
+        ['EAI_AGAIN (a resolver hiccup)', Object.assign(new Error('getaddrinfo EAI_AGAIN docling'), { code: 'EAI_AGAIN' })],
+    ])('%s is UNREACHABLE, so a text upload falls back to the stub', async (_label, err) => {
+        lookup = jest.spyOn(dnsPromises, 'lookup').mockRejectedValue(err);
+        const parser = createDoclingParser({ baseUrl: BASE });
+        expect(await parser.parse(PDF)).toEqual({ ok: false, backend: 'docling', reason: 'UNREACHABLE' });
+        expect(lookup).toHaveBeenCalled();
+        const r = await parseWithFallback(createDoclingParser({ baseUrl: BASE }), createStubParser(), MD);
+        expect(r).toMatchObject({ ok: true, fallbackFrom: { backend: 'docling', reason: 'UNREACHABLE' } });
+        expect(okDoc(r).backend).toBe('stub');
+    });
+
+    it('an empty answer from the resolver is UNREACHABLE too', async () => {
+        lookup = jest.spyOn(dnsPromises, 'lookup').mockResolvedValue([] as never);
+        expect(await createDoclingParser({ baseUrl: BASE }).parse(PDF)).toMatchObject({ reason: 'UNREACHABLE' });
+    });
+
+    it('a name resolving to a private address is EGRESS_REFUSED and does not fall back', async () => {
+        lookup = jest.spyOn(dnsPromises, 'lookup').mockResolvedValue([{ address: '10.0.0.5', family: 4 }] as never);
+        expect(await createDoclingParser({ baseUrl: BASE }).parse(PDF)).toEqual({
+            ok: false,
+            backend: 'docling',
+            reason: 'EGRESS_REFUSED',
+        });
     });
 });
 
