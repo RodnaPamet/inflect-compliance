@@ -154,7 +154,12 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // position before `ghcr-publish.yml:build-push` ('ga' < 'gh'), +5/-0.
         // Both 2026-11-11 entries merged together: the digest is over the file
         // holding both, computed with the guard's own keyOrder.
-        keyOrderSha: '7a842d1ceab698cccf23657f85aaba67cd24d143ca1173c530d1e25cabbb5f60',
+        // Updated 2026-11-12 for `vm-apply.yml:vm-apply`, the dispatch-only
+        // named changes to the production VM. Its key sorts between
+        // `scanner-vm` and `vm-capacity`, so it is a mid-file insert, +5/-0.
+        // Merged 2026-11-12: the digest is over the file holding the
+        // 2026-11-11 entries and `vm-apply.yml:vm-apply` together.
+        keyOrderSha: '7305be5b379e60d79c21d937a39d785b9c6884629172eeb906aa878e23707555',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

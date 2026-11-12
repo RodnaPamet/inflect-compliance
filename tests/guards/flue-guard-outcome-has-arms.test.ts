@@ -137,8 +137,9 @@ describe('the two verdicts settle differently, because they mean different thing
     it('it is not `failRun`, and says why in its own message', () => {
         // The distinction `haltRunAtCap` already draws: `failRun` says a step
         // went wrong. Nothing went wrong here.
-        expect(guardSettle).toContain('flue_run_guard_blocked:');
-        expect(guardSettle).toContain('flue_run_guard_flagged:');
+        // The engine's name heads it (#5372); the two codes are the arms'.
+        expect(guardSettle).toContain('_run_guard_blocked:');
+        expect(guardSettle).toContain('_run_guard_flagged:');
         expect(guardSettle).not.toContain("status: 'FAILED'");
     });
 
