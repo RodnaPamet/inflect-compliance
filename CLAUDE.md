@@ -1027,6 +1027,15 @@ sent to the primary's own challenge page. Sign-in used to ask only the primary, 
 workspace that required MFA but was joined later let its members in on a password alone.
 Do not narrow it back to the primary.
 
+**A challenge pass belongs to the session that answered it** (`verifyMfaChallenge`). The pass
+is recorded on that session's own `UserSession.mfaPassedTenantIds`, and the jwt callback clears
+`mfaPending` or a pending workspace only when the token's `userSessionId` row lists it
+(`workspacesPassedBySession`). It used to compare `UserMfaEnrollment.lastChallengeAt` with the
+token's `iat`, so the real person passing the challenge also cleared an older password-only
+session. A code is accepted once: `lastAcceptedTotpStep` records the step of the last accepted
+code (enrolment included), and the claim is a conditional `updateMany` on a LATER step. Do not go
+back to a time comparison, and do not accept a pass for a request that names no live session.
+
 **An OAuth email counts only when its provider vouches for it** (`src/lib/auth/oauth-email-trust.ts`,
 owner decisions 2026-11-12). The `signIn` callback links a Google or Microsoft sign-in to an
 existing account, and redeems pending invites by address, only on Google's `email_verified ===
