@@ -65,7 +65,12 @@ import {
     lowerRole,
 } from '@/lib/agentic/agent-authority';
 import { enqueue } from '@/app-layer/jobs/queue';
-import { failRun } from '@/lib/agentic/drivers/run-settlement';
+import {
+    failRun,
+    OPERATOR_ABORT_MESSAGE,
+    readRunSettlementState,
+} from '@/lib/agentic/drivers/run-settlement';
+import { isLiveRunStatus, LIVE_RUN_STATUSES } from '@/lib/agentic/run-concurrency';
 import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, notFound, forbidden } from '@/lib/errors/types';
@@ -988,31 +993,51 @@ export async function resumeWorkflowRun(
 export async function abortWorkflowRun(ctx: RequestContext, runId: string): Promise<void> {
     assertCanWrite(ctx);
     const run = await getRunRow(ctx, runId);
-    if (['COMPLETED', 'ABORTED', 'FAILED'].includes(run.status)) {
+    // ONLY A RUN THAT CAN STILL PRODUCE STEPS IS ABORTABLE, by the shared
+    // allowlist of live statuses. The list this replaced named three terminal
+    // statuses and missed EMPTY_CATALOGUE (#5366), so a settled run could be
+    // re-stamped ABORTED and its decision rows REJECTED after the fact.
+    if (!isLiveRunStatus(run.status)) {
         throw badRequest(`Run is already ${run.status}`);
     }
-    await runInTenantContext(ctx, async (db) => {
-        await db.workflowRun.update({
-            where: { id: runId },
-            data: { status: 'ABORTED', completedAt: new Date() },
-            // The operator's stop has to work on a run this build cannot name
-            // the engine of (#4241) — that is when it is most likely needed.
-            omit: { driver: true },
+    try {
+        await runInTenantContext(ctx, async (db) => {
+            // CONDITIONAL on the run still being live, so an engine that
+            // settled between the read above and this write keeps its
+            // settlement rather than the abort overwriting a finished run.
+            await db.workflowRun.update({
+                where: { id: runId, status: { in: [...LIVE_RUN_STATUSES] } },
+                // The reason names the operator (#5366). It is what the
+                // engines' settlement seam reads to tell this stop from an
+                // engine's own ABORTED, and no engine writes over it:
+                // `updateRun` lands no settlement on an ABORTED row.
+                data: { status: 'ABORTED', completedAt: new Date(), errorMessage: OPERATOR_ABORT_MESSAGE },
+                // The operator's stop has to work on a run this build cannot
+                // name the engine of (#4241) — that is when it is most likely
+                // needed.
+                omit: { driver: true },
+            });
+            // ═══ ART 14: AN ABORT IS A REJECTION ═══
+            //
+            // The other half of the resume above, and the same key. A human
+            // stopping a run refuses what it decided, so its model-call decision
+            // rows move PENDING → REJECTED rather than sitting at "awaiting review"
+            // for ever after the review that killed the run.
+            //
+            // One-way, so a run aborted after a resume keeps the ACCEPTED the
+            // resume wrote: `recordDecisionOutcome` filters `humanOutcome:
+            // 'PENDING'` and the DB trigger enforces the same. That is the right
+            // reading — the human accepted what the run had done at the checkpoint,
+            // and then refused what it did next.
+            await recordDecisionOutcome(db, ctx, runId, 'REJECTED');
         });
-        // ═══ ART 14: AN ABORT IS A REJECTION ═══
-        //
-        // The other half of the resume above, and the same key. A human
-        // stopping a run refuses what it decided, so its model-call decision
-        // rows move PENDING → REJECTED rather than sitting at "awaiting review"
-        // for ever after the review that killed the run.
-        //
-        // One-way, so a run aborted after a resume keeps the ACCEPTED the
-        // resume wrote: `recordDecisionOutcome` filters `humanOutcome:
-        // 'PENDING'` and the DB trigger enforces the same. That is the right
-        // reading — the human accepted what the run had done at the checkpoint,
-        // and then refused what it did next.
-        await recordDecisionOutcome(db, ctx, runId, 'REJECTED');
-    });
+    } catch (err) {
+        // No row matched: the run settled after the read above. Say which way,
+        // as the refusal above does; anything else is not ours to explain.
+        const now = await readRunSettlementState(ctx, runId).catch(() => null);
+        if (now && !isLiveRunStatus(now.status)) throw badRequest(`Run is already ${now.status}`);
+        throw err;
+    }
     await appendAuditEntry({
         tenantId: ctx.tenantId, userId: ctx.userId, actorType: 'USER',
         entity: 'WorkflowRun', entityId: runId, action: 'WORKFLOW_RUN_ABORTED',
@@ -1252,7 +1277,10 @@ async function executeFrom(
 
     trackInFlightRun(runId);
     try {
-        const outcome = await run(runCtx, runId, def, fromSeq, runStartMs);
+        // THE OPERATOR'S ABORT IS THE SETTLEMENT (#5366), whatever the engine
+        // reports: it may have finished its last call before it next read the
+        // row, and its own write did not land on the ABORTED.
+        const outcome = await yieldToOperatorAbort(runCtx, runId, await run(runCtx, runId, def, fromSeq, runStartMs));
         await recordRunSettlementMetrics(runCtx, runId, driverLabel, outcome.status);
         // A FINISHED run's unreviewed model calls are stamped "no human
         // review" here (#4896), at the one seam that sees every settlement.
@@ -1273,12 +1301,59 @@ async function executeFrom(
         // function would otherwise count a start with no settlement — and a
         // started-minus-settled gap is the first thing an operator reads as a
         // leak.
-        recordAgentRunSettled({ driver: driverLabel, outcome: 'failed' });
+        // An operator's Abort stands over a throw too: the caller's `failRun`
+        // does not land on it, and what the run did after the abort is refused
+        // rather than stamped unreviewed (#5366).
+        const settled = await yieldToOperatorAbort(runCtx, runId, { status: 'FAILED', stepFailures: 0 });
+        recordAgentRunSettled({ driver: driverLabel, outcome: settled.status === 'ABORTED' ? 'aborted' : 'failed' });
         // The caller fails the run; nobody reviews what it did before the throw.
         await settleRunDecisionLog(runCtx, runId, 'FAILED');
         throw err;
     } finally {
         untrackInFlightRun(runId);
+    }
+}
+
+/**
+ * Report an operator's Abort as the run's settlement, and REJECT what the run
+ * decided after it (#5366).
+ *
+ * `abortWorkflowRun` writes ABORTED and moves the run's PENDING decision rows
+ * to REJECTED while the engine may still be running. An engine reads the row
+ * only at its checks, so it can finish a call, or a whole segment, after the
+ * abort; `updateRun` keeps its settlement off the ABORTED row, and this keeps
+ * its REPORT from contradicting the row. Decision rows written after the abort
+ * are still PENDING, and would otherwise be stamped "no human review" by
+ * `settleRunDecisionLog` below: a person did review the run, and refused it,
+ * so they are REJECTED as the abort's own rows were.
+ *
+ * An operator's abort is told from an engine's own ABORTED (a kill, a guard
+ * block — whose rows nobody reviewed) by the reason the abort writes, which no
+ * engine writes over. A row that is ABORTED while the engine reported anything
+ * else was aborted by somebody else, which is the operator, so a run aborted
+ * by a build that wrote no reason is caught too.
+ */
+async function yieldToOperatorAbort(
+    ctx: RequestContext,
+    runId: string,
+    outcome: RunDriverOutcome,
+): Promise<RunDriverOutcome> {
+    try {
+        const row = await readRunSettlementState(ctx, runId);
+        if (row?.status !== 'ABORTED') return outcome;
+        const byOperator = row.errorMessage === OPERATOR_ABORT_MESSAGE || outcome.status !== 'ABORTED';
+        if (!byOperator) return outcome;
+        await runInTenantContext(ctx, (db) => recordDecisionOutcome(db, ctx, runId, 'REJECTED'));
+        return { ...outcome, status: 'ABORTED' };
+    } catch {
+        // NEVER THROWS, as the settlement steps below do not: the row is
+        // already protected by `updateRun`, and a failed read must not turn a
+        // settled run into a thrown one.
+        logger.warn('workflow run: operator abort not reconciled', {
+            component: 'workflow-runs',
+            tenantId: ctx.tenantId,
+        });
+        return outcome;
     }
 }
 
@@ -1295,7 +1370,10 @@ async function executeFrom(
  * they were in before this existed.
  */
 export async function settleRunDecisionLog(ctx: RequestContext, runId: string, status: string): Promise<void> {
-    if (status !== 'COMPLETED' && status !== 'FAILED' && status !== 'ABORTED') return;
+    // EMPTY_CATALOGUE is a settlement too (#5366): a Flue run offered no tools
+    // makes its one model call and finishes, and its row stayed PENDING for
+    // ever. Stamped as a FAILED run's are.
+    if (status !== 'COMPLETED' && status !== 'FAILED' && status !== 'ABORTED' && status !== 'EMPTY_CATALOGUE') return;
     try {
         await runInTenantContext(ctx, async (db) => {
             const awaitingPerson = await db.agentProposal.findFirst({
@@ -1337,6 +1415,10 @@ async function recordRunSettlementMetrics(
         status === 'COMPLETED' ? 'completed'
         : status === 'FAILED' ? 'failed'
         : status === 'ABORTED' ? 'aborted'
+        // A run that could reach nothing settled without doing its work
+        // (#5366): counted with the failures, as its `stepFailures` already
+        // says, so it is not left a start with no settlement.
+        : status === 'EMPTY_CATALOGUE' ? 'failed'
         : null;
     // AWAITING_APPROVAL and PAUSED are not settlements. Counting them would
     // make "settled" mean "stopped for now", and the started-minus-settled gap
