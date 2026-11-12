@@ -41,6 +41,8 @@
  *     `tests/guards/flue-provider-is-never-set-per-run.test.ts` fails any call
  *     to that setter anywhere under `src/`.
  */
+import type { AssistantHistoryTurn } from './limits';
+
 /**
  * How a turn ended.
  *
@@ -134,6 +136,16 @@ export interface ProviderRequest {
     readonly specifier: string;
     readonly system: string;
     readonly question: string;
+    /**
+     * Earlier exchanges in this CONVERSATION, oldest first (#5054). Sent before
+     * the question as plain user and assistant messages.
+     *
+     * Not to be confused with {@link ProviderRequest.history}, which is the
+     * round trips WITHIN this turn. These came from the browser and have
+     * passed the input guard; they carry no tool results and no ids. Optional
+     * so a request built by hand without them is the request it always was.
+     */
+    readonly priorTurns?: readonly AssistantHistoryTurn[];
     readonly history: ReadonlyArray<
         | {
               readonly role: 'assistant';
@@ -193,7 +205,11 @@ export function haltNotice(outcome: LoopOutcome, bounds: LoopBounds): string | n
         case 'halted-iterations':
             return `I stopped after ${bounds.iterations} reasoning steps, so this answer may be incomplete. Ask a narrower question to get a full one.`;
         case 'halted-tool-calls':
-            return `I stopped after ${bounds.toolCalls} data lookups in this conversation, so this answer may be incomplete. Start a new conversation to reset that budget.`;
+            // PER QUESTION, and said so (#5054). The count lives in one
+            // `runAssistantLoop` call, so the next question in the SAME
+            // conversation has a fresh budget; telling the person to start a
+            // new conversation would have them discard its history for nothing.
+            return `I stopped after ${bounds.toolCalls} data lookups for this question, so this answer may be incomplete. The limit applies to each question: ask a narrower follow-up to continue.`;
         case 'halted-wall-clock':
             return `I stopped after ${Math.round(bounds.wallClockMs / 1000)} seconds, so this answer may be incomplete.`;
         case 'halted-provider-unavailable':
@@ -251,6 +267,8 @@ export interface RunLoopOptions {
     readonly specifier: string;
     readonly system: string;
     readonly question: string;
+    /** Earlier exchanges, already guarded. Sent unchanged on EVERY round trip. See {@link ProviderRequest.priorTurns}. */
+    readonly priorTurns?: readonly AssistantHistoryTurn[];
     readonly tools: readonly LoopTool[];
     readonly bounds?: LoopBounds;
     readonly signal?: AbortSignal;
@@ -335,6 +353,7 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
     const byName = new Map(opts.tools.map((t) => [t.name, t]));
     const specs = opts.tools.map((t) => ({ name: t.name, description: t.description, jsonSchema: t.jsonSchema }));
 
+    const priorTurns = opts.priorTurns ?? [];
     const history: Array<ProviderRequest['history'][number]> = [];
     const calls: LoopToolCall[] = [];
     let tokensIn: number | null = null;
@@ -372,6 +391,9 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
                 specifier: opts.specifier,
                 system: opts.system,
                 question: opts.question,
+                // The same array every round trip: the prefix a replayed
+                // thinking block depends on must not move (#4153).
+                priorTurns,
                 history,
                 tools: specs,
                 signal: opts.signal,

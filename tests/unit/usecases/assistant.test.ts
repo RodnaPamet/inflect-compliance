@@ -178,6 +178,43 @@ describe('askAssistant — guard enforcement', () => {
     });
 });
 
+describe('askAssistant — earlier turns are guarded like the question (#5054)', () => {
+    const history = [{ question: 'how many controls?', answer: 'Forty.' }];
+
+    it('guards the history AFTER the question and BEFORE any answer', async () => {
+        await askAssistant(ctx, { question: 'and how many risks?', history });
+
+        const calls = (guardUntrustedInput as jest.Mock).mock.calls;
+        const sources = calls.map((c) => (c[2] as { source: string }).source);
+        expect(sources[0]).toBe('assistant');
+        expect(sources).toContain('assistant:history');
+        const order = (guardUntrustedInput as jest.Mock).mock.invocationCallOrder;
+        const historyAt = order[sources.indexOf('assistant:history')];
+        expect(order[0]).toBeLessThan(historyAt);
+        expect(historyAt).toBeLessThan((getDashboardData as jest.Mock).mock.invocationCallOrder[0]);
+        // The text scanned is the turns themselves, not a label for them.
+        expect(calls[sources.indexOf('assistant:history')][1]).toBe('how many controls?\n\nForty.');
+    });
+
+    it('a review-required history verdict refuses the whole request, before any answer', async () => {
+        (guardUntrustedInput as jest.Mock).mockImplementation(async (_c, _t, o: { source: string }) =>
+            o.source === 'assistant:history' ? { blocked: false, reviewRequired: true } : { blocked: false },
+        );
+        await expect(askAssistant(ctx, { question: 'and how many risks?', history })).rejects.toThrow(
+            'ai_guard_review_required',
+        );
+        expect(getDashboardData).not.toHaveBeenCalled();
+        expect(recordGeneration).not.toHaveBeenCalled();
+    });
+
+    it('does not run when there is no history', async () => {
+        await askAssistant(ctx, { question: 'how many risks?' });
+        await askAssistant(ctx, { question: 'how many risks?', history: [] });
+        const sources = (guardUntrustedInput as jest.Mock).mock.calls.map((c) => (c[2] as { source: string }).source);
+        expect(sources).not.toContain('assistant:history');
+    });
+});
+
 describe('askAssistant — the Art 12 decision row (#3828)', () => {
     beforeEach(() => {
         logAiDecisionMock.mockClear();

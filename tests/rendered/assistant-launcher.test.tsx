@@ -9,6 +9,14 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 
+// The sheet is replaced by a marker: this suite is about WHEN the launcher
+// mounts it (#5054), and the sheet's own behaviour has its own suite.
+jest.mock('@/components/assistant/AssistantSheet', () => ({
+    AssistantSheet: ({ open }: { open: boolean }) => (
+        <div data-testid="assistant-sheet-stub" data-open={String(open)} />
+    ),
+}));
+
 // A FULL-ish surface, not the two hooks this file happens to read. Mounting
 // the real shell pulls in the nav, the breadcrumbs and the palette, each of
 // which reaches for a different one of these -- and a missing export here
@@ -265,5 +273,23 @@ describe('the role gate — a reader is not shown a button that refuses them', (
         // the assertion above.
         const { container } = mountAs(true);
         expect(container.querySelector('[data-testid="assistant-launcher"]')).not.toBeNull();
+    });
+});
+
+describe('the sheet is loaded on first use, not with the page (#5054)', () => {
+    it('is not mounted before the assistant is first opened', () => {
+        mount(<AssistantLauncher />);
+        expect(screen.queryByTestId('assistant-sheet-stub')).toBeNull();
+    });
+
+    it('mounts on the first open and stays mounted after closing, so the conversation survives', async () => {
+        mount(<AssistantLauncher />);
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        const sheet = await screen.findByTestId('assistant-sheet-stub');
+        expect(sheet).toHaveAttribute('data-open', 'true');
+
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        const after = await screen.findByTestId('assistant-sheet-stub');
+        expect(after).toHaveAttribute('data-open', 'false');
     });
 });

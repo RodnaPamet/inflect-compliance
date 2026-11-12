@@ -15,6 +15,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
+import type { AssistantHistoryTurn } from '@/app-layer/ai/assistant/limits';
 
 /** What the UI needs to render, accumulated from the event stream. */
 export interface AssistantTurnState {
@@ -25,6 +26,11 @@ export interface AssistantTurnState {
     /** Tools called this turn, in order, with how each ended. */
     calls: ReadonlyArray<{ name: string; ok: boolean; truncated: boolean }>;
     answer: string | null;
+    /**
+     * The server's seal on `answer` (#5054), kept so the answer can go back as
+     * history without being re-scanned as the person's own text. Never shown.
+     */
+    answerSeal: string | null;
     /** A refusal and its reason (#3849). Distinct from an error. */
     refusal: string | null;
     /** A bound was hit and the turn stopped early. */
@@ -38,6 +44,11 @@ export interface AssistantTurnState {
     /** A transport failure. NOT a refusal — the distinction is the point. */
     error: string | null;
     /**
+     * The stream ended before any event arrived (#5054). A flag rather than a
+     * sentence in `error`, so the sheet says it in the person's language.
+     */
+    connectionClosed: boolean;
+    /**
      * The proposal this turn queued or quarantined, when it did (#3847).
      *
      * `status` is kept verbatim from the server rather than reduced to a
@@ -46,6 +57,22 @@ export interface AssistantTurnState {
      * client is where that rule would get lost.
      */
     proposal: { id: string; kind: string; status: string } | null;
+    /**
+     * The person pressed Stop, or closed the sheet, before the turn finished.
+     *
+     * A turn of its own phase, `done`, so the input is usable again: before
+     * #5054 an abort left the phase where it was, and Stop kept showing over a
+     * disabled input with nothing left to stop.
+     */
+    stopped: boolean;
+}
+
+/** One question in the conversation, and what came back for it. */
+export interface AssistantTurn {
+    readonly id: number;
+    /** Exactly as sent. Rendered as React text, line breaks kept. */
+    readonly question: string;
+    readonly state: AssistantTurnState;
 }
 
 const IDLE: AssistantTurnState = {
@@ -53,12 +80,47 @@ const IDLE: AssistantTurnState = {
     callingTool: null,
     calls: [],
     answer: null,
+    answerSeal: null,
     refusal: null,
     halt: null,
     truncatedAny: false,
     error: null,
+    connectionClosed: false,
     proposal: null,
+    stopped: false,
 };
+
+/**
+ * May this turn go to the server as history (#5054)?
+ *
+ * Only a turn that finished with an answer the person saw. A refused, failed
+ * or stopped turn never does, so a guard refusal cannot carry over into later
+ * requests, and a turn the person abandoned is not presented to the model as
+ * something it said. A proposal turn qualifies, but only its sentence is ever
+ * sent: the proposal's id and status stay in the browser.
+ */
+export function isHistoryEligible(turn: AssistantTurn): boolean {
+    const s = turn.state;
+    return (
+        s.phase === 'done' &&
+        !s.stopped &&
+        s.refusal === null &&
+        s.error === null &&
+        !s.connectionClosed &&
+        s.answer !== null &&
+        /\S/.test(s.answer)
+    );
+}
+
+/** The question and answer of an eligible turn, the answer's seal when it has one, and nothing else. */
+export function historyTurnOf(turn: AssistantTurn): AssistantHistoryTurn {
+    const seal = turn.state.answerSeal;
+    return {
+        question: turn.question,
+        answer: turn.state.answer ?? '',
+        ...(seal === null ? {} : { answerSeal: seal }),
+    };
+}
 
 /**
  * Apply one event.
@@ -96,6 +158,7 @@ export function applyAssistantEvent(
                 ...state,
                 phase: 'answering',
                 answer: event.text,
+                answerSeal: typeof event.seal === 'string' ? event.seal : null,
                 callingTool: null,
                 proposal: event.proposal ?? null,
             };
@@ -143,27 +206,59 @@ export function parseSseData(block: string): AssistantStreamEvent | null {
 export interface AskOptions {
     question: string;
     pageContext?: Record<string, unknown>;
+    /** Earlier turns to send, already windowed. Omitted from the body when empty. */
+    history?: readonly AssistantHistoryTurn[];
 }
 
+/**
+ * The conversation, held in memory only (#5054).
+ *
+ * Never written to browser storage: that would leave tenant data at rest in
+ * the browser, and the server trusts none of it anyway. It survives closing
+ * and reopening the sheet, which stays mounted, and is gone on reload.
+ */
 export function useAssistantStream(streamUrl: string) {
-    const [state, setState] = useState<AssistantTurnState>(IDLE);
+    const [turns, setTurns] = useState<readonly AssistantTurn[]>([]);
     const abortRef = useRef<AbortController | null>(null);
+    const liveIdRef = useRef<number | null>(null);
+    const nextIdRef = useRef(1);
+
+    /** Apply `fn` to one turn's state. A stopped turn takes no more events. */
+    const update = useCallback(
+        (id: number, fn: (s: AssistantTurnState) => AssistantTurnState) => {
+            setTurns((ts) =>
+                ts.map((t) => (t.id === id && !t.state.stopped ? { ...t, state: fn(t.state) } : t)),
+            );
+        },
+        [],
+    );
 
     const cancel = useCallback(() => {
         abortRef.current?.abort();
         abortRef.current = null;
-    }, []);
+        const live = liveIdRef.current;
+        liveIdRef.current = null;
+        if (live === null) return;
+        // Settled HERE, not by the reader: an aborted fetch returns early and
+        // an aborted read is not an error, so nothing else would end the turn.
+        update(live, (s) =>
+            s.phase === 'done' ? s : { ...s, phase: 'done', callingTool: null, stopped: true },
+        );
+    }, [update]);
 
     const ask = useCallback(
-        async ({ question, pageContext }: AskOptions) => {
+        async ({ question, pageContext, history = [] }: AskOptions) => {
             // One turn at a time. Starting a second without cancelling the
-            // first would interleave two streams into one state and bill for
-            // both.
-            abortRef.current?.abort();
+            // first would interleave two streams and bill for both.
+            cancel();
             const abort = new AbortController();
             abortRef.current = abort;
+            const id = nextIdRef.current;
+            nextIdRef.current += 1;
+            liveIdRef.current = id;
+            const setState = (fn: (s: AssistantTurnState) => AssistantTurnState) => update(id, fn);
 
-            setState({ ...IDLE, phase: 'thinking' });
+            setTurns((ts) => [...ts, { id, question, state: { ...IDLE, phase: 'thinking' } }]);
 
             let res: Response;
             try {
@@ -173,6 +268,9 @@ export function useAssistantStream(streamUrl: string) {
                     body: JSON.stringify({
                         question,
                         ...(pageContext === undefined ? {} : { pageContext }),
+                        // Omitted when empty, like the page context's own
+                        // collections: an old server reads the body unchanged.
+                        ...(history.length === 0 ? {} : { history }),
                     }),
                     signal: abort.signal,
                 });
@@ -227,15 +325,34 @@ export function useAssistantStream(streamUrl: string) {
                 }
             } finally {
                 if (abortRef.current === abort) abortRef.current = null;
+                if (liveIdRef.current === id) liveIdRef.current = null;
+                // A stream that ended without `done` still ends the turn, so
+                // the input comes back. Said, when nothing at all arrived, so a
+                // dropped connection is not an empty answer; the sheet words it.
+                // A stopped turn is left alone (`update` skips it).
+                setState((s) =>
+                    s.phase === 'done'
+                        ? s
+                        : {
+                              ...s,
+                              phase: 'done',
+                              callingTool: null,
+                              connectionClosed: s.answer === null && s.refusal === null && s.error === null,
+                          },
+                );
             }
         },
-        [streamUrl],
+        [streamUrl, cancel, update],
     );
 
+    /** New conversation: stop anything live and forget every turn. */
     const reset = useCallback(() => {
         cancel();
-        setState(IDLE);
+        setTurns([]);
     }, [cancel]);
 
-    return { state, ask, cancel, reset };
+    const last = turns.length === 0 ? null : turns[turns.length - 1];
+    const busy = last !== null && last.state.phase !== 'idle' && last.state.phase !== 'done';
+
+    return { turns, busy, ask, cancel, reset };
 }
