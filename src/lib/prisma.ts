@@ -6,6 +6,7 @@ import { redactSensitiveFields, extractChangedFields } from './audit-redact';
 import { withSoftDeleteExtension } from './soft-delete';
 import { withPiiEncryptionExtension } from './security/pii-middleware';
 import { withEncryptionExtension } from './db/encryption-middleware';
+import { ENCRYPTED_FIELDS } from './security/encrypted-fields';
 import { withRlsTripwireExtension } from './db/rls-middleware';
 import { DB_POOL_MAX, DB_POOL_CONNECTION_TIMEOUT_MS } from './db/concurrency-limits';
 import { logger as auditMiddlewareLogger } from '@/lib/observability/logger';
@@ -100,17 +101,51 @@ export function buildDiffJson(
     data: Record<string, unknown> | null | undefined,
     result: unknown,
     priorState?: Record<string, unknown> | null,
+    model?: string,
 ): Record<string, unknown> | null {
     if (!DIFF_ACTIONS.has(action) || !data) return null;
+
+    // ═══ EPIC B FIELDS ARE NAMED, NEVER COMPARED, NEVER RECORDED (#5292) ═══
+    //
+    // This extension is the INNERMOST layer, so `data` and `result` reach it as
+    // CIPHERTEXT. `priorState` does not: `priorStateReaderFor(tx)` reads through
+    // the fully extended client and `findFirst` is on the encryption extension's
+    // decrypting list, so the prior row arrives DECRYPTED.
+    //
+    // Two consequences, both of which this removes:
+    //
+    //   - `before` recorded the old PLAINTEXT of `Risk.treatmentNotes`,
+    //     `TaskComment.body`, `PolicyVersion.contentText` and the rest of the 53
+    //     manifest models into `AuditLog.diffJson`, a column `encrypted-fields.ts`
+    //     deliberately leaves unencrypted. That defeats Epic B's at-rest contract
+    //     for every PRIOR value. `redactSensitiveFields` does not catch it — it
+    //     redacts by NAME, and `description`/`body`/`notes` are not secret-shaped.
+    //
+    //   - comparing plaintext against ciphertext NEVER matches, so every encrypted
+    //     field a payload named was reported as changed even when nothing changed.
+    //     That is #2881's "fires on everything" defect, reintroduced for this subset.
+    //
+    // The honest report is the one `changedFieldsAreDiffed` already draws, per
+    // field: this layer can see that the write NAMED these columns and cannot see
+    // whether their values moved. So they go in `undiffableFields`, never in
+    // `changedFields`, and their values go nowhere.
+    //
+    // `model` is optional so the 4-argument call shape keeps its exact behaviour.
+    const encrypted = new Set<string>(model ? ENCRYPTED_FIELDS[model] ?? [] : []);
 
     // `priorState === undefined` means no reader was available; `null` means
     // the reader ran and found no row. Only the first is a fallback — the
     // second is an upsert that inserted, where every payload key IS new.
     const diffed = priorState !== undefined && priorState !== null;
+    const named = extractChangedFields(data);
+    const undiffableFields = named.filter((f) => encrypted.has(f));
+    const comparable = named.filter((f) => !encrypted.has(f));
     const changedFields = diffed
-        ? extractChangedFields(data).filter((f) => !sameStoredValue(priorState[f], data[f]))
-        : extractChangedFields(data);
-    if (changedFields.length === 0) return null;
+        ? comparable.filter((f) => !sameStoredValue(priorState[f], data[f]))
+        : comparable;
+    // A write that named ONLY encrypted columns still happened, and a trail that
+    // says nothing about it is worse than one that says "these were written".
+    if (changedFields.length === 0 && undiffableFields.length === 0) return null;
 
     // Build redacted "after" snapshot from result, limited to changed fields
     const afterRaw: Record<string, unknown> = {};
@@ -124,6 +159,7 @@ export function buildDiffJson(
 
     return {
         changedFields,
+        ...(undiffableFields.length > 0 ? { undiffableFields } : {}),
         after,
         // ON THE ROW, not inferred by a reader. Whether these fields were
         // COMPARED or merely NAMED is the difference between evidence and a
@@ -296,7 +332,7 @@ function buildAuditExtension() {
                 metadataJson.filterKeys = Object.keys(argsWhere);
             }
 
-            const diffJson = buildDiffJson(operation, updateData, result, priorState);
+            const diffJson = buildDiffJson(operation, updateData, result, priorState, model);
 
             const detailsJson: Record<string, unknown> = {
                 category: 'entity_lifecycle',
