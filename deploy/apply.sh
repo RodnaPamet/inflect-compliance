@@ -76,6 +76,11 @@
 #   thing that was not true, and it outlived the state it described — which is
 #   the whole failure mode #3589 is about.
 #
+#   That measurement is of 2026-10-15. Since 2026-11-12 the repo copy no
+#   longer serves `hrm-mcp.…sslip.io` or `orangehrm-lab.…sslip.io`: the
+#   OrangeHRM lab was retired from this VM (capacity budget C1), so the next
+#   CADDY_ONLY push deliberately removes those two hostnames and no other.
+#
 # WHAT IT NEVER TOUCHES: /opt/inflect/.env and /opt/inflect/.env.prod. Those
 # are host-owned secret files. This script reads their KEY NAMES in preflight
 # and never their values, and never echoes either.
@@ -98,6 +103,13 @@
 #                                # this needs no service window either. Rolls
 #                                # the file back and reloads again if any
 #                                # hostname stops answering.
+#
+#   CADDY_RETIRE_HOSTS="a.example b.example" CADDY_ONLY=1 CONFIRM=1 deploy/apply.sh
+#                                # the same, when the repo copy deliberately
+#                                # stops serving hostnames the live copy serves.
+#                                # Without it such a push is refused; a lost
+#                                # hostname the list does not name is still
+#                                # refused with it.
 #
 # Applying recreates containers. Expect a short 502 window on `app` and a
 # Redis restart (AOF-persisted, so queued BullMQ jobs survive). Run it in a
@@ -343,14 +355,27 @@ caddy_preflight() {
     fi
     log "    hostnames served now : $(echo "$live_hosts" | tr '\n' ' ')"
     log "    hostnames after push : $(echo "$repo_hosts" | tr '\n' ' ')"
-    gone="$(comm -23 <(echo "$live_hosts") <(echo "$repo_hosts") || true)"
-    if [ -n "$gone" ]; then
-        err "pushing would STOP SERVING: $(echo "$gone" | tr '\n' ' ')"
+    gone="$(comm -23 <(echo "$live_hosts") <(echo "$repo_hosts") | sed '/^$/d' || true)"
+    # A hostname is retired on purpose only by NAMING it. CADDY_RETIRE_HOSTS is
+    # a space-separated list of the exact names the operator means to stop
+    # serving (first used 2026-11-12, retiring the OrangeHRM lab's two vhosts).
+    # Anything lost that it does not name is still refused, so the escape hatch
+    # cannot hide a hostname nobody meant to drop.
+    # shellcheck disable=SC2086  # word-splitting the list is the point
+    retire="$(printf '%s\n' ${CADDY_RETIRE_HOSTS:-} | sed '/^$/d' | sort -u)"
+    unexpected="$(comm -23 <(echo "$gone") <(echo "$retire") | sed '/^$/d' || true)"
+    if [ -n "$unexpected" ]; then
+        err "pushing would STOP SERVING: $(echo "$unexpected" | tr '\n' ' ')"
         err "  That is the thing #3589's exclusion reason existed to prevent, and it is"
-        err "  checked rather than assumed. Reconcile the repo copy first."
+        err "  checked rather than assumed. Reconcile the repo copy first — or, if"
+        err "  retiring a hostname is the point, name it in CADDY_RETIRE_HOSTS."
         return 1
     fi
-    log "    no hostname is lost"
+    if [ -n "$gone" ]; then
+        log "    retiring, as CADDY_RETIRE_HOSTS names: $(echo "$gone" | tr '\n' ' ')"
+    else
+        log "    no hostname is lost"
+    fi
 }
 
 # Push the Caddyfile and RELOAD, then prove every hostname still answers.

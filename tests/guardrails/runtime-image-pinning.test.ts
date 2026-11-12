@@ -73,7 +73,6 @@ const BASELINE: Readonly<Record<string, string>> = {
         'Docker Official Image, pinned to the 7 line. Same reasoning as postgres: a digest would '
         + 'freeze the security patches the alpine tag delivers.',
     caddy: 'Docker Official Image, pinned to the 2 line. Terminates TLS; no tenant data at rest.',
-    mariadb: 'Docker Official Image. The OrangeHRM LAB only — never production.',
     'node': 'Docker Official Image. Build and test stages only.',
     'clamav/clamav':
         'Cisco-maintained, the upstream for the scanner itself. Pinned to the 1.4 line.',
@@ -84,7 +83,6 @@ const BASELINE: Readonly<Record<string, string>> = {
     'containrrr/watchtower':
         'The deploy mechanism itself, on `:latest`. Pinning it would freeze the component '
         + 'that performs updates.',
-    'orangehrm/orangehrm': 'The vendor image for the HRIS LAB. Never production.',
     'grafana/grafana':
         'Observability stack, version-pinned. Reads metrics and traces; holds no tenant rows.',
     'grafana/tempo': 'Observability stack, version-pinned. Holds traces, never tenant rows.',
@@ -243,7 +241,7 @@ export function repositoryOf(ref: string): string {
  *
  * `CANONICAL_COMPOSE="docker-compose.prod.yml"` there, sent from `deploy/`. An
  * overlay beside it (`docker-compose.pipelock.yml`, the harness scanner, the
- * labs) is opt-in and reaches the VM only when somebody names it.
+ * legacy-MCP proving server) is opt-in and reaches the VM only when somebody names it.
  */
 const CANONICAL_COMPOSE = 'deploy/docker-compose.prod.yml';
 

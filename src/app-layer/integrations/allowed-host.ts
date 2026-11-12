@@ -244,6 +244,13 @@ export const ORANGEHRM_HOSTS: HostAllowlist = {
         //
         // If the lab moves, this line moves with it. It is a fixture address,
         // not a vendor domain, and it is the only entry here that is neither.
+        //
+        // RETIRED 2026-11-12: the lab was taken off the production VM (owner
+        // decision, capacity budget C1) and Caddy no longer serves this name,
+        // so a connection pointed at it fails to connect. The entry is left in
+        // place until a non-production OrangeHRM instance is chosen, when it
+        // moves to that instance's exact name; it admits one name nothing
+        // serves, and widens nothing.
         'orangehrm-lab.34-140-180-255.sslip.io',
     ],
 };

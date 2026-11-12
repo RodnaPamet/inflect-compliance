@@ -22,20 +22,29 @@ The services in `deploy/docker-compose.prod.yml`:
 
 | Service | Image | Role | Limits set in the compose file |
 |---|---|---|---|
-| `caddy` | `caddy:2-alpine` | TLS and reverse proxy. Publishes the only host ports, 80 and 443. | none |
-| `app` | `ghcr.io/rodnapamet/inflect-compliance:latest` | Next.js web server. Runs `prisma migrate deploy` when it starts. | none |
-| `worker` | the same image | BullMQ worker and scheduler (`scripts/worker.ts`, `scripts/scheduler.ts`). | none |
-| `pgbouncer` | `edoburu/pgbouncer:latest` | Transaction-mode pool between `app`/`worker` and Postgres. | `DEFAULT_POOL_SIZE` 25, `MAX_DB_CONNECTIONS` 50, `MAX_CLIENT_CONN` 200 |
-| `postgres` | `postgres:16-alpine` | The database. | none; `max_connections` is not set |
-| `redis` | `redis:7-alpine` | BullMQ job queue, rate limits, cache. AOF persistence on. | `--maxmemory 256mb`, `--maxmemory-policy noeviction` |
-| `clamav` | `clamav/clamav:1.4` | Virus scan of uploaded files. | none |
-| `watchtower` | `containrrr/watchtower:latest` | Rolls `app` and `worker` onto a new image. | none |
+| `caddy` | `caddy:2-alpine` | TLS and reverse proxy. Publishes the only host ports, 80 and 443. | 256 MB, 1.0 CPU |
+| `app` | `ghcr.io/rodnapamet/inflect-compliance:latest` | Next.js web server. Runs `prisma migrate deploy` when it starts. | 1.5 GB, 1.5 CPU (memory provisional) |
+| `worker` | the same image | BullMQ worker and scheduler (`scripts/worker.ts`, `scripts/scheduler.ts`). | 1.5 GB, 1.0 CPU, half CPU weight (memory provisional) |
+| `pgbouncer` | `edoburu/pgbouncer:latest` | Transaction-mode pool between `app`/`worker` and Postgres. | 128 MB, 1.0 CPU; `DEFAULT_POOL_SIZE` 25, `MAX_DB_CONNECTIONS` 50, `MAX_CLIENT_CONN` 200 |
+| `postgres` | `postgres:16-alpine` | The database. | 2 GB, 1.5 CPU; `max_connections` is not set |
+| `redis` | `redis:7-alpine` | BullMQ job queue, rate limits, cache. AOF persistence on. | 768 MB, 1.0 CPU; `--maxmemory 256mb`, `--maxmemory-policy noeviction` |
+| `clamav` | `clamav/clamav:1.4` | Virus scan of uploaded files. | 3 GB, 1.0 CPU, half CPU weight |
+| `watchtower` | `containrrr/watchtower:latest` | Rolls `app` and `worker` onto a new image. | 128 MB, 0.25 CPU |
 
 Four more things share the machine:
 
-- **No service sets `mem_limit`, `cpus` or `deploy.resources`.** Every
-  container draws on the whole VM, so one busy container slows the others. When
-  memory runs out, the kernel picks which process to kill.
+- **Every service sets `mem_limit` and `cpus`** (capacity budget C1,
+  2026-11-12). A container that reaches its memory limit is killed and
+  restarted on its own, rather than the kernel choosing a process anywhere on
+  the VM. A limit takes effect when the container is recreated from the file
+  (`CONFIRM=1 deploy/apply.sh`, or the overlay's own path); a container created
+  before that keeps running without one, and the `VM capacity` workflow's
+  "Mem limit" column shows which. The limits of the canonical file and the two running overlays sum to
+  10,496 MiB, under the 14,848 MiB (14.5 GB) budget of host memory minus
+  1.5 GB, with about 4 GB of the budget unallocated. The basis
+  for each figure, and the risk of a kill at the limit, are in
+  [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md);
+  `tests/guards/deploy-compose-canonical.test.ts` holds the budget.
 - **The observability stack** is packaged as a separate Compose project to
   run on the same VM (`infra/observability/docker-compose.observability.yml`).
   The repository's record of the running stack lists none of its containers
@@ -43,10 +52,13 @@ Four more things share the machine:
   Where it runs, its four containers carry caps: collector 512 MB / 1 CPU,
   Prometheus 1 GB / 1 CPU, Tempo 1 GB / 1 CPU, Grafana 512 MB / 0.75 CPU. See
   `docs/observability/01-deployment-topology.md`.
-- **Opt-in overlays** in `deploy/` (`docker-compose.pipelock.yml`,
-  `docker-compose.orangehrm-lab.yml`, `docker-compose.legacy-mcp-proving.yml`,
-  `docker-compose.harness-scanner.yml`) add services to the same VM when an
-  operator starts them. Count them in when they are running.
+- **Opt-in overlays** in `deploy/` add services to the same VM when an
+  operator starts them. `docker-compose.harness-scanner.yml` (the scanner,
+  512 MB / 1.0 CPU, and its egress proxy, 256 MB / 0.5 CPU) and
+  `docker-compose.legacy-mcp-proving.yml` (256 MB / 0.5 CPU) run there and are
+  counted in the budget. `docker-compose.pipelock.yml` is not enabled and
+  carries no limits yet. The OrangeHRM lab overlay was retired from the VM on
+  2026-11-12.
 - **One disk holds everything**: the OS, Docker images, the Postgres and Redis
   data, evidence uploads, container logs and the observability volumes. Each
   container's log is capped at three 10 MB files (`x-logging` in the compose
@@ -61,11 +73,14 @@ The VM was an `e2-highmem-2` (2 vCPUs, 16 GB) when that was recorded on
 Nothing in this repository sets the machine type. Check the current one in the
 Compute Engine console before planning.
 
-A larger machine type gives every container more CPU and memory at once,
-because none of them is capped. Changing it needs the VM stopped, which stops
+Changing the machine type needs the VM stopped, which stops
 the whole stack rather than restarting `app`, so it needs a service window. The
 containers start again on boot (`restart: unless-stopped`). Take a manual disk
 snapshot before the stop.
+
+A larger machine type does not give a container more memory on its own: each
+one is held to its `mem_limit`. Raise the limits that are short in the same
+change, within the new budget (host memory minus 1.5 GB).
 
 ## Signals and what to change first
 
@@ -75,6 +90,7 @@ of shortage and does nothing for the others.
 | Signal | Where to read it | First change |
 |---|---|---|
 | Host CPU or memory near its limit | `sudo docker stats --no-stream` on the VM; the VM's CPU graph in the Compute Engine console | A larger machine type. |
+| A container at its memory limit, or restarted with out-of-memory kills | The `VM capacity` workflow: each container's limit, peak memory and OOM kills | Raise that container's `mem_limit`, within the budget, if its peak is real rather than page cache. |
 | API p95 near the SLO: reads 500 ms, writes 1000 ms (`docs/slos.md`, SLO 2 and 2b) | Recording rule `job:api_request_duration_ms:p95`; alert `ApiLatencySloBreach` (p95 above 750 ms for 15 minutes); the `inflect-api-overview` dashboard | If host CPU is high, a larger machine type. If it is not, find the slow route or query first. |
 | Clients waiting for a database connection | PgBouncer's admin console (`SHOW POOLS`, the `cl_waiting` column); one stats line a minute in the `pgbouncer` log (`STATS_PERIOD: 60`) | [Raise the PgBouncer pool](#database-connections), within Postgres `max_connections`. |
 | Jobs waiting | `redis-cli LLEN bull:inflect-jobs:wait`, as in the Redis triage in `docs/incident-response.md`. Where the observability stack runs: recording rule `job:job_queue_depth:max`, whose `waiting` and `prioritized` states are the backlog; alert `JobQueueDepthGrowing` (backlog above 500 and growing for 20 minutes); the `inflect-jobs-and-queues` dashboard. The worker reports them only with `OTEL_ENABLED=true` | See [worker throughput](#worker-throughput). |
@@ -132,6 +148,9 @@ the cap Redis refuses writes with an `OOM` error rather than dropping keys, so
 an enqueue fails loudly instead of losing a job. `docs/deployment.md`, section
 "Redis — eviction policy", explains why. Raise `--maxmemory` in the `redis`
 service's `command:`. Applying it restarts Redis; the AOF keeps queued jobs.
+Raise the service's `mem_limit` (768 MB) with it: an AOF rewrite forks, and the
+copy-on-write pages can briefly double the resident data, so the limit is kept
+at about twice `--maxmemory` plus the process.
 
 ## Load tiers
 

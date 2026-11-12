@@ -35,8 +35,8 @@
 #
 # ── WHY AN OVERLAY AND NOT docker-compose.prod.yml ────────────────────
 #
-# The same argument `docker-compose.orangehrm-lab.yml` makes, which
-# applies here too: this is a FIXTURE. It has no business starting
+# The same argument the OrangeHRM lab overlay made (retired from the
+# production VM 2026-11-12), which applies here too: this is a FIXTURE. It has no business starting
 # because somebody ran the canonical deploy. Splitting it out means the
 # thing we push is the thing that runs, and enabling it stays a
 # deliberate act by a person who knows what it is.
@@ -50,10 +50,10 @@
 # however the tenant egress allowlist is written, so `127.0.0.1` is
 # impossible by construction.
 #
-# `hrm-mcp` reached the same conclusion for the same reason (#2861): the
-# obvious internal shortcut "is refused by IC before a socket opens".
-# This follows that pattern exactly — no published port, reachable only
-# through Caddy by service name.
+# The OrangeHRM lab's `hrm-mcp` adapter reached the same conclusion for
+# the same reason (#2861): the obvious internal shortcut "is refused by IC
+# before a socket opens". This follows that pattern exactly — no published
+# port, reachable only through Caddy by service name.
 #
 # It serves SYNTHETIC rows, which is why this is a far lower-stakes
 # public surface than a server over a real HR database would be.
@@ -74,6 +74,12 @@ services:
     restart: unless-stopped
     working_dir: /srv
     command: ["node", "/srv/app.mjs"]
+    # Capacity budget C1 (2026-11-12): peak 89 MiB; a Node process's floor.
+    # A fixture serving seven synthetic accounts: half a core is ample, and
+    # it must never compete with the request path.
+    # docs/implementation-notes/2026-11-12-capacity-c1.md.
+    mem_limit: 256m
+    cpus: 0.5
     environment:
       PROVING_PORT: "8099"
       # Fails CLOSED when unset — the wrapper exits rather than serving

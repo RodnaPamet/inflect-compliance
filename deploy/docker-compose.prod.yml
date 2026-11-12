@@ -83,10 +83,37 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+# ── Resource limits (capacity budget C1, 2026-11-12) ────────────
+#
+# Every service declares `mem_limit` and `cpus`. Before this change none did,
+# so every container could draw on the whole VM and, when memory ran out, the
+# kernel chose what to kill. The budget rule: every container has a memory
+# limit and a CPU cap, the memory limits of the canonical file plus the kept
+# overlays sum to at most host memory minus 1.5 GB, and batch-shaped services
+# are capped at 1.0 CPU so the request path keeps a core.
+# `tests/guards/deploy-compose-canonical.test.ts` holds all three.
+#
+# `mem_limit` / `cpus` are the service-level keys, not `deploy.resources`:
+# the stack runs under plain `docker compose`, not swarm, and these are the
+# keys this repository has used before (the observability stack's caps).
+#
+# The figures and their basis — the C0 measurement of 2026-11-12, VM capacity
+# run 43209382354 — are in docs/implementation-notes/2026-11-12-capacity-c1.md.
+# The app and worker limits are PROVISIONAL: their peaks were measured over 24
+# minutes that held no nightly job, and they are re-measured after a day that
+# spans 02:00-05:30 UTC, then tightened.
+
 services:
   # ── Postgres ──────────────────────────────────────────────────
   postgres:
     logging: *default-logging
+    # Peak 406 MiB (162 MiB of it page cache). The limit counts page cache,
+    # and Postgres leans on the OS cache for reads, so the floor is generous:
+    # a database OOM kill is crash recovery for every request.
+    mem_limit: 2048m
+    # Request path. 1.5, not 2.0: a runaway query cannot take both cores from
+    # `app`, and the half core left over is enough for caddy and pgbouncer.
+    cpus: 1.5
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -111,6 +138,11 @@ services:
   # ── PgBouncer ─────────────────────────────────────────────────
   pgbouncer:
     logging: *default-logging
+    # Peak 16 MiB; the limit is a floor, not a multiple.
+    mem_limit: 128m
+    # Request path. Single-threaded, so it can never use more than one core;
+    # the cap states that rather than restricting it.
+    cpus: 1.0
     image: edoburu/pgbouncer:latest
     restart: unless-stopped
     depends_on:
@@ -162,6 +194,13 @@ services:
   # ── Redis ─────────────────────────────────────────────────────
   redis:
     logging: *default-logging
+    # Peak 58 MiB. `--maxmemory 256mb` bounds the data set, and an AOF
+    # rewrite forks: copy-on-write can briefly double the resident pages. So
+    # the limit is twice maxmemory plus room for the process itself — an OOM
+    # kill here would stall every queued job and rate limit at once.
+    mem_limit: 768m
+    # Request path. Single-threaded command loop, so 1.0 restricts nothing.
+    cpus: 1.0
     image: redis:7-alpine
     restart: unless-stopped
     # Redis MUST require a password in a production-like deployment.
@@ -189,6 +228,19 @@ services:
   # ── ClamAV ────────────────────────────────────────────────────
   clamav:
     logging: *default-logging
+    # Peak 2123 MiB. At the snapshot 964 MiB was anonymous (the loaded
+    # signature engine) and the rest page cache. No clamd.conf is supplied, so the
+    # image's default applies: ConcurrentDatabaseReload is ON, and during a
+    # freshclam reload the new engine is built beside the old one — anonymous
+    # memory roughly doubles to ~1.9 GiB for the length of the reload. 3 GiB
+    # covers that plus the cache. Turning concurrent reload off would halve
+    # the need but block every scan for the length of each reload.
+    mem_limit: 3072m
+    # Batch-shaped (scanning), so capped at one core: the request path keeps
+    # the other. cpu_shares halves its weight when it contends with the
+    # request path, which a quota alone does not do.
+    cpus: 1.0
+    cpu_shares: 512
     image: clamav/clamav:1.4
     restart: unless-stopped
     volumes:
@@ -233,6 +285,14 @@ services:
   # ── App (Next.js) — auto-updated by Watchtower ────────────────
   app:
     logging: *default-logging
+    # PROVISIONAL (owner decision 2026-11-12): peak 586 MiB over the 24
+    # minutes after a restart. Re-measured after a day spanning the nightly
+    # jobs, then tightened.
+    mem_limit: 1536m
+    # Request path. Next.js runs JavaScript on one thread; 1.5 lets GC and the
+    # libuv pool burst past it while guaranteeing the rest of the request path
+    # half a core even if a render loop spins.
+    cpus: 1.5
     image: ghcr.io/rodnapamet/inflect-compliance:latest
     restart: unless-stopped
     pull_policy: always
@@ -286,6 +346,14 @@ services:
   # See docs/deployment.md "Background worker".
   worker:
     logging: *default-logging
+    # PROVISIONAL, as `app`: peak 422 MiB over 24 minutes with no nightly
+    # job in them.
+    mem_limit: 1536m
+    # Batch-shaped (the 02:00-05:30 UTC chain and every queued job), so one
+    # core and half the weight under contention: a heavy pass slows itself,
+    # not the request path.
+    cpus: 1.0
+    cpu_shares: 512
     image: ghcr.io/rodnapamet/inflect-compliance:latest
     restart: unless-stopped
     pull_policy: always
@@ -341,6 +409,11 @@ services:
   # Postgres / Redis / Caddy / ClamAV stay pinned.
   watchtower:
     logging: *default-logging
+    # Peak 39 MiB; the limit is a floor.
+    mem_limit: 128m
+    # Polls once a minute. A quarter core is ample and keeps a pull or an
+    # image cleanup off the request path.
+    cpus: 0.25
     image: containrrr/watchtower:latest
     restart: unless-stopped
     volumes:
@@ -362,6 +435,12 @@ services:
   # ── Caddy (TLS + reverse proxy) ───────────────────────────────
   caddy:
     logging: *default-logging
+    # Peak 74 MiB; 1.5x is ~111 MiB, rounded up to a floor that leaves room
+    # for TLS session caches and an ACME renewal.
+    mem_limit: 256m
+    # Request path. One core terminates TLS for this load with headroom; a
+    # cap below that would add latency to every request.
+    cpus: 1.0
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:

@@ -36,6 +36,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+import { repoRelativeFiles } from '../helpers/repo-files';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 const CANONICAL = 'deploy/docker-compose.prod.yml';
@@ -341,6 +343,114 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
 
     it('runs the schedule against the mounted configuration', () => {
         expect(svc.command).toEqual(['schedule', '--config', '/etc/agent-harness-scanner/config.json']);
+    });
+});
+
+/**
+ * The capacity budget (C1, 2026-11-12): every container on the production VM
+ * has a memory limit and a CPU cap, and the memory limits together leave the
+ * host 1.5 GB of its own.
+ *
+ * Before C1 no service declared either, so one container could take the whole
+ * VM and the kernel chose what to kill when memory ran out. Each assertion is
+ * one a "make it start" edit would plausibly undo — deleting a `mem_limit`
+ * because a container was OOM-killed, or raising one past the budget — and
+ * none of them fails at `up`. Parsed as YAML, so every assertion is on a value
+ * the service has rather than on the file's text.
+ *
+ * The population is the canonical file plus each overlay that runs on the VM.
+ * The pipelock overlay is not in it: it is not enabled, and its limits are owed
+ * when it is. The OrangeHRM lab overlay was retired in the same change.
+ */
+describe('deploy compose — every container has a memory limit and a CPU cap, within the budget', () => {
+    const BUDGETED_FILES = [
+        CANONICAL,
+        'deploy/docker-compose.harness-scanner.yml',
+        'deploy/docker-compose.legacy-mcp-proving.yml',
+    ] as const;
+
+    /** 16 GB host minus 1.5 GB for the kernel, Docker and the page cache. */
+    const MEMORY_BUDGET_MIB = 14848;
+    /** The VM's vCPU count: a cap above it is no cap at all. */
+    const HOST_CPUS = 2;
+    /** Batch-shaped: capped at one core so the request path keeps the other. */
+    const BATCH_SERVICES = ['clamav', 'worker', 'harness-scanner'] as const;
+
+    type LimitedService = { mem_limit?: unknown; cpus?: unknown };
+    const servicesOf = (rel: string): Record<string, LimitedService> =>
+        (yaml.load(read(rel)) as { services: Record<string, LimitedService> }).services;
+
+    /**
+     * A Compose byte value in MiB: a bare number of bytes, or a number with a
+     * b/k/m/g suffix. Anything else is NaN, so an unparseable limit fails the
+     * assertion that reads it rather than counting as zero against the budget.
+     */
+    function mib(value: unknown): number {
+        if (typeof value === 'number') return value / (1024 * 1024);
+        if (typeof value !== 'string') return NaN;
+        const m = /^(\d+(?:\.\d+)?)\s*([bkmg])?b?$/i.exec(value.trim());
+        if (!m) return NaN;
+        const factor: Record<string, number> = { b: 1 / (1024 * 1024), k: 1 / 1024, m: 1, g: 1024 };
+        return Number(m[1]) * factor[(m[2] ?? 'b').toLowerCase()];
+    }
+
+    const all = BUDGETED_FILES.flatMap((rel) =>
+        Object.entries(servicesOf(rel)).map(([name, svc]) => ({ rel, name, svc })),
+    );
+
+    it('reads every budgeted file and finds its services (the scan is not vacuous)', () => {
+        for (const rel of BUDGETED_FILES) {
+            expect(Object.keys(servicesOf(rel)).length).toBeGreaterThan(0);
+        }
+        // Eight canonical services, the scanner and its proxy, the proving server.
+        expect(all.length).toBe(11);
+    });
+
+    it('the byte parser reads the units Compose accepts', () => {
+        expect(mib('1536m')).toBe(1536);
+        expect(mib('2g')).toBe(2048);
+        expect(mib('512M')).toBe(512);
+        expect(mib(1073741824)).toBe(1024);
+        expect(mib('lots')).toBeNaN();
+        expect(mib(undefined)).toBeNaN();
+    });
+
+    it('every service declares a positive, parseable mem_limit', () => {
+        const missing = all
+            .filter(({ svc }) => !(mib(svc.mem_limit) > 0))
+            .map(({ rel, name }) => `${rel}: ${name}`);
+        expect(missing).toEqual([]);
+    });
+
+    it('every service declares a CPU cap above zero and no larger than the host', () => {
+        const bad = all
+            .filter(({ svc }) => {
+                const cpus = Number(svc.cpus);
+                return svc.cpus === undefined || !(cpus > 0 && cpus <= HOST_CPUS);
+            })
+            .map(({ rel, name }) => `${rel}: ${name}`);
+        expect(bad).toEqual([]);
+    });
+
+    it(`the memory limits together stay within ${MEMORY_BUDGET_MIB} MiB`, () => {
+        const total = all.reduce((sum, { svc }) => sum + mib(svc.mem_limit), 0);
+        expect(total).toBeLessThanOrEqual(MEMORY_BUDGET_MIB);
+    });
+
+    it.each(BATCH_SERVICES)('%s is batch-shaped and capped at one core', (name) => {
+        const found = all.filter((s) => s.name === name);
+        expect(found).toHaveLength(1);
+        expect(Number(found[0].svc.cpus)).toBeLessThanOrEqual(1);
+    });
+
+    it('the OrangeHRM lab is retired: no overlay, and no service of it in any deploy compose file', () => {
+        const composeFiles = repoRelativeFiles().filter((f) => /^deploy\/docker-compose.*\.ya?ml$/.test(f));
+        expect(composeFiles).toContain(CANONICAL);
+        expect(composeFiles).not.toContain('deploy/docker-compose.orangehrm-lab.yml');
+        const labServices = composeFiles.flatMap((f) =>
+            Object.keys(servicesOf(f)).filter((n) => n.startsWith('orangehrm')),
+        );
+        expect(labServices).toEqual([]);
     });
 });
 
