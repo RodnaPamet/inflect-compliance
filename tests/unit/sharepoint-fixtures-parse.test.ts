@@ -9,11 +9,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { SharePointClient, type SharePointConnectionConfig } from '@/app-layer/integrations/providers/sharepoint/client';
+import { withApprovedDrives } from '../helpers/sharepoint-approved-drives';
 
 const FIX = path.resolve(__dirname, '../fixtures/sharepoint');
 const load = (name: string) => JSON.parse(fs.readFileSync(path.join(FIX, name), 'utf8'));
 
-function clientReturning(body: unknown) {
+function clientReturning(body: unknown, { raw = false }: { raw?: boolean } = {}) {
     const fetchImpl = jest.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -25,7 +26,10 @@ function clientReturning(body: unknown) {
         allowedSiteIds: ['site-1'],
         accessToken: 'tok',
     };
-    return { client: new SharePointClient(config, fetchImpl as unknown as typeof fetch), fetchImpl };
+    // The fixtures' drive id is an approved site's drive, so reads pass the allowlist.
+    const approved = withApprovedDrives(fetchImpl, ['b!aBcDeFgHiJkLmNoPqRsTuVwXyZ012345']);
+    const transport = raw ? fetchImpl : approved;
+    return { client: new SharePointClient(config, transport as unknown as typeof fetch), fetchImpl };
 }
 
 describe('SP-F4 — Graph fixture parse-through', () => {
@@ -38,7 +42,7 @@ describe('SP-F4 — Graph fixture parse-through', () => {
     });
 
     it('site-drives.json → listDrives parses document libraries', async () => {
-        const { client } = clientReturning(load('site-drives.json'));
+        const { client } = clientReturning(load('site-drives.json'), { raw: true });
         const drives = await client.listDrives('site-1');
         expect(drives.map((d) => d.name)).toEqual(['Documents', 'Policies']);
         expect(drives[0].driveType).toBe('documentLibrary');
