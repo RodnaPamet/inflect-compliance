@@ -172,18 +172,19 @@ export const PROPOSE_TOOLS: McpProposeTool[] = [
             'title required; description, rootCause, …). Returns pending proposal ids.',
         inputSchema: proposeInputSchema('finding'),
         kind: 'FINDING',
+        // The KEY scope stays `audits:read` for now: agent keys minted for this
+        // tool since the #4535 migration hold `audits:read` and not
+        // `findings:read`, so moving it would cut them off. Moving it needs a
+        // data migration of those keys (#5409).
         resourceScope: { resource: 'audits', action: 'read' },
-        // `POST /api/t/:slug/findings` carries no permission key —
-        // `PermissionSet` has no `findings` domain — so its real gate is
-        // `assertCanWrite` inside `createFinding`. Naming `audits.manage`
-        // instead would be stricter but WRONG: an EDITOR holds
-        // `audits.manage: false` and can create a finding through the human
-        // API, so the tool would refuse a proposal its principal could commit.
+        // The key the human route takes and `createFinding` floors on (#4574,
+        // #5369), so the tool never queues a proposal its principal could not
+        // approve. It named `audits.view` + write while findings had no keys
+        // of their own (#5393).
         authorize: {
-            keys: ['audits.view'],
-            policy: 'write',
+            keys: ['findings.create'],
             basis: 'principal',
-            mirrors: 'POST /api/t/:slug/findings (getTenantCtx + assertCanWrite)',
+            mirrors: 'POST /api/t/:slug/findings',
         },
     },
     {
