@@ -119,3 +119,31 @@ export async function activeMemberWorkspaceId(userId: string, slug: string): Pro
     });
     return membership?.status === 'ACTIVE' ? tenant.id : null;
 }
+
+/** The refusal for a workspace that still wants this session's code: the edge's own words. */
+export const WORKSPACE_MFA_REQUIRED = 'MFA verification required';
+
+/**
+ * Does this workspace still want an MFA code from this session?
+ *
+ * Sign-in asks every workspace in the session's membership claim, and the edge
+ * holds the pending ones. The claim is capped (`MAX_JWT_MEMBERSHIPS`), so a
+ * workspace past the cap was never asked and the edge cannot hold it: the
+ * server tenant gate asks here instead. A workspace in the claim costs no
+ * query; one outside it is asked whether it wants a code, and whether this
+ * session passed its challenge.
+ */
+export async function workspaceStillAsksThisSession(args: {
+    userId: string;
+    tenantId: string;
+    claimedTenantIds: readonly string[];
+    pendingTenantIds: readonly string[];
+    sessionId: () => Promise<string | null>;
+}): Promise<boolean> {
+    if (args.pendingTenantIds.includes(args.tenantId)) return true;
+    if (args.claimedTenantIds.includes(args.tenantId)) return false;
+    const asking = await workspacesAskingForCode(args.userId, [args.tenantId]);
+    if (asking.length === 0) return false;
+    const passed = await workspacesPassedBySession(args.userId, await args.sessionId());
+    return !passed.has(args.tenantId);
+}

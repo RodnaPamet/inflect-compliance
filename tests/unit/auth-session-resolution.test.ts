@@ -102,6 +102,26 @@ describe('getSession', () => {
             ssoTenantId: null,
             signInMethod: null,
             entraGateDeniedTenantIds: [],
+            membershipTenantIds: [],
+            mfaPendingTenantIds: [],
+        });
+    });
+
+    it('carries the membership claim and the pending MFA workspaces through, for the tenant gate', async () => {
+        mockAuth.mockResolvedValue({
+            user: {
+                id: 'usr_1',
+                tenantId: 'tnt_1',
+                memberships: [
+                    { tenantId: 'tnt_1', slug: 'one', role: 'ADMIN' },
+                    { tenantId: 'tnt_2', slug: 'two', role: 'EDITOR' },
+                ],
+                mfaPendingTenantIds: ['tnt_2'],
+            },
+        });
+        expect(await getSession()).toMatchObject({
+            membershipTenantIds: ['tnt_1', 'tnt_2'],
+            mfaPendingTenantIds: ['tnt_2'],
         });
     });
 
@@ -155,6 +175,8 @@ describe('getSession', () => {
             ssoTenantId: null,
             signInMethod: null,
             entraGateDeniedTenantIds: [],
+            membershipTenantIds: [],
+            mfaPendingTenantIds: [],
         });
     });
 });
@@ -185,6 +207,8 @@ describe('getSessionOrThrow', () => {
             ssoTenantId: null,
             signInMethod: null,
             entraGateDeniedTenantIds: [],
+            membershipTenantIds: [],
+            mfaPendingTenantIds: [],
         });
     });
 });

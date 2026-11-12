@@ -17,6 +17,8 @@ import { isOutsideSsoScope, SSO_SCOPE_REFUSAL } from '@/lib/auth/sso-session';
 import { assertSsoEnforcementAdmits } from '@/lib/auth/sso-enforcement';
 import { ENTRA_GATE_REFUSAL, isRefusedByEntraGate } from '@/lib/auth/entra-gate-scope';
 import { assertAgentKeyMayActAtRest } from '@/lib/agentic/agent-key-rest-gate';
+import { WORKSPACE_MFA_REQUIRED, workspaceStillAsksThisSession } from '@/lib/auth/workspace-mfa';
+import { isMfaAllowedPath } from '@/lib/auth/guard';
 
 /**
  * Generates or extracts a request ID.
@@ -37,6 +39,36 @@ function getRequestId(req?: NextRequest): string {
  * appPermissions comes from the custom role's permissionsJson (parsed
  * with baseRole fallback). Otherwise, standard enum-based permissions.
  */
+/**
+ * Refuse a workspace that still wants this session's MFA code
+ * (`workspaceStillAsksThisSession`). An API request gets the edge's own 403; a
+ * page is sent to the workspace's challenge. A payload with no membership
+ * claim at all (only a test double builds one) is not asked.
+ */
+async function assertWorkspaceMfaSatisfied(
+    session: Awaited<ReturnType<typeof getSessionOrThrow>>,
+    tenantId: string,
+    tenantSlug: string,
+    req: NextRequest | undefined,
+): Promise<void> {
+    if (!session.membershipTenantIds) return;
+    if (req && isMfaAllowedPath(new URL(req.url).pathname)) return;
+    const asks = await workspaceStillAsksThisSession({
+        userId: session.userId,
+        tenantId,
+        claimedTenantIds: session.membershipTenantIds,
+        pendingTenantIds: session.mfaPendingTenantIds ?? [],
+        sessionId: async () => {
+            const { currentSessionIdOf, currentSessionIdFromCookies } = await import('@/lib/security/session-tracker');
+            return req ? currentSessionIdOf(req) : currentSessionIdFromCookies();
+        },
+    });
+    if (!asks) return;
+    if (req) throw forbidden(WORKSPACE_MFA_REQUIRED);
+    const { redirect } = await import('next/navigation');
+    redirect(`/t/${tenantSlug}/auth/mfa`);
+}
+
 export async function getTenantCtx(
     params: { tenantSlug: string },
     req?: NextRequest
@@ -87,6 +119,10 @@ export async function getTenantCtx(
     // "Enforce SSO": a workspace that requires its own SSO refuses any other
     // way in but a break-glass password sign-in.
     await assertSsoEnforcementAdmits(session, ctx.tenant.id, ctx.membership.role);
+    // A workspace that still wants this session's MFA code. The edge holds the
+    // ones in the session's capped membership claim; one past the cap is asked
+    // here. The MFA challenge and enrolment APIs stay reachable.
+    await assertWorkspaceMfaSatisfied(session, ctx.tenant.id, ctx.tenant.slug, req);
 
     // Enrich the observability context with tenant and user info
     // so that logs/traces emitted downstream automatically include them.

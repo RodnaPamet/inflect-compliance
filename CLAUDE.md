@@ -1025,7 +1025,10 @@ until its own challenge is passed (`pendingMfaWorkspaceSlug` in `src/lib/auth/gu
 The challenge verifies the code against the workspace in its URL, so a pending primary is
 sent to the primary's own challenge page. Sign-in used to ask only the primary, so a
 workspace that required MFA but was joined later let its members in on a password alone.
-Do not narrow it back to the primary.
+Do not narrow it back to the primary. The membership claim is capped, so a workspace past the
+cap is never asked at sign-in and the edge cannot hold it: `getTenantCtx` asks it instead
+(`workspaceStillAsksThisSession`), refusing an API request and sending a page to that
+workspace's challenge until this session passes it. A workspace in the claim costs no query.
 
 **A challenge pass belongs to the session that answered it** (`verifyMfaChallenge`). The pass
 is recorded on that session's own `UserSession.mfaPassedTenantIds`, and the jwt callback clears
