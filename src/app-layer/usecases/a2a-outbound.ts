@@ -224,6 +224,15 @@ export async function dispatchA2aSend(
             'This run was started by a task from an A2A peer, and such a run may not send a task to a peer.',
         );
     }
+    // A READ-ONLY run sends no task (#5365). The offer withholds the send tool
+    // from such a run; this is the backstop, before any read or row.
+    if (ctx.readOnlyRun) {
+        recordA2aMetric({ direction: 'OUTBOUND', outcome: 'READ_ONLY_RUN_REFUSED' });
+        throw refusedForModel(
+            'a2a_send_refused_for_read_only_run',
+            'This run is read-only, and a read-only run may not send a task to a peer.',
+        );
+    }
     const parsedArgs = A2aSendArgsSchema.safeParse(call.outbound);
     if (!parsedArgs.success) {
         throw refusedForModel(

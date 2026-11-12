@@ -60,8 +60,12 @@ jest.mock('@/lib/audit', () => ({
 
 // ── Tranche 3: routes that gated on the coarse `assertCanWrite` ──
 const mockArchiveEvidence = jest.fn();
+const mockUnarchiveEvidence = jest.fn();
+const mockUpdateEvidenceRetention = jest.fn();
 jest.mock('@/app-layer/usecases/evidence-retention', () => ({
     archiveEvidence: (...a: unknown[]) => mockArchiveEvidence(...a),
+    unarchiveEvidence: (...a: unknown[]) => mockUnarchiveEvidence(...a),
+    updateEvidenceRetention: (...a: unknown[]) => mockUpdateEvidenceRetention(...a),
 }));
 const mockDeleteNode = jest.fn();
 // `linkRisk` / `unlinkRisk` join the SAME factory rather than a second
@@ -260,6 +264,8 @@ import { getPermissionsForRole } from '@/lib/permissions';
 import { assertCanAdmin } from '@/app-layer/policies/common';
 
 import { POST as evidenceArchive } from '@/app/api/t/[tenantSlug]/evidence/[id]/archive/route';
+import { POST as evidenceUnarchive } from '@/app/api/t/[tenantSlug]/evidence/[id]/unarchive/route';
+import { POST as evidenceRetention } from '@/app/api/t/[tenantSlug]/evidence/[id]/retention/route';
 import { DELETE as riskNodeDelete } from '@/app/api/t/[tenantSlug]/risks/hierarchy/[nodeId]/route';
 import { DELETE as kriDelete } from '@/app/api/t/[tenantSlug]/risks/kri/[kriId]/route';
 import { DELETE as scheduleDelete } from '@/app/api/t/[tenantSlug]/risks/reports/schedules/[scheduleId]/route';
@@ -500,6 +506,31 @@ const ROUTES: ReadonlyArray<{
         usecase: mockArchiveEvidence,
         forwards: ['ev-1'],
         result: { archived: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'POST /evidence/[id]/unarchive',
+        handler: asHandler(evidenceUnarchive),
+        path: '/api/t/acme/evidence/ev-1/unarchive',
+        params: { tenantSlug: 'acme', id: 'ev-1' },
+        key: 'evidence.edit',
+        usecase: mockUnarchiveEvidence,
+        forwards: ['ev-1'],
+        result: { unarchived: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'POST /evidence/[id]/retention',
+        handler: asHandler(evidenceRetention),
+        path: '/api/t/acme/evidence/ev-1/retention',
+        params: { tenantSlug: 'acme', id: 'ev-1' },
+        body: { retentionUntil: '2027-01-01T00:00:00.000Z', retentionPolicy: 'FIXED_DATE' },
+        key: 'evidence.edit',
+        usecase: mockUpdateEvidenceRetention,
+        forwards: ['ev-1', { retentionUntil: '2027-01-01T00:00:00.000Z', retentionPolicy: 'FIXED_DATE' }],
+        result: { id: 'ev-1' },
         allowedRole: 'EDITOR',
         deniedRole: 'READER',
     },

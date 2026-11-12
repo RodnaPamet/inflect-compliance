@@ -24,21 +24,89 @@ export async function updateRun(
     ctx: RequestContext,
     runId: string,
     data: Record<string, unknown>,
-): Promise<void> {
-    await runInTenantContext(ctx, (db) =>
-        db.workflowRun.update({
-            where: { id: runId },
-            data: data as never,
-            // An `update` RETURNS the row, and Prisma maps every scalar it
-            // returns — so a run stamped with an engine this build does not
-            // know (#4241) made this write throw after the statement ran, rolled
-            // the transaction back, and left the run unsettleable: `failRun`
-            // could not fail it. `omit` rather than `select: { id: true }`
-            // because the audit extension's `after` snapshot is read off this
-            // result, and narrowing it would empty that snapshot.
-            omit: { driver: true },
+): Promise<boolean> {
+    // A WRITE THAT SETTLES NEVER LANDS ON AN OPERATOR'S ABORT (#5366).
+    //
+    // `abortWorkflowRun` writes ABORTED while the engine is still running, and
+    // every engine settles through here. Unconditional, the engine's COMPLETED
+    // or FAILED replaced the operator's stop: the run read as if nobody had
+    // pressed it. So a write that carries `status` matches only a row that is
+    // not ABORTED. Nothing legitimate writes a status onto an ABORTED row: it
+    // is terminal, `abortWorkflowRun` refuses a second abort, and resume
+    // refuses everything but AWAITING_APPROVAL and PAUSED (and does not write
+    // through here).
+    //
+    // A write with no `status` — the running token and step counts — still
+    // lands: the tokens were spent, and the operator's status, reason and
+    // `completedAt` are untouched by it.
+    const settles = Object.prototype.hasOwnProperty.call(data, 'status');
+    try {
+        await runInTenantContext(ctx, (db) =>
+            db.workflowRun.update({
+                where: settles ? { id: runId, status: { not: 'ABORTED' } } : { id: runId },
+                data: data as never,
+                // An `update` RETURNS the row, and Prisma maps every scalar it
+                // returns — so a run stamped with an engine this build does not
+                // know (#4241) made this write throw after the statement ran,
+                // rolled the transaction back, and left the run unsettleable:
+                // `failRun` could not fail it. `omit` rather than `select: {
+                // id: true }` because the audit extension's `after` snapshot is
+                // read off this result, and narrowing it would empty that
+                // snapshot.
+                omit: { driver: true },
+            }),
+        );
+        return true;
+    } catch (err) {
+        // No row matched (P2025). Whether that is the abort or a run that is
+        // not there is a question for the row, not for the error's shape: only
+        // a row that IS aborted makes this a no-op. Anything else still throws.
+        if (settles && (await readRunSettlementState(ctx, runId))?.status === 'ABORTED') return false;
+        throw err;
+    }
+}
+
+/**
+ * What an operator's Abort writes as the run's reason (#5366).
+ *
+ * Written by `abortWorkflowRun` alone, and never overwritten: `updateRun`
+ * lands no settlement on an ABORTED row. So it is how the one seam every
+ * engine's settlement passes through tells an operator's stop from an engine's
+ * own ABORTED (a kill, a guard block), which carry their own reasons. The two
+ * differ in what becomes of the run's unreviewed model calls: a person refused
+ * them, or nobody reviewed them.
+ */
+export const OPERATOR_ABORT_MESSAGE = 'run_aborted_by_operator: an operator stopped this run.';
+
+/** The two columns a settlement reads back: the status and its reason. `null` when there is no row. */
+export async function readRunSettlementState(
+    ctx: RequestContext,
+    runId: string,
+): Promise<{ status: string; errorMessage: string | null } | null> {
+    return runInTenantContext(ctx, (db) =>
+        db.workflowRun.findFirst({
+            where: { id: runId, tenantId: ctx.tenantId },
+            select: { status: true, errorMessage: true },
         }),
     );
+}
+
+/**
+ * Has somebody aborted this run while it runs? (#5366)
+ *
+ * Asked by the reasoning engines where they ask the kill switch — after every
+ * model call and every tool call on the Tool Runner, before every model call
+ * on Flue — so an operator's Abort stops the loop as a kill does, and the run
+ * does not spend another call. ABORTED is enough: an engine writes its own
+ * ABORTED only when it settles, after its loop has ended, so a running engine
+ * that reads one is reading an operator's.
+ *
+ * A read that throws is not swallowed: a run whose status cannot be read is
+ * stopped by the failure path, never carried on as though nobody had pressed
+ * stop.
+ */
+export async function isRunAborted(ctx: RequestContext, runId: string): Promise<boolean> {
+    return (await readRunSettlementState(ctx, runId))?.status === 'ABORTED';
 }
 
 /**
@@ -54,11 +122,13 @@ export async function failRun(
     runId: string,
     message: string,
 ): Promise<string> {
-    await updateRun(ctx, runId, {
+    // An operator aborted the run first: their stop stands, and the trail
+    // gains no failure for a run that did not settle here (#5366).
+    if (!(await updateRun(ctx, runId, {
         status: 'FAILED',
         completedAt: new Date(),
         errorMessage: message,
-    });
+    }))) return 'ABORTED';
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
@@ -130,11 +200,12 @@ export async function haltRunAtGuard(
         ? `${enginePrefix}_run_guard_blocked: the content guard refused this run's traffic (${ruleIds.join(', ') || 'no rule ids recorded'}). Nothing was committed.`
         : `${enginePrefix}_run_guard_flagged: the content guard requires human review before this run may continue (${ruleIds.join(', ') || 'no rule ids recorded'}).`;
 
-    await updateRun(ctx, runId, {
+    // An operator's abort stands, as in `failRun` (#5366).
+    if (!(await updateRun(ctx, runId, {
         status,
         ...(blocked ? { completedAt: new Date() } : {}),
         errorMessage: message,
-    });
+    }))) return 'ABORTED';
     // THE GUARD-BLOCK COUNTER (#3484), at the one place a block settles a run.
     // The verdict is a label rather than two counters: QUARANTINED (stopped,
     // nothing committed) and FLAGGED (parked for review) are different
@@ -209,11 +280,12 @@ export async function haltRunAtKill(
     if (alsoCapped) {
         recordAgentRunCapHalt({ cap: alsoCapped.halt.kind, source: alsoCapped.halt.source });
     }
-    await updateRun(ctx, runId, {
+    // An operator's abort stands, as in `failRun` (#5366).
+    if (!(await updateRun(ctx, runId, {
         status: 'ABORTED',
         completedAt: new Date(),
         errorMessage: message,
-    });
+    }))) return 'ABORTED';
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
@@ -287,11 +359,12 @@ export async function haltRunAtCap(
     halt: RunCapHalt,
     stepsNotRun: number | null,
 ): Promise<string> {
-    await updateRun(ctx, runId, {
+    // An operator's abort stands, as in `failRun` (#5366).
+    if (!(await updateRun(ctx, runId, {
         status: 'FAILED',
         completedAt: new Date(),
         errorMessage: halt.message,
-    });
+    }))) return 'ABORTED';
     recordAgentRunCapHalt({ cap: halt.kind, source: halt.source });
     await appendAuditEntry({
         tenantId: ctx.tenantId,

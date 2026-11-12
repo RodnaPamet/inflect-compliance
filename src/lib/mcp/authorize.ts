@@ -1335,7 +1335,7 @@ export function applyRedaction(
  */
 export function applyRowRedaction(
     inv: McpInvocation,
-    rules: readonly { path: string; keyOf: (row: unknown) => string | null }[] | undefined,
+    rules: readonly { path: string; keyOf: (row: unknown) => string | readonly string[] | null }[] | undefined,
     data: unknown,
 ): unknown {
     if (!rules || rules.length === 0) return data;
@@ -1362,7 +1362,10 @@ export function applyRowRedaction(
         if (!Array.isArray(arr)) continue;
         (parent as Record<string, unknown>)[leaf] = arr.filter((row) => {
             const key = rule.keyOf(row);
-            return key === null || granted(key);
+            if (key === null) return true;
+            // An array is "any one of" (`McpRowRedactionRule.keyOf`); an empty
+            // one is held by nobody, so `some` drops the row.
+            return typeof key === 'string' ? granted(key) : key.some(granted);
         });
     }
     return copy;

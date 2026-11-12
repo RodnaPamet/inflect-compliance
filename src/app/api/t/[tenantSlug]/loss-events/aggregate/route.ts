@@ -13,6 +13,7 @@ import { jsonResponse } from '@/lib/api-response';
 import { getLossEventAggregate } from '@/app-layer/usecases/loss-event';
 import { cachedAggregationRead } from '@/lib/cache/aggregation-cache';
 import { AGGREGATIONS } from '@/lib/cache/aggregation-registry';
+import { assertCanRead } from '@/app-layer/policies/common';
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
@@ -26,6 +27,7 @@ export const GET = withApiErrorHandling(
             dependsOn: AGGREGATIONS['loss-events-aggregate'].dependsOn,
             ttlSeconds: AGGREGATIONS['loss-events-aggregate'].ttlSeconds,
             variant: { riskId: riskId ?? null },
+            authorize: () => assertCanRead(ctx),
             compute: () => getLossEventAggregate(ctx, { riskId }),
         });
         return jsonResponse(aggregate);

@@ -12,7 +12,7 @@ import { AgentProposalKind } from '@prisma/client';
 
 import {
     CreateControlSchema,
-    CreateFindingSchema,
+    ProposedFindingSchema,
     CreatePolicySchema,
     CreateRiskSchema,
     UpdateControlSchema,
@@ -61,7 +61,7 @@ const PAYLOAD_SCHEMAS = {
     CreateControlSchema,
     UpdateControlSchema,
     CreatePolicySchema,
-    CreateFindingSchema,
+    ProposedFindingSchema,
     UpdateFindingSchema,
     ExternalWriteProposalPayloadSchema,
     // Reached through `.superRefine`: `keysOf` walks the wrapper to the shape.

@@ -57,11 +57,11 @@ npm run typecheck         # tsc --noEmit
 npm run lint              # eslint . (flat config, eslint.config.mjs)
 
 # Database
-# The Prisma schema lives in a folder of 26 files, not a single file —
+# The Prisma schema lives in a folder of `.prisma` files, not a single file —
 # base/enums/auth/vendor/audit-trail/audit-workflow/automation/processes plus
 # the compliance-domain split (controls, evidence, risk, frameworks, policy,
 # tasks, assets, personnel, findings, incidents, questionnaire, nis2,
-# ai-governance, trust-center, agentic, analytics). See the Layer Structure
+# ai-governance, trust-center, agentic, analytics, legacy-access). See the Layer Structure
 # section below and prisma/schema/README.md — `compliance.prisma` is an empty
 # stub and `audit.prisma` no longer exists.
 # Prisma reads every `.prisma` file in the folder and concatenates them at
@@ -74,7 +74,7 @@ npm run db:reset          # Drop, recreate, and reseed the DB
 
 # Tests
 npm test                  # Jest (parallel)
-npm run test:ci           # Jest (sequential, no coverage — used by scripts/ci-local.mjs; GitHub CI runs sharded `npx jest --shard=K/4`)
+npm run test:ci           # Jest (sequential, no coverage — used by scripts/ci-local.mjs; GitHub CI runs the `Test` matrix sharded `--shard=K/N`, N in ci.yml)
 npm run test:coverage     # Jest with coverage report
 npm run test:e2e          # Playwright browser tests
 
@@ -166,7 +166,8 @@ when the session is signed in, rather than asking the operator.
 
 ### Framework baseline
 
-**Next.js 16.3.8** (App Router) + **React 19.2** + **TypeScript 5.9** (declared `^5.5.0`).
+**Next.js 16** (App Router) + **React 19** + **TypeScript 5** (declared `^5.5.0`) — read
+the exact versions off `package.json`.
 The React 18 → 19 bump (#67) is complete: React 19 removed
 `propTypes`, function-component `defaultProps`, string refs and
 legacy context — the codebase carries none of those.
@@ -190,8 +191,8 @@ minutes for a missing or unfinished check (`scripts/sast-alert-gate.mjs`),
 and the same ratchet pins it.
 
 Async-request-API: this migration is COMPLETE. Every dynamic route
-handler types `params` as `Promise<…>` and awaits it itself (354 of
-them; zero type it synchronously), and the transparent-await shim that
+handler types `params` as `Promise<…>` and awaits it itself (none
+types it synchronously), and the transparent-await shim that
 `src/lib/errors/api.ts::withApiErrorHandling` once carried was removed
 in Roadmap-6 P3 — the wrapper now forwards `ctx` through untouched.
 Unit tests that pass a plain sync `params` object still work, because a
@@ -239,6 +240,7 @@ prisma/schema/         → Multi-file Prisma schema (GAP-09):
                             trust-center.prisma — Public trust-center projection + gated docs
                             agentic.prisma      — Agent-proposal queue + workflow engine
                             analytics.prisma    — Denormalised dashboard snapshots
+                            legacy-access.prisma— Legacy-app snapshots/accounts, identity aliases, resolutions + match verdicts
                             compliance.prisma   — now an empty stub (do NOT add models here)
                             schema.prisma       — transitional sediment file (currently empty)
                           See prisma/schema/README.md and
@@ -486,8 +488,8 @@ weaker mechanism on that population was measured, once, at a net
 strictness regression across 25 routes.
 
 `tests/guardrails/api-route-has-some-authorization.test.ts` is
-LAYER 2 (#2099) — additive, over ALL 582 `src/app/api/**/route.ts`
-files. It asks only *"is there any authorization on this path at
+LAYER 2 (#2099) — additive, over EVERY `src/app/api/**/route.ts`
+file. It asks only *"is there any authorization on this path at
 all?"*, satisfied by a route-level gate, an `assertCan*` reached
 through the call graph (`tests/helpers/route-authorization-graph.ts`,
 3 module hops), or a declared exempt class whose credential check
@@ -680,20 +682,25 @@ pluralisation). Every caller uses `buildOutboundHeaders(...)` and
 inline, never hand-roll dedupe keys.
 
 **E.3 — Graceful shutdown.** On a rolling deploy the process receives
-SIGTERM. Without a drain handler, three observability surfaces lose
-data: per-tenant audit-stream buffers (irreversible — events never
-reach the SIEM), OTel span batches still in the `BatchSpanProcessor`,
-and Sentry errors still in the transport queue.
-`installShutdownHandlers()` in `src/lib/observability/shutdown.ts`
-drains all three in the order most-to-least critical for audit
-correctness: audit buffers first, then OTel, then Sentry. Each stage
-is `Promise.race`'d against its per-stage budget from
+SIGTERM. Without a drain handler it loses work: per-tenant audit-stream
+buffers (irreversible — events never reach the SIEM), the agentic runs
+it is executing (abandoned RUNNING, later reaped to FAILED), OTel span
+batches still in the `BatchSpanProcessor`, and Sentry errors still in
+the transport queue. `installShutdownHandlers()` in
+`src/lib/observability/shutdown.ts` handles them in the order
+most-to-least costly to lose: audit buffers first, then
+`pauseInFlightRuns` (leaves this process's runs resumable), then OTel,
+then Sentry. Between the run pause and OTel it also closes open
+run-replay streams and cuts open assistant streams with a reason; both
+are synchronous and never throw, so they carry no budget. Each budgeted
+stage is bounded by its per-stage budget from
 `src/lib/observability/shutdown-budget.ts` so a slow exporter never
-blocks past the container's grace period (k8s default 30 s). The
-three stage budgets (3 s + 2 s + 2 s = 7 s) fit under the 20 s
-ceiling — leaving 10+ s for Next.js's own HTTP-drain handler
-running in parallel. The handler never calls `process.exit` —
-`next start` owns the process lifecycle. Registration happens in
+blocks past the container's grace period (k8s default 30 s). The four
+budgets sum to `SHUTDOWN_STAGES_TOTAL_MS`, which must stay under
+`SHUTDOWN_TOTAL_CEILING_MS` (20 s), leaving the rest of the grace
+period for Next.js's own HTTP-drain handler running in parallel. Every
+stage is guarded so a throw in one never skips the later ones. The
+handler never calls `process.exit` — `next start` owns the process lifecycle. Registration happens in
 `src/instrumentation.ts::register()`, after all `init*` calls, and
 is idempotent under HMR via a module-level flag. SIGINT gets the
 same treatment. A second SIGTERM falls through to Node's default
@@ -796,12 +803,13 @@ explicitly. That is a value guarantee, not a type-level one (the declared
 field type is `boolean`), so the custom-role path — which CAN express those
 flags — is re-checked at runtime by `permissionsExceeding`.
 
-`AI_ADMIN` (#3699) runs the agent register and can own and receive agents: the
-seven agent keys (`AGENT_ADMIN_KEYS` — register, tool exposure, policy card,
-kill switch, external tools, harness ingest, agent ownership) on top of
-READER's set, and NONE of the tenant-wide admin keys (no `view`, `manage`,
-members, SSO, SCIM, lifecycle, owner management or DSAR). It sits on READER's
-rung of the coarse ladder (`ROLE_ORDER`), so `canWrite`/`canAdmin` are false
+`AI_ADMIN` (#3699) runs the agent register and can own and receive agents: every
+agent key in `AGENT_ADMIN_KEYS` (`src/lib/permissions.ts` — register, register
+view, tool exposure, policy card, kill switch, external tools, harness ingest,
+agent ownership, skill review, skill authoring) on top of READER's set, and
+NONE of the tenant-wide admin keys (no `view`, `manage`, members, SSO, SCIM,
+lifecycle, owner management or DSAR). It sits on READER's rung of the coarse
+ladder (`ROLE_ORDER`), so `canWrite`/`canAdmin` are false
 and no usecase gated on the coarse tier alone admits it; the agent usecases'
 floor is `assertAgentGovernanceWrite` / `…Admin`
 (`src/app-layer/policies/agent-governance.policies.ts`) — the coarse tier OR
@@ -824,7 +832,7 @@ token is burnt on email mismatch.
 (b) `createTenantWithOwner` in `src/app-layer/usecases/tenant-lifecycle.ts` —
 platform-admin tenant bootstrap, gated by `PLATFORM_ADMIN_API_KEY`
 (constant-time compared via `verifyPlatformApiKey`).
-(c) `/api/auth/register` — credentials self-service signup. It is NOT `AUTH_TEST_MODE`-gated: the route carries no such gate and the Credentials provider is always registered (`src/auth.ts:342-349`), so a self-registered production account is usable. Its only throttle is `TENANT_CREATE_LIMIT` (5/hour). Whether public signup should be open is an open product decision — see the note at the top of `src/app/api/auth/register/route.ts`.
+(c) `/api/auth/register` — credentials self-service signup. It is NOT `AUTH_TEST_MODE`-gated: the route carries no such gate and the Credentials provider (`id: 'credentials'` in `src/auth.ts`) is always registered, so a self-registered production account is usable. Its only throttle is `TENANT_CREATE_LIMIT` (5/hour). Whether public signup should be open is an open product decision — see the note at the top of `src/app/api/auth/register/route.ts`.
 Plus the legitimate SSO + SCIM provisioning paths, the two Epic O-2 org
 paths (`org-provisioning.ts` fans ADMIN rows into every tenant under an
 org for an existing ORG_ADMIN; `org-tenants.ts::createTenantUnderOrg`
@@ -901,7 +909,7 @@ new tenant-membership creation path).
 ### RBAC & Permissions
 
 - `src/lib/permissions.ts` — `PermissionSet` (granular UI flags) resolved from the user's role
-- Built-in roles: `OWNER`, `ADMIN`, `EDITOR`, `READER`, `AUDITOR` (Prisma enum `Role`)
+- Built-in roles: `OWNER`, `ADMIN`, `EDITOR`, `READER`, `AUDITOR`, `AI_ADMIN` (Prisma enum `Role`; see the Epic 1 "Role model" paragraph for `AI_ADMIN`)
 - Custom roles: `TenantCustomRole` model with `permissionsJson` overrides, referenced via `TenantMembership.customRoleId`
 - **Organization roles are `OrgRole`: `ORG_OWNER`, `ORG_ADMIN`, `ORG_READER`**
   (`OrgPermissionSet` from `getOrgPermissions`). `ORG_OWNER` (#4576) lands in two
@@ -921,6 +929,14 @@ new tenant-membership creation path).
   writer of the value) and `canManageTenants`. A new organization is owned by
   its creator. No org delete or rename exists; when one is built it is
   owner-only. Test teardowns delete the ORGANIZATION, not its memberships.
+  **Both layers serialise per organization before they count** (#5373): the
+  trigger and the usecase's in-transaction re-checks take
+  `pg_advisory_xact_lock(hashtext('org-owner:' || organizationId))` first,
+  because under READ COMMITTED two owners demoting each other at once each
+  counted the other as still an owner and both committed. A removal's tenant
+  fan-in and its membership delete share that one transaction, so a refused
+  removal takes no tenant access with it. Keep the trigger function VOLATILE:
+  its count reads a fresh snapshot only because it runs after the lock.
 - `appPermissions` on `RequestContext` is already custom-role–aware
 - **An OWNER or AI_ADMIN membership never carries a custom role** (#3720, #3699).
   A custom role REPLACES the membership's permissions, so on an OWNER it was a
@@ -1027,6 +1043,15 @@ sent to the primary's own challenge page. Sign-in used to ask only the primary, 
 workspace that required MFA but was joined later let its members in on a password alone.
 Do not narrow it back to the primary.
 
+**A challenge pass belongs to the session that answered it** (`verifyMfaChallenge`). The pass
+is recorded on that session's own `UserSession.mfaPassedTenantIds`, and the jwt callback clears
+`mfaPending` or a pending workspace only when the token's `userSessionId` row lists it
+(`workspacesPassedBySession`). It used to compare `UserMfaEnrollment.lastChallengeAt` with the
+token's `iat`, so the real person passing the challenge also cleared an older password-only
+session. A code is accepted once: `lastAcceptedTotpStep` records the step of the last accepted
+code (enrolment included), and the claim is a conditional `updateMany` on a LATER step. Do not go
+back to a time comparison, and do not accept a pass for a request that names no live session.
+
 **An OAuth email counts only when its provider vouches for it** (`src/lib/auth/oauth-email-trust.ts`,
 owner decisions 2026-11-12). The `signIn` callback links a Google or Microsoft sign-in to an
 existing account, and redeems pending invites by address, only on Google's `email_verified ===
@@ -1123,7 +1148,7 @@ Job definitions are in `src/app-layer/jobs/`. The executor registry is `src/app-
 
 ### Data Retention
 
-**See `docs/data-retention.md`** — the policy document that categorizes all 203
+**See `docs/data-retention.md`** — the policy document that categorizes the
 Prisma models into 7 retention categories (Business record / Regulatory artefact /
 Operational / Security ephemeral / PII subject / Financial / Configuration),
 declares the *current* retention behaviour per entity, and surfaces the open
@@ -1249,7 +1274,7 @@ off BY DEFAULT — which is a different kind of nothing.
 
 ```
 03:00 UTC  identity-sync-dispatch    per enabled okta / google-workspace / entra-id / active-directory connection
-04:00 UTC  hris-sync-dispatch        per enabled bamboohr / workday connection  (roster → Employee)
+04:00 UTC  hris-sync-dispatch        per enabled HRIS_PROVIDERS connection (bamboohr / workday / orangehrm; roster → Employee)
 04:30 UTC  identity-joiner-dispatch  per (tenant, provider) over WRITABLE_IDENTITY_PROVIDERS  (#2687)
 05:00 UTC  identity-leaver-dispatch  per (tenant, provider) over WRITABLE_IDENTITY_PROVIDERS
 ```
@@ -1461,8 +1486,11 @@ vendor's API is not evidence about this one.
 `resolveDirectoryWriter`'s construction block — the last arm there falls through
 to `createActiveDirectoryWriter`, so a provider added without a branch silently
 gets an AD writer; a new directory provider that only reads goes in
-`IDENTITY_PROVIDERS` in `jobs/identity-sync.ts` (and the two other copies of that
-list — they are not shared). Follow
+`IDENTITY_PROVIDERS` in `jobs/identity-sync.ts` — and in every other copy of
+that list, because none of them is shared: the identity-sync usecase, the
+integrations usecase (`IDENTITY_SYNC_PROVIDERS`), the connected access review,
+the audit procedures and the admin pages' provider filters each spell the four
+providers out. A grep for `'okta', 'google-workspace'` finds them all. Follow
 [docs/new-subsystem-checklist.md](docs/new-subsystem-checklist.md) as usual.
 
 When the chain produces nothing, the causes are numerous and all present
@@ -2581,8 +2609,16 @@ its own calls from everything its agent is granted, propose tools included.
 sets it — `audit-narrative`, `discovered-agent-review`, `posture-review` and
 `access-posture` (#3775, owner decision) — and
 `tests/unit/agentic/flue-read-only-workflows.test.ts` fails, over the
-registry, for one that does not. External read tools stay on the read surface,
-so `access-posture` still reaches the directory.
+registry, for one that does not. External tools ride the READ surface, so
+`readOnly` also withholds every EXTERNAL write — a write-classified external
+tool and every A2A send (`externalConnection.declaresWrite`), also
+`READ_ONLY_WORKFLOW` (#5365) — from every engine, Test runs and Ask runs
+included; withholding only the propose list let a read-only run open a
+proposal, or at AUTOMATIC a journal row sent with no approval. External READ
+tools stay offered, so `access-posture` still reaches the directory. The
+backstop is `RequestContext.readOnlyRun`, set by `offerToolSet` on every
+closure it hands a read-only run: `dispatchWrite` and `dispatchA2aSend` refuse
+it at every rung, before the prior-state read and before any row.
 
 **The audit narrative (#3749)** is model prose about a regulatory record, so it
 is stored only through `usecases/audit-workpaper-narrative.ts`, after
@@ -2957,8 +2993,9 @@ tenant-wide admin key (see the Epic 1 "Role model" paragraph for its
 
 - **The edge admits it to `AI_ADMIN_ADMIN_PATH_PREFIXES` and nowhere else
   under `/admin`** (`src/lib/auth/guard.ts`): `/api/t/:slug/admin/agents`,
-  `/api/t/:slug/admin/mcp/quarantine` (the one agent-key API outside it) and
-  the three agent redirect pages still under `/t/:slug/admin`. Matching is on
+  plus two agent-key APIs outside it — `/api/t/:slug/admin/a2a` (A2A host
+  consumers, #3861) and `/api/t/:slug/admin/mcp/quarantine` — and the three
+  agent redirect pages still under `/t/:slug/admin`. Matching is on
   segment boundaries, never a bare `startsWith`, and a non-canonical path (a
   `%`, a backslash, an empty or dot segment) is refused rather than reasoned
   about. `tests/unit/ai-admin-edge-allowlist.test.ts` pins the list by exact
@@ -3045,6 +3082,19 @@ call finish and settles the run ABORTED at the check that follows it, with
 nothing sent after it. Observed in production on 2026-11-11: the stop landed
 during a run's last model call, every step reads Done, and the run is Aborted.
 That shape is the check working, not a missed kill.
+
+**An operator's Abort stops every engine, and stays the run's status** (#5366).
+Every engine reads the run row where it reads the kill switch (`isRunAborted`
+in `run-settlement.ts`: after each model and tool call on the Tool Runner,
+before each model call on Flue, between steps on the static driver) and stops
+without settling. `updateRun` never lands a write carrying `status` on an
+ABORTED row, so a late COMPLETED or FAILED is a no-op and the settle helpers
+write no audit row for it. `executeFrom` reports the operator's ABORTED
+whatever the engine returned and REJECTS the decision rows written after the
+abort, telling it from an engine's own ABORTED (a kill, a guard block) by
+`OPERATOR_ABORT_MESSAGE`, which only `abortWorkflowRun` writes. EMPTY_CATALOGUE
+is terminal: the abort refuses it (`isLiveRunStatus`), and its decision rows
+and metric settle as a FAILED run's.
 
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
@@ -3144,10 +3194,14 @@ edit from being undone:
     the profiles naming it; admission asks a third time. Do not price or gate
     from `repositorySkillNames()`: it keeps refused names on purpose, because
     a tenant skill may take none of them.
-    only the APPROVED version in force; a malformed key is refused, never read
-    as a registered workflow key.
-  - **Only the Tool Runner runs a profile** (Step 2c, #4150). `runsProfiles` is
-    a `Record<AgentDriver, boolean>`, true for `tool-runner` alone; a profile's
+  - **`agent-profile:<id>@v<n>` resolves only inside the caller's tenant**
+    (`resolveRunDefinition` in `usecases/agent-profile-runs.ts`), and only to
+    the APPROVED version in force (a Test run's key may also name the
+    SUBMITTED version, below); a malformed key is refused
+    (`PROFILE_KEY_INVALID`), never read as a registered workflow key.
+  - **Only the Tool Runner runs a profile** (Step 2c, #4150). `runsProfiles(driver)`
+    reads a private `Record<AgentDriver, boolean>` (`RUNS_PROFILES` in
+    `src/lib/agentic/agent-profile.ts`), true for `tool-runner` alone; a profile's
     definition asks for that engine, and admission refuses it before the run row
     exists: `PROFILE_NEEDS_REASONING_ENGINE` where the tenant's engine is static
     (or Flue, which a profile does not ask for), `PROFILE_ENGINE_CANNOT_RUN_PROFILES`
@@ -3164,6 +3218,18 @@ edit from being undone:
     context (`TESTER_NOT_A_PERSON` otherwise), and its definition is read-only
     whatever the output kind. The key is what tells the worker it is a Test run,
     so do not drop the suffix from the stored `workflowKey`.
+  - **A profile key names its trigger, and the version decides** (#5367).
+    `resolveRunDefinition` refuses a profile key whose start names no trigger
+    (`PROFILE_TRIGGER_REQUIRED`, before the version is read) and one whose
+    trigger the version's `allowedTriggers` does not hold
+    (`PROFILE_TRIGGER_NOT_ALLOWED`). Each start path passes its own:
+    `startInteractiveRun` `ASK`, the `agent-invoke` dispatcher `AUTOMATION`,
+    `startAgentProfileTestRun` `TEST_RUN`. The generic `POST /agent-runs`, a
+    person or a key, is none of them and passes none, so it starts no profile.
+    The check used to run only when a trigger was named, and only the Test run
+    named one, so a version allowing only `TEST_RUN` ran from an automation
+    rule and from the generic route. A new start path names its trigger; do not
+    default one.
   - **The worker executes what admission PINNED.** `executeQueuedWorkflowRun`
     and resume rebuild a profile run's definition from the run's own
     `profileVersionId` while its instructions hash to `profileInstructionsHash`
@@ -3179,7 +3245,10 @@ edit from being undone:
     opens the same surface to the tenants it names and to no other; the route
     gate reads the URL's slug, the usecases `ctx.tenantSlug`, and a context
     with no slug is never named. Every check goes through
-    `agentProfilesEnabledFor`; do not read either variable anywhere else.
+    `agentProfilesDecisionFor` (or its boolean, `agentProfilesOnFor`) in
+    `src/lib/agentic/agent-switches-policy.ts`, which also reads the
+    organization's choice when the deployment switch is unset; do not decide
+    from either variable anywhere else.
   - **Instructions never grant.** A version's text is scanned at save and at
     approval, and a tool it names that the version does not declare is refused
     (`skill.undeclared_tool`). What a run may call is the version's tools
@@ -3287,9 +3356,9 @@ from being undone:
     per-run budget is a budget on what is sent. A change to the line format is
     a change to both.
   - **It is reported as engine-supplied** (`tool-runner/supplied-tools.ts`).
-    `engineSuppliedTools()` in `agent-tool-exposure.ts` merges both engines'
-    lists by name for the Tools tab. A tool the engine adds and the list omits
-    fails `tests/unit/agentic/tool-runner-skills.test.ts`.
+    `engineSuppliedTools()` in `src/app-layer/usecases/agent-tool-exposure.ts`
+    merges both engines' lists by name for the Tools tab. A tool the engine
+    adds and the list omits fails `tests/unit/agentic/tool-runner-skills.test.ts`.
 
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
@@ -3320,7 +3389,8 @@ directly: that reports an organization's choice as off. The Tool Runner's
 
 **A new engine passes the driver conformance suite before it is switched on**
 (Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables
-hold eleven run scenarios and one admission scenario. An engine supplies an
+hold the run scenarios (`CONFORMANCE_SCENARIOS`) and the admission scenario
+(`ADMISSION_SCENARIOS`). An engine supplies an
 adapter, which scripts the model's turns and reads back an observation. The
 scenarios assert only on that observation. The helper reads `adapter.engine`
 for two describe titles and nothing else, and
@@ -3427,9 +3497,8 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
       `data-testid` only where neither exists.** In hand-written
       markup, do not sprinkle `data-testid` on an element merely to
       select it — give it a real `id`, or select it by role/label.
-      Measured practice in `tests/e2e` spec files: `#id` locators 304
-      calls, `[data-testid=…]` 101, `getByRole` 85;
-      `getByTestId` is used **zero** times.
+      In `tests/e2e` spec files `#id` and role locators are the norm;
+      `[data-testid=…]` and `getByTestId` are the exception.
     - **`<DataTable>` is the documented exception, because there its
       `data-testid` prop IS the `id` setter.** `DataTableProps` has no
       `id` prop and does not extend `HTMLAttributes`; every render
@@ -3437,17 +3506,16 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
       So passing `data-testid="risks-table"` is *how* you create the
       "existing HTML `id`" (`#risks-table`) the rule above tells specs
       to select on — it is not an extra attribute bolted on for tests.
-      Omitting it leaves the table addressable by neither. Ten `#id`
-      selectors across 34 E2E locator calls (`#controls-table`,
+      Omitting it leaves the table addressable by neither. Every
+      `#…-table` selector in the E2E suite (`#controls-table`,
       `#members-table`, `#evidence-table`, `#soa-table`, the
-      `#linked-*-table`s and the `#org-*-table`s) exist
+      `#linked-*-table`s and the `#org-*-table`s among them) exists
       only because that prop was passed. Every list page must pass it,
       on the `<DataTable>` itself or in the `table={{ … }}` config of
       `EntityListPage`; `tests/unit/data-table.test.ts` enforces it and
       `src/components/ui/table/GUIDE.md` shows the canonical call.
-    - **Rendered (RTL) tests are testid-first** — `tests/rendered`
-      calls `getByTestId` 806 times across 124 files (1,087 `*ByTestId`
-      queries across 130 files). A `data-testid`
+    - **Rendered (RTL) tests are testid-first** — `*ByTestId` is the
+      most common query in `tests/rendered`. A `data-testid`
       added because a rendered test needs a stable handle is correct
       and is not covered by the preference above.
     - Scope `#id` / role locators to `getByRole('main')` where a
@@ -3480,8 +3548,8 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
 
   It now merges **nine** artifacts, and which nine is load-bearing.
   Coverage is collected by the jobs that already run the suite: the seven
-  `Test` shards (`JEST_SKIP_RATCHETS=1`, 1392 files), `Ratchets`
-  (guards + guardrails + contracts, 661 files) and `Flue`
+  `Test` shards (`JEST_SKIP_RATCHETS=1`), `Ratchets`
+  (guards + guardrails + contracts) and `Flue`
   (`coverage-shard-flue`). Those sets are
   disjoint and exhaustive — together they are the whole suite, which is
   what makes the merged numbers comparable to the old single-matrix ones.
@@ -3761,13 +3829,13 @@ stands for that PR only — not as a precedent.
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/`
   and `src/lib/schemas/`. Both are backend-first but neither directory is
-  client-free — 13 `'use client'` files import values from
+  client-free — `'use client'` files import values from
   `@/app-layer/schemas/*` (`CALENDAR_EVENT_CATEGORIES` in `CalendarClient.tsx`,
   `ENTRA_MAPPABLE_ROLES` in `GroupMappingsSection.tsx`), and the five
   `src/lib/schemas/*-form.ts` files exist precisely to be imported by the
   `_form/useNew*Form.ts` client hooks. What IS backend-only is
   `src/lib/schemas/index.ts`: it is
-  ~1,270 lines of pure API request bodies with ZERO client importers, so the
+  pure API request bodies with ZERO client importers, so the
   long-standing "(shared)" label here was wrong. The split is benign — nothing
   is duplicated across the two — so this is a doc correction, not a refactor
   brief. See `docs/calendar-surface-do-not-touch.md` §5.
@@ -4281,8 +4349,8 @@ happens. The pending state lives at module scope (NOT in component
 state) so commits survive client-side navigation, mirroring Gmail's
 "undo send" UX.
 
-The wired sites today number 14 — the authority is `SITE_CONTRACTS`
-itself, not this list. They include cross-entity unlink in
+The wired sites are listed in `SITE_CONTRACTS`, which is the
+authority, not this paragraph. They include cross-entity unlink in
 `TraceabilityPanel`, control-evidence and control-requirement unlink on
 the control detail page, task link removal, vendor document removal,
 auditor pack-grant revoke, and BIA dependency removal. The structural

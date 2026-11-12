@@ -49,6 +49,9 @@ const MEMBERSHIPS: ReadonlyArray<{
     // Both ACTIVE, but their tenant is soft-deleted.
     { id: 'm-gina', userId: 'gina', tenantId: 't-ghost', status: 'ACTIVE' },
     { id: 'm-hank', userId: 'hank', tenantId: 't-ghost', status: 'ACTIVE' },
+    // A member of BOTH live tenants, who signs in through one tenant's SSO.
+    { id: 'm-zoe-acme', userId: 'zoe', tenantId: 't-acme', status: 'ACTIVE' },
+    { id: 'm-zoe-globex', userId: 'zoe', tenantId: 't-globex', status: 'ACTIVE' },
     // 'dave' appears nowhere: a signed-in account with zero memberships.
 ];
 
@@ -74,7 +77,10 @@ function findFirstMembership(args: {
     where: Record<string, unknown>;
 }): { id: string } | null {
     const where = args.where;
-    const keys = Object.keys(where).sort().join(',');
+    const keys = Object.keys(where)
+        .filter((k) => k !== 'tenantId' && k !== 'NOT')
+        .sort()
+        .join(',');
     if (keys !== 'status,tenant,userId') {
         throw new Error(
             `avatar audience fake: unexpected where keys [${keys}]. This fake ` +
@@ -97,8 +103,15 @@ function findFirstMembership(args: {
     }
     const viewer = tenantFilter.memberships.some;
 
+    // The session's scope: an SSO session's own tenant, and the tenants the
+    // Entra gate refused it.
+    const onlyTenant = where.tenantId as string | undefined;
+    const notIn = ((where.NOT as { tenantId?: { in?: string[] } } | undefined)?.tenantId?.in) ?? [];
+
     const row = MEMBERSHIPS.find(
         (m) =>
+            (onlyTenant === undefined || m.tenantId === onlyTenant) &&
+            !notIn.includes(m.tenantId) &&
             m.userId === subjectId &&
             m.status === subjectStatus &&
             // `deletedAt: null` — live tenants only.
@@ -171,9 +184,10 @@ function requestFor(subjectUserId: string): NextRequest {
 async function get(
     viewerUserId: string | null,
     subjectUserId: string,
+    scope: { ssoTenantId?: string | null; entraGateDeniedTenantIds?: string[] } = {},
 ): Promise<Response> {
     getServerSessionMock.mockResolvedValue(
-        viewerUserId ? { user: { id: viewerUserId } } : null,
+        viewerUserId ? { user: { id: viewerUserId, ...scope } } : null,
     );
     return GET(requestFor(subjectUserId), {
         params: Promise.resolve({ userId: subjectUserId }),
@@ -330,5 +344,22 @@ describe('avatar serve route — refusal and absence are the same response', () 
         const refused = await observable(await get('carol', 'bob'));
 
         expect(noObject).toEqual(refused);
+    });
+});
+
+describe('avatar serve route — the session scope', () => {
+    it('an unscoped session sees colleagues in every shared tenant', async () => {
+        expect((await get('zoe', 'bob')).status).toBe(200);
+        expect((await get('zoe', 'carol')).status).toBe(200);
+    });
+
+    it("a session opened by one tenant's SSO sees colleagues in that tenant only", async () => {
+        expect((await get('zoe', 'carol', { ssoTenantId: 't-globex' })).status).toBe(200);
+        expect((await get('zoe', 'bob', { ssoTenantId: 't-globex' })).status).toBe(404);
+    });
+
+    it('a tenant the Entra gate refused this session shares nobody', async () => {
+        expect((await get('zoe', 'bob', { entraGateDeniedTenantIds: ['t-acme'] })).status).toBe(404);
+        expect((await get('zoe', 'carol', { entraGateDeniedTenantIds: ['t-acme'] })).status).toBe(200);
     });
 });

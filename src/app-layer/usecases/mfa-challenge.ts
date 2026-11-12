@@ -8,7 +8,7 @@
  * Audit events: MFA_CHALLENGE_PASSED, MFA_CHALLENGE_FAILED
  */
 import { prisma } from '@/lib/prisma';
-import { decryptTotpSecret, verifyTotpCode } from '@/lib/security/totp-crypto';
+import { decryptTotpSecret, matchTotpStep } from '@/lib/security/totp-crypto';
 import { logEvent } from '../events/audit';
 import type { RequestContext } from '../types';
 import { badRequest, internal } from '@/lib/errors/types';
@@ -24,13 +24,23 @@ export interface MfaChallengeResult {
 
 /**
  * Verifies a TOTP code during the MFA login challenge.
- * On success, updates lastChallengeAt so JWT callback can clear mfaPending.
+ *
+ * A pass is bound to the session that answered it: on success this session's
+ * `UserSession.mfaPassedTenantIds` gains the workspace, and the jwt callback
+ * clears a pending workspace only when the session's own row lists it. A
+ * session the request cannot name (`userSessionId` null) cannot pass, because
+ * nothing would bind the pass to it.
+ *
+ * A code is accepted once: the enrolment records the time step of the last
+ * accepted code, and a code is accepted only for a later step, claimed with a
+ * conditional update so two concurrent uses cannot both win.
  */
 export async function verifyMfaChallenge(
     userId: string,
     tenantId: string,
     code: string,
     remaining: number,
+    userSessionId: string | null,
 ): Promise<MfaChallengeResult> {
     logger.info('mfa challenge started', { component: 'mfa', userId });
 
@@ -55,8 +65,40 @@ export async function verifyMfaChallenge(
         throw internal('Server configuration error');
     }
 
+    // The session this pass will belong to: this user's, and still live.
+    const session = userSessionId
+        ? await prisma.userSession.findUnique({
+              where: { sessionId: userSessionId },
+              select: { userId: true, revokedAt: true, expiresAt: true },
+          })
+        : null;
+    if (!session || session.userId !== userId || session.revokedAt || session.expiresAt <= new Date()) {
+        logger.warn('mfa challenge refused: no live session to bind the pass to', { component: 'mfa', userId });
+        return {
+            success: false,
+            message: 'Your sign-in could not be confirmed. Sign out, sign in again and enter a new code.',
+            remaining,
+        };
+    }
+
     const secret = decryptTotpSecret(enrollment.secretEncrypted, authSecret);
-    const isValid = verifyTotpCode(secret, code);
+    const step = matchTotpStep(secret, code);
+    // Accept the code only for a step later than the last accepted one. The
+    // conditional update is the claim: of two requests carrying the same
+    // code, one updates the row and the other finds nothing to update.
+    const claimed =
+        step === null
+            ? 0
+            : (
+                  await prisma.userMfaEnrollment.updateMany({
+                      where: {
+                          id: enrollment.id,
+                          OR: [{ lastAcceptedTotpStep: null }, { lastAcceptedTotpStep: { lt: step } }],
+                      },
+                      data: { lastAcceptedTotpStep: step, lastChallengeAt: new Date() },
+                  })
+              ).count;
+    const isValid = claimed === 1;
 
     // Build a minimal audit context (challenge route doesn't have full RequestContext)
     const auditCtx: RequestContext = {
@@ -87,15 +129,15 @@ export async function verifyMfaChallenge(
         logger.warn('mfa challenge failed', { component: 'mfa', userId, remaining });
         return {
             success: false,
-            message: 'Invalid code. Please check your authenticator app and try again.',
+            message: 'Invalid or already-used code. Check your authenticator app, or wait for its next code.',
             remaining,
         };
     }
 
-    // Success — update lastChallengeAt
-    await prisma.userMfaEnrollment.update({
-        where: { id: enrollment.id },
-        data: { lastChallengeAt: new Date() },
+    // Success — bind the pass to this session.
+    await prisma.userSession.update({
+        where: { sessionId: userSessionId! },
+        data: { mfaPassedTenantIds: { push: tenantId } },
     });
 
     // Audit: passed challenge

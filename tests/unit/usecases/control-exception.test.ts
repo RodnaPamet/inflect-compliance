@@ -411,6 +411,8 @@ describe('renewException', () => {
             riskAcceptedByUserId: 'risk-owner-prior',
             status: 'EXPIRED',
         });
+        // The carried-over acceptor is still an active member.
+        db.tenantMembership.findFirst.mockResolvedValueOnce({ id: 'm-prior' });
         mockRepo.create.mockResolvedValueOnce({ id: 'ex-renewed' } as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
@@ -435,6 +437,7 @@ describe('renewException', () => {
             riskAcceptedByUserId: 'risk-owner-prior',
             status: 'APPROVED',
         });
+        db.tenantMembership.findFirst.mockResolvedValueOnce({ id: 'm-prior' });
         mockRepo.create.mockResolvedValueOnce({ id: 'ex-renewed' } as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 

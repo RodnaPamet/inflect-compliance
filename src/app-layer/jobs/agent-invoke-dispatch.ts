@@ -193,6 +193,10 @@ export async function runAgentInvokeDispatch(
         // lineage lived in the queue and vanished when the job completed.
         const started = await startWorkflowRun(ctx, workflowKey, projectInput(payload), {
             parentExecutionId: payload.parentExecutionId,
+            // An `INVOKE_AGENT` rule is the AUTOMATION trigger (#5367): a profile
+            // key runs from here only when its version allows it. Ignored for a
+            // registered workflow key.
+            profileTrigger: 'AUTOMATION',
         });
         logger.info('agent-invoke: dispatched', {
             component: 'automation', tenantId, agentId, workflowKey, depth, runId: started.runId,

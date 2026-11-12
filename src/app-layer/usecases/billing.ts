@@ -1,10 +1,12 @@
 /**
  * Billing — administrative plan changes.
  *
- * `changeTenantPlan` is the only first-party path that mutates
- * `BillingAccount.plan`. This deployment has no Stripe webhook, so a
- * plan change is an explicit operator/admin action rather than a
- * subscription-event side effect. It emits `business.plan.upgraded` /
+ * `changeTenantPlan` is the manual path that mutates `BillingAccount.plan`;
+ * the Stripe webhook (`src/lib/stripe.ts`) is the other. Its only caller is
+ * the PLATFORM-admin route, through `setTenantPlanAsPlatform` in
+ * `tenant-lifecycle.ts`: a plan
+ * decides a tenant's entitlements, so a tenant's own OWNER must not set it
+ * (owner decision 2026-11-12). It emits `business.plan.upgraded` /
  * `business.plan.downgraded` by comparing the plan RANK before/after
  * the change — the canonical wiring point for those two KPIs.
  *

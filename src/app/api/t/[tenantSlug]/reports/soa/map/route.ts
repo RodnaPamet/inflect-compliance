@@ -1,9 +1,8 @@
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { z } from 'zod';
 import { runInTenantContext } from '@/lib/db-context';
-import { assertCanWrite } from '@/app-layer/policies/common';
+import { assertCanMapFramework } from '@/app-layer/policies/control.policies';
 import { logEvent } from '@/app-layer/events/audit';
 import { jsonResponse } from '@/lib/api-response';
 import { notFound } from '@/lib/errors/types';
@@ -15,10 +14,11 @@ const MapBody = z.object({
     controlId: z.string().min(1),
 }).strip();
 
-export const POST = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    assertCanWrite(ctx);
+// `controls.edit`, the key POST /controls/:controlId/requirements takes, and
+// the usecase floor that path asserts (`assertCanMapFramework`): both write the
+// same control-to-requirement mapping.
+export const POST = withApiErrorHandling(requirePermission<{ tenantSlug: string }>('controls.edit', async (req, _routeArgs, ctx) => {
+    assertCanMapFramework(ctx);
 
     const body = MapBody.parse(await req.json());
 
@@ -75,4 +75,4 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
     });
 
     return jsonResponse(result, { status: 201 });
-});
+}));

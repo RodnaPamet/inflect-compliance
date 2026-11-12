@@ -48,6 +48,8 @@ const mockState = {
     alreadyTokens: 0,
     toolCallLimit: null as number | null,
     killAfterModelCalls: null as number | null,
+    /** An operator aborts the run once this many model calls are made (#5366). */
+    abortAfterModelCalls: null as number | null,
     modelCalls: 0,
     ledger: [] as Array<{ kind: string; rec: Record<string, unknown> }>,
     decisionRows: [] as Array<{ inputDigest: string }>,
@@ -62,6 +64,10 @@ const mockState = {
 // reset to null is narrowed to `null` across the await.
 function recordedSettlement(): MockSettlement | null {
     return mockState.settlement;
+}
+
+function mockAborted(): boolean {
+    return mockState.abortAfterModelCalls !== null && mockState.modelCalls >= mockState.abortAfterModelCalls;
 }
 
 function mockKilled(): boolean {
@@ -106,7 +112,12 @@ jest.unstable_mockModule('@/lib/agentic/drivers/run-settlement', () => {
         return status;
     };
     return {
-        updateRun: jest.fn(async () => undefined),
+        // As the real one does (#5366): a write that settles does not land on
+        // a row an operator aborted, and says so.
+        updateRun: jest.fn(async (_c: unknown, _r: string, data: Record<string, unknown>) =>
+            !(typeof data.status === 'string' && mockAborted()),
+        ),
+        isRunAborted: jest.fn(async () => mockAborted()),
         failRun: jest.fn(async (_c: unknown, _r: string, message: string) => settle('FAILED', message)),
         haltRunAtKill: jest.fn(async (_c: unknown, _r: string, _kill: unknown, message: string) => settle('ABORTED', message)),
         haltRunAtCap: jest.fn(async (_c: unknown, _r: string, halt: { kind: string; message: string }) =>
@@ -296,6 +307,7 @@ async function runOnFlue(run: ConformanceRun): Promise<ConformanceObservation> {
     mockState.alreadyTokens = run.alreadySpent?.tokens ?? 0;
     mockState.toolCallLimit = run.toolCallLimit ?? null;
     mockState.killAfterModelCalls = run.killAfterModelCalls ?? null;
+    mockState.abortAfterModelCalls = run.abortAfterModelCalls ?? null;
     mockState.modelCalls = 0;
     mockState.ledger = [];
     mockState.decisionRows = [];
