@@ -5,7 +5,7 @@ inflect · ai architecture · presidio · roadmap v1 · 2026-10-29
 > **Status: living design** — the integration roadmap for Microsoft Presidio,
 > named by the target architecture for Layer 1 as "PII redaction". The
 > **Current state** section is true today (main 3.338.0, `a1c2f05c`, plus
-> Phase 0 of 2026-11-11). The **Roadmap** section is the plan. This is a child
+> Phase 0 and the Phase 1 seam of 2026-11-11, reconciled 2026-11-12). The **Roadmap** section is the plan. This is a child
 > of [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
 > first for the target map, the global rules **G1–G13**, and the sequencing.
 > If the code contradicts a fact here, the code wins and the pull request that
@@ -81,8 +81,10 @@ flowchart LR
   root with its own context (`Dockerfile.dockerignore`, an allowlist, because
   the root one excludes `tests/`) and runs the pytest suite. Nothing calls it.
 - **D-L1-1 is decided and is code.** `src/lib/ai/pii/scope.ts` holds the five
-  types (`PERSON`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, `IBAN_CODE`, `BG_EGN`), the
-  two locales and `LOCAL_ROUTE_REDACTED = false`.
+  types (`PERSON`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, `IBAN_CODE`, `BG_EGN` —
+  Presidio's own names, used unchanged by the corpus, the record, the seam and
+  the placeholders), the two locales, the external-route rule and
+  `LOCAL_ROUTE_REDACTED = false`.
 - **A fixture corpus and a first record exist.** `tests/fixtures/pii/` is 85
   generated EN + BG cases with ground-truth spans in all four case kinds; a
   Jest test regenerates it and refuses a hand edit.
@@ -91,16 +93,26 @@ flowchart LR
   `evals/pii/records/` holds one record for the current configuration hash
   (CI fails when a recogniser changes without a new one). Its figures are a
   development-set measure — the recognisers were corrected against the same
-  corpus — and are not yet a mount condition.
-- **No Presidio, no NER model, no Python** in the app (G5).
+  corpus — and it does **not** mount: the corpus has fewer than 20 spans for
+  eight of the ten type-locale pairs (`LOW_SUPPORT`), and EN PERSON precision
+  (22/31) is below the proposed floor.
 - **The `PiiDetector` seam exists and is mounted nowhere** (2026-11-11,
-  `src/lib/ai/pii/`). It holds the D-L1-1 scope (`entities.ts`), a pure
-  `redact()`, a Presidio HTTP client behind `safeFetch`, a fixture stub, the
-  mount gate (`mount.ts`, a passing record under `evals/pii/records/` for
-  `AI_PII_CONFIG_HASH`, made by the Presidio provider against the committed
-  fixture set), and the egress use (`egress.ts`), which blocks with
-  `PII_DETECTOR_UNAVAILABLE` when a tenant has redaction on and the detector
-  is unmounted or unreachable. No record exists, no service runs, and no
+  reconciled with Phase 0 on 2026-11-12, `src/lib/ai/pii/`). It holds a pure
+  `redact()`, a Presidio HTTP client (`presidio-provider.ts`), a fixture stub,
+  `measure.ts` (a record produced through any detector, in Phase 0's format),
+  the mount gate (`mount.ts`) and the egress use (`egress.ts`), which blocks
+  with `PII_DETECTOR_UNAVAILABLE` when a tenant has redaction on and the
+  detector is unmounted or unreachable. There is ONE record format and ONE
+  ground truth, Phase 0's: the mount gate scores the newest record for
+  `AI_PII_CONFIG_HASH` against the committed corpus and requires a Presidio
+  record, at least 20 spans per type per locale, and recall ≥ 0.95 /
+  precision ≥ 0.80 per type per locale (all three proposed, not initialled).
+  The client is an **in-deployment service** (G6 as amended 2026-11-12): it is
+  reached only through `inDeploymentRequest` in
+  `src/lib/ai/in-deployment-service.ts`, over http or https, every resolved
+  address inside the deployment, one deadline, a byte cap that aborts, no
+  redirects — not `safeFetch`, which refused the Compose network.
+  `AI_PII_BASE_URL` is read by `mount.ts` alone. No service runs and no
   product path calls it, so no payload is checked yet.
 
 ## Fit, and what is deliberately not adopted
@@ -203,41 +215,43 @@ are not optional in a BG product).
       the config from Phase 0, digest), app/worker network only, no published
       port. Waits on the capacity budget's C1. `AI_PII_BASE_URL` and
       `AI_PII_CONFIG_HASH` are already in `src/env.ts` (absent = no detector,
-      G9). Open: `safeFetch` is https-only and refuses private addresses, so a
-      Compose-internal `http://presidio:…` is unreachable on the seam's
-      transport (it is UNMOUNTED as `BASE_URL_NOT_HTTPS`); 1.1 decides between
-      TLS plus the deployment-level egress allowlist and an operator-only
-      internal dial in the `local-gateway.ts` style. The records directory
-      and the fixture set also have to be copied into the runtime image.
+      G9). The transport question is settled by the G6 amendment
+      (2026-11-12): the detector is an in-deployment service, so a
+      Compose-internal `http://presidio:3000` is the expected base URL, and a
+      URL resolving outside the deployment refuses every call. The records
+      directory and the corpus also have to be copied into the runtime image.
 - [x] 1.2 `src/lib/ai/pii/`: `types.ts` (`PiiDetector.analyze(text, locale)` →
       spans; `redact(text, spans, policy)` → `{ text, redactions }`),
-      `presidio-provider.ts` (`safeFetch`, byte cap, deadline), `stub-provider.ts`
-      (fixture-driven), `policy.ts` (per-type action from D-L1-1). D-L1-1's
-      scope lives once in `entities.ts`; every type is REPLACED; there is no
-      HASH action, because an unkeyed digest of an ЕГН is reversible by
-      enumeration.
+      `presidio-provider.ts` (the in-deployment dial, byte cap, deadline),
+      `stub-provider.ts` (fixture-driven), `policy.ts` (per-type action from
+      D-L1-1). D-L1-1's scope lives once in `scope.ts`; every type is
+      REPLACED (`<PERSON_1>`, `<EMAIL_ADDRESS_1>`); there is no HASH action,
+      because an unkeyed digest of an ЕГН is reversible by enumeration.
 - [x] 1.3 Outage policy: for the *egress* use, an unavailable detector
       **blocks** egress to an external provider with reason
       `PII_DETECTOR_UNAVAILABLE` for tenants that have redaction on (fail
       closed — the alternative is sending unredacted text), and is a no-op
       for tenants that have it off. A configured but unmounted detector blocks
       the same way; `FLAG` sends unchanged and records the outage.
-- [x] 1.4 The record from Phase 0 is the mount condition: the provider is
-      registered only if a record exists for the current config hash (the
-      skills mount-gate pattern). The ground truth is the committed fixture
-      set (`fixture-set.ts`, read from `tests/fixtures/pii/fixture-set.json`),
-      never the record: a record whose `fixtureDigest` or cases differ from
-      the set is `SET_MISMATCH`, and the set needs at least 20 spans per type
-      per locale (proposed). The newest record for the config decides by
-      instant, a malformed one refuses the mount, and a record not made by the
-      Presidio provider (the stub's replay) is `DETECTOR_MISMATCH`. The record
-      shape, the four case kinds and the proposed floors (recall 0.95,
-      precision 0.80, per type per locale, not yet initialled) are in
-      `evaluation-record.ts` and `fixture-set.ts`; Phase 0's set and record
-      must be written in those shapes. `measure.ts` produces a record through
-      any detector; the "reproduce through HTTP" test runs it over the
-      provider's test seam until the service exists, so Phase 1's "done when"
-      is still open.
+- [x] 1.4 The record is the mount condition: the provider is registered only
+      if a record exists for the current config hash (the skills mount-gate
+      pattern). The format is Phase 0's (`evaluation-record.ts`): the ground
+      truth is the committed corpus (`tests/fixtures/pii/corpus.json`), named
+      by the digest of its bytes, never the record — a record that answered
+      another corpus is `CORPUS_MISMATCH`. `checkPiiEvaluationRecord`
+      recomputes per-type, per-locale recall and precision from the raw spans
+      with Phase 0's rule, and refuses below 20 spans per type per locale
+      (`LOW_SUPPORT`) or below recall 0.95 / precision 0.80 (`BELOW_FLOOR`) —
+      all three proposed, not initialled. The newest record for the config
+      decides by instant (`ranAt`), a malformed one refuses the mount, and a
+      record not made by the Presidio provider (the stub's replay) is
+      `DETECTOR_MISMATCH`. Records are produced at score threshold 0, and the
+      mounted provider asks for exactly that. `measure.ts` produces a record
+      through any detector; the "reproduce through HTTP" test replays the
+      committed record through the provider and the real dial (network mocked
+      at `undici` and DNS) until the service exists, so Phase 1's "done when"
+      is still open — and a held-out corpus large enough for the support
+      floor comes before any record mounts.
 
 **Prompt.**
 ```text

@@ -31,7 +31,7 @@
  */
 import { logger } from '@/lib/observability';
 
-import { PII_LOCALES, redactionAppliesToRoute, type PiiEgressRoute, type PiiEntityType } from './entities';
+import { PII_LOCALES, redactionAppliesToRoute, type PiiEgressRoute, type PiiEntityType } from './scope';
 import type { PiiDetectorResolution } from './mount';
 import { EGRESS_REDACTION_POLICY } from './policy';
 import { countByType, redact } from './redact';

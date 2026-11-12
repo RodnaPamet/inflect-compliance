@@ -169,6 +169,7 @@ describe('the services held to the rule are a closed, named set', () => {
             'ai-guard-nemo': 'AI_GUARD_NEMO_BASE_URL',
             embed: 'AI_EMBED_LOCAL_BASE_URL',
             rerank: 'AI_RERANK_LOCAL_BASE_URL',
+            'pii-detector': 'AI_PII_BASE_URL',
         });
     });
 });

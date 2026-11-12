@@ -28,6 +28,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from inflect_pii import config  # noqa: E402
 
+# Every span the analyzer returns, each with its score. The mounted provider
+# asks the service for exactly this threshold (PII_SCORE_THRESHOLD in
+# src/lib/ai/pii/evaluation-record.ts; a unit test holds the two equal), so it
+# answers what the record measured. Not part of config_hash(): the threshold is
+# a property of the measurement and of the request, not of the recognisers.
+SCORE_THRESHOLD = 0.0
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -41,7 +48,9 @@ def main() -> int:
 
     answers = []
     for case in corpus["cases"]:
-        found = analyzer.analyze(text=case["text"], language=case["locale"], entities=config.SCOPE)
+        found = analyzer.analyze(
+            text=case["text"], language=case["locale"], entities=config.SCOPE, score_threshold=SCORE_THRESHOLD
+        )
         spans = sorted(
             ({"type": r.entity_type, "start": r.start, "end": r.end, "score": round(float(r.score), 4)} for r in found),
             key=lambda s: (s["start"], s["end"], s["type"]),

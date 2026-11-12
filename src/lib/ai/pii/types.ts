@@ -12,7 +12,7 @@
  * code-point offset applied to a JS string lands one unit early per astral
  * character before it — and an early end is an unredacted tail.
  */
-import type { PiiEntityType, PiiLocale } from './entities';
+import type { PiiEntityType, PiiLocale } from './scope';
 
 export interface PiiSpan {
     readonly type: PiiEntityType;
@@ -45,7 +45,10 @@ export interface PiiDetector {
 /** Why a detector could not answer. Never carries the analysed text. */
 export type PiiDetectorFailure =
     | 'SCHEME_REFUSED'
+    /** The service's address is outside the deployment, or it redirected: nothing was read. */
     | 'EGRESS_REFUSED'
+    /** DNS failed, or the socket did: the service is not there. */
+    | 'UNREACHABLE'
     | 'TIMEOUT'
     | 'HTTP_ERROR'
     | 'TOO_LARGE'

@@ -20,7 +20,7 @@ import { createStubPiiDetector } from '@/lib/ai/pii/stub-provider';
 import { PiiDetectorError, type PiiDetector } from '@/lib/ai/pii/types';
 
 const TEXT = 'Ask Zara Quillfeather (Добрина) about it.';
-const RECORD = { detector: 'stub@1', configHash: `sha256:${'a'.repeat(64)}`, producedAt: '2026-11-11T00:00:00.000Z' };
+const RECORD = { detector: 'stub@1', configHash: `sha256:${'a'.repeat(64)}`, ranAt: '2026-11-11T00:00:00.000Z' };
 
 function mounted(detector: PiiDetector): PiiDetectorResolution {
     return { state: 'MOUNTED', detector, record: RECORD };

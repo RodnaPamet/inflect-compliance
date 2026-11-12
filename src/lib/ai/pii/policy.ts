@@ -12,16 +12,16 @@
  * number is reversed by enumerating the space, so it would be a redaction that
  * redacts nothing. A keyed digest needs a key-management decision of its own.
  */
-import { PII_ENTITY_TYPES, type PiiEntityType } from './entities';
+import { PII_ENTITY_TYPES, type PiiEntityType } from './scope';
 import type { PiiRedactionAction, PiiRedactionPolicy } from './types';
 
 /** The egress policy. A `Record` over the union, so a new type without an action fails `tsc`. */
 export const EGRESS_REDACTION_POLICY: PiiRedactionPolicy = {
     PERSON: 'REPLACE',
-    EMAIL: 'REPLACE',
-    PHONE: 'REPLACE',
-    IBAN: 'REPLACE',
-    EGN: 'REPLACE',
+    EMAIL_ADDRESS: 'REPLACE',
+    PHONE_NUMBER: 'REPLACE',
+    IBAN_CODE: 'REPLACE',
+    BG_EGN: 'REPLACE',
 };
 
 /** A policy applying one action to every type — for tests and shape-keeping surfaces. */

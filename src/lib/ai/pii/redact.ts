@@ -21,7 +21,7 @@
  * appearance, so the same person named twice is `<PERSON_1>` twice — the model
  * can still follow who did what without ever seeing who.
  */
-import { PII_ENTITY_TYPES, type PiiEntityType } from './entities';
+import { PII_ENTITY_TYPES, type PiiEntityType } from './scope';
 import type { PiiRedaction, PiiRedactionPolicy, PiiRedactionResult, PiiSpan } from './types';
 
 export class PiiSpanOutOfRangeError extends Error {

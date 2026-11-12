@@ -7,31 +7,41 @@
  *              redaction is OFF for every tenant — the deployment key of the
  *              two (Phase 2.1 adds the tenant's).
  *   UNMOUNTED  the operator configured a detector and it may not be used: no
- *              config hash, a base URL that is not https, no committed record
- *              for the deployed configuration, a record made by a different
- *              detector, a record that does not answer the committed fixture
- *              set, or a record whose RECOMPUTED rates fall short. The egress
- *              use BLOCKS for a tenant with redaction on (`./egress.ts`): the
- *              operator asked for a detector, and the one they have cannot
- *              vouch for itself.
- *   MOUNTED    a Presidio provider, built with the threshold its record was
- *              measured at.
+ *              config hash, a base URL that is not an in-deployment address,
+ *              no committed record for the deployed configuration, a record
+ *              made by a different detector, a record that does not answer the
+ *              committed fixture corpus, or one whose RECOMPUTED rates or
+ *              support fall short. The egress use BLOCKS for a tenant with
+ *              redaction on (`./egress.ts`): the operator asked for a
+ *              detector, and the one they have cannot vouch for itself.
+ *   MOUNTED    a Presidio provider, asking for the threshold records are
+ *              measured at (`PII_SCORE_THRESHOLD`).
  *
- * This is the ONLY module that constructs the Presidio provider, and the only
- * call of `resolvePiiDetector` under `src/` passes no options
+ * This is the ONLY module that constructs the Presidio provider, the ONLY
+ * reader of `AI_PII_BASE_URL` (G6 as amended 2026-11-12: an in-deployment
+ * service's URL is operator config read by exactly one module —
+ * `tests/guards/ssrf-egress-coverage.test.ts`), and the only call of
+ * `resolvePiiDetector` under `src/` passes no options
  * (`tests/guards/pii-detector-single-seam.test.ts`), so "mounted only with a
  * passing record" is not a convention a second caller could skip, nor one a
- * caller could re-point at another directory or another transport.
+ * caller could re-point at another directory.
+ *
+ * The base URL's STRUCTURE is judged here (`checkPerimeterUrl`: http or https,
+ * no credentials, no metadata host, no literal outside the deployment); what
+ * the host RESOLVES to is judged at every call by the shared in-deployment
+ * dial, which refuses a public address before sending anything.
  *
  * Records are read from `evals/pii/records/*.json` and the ground truth from
- * `tests/fixtures/pii/fixture-set.json`, both relative to the process's working
- * directory. Neither exists today, so every configured deployment answers
- * UNMOUNTED(NO_RECORD) — the designed state, not a gap.
+ * the committed corpus `tests/fixtures/pii/corpus.json` (Phase 0's, the one
+ * ground truth), both relative to the process's working directory. One record
+ * exists today, for Phase 0's configuration, and it does not mount: the corpus
+ * is below `PII_MIN_SUPPORT` and EN PERSON precision is below the floor — the
+ * designed state, not a gap.
  *
  * ── WHICH RECORD DECIDES ────────────────────────────────────────────────────
  *
- * The NEWEST record for the configuration, by the instant its `producedAt`
- * names (`Date.parse`, never string order: "…00:00:00.500Z" sorts before
+ * The NEWEST record for the configuration, by the instant its `ranAt` names
+ * (`Date.parse`, never string order: "…00:00:00.500Z" sorts before
  * "…00:00:00Z"), passing or not — an older pass never stands in for a newer
  * failure. Every record that names this configuration, or names none, is
  * schema-checked first: a malformed one cannot be placed in time, so it cannot
@@ -41,22 +51,28 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { env } from '@/env';
+import { checkPerimeterUrl } from '@/lib/ai/in-deployment-service';
 
-import { checkPiiEvaluationRecord, PiiEvaluationRecordSchema, type PiiRecordRefusal } from './evaluation-record';
-import { createPresidioDetector, PRESIDIO_DETECTOR_ID, type PresidioProviderOptions } from './presidio-provider';
+import {
+    checkPiiEvaluationRecord,
+    PII_SCORE_THRESHOLD,
+    PiiEvaluationRecordSchema,
+    type PiiMountCheckRefusal,
+} from './evaluation-record';
+import { createPresidioDetector, PRESIDIO_DETECTOR_ID } from './presidio-provider';
 import type { PiiDetector } from './types';
 
 export const PII_RECORDS_DIR = path.join('evals', 'pii', 'records');
-export const PII_FIXTURE_SET_FILE = path.join('tests', 'fixtures', 'pii', 'fixture-set.json');
+export const PII_CORPUS_FILE = path.join('tests', 'fixtures', 'pii', 'corpus.json');
 
 export type PiiMountRefusal =
     | 'NO_CONFIG_HASH'
-    | 'BASE_URL_NOT_HTTPS'
+    | 'BASE_URL_OUTSIDE_DEPLOYMENT'
     | 'RECORDS_UNREADABLE'
     | 'NO_RECORD'
     | 'DETECTOR_MISMATCH'
-    | 'NO_FIXTURE_SET'
-    | PiiRecordRefusal;
+    | 'NO_CORPUS'
+    | PiiMountCheckRefusal;
 
 export type PiiDetectorResolution =
     | { readonly state: 'ABSENT' }
@@ -64,20 +80,20 @@ export type PiiDetectorResolution =
     | {
         readonly state: 'MOUNTED';
         readonly detector: PiiDetector;
-        readonly record: { readonly detector: string; readonly configHash: string; readonly producedAt: string };
+        readonly record: { readonly detector: string; readonly configHash: string; readonly ranAt: string };
     };
 
+/**
+ * Test seams, all three. Production passes nothing and reads the env and the
+ * working directory; no caller under `src/` may pass any (the single-seam
+ * guard). There is no fetch seam: the provider reaches its service only
+ * through the in-deployment dial.
+ */
 export interface ResolvePiiDetectorOptions {
     readonly baseUrl?: string;
     readonly configHash?: string;
-    /**
-     * Test seam: the directory `evals/pii/records/` and `tests/fixtures/pii/`
-     * are read under. Production reads the working directory. No caller under
-     * `src/` may pass it (the single-seam guard).
-     */
+    /** The directory `evals/pii/records/` and `tests/fixtures/pii/` are read under. */
     readonly root?: string;
-    /** Test seam, handed to the provider. No caller under `src/` may pass it. */
-    readonly fetchImpl?: PresidioProviderOptions['fetchImpl'];
 }
 
 function unmounted(reason: PiiMountRefusal, detail: string): PiiDetectorResolution {
@@ -94,6 +110,12 @@ function readRecords(dir: string): { file: string; raw: unknown }[] {
         .map((file) => ({ file, raw: JSON.parse(fs.readFileSync(path.join(dir, file), 'utf-8')) as unknown }));
 }
 
+/** The configuration a raw record names, if it names one as a string. */
+function namedConfig(raw: unknown): unknown {
+    const detector = (raw as { detector?: unknown } | null)?.detector;
+    return (detector as { configHash?: unknown } | null | undefined)?.configHash;
+}
+
 export function resolvePiiDetector(opts: ResolvePiiDetectorOptions = {}): PiiDetectorResolution {
     const baseUrl = 'baseUrl' in opts ? opts.baseUrl : env.AI_PII_BASE_URL;
     const configHash = 'configHash' in opts ? opts.configHash : env.AI_PII_CONFIG_HASH;
@@ -101,13 +123,10 @@ export function resolvePiiDetector(opts: ResolvePiiDetectorOptions = {}): PiiDet
     if (!configHash) {
         return unmounted('NO_CONFIG_HASH', 'AI_PII_BASE_URL is set but AI_PII_CONFIG_HASH does not name the deployed configuration');
     }
-    let protocol: string | null;
-    try {
-        protocol = new URL(baseUrl).protocol;
-    } catch {
-        protocol = null;
+    const where = checkPerimeterUrl(baseUrl);
+    if (!where.ok) {
+        return unmounted('BASE_URL_OUTSIDE_DEPLOYMENT', `the detector is an in-deployment service, and its base URL is refused: ${where.reason}`);
     }
-    if (protocol !== 'https:') return unmounted('BASE_URL_NOT_HTTPS', 'the detector is reached through safeFetch, which is https-only');
 
     const root = opts.root ?? process.cwd();
     let records: { file: string; raw: unknown }[];
@@ -123,13 +142,13 @@ export function resolvePiiDetector(opts: ResolvePiiDetectorOptions = {}): PiiDet
     // be ruled out — must parse before any is ordered.
     const forConfig: { file: string; raw: unknown; detectorName: string; at: number }[] = [];
     for (const r of records) {
-        const named = (r.raw as { configHash?: unknown } | null)?.configHash;
+        const named = namedConfig(r.raw);
         if (typeof named === 'string' && named !== configHash) continue;
         const parsed = PiiEvaluationRecordSchema.safeParse(r.raw);
         if (!parsed.success) {
-            return unmounted('MALFORMED', `${r.file}: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+            return unmounted('MALFORMED_RECORD', `${r.file}: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
         }
-        forConfig.push({ file: r.file, raw: r.raw, detectorName: parsed.data.detector.name, at: Date.parse(parsed.data.producedAt) });
+        forConfig.push({ file: r.file, raw: r.raw, detectorName: parsed.data.detector.name, at: Date.parse(parsed.data.ranAt) });
     }
     forConfig.sort((a, b) => (a.at === b.at ? a.file.localeCompare(b.file) : a.at - b.at));
     const newest = forConfig[forConfig.length - 1];
@@ -141,23 +160,23 @@ export function resolvePiiDetector(opts: ResolvePiiDetectorOptions = {}): PiiDet
         return unmounted('DETECTOR_MISMATCH', `${newest.file} measured '${newest.detectorName}', not '${PRESIDIO_DETECTOR_ID}'`);
     }
 
-    let fixtureSet: unknown;
+    let corpusText: string;
     try {
-        fixtureSet = JSON.parse(fs.readFileSync(path.join(root, PII_FIXTURE_SET_FILE), 'utf-8')) as unknown;
+        corpusText = fs.readFileSync(path.join(root, PII_CORPUS_FILE), 'utf-8');
     } catch (e) {
-        return unmounted('NO_FIXTURE_SET', `${PII_FIXTURE_SET_FILE}: ${e instanceof Error ? e.message : String(e)}`);
+        return unmounted('NO_CORPUS', `${PII_CORPUS_FILE}: ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    const check = checkPiiEvaluationRecord(newest.raw, fixtureSet);
+    const check = checkPiiEvaluationRecord(newest.raw, corpusText);
     if (!check.ok) return unmounted(check.reason, `${newest.file}: ${check.detail}`);
 
     return {
         state: 'MOUNTED',
-        detector: createPresidioDetector({ baseUrl, scoreThreshold: check.record.scoreThreshold, fetchImpl: opts.fetchImpl }),
+        detector: createPresidioDetector({ baseUrl, scoreThreshold: PII_SCORE_THRESHOLD }),
         record: {
-            detector: `${check.record.detector.name}@${check.record.detector.revision}`,
-            configHash: check.record.configHash,
-            producedAt: check.record.producedAt,
+            detector: `${check.record.detector.name}@${check.record.detector.version}`,
+            configHash: check.record.detector.configHash,
+            ranAt: check.record.ranAt,
         },
     };
 }

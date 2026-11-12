@@ -17,7 +17,7 @@ import {
     redact,
 } from '@/lib/ai/pii/redact';
 import { EGRESS_REDACTION_POLICY, uniformPolicy } from '@/lib/ai/pii/policy';
-import { PII_ENTITY_TYPES, type PiiEntityType } from '@/lib/ai/pii/entities';
+import { PII_ENTITY_TYPES, type PiiEntityType } from '@/lib/ai/pii/scope';
 import type { PiiSpan } from '@/lib/ai/pii/types';
 
 /** Synthetic texts only: generated names, no real person. */
@@ -81,7 +81,7 @@ describe('redact never changes text outside a span', () => {
                 const gap = text.slice(cursor, m.start);
                 expect(rest.slice(0, gap.length)).toBe(gap);
                 rest = rest.slice(gap.length);
-                const ph = /^<(PERSON|EMAIL|PHONE|IBAN|EGN)_\d+>/.exec(rest);
+                const ph = /^<(PERSON|EMAIL_ADDRESS|PHONE_NUMBER|IBAN_CODE|BG_EGN)_\d+>/.exec(rest);
                 expect(ph?.[1]).toBe(m.type);
                 rest = rest.slice(ph ? ph[0].length : 0);
                 cursor = m.end;
@@ -124,10 +124,10 @@ describe('overlapping spans redact their union', () => {
 
     it('the higher-scoring type names the merged span, independent of return order', () => {
         const text = 'call 0888000111 now';
-        const a: PiiSpan = { type: 'EGN', start: 5, end: 15, score: 0.4 };
-        const b: PiiSpan = { type: 'PHONE', start: 5, end: 15, score: 0.8 };
-        expect(redact(text, [a, b], EGRESS_REDACTION_POLICY).text).toBe('call <PHONE_1> now');
-        expect(redact(text, [b, a], EGRESS_REDACTION_POLICY).text).toBe('call <PHONE_1> now');
+        const a: PiiSpan = { type: 'BG_EGN', start: 5, end: 15, score: 0.4 };
+        const b: PiiSpan = { type: 'PHONE_NUMBER', start: 5, end: 15, score: 0.8 };
+        expect(redact(text, [a, b], EGRESS_REDACTION_POLICY).text).toBe('call <PHONE_NUMBER_1> now');
+        expect(redact(text, [b, a], EGRESS_REDACTION_POLICY).text).toBe('call <PHONE_NUMBER_1> now');
     });
 });
 

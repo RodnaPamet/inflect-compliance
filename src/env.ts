@@ -423,6 +423,11 @@ export const env = createEnv({
         // PII detector (docs/ai-architecture/presidio.md, Phase 1). The base
         // URL of the in-deployment Presidio analyzer — operator configuration,
         // never a tenant value (G6). Absent = no detector is constructed (G9).
+        // A server WE operate inside the deployment: http or https, and it must
+        // resolve INSIDE the deployment (src/lib/ai/in-deployment-service.ts),
+        // or the detector is unmounted / every call fails — and the egress use
+        // then BLOCKS for a tenant with redaction on. Read only by
+        // src/lib/ai/pii/mount.ts.
         // The config hash names the recogniser configuration the deployed
         // service image was built from; the detector mounts only when a
         // committed record under evals/pii/records/ answered exactly it.

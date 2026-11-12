@@ -34,6 +34,7 @@
  *   ai-guard-nemo  AI_GUARD_NEMO_BASE_URL     src/app-layer/ai/guard/providers/registry.ts
  *   embed          AI_EMBED_LOCAL_BASE_URL    src/lib/ai/embeddings/select.ts
  *   rerank         AI_RERANK_LOCAL_BASE_URL   src/lib/ai/embeddings/select.ts
+ *   pii-detector   AI_PII_BASE_URL            src/lib/ai/pii/mount.ts
  *
  * ── WHAT COUNTS AS INSIDE ───────────────────────────────────────────────────
  *
@@ -102,6 +103,7 @@ export const IN_DEPLOYMENT_SERVICES = {
     'ai-guard-nemo': 'AI_GUARD_NEMO_BASE_URL',
     embed: 'AI_EMBED_LOCAL_BASE_URL',
     rerank: 'AI_RERANK_LOCAL_BASE_URL',
+    'pii-detector': 'AI_PII_BASE_URL',
 } as const;
 
 export type InDeploymentService = keyof typeof IN_DEPLOYMENT_SERVICES;

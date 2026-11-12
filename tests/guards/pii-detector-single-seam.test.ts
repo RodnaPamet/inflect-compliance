@@ -8,12 +8,14 @@
  * read off the tree (git-backed, `repoRelativeFiles`) and asserted by exact
  * equality — a new importer fails until somebody decides it is a second seam.
  *
- * The provider itself may reach the network only through `safeFetch` or the
- * test seam `opts.fetchImpl`; any other fetch-shaped call (`fetch`,
- * `resilientFetch`, `boundedFetch`) is an unguarded path to the host.
+ * The provider itself reaches the network only through the shared
+ * in-deployment dial (`inDeploymentRequest`, G6 as amended 2026-11-12) and
+ * makes no fetch-shaped call of its own (`fetch`, `safeFetch`,
+ * `resilientFetch`, `boundedFetch`): any one would be a second path to the
+ * host, around the address rule. The SSRF guard holds the dial itself.
  *
- * And the mount gate's own options are TEST SEAMS: `fetchImpl` would post every
- * outbound prompt past `safeFetch`, and `root` would point "only a committed
+ * And the mount gate's own options are TEST SEAMS: `baseUrl` and `configHash`
+ * would bypass the operator's env, and `root` would point "only a committed
  * record mounts" at any directory. So every reference to `resolvePiiDetector`
  * under `src/` must be a call with NO arguments (or its declaration) — read off
  * the syntax tree, so a rename, an alias or passing the function along counts.
@@ -85,8 +87,10 @@ describe('the PII detector has one construction seam', () => {
         expect(providerImporters()).toEqual(['src/lib/ai/pii/mount.ts']);
     });
 
-    it('the provider reaches the network only through safeFetch or the test seam', () => {
-        expect([...new Set(providerFetchCalls())].sort()).toEqual(['opts.fetchImpl(', 'safeFetch(']);
+    it('the provider reaches the network only through the in-deployment dial', () => {
+        expect(providerFetchCalls()).toEqual([]);
+        expect(code(PROVIDER).match(/\binDeploymentRequest\s*\(/g) ?? []).toHaveLength(1);
+        expect(code(PROVIDER).includes('fetchImpl')).toBe(false);
     });
 
     it('no caller under src/ passes the mount gate a test seam', () => {

@@ -10,7 +10,7 @@
  * It is never mounted by configuration — `./mount.ts` builds only the Presidio
  * provider — so it cannot stand in for a detector in a deployment.
  */
-import type { PiiLocale } from './entities';
+import type { PiiLocale } from './scope';
 import { PiiDetectorError, type PiiDetector, type PiiSpan } from './types';
 
 export interface StubAnswer {

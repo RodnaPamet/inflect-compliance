@@ -126,14 +126,10 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
         // time, and each hop is a fresh safeFetch.
         noBareFetchOf: 'fetchWithRetry(',
     },
-    {
-        file: 'src/lib/ai/pii/presidio-provider.ts',
-        reason:
-            'The PII detector (presidio.md Phase 1): every outbound text bound for an ' +
-            'external model would be posted here. The host is operator config ' +
-            '(AI_PII_BASE_URL), never a tenant value, and G6 still puts it behind safeFetch.',
-        noBareFetchOf: 'fetch(url',
-    },
+    // The PII detector's Presidio provider was an entry here until the owner's
+    // G6 amendment (2026-11-12): it is an IN-DEPLOYMENT service, and safeFetch
+    // refused the Compose network it lives on, so it moved to the in-deployment
+    // dial, where it is held below.
     {
         file: 'src/lib/security/oidc-client.ts',
         reason:
@@ -358,6 +354,8 @@ const IN_DEPLOYMENT_CLIENTS: Record<string, string> = {
         "The DocumentParser seam's Docling backend (ragflow.md Phase 1, D-L4-4): tenant documents in, text a model will see out.",
     'src/app-layer/ai/guard/providers/nemo-provider.ts':
         "The AI guard's NeMo Guardrails provider: tenant text on every guarded call, and a verdict back.",
+    'src/lib/ai/pii/presidio-provider.ts':
+        "The PII detector's Presidio provider (presidio.md Phase 1): every text bound for an external model, and the spans to redact back.",
 };
 
 /** For each client module, the ONE module that imports it (step 3). */
@@ -378,6 +376,10 @@ const CLIENT_CONSTRUCTED_BY: Record<string, { module: string; importedAs: RegExp
         module: 'src/app-layer/ai/guard/providers/registry.ts',
         importedAs: /from '(\.|@\/app-layer\/ai\/guard\/providers)\/nemo-provider'/,
     },
+    'src/lib/ai/pii/presidio-provider.ts': {
+        module: 'src/lib/ai/pii/mount.ts',
+        importedAs: /from '(\.|@\/lib\/ai\/pii)\/presidio-provider'/,
+    },
 };
 
 /** For each service's variable, the ONE module that reads it (step 4). */
@@ -386,10 +388,11 @@ const IN_DEPLOYMENT_READERS: Record<keyof typeof IN_DEPLOYMENT_SERVICES, string>
     'ai-guard-nemo': 'src/app-layer/ai/guard/providers/registry.ts',
     embed: 'src/lib/ai/embeddings/select.ts',
     rerank: 'src/lib/ai/embeddings/select.ts',
+    'pii-detector': 'src/lib/ai/pii/mount.ts',
 };
 
 /** Directories whose every file belongs to an in-deployment client, and so makes no fetch call. */
-const IN_DEPLOYMENT_CLIENT_DIRS = ['src/lib/ai/embeddings/', 'src/lib/ai/parsing/'];
+const IN_DEPLOYMENT_CLIENT_DIRS = ['src/lib/ai/embeddings/', 'src/lib/ai/parsing/', 'src/lib/ai/pii/'];
 
 const srcTsFiles = () => repoRelativeFiles().filter((f) => f.startsWith('src/') && /\.tsx?$/.test(f));
 
@@ -464,6 +467,7 @@ describe('SSRF — the in-deployment clients reach the network only through the 
                 'src/lib/ai/embeddings/tei-provider.ts',
                 'src/lib/ai/embeddings/select.ts',
                 'src/lib/ai/parsing/index.ts',
+                'src/lib/ai/pii/mount.ts',
             ]),
         );
         expect(inDeploymentClientsWithTheirOwnFetch()).toEqual([]);

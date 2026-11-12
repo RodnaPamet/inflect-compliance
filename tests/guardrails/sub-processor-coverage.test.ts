@@ -234,6 +234,10 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // precisely because it would be a sub-processor receiving every payload. The
     // service's register row (G2, legacy-mcp style) lands with its container in
     // Phase 1.1; these two vars only name where it is and what it was built from.
+    // The base URL is held to the in-deployment rule (G6 as amended 2026-11-12):
+    // every address it resolves to must be inside the deployment, so pointing it
+    // at a third party's host refuses every call rather than making that party
+    // a sub-processor.
     AI_PII_BASE_URL: 'base URL of the in-deployment Presidio PII analyzer — operator-run, inside the perimeter, not a third-party processor',
     AI_PII_CONFIG_HASH: 'hash naming the recogniser configuration the deployed PII analyzer was built from — a config string, not an endpoint',
     // Internal secrets (env-provided; stored in AWS Secrets Manager, itself listed).

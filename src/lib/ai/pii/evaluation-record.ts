@@ -2,7 +2,11 @@
  * The PII fixture corpus and the PII evaluation record — the house shape (G11)
  * for a DETECTOR rather than a model answer.
  *
- * Phase 0 of `docs/ai-architecture/presidio.md`. Two shapes, as in
+ * Phase 0 of `docs/ai-architecture/presidio.md` wrote the two shapes; Phase 1
+ * reads the same two for its mount condition. There is ONE record format and
+ * ONE ground truth — Phase 1's seam once carried a second (`fixture-set.ts`,
+ * a different case vocabulary and a looser precision rule) and it was folded
+ * into this one rather than kept beside it. Two shapes, as in
  * `flue/skills/evaluation-record.ts`, and the split is the point:
  *
  *   • The FIXTURE CORPUS (`tests/fixtures/pii/corpus.json`) is generated, never
@@ -54,6 +58,16 @@
  *                  instruction must change nothing
  *   missing-input  nothing to find: blank fields, "not provided", text that is
  *                  ALREADY redacted (`<PERSON_1>`), the empty string
+ *
+ * ‾‾‾ THE MOUNT CONDITION (Phase 1.4) ‾‾‾
+ *
+ * `checkPiiEvaluationRecord` is what `./mount.ts` asks: the record scores
+ * without refusal against the committed corpus, every type has at least
+ * `PII_MIN_SUPPORT` ground-truth spans in every locale (zero, or a handful, is
+ * never complete: at 20 a 0.95 recall floor tolerates one miss, so the floor is
+ * a measurement rather than "1 of 1"), and every type in every locale clears
+ * `PII_RECALL_FLOOR` and `PII_PRECISION_FLOOR` — each figure RECOMPUTED here
+ * from the raw spans by `scorePiiRecord`, never read from the record.
  *
  * ‾‾‾ OFFSETS ARE UTF-16 CODE UNITS, AND THE CORPUS STAYS IN THE BMP ‾‾‾
  *
@@ -365,4 +379,75 @@ export function scorePiiRecord(record: unknown, corpusText: string): PiiRecordSc
         perTypeByLocale: { en: finishAll(byLocale.en), bg: finishAll(byLocale.bg) },
         perKind,
     };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  The mount condition (Phase 1.4)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * The floors, per type and per locale. PROPOSED (2026-11-11), not yet
+ * initialled by the owner: recall is set high because a miss is a leak,
+ * precision lower because a false positive only over-redacts. Raising either
+ * is free; lowering one is a reviewed diff with a written reason (G10).
+ */
+export const PII_RECALL_FLOOR = 0.95;
+export const PII_PRECISION_FLOOR = 0.8;
+
+/**
+ * Ground-truth spans per type per locale, at least, in the corpus a mounting
+ * record answered. PROPOSED (2026-11-12) beside the floors, not yet initialled.
+ * The committed Phase 0 corpus does not meet it (5 to 24 per pair), which is
+ * one reason its record does not mount: a held-out corpus comes first.
+ */
+export const PII_MIN_SUPPORT = 20;
+
+/**
+ * The score threshold a record is produced at, and so the one the mounted
+ * provider asks the service for: 0, every span the analyzer returns, each with
+ * its score. `guards/presidio/evaluate.py` passes the same value explicitly,
+ * and a unit test holds the two equal — a provider asking for a higher
+ * threshold than its record was measured at would answer less than the record
+ * vouches for.
+ */
+export const PII_SCORE_THRESHOLD = 0;
+
+export type PiiMountCheckRefusal = PiiRecordRefusal | 'LOW_SUPPORT' | 'BELOW_FLOOR';
+
+export type PiiRecordCheck =
+    | { readonly ok: true; readonly record: PiiEvaluationRecord; readonly score: Extract<PiiRecordScore, { ok: true }> }
+    | { readonly ok: false; readonly reason: PiiMountCheckRefusal; readonly detail: string };
+
+/**
+ * May this record mount its detector? Scores it against the corpus text (which
+ * is parsed and hashed here, so neither the ground truth nor its digest can be
+ * supplied wrong), then holds the support and the floors per type per locale.
+ * Every shortfall is reported, not the first: the author re-records once.
+ */
+export function checkPiiEvaluationRecord(record: unknown, corpusText: string): PiiRecordCheck {
+    const score = scorePiiRecord(record, corpusText);
+    if (!score.ok) return { ok: false, reason: score.refusal, detail: score.detail };
+    // scorePiiRecord parsed it already; this cannot fail, and is typed.
+    const parsed = PiiEvaluationRecordSchema.parse(record);
+
+    const thin: string[] = [];
+    const short: string[] = [];
+    for (const locale of PII_LOCALES) {
+        for (const type of PII_ENTITY_TYPES) {
+            const r = score.perTypeByLocale[locale][type];
+            if (r.support < PII_MIN_SUPPORT) thin.push(`${type}/${locale} ${r.support}`);
+            // `recall` is null only at zero support, which the support check
+            // has already refused; read as a failure all the same.
+            if (r.recall === null || r.recall < PII_RECALL_FLOOR) short.push(`${type}/${locale} recall ${r.recalled}/${r.support}`);
+            // Precision over zero predictions is not a number, so it is not
+            // judged; with support > 0 that case is already a recall failure.
+            if (r.precision !== null && r.precision < PII_PRECISION_FLOOR) {
+                short.push(`${type}/${locale} precision ${r.correct}/${r.predicted}`);
+            }
+        }
+    }
+    // Support first: a floor over a thin corpus measures nothing.
+    if (thin.length > 0) return { ok: false, reason: 'LOW_SUPPORT', detail: `below ${PII_MIN_SUPPORT}: ${thin.join(', ')}` };
+    if (short.length > 0) return { ok: false, reason: 'BELOW_FLOOR', detail: short.join(', ') };
+    return { ok: true, record: parsed, score };
 }
