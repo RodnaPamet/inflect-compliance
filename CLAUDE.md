@@ -103,6 +103,28 @@ logs are public, so the checks print names, states and counts
 only. A check that is missing is a PR to `deploy/vm-check/remote.sh`,
 never a free-text input — the identity it holds is root on the VM.
 
+**Changing the VM has two ways in** (owner decision 2026-11-12).
+Option 1: the owner signs the session in to `gcloud` (below), for that
+container's life. Option 2, the durable one: the **`VM apply`**
+workflow (`.github/workflows/vm-apply.yml`), the write-side sibling
+of `VM check` — dispatch it from `main` with one action from its fixed
+list (`deploy/vm-apply/vm.sh`: `apply.sh`'s preflight / apply, the
+Caddy-only and host-config-only modes, the OrangeHRM lab's vhost and
+container retirement, the proving server's recreation, a rollback to
+the newest compose backup that differs from the live file), the owner
+approves the run in `production`, and the job uses the same identity.
+The in-file `main`-only `if` and the action list bind only an
+unmodified branch: a dispatch runs the files of the ref it names, so
+the boundary is the `production` environment (deployment branches:
+protected only, i.e. `main`; the owner, its sole reviewer, reads the
+run's branch before approving) —
+see `docs/deployment.md`, "Named changes without a key". Every write runs its
+preflight first in the same run. Its logs are public too, so
+`apply.sh` runs with `APPLY_PUBLIC_LOG=1`, which reduces everything a
+tool on the VM prints to shape. A missing action is a PR to
+`deploy/vm-apply/vm.sh`, never an input; the lab teardown is
+`compose rm --stop`, never `down`.
+
 When the owner signs a session in to `gcloud` with their own Google
 account, direct access works too, for that container's lifetime.
 Run `gcloud` with `CLOUDSDK_AUTH_ACCESS_TOKEN` unset (the

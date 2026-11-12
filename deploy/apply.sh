@@ -111,6 +111,23 @@
 #                                # hostname the list does not name is still
 #                                # refused with it.
 #
+#   ROLLBACK=1 deploy/apply.sh   # name the newest compose backup this script
+#   ROLLBACK=1 CONFIRM=1 deploy/apply.sh
+#                                # kept that differs from the live file, and
+#                                # validate it; with CONFIRM=1 put it
+#                                # back, `up -d` and health-verify. The compose
+#                                # file only: the other canonical files, the
+#                                # host config and the Caddyfile keep their own
+#                                # backups and are not restored by this.
+#
+#   APPLY_PUBLIC_LOG=1 …         # any of the above, for a run whose output is a
+#                                # PUBLIC log (the `VM apply` workflow: its logs
+#                                # are public because the repository is). What
+#                                # a tool on the VM prints is reduced to SHAPE
+#                                # before it reaches this process's output — see
+#                                # `show` below — and gcloud runs with --quiet,
+#                                # because a runner cannot answer a prompt.
+#
 # Applying recreates containers. Expect a short 502 window on `app` and a
 # Redis restart (AOF-persisted, so queued BullMQ jobs survive). Run it in a
 # service window. HOST_CONFIG_ONLY=1 is the exception: it recreates nothing.
@@ -132,6 +149,8 @@ HEALTH_ORIGINS="${HEALTH_ORIGINS:-https://app.inflect.bg https://inflect.34-140-
 # compose-level DATA_ENCRYPTION_KEY agree with the container's by
 # construction — see the header of the compose file.
 ENV_FILES=(".env" ".env.prod")
+ENV_ARGS=""
+for f in "${ENV_FILES[@]}"; do ENV_ARGS="${ENV_ARGS} --env-file '${f}'"; done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -142,6 +161,76 @@ TS="$(date +%Y%m%d-%H%M%S)"
 log()  { printf '\033[36m[apply]\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m[apply] WARN:\033[0m %s\n' "$*" >&2; }
 err()  { printf '\033[31m[apply] ERROR:\033[0m %s\n' "$*" >&2; }
+
+# ── A public log gets shape, never content ───────────────────────────────
+#
+# Run from the `VM apply` workflow, this script's stdout and stderr are a
+# GitHub Actions log anybody can read. Most of what it prints is built here —
+# names, hashes, hostnames, counts — and is safe either way. What is not is
+# output it RELAYS from a tool on the VM, and one of those tools reads the
+# secrets: `docker compose` interpolates .env and .env.prod, and its errors and
+# warnings quote what it read. So under APPLY_PUBLIC_LOG=1 every relayed stream
+# goes through `show`, which keeps only lines of a known shape:
+#
+#   compose      the resource lines compose prints (`Container <name> <state>`,
+#                and Network, Volume, Image), each token checked against a
+#                narrow character set, and the NAME of a variable a ':?' guard
+#                found missing. Everything else is counted and withheld.
+#   diagnostics  error-shaped lines from caddy and the ops agent's engine, whose
+#                only input is a file from this repository.
+#   none         the count alone.
+#
+# The filter runs HERE, on the stream before it is printed, so a line it does
+# not recognise never reaches stdout or stderr — nothing is left to masking.
+# Interactively `show` is `cat`: an operator at a terminal reads everything.
+PUBLIC_LOG="${APPLY_PUBLIC_LOG:-0}"
+QUIET_FLAG=""
+if [ "$PUBLIC_LOG" = "1" ]; then QUIET_FLAG="--quiet"; fi
+
+shape_compose() {
+    awk '
+        { n++ }
+        match($0, /required variable [A-Za-z_][A-Za-z0-9_]*/) {
+            print "    " substr($0, RSTART, RLENGTH); kept++; next
+        }
+        match($0, /^ERROR: \(gcloud\.[a-z.-]+\)/) {
+            print "    " substr($0, RSTART, RLENGTH) " (its message withheld)"; kept++; next
+        }
+        {
+            for (i = 1; i + 1 <= NF; i++) {
+                if ($i !~ /^(Container|Network|Volume|Image)$/) continue
+                state = (i + 2 <= NF) ? $(i + 2) : ""
+                if ($(i + 1) ~ /^[A-Za-z0-9._\/:@-]+$/ && state ~ /^[A-Za-z]*$/) {
+                    print "    " $i " " $(i + 1) " " state; kept++; next
+                }
+            }
+        }
+        END { if (n > kept) printf "    [%d line(s) withheld: this log is public]\n", n - kept }'
+}
+
+shape_diagnostics() {
+    awk '
+        { n++ }
+        /[Ee]rror|[Ii]nvalid|[Uu]nsupported|[Uu]nknown|[Uu]nrecognized|line [0-9]+|column [0-9]+|Valid configuration/ {
+            line = $0
+            gsub(/[^A-Za-z0-9 ._:\/,()#@=+-]/, "", line)
+            print "      " substr(line, 1, 240); kept++; next
+        }
+        END { if (n > kept) printf "      [%d line(s) withheld: this log is public]\n", n - kept }'
+}
+
+shape_none() {
+    awk '{ n++ } END { if (n > 0) printf "    [%d line(s) withheld: this log is public]\n", n }'
+}
+
+show() {
+    if [ "$PUBLIC_LOG" != "1" ]; then cat; return; fi
+    case "$1" in
+        compose)     shape_compose ;;
+        diagnostics) shape_diagnostics ;;
+        *)           shape_none ;;
+    esac
+}
 
 # ── COMPOSE_BASENAME is an allowlist, not a free variable ────────────────
 #
@@ -224,7 +313,59 @@ OPS_AGENT_COMPILED="/run/google-cloud-ops-agent-opentelemetry-collector/otel.yam
 # silently did nothing.
 OPS_AGENT_COMPILED_NEEDLE="/var/lib/docker/containers"
 
-ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --command "$1"; }
+ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap ${QUIET_FLAG:+"$QUIET_FLAG"} --command "$1"; }
+# scp_vm <local file> <remote path>
+scp_vm() { gcloud compute scp "$1" "${VM_NAME}:$2" --zone "$VM_ZONE" --tunnel-through-iap ${QUIET_FLAG:+"$QUIET_FLAG"}; }
+
+# The first `gcloud compute ssh` on a machine with no key GENERATES one, and
+# ssh-keygen writes its banner, the key paths, the fingerprint and the randomart
+# to STDOUT, which is whatever `$(ssh_vm …)` is capturing at that moment: the
+# rollback's backup path, a file's hash. Every run on a GitHub runner is such a
+# first run. So the key is made, when absent, by one throwaway ssh whose stdout
+# is discarded, before any call whose output is read (called once, below, by
+# every mode that reaches the VM).
+ssh_key_ready() {
+    [ -f "${HOME}/.ssh/google_compute_engine" ] && return 0
+    log "no gcloud ssh key on this machine: making one with a throwaway ssh"
+    ssh_vm true >/dev/null
+}
+
+# The hash a `sha256sum` printed, and nothing else the remote side said: the
+# first word of the first line that is exactly 64 hex digits. Empty when there
+# is none. It reads to the end rather than `exit` early, so the writer never
+# meets a closed pipe, which `pipefail` would turn into a failed assignment.
+first_sha() { awk '!found && length($1) == 64 && $1 ~ /^[0-9a-f]+$/ { print $1; found = 1 }'; }
+
+# ── Health-verify ────────────────────────────────────────────────────────
+#
+# BOTH public origins, because Caddy serves two vhosts and a Caddyfile or
+# cert problem can take one down while the other answers — checking only the
+# sslip.io host would have reported a dead app.inflect.bg as a clean deploy.
+# /api/readyz (not /api/livez): livez is dependency-free and stays green
+# through a Redis or DB outage, which is exactly the failure a deploy causes.
+# A function because both the apply and the rollback end with it. Sets
+# HEALTH_FAILED.
+health_verify() {
+    local origin code
+    log "health-verifying: ${HEALTH_ORIGINS}"
+    HEALTH_FAILED=0
+    for origin in $HEALTH_ORIGINS; do
+        code=""
+        for _ in 1 2 3 4 5 6 7 8; do
+            # 000 is a sentinel OUTSIDE the healthy range; the comparison below
+            # fails closed on it, unlike `|| echo 0`.
+            code="$(curl -fsS -o /dev/null -w '%{http_code}' "${origin}/api/readyz" 2>/dev/null || echo 000)"
+            [ "$code" = "200" ] && break
+            sleep 5
+        done
+        if [ "$code" = "200" ]; then
+            log "  OK   ${origin}/api/readyz → 200"
+        else
+            err "  FAIL ${origin}/api/readyz → ${code}"
+            HEALTH_FAILED=1
+        fi
+    done
+}
 
 # ── Host config set: preflight and apply ─────────────────────────────────
 #
@@ -239,8 +380,8 @@ host_config_preflight() {
         local_path="${entry%%:*}"; remote_path="${entry#*:}"; base="$(basename "$remote_path")"
         [ -f "$local_path" ] || { err "host config missing from the repo: $local_path"; return 1; }
 
-        lsha="$(sha256sum "$local_path" | awk '{print $1}')"
-        rsha="$(ssh_vm "sudo sha256sum '${remote_path}' 2>/dev/null || true" | awk '{print $1}')"
+        lsha="$(sha256sum "$local_path" | first_sha)"
+        rsha="$(ssh_vm "sudo sha256sum '${remote_path}' 2>/dev/null || true" | first_sha)"
         if [ -z "$rsha" ]; then
             log "    WOULD CREATE ${remote_path} (absent on the VM)"
         elif [ "$lsha" = "$rsha" ]; then
@@ -260,8 +401,7 @@ host_config_preflight() {
         # on malformed YAML (reporting line:column), so it can express failure.
         staged="/tmp/${base}.validate.${TS}"
         log "    validating ${base} with ${OPS_AGENT_UNIT}'s own engine"
-        gcloud compute scp "$local_path" "${VM_NAME}:${staged}" \
-            --zone "$VM_ZONE" --tunnel-through-iap >/dev/null
+        scp_vm "$local_path" "${staged}" >/dev/null
         rc=0
         # The engine's output is captured to a file and printed AFTER, rather
         # than piped through `sed` for indentation, because the exit code is the
@@ -280,7 +420,7 @@ host_config_preflight() {
             sudo ${OPS_AGENT_ENGINE} -service=otel -in '${staged}' \\
                 -logs \"\$T/logs\" -state \"\$T/state\" >\"\$T/out\" 2>&1 || rc=\$?
             sed 's/^/      /' \"\$T/out\"
-            exit \$rc" || rc=$?
+            exit \$rc" 2>&1 | show diagnostics || rc=$?
         if [ "$rc" -ne 0 ]; then
             err "${base} is NOT a valid ${OPS_AGENT_UNIT} config — the engine rejected it."
             err "  Its own message is printed above and names either the unsupported field"
@@ -303,8 +443,8 @@ caddy_preflight() {
     [ -f "$CADDY_LOCAL" ] || { err "Caddyfile missing from the repo: $CADDY_LOCAL"; return 1; }
 
     log "Caddyfile (pushed to ${CADDY_REMOTE}, activated by reload — no container is recreated):"
-    lsha="$(sha256sum "$CADDY_LOCAL" | awk '{print $1}')"
-    rsha="$(ssh_vm "sudo sha256sum '${CADDY_REMOTE}' 2>/dev/null || true" | awk '{print $1}')"
+    lsha="$(sha256sum "$CADDY_LOCAL" | first_sha)"
+    rsha="$(ssh_vm "sudo sha256sum '${CADDY_REMOTE}' 2>/dev/null || true" | first_sha)"
     if [ -z "$rsha" ]; then
         log "    WOULD CREATE ${CADDY_REMOTE} (absent on the VM)"
     elif [ "$lsha" = "$rsha" ]; then
@@ -314,8 +454,7 @@ caddy_preflight() {
     fi
 
     staged="/tmp/Caddyfile.validate.${TS}"
-    gcloud compute scp "$CADDY_LOCAL" "${VM_NAME}:${staged}" \
-        --zone "$VM_ZONE" --tunnel-through-iap >/dev/null
+    scp_vm "$CADDY_LOCAL" "${staged}" >/dev/null
 
     log "    validating with ${CADDY_CONTAINER}'s own caddy binary"
     rc=0
@@ -330,7 +469,7 @@ caddy_preflight() {
             --config /tmp/Caddyfile.candidate --adapter caddyfile >/tmp/caddyval.${TS} 2>&1 || rc=\$?
         sed 's/^/      /' /tmp/caddyval.${TS}
         sudo rm -f /tmp/caddyval.${TS} '${staged}'
-        exit \$rc" || rc=$?
+        exit \$rc" 2>&1 | show diagnostics || rc=$?
     if [ "$rc" -ne 0 ]; then
         err "the repo Caddyfile is NOT valid — caddy rejected it. Its message is above."
         err "  Nothing was changed."
@@ -396,17 +535,21 @@ caddy_apply() {
     # Flattened staging name. `/tmp/${remote_base}.new` would be
     # `/tmp/caddy/Caddyfile.new` for this nested path, and /tmp/caddy does not
     # exist — the mechanical blocker the UNRECONCILED entry named.
-    gcloud compute scp "$CADDY_LOCAL" "${VM_NAME}:${staged}" \
-        --zone "$VM_ZONE" --tunnel-through-iap
+    scp_vm "$CADDY_LOCAL" "${staged}"
     ssh_vm "sudo mv '${staged}' '${CADDY_REMOTE}' && sudo chown root:root '${CADDY_REMOTE}'"
 
     log "reloading caddy (keeps listeners and issued certificates)"
     rc=0
+    # No `| sed` on the VM: a pipeline's status is its LAST command's and the
+    # remote shell sets no pipefail, so `caddy reload | sed` reported sed's
+    # success for a rejected reload. The restores below relay nothing but a
+    # count, because the backup they reload is the previous LIVE file, which
+    # this repository has never seen.
     ssh_vm "sudo docker exec '${CADDY_CONTAINER}' caddy reload \
-        --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>&1 | sed 's/^/      /'" || rc=$?
+        --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>&1" 2>&1 | show diagnostics || rc=$?
     if [ "$rc" -ne 0 ]; then
         err "caddy reload FAILED — restoring ${backup} and reloading again."
-        ssh_vm "sudo cp -a '${backup}' '${CADDY_REMOTE}' && sudo docker exec '${CADDY_CONTAINER}' caddy reload --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile" || true
+        ssh_vm "sudo cp -a '${backup}' '${CADDY_REMOTE}' && sudo docker exec '${CADDY_CONTAINER}' caddy reload --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>&1" 2>&1 | show none || true
         return 1
     fi
 
@@ -431,7 +574,7 @@ caddy_apply() {
     if [ -n "$bad" ]; then
         err "these hostnames stopped answering after the reload:${bad}"
         err "  restoring ${backup} and reloading again."
-        ssh_vm "sudo cp -a '${backup}' '${CADDY_REMOTE}' && sudo docker exec '${CADDY_CONTAINER}' caddy reload --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile" || true
+        ssh_vm "sudo cp -a '${backup}' '${CADDY_REMOTE}' && sudo docker exec '${CADDY_CONTAINER}' caddy reload --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>&1" 2>&1 | show none || true
         return 1
     fi
     log "Caddyfile applied and every hostname answers."
@@ -457,8 +600,7 @@ host_config_apply() {
         ssh_vm "sudo sh -c \"cp -a '${remote_path}' '${REMOTE_DIR}/${base}.bak.${TS}' && chmod 600 '${REMOTE_DIR}/${base}.bak.${TS}'\" 2>/dev/null || true"
 
         log "pushing ${remote_path}"
-        gcloud compute scp "$local_path" "${VM_NAME}:/tmp/${base}.new.${TS}" \
-            --zone "$VM_ZONE" --tunnel-through-iap
+        scp_vm "$local_path" "/tmp/${base}.new.${TS}"
         # 644, matching the live mode: this file carries no credential, and the
         # agent reads it as root anyway. The backup above is 600 regardless,
         # because a dead copy has no reader to accommodate.
@@ -495,6 +637,11 @@ host_config_apply() {
         log "  OK   the receiver from ${base} is present in the compiled config (${compiled} ref(s))"
     done
 }
+
+# Every mode below but DRY_RUN reaches the VM, and DRY_RUN never does.
+if [ "${DRY_RUN:-0}" != "1" ]; then
+    ssh_key_ready
+fi
 
 # ── CADDY_ONLY: the other no-service-window path (#3589) ─────────────────
 #
@@ -546,6 +693,90 @@ if [ "${HOST_CONFIG_ONLY:-0}" = "1" ]; then
     fi
     host_config_apply || exit 1
     log "host config applied. Verify with deploy/check-drift.sh."
+    exit 0
+fi
+
+# ── ROLLBACK: the newest DIFFERENT compose backup, back into service ─────
+#
+# Every apply keeps `${REMOTE_COMPOSE}.bak.<timestamp>` and prints a one-line
+# rollback naming THIS run's timestamp. That line needs a person with a shell on
+# the VM; this mode is the same restore for a caller without one (the `VM apply`
+# workflow's `rollback`).
+#
+# It picks the newest backup whose content DIFFERS from the live file, newest by
+# the timestamp in its name, which sorts as time. Not simply the newest: every
+# CONFIRM apply backs the compose file up, also when it does not change it, so a
+# retried apply, or one that pushed only another file, leaves a newest backup
+# identical to the live file in front of the one worth restoring. Those are
+# skipped and counted. When EVERY backup equals the live file it refuses:
+# restoring one would recreate nothing and report a rollback that did not
+# happen.
+#
+# Without CONFIRM=1 it names the backup and validates it with `docker compose
+# config` in place (so relative paths resolve as they will). It restores the
+# compose file only, as the printed rollback does; the other canonical files,
+# the host config and the Caddyfile keep their own backups. The VM then drifts
+# from the repo until a revert merges, which check-drift.sh reports.
+if [ "${ROLLBACK:-0}" = "1" ]; then
+    if [ "${DRY_RUN:-0}" = "1" ] || [ "${CADDY_ONLY:-0}" = "1" ] || [ "${HOST_CONFIG_ONLY:-0}" = "1" ]; then
+        err "ROLLBACK=1 restores the compose file and takes no other mode."
+        exit 2
+    fi
+    log "ROLLBACK — the newest backup of ${REMOTE_COMPOSE} that differs from it"
+    LSHA="$(ssh_vm "sudo sha256sum '${REMOTE_COMPOSE}' 2>/dev/null || true" | first_sha)"
+    # Every backup with its hash, in one call. Only lines of exactly the shape
+    # `<64 hex>  <REMOTE_COMPOSE>.bak.<YYYYmmdd-HHMMSS>` are read, so nothing
+    # else the remote side prints can become a path; newest first. The awk
+    # reads sha256sum's lines, never a backup's content.
+    BAK_PREFIX="${REMOTE_COMPOSE}.bak."
+    BACKUPS="$(ssh_vm "sudo sh -c 'sha256sum ${BAK_PREFIX}* 2>/dev/null' || true" | tr -d '\r' \
+        | awk -v prefix="$BAK_PREFIX" '
+            NF == 2 && length($1) == 64 && $1 ~ /^[0-9a-f]+$/ && index($2, prefix) == 1 \
+                && substr($2, length(prefix) + 1) ~ /^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]$/ { print }' \
+        | sort -r -k2,2)" || BACKUPS=""
+    if [ -z "$BACKUPS" ]; then
+        err "no ${COMPOSE_BASENAME}.bak.<timestamp> on the VM — nothing to roll back to."
+        exit 1
+    fi
+    BACKUP=""; BSHA=""; SAME=0
+    while read -r sha path; do
+        if [ "$sha" = "$LSHA" ]; then SAME=$((SAME + 1)); continue; fi
+        BACKUP="$path"; BSHA="$sha"
+        break
+    done <<<"$BACKUPS"
+    log "    live    ${COMPOSE_BASENAME} (${LSHA:0:12})"
+    if [ -z "$BACKUP" ]; then
+        err "every backup (${SAME}) IS the live file — restoring one would change nothing."
+        exit 2
+    fi
+    log "    backup  $(basename "$BACKUP") (${BSHA:0:12})"
+    if [ "$SAME" -gt 0 ]; then
+        log "    skipped ${SAME} newer backup(s) identical to the live file (an apply that"
+        log "    did not change the compose file still backs it up)"
+    fi
+    log "validating the backup on the VM: docker compose config"
+    if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$BACKUP")' config -q 2>&1" 2>&1 | show compose; then
+        err "the backup does not validate against today's env files. Nothing was changed."
+        exit 1
+    fi
+    log "  config OK"
+    if [ "${CONFIRM:-0}" != "1" ]; then
+        log ""
+        log "PREFLIGHT ONLY — nothing has been restored. Re-run with CONFIRM=1, in a"
+        log "service window: restoring recreates the containers whose definition changes."
+        exit 0
+    fi
+    log "restoring $(basename "$BACKUP") → ${COMPOSE_BASENAME}"
+    ssh_vm "sudo cp -a '${BACKUP}' '${REMOTE_COMPOSE}' && sudo chown root:root '${REMOTE_COMPOSE}'"
+    log "docker compose up -d"
+    ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '${COMPOSE_BASENAME}' up -d 2>&1" 2>&1 | show compose
+    health_verify
+    if [ "$HEALTH_FAILED" = "1" ]; then
+        err "restored, but health checks FAILED. The backup is still on the VM."
+        exit 1
+    fi
+    log "rolled back to $(basename "$BACKUP"). The VM now drifts from the repo until a"
+    log "revert merges; deploy/check-drift.sh reports it."
     exit 0
 fi
 
@@ -628,13 +859,25 @@ for f in "${ENV_FILES[@]}"; do
 done
 ENV_CHECK_CMD="${ENV_CHECK_CMD}; for k in POSTGRES_PASSWORD REDIS_PASSWORD DATA_ENCRYPTION_KEY; do"
 ENV_CHECK_CMD="${ENV_CHECK_CMD} if sudo grep -qE \"^\${k}=.\" ${ENV_FILES[*]}; then echo \"PRESENT \${k}\"; else echo \"ABSENT \${k}\"; fi; done"
+# NODE_OPTIONS, counted (capacity budget C1). The canonical file states it in
+# `environment:` for app and worker, which overrides `env_file:`, so a line in
+# .env.prod stops reaching them. A count, never the line.
+ENV_CHECK_CMD="${ENV_CHECK_CMD}; echo \"COUNT NODE_OPTIONS \$(sudo grep -c '^NODE_OPTIONS=' .env.prod || true)\""
 
 log "checking the host env files carry the three interpolation variables (key names only)"
 ENV_REPORT="$(ssh_vm "$ENV_CHECK_CMD")" || {
     err "could not read the env files on ${VM_NAME}. Check gcloud auth / VM state."
     exit 1
 }
-printf '%s\n' "$ENV_REPORT" | sed 's/^/    /'
+# Only the lines the command above writes, so nothing else the remote shell
+# says can ride along into a public log.
+printf '%s\n' "$ENV_REPORT" | grep -E '^((PRESENT|ABSENT|MISSING_ENV_FILE) [A-Za-z0-9_.]+|COUNT [A-Z_]+ [0-9]+)$' | sed 's/^/    /' || true
+NODE_OPTIONS_LINES="$(printf '%s\n' "$ENV_REPORT" | awk '$1 == "COUNT" && $2 == "NODE_OPTIONS" { print $3 }')"
+if [ -n "$NODE_OPTIONS_LINES" ] && [ "$NODE_OPTIONS_LINES" != "0" ]; then
+    warn ".env.prod sets NODE_OPTIONS (${NODE_OPTIONS_LINES} line(s)). The canonical file's"
+    warn "  environment: for app and worker overrides it, so it no longer reaches them."
+    warn "  Fold any flag it carried into deploy/docker-compose.prod.yml in a PR first."
+fi
 
 if printf '%s' "$ENV_REPORT" | grep -q '^ABSENT '; then
     err "an interpolation variable is absent from ${REMOTE_DIR}/{${ENV_FILES[0]},${ENV_FILES[1]}}."
@@ -656,17 +899,13 @@ fi
 #    `up` time. Nothing live is touched: the live file still has its name.
 STAGED="${REMOTE_COMPOSE}.new.${TS}"
 log "staging ${LOCAL_COMPOSE} → ${VM_NAME}:${STAGED}"
-gcloud compute scp "$LOCAL_COMPOSE" "${VM_NAME}:/tmp/${COMPOSE_BASENAME}.new.${TS}" \
-    --zone "$VM_ZONE" --tunnel-through-iap
+scp_vm "$LOCAL_COMPOSE" "/tmp/${COMPOSE_BASENAME}.new.${TS}"
 ssh_vm "sudo mv '/tmp/${COMPOSE_BASENAME}.new.${TS}' '${STAGED}'"
-
-ENV_ARGS=""
-for f in "${ENV_FILES[@]}"; do ENV_ARGS="${ENV_ARGS} --env-file '${f}'"; done
 
 cleanup_staged() { ssh_vm "sudo rm -f '${STAGED}'" >/dev/null 2>&1 || true; }
 
 log "validating on the VM: docker compose config (this is where a ':?' guard fires)"
-if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$STAGED")' config -q"; then
+if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$STAGED")' config -q 2>&1" 2>&1 | show compose; then
     err "docker compose config FAILED on the VM. Nothing was changed — the live file"
     err "  still has its own name and every container is untouched."
     cleanup_staged
@@ -679,7 +918,7 @@ log "  config OK — every \${VAR} resolved"
 #    without creating any. Advisory: an older compose without --dry-run just
 #    warns rather than blocking the apply.
 log "simulating the apply (docker compose up -d --dry-run)"
-if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$STAGED")' up -d --dry-run 2>&1 | sed 's/^/    /'"; then
+if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$STAGED")' up -d --dry-run 2>&1 | sed 's/^/    /'" 2>&1 | show compose; then
     warn "up --dry-run was not usable on this host — continuing without the simulation."
 fi
 
@@ -687,8 +926,8 @@ fi
 log "other canonical files (pushed alongside the compose file):"
 for entry in "${CANONICAL_SET[@]:1}"; do
     local_path="${entry%%:*}"; remote_base="${entry##*:}"
-    lsha="$(sha256sum "$local_path" | awk '{print $1}')"
-    rsha="$(ssh_vm "sudo sha256sum '${REMOTE_DIR}/${remote_base}' 2>/dev/null || true" | awk '{print $1}')"
+    lsha="$(sha256sum "$local_path" | first_sha)"
+    rsha="$(ssh_vm "sudo sha256sum '${REMOTE_DIR}/${remote_base}' 2>/dev/null || true" | first_sha)"
     if [ "$lsha" = "$rsha" ]; then
         log "    unchanged  ${remote_base} (${lsha:0:12})"
     else
@@ -739,8 +978,7 @@ for entry in "${CANONICAL_SET[@]:1}"; do
     local_path="${entry%%:*}"; remote_base="${entry##*:}"
     log "pushing ${remote_base}"
     ssh_vm "sudo sh -c \"cp -a '${REMOTE_DIR}/${remote_base}' '${REMOTE_DIR}/${remote_base}.bak.${TS}' && chmod 600 '${REMOTE_DIR}/${remote_base}.bak.${TS}'\" 2>/dev/null || true"
-    gcloud compute scp "$local_path" "${VM_NAME}:/tmp/${remote_base}.new.${TS}" \
-        --zone "$VM_ZONE" --tunnel-through-iap
+    scp_vm "$local_path" "/tmp/${remote_base}.new.${TS}"
     ssh_vm "sudo mv '/tmp/${remote_base}.new.${TS}' '${REMOTE_DIR}/${remote_base}' && sudo chown root:root '${REMOTE_DIR}/${remote_base}'"
 done
 
@@ -788,39 +1026,18 @@ ssh_vm "sudo sh -c '
 '"
 
 log "docker compose up -d"
-ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '${COMPOSE_BASENAME}' up -d"
+ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '${COMPOSE_BASENAME}' up -d 2>&1" 2>&1 | show compose
 
-# ── Health-verify ────────────────────────────────────────────────────────
-#
-# BOTH public origins, because Caddy serves two vhosts and a Caddyfile or
-# cert problem can take one down while the other answers — checking only the
-# sslip.io host would have reported a dead app.inflect.bg as a clean deploy.
-# /api/readyz (not /api/livez): livez is dependency-free and stays green
-# through a Redis or DB outage, which is exactly the failure a deploy causes.
-log "health-verifying: ${HEALTH_ORIGINS}"
-HEALTH_FAILED=0
-for origin in $HEALTH_ORIGINS; do
-    code=""
-    for _ in 1 2 3 4 5 6 7 8; do
-        # 000 is a sentinel OUTSIDE the healthy range; the comparison below
-        # fails closed on it, unlike `|| echo 0`.
-        code="$(curl -fsS -o /dev/null -w '%{http_code}' "${origin}/api/readyz" 2>/dev/null || echo 000)"
-        [ "$code" = "200" ] && break
-        sleep 5
-    done
-    if [ "$code" = "200" ]; then
-        log "  OK   ${origin}/api/readyz → 200"
-    else
-        err "  FAIL ${origin}/api/readyz → ${code}"
-        HEALTH_FAILED=1
-    fi
-done
+health_verify
 
 ROLLBACK="gcloud compute ssh ${VM_NAME} --zone ${VM_ZONE} --tunnel-through-iap --command \"sudo cp -a '${REMOTE_COMPOSE}.bak.${TS}' '${REMOTE_COMPOSE}' && cd '${REMOTE_DIR}' && sudo docker compose${ENV_ARGS} -f '${COMPOSE_BASENAME}' up -d\""
 
 if [ "$HEALTH_FAILED" = "1" ]; then
     err "applied, but health checks FAILED. Roll back with:"
     printf '  %s\n' "$ROLLBACK" >&2
+    err "  or ROLLBACK=1 CONFIRM=1 deploy/apply.sh (the VM apply workflow's 'rollback'),"
+    err "  which restores the newest backup that differs from the live file: this"
+    err "  run's, when this run changed the compose file."
     exit 1
 fi
 

@@ -198,7 +198,7 @@ a file that had never run.
 
 | | |
 | --- | --- |
-| `deploy/apply.sh` | Pushes the canonical set to the VM. Preflights first and stops; `CONFIRM=1` applies. `DRY_RUN=1` validates the repo file locally and contacts no VM at all (usable in CI). `HOST_CONFIG_ONLY=1 CONFIRM=1` pushes only the host config set and reloads its service — it recreates no container, so it needs no service window. |
+| `deploy/apply.sh` | Pushes the canonical set to the VM. Preflights first and stops; `CONFIRM=1` applies. `DRY_RUN=1` validates the repo file locally and contacts no VM at all (usable in CI). `HOST_CONFIG_ONLY=1 CONFIRM=1` pushes only the host config set and reloads its service — it recreates no container, so it needs no service window. `ROLLBACK=1` names the newest compose backup whose content differs from the live file (an apply that changes nothing still backs it up) and validates it; with `CONFIRM=1` it restores it, runs `up -d` and health-verifies. `APPLY_PUBLIC_LOG=1` is for a run whose output is a public log (the `VM apply` workflow): what a tool on the VM prints is reduced to shape. |
 | `deploy/check-drift.sh` | Compares repo against VM by sha256. Exit 0 in sync, 1 drift in a file `apply.sh` can push, 2 the VM was unreachable (UNKNOWN — never read as "no drift"), 3 only an `UNRECONCILED` file differs — today just the Caddyfile. |
 
 Run `check-drift.sh` on a weekly cadence so a hand-edit on the VM surfaces in
@@ -362,7 +362,7 @@ Neither is in the canonical set: `apply.sh` does not push them and
 | overlay | services | how it reaches the VM |
 | --- | --- | --- |
 | `deploy/docker-compose.harness-scanner.yml` | `harness-scanner`, `harness-egress` | the `Scanner VM` workflow's `configure` action copies it; `start` runs it |
-| `deploy/docker-compose.legacy-mcp-proving.yml` | `legacy-mcp-proving` | copied by hand, then `up -d legacy-mcp-proving` with both `-f` files |
+| `deploy/docker-compose.legacy-mcp-proving.yml` | `legacy-mcp-proving` | the `VM apply` workflow's `recreate-legacy-mcp-proving` action validates, installs and recreates it (or by hand: copy it, then `up -d legacy-mcp-proving` with both `-f` files) |
 
 The OrangeHRM lab overlay (`docker-compose.orangehrm-lab.yml`: `orangehrm`,
 `orangehrm-db`, `orangehrm-mcp`) was **retired by owner decision on
@@ -668,6 +668,83 @@ a choice rather than a command, and a new check is a pull request. The
 repository is public, and so are the runs' logs: every check prints names,
 states, versions and counts, never a log line, a database row or a credential.
 `tests/guards/vm-check-workflow.test.ts` holds these properties.
+
+### Named changes without a key
+
+`VM apply` (`vm-apply.yml`) is the write-side sibling of `VM check`, under the
+same identity and the same reviewer (owner decision 2026-11-12). A Claude Code
+session that is not signed in to `gcloud` changes production this way:
+it dispatches the workflow from `main` with one action, the reviewer approves,
+and the session reads the output. The workflow's job-level `if` skips an
+unmodified dispatch from any other ref before it asks for approval, because
+what it pushes is the checkout and the VM's structure is what merged.
+
+**That `if` is not the security boundary, and neither is the action list.** A
+`workflow_dispatch` runs the workflow file and every script it calls from the
+ref the dispatcher picks. A branch that deletes the `if`, or rewrites an action
+in `deploy/vm-apply/vm.sh`, runs as written, under an identity that is root on
+production. The Workload Identity provider admits a token on
+`assertion.repository` and `assertion.environment == 'production'` only
+(`deploy/harness-scanner/README.md`), not on the ref. So what keeps a branch
+off the VM is the `production` environment's protection, and it must be set
+this way:
+
+- **Deployment branches: `main` only** (Settings → Environments → production →
+  Deployment branches and tags → Selected branches and tags → `main`). A job
+  from any other ref then fails before it asks for approval, whatever its file
+  says. This is the setting the `if` relies on.
+- **Required reviewers.** "Prevent self-review" is **off**, deliberately: a
+  session dispatches under the owner's own GitHub account, and the owner is the
+  only reviewer, so with it on no run could ever be approved. The approval is
+  therefore the owner reading the run, not a second person; a second operator
+  would turn it on.
+- **The reviewer reads the branch on the pending deployment before approving**,
+  and refuses any run not from `main`.
+
+The same holds for `VM check`, `VM capacity` and `Scanner VM`, which take the
+same environment and identity.
+
+**As confirmed by the owner on 2026-11-12** (a screenshot of the settings page;
+a session cannot read them, because the API path is refused through its proxy),
+`production` has **Deployment branches and tags: Protected branches only**, which
+applies to one branch, `main`. Two things follow from that setting rather than
+from a literal `main`:
+
+- "Prevent self-review" is off (confirmed the same day), for the reason in the
+  list above.
+- A branch that later gets a branch protection rule becomes deployable to
+  `production` too. Keep `main` the only protected branch, or switch the setting
+  to *Selected branches and tags* with `main`.
+- **Allow administrators to bypass configured protection rules** is on, so an
+  administrator can bypass the environment's protection rules. That is the
+  owner's own lever, not a path for anyone else.
+
+A second layer is also open: adding
+`&& assertion.ref == 'refs/heads/main'` to the provider's attribute condition
+would refuse the identity to a branch run even after an approval, and would
+limit all four workflows to `main`. It changes a live GCP setting and is the
+owner's to make.
+
+| Action | What it runs |
+| --- | --- |
+| `preflight` | `deploy/apply.sh` (preflight only) |
+| `apply` | the preflight, then `CONFIRM=1 deploy/apply.sh` |
+| `caddy-preflight` / `caddy-apply` | the same with `CADDY_ONLY=1` |
+| `retire-lab-vhosts-preflight` / `retire-lab-vhosts` | the same with `CADDY_RETIRE_HOSTS` set to the OrangeHRM lab's two hostnames, written in `deploy/vm-apply/vm.sh` |
+| `host-config-preflight` / `host-config-apply` | the same with `HOST_CONFIG_ONLY=1` |
+| `rollback-preflight` / `rollback` | the same with `ROLLBACK=1`: the newest compose backup that differs from the live file, back into service |
+| `retire-lab-containers` | `deploy/vm-apply/remote.sh`: `docker compose rm --stop --force` of the lab's three services, volumes kept, never `down` |
+| `recreate-legacy-mcp-proving` | `deploy/vm-apply/remote.sh`: checks the bundle and the token are present, validates the repo overlay, keeps the previous one, installs it and recreates that one service |
+
+Every action that writes runs its preflight first in the same run and writes
+only if it passed. The input is a choice, never a command, a path, a host or a
+compose argument, so a new action is a pull request. The logs are public:
+`apply.sh` runs with `APPLY_PUBLIC_LOG=1`, which lets through only the
+resource lines `docker compose` prints, the name of a missing variable, and
+error lines from caddy and the ops agent (whose only input is a repository
+file), and counts the rest as withheld; the remote script prints names,
+states, counts and limits. `tests/guards/vm-apply-workflow.test.ts` holds these
+properties, and runs the filters on a stream carrying secret-shaped lines.
 
 ## Observability provisioning
 
