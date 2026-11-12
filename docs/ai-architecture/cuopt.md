@@ -4,8 +4,12 @@ inflect · ai architecture · cuopt · roadmap v1 · 2026-10-29
 
 > **Status: living design** — the integration roadmap for NVIDIA cuOpt, named
 > by the target architecture for Layer 3 as an "optimisation tool for ERP/SAP
-> scheduling & logistics routing". The **Current state** section is true today
-> (main 3.338.0, `a1c2f05c`). The **Roadmap** section is the plan. This is a
+> scheduling & logistics routing". **Complete: declined at Phase 0 (D-L3-3,
+> initialled by the owner 2026-11-11) — no feature has an optimisation problem
+> today, and none at GPU scale.** The **Current state** section is true today
+> (re-verified 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap**
+> section records the decision; Phase 1 is kept as the plan for the day a
+> feature wants a solver. This is a
 > child of [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md):
 > read that first for the target map, the global rules **G1–G13**, and the
 > sequencing. If the code contradicts a fact here, the code wins and the pull
@@ -16,26 +20,26 @@ inflect · ai architecture · cuopt · roadmap v1 · 2026-10-29
 | | |
 | --- | --- |
 | Layer · box | 3 — Cognitive & reasoning · "NVIDIA cuOpt" |
-| Wave | 4 (last; conditional on a measured need). The GPU arm (Phase 2) is optional Layer 5 work, after every other roadmap is complete |
+| Wave | 4 (decision taken 2026-11-11; Phase 1 only if a feature asks for a solver). The GPU arm (Phase 2) is optional Layer 5 work, after every other roadmap is complete |
 | Depends on | nothing for Phases 0–1; Layer 5 ([`modal-inference.md`](./modal-inference.md)), optional and last, for Phase 2 |
 | Unblocks | nothing |
-| Owner decisions | **D-L3-3** (is there an optimisation problem at a size that needs a GPU) |
-| Complete at | Phase 1, or Phase 0's recorded decline when no feature wants it. Phase 2 is optional Layer 5 work |
+| Owner decisions | **D-L3-3** decided 2026-11-11: no GPU-scale optimisation problem; cuOpt only as a CPU seam's backend if a feature ever wants one |
+| Complete at | Phase 0's recorded decline — **complete 2026-11-11** (no feature wants a solver). Phase 1 reopens only when one does; Phase 2 is optional Layer 5 work |
 
 ## At a glance
 
-Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Slate dashed: optional Layer 5 work, which starts only after every other roadmap is complete. Dashed white: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+Green: decided or on `main`. Grey dashed: a path not taken today, kept as the plan if a feature asks for a solver. Slate dashed: optional Layer 5 work, which starts only after every other roadmap is complete. Pink: the evaluation record that path would need.
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · measure<br/>formulate one problem<br/>solve it on CPU at 1x to 100x<br/>D-L3-3"}}:::gate
-  DEC["No feature wants it<br/>declined"]:::declined
-  P1["Phase 1 · optimisation seam, CPU<br/>plan_ read tool via the funnel<br/>plans become proposals<br/>bounded solve"]:::todo
+  P0(["Phase 0 · decided 2026-11-11<br/>no optimisation problem in the code<br/>D-L3-3"]):::done
+  DEC["No feature wants it<br/>declined"]:::done
+  P1["Phase 1 · optimisation seam, CPU<br/>only if a feature asks<br/>plans become proposals"]:::declined
   P2["Phase 2 · cuOpt on the Layer 5 VM<br/>same seam, parity record"]:::optional
   MOD["Layer 5<br/>optional, after completion"]:::optional
   FIX["Fixture instances<br/>known optima"]:::eval
-  P0 -->|feature wanted| P1
-  P0 -.->|no| DEC
+  P0 -.->|if a feature asks| P1
+  P0 -->|today| DEC
   P1 -->|only if measured scale<br/>exceeds the CPU solver| P2
   MOD -.-> P2
   FIX -.-> P1
@@ -52,13 +56,32 @@ flowchart LR
 ## Current state (true today)
 
 - **No optimisation solver of any kind.** No LP/MILP/VRP library in
-  `package.json`; no `cuopt` anywhere.
+  `package.json`; no `cuopt` anywhere; no `solver`, `knapsack`, `simplex` or
+  `MILP` identifier in `src/`.
+- **No feature computes an optimal plan.** Searched 2026-11-11 for the three
+  candidate shapes below:
+  - *Remediation portfolio.* Mitigation ROI (`src/lib/control-roi.ts`,
+    `usecases/control/roi.ts`) values each control on its own — "a per-control
+    valuation, not a portfolio simulation", in the module's own words — and
+    `rankByRoi` sorts the priced controls and takes the top N for the
+    best-value leaderboard. A sort under a hard cap is not a knapsack: there is
+    no budget constraint and no joint choice.
+  - *Control-test calendar.* Each control's `nextDueAt` is computed from its
+    own frequency (`computeNextDueAt`); nothing spreads tests across testers
+    or weeks.
+  - *Evidence collection.* Evidence carries an `ownerUserId` and a
+    `nextReviewDate` that a person sets (`evidence.prisma`); there is no
+    evidence-request model, and nothing assigns evidence work under capacity.
+
+  The remaining combinatorial code is not optimisation in this sense: keyed
+  random sampling (`proposal-sampling.ts`, `workpaper-review-sampling.ts`),
+  and graph layout for the canvas (`@dagrejs/dagre`).
 - **The scheduling-shaped data the product holds** is compliance work, not
   logistics: audit cycles and packs (`audit-workflow.prisma`), control tests
   and test plans (`controls.prisma`, `usecases/control/test-plans.ts`), tasks
   with owners and due dates (`tasks.prisma`), risk treatment with a priced
   Mitigation ROI per item (RQ3, `docs/rq3-roadmap-complete.md`), evidence
-  requests with owners and deadlines. The SAP work in this repo is
+  with owners and review dates. The SAP work in this repo is
   *transaction review* (`workflows/sap-transaction-review.ts`,
   `docs/sap-agent-integration-roadmap.md`), not routing or scheduling.
 - **Instance sizes are small.** A large tenant has hundreds of controls, tens
@@ -96,7 +119,7 @@ Python API. It pays at scale — hundreds of thousands of variables, large VRPs
 - *The NIM container* (blueprint §3): the open-source server image is the
   de-NIM path if the GPU arm is ever built.
 
-**The honest recommendation (D-L3-3).** Build the *optimisation seam* with a
+**The recommendation (D-L3-3), adopted by the owner 2026-11-11.** Build the *optimisation seam* with a
 CPU backend when one of the three problems is wanted as a feature; put cuOpt
 behind the same seam on the Layer 5 GPU VM only if Layer 5 is taken up and a
 measured instance exceeds what the
@@ -104,15 +127,35 @@ CPU backend solves inside the engine's step budget.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Find the problem and measure it
+### Phase 0 — Find the problem and measure it (complete 2026-11-11: declined)
+
+**The record.** D-L3-3 was initialled by the owner on 2026-11-11: there is no
+optimisation problem at a size that needs a GPU, and cuOpt enters only as a
+backend behind a CPU seam if a feature ever wants one. The code was then
+checked for a feature that wants one today (§ Current state), and none does:
+the nearest candidate, Mitigation ROI, ranks controls one by one and was
+designed not to be a portfolio. So the decline is recorded and the roadmap
+completes at Phase 0. Formulating and timing a problem no feature asks for
+would measure a hypothetical, so 0.1 and 0.2 are not run; they become Phase
+1's first step if a feature is proposed. Recorded in
+`docs/implementation-notes/2026-11-11-ai-roadmap-decision-completions.md`.
 
 **Sub-phases.**
-- [ ] 0.1 Pick one of the three candidate problems with the owner; write its
+- [x] 0.1 Pick one of the three candidate problems with the owner; write its
       formulation (variables, constraints, objective) in an implementation
-      note.
-- [ ] 0.2 Export an anonymised instance from the seed tenant at 1×, 10×, 100×
+      note. *Not run: no feature picks one (2026-11-11). Done first, and with
+      the owner, if Phase 1 is ever opened.*
+- [x] 0.2 Export an anonymised instance from the seed tenant at 1×, 10×, 100×
       scale; solve with a CPU solver in a scratch script; record wall-clock.
-- [ ] 0.3 Decide D-L3-3: CPU seam now / cuOpt later / neither.
+      *Not run, for the same reason; the instance-size estimate below
+      (hundreds to low thousands of variables) stands unmeasured.*
+- [x] 0.3 Decide D-L3-3: CPU seam now / cuOpt later / neither. *Neither, now
+      (2026-11-11); a CPU seam when a feature wants one; cuOpt only behind
+      that seam and only if a measured instance outgrows it.*
+
+**What reopens it.** A feature proposal that needs a joint choice under a
+constraint — "pick the treatments that fit this budget", "spread these tests
+across these testers" — not a better sort.
 
 **Prompt.**
 ```text
@@ -135,6 +178,8 @@ owner can initial.
 ```
 
 ### Phase 1 — The optimisation seam with a CPU backend (if wanted)
+
+*Not started: no feature wants it (D-L3-3, 2026-11-11). Kept as the plan.*
 
 **Sub-phases.**
 - [ ] 1.1 `src/lib/ai/optimisation/`: `types.ts` (`Optimiser.solve(problem) →
@@ -202,6 +247,7 @@ burn a step's budget alone).
 
 ## Updating the master
 
-Flip the row on the master [Status board](../ai-architecture-roadmap.md#status-board)
-after Phase 0; if D-L3-3 is "neither", mark the box "declined — no problem at
-GPU scale" with the note's link.
+Phase 0 is complete: the master's row reads "declined — no optimisation
+problem in the product, none at GPU scale (D-L3-3, 2026-11-11)", with the
+implementation note's link. A feature that asks for a solver reopens Phase 1
+and flips the row back.

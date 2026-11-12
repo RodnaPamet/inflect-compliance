@@ -19,7 +19,7 @@ inflect · ai architecture · ares · roadmap v1 · 2026-10-29
 | Wave | 2 (after Ragas has produced records to calibrate against) |
 | Depends on | [`ragas.md`](./ragas.md) Phase 1. Judges train on CPU in CI; no Layer 5 |
 | Unblocks | cheaper nightly RAG evals; confidence intervals on the floors |
-| Owner decisions | **D-EV-3** (who labels the 150+ triples, and from which corpus) |
+| Owner decisions | **D-EV-3** decided 2026-11-11: the operator labels the triples, from seed data only |
 | Complete at | Phase 3, or a recorded decision at Phase 2 that the judges did not calibrate, in which case Ragas stays the judge of record |
 
 ## At a glance
@@ -28,7 +28,7 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · labels<br/>150 or more seed triples<br/>agreement on an overlap<br/>D-EV-3"}}:::gate
+  P0{{"Phase 0 · labels<br/>D-EV-3 decided 2026-11-11<br/>operator, seed data only<br/>150 or more triples, agreement"}}:::gate
   P1["Phase 1 · train judges<br/>on CPU in CI<br/>weights outside git<br/>revision inside"]:::todo
   P2["Phase 2 · beside Ragas<br/>confidence intervals<br/>disagreement surfaced"]:::todo
   P3["Phase 3 · judge of record<br/>after three months in tolerance"]:::todo
@@ -69,6 +69,10 @@ inference (PPI). Value over Ragas: much cheaper per evaluation (no large
 judge call per case), and calibrated against *your* labels rather than a
 zero-shot judge's taste.
 
+**D-EV-3, initialled by the owner 2026-11-11.** The operator labels the
+triples, and only from seed data — never a customer's corpus or a customer's
+judgements. Nothing is labelled yet; the decision sets who may.
+
 **Adopted.** ARES as the *second* judge: trained once per domain on labelled
 seed triples, run nightly beside Ragas, with disagreement between the two
 surfaced for human review; eventually the nightly judge of record if it
@@ -90,13 +94,19 @@ calibrates.
 ### Phase 0 — The labelled set
 
 **Sub-phases.**
-- [ ] 0.1 D-EV-3: who labels, from which corpus (seed only), how many (≥150
-      triples per judge, ARES's floor), with what rubric.
+- [x] 0.1 D-EV-3: who labels, from which corpus (seed only), how many (≥150
+      triples per judge, ARES's floor), with what rubric. *Decided by the
+      owner 2026-11-11: the operator labels, from seed data only. The count
+      stays ARES's floor (≥150 per judge). The rubric is written with the set
+      (0.2), and the note that ships the set names who accepted it.*
 - [ ] 0.2 `evals/rag/labels/seed-triples.json`: query, passage, answer, three
       human labels (context relevant? answer faithful? answer relevant?),
       labeller id, date; content hash file beside it.
 - [ ] 0.3 Inter-labeller agreement on a 30-triple overlap, recorded in the
-      note — a labelled set with no agreement figure is an opinion.
+      note — a labelled set with no agreement figure is an opinion. *With one
+      labeller (D-EV-3), the overlap is labelled by a second person or, if
+      none is named, by the operator again after an interval; the note says
+      which, because the second is intra-rater agreement and a weaker claim.*
 
 **Prompt.**
 ```text
@@ -185,4 +195,5 @@ with human labels (Phase 1) and by agreement with Ragas over time (Phase 2).
 ## Updating the master
 
 Flip the row on the master [Status board](../ai-architecture-roadmap.md#status-board)
-per phase; D-EV-3 in the decision table.
+per phase. D-EV-3 reads "decided 2026-11-11: operator, seed data only" in the
+decision table; the row stays at Phase 0 until the labelled set exists.

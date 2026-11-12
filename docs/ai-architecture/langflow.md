@@ -25,7 +25,7 @@ inflect · ai architecture · agent-flow canvas · roadmap v2 · 2026-10-29
 | Wave | 2 for viewing, authoring and preview (Phases 1–4); 3 for running (Phase 5) |
 | Depends on | agent profiles (on `main`); the process canvas module and its tldraw renderer pieces (on `main`); for Phase 5, an engine that runs profiles — the Tool Runner, on since Claude engines Step 2c (#4512, `docs/claude-tool-runner-design.md`) |
 | Unblocks | every agent on the register visible on the canvas, however it was created; customers composing their own agent flows with no code and no CLI |
-| Owner decisions | **D-L2-1** decided 2026-10-29 (in-product canvas; Langflow not adopted); **D-L2-3** decided 2026-10-29 (tldraw, never xyflow); **D-L2-2** open (reasoning engines enforce checkpoints, or the palette offers none) |
+| Owner decisions | **D-L2-1** decided 2026-10-29 (in-product canvas; Langflow not adopted); **D-L2-3** decided 2026-10-29 (tldraw, never xyflow); **D-L2-2** decided 2026-11-11 (reasoning engines must enforce flow checkpoints before the canvas offers a checkpoint node) |
 | Complete at | Phase 5 |
 
 ## At a glance
@@ -43,7 +43,7 @@ flowchart LR
   P3["Phase 3 · the canvas editor<br/>agent-flow document kind<br/>layout and logic kept apart<br/>no second write path"]:::todo
   P4["Phase 4 · preview<br/>the exact run message<br/>enforced or advisory, per node<br/>visual diff for the approver"]:::todo
   P5["Phase 5 · run and replay<br/>checkpoints enforced first<br/>invoked by the agent node<br/>live overlay on the canvas"]:::todo
-  G2{{"D-L2-2<br/>checkpoint<br/>enforcement"}}:::gate
+  G2(["D-L2-2 decided 2026-11-11<br/>engine enforces checkpoints<br/>before the palette offers one"]):::done
   PROF["Agent profiles<br/>approval, freeze, narrowing"]:::done
   CANV["Process canvas module<br/>tldraw renderer pieces"]:::done
   XY["xyflow renderer<br/>being retired (#2962)<br/>never used here"]:::declined
@@ -230,16 +230,21 @@ no element that the engine would ignore.
 | A subagent node | the delegation gate and fan-out policy; the subagent's tools are a subset of the parent's | enforced |
 | A skill | the skill mount gate: a skill mounts only with an evaluation record | enforced |
 | Node order and edges | the run message lists the steps in order; the model may deviate | **advisory** — drawn dashed, and deviations shown on replay |
-| A checkpoint node | nothing today: no reasoning engine parks a run at a checkpoint | **not offered** until Phase 5.1 (D-L2-2) |
+| A checkpoint node | nothing today: no reasoning engine parks a run at a checkpoint | **not offered** until Phase 5.1 (D-L2-2, decided 2026-11-11) |
 
 ## Roadmap (future direction)
 
 ### Phase 0 — Decide (done)
 
 D-L2-1 was decided by the owner on 2026-10-29 and is recorded in the master's
-decision table. D-L2-2 is open. Its recommended answer is to build checkpoint
-enforcement (Phase 5.1); until it lands, the palette offers no checkpoint node,
-and save refuses one with `FLOW_CHECKPOINT_UNENFORCED`.
+decision table. **D-L2-2 was decided by the owner on 2026-11-11**, adopting the
+recommended answer: reasoning engines must enforce flow checkpoints before the
+canvas offers a checkpoint node. Enforcement is built in Phase 5.1, and the
+`checkpoint` kind enters the schema and the palette in the same pull request.
+Until then the palette offers no checkpoint node, and save refuses one with
+`FLOW_CHECKPOINT_UNENFORCED`. The decision closes the other branch: a
+checkpoint drawn as advisory guidance, which an engine would ignore, is never
+offered.
 
 ### Phase 1 — The flow inside the profile version
 
@@ -591,7 +596,8 @@ surface exists because approvals that mean nothing are a known failure here.
 same canvas. A checkpoint can be drawn only once an engine will honour it.
 
 **Sub-phases.**
-- [ ] 5.1 **Checkpoint enforcement on the reasoning engine (D-L2-2).**
+- [ ] 5.1 **Checkpoint enforcement on the reasoning engine (D-L2-2, decided
+      2026-11-11).**
       - A flow's checkpoint node splits the run into segments.
       - The engine ends a segment there and parks the run `AWAITING_APPROVAL`,
         the same state the static driver uses.
@@ -683,5 +689,6 @@ unmapped tool are refused by name. Reopening it is D-L2-1 again.
 ## Updating the master
 
 Flip the row on the master [Status board](../ai-architecture-roadmap.md#status-board)
-per phase; D-L2-2 in the decision table when it is taken. When Phase 5 lands,
+per phase. D-L2-2 reads "decided 2026-11-11: engines enforce checkpoints before
+the palette offers one" in the decision table. When Phase 5 lands,
 the master's target diagram turns the Layer 2 canvas node green.

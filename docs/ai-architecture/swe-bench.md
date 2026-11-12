@@ -3,11 +3,12 @@ inflect · ai architecture · swe-bench · roadmap v1 · 2026-10-29
 # SWE-bench — a coding benchmark with no surface here, Validation column
 
 > **Status: living design** — the integration roadmap for SWE-bench, which
-> the target architecture places in the Validation column as "testing". The
-> **Current state** section is true today (main 3.338.0, `a1c2f05c`). The
-> **Roadmap** section is the plan — and the plan is a decision, because the
-> benchmark measures a capability this product does not have and has decided
-> not to have. This is a child of
+> the target architecture places in the Validation column as "testing".
+> **Complete: declined at Phase 0 (D-EV-5, initialled by the owner
+> 2026-11-11).** The **Current state** section is true today (re-verified
+> 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap** section records the
+> decision, because the benchmark measures a capability this product does not
+> have and has decided not to have. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md). If the
 > code contradicts a fact here, the code wins and the pull request that finds
 > it corrects this document.
@@ -20,21 +21,21 @@ inflect · ai architecture · swe-bench · roadmap v1 · 2026-10-29
 | Wave | none (decision only) |
 | Depends on | — |
 | Unblocks | — |
-| Owner decisions | **D-EV-5** (keep the box or retire it) |
-| Complete at | Phase 0's recorded decision (expected: declined) |
+| Owner decisions | **D-EV-5** decided 2026-11-11: declined (no capability to measure) |
+| Complete at | Phase 0's recorded decision — **complete 2026-11-11, declined** |
 
 ## At a glance
 
-Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns green (`done`) in the pull request that meets its "done when". Dashed: another roadmap this one waits on or unblocks. Pink: the evaluation record. Grey dashed: an outcome that ends the roadmap.
+Green: decided or on `main`. Dashed: another roadmap this one points at. Grey dashed: an outcome not taken.
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · decide<br/>D-EV-5"}}:::gate
-  DEC["Declined<br/>no agent writes or runs code"]:::declined
-  PH["Placeholder<br/>tied to the sandbox refusal"]:::declined
+  P0(["Phase 0 · decided 2026-11-11<br/>D-EV-5"]):::done
+  DEC["Declined<br/>no agent writes or runs code"]:::done
+  PH["Placeholder<br/>tied to the sandbox refusal<br/>not chosen"]:::declined
   REF["Sandbox refusal<br/>flue/refused-capabilities.ts"]:::done
   INS["inspect.md<br/>the agentic evals that apply"]:::ext
-  P0 -.-> DEC
+  P0 --> DEC
   P0 -.-> PH
   REF -.->|would have to be reversed first| PH
   DEC -.-> INS
@@ -58,7 +59,8 @@ flowchart LR
   read tools and the `propose_*` tools (`src/lib/mcp/tools/`); every write is
   a proposal a human approves. Flue's `useSandbox`, the bash tool and the
   sandbox filesystem tools are refused by import
-  (`flue/refused-capabilities.ts`, 23 exports). The one sandbox in the
+  (`flue/refused-capabilities.ts`, 23 exports: 16 sandbox and shell, 5
+  filesystem, 2 channel; held by `tests/guards/flue-refused-capabilities.test.ts`). The one sandbox in the
   product — OpenShell, `src/lib/agentic/openshell/` — confines Inflect's *own*
   collector binaries (Powerpipe), not model-written code.
 - **The harness scanner reads customers' code and never executes it**
@@ -90,13 +92,28 @@ roadmap's to take.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Decide, and record
+### Phase 0 — Decide, and record (complete 2026-11-11)
+
+**The record.** D-EV-5 was initialled by the owner on 2026-11-11:
+**declined — no capability to measure.** SWE-bench scores an agent that edits
+a repository and runs its tests. No Inflect agent writes or executes code, and
+that is a decision held in code (`flue/refused-capabilities.ts` and its guard),
+not a gap waiting to be filled. A placeholder tied to the refusal was the other
+option; it was not taken, because a box that cannot start until three other
+decisions reverse reads as an unstarted task, which is what this document
+exists to prevent. The reasoning, and the three decisions that would have to
+change before the benchmark became relevant, are in
+`docs/implementation-notes/2026-11-11-ai-roadmap-decision-completions.md`.
 
 **Sub-phases.**
-- [ ] 0.1 D-EV-5: retire the box from the target diagram's Validation column,
-      or keep it as a placeholder tied to the sandbox refusal.
-- [ ] 0.2 Record the decision in the master's decision table and mark this
+- [x] 0.1 D-EV-5: retire the box from the target diagram's Validation column,
+      or keep it as a placeholder tied to the sandbox refusal. *Declined,
+      2026-11-11: the box is answered "declined — no capability to measure".*
+- [x] 0.2 Record the decision in the master's decision table and mark this
       framework "declined — no capability to measure" or "placeholder".
+      *Recorded here and in the implementation note; the master's status-board
+      and decision-table rows are the coordinator's to flip, and read
+      "declined".*
 
 **Prompt.**
 ```text
@@ -127,6 +144,6 @@ Not applicable.
 
 ## Updating the master
 
-After Phase 0, the master's row for SWE-bench reads "declined" or
-"placeholder (gated on the sandbox refusal)". Nothing further unless the
+Phase 0 is complete: the master's row for SWE-bench reads "declined — no
+capability to measure (D-EV-5, 2026-11-11)". Nothing further unless the sandbox
 refusal is reversed, which reopens this document from its Fit section.
