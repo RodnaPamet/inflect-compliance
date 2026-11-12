@@ -899,6 +899,14 @@ new tenant-membership creation path).
   writer of the value) and `canManageTenants`. A new organization is owned by
   its creator. No org delete or rename exists; when one is built it is
   owner-only. Test teardowns delete the ORGANIZATION, not its memberships.
+  **Both layers serialise per organization before they count** (#5373): the
+  trigger and the usecase's in-transaction re-checks take
+  `pg_advisory_xact_lock(hashtext('org-owner:' || organizationId))` first,
+  because under READ COMMITTED two owners demoting each other at once each
+  counted the other as still an owner and both committed. A removal's tenant
+  fan-in and its membership delete share that one transaction, so a refused
+  removal takes no tenant access with it. Keep the trigger function VOLATILE:
+  its count reads a fresh snapshot only because it runs after the lock.
 - `appPermissions` on `RequestContext` is already custom-role–aware
 - **An OWNER or AI_ADMIN membership never carries a custom role** (#3720, #3699).
   A custom role REPLACES the membership's permissions, so on an OWNER it was a

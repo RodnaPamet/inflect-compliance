@@ -195,6 +195,16 @@ describe('removeOrgMember — org audit emission', () => {
     function setupHappyPath(role: 'ORG_ADMIN' | 'ORG_READER', deprovisioningCount = 0) {
         orgMembershipFindUniqueMock.mockResolvedValue({ id: 'mem-1', role });
         orgMembershipDeleteMock.mockResolvedValue({ id: 'mem-1' });
+        // The fan-in and the delete run in one transaction (#5373).
+        transactionMock.mockImplementation(async (cb: (tx: unknown) => unknown) =>
+            cb({
+                $executeRawUnsafe: async () => 0,
+                orgMembership: {
+                    delete: (...a: unknown[]) => orgMembershipDeleteMock(...a),
+                    count: (...a: unknown[]) => orgMembershipCountMock(...a),
+                },
+            }),
+        );
         if (role === 'ORG_ADMIN') {
             // Sufficient admin count so the last-admin guard doesn't block.
             orgMembershipCountMock.mockResolvedValue(2);
@@ -259,6 +269,7 @@ describe('changeOrgMemberRole — org audit emission', () => {
         // callback with our mock client so the inner provisioning fires.
         transactionMock.mockImplementation(async (cb: (tx: unknown) => unknown) =>
             cb({
+                $executeRawUnsafe: async () => 0,
                 orgMembership: {
                     update: (...a: unknown[]) => orgMembershipUpdateMock(...a),
                     count: (...a: unknown[]) => orgMembershipCountMock(...a),
@@ -283,6 +294,7 @@ describe('changeOrgMemberRole — org audit emission', () => {
         });
         transactionMock.mockImplementation(async (cb: (tx: unknown) => unknown) =>
             cb({
+                $executeRawUnsafe: async () => 0,
                 orgMembership: {
                     update: (...a: unknown[]) => orgMembershipUpdateMock(...a),
                     count: (...a: unknown[]) => orgMembershipCountMock(...a),
