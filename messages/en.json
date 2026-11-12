@@ -6516,7 +6516,7 @@
         "whyLine": "{observed} against a baseline mean of {mean} (σ {sd}, z {z})",
         "whyUnreadable": "The features that drove this anomaly could not be read.",
         "moreAnomalies": "{count, plural, one {# earlier anomaly is} other {# earlier anomalies are}} listed on Agent reports → Behaviour anomalies.",
-        "noAnomalies": "No anomalies on the days scored.",
+        "noAnomalies": "No anomalies yet",
         "breakerOpen": "The agent’s circuit breaker is open. Close it on the Circuit breaker tab, choosing whether the change was intended — that choice also decides this detector’s baseline.",
         "acceptAction": "Accept as new normal",
         "acceptTitle": "Accept this behaviour as the agent’s new normal?",

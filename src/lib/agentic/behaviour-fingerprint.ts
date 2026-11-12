@@ -342,7 +342,7 @@ export function baselineLookbackStart(start: Date): Date {
  * The re-baseline instant a PERSON set on this agent's breaker, or `null`.
  *
  * `baselineEpoch` defaults to the row's creation time, and the row is created by
- * whatever touches the breaker first — including a latch (`ensureLatchRow`), the
+ * whatever touches the breaker first — including a latch (`ensureBreakerRow`), the
  * fingerprint's own among them. An epoch at the creation instant is that
  * default, not a decision, and honouring it would let the act of latching wipe
  * the baseline the latch was judged against: a later `RESOLVED` close would
@@ -350,9 +350,11 @@ export function baselineLookbackStart(start: Date): Date {
  * exactly two writers move it, both a person's "this change was intended":
  * `closeAgentCircuitBreaker` on `ACCEPTED_NEW_BASELINE` (an OPEN breaker), and
  * `acceptAgentBehaviourBaseline` (a CLOSED one, after an anomaly that did not
- * latch — Morpheus 1.3). (The row has a single insert site, raw SQL, where
- * both columns take `CURRENT_TIMESTAMP` from one statement, so a defaulted epoch
- * equals `createdAt` exactly.)
+ * latch — Morpheus 1.3; it creates the row first when the agent has none, and
+ * always writes an epoch strictly after `createdAt`). (The row has a single
+ * insert site, `ensureBreakerRow`, raw SQL, where both columns take
+ * `CURRENT_TIMESTAMP` from one statement, so a defaulted epoch equals
+ * `createdAt` exactly.)
  *
  * `RESOLVED` leaves the epoch where it was, so the old baseline keeps judging:
  * "I fixed the agent" means the agent should look like it did before.

@@ -261,6 +261,9 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // #3777 — the FIRST capacity axis, the monthly token budget, which had a
     // reader and no writer. Set beside the cap on the register page.
     't/[tenantSlug]/admin/agents/budget/route.ts',
+    // Morpheus 1.3 — the behaviour fingerprint's panel on the agent Overview
+    // (BehaviourFingerprintCard) reads and posts here.
+    't/[tenantSlug]/admin/agents/[agentId]/behaviour-fingerprint/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/circuit-breaker/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/coverage/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/policy-card/route.ts',

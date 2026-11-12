@@ -54,11 +54,20 @@
  *     is LEARNING again); closing today's finding is the findings workflow's
  *     act, done where findings are closed.
  *
- * An agent with no breaker row is refused (`NO_BREAKER`) rather than given one
- * here: the row has one insert site, and a defaulted epoch equal to `createdAt`
- * is read as "nobody decided" (`personSetBaselineEpoch`), so a row minted to
- * carry an acceptance would not carry it. Every agent that makes a funnel call
- * has a row (`openBreakerGate`).
+ * AN AGENT WITH NO BREAKER ROW IS ACCEPTED, NOT REFUSED. The fingerprint scores
+ * every agent with any activity in the ledger — model calls, proposals, guard
+ * flags — while the breaker row is created only by a tool-funnel call
+ * (`openBreakerGate`) or a latch. So an agent that only ever proposes, or runs
+ * read-only on Flue, is scored and can be judged ANOMALOUS every night with no
+ * row to carry an epoch; refusing it would leave exactly the treadmill this
+ * control exists to end, for exactly the agents with the least other traffic.
+ * A missing row is a CLOSED breaker that has never been observed, so the
+ * acceptance creates it through the store's one insert site
+ * (`ensureBreakerRow`, in this transaction) and then moves its epoch. The
+ * epoch written is strictly after the row's `createdAt` — never equal — because
+ * an epoch AT creation is read as the column default, "nobody decided"
+ * (`personSetBaselineEpoch`), and an acceptance that read back as that would
+ * be recorded and ignored.
  *
  * @module usecases/agent-behaviour-fingerprint-read
  */
@@ -79,6 +88,7 @@ import {
     type FingerprintFeature,
     type FingerprintVerdict,
 } from '@/lib/agentic/behaviour-fingerprint';
+import { ensureBreakerRow } from '@/lib/agentic/circuit-breaker-store';
 import {
     behaviourDetectorDecisionFor,
     type BehaviourDetectorBasis,
@@ -102,7 +112,6 @@ const DAY_MS = 86_400_000;
 /** Why an acceptance was refused. Stable codes; the surface words them. */
 export const BASELINE_ACCEPT_REFUSALS = [
     'NOT_A_PERSON',
-    'NO_BREAKER',
     'BREAKER_OPEN',
     'NOTHING_TO_ACCEPT',
 ] as const;
@@ -178,14 +187,14 @@ export function baselineAcceptRefusalForCaller(ctx: RequestContext): BaselineAcc
 
 /**
  * The row-state half of the acceptance rule, pure so the read and the write
- * ask it identically.
+ * ask it identically. No breaker row is a CLOSED breaker nobody has
+ * re-baselined (see the module header), not a refusal.
  */
 export function baselineAcceptRefusalForState(input: {
     breaker: { state: string; baselineEpoch: Date; createdAt: Date } | null;
     latestAnomalyCreatedAt: Date | null;
 }): BaselineAcceptRefusal | null {
-    if (!input.breaker) return 'NO_BREAKER';
-    if (input.breaker.state !== 'CLOSED') return 'BREAKER_OPEN';
+    if (input.breaker && input.breaker.state !== 'CLOSED') return 'BREAKER_OPEN';
     if (!input.latestAnomalyCreatedAt) return 'NOTHING_TO_ACCEPT';
     const epoch = personSetBaselineEpoch(input.breaker);
     if (epoch && input.latestAnomalyCreatedAt.getTime() <= epoch.getTime()) return 'NOTHING_TO_ACCEPT';
@@ -390,7 +399,7 @@ export async function acceptAgentBehaviourBaseline(ctx: RequestContext, agentId:
         });
         if (!agent) throw notFound('Agent not found');
 
-        const [breaker, latest] = await Promise.all([
+        const [existingBreaker, latest] = await Promise.all([
             db.agentCircuitBreaker.findUnique({
                 where: { tenantId_agentId: { tenantId: ctx.tenantId, agentId } },
                 select: { state: true, baselineEpoch: true, createdAt: true },
@@ -402,12 +411,27 @@ export async function acceptAgentBehaviourBaseline(ctx: RequestContext, agentId:
             }),
         ]);
         const refusal = baselineAcceptRefusalForState({
-            breaker,
+            breaker: existingBreaker,
             latestAnomalyCreatedAt: latest?.createdAt ?? null,
         });
         if (refusal) throw refusalError(refusal);
 
-        const now = new Date();
+        // No row yet (an agent the fingerprint scores but the tool funnel never
+        // saw): create it here, in this transaction, through the one insert
+        // site, and read back its `createdAt` so the epoch can be placed after it.
+        let breaker = existingBreaker;
+        if (!breaker) {
+            await ensureBreakerRow(db, ctx.tenantId, agentId);
+            breaker = await db.agentCircuitBreaker.findUnique({
+                where: { tenantId_agentId: { tenantId: ctx.tenantId, agentId } },
+                select: { state: true, baselineEpoch: true, createdAt: true },
+            });
+            if (!breaker || breaker.state !== 'CLOSED') throw refusalError('BREAKER_OPEN');
+        }
+
+        // Strictly after creation, whatever the app and database clocks say: an
+        // epoch equal to `createdAt` reads as the default (`personSetBaselineEpoch`).
+        const now = new Date(Math.max(Date.now(), breaker.createdAt.getTime() + 1));
         // Conditional on CLOSED: a latch landing between the read above and this
         // write must refuse, not be silently re-baselined under.
         const moved = await db.agentCircuitBreaker.updateMany({
@@ -459,7 +483,6 @@ export async function acceptAgentBehaviourBaseline(ctx: RequestContext, agentId:
 function refusalError(reason: BaselineAcceptRefusal) {
     const message: Record<BaselineAcceptRefusal, string> = {
         NOT_A_PERSON: 'Only a person can accept an agent’s new behaviour as normal.',
-        NO_BREAKER: 'This agent has no circuit breaker to carry the new baseline.',
         BREAKER_OPEN: 'The agent’s circuit breaker is open: close it, choosing whether the change was intended.',
         NOTHING_TO_ACCEPT: 'There is no behaviour anomaly since the last accepted baseline.',
     };

@@ -38,6 +38,7 @@ usecases/agent-behaviour-fingerprint-read.ts
 | `src/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentDetailClient.tsx` | Mounts the card behind `canReadRegistry` |
 | `src/app/t/[tenantSlug]/(app)/agents/reports/{page.tsx,ReportsClient.tsx,behaviour/BehaviourTab.tsx}` | The third reports tab, loaded on demand |
 | `src/lib/agentic/behaviour-fingerprint.ts` | Doc only: the epoch now has two writers |
+| `src/lib/agentic/circuit-breaker-store.ts` | `ensureBreakerRow`, the row's one insert site, now takes the client so the acceptance inserts in its own transaction |
 | `src/lib/observability/integration-metrics.ts` | `agentic.agent_fingerprint.baseline_accepted` |
 | `messages/{en,bg}.json` | `admin.agentDetail.fingerprint.*`, `agents.reports.behaviour*` |
 
@@ -72,10 +73,17 @@ usecases/agent-behaviour-fingerprint-read.ts
   or `agentId`): an agent must not be able to declare its own behaviour normal.
   The floor is the breaker close's, `assertAgentGovernanceAdmin(ctx,
   'agent_registry')`, behind the route's literal `requirePermission`.
-- **No breaker row is refused (`NO_BREAKER`), not created.** The row has one
-  insert site, and a defaulted epoch equal to `createdAt` reads as "nobody
-  decided", so a row minted here to carry the acceptance would not carry it.
-  Every agent that makes a funnel call has a row (`openBreakerGate`).
+- **No breaker row is created, not refused.** The fingerprint scores every
+  agent with any activity in the ledger (model calls, proposals, guard flags),
+  but the breaker row exists only after a tool-funnel call (`openBreakerGate`)
+  or a latch. An agent that only proposes, or runs read-only on Flue, is
+  scored with no row; refusing it would leave the treadmill in place for
+  exactly those agents, and the card hid the button without saying why. A
+  first draft did refuse (`NO_BREAKER`); review caught it. The acceptance now
+  creates the row through the store's one insert site (`ensureBreakerRow`, in
+  the acceptance's transaction) and writes an epoch strictly after its
+  `createdAt`, because an epoch AT creation reads as the column default,
+  "nobody decided", and would be recorded and ignored.
 - **It closes no finding.** Re-baselining stops tomorrow's re-raise (the agent
   is LEARNING again). Closing today's finding is the findings workflow's act.
 - **The affordance is computed by the server.** The read returns

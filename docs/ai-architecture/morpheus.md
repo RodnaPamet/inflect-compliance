@@ -265,7 +265,10 @@ can now "accept as new normal" from the card: it moves the SAME
 `AgentCircuitBreaker.baselineEpoch` the close moves (one decision, one column,
 both detectors), only on a CLOSED breaker (an open one is decided by its close),
 only after an anomaly since the last acceptance, never for an API key or an
-agent, and audited `AGENT_BEHAVIOUR_BASELINE_ACCEPTED`. It closes no finding.
+agent, and audited `AGENT_BEHAVIOUR_BASELINE_ACCEPTED`. An agent the tool
+funnel never saw (one that only proposes, or runs read-only) is scored without
+a breaker row, so the acceptance creates the row first and places the epoch
+after its creation. It closes no finding.
 Note `docs/implementation-notes/2026-11-12-agent-behaviour-fingerprint-surface.md`.
 
 **Prompt.**

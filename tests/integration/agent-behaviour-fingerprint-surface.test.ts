@@ -35,6 +35,10 @@ jest.setTimeout(180_000);
 
 const T1 = 'abfs-tenant-one';
 const T2 = 'abfs-tenant-two';
+// An agent the fingerprint scores but the tool funnel never saw, so it has NO
+// breaker row: one that only proposes, or runs read-only on Flue (model calls).
+const T3 = 'abfs-tenant-three';
+const TENANTS = [T1, T2, T3] as const;
 const DAY_MS = 86_400_000;
 const DAY0 = Date.UTC(2026, 8, 1);
 const BASELINE_DAYS = 20;
@@ -63,7 +67,7 @@ async function purgeTenant(tenantId: string): Promise<void> {
     await prisma.user.deleteMany({ where: { email: `owner-${tenantId}@example.test` } });
 }
 
-async function seedTenant(tenantId: string): Promise<void> {
+async function seedTenant(tenantId: string, opts: { breakerRow: boolean } = { breakerRow: true }): Promise<void> {
     await prisma.tenant.create({ data: { id: tenantId, name: tenantId, slug: tenantId } });
     const email = `owner-${tenantId}@example.test`;
     const owner = await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
@@ -83,8 +87,8 @@ async function seedTenant(tenantId: string): Promise<void> {
     });
     seeded[tenantId] = { ownerUserId: owner.id, agentId: agent.id };
     // The breaker row, through the funnel's own seam — every agent that makes
-    // a funnel call has one.
-    await openBreakerGate(tenantId, agent.id);
+    // a funnel call has one. T3's agent never makes one.
+    if (opts.breakerRow) await openBreakerGate(tenantId, agent.id);
 }
 
 function readsOn(i: number): number {
@@ -115,21 +119,24 @@ describeFn('the behaviour fingerprint surface and the accepted baseline', () => 
     beforeAll(async () => {
         for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
         process.env.AGENT_BEHAVIOUR_DETECTOR = '1';
-        process.env.AGENT_BEHAVIOUR_DETECTOR_TENANTS = `${T1},${T2}`;
+        process.env.AGENT_BEHAVIOUR_DETECTOR_TENANTS = TENANTS.join(',');
         delete process.env.AGENT_BEHAVIOUR_DETECTOR_LATCH;
-        for (const t of [T1, T2]) {
+        for (const t of TENANTS) {
             await purgeTenant(t);
-            await seedTenant(t);
+            await seedTenant(t, { breakerRow: t !== T3 });
             for (let i = 0; i < BASELINE_DAYS; i++) await seedDay(t, i, readsOn(i));
             for (let i = 0; i < BASELINE_DAYS; i++) await score(t, i);
         }
         // T1's owner deliberately triples the agent's workload from day 20.
         await seedDay(T1, BASELINE_DAYS, readsOn(BASELINE_DAYS) * 3);
         await score(T1, BASELINE_DAYS);
+        // And T3's, whose agent has no breaker row.
+        await seedDay(T3, BASELINE_DAYS, readsOn(BASELINE_DAYS) * 3);
+        await score(T3, BASELINE_DAYS);
     });
 
     afterAll(async () => {
-        for (const t of [T1, T2]) await purgeTenant(t);
+        for (const t of TENANTS) await purgeTenant(t);
         for (const k of ENV_KEYS) {
             if (savedEnv[k] === undefined) delete process.env[k];
             else process.env[k] = savedEnv[k];
@@ -261,7 +268,37 @@ describeFn('the behaviour fingerprint surface and the accepted baseline', () => 
             const view = await getAgentBehaviourFingerprint(ownerOf(T1), seeded[T1].agentId);
             expect(view.detector).toEqual({ on: false, basis: 'TENANT_NOT_NAMED', latch: false });
         } finally {
-            process.env.AGENT_BEHAVIOUR_DETECTOR_TENANTS = `${T1},${T2}`;
+            process.env.AGENT_BEHAVIOUR_DETECTOR_TENANTS = TENANTS.join(',');
         }
+    });
+
+    it('an agent the funnel never saw (no breaker row) can still be accepted, and the acceptance is honoured', async () => {
+        const agentId = seeded[T3].agentId;
+        expect(await prisma.agentCircuitBreaker.findFirst({ where: { tenantId: T3, agentId } })).toBeNull();
+
+        // The night after the change it is anomalous again; without this
+        // acceptance its owner's only way out is to switch the detector off.
+        await seedDay(T3, BASELINE_DAYS + 1, readsOn(BASELINE_DAYS + 1) * 3);
+        expect((await score(T3, BASELINE_DAYS + 1)).agents[0]).toMatchObject({ verdict: 'ANOMALOUS', latched: false });
+
+        const view = await getAgentBehaviourFingerprint(ownerOf(T3), agentId);
+        expect(view.anomalies.length).toBeGreaterThan(0);
+        expect(view.acceptBaseline).toEqual({ allowed: true, refusal: null });
+
+        const res = await acceptAgentBehaviourBaseline(ownerOf(T3), agentId);
+        const row = await prisma.agentCircuitBreaker.findFirstOrThrow({ where: { tenantId: T3, agentId } });
+        expect(row.state).toBe('CLOSED');
+        expect(row.baselineEpoch.toISOString()).toBe(res.baselineEpoch);
+        // Strictly after creation, or it would read as the column default and
+        // the acceptance would be recorded and ignored.
+        expect(row.baselineEpoch.getTime()).toBeGreaterThan(row.createdAt.getTime());
+        expect((await getAgentBehaviourFingerprint(ownerOf(T3), agentId)).baselineEpoch).toBe(res.baselineEpoch);
+
+        await seedDay(T3, BASELINE_DAYS + 2, readsOn(BASELINE_DAYS + 2) * 3);
+        expect((await score(T3, BASELINE_DAYS + 2)).agents[0]).toMatchObject({
+            verdict: 'LEARNING',
+            baselineDays: 0,
+            findingAction: null,
+        });
     });
 });
