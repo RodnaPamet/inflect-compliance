@@ -3,7 +3,8 @@
  * Turn one role's garak report (JSONL) and the target proxy's ledger into the
  * night's RECORD for that role, plus a markdown summary for the job page.
  *
- *   node .garak/summarise.mjs <report.jsonl> <ledger.json> <allowlist.tsv> <role> [--md <out.md>]
+ *   node .garak/summarise.mjs <report.jsonl> <ledger.json> <allowlist.tsv> <role>
+ *       --probes <comma-separated probe_spec> --garak-exit <code> [--md <out.md>]
  *
  * The record (schema `inflect-garak-night/1`) is the Phase 0 shape Phase 2
  * turns into a committed evaluation record:
@@ -13,9 +14,16 @@
  *   families  hit rate per probe family, DERIVED from `raw` on every run and
  *             never stored anywhere else (G11: aggregates are recomputed from
  *             raw answers, a stored figure is never trusted).
- *   complete  TRUE only when something was evaluated AND no request was cut
- *             by the wire cap AND none failed upstream. Zero evaluations is
- *             never a clean night: "no hits" over nothing evidences nothing.
+ *   complete  TRUE only when EVERY configured probe has scored outputs, garak
+ *             exited 0, no request was cut by the wire cap, none failed
+ *             upstream and no rate limit was abandoned. A night garak left
+ *             partway (killed by the timeout, a crash between probes) writes
+ *             eval rows for the probes it finished and none for the rest, and
+ *             no ledger counter moves, so "something was evaluated" alone
+ *             would call a subset of the families a complete night. Zero
+ *             evaluations is never a clean night either: "no hits" over
+ *             nothing evidences nothing.
+ *   notEvaluated  the configured probes with no scored output, by name.
  *   allowlisted  the probe classes .garak/allowlist.tsv names, REPORTED beside
  *             their hits, never subtracted from them.
  *
@@ -83,21 +91,40 @@ export function familiesFrom(raw) {
     return out;
 }
 
-export function buildRecord({ report, ledger, allowlist, role }) {
+/** The configured probes that produced no scored output at all. */
+export function probesNotEvaluated(raw, probes) {
+    const scored = new Set(raw.filter((r) => r.evaluated > 0).map((r) => r.probe));
+    return probes.map((p) => p.replace(/^probes\./, '')).filter((p) => !scored.has(p));
+}
+
+/**
+ * @param {{ report: string, ledger: object, allowlist: string, role: string,
+ *           probes: string[], garakExit: number | null }} input
+ *   `probes` is the configured probe_spec; `garakExit` is garak's exit code
+ *   (null when it was not recorded, which is never read as success).
+ */
+export function buildRecord({ report, ledger, allowlist, role, probes, garakExit }) {
     const { raw, garakVersion } = parseReport(report);
     const evaluated = raw.reduce((n, r) => n + r.evaluated, 0);
+    const notEvaluated = probesNotEvaluated(raw, probes);
     const incompleteReasons = [];
     if (evaluated === 0) incompleteReasons.push('NO_EVALUATIONS');
+    if (probes.length === 0) incompleteReasons.push('NO_PROBES_CONFIGURED');
+    if (notEvaluated.length > 0) incompleteReasons.push('PROBES_NOT_EVALUATED');
+    if (garakExit !== 0) incompleteReasons.push(garakExit === null ? 'GARAK_EXIT_UNKNOWN' : 'GARAK_EXIT_NONZERO');
     if ((ledger.overCap ?? 0) > 0) incompleteReasons.push('REQUEST_CAP_REACHED');
     if ((ledger.upstreamErrors ?? 0) > 0) incompleteReasons.push('UPSTREAM_ERRORS');
+    if ((ledger.rateLimitAbandoned ?? 0) > 0) incompleteReasons.push('RATE_LIMITED');
     if ((ledger.forwarded ?? 0) === 0) incompleteReasons.push('NOTHING_FORWARDED');
     const allowed = parseAllowlist(allowlist);
     return {
         schema: RECORD_SCHEMA,
         role,
         garakVersion,
-        complete: evaluated > 0 && incompleteReasons.length === 0,
+        complete: evaluated > 0 && notEvaluated.length === 0 && incompleteReasons.length === 0,
         incompleteReasons,
+        notEvaluated,
+        garakExit,
         ledger,
         families: familiesFrom(raw),
         allowlisted: allowed.map((a) => ({
@@ -115,9 +142,14 @@ export function toMarkdown(record) {
         `Complete: **${record.complete ? 'yes' : 'NO'}**` +
             (record.incompleteReasons.length ? ` (${record.incompleteReasons.join(', ')})` : ''),
         '',
+        ...(record.notEvaluated.length ? [`Not evaluated: ${record.notEvaluated.join(', ')}.`, ''] : []),
         `Requests forwarded ${record.ledger.forwarded} of cap ${record.ledger.maxRequests}; ` +
             `guard refusals input ${record.ledger.guardRefusedInput}, output ${record.ledger.guardRefusedOutput}; ` +
-            `over cap ${record.ledger.overCap}; upstream errors ${record.ledger.upstreamErrors}.`,
+            `over cap ${record.ledger.overCap}; over the product's question length (not deliverable, ` +
+            `not scored) ${record.ledger.overLength ?? 0}; rate limits abandoned ${record.ledger.rateLimitAbandoned ?? 0}; ` +
+            `upstream errors ${record.ledger.upstreamErrors}` +
+            (record.ledger.upstreamErrors ? ` (${JSON.stringify(record.ledger.upstreamErrorStatuses ?? {})})` : '') +
+            `; garak exit ${record.garakExit ?? 'unknown'}.`,
         '',
         '| family | evaluated | hits | hit rate |',
         '| --- | ---: | ---: | ---: |',
@@ -136,11 +168,20 @@ export function toMarkdown(record) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     const [reportPath, ledgerPath, allowlistPath, role] = process.argv.slice(2, 6);
-    const mdAt = process.argv.indexOf('--md');
-    if (!reportPath || !ledgerPath || !allowlistPath || !role) {
-        process.stderr.write('usage: summarise.mjs <report.jsonl> <ledger.json> <allowlist.tsv> <role> [--md <out>]\n');
+    const flag = (name) => {
+        const at = process.argv.indexOf(name);
+        return at > 0 ? process.argv[at + 1] : undefined;
+    };
+    const probesArg = flag('--probes');
+    const exitArg = flag('--garak-exit');
+    if (!reportPath || !ledgerPath || !allowlistPath || !role || probesArg === undefined) {
+        process.stderr.write(
+            'usage: summarise.mjs <report.jsonl> <ledger.json> <allowlist.tsv> <role> --probes <csv> --garak-exit <code> [--md <out>]\n',
+        );
         process.exit(2);
     }
+    const probes = probesArg.split(',').map((p) => p.trim()).filter(Boolean);
+    const garakExit = /^\d+$/.test(exitArg ?? '') ? Number(exitArg) : null;
     let ledger;
     try {
         ledger = JSON.parse(readFileSync(ledgerPath, 'utf-8'));
@@ -152,7 +193,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     // never skipped.
     const report = existsSync(reportPath) ? readFileSync(reportPath, 'utf-8') : '';
     const allowlist = existsSync(allowlistPath) ? readFileSync(allowlistPath, 'utf-8') : '';
-    const record = buildRecord({ report, ledger, allowlist, role });
+    const record = buildRecord({ report, ledger, allowlist, role, probes, garakExit });
     process.stdout.write(`${JSON.stringify(record, null, 2)}\n`);
-    if (mdAt > 0 && process.argv[mdAt + 1]) writeFileSync(process.argv[mdAt + 1], toMarkdown(record));
+    const mdOut = flag('--md');
+    if (mdOut) writeFileSync(mdOut, toMarkdown(record));
 }

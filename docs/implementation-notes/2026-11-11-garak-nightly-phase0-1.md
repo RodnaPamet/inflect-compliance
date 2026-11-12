@@ -10,12 +10,13 @@ schedule 01:15 UTC ─▶ garak.yml (one job)
   boot (dast.yml shape) + seed, ANTHROPIC_API_KEY only on the app process
   docker build .garak (python:3.12-slim@sha256, garak==0.17.1)
   verify probe names against `garak --list_probes`
-  for role in owner, editor, reader:              (sequential: one budget)
+  reader: one request, expected 403 from the AI feature gate (else step fails)
+  for role in owner, editor:                      (sequential: one budget)
       measured breaker (.garak/spend.mjs over AiDecisionLog)
       NextAuth login ─▶ session cookie
       target-proxy.mjs (127.0.0.1:3107) ── cookie, wire cap ─▶ /api/t/acme-corp/assistant/ask
-      garak container (host network) ─▶ proxy only
-  summarise.mjs ─▶ inflect-garak-night/1 record per role + job summary
+      garak container (host network) ─▶ proxy only; exit code kept
+  summarise.mjs (+ configured probes, garak exit) ─▶ inflect-garak-night/1 record per role
   upload reports/records; open or update one findings issue on any hit
 ```
 
@@ -34,7 +35,9 @@ half of that adapter (start a workflow, await it) is not built.
 | `.garak/allowlist.tsv` | empty accepted-finding list; header carries the IGNORE-at-every-severity warning |
 | `.garak/Dockerfile` | the scanner image; base pinned by digest, garak by exact version |
 | `.garak/target-proxy.mjs` | wire cap, cookie holder, guard-403-to-refusal translation, counts-only ledger |
-| `.garak/summarise.mjs` | report + ledger to the night record and markdown |
+| `.garak/summarise.mjs` | report + ledger + configured probes + garak exit to the night record and markdown |
+| `.garak/verify-probes.mjs` | refuses a configured probe the pinned garak's `--list_probes` does not list |
+| `tests/fixtures/garak/list-probes-0.17.1.txt` | that output, generated in garak's print format from the 0.17.1 wheel's plugin cache |
 | `.garak/spend.mjs` | measured spend from the decision log; may another role start |
 | `.github/workflows/garak.yml` | the nightly job |
 | `tests/guardrails/garak-workflow-pinning.test.ts` | dated marker vs the clock, skip-without-key, budget arithmetic, image pin, reach |
@@ -68,9 +71,26 @@ half of that adapter (start a workflow, await it) is not built.
 - **The product's AI quota, not `agentMonthlyTokenBudget`.** #3833 decided the
   assistant is not metered against the agent budget; the per-tenant daily
   quota is its pre-flight cap, and the job sets it to the night's request cap.
-- **Auditor left out of the role list.** The assistant's surface for an
-  auditor is the reader's; a fourth role would add a third more spend for no
-  new surface.
+- **Corrected in review, before merge, against the garak 0.17.1 wheel.**
+  The first cut would have failed every night once the key existed: the
+  probe check grepped for `probes.<name>` where garak prints a coloured
+  `probes: <name>`; `xss.MarkdownImageExfil` no longer exists (the module is
+  `web_injection`, and that class ignores the prompt cap, sending 12); the
+  reader is refused by the AI feature gate and garak aborts its whole run on
+  that 403, as it does on the schema's 400 for the 41 % of DanInTheWild
+  prompts longer than 2000 characters; and the bracketed refusal text scored
+  as a jailbreak under the inverted `MitigationBypass` detector, so a working
+  guard read as a failing one. The fixes: a tested parser, a cap-honouring
+  class and a guard listing which classes honour the cap, a `skip_codes`
+  status for everything that is not an answer, a refusal text the detectors
+  score as a pass, and a record that is complete only when every configured
+  probe scored and garak exited 0. Over-length prompts are not forwarded:
+  any user gets the same 400, so they are not deliverable through the
+  product, and they are counted rather than scored.
+- **Auditor and reader left out of the role list.** Both are refused by the
+  AI feature gate (`canWrite`) before any guard; the reader's refusal is
+  checked with one request. An auditor's assistant surface is the reader's,
+  so it needs no check of its own.
 - **Not in the coverage partition.** The job runs no Jest.
 - **Sub-processor note.** The CI key sends garak's probe text and seed CI data
   to Anthropic, no customer content. The Anthropic row of

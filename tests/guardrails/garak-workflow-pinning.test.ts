@@ -13,7 +13,10 @@
  *   3. The spend cap is held in config and the numbers agree (D-EV-1, USD 5 a
  *      night): garak's own request count fits the proxy's wire cap, the roles
  *      fit the night, the night fits the cap at the planned turn cost, and the
- *      product's own AI quota equals the night's request cap.
+ *      product's own AI quota equals the night's request cap. garak's count is
+ *      probes x cap x generations ONLY for a probe that prunes to the cap, so
+ *      every configured probe must be one read, in the pinned garak's source,
+ *      to do that.
  *   4. The scanner image is pinned by digest and garak by exact version, and
  *      garak can reach only the local proxy.
  *   5. The allowlist's semantics warning is at the top of the file and every
@@ -29,6 +32,32 @@ const CONFIG = '.garak/config.yaml';
 const BUDGET = '.garak/budget.json';
 const DOCKERFILE = '.garak/Dockerfile';
 const ALLOWLIST = '.garak/allowlist.tsv';
+const PROXY = '.garak/target-proxy.mjs';
+
+/**
+ * The garak version CAP_HONOURING_PROBES was read against. A version bump
+ * re-reads each class (and regenerates tests/fixtures/garak/list-probes-*.txt).
+ */
+const CAP_READ_AGAINST_GARAK = '0.17.1';
+
+/**
+ * Probe classes whose prompt count is at most `soft_probe_prompt_cap`, each
+ * with where garak's source does it. A class that builds a fixed prompt set
+ * and never prunes (web_injection.MarkdownImageExfil: 4 domains x 3 encodings
+ * = 12 prompts whatever the cap) is NOT here, and configuring one fails below
+ * rather than overrunning the proxy's wire cap every night.
+ */
+const CAP_HONOURING_PROBES: Record<string, string> = {
+    'promptinject.HijackHateHumans': 'promptinject constructor: max_prompts = soft_probe_prompt_cap, then a slice',
+    'promptinject.HijackLongPrompt': 'promptinject constructor: max_prompts = soft_probe_prompt_cap, then a slice',
+    'dan.DanInTheWild': 'DanInTheWild.__init__: _prune_data(soft_probe_prompt_cap)',
+    'encoding.InjectBase64': 'EncodingMixin.__init__: _prune_data(prune_triggers=True)',
+    'encoding.InjectROT13': 'EncodingMixin.__init__: _prune_data(prune_triggers=True)',
+    'leakreplay.LiteratureCloze': 'ClozeProbeMixin.__init__: _prune_data, follow_prompt_cap = True via NonFullMixin',
+    'web_injection.MarkdownURIImageExfilExtended': 'MarkdownExfilMixin.generate_prompts(templates, soft_probe_prompt_cap)',
+    'packagehallucination.Python': 'PackageHallucinationProbe.__init__: _prune_data()',
+    'packagehallucination.JavaScript': 'PackageHallucinationProbe.__init__: _prune_data()',
+};
 
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
@@ -68,7 +97,7 @@ interface GarakConfig {
     run: { generations: number; soft_probe_prompt_cap: number };
     plugins: {
         probe_spec: string;
-        generators: { rest: { RestGenerator: { uri: string } } };
+        generators: { rest: { RestGenerator: { uri: string; skip_codes?: number[]; ratelimit_codes?: number[] } } };
     };
 }
 
@@ -179,6 +208,20 @@ describe('garak spend cap (D-EV-1: USD 5 a night)', () => {
         expect(job.env?.AGENT_FLUE_MODEL).toBe(budget.model);
     });
 
+    it('every configured probe prunes to the prompt cap in the pinned garak', () => {
+        const pinned = read(DOCKERFILE)
+            .split('\n')
+            .filter((l) => l.startsWith('ARG GARAK_VERSION='));
+        expect(pinned).toEqual([`ARG GARAK_VERSION=${CAP_READ_AGAINST_GARAK}`]);
+        const unread = probes.filter((p) => !(p in CAP_HONOURING_PROBES));
+        expect({
+            unread,
+            fix:
+                'Read the class in garak\'s source: if it prunes to soft_probe_prompt_cap, add it to ' +
+                'CAP_HONOURING_PROBES with where; if not, count its fixed prompts into the per-role budget.',
+        }).toMatchObject({ unread: [] });
+    });
+
     it("garak's own request count fits the proxy's per-role wire cap", () => {
         expect(config.run.generations).toBe(1);
         expect(config.system.parallel_requests).toBe(false);
@@ -204,6 +247,39 @@ describe('garak spend cap (D-EV-1: USD 5 a night)', () => {
         expect(scan).toMatch(/maxRequestsPerRole/);
         expect(scan).toMatch(/GARAK_MAX_REQUESTS="\$MAX_PER_ROLE"/);
         expect(scan).toMatch(/spend\.mjs may-continue/);
+    });
+
+    it('the reader is not probed but its feature-gate refusal is checked, and fails the step if admitted', () => {
+        expect(budget.roles).not.toContain('reader');
+        const scan = scanSteps[0].run ?? '';
+        expect(scan).toContain('login viewer@acme.com');
+        expect(scan).toContain('gate=ADMITTED; status=1');
+    });
+});
+
+describe('garak never aborts on a status it cannot score, and never scores one it should not', () => {
+    const rest = config.plugins.generators.rest.RestGenerator;
+    const proxySrc = read(PROXY);
+
+    it("the proxy's skip status is exactly the generator's skip_codes, and distinct from a rate limit", () => {
+        const skip = /export const SKIP_STATUS = (\d+);/.exec(proxySrc)?.[1];
+        expect(skip).toBeDefined();
+        expect(rest.skip_codes).toEqual([Number(skip)]);
+        expect(rest.ratelimit_codes).toEqual([429]);
+        expect(Number(skip)).not.toBe(429);
+    });
+
+    it('the probe-name check runs the tested parser, not an inline grep', () => {
+        const verify = steps.find((s) => s.name === 'Verify every configured probe exists in this garak');
+        expect(verify?.run).toContain('node .garak/verify-probes.mjs /tmp/probes.txt .garak/config.yaml');
+        expect(verify?.run).not.toMatch(/grep/);
+    });
+
+    it("garak's exit code and the configured probes reach the record", () => {
+        const scan = scanSteps[0].run ?? '';
+        expect(scan).toContain('echo "$garak_exit" > "garak-out/${role}/garak-exit"');
+        const summarise = steps.find((s) => s.name === 'Summarise per role (record + job summary)');
+        expect(summarise?.run).toContain('--probes "$spec" --garak-exit');
     });
 });
 

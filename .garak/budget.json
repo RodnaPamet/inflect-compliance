@@ -9,7 +9,8 @@
         "outputTokens": 2000,
         "basis": "A heavy assistant turn: system prompt, tool specs, a 2000-character probe and several tool results in, a long answer out. An ESTIMATE until the Phase 0.4 baseline measures the p99 turn from the decision log; replace it with the measured figure then."
     },
-    "roles": ["owner", "editor", "reader"],
+    "roles": ["owner", "editor"],
+    "rolesBasis": "The roles that can reach the assistant. A READER (and an AUDITOR) is refused by the AI feature gate (feature-gate.ts predicate 3: canWrite) before any guard or model call, so garak has nothing to probe there; the workflow checks that refusal with one request instead.",
     "maxRequestsPerRole": 50,
-    "maxRequestsPerNight": 150
+    "maxRequestsPerNight": 100
 }

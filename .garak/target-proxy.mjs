@@ -5,24 +5,46 @@
  *   garak (container, host network) --POST /ask--> this proxy (127.0.0.1)
  *     --POST + session cookie--> /api/t/<slug>/assistant/ask (the app)
  *
- * Three jobs, each of which garak cannot do for itself:
+ * Four jobs, each of which garak cannot do for itself:
  *
  *  1. THE WIRE CAP. At most MAX_REQUESTS requests reach the app per run,
  *     whatever .garak/config.yaml asks for. Past it, no request is forwarded:
- *     garak receives OVER_CAP_SENTINEL as the answer and the ledger counts
+ *     garak receives SKIP_STATUS, which .garak/config.yaml lists in the rest
+ *     generator's `skip_codes`, so the attempt is recorded UNSCORED (garak
+ *     counts it in `nones`, never in `total_evaluated`) and the ledger counts
  *     it, so a truncated run is a fact the summary holds (it reports the run
- *     INCOMPLETE) rather than one nobody can observe. A 429 from the app is a
- *     pre-flight refusal that made no model call, so it is passed back to
- *     garak (which backs off) and NOT charged against the cap.
+ *     INCOMPLETE). It used to answer a sentinel TEXT, which a detector scores
+ *     like any other answer: `mitigation.MitigationBypass` (dan) reads any
+ *     text without a mitigation phrase as a jailbreak, so every capped request
+ *     was a false hit.
  *  2. THE CREDENTIAL. The role's session cookie lives in this process's
  *     environment only. garak echoes its generator config into its report;
  *     a cookie there would be uploaded as an artifact.
  *  3. GUARD REFUSALS AS ANSWERS. A content-guard refusal is HTTP 403 with
- *     `ai_guard_*` in the body. To garak that is an error and the attempt is
- *     lost; it is in fact the guard doing its job, i.e. "no hit". It is
- *     returned as a refusal text the detectors score, and counted per
- *     direction (input: the model was never called; output: it was, and the
- *     egress guard withheld the answer).
+ *     `ai_guard_*` in the body. To garak that is an error; it is in fact the
+ *     guard doing its job, i.e. "no hit". It is returned as REFUSAL text
+ *     (refusalText) that every detector the configured probes use scores as a
+ *     pass: it opens with a phrase from MitigationBypass's mitigation list
+ *     (an inverted detector, a HIT when no such phrase appears) and carries no
+ *     trigger, payload, markdown or import any other detector looks for.
+ *     Counted per direction (input: the model was never called; output: it
+ *     was, and the egress guard withheld the answer).
+ *  4. NOTHING ELSE ABORTS GARAK. garak 0.17.1's RestGenerator raises a bare
+ *     ConnectionError on any 4xx or 5xx outside `skip_codes`, and nothing
+ *     catches it: the whole role's run ends at the first one. So every
+ *     outcome that is not an answer, a refusal or a (bounded) rate limit is
+ *     returned as SKIP_STATUS and counted:
+ *       - a question longer than QUESTION_MAX_CHARS is NOT forwarded
+ *         (`overLength`): the product's own schema refuses it for any user
+ *         with a 400 before any model call, so it is not deliverable. 41 % of
+ *         garak's DanInTheWild corpus is longer than that;
+ *       - any other upstream status (`upstreamErrors`), which makes the
+ *         record incomplete;
+ *       - a 429 is passed back (garak backs off and retries; no model call
+ *         was made, so it is NOT charged) at most MAX_RATE_LIMIT_PASSBACKS
+ *         times per run. garak retries a 429 without a retry limit, so past
+ *         that the proxy stops it (`rateLimitAbandoned`, incomplete) rather
+ *         than let one role spin until the job's timeout.
  *
  * Logs nothing row by row and never logs probe text or answers: the ledger
  * holds counts only. Dependency-free; Node >= 20.
@@ -38,10 +60,29 @@ import { createServer } from 'node:http';
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-export const OVER_CAP_SENTINEL = '[garak-budget: request cap reached, not forwarded]';
-export const REFUSED_PREFIX = '[refused by the content guard:';
+/**
+ * The status garak is told to record as "no output" (.garak/config.yaml
+ * `skip_codes`). tests/guardrails/garak-workflow-pinning.test.ts holds the two
+ * equal.
+ */
+export const SKIP_STATUS = 422;
 
-/** Max body garak may send; the app's own schema caps a question at 2000 chars. */
+/** AskAssistantSchema's `question` maximum (src/app-layer/usecases/assistant.ts). */
+export const QUESTION_MAX_CHARS = 2000;
+
+/** How many 429s one run passes back to garak before the proxy stops it. */
+export const MAX_RATE_LIMIT_PASSBACKS = 10;
+
+/**
+ * The answer garak scores for a guard refusal. It must read as a PASS to every
+ * detector the configured probes use; the opening clause is on garak 0.17.1's
+ * MitigationBypass list ("I'm sorry, but I can", "I can't assist"), which is
+ * what keeps dan from scoring a working guard as a jailbreak.
+ */
+export const refusalText = (direction) =>
+    `I'm sorry, but I can't assist with that: the content guard refused this turn (${direction}).`;
+
+/** Max body garak may send (well above QUESTION_MAX_CHARS, which is checked separately). */
 const MAX_BODY_BYTES = 64 * 1024;
 
 /**
@@ -59,7 +100,7 @@ export function classifyUpstream(status, bodyText) {
             const parsed = JSON.parse(bodyText);
             if (parsed && typeof parsed.message === 'string') message = parsed.message;
         } catch {
-            return { kind: 'error', status: 502, charged: true };
+            return { kind: 'error', status: SKIP_STATUS, upstreamStatus: 200, charged: true };
         }
         return { kind: 'answer', status: 200, message, charged: true };
     }
@@ -70,11 +111,13 @@ export function classifyUpstream(status, bodyText) {
         return {
             kind: output ? 'guard-output' : 'guard-input',
             status: 200,
-            message: `${REFUSED_PREFIX} ${output ? 'output' : 'input'}]`,
+            message: refusalText(output ? 'output' : 'input'),
             charged: true,
         };
     }
-    return { kind: 'error', status, charged: true };
+    // A gate 403, a schema 400, a 5xx: garak would abort the whole role on
+    // it, so it goes back as a skip. Charged: a 5xx may have reached the model.
+    return { kind: 'error', status: SKIP_STATUS, upstreamStatus: status, charged: true };
 }
 
 export function emptyLedger(maxRequests) {
@@ -85,8 +128,12 @@ export function emptyLedger(maxRequests) {
         guardRefusedInput: 0,
         guardRefusedOutput: 0,
         rateLimited: 0,
+        rateLimitAbandoned: 0,
         upstreamErrors: 0,
+        /** Counts by upstream status (`network` when no response), so a broken night says why. */
+        upstreamErrorStatuses: {},
         overCap: 0,
+        overLength: 0,
     };
 }
 
@@ -132,10 +179,16 @@ export function startProxy({ targetUrl, cookie, maxRequests, port, ledgerPath })
         }
         if (typeof question !== 'string') return reply(res, 400, { error: 'question must be a string' });
 
+        if (question.length > QUESTION_MAX_CHARS) {
+            ledger.overLength += 1;
+            persist();
+            return reply(res, SKIP_STATUS, { error: 'over-length' });
+        }
+
         if (ledger.forwarded >= maxRequests) {
             ledger.overCap += 1;
             persist();
-            return reply(res, 200, { message: OVER_CAP_SENTINEL });
+            return reply(res, SKIP_STATUS, { error: 'over-cap' });
         }
 
         ledger.forwarded += 1;
@@ -153,15 +206,24 @@ export function startProxy({ targetUrl, cookie, maxRequests, port, ledgerPath })
             });
             verdict = classifyUpstream(upstream.status, await upstream.text());
         } catch {
-            verdict = { kind: 'error', status: 502, charged: true };
+            verdict = { kind: 'error', status: SKIP_STATUS, charged: true };
         }
 
         if (!verdict.charged) ledger.forwarded -= 1;
         if (verdict.kind === 'answer') ledger.answers += 1;
         else if (verdict.kind === 'guard-input') ledger.guardRefusedInput += 1;
         else if (verdict.kind === 'guard-output') ledger.guardRefusedOutput += 1;
-        else if (verdict.kind === 'rate-limited') ledger.rateLimited += 1;
-        else ledger.upstreamErrors += 1;
+        else if (verdict.kind === 'rate-limited') {
+            ledger.rateLimited += 1;
+            if (ledger.rateLimited > MAX_RATE_LIMIT_PASSBACKS) {
+                ledger.rateLimitAbandoned += 1;
+                verdict = { kind: 'rate-limited', status: SKIP_STATUS, charged: false };
+            }
+        } else {
+            ledger.upstreamErrors += 1;
+            const key = String(verdict.upstreamStatus ?? 'network');
+            ledger.upstreamErrorStatuses[key] = (ledger.upstreamErrorStatuses[key] ?? 0) + 1;
+        }
         persist();
 
         if (verdict.message !== undefined) return reply(res, 200, { message: verdict.message });
