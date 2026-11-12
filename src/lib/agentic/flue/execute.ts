@@ -157,7 +157,7 @@ function capBesideKill(latch: CapLatch, killed: KillLatch): CapBesideKill | null
 // app-layer reader importing the constant from here failed to LOAD rather than
 // failing an assertion. Re-exported so every existing importer is unaffected.
 export { EMPTY_TOOLSET_MESSAGE } from './empty-toolset-message';
-import { EMPTY_TOOLSET_MESSAGE } from './empty-toolset-message';
+import { emptyCatalogueMessage } from '@/lib/agentic/empty-catalogue-message';
 
 
 /**
@@ -1009,7 +1009,17 @@ export async function executeFlueRun(
             completedAt: new Date(),
             stepCount: seq,
             costTokens,
-            ...(emptyCatalogue ? { errorMessage: EMPTY_TOOLSET_MESSAGE } : {}),
+            // WHY it is empty (#5045): "holds no grants" only when it holds none.
+            ...(emptyCatalogue
+                ? {
+                      errorMessage: emptyCatalogueMessage('flue', {
+                          grantedTools: invocation.grantedTools,
+                          permittedTools: invocation.policyCard?.inForce.value.permittedTools ?? null,
+                          offeredTools: invocation.offeredTools,
+                          omitted: offered.omitted,
+                      }),
+                  }
+                : {}),
         });
         // TWO literal returns rather than one ternary, deliberately. The output
         // guard pins each return expression as a literal — the assertion is

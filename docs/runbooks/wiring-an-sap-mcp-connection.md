@@ -51,9 +51,14 @@ requires seven days in it.
 
 ## 2 · An empty catalogue is a failure, not a quiet answer
 
-A run that resolved no tools settles `EMPTY_CATALOGUE` and says why: the agent
-holds no MCP tool grants, so the run had nothing to read and its conclusion
-would be based on no data.
+A run that resolved no tools settles `EMPTY_CATALOGUE` and says why, so the run
+had nothing to read and its conclusion would be based on no data. The message
+names the cause. `flue_no_tools_granted` means the agent holds no MCP tool
+grants at all. `flue_no_tools_offered` / `tool_runner_no_tools_offered` means it
+holds grants and something else withheld every one of them, and it lists each
+cause with the tools it withheld: the policy card, the run's permissions, the
+credential's scopes, the autonomy ceiling, a read-only connection or workflow,
+the profile's tool list, or a tool missing from the run's catalogue.
 
 **Verify it.** Start a run for an agent with no grants and read the status. It
 is `EMPTY_CATALOGUE`, never `COMPLETED`. If you see `COMPLETED` with an empty
@@ -109,12 +114,13 @@ rough order of likelihood:
 
 | Symptom | Likely cause |
 | --- | --- |
-| Status `EMPTY_CATALOGUE` | no `RegisteredAgentTool` grants for this agent |
+| Status `EMPTY_CATALOGUE`, `flue_no_tools_granted` | no `RegisteredAgentTool` grants for this agent |
+| Status `EMPTY_CATALOGUE`, `*_no_tools_offered` | grants exist; the message names the term that withheld them (often the policy card) |
 | A write tool never called, omission `CONNECTION_READ_ONLY` | the connection is at `DISABLED` |
 | A write tool never called, omission `AUTONOMY` | the tool's required rung exceeds the agent's autonomy ceiling |
 | A write tool never called, omission `READ_ONLY_WORKFLOW` | the workflow declares `readOnly` |
 | `flue_external_ai_business_data_unacknowledged` | section 3 |
-| `flue_no_tools_granted` | the pre-`EMPTY_CATALOGUE` form of the same cause, on older runs |
+| `flue_no_tools_granted` on a `COMPLETED` run | the pre-`EMPTY_CATALOGUE` form, on older runs; it was written whatever the cause |
 
 ## Related
 
