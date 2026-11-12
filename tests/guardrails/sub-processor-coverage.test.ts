@@ -294,6 +294,20 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
         'DOC_PARSER_BASE_URL.',
     LAYA_BASE_URL: "base URL of a Laya System One server WE operate (open weights, Apache-2.0); no data leaves our infrastructure, so not a sub-processor — deployment config, unreachable from any tenant setting",
     LAYA_API_KEY: 'optional bearer for our own Laya server; most deployments sit behind a network boundary instead — our infrastructure, not a third party, so not a sub-processor',
+    // Web Bot Auth Phase 1 (owner decisions D-L1-5/6/7, 2026-11-11). The
+    // deployment's ONE Ed25519 signing seed, and its predecessor during a
+    // rotation's grace. Neither names an external service: the seed signs our
+    // own outbound requests and its public half is served from OUR OWN key
+    // directory. Nothing is sent anywhere by holding it, and no third party
+    // receives it — a site that verifies a signature fetches the public key
+    // from us. If a hosted signing service ever replaces the local seed, that
+    // service is an inventory entry, not an allowlist one.
+    WEB_BOT_AUTH_SIGNING_KEY:
+        'Deployment-held Ed25519 signing seed for Web Bot Auth (one per deployment, never per tenant). ' +
+        'A local secret; names no external service, and only its public half is published, from our own key directory.',
+    WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY:
+        'The previous Web Bot Auth signing seed, published beside the current one during a rotation\'s grace. ' +
+        'A local secret; names no external service.',
 };
 
 /**
