@@ -213,6 +213,18 @@ export async function computeNis2Readiness(
     ctx: RequestContext,
     assessmentId?: string,
 ): Promise<Nis2Readiness> {
+    return (await scoreNis2WithAnswers(ctx, assessmentId)).readiness;
+}
+
+/**
+ * The score AND the answers it was computed from. The materialiser needs the
+ * answers: a question missing from the gaps may be answered YES or NA, or not
+ * answered at all, and only the first two remediate a finding (#5146).
+ */
+async function scoreNis2WithAnswers(
+    ctx: RequestContext,
+    assessmentId?: string,
+): Promise<{ readiness: Nis2Readiness; answers: Readonly<Record<string, Nis2Answer>> }> {
     // readiness-reconcile — this is a pure READ (a maturity SCORE), surfaced
     // as one axis of the readiness overview beside control-coverage and
     // test-readiness (both `assertCanViewPack`). Gate it on the SAME
@@ -250,8 +262,17 @@ export async function computeNis2Readiness(
             code: d.code,
             name: d.name as Bilingual,
         }));
-        return scoreNis2Assessment(sq, sd, answers);
+        return { readiness: scoreNis2Assessment(sq, sd, answers), answers };
     });
+}
+
+/**
+ * A finding raised for a question closes only on an answer that says the gap
+ * is gone (#5146). An unanswered question is not a gap to the score, so a
+ * fresh or half-answered run used to close every finding it had not reached.
+ */
+function answerRemediates(answer: Nis2Answer | undefined): boolean {
+    return answer === 'YES' || answer === 'NA';
 }
 
 export interface MaterializeOptions {
@@ -276,7 +297,8 @@ export interface MaterializeResult {
  * Create Findings (and optionally Tasks) for serious gaps, idempotently.
  * Re-runnable: an existing OPEN finding is left alone; a CLOSED finding
  * whose question is a gap again is reopened; a finding whose question is
- * no longer a gap (answer now YES/NA) is CLOSED (reconciliation).
+ * now answered YES or NA in the scored run is CLOSED (reconciliation). An
+ * unanswered question closes nothing (#5146).
  *
  * Explicit, opt-in — NEVER called automatically. Reuses the finding/task
  * usecases (sanitisation + audit + validation come for free).
@@ -290,7 +312,9 @@ export async function materializeNis2Gaps(
     const createTasks = options.createTasks ?? true;
     const threshold = CRIT_RANK[minCriticality] ?? 3;
 
-    const readiness = await computeNis2Readiness(ctx);
+    const { readiness, answers } = await scoreNis2WithAnswers(ctx);
+    const closes = (f: { sourceRef: string | null; status: string }) =>
+        !!f.sourceRef && !allGapIds.has(f.sourceRef) && answerRemediates(answers[f.sourceRef]) && f.status !== 'CLOSED';
     const allGapIds = new Set(readiness.gaps.map((g) => g.questionId));
     const eligible = readiness.gaps.filter((g) => (CRIT_RANK[g.criticality] ?? 1) >= threshold);
 
@@ -311,9 +335,7 @@ export async function materializeNis2Gaps(
             if (!ex) wouldCreate += 1;
             else if (ex.status === 'CLOSED') wouldReopen += 1;
         }
-        const wouldClose = existing.filter(
-            (f) => f.sourceRef && !allGapIds.has(f.sourceRef) && f.status !== 'CLOSED',
-        ).length;
+        const wouldClose = existing.filter(closes).length;
         return { created: wouldCreate, reopened: wouldReopen, closed: wouldClose, tasksCreated: 0, eligibleGaps: eligible.length };
     }
 
@@ -367,10 +389,10 @@ export async function materializeNis2Gaps(
         }
     }
 
-    // Reconciliation — close findings whose question is no longer a gap.
+    // Reconciliation — close findings whose question is now answered YES or NA.
     let closed = 0;
     for (const f of existing) {
-        if (f.sourceRef && !allGapIds.has(f.sourceRef) && f.status !== 'CLOSED') {
+        if (closes(f)) {
             await updateFinding(ctx, f.id, { status: 'CLOSED' });
             closed += 1;
         }

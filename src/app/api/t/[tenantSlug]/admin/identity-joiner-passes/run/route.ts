@@ -152,6 +152,11 @@ export const POST = withApiErrorHandling(
     {
         rateLimit: {
             config: API_KEY_CREATE_LIMIT,
+            // Its own bucket (#5123). Without a scope the key fell back to
+            // `api-mutation`, shared with every default-limited route: five
+            // ordinary saves a minute locked this trigger out for an hour,
+            // and any other mutation pruned the hourly window it relies on.
+            scope: 'identity-joiner-pass-run',
         },
     },
 );

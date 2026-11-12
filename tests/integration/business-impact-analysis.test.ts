@@ -17,7 +17,7 @@ import type { PrismaClient } from '@prisma/client';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
-import { createBia, listBias, linkBiaToControl, getControlBiaSurface, markBiaReviewed, updateBia, getBia } from '@/app-layer/usecases/business-impact-analysis';
+import { createBia, listBias, linkBiaToControl, getControlBiaSurface, getIncidentBiaContext, markBiaReviewed, updateBia, getBia } from '@/app-layer/usecases/business-impact-analysis';
 import { createControl } from '@/app-layer/usecases/control';
 
 jest.setTimeout(30_000);
@@ -75,6 +75,11 @@ describeFn('business impact analysis (integration)', () => {
             if (tenantId) {
                 await prisma.biaDependency.deleteMany({ where: { tenantId } });
                 await prisma.businessImpactAnalysis.deleteMany({ where: { tenantId } });
+                await prisma.incident.deleteMany({ where: { tenantId } });
+                await prisma.processEdgeControl.deleteMany({ where: { tenantId } });
+                await prisma.processEdge.deleteMany({ where: { tenantId } });
+                await prisma.processNode.deleteMany({ where: { tenantId } });
+                await prisma.processMap.deleteMany({ where: { tenantId } });
             }
         } catch {
             /* best-effort */
@@ -121,6 +126,50 @@ describeFn('business impact analysis (integration)', () => {
         if (surface.kind === 'continuity') {
             expect(surface.bias.map((b) => b.id)).toContain(bia.id);
         }
+    });
+
+    it('a protected edge reaches only its own map’s nodes, though two maps reuse node keys (#5260)', async () => {
+        // Map templates mint n1..n6 for every map, so (A, n5) and (B, n5) are
+        // routine. The control protects A: n1→n2 and B: n5→n6. A BIA on
+        // A's n5 sits on a process the control does NOT protect.
+        const control = await createControl(ctx, { name: 'Shipping release check' });
+        const nodeKeys = ['n1', 'n2', 'n5', 'n6'];
+        const mapWith = async (name: string, from: string, to: string) => {
+            const map = await prisma.processMap.create({ data: { tenantId, name, createdByUserId: ctx.userId } });
+            await prisma.processNode.createMany({
+                data: nodeKeys.map((nodeKey, i) => ({
+                    tenantId, processMapId: map.id, nodeKey, nodeType: 'processStep', label: `${name} ${nodeKey}`, posX: i, posY: 0,
+                })),
+            });
+            const edge = await prisma.processEdge.create({
+                data: { tenantId, processMapId: map.id, edgeKey: 'e1', sourceKey: from, targetKey: to },
+            });
+            await prisma.processEdgeControl.create({
+                data: { tenantId, processMapId: map.id, edgeId: edge.id, controlKey: 'c1', label: 'check', controlId: control.id },
+            });
+            return map.id;
+        };
+        const mapA = await mapWith('Map A', 'n1', 'n2');
+        await mapWith('Map B', 'n5', 'n6');
+        await prisma.businessImpactAnalysis.create({
+            data: { tenantId, processMapId: mapA, processNodeKey: 'n5', name: 'Unprotected process', criticality: 'CRITICAL', mtpdHours: 1 },
+        });
+        const incident = await prisma.incident.create({
+            data: {
+                tenantId, reference: `INC-${Date.now()}`, title: 'Outage', description: 'x', severity: 'HIGH',
+                incidentType: 'OUTAGE', detectedAt: new Date(), createdByUserId: ctx.userId, linkedControlIds: [control.id],
+            },
+        });
+
+        expect(await getControlBiaSurface(ctx, control.id)).toEqual({ kind: 'none' });
+        expect(await getIncidentBiaContext(ctx, incident.id)).toEqual([]);
+
+        // A BIA on a node the control DOES protect is still found.
+        const onA = await prisma.businessImpactAnalysis.create({
+            data: { tenantId, processMapId: mapA, processNodeKey: 'n2', name: 'Protected process', criticality: 'HIGH', mtpdHours: 12 },
+        });
+        expect(await getControlBiaSurface(ctx, control.id)).toMatchObject({ kind: 'process', biaId: onA.id, processLabel: 'Map A n2' });
+        expect((await getIncidentBiaContext(ctx, incident.id)).map((b) => b.id)).toEqual([onA.id]);
     });
 
     it('a plain control with no continuity/process link shows NO BIA surface (no-dead-tab, case 4c)', async () => {

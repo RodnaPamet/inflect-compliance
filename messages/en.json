@@ -4227,7 +4227,7 @@
         "ENTRY_NOT_RESOLVABLE": "A comment has nothing to resolve.",
         "ENTRY_ALREADY_RESOLVED": "That entry is already resolved.",
         "ENTRY_NOT_MATERIALISABLE": "Only a finding or an evidence request can become a finding.",
-        "ENTRY_RESOLVED_WITHOUT_FINDING": "That entry is resolved, but its finding was not created. Reopen the entry to try again.",
+        "ENTRY_RESOLVED_WITHOUT_FINDING": "That entry is resolved, but its finding was not created. Raise the finding by hand from the entry.",
         "ENTRY_BEING_MATERIALISED": "Another reviewer is creating the finding from this entry. Refresh in a moment."
       }
     },
