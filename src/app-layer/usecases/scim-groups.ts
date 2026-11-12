@@ -28,6 +28,11 @@ import type { RequestContext } from '../types';
 import { syncEntraMembershipRole } from '@/lib/auth/entra-group-sync';
 import { SCIM_GROUP_ASSIGNABLE_ROLES } from '@/lib/scim/roles';
 import { ScimUnresolvableMemberError } from '@/lib/scim/auth';
+import {
+    normaliseScimPatchOperations,
+    memberValueFromFilterPath,
+    ScimInvalidPatchError,
+} from '@/lib/scim/patch';
 
 export interface ScimContext {
     tenantId: string;
@@ -148,12 +153,29 @@ export async function scimReplaceGroup(
 
 /**
  * PATCH — RFC 7644 PatchOp. Supports member add/remove + displayName replace.
+ *
+ * `op` is matched case-insensitively and a member may be removed by filter
+ * (`members[value eq "<id>"]`) — both forms Microsoft Entra sends (#5370); see
+ * `@/lib/scim/patch`. An unrecognised `op`, or a member filter this module
+ * cannot read, is a 400 before anything is written: skipping it would report a
+ * removal that never happened, and the removed member would keep the role the
+ * group maps to.
  */
 export async function scimPatchGroup(
     ctx: ScimContext,
     id: string,
-    ops: Array<{ op: string; path?: string; value?: unknown }>,
+    rawOps: readonly unknown[],
 ) {
+    const ops = normaliseScimPatchOperations(rawOps);
+    for (const op of ops) {
+        if (isMemberFilterPath(op.path)
+            && (op.op !== 'remove' || memberValueFromFilterPath(op.path) === null)) {
+            throw new ScimInvalidPatchError(
+                'A members filter path is supported only as remove with members[value eq "<id>"]',
+                'invalidPath',
+            );
+        }
+    }
     const affected = new Set<string>();
 
     await runInTenantContext(ctxOf(ctx), async (db) => {
@@ -163,8 +185,14 @@ export async function scimPatchGroup(
         let displayName = group.displayName;
 
         for (const op of ops) {
+            const filteredMember = memberValueFromFilterPath(op.path);
             const path = (op.path ?? '').toLowerCase();
-            if (path === 'members' || path === '') {
+            if (filteredMember !== null) {
+                // Validated above: only `remove` reaches here.
+                const uids = await resolveUserIds(ctx.tenantId, [filteredMember], db);
+                memberIds = memberIds.filter((m) => !uids.includes(m));
+                uids.forEach((u) => affected.add(u));
+            } else if (path === 'members' || path === '') {
                 if (op.op === 'add') {
                     const ext = membersOf(op.value).map((m) => m.value);
                     const uids = await resolveUserIds(ctx.tenantId, ext, db);
@@ -210,6 +238,11 @@ export async function scimDeleteGroup(ctx: ScimContext, id: string) {
 }
 
 // ─── helpers ───────────────────────────────────────────────────────────
+
+/** Any `members[...]` path — parseable or not. */
+function isMemberFilterPath(path: string | undefined): boolean {
+    return /^\s*members\s*\[/i.test(path ?? '');
+}
 
 /** A PatchOp `value` may be a single member object or an array of them. */
 function membersOf(value: unknown): ScimMember[] {

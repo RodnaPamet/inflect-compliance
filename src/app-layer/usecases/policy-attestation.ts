@@ -28,6 +28,7 @@ import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { PolicyRepository } from '../repositories/PolicyRepository';
 import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
+import { assertActingAsPerson } from '../policies/person-only.policies';
 
 export interface AttestPolicyResult {
     acknowledgementId: string;
@@ -78,6 +79,9 @@ export async function attestPolicy(
     policyId: string,
 ): Promise<AttestPolicyResult> {
     assertCanRead(ctx);
+    // An acknowledgement is a statement by a person that they read the
+    // policy; a key or an agent acting in their name cannot make it.
+    assertActingAsPerson(ctx, 'Acknowledging a policy');
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);

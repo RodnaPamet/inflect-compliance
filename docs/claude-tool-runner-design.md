@@ -113,6 +113,12 @@ Inflect would host it in the worker, the same way it hosts Flue.
   charged to the step cap, and never a funnel call. It is reported to the
   register as engine-supplied (`tool-runner/supplied-tools.ts`), beside Flue's
   runtime tools on the agent's Tools tab.
+- **The engine has run in production (Step 2H, 2026-11-11).** A profile's Test
+  run completed in the proving tenant, a second was stopped by the kill switch
+  and settled Aborted, and a `LOCAL_ONLY` tenant's run was refused
+  `tool_runner_local_only_unserved` before any step. Every recorded request was
+  `POST /v1/messages` with no `thread` member. Run ids and counts are in the
+  Operational evidence table of `docs/claude-agent-sdk-design.md`.
 - **SDK 1.x speaks API version `2026-10-21`.** It sends that version and the key
   as `Authorization: Bearer`. Inflect's other Anthropic callers use raw `fetch`
   on `2023-06-01` (`src/app-layer/ai/*/anthropic-provider.ts`,
@@ -576,6 +582,13 @@ Deliver per the Definition of done.
 **Exit.** Skills work on the Tool Runner engine through the same gate and pins as on Flue.
 
 #### Step 2H — Phase 2 hardening
+
+Delivered in two pull requests. #4537 made each request's shape observable and
+recorded the adversarial read (no defect in any of the five questions). The
+second recorded the production runs: completed, stopped by the kill switch, and
+refused under `LOCAL_ONLY`, with no `thread` member on any request. See the
+Phase 2 row of the Operational evidence table in `docs/claude-agent-sdk-design.md`
+and `docs/implementation-notes/2026-11-12-agents-production-evidence.md`.
 
 **Goal.** Prove the engine in production, under stop conditions, and against the
 data rules it was built on.

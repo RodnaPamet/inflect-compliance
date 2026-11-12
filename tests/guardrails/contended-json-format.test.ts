@@ -154,11 +154,18 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // position before `ghcr-publish.yml:build-push` ('ga' < 'gh'), +5/-0.
         // Both 2026-11-11 entries merged together: the digest is over the file
         // holding both, computed with the guard's own keyOrder.
+        // Updated 2026-11-12 for `vm-apply.yml:vm-apply`, the dispatch-only
+        // named changes to the production VM. Its key sorts between
+        // `scanner-vm` and `vm-capacity`, so it is a mid-file insert, +5/-0.
+        // Merged 2026-11-12: the digest is over the file holding the
+        // 2026-11-11 entries and `vm-apply.yml:vm-apply` together.
         // Updated 2026-11-12 for `agent-evals.yml:inspect`, the nightly Inspect
         // evaluation of the product's own engines (docs/ai-architecture/inspect.md
         // Phase 1). Inserted in alphabetical position first, before
         // `bundle-analyze.yml:analyze` ('ag' < 'bu'), +5/-0.
-        keyOrderSha: 'e5d44f11f81eb3a9e1371aba3db4d28308633728f5f68f0b5859f06ee599c80d',
+        // Merged 2026-11-12 with #5360: the digest is over the file holding the
+        // final batch's entries and `vm-apply.yml:vm-apply` together.
+        keyOrderSha: 'a73f31ea3d38e43ae28f436338f325e0f70b162189d47c0d1b913986bfba22f2',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
