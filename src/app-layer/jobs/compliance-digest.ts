@@ -197,7 +197,9 @@ async function generateAndSendDigest(
     const data: DigestData = {
         tenantName: tenant.name,
         snapshotDate: latestSnapshot.snapshotDate.toISOString().slice(0, 10),
-        controlCoveragePercent: latestSnapshot.controlCoverageBps / 100,
+        // The column is coverage % × 10 (753 = 75.3%), as the snapshot job
+        // writes it and the trends usecase reads it (#5091).
+        controlCoveragePercent: latestSnapshot.controlCoverageBps / 10,
         controlsImplemented: latestSnapshot.controlsImplemented,
         controlsApplicable: latestSnapshot.controlsApplicable,
         risksTotal: latestSnapshot.risksTotal,
@@ -211,7 +213,7 @@ async function generateAndSendDigest(
         tasksOverdue: latestSnapshot.tasksOverdue,
         findingsOpen: latestSnapshot.findingsOpen,
         coverageDelta: priorSnapshot
-            ? (latestSnapshot.controlCoverageBps - priorSnapshot.controlCoverageBps) / 100
+            ? (latestSnapshot.controlCoverageBps - priorSnapshot.controlCoverageBps) / 10
             : null,
         risksOpenDelta: priorSnapshot
             ? latestSnapshot.risksOpen - priorSnapshot.risksOpen
@@ -258,7 +260,9 @@ async function generateAndSendDigest(
 }
 
 /**
- * Get digest recipients: ADMIN members with active status.
+ * Get digest recipients: ACTIVE OWNER and ADMIN members, deduplicated.
+ * OWNERs are included (#5203): a workspace created by sign-up has only its
+ * OWNER, and an ADMIN-only filter resolved nobody there.
  * Returns email addresses only — no PII leaks in logs.
  */
 async function getDigestRecipients(tenantId: string): Promise<string[]> {
@@ -266,16 +270,16 @@ async function getDigestRecipients(tenantId: string): Promise<string[]> {
         where: {
             tenantId,
             status: 'ACTIVE',
-            role: 'ADMIN',
+            role: { in: ['OWNER', 'ADMIN'] },
         },
         select: {
             user: { select: { email: true } },
         },
     });
 
-    return members
+    return [...new Set(members
         .map(m => m.user.email)
-        .filter((e): e is string => !!e);
+        .filter((e): e is string => !!e))];
 }
 
 // ─── Email Rendering ────────────────────────────────────────────────

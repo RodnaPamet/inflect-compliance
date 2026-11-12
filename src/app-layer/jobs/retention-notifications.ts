@@ -57,6 +57,8 @@ export interface RetentionNotificationResult {
     scanned: number;
     tasksCreated: number;
     skippedDuplicate: number;
+    /** Items whose reminder failed and were skipped, so the sweep could go on (#5100). */
+    failed: number;
 }
 
 export async function runEvidenceRetentionNotifications(
@@ -141,123 +143,159 @@ export async function runEvidenceRetentionNotifications(
     let tasksCreated = 0;
     let skippedDuplicate = 0;
 
-    for (const ev of expiring) {
-        // TP-5 — idempotency is keyed on the WORK SOURCE, not the task
-        // type: an open `EVIDENCE_EXPIRY` task already linked to this
-        // evidence means the reminder is live, so the sweep does not mint
-        // a duplicate. Once that task is closed (or CANCELED — terminal),
-        // a future sweep may raise a fresh one.
-        const existingTask = await prisma.task.findFirst({
+    // Owners who still hold an ACTIVE membership, read once (#5100). A
+    // departed owner is not made the reminder's assignee: `createTask` refuses
+    // a non-member assignee, and that refusal used to abort the sweep for every
+    // expiring item after it, across all tenants, including the EVIDENCE_EXPIRED
+    // pass below.
+    const ownerPairs = expiring.filter((ev) => ev.ownerUserId);
+    const activeOwners = new Set<string>();
+    if (ownerPairs.length) {
+        const memberships = await prisma.tenantMembership.findMany({ // guardrail-allow: unbounded -- bounded by the expiring set
             where: {
-                tenantId: ev.tenantId,
-                source: 'EVIDENCE_EXPIRY',
-                status: { notIn: [...TERMINAL_TASK_STATUSES] },
-                links: {
-                    some: {
-                        entityType: 'EVIDENCE',
-                        entityId: ev.id,
-                    },
-                },
-            } satisfies Prisma.TaskWhereInput,
-        });
-
-        if (existingTask) {
-            skippedDuplicate++;
-            continue;
-        }
-
-        // Create Task + link
-        // retentionUntil is non-null: the where clause filters `retentionUntil: { not: null }`
-        const daysLeft = Math.ceil((new Date(ev.retentionUntil!).getTime() - Date.now()) / 86_400_000);
-        // TP-1 — route through the canonical createTask so the reminder
-        // task carries a TSK-N key + TASK_CREATED audit/automation event +
-        // assignee bell/email, same as every other task (was a raw
-        // prisma.task.create that produced a keyless, unaudited task).
-        const ctx = await retentionCtx(ev.tenantId);
-        const task = await createTask(ctx, {
-            // TP-5 — a neutral TASK carrying the EVIDENCE_EXPIRY source
-            // so it lands in the universal /tasks inbox and is filterable
-            // by where it came from.
-            type: 'TASK',
-            source: 'EVIDENCE_EXPIRY',
-            title: `Refresh expiring evidence: ${ev.title}`,
-            description: `Evidence "${ev.title}" expires in ${daysLeft} days (${formatDate(ev.retentionUntil)}). Please upload refreshed evidence or extend the retention date.`,
-            priority: daysLeft <= 7 ? 'P1' : 'P2',
-            // Assign to the evidence owner when one exists so the reminder
-            // reaches the person responsible for it.
-            ...(ev.ownerUserId ? { assigneeUserId: ev.ownerUserId } : {}),
-            ...(ev.controlId ? { controlId: ev.controlId } : {}),
-        });
-
-        // Link the task to the evidence it was raised for.
-        await addTaskLink(ctx, task.id, 'EVIDENCE', ev.id);
-
-        // Enqueue EVIDENCE_EXPIRING email to tenant admins/editors
-        // Tenant notification eligibility — skip if notifications are disabled.
-        // Uses the same isNotificationsEnabled check as enqueue.ts and digest-dispatcher.
-        try {
-            const enabled = await isNotificationsEnabled(prisma, ev.tenantId);
-            if (!enabled) {
-                logger.info('retention notification suppressed — notifications disabled for tenant', {
-                    component: 'retention-notifications',
-                    tenantId: ev.tenantId,
-                    evidenceId: ev.id,
-                });
-            } else {
-                const members = await prisma.tenantMembership.findMany({
-                    where: { tenantId: ev.tenantId, role: { in: ['ADMIN', 'EDITOR'] } },
-                    include: { user: { select: { email: true, name: true } } },
-                });
-
-                // `controlName` was previously looked up here but
-                // never referenced in the notification body —
-                // CodeQL `js/useless-assignment-to-local` caught it.
-                // Removed the dead lookup; if a future template wants
-                // the control name, surface it through a single
-                // `include: { control: { select: { name: true } } }`
-                // on the parent evidence query instead of a per-row
-                // extra `prisma.control.findUnique`.
-
-                for (const m of members) {
-                    if (!m.user.email) continue;
-                    await prisma.notificationOutbox.create({
-                        data: {
-                            tenantId: ev.tenantId,
-                            type: 'EVIDENCE_EXPIRING',
-                            toEmail: m.user.email,
-                            subject: `${daysLeft <= 7 ? '⚠️ ' : ''}Evidence expiring in ${daysLeft} day(s): ${ev.title}`,
-                            bodyText: `Evidence "${ev.title}" expires in ${daysLeft} days. Please upload refreshed evidence or extend the retention date.`,
-                            bodyHtml: null,
-                            dedupeKey: `${ev.tenantId}:EVIDENCE_EXPIRING:${m.user.email}:${ev.id}:${new Date().toISOString().slice(0, 10)}`,
-                        },
-                    }).catch(() => {
-                        // Silently skip duplicates (P2002)
-                    });
-                }
-            }
-        } catch (err) {
-            logger.warn('failed to enqueue evidence expiring emails', { component: 'job' });
-        }
-
-        // Audit event
-        await prisma.auditLog.create({
-            data: {
-                tenantId: ev.tenantId,
-                entity: 'Evidence',
-                entityId: ev.id,
-                action: 'EVIDENCE_EXPIRING_SOON',
-                details: JSON.stringify({ daysLeft, taskId: task.id, title: ev.title }),
+                status: 'ACTIVE',
+                OR: ownerPairs.map((ev) => ({ tenantId: ev.tenantId, userId: ev.ownerUserId! })),
             },
+            select: { tenantId: true, userId: true },
         });
+        for (const m of memberships) activeOwners.add(`${m.tenantId}:${m.userId}`);
+    }
+    let failed = 0;
 
-        // Automation trigger — let rules fire on evidence going stale.
-        await emitEvidenceTrigger(
-            'EVIDENCE_EXPIRING',
-            ev,
-            ev.retentionUntil ? new Date(ev.retentionUntil).toISOString() : null,
-        );
+    for (const ev of expiring) {
+        // One item's failure is counted and logged, never allowed to stop the
+        // sweep for every item after it (#5100).
+        try {
+            // TP-5 — idempotency is keyed on the WORK SOURCE, not the task
+            // type: an open `EVIDENCE_EXPIRY` task already linked to this
+            // evidence means the reminder is live, so the sweep does not mint
+            // a duplicate. Once that task is closed (or CANCELED — terminal),
+            // a future sweep may raise a fresh one.
+            const existingTask = await prisma.task.findFirst({
+                where: {
+                    tenantId: ev.tenantId,
+                    source: 'EVIDENCE_EXPIRY',
+                    status: { notIn: [...TERMINAL_TASK_STATUSES] },
+                    links: {
+                        some: {
+                            entityType: 'EVIDENCE',
+                            entityId: ev.id,
+                        },
+                    },
+                } satisfies Prisma.TaskWhereInput,
+            });
 
-        tasksCreated++;
+            if (existingTask) {
+                skippedDuplicate++;
+                continue;
+            }
+
+            // Create Task + link
+            // retentionUntil is non-null: the where clause filters `retentionUntil: { not: null }`
+            const daysLeft = Math.ceil((new Date(ev.retentionUntil!).getTime() - Date.now()) / 86_400_000);
+            // TP-1 — route through the canonical createTask so the reminder
+            // task carries a TSK-N key + TASK_CREATED audit/automation event +
+            // assignee bell/email, same as every other task (was a raw
+            // prisma.task.create that produced a keyless, unaudited task).
+            const ctx = await retentionCtx(ev.tenantId);
+            const task = await createTask(ctx, {
+                // TP-5 — a neutral TASK carrying the EVIDENCE_EXPIRY source
+                // so it lands in the universal /tasks inbox and is filterable
+                // by where it came from.
+                type: 'TASK',
+                source: 'EVIDENCE_EXPIRY',
+                title: `Refresh expiring evidence: ${ev.title}`,
+                description: `Evidence "${ev.title}" expires in ${daysLeft} days (${formatDate(ev.retentionUntil)}). Please upload refreshed evidence or extend the retention date.`,
+                priority: daysLeft <= 7 ? 'P1' : 'P2',
+                // Assign to the evidence owner when one exists so the reminder
+                // reaches the person responsible for it, unless they have left.
+                ...(ev.ownerUserId && activeOwners.has(`${ev.tenantId}:${ev.ownerUserId}`)
+                    ? { assigneeUserId: ev.ownerUserId }
+                    : {}),
+                ...(ev.controlId ? { controlId: ev.controlId } : {}),
+            });
+
+            // Link the task to the evidence it was raised for.
+            await addTaskLink(ctx, task.id, 'EVIDENCE', ev.id);
+
+            // Enqueue EVIDENCE_EXPIRING email to tenant admins/editors
+            // Tenant notification eligibility — skip if notifications are disabled.
+            // Uses the same isNotificationsEnabled check as enqueue.ts and digest-dispatcher.
+            try {
+                const enabled = await isNotificationsEnabled(prisma, ev.tenantId);
+                if (!enabled) {
+                    logger.info('retention notification suppressed — notifications disabled for tenant', {
+                        component: 'retention-notifications',
+                        tenantId: ev.tenantId,
+                        evidenceId: ev.id,
+                    });
+                } else {
+                    const members = await prisma.tenantMembership.findMany({
+                        // ACTIVE members only, and OWNERs too (#5101): a former
+                        // editor kept receiving the tenant's evidence titles, and
+                        // a tenant with only an OWNER resolved nobody.
+                        where: { tenantId: ev.tenantId, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN', 'EDITOR'] } },
+                        include: { user: { select: { email: true, name: true } } },
+                    });
+
+                    // `controlName` was previously looked up here but
+                    // never referenced in the notification body —
+                    // CodeQL `js/useless-assignment-to-local` caught it.
+                    // Removed the dead lookup; if a future template wants
+                    // the control name, surface it through a single
+                    // `include: { control: { select: { name: true } } }`
+                    // on the parent evidence query instead of a per-row
+                    // extra `prisma.control.findUnique`.
+
+                    for (const m of members) {
+                        if (!m.user.email) continue;
+                        await prisma.notificationOutbox.create({
+                            data: {
+                                tenantId: ev.tenantId,
+                                type: 'EVIDENCE_EXPIRING',
+                                toEmail: m.user.email,
+                                subject: `${daysLeft <= 7 ? '⚠️ ' : ''}Evidence expiring in ${daysLeft} day(s): ${ev.title}`,
+                                bodyText: `Evidence "${ev.title}" expires in ${daysLeft} days. Please upload refreshed evidence or extend the retention date.`,
+                                bodyHtml: null,
+                                dedupeKey: `${ev.tenantId}:EVIDENCE_EXPIRING:${m.user.email}:${ev.id}:${new Date().toISOString().slice(0, 10)}`,
+                            },
+                        }).catch(() => {
+                            // Silently skip duplicates (P2002)
+                        });
+                    }
+                }
+            } catch (err) {
+                logger.warn('failed to enqueue evidence expiring emails', { component: 'job' });
+            }
+
+            // Audit event
+            await prisma.auditLog.create({
+                data: {
+                    tenantId: ev.tenantId,
+                    entity: 'Evidence',
+                    entityId: ev.id,
+                    action: 'EVIDENCE_EXPIRING_SOON',
+                    details: JSON.stringify({ daysLeft, taskId: task.id, title: ev.title }),
+                },
+            });
+
+            // Automation trigger — let rules fire on evidence going stale.
+            await emitEvidenceTrigger(
+                'EVIDENCE_EXPIRING',
+                ev,
+                ev.retentionUntil ? new Date(ev.retentionUntil).toISOString() : null,
+            );
+
+            tasksCreated++;
+        } catch (err) {
+            failed++;
+            logger.error('retention reminder failed for one evidence item', {
+                component: 'retention-notifications',
+                tenantId: ev.tenantId,
+                evidenceId: ev.id,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
     }
 
     // Already-expired evidence → EVIDENCE_EXPIRED trigger (separate signal).
@@ -290,5 +328,5 @@ export async function runEvidenceRetentionNotifications(
         );
     }
 
-    return { scanned: expiring.length, tasksCreated, skippedDuplicate };
+    return { scanned: expiring.length, tasksCreated, skippedDuplicate, failed };
 }

@@ -95,7 +95,7 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
         const tenantId = await freshTenant();
         try {
             const res = await runEvidenceRetentionNotifications({ tenantId });
-            expect(res).toEqual({ scanned: 0, tasksCreated: 0, skippedDuplicate: 0 });
+            expect(res).toEqual({ scanned: 0, tasksCreated: 0, skippedDuplicate: 0, failed: 0 });
         } finally {
             await cleanup(tenantId);
         }
@@ -153,6 +153,44 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
                 where: { tenantId, action: 'EVIDENCE_EXPIRING_SOON', entityId: ev.id },
             });
             expect(audit).toHaveLength(1);
+        } finally {
+            await cleanup(tenantId);
+        }
+    });
+
+    // #5100 / #5101 — evidence owned by somebody who has left. createTask
+    // refuses a non-member assignee, and that refusal used to abort the sweep
+    // for every item after it. And a deactivated member, or an OWNER-only
+    // tenant, decided who got the email.
+    it('a departed owner leaves the reminder unassigned, the sweep goes on, and only ACTIVE members (OWNER included) are mailed', async () => {
+        const tenantId = await freshTenant();
+        try {
+            const owner = await makeUser('owner');
+            const departed = await makeUser('departed');
+            await prisma.tenantMembership.create({ data: { tenantId, userId: owner, role: 'OWNER', status: 'ACTIVE' } });
+            await prisma.tenantMembership.create({ data: { tenantId, userId: departed, role: 'EDITOR', status: 'DEACTIVATED' } });
+            const orphaned = await prisma.evidence.create({
+                data: { tenantId, type: 'FILE', title: 'orphaned', retentionUntil: soon(3), isArchived: false, ownerUserId: departed },
+            });
+            await prisma.evidence.create({
+                data: { tenantId, type: 'FILE', title: 'owned', retentionUntil: soon(5), isArchived: false, ownerUserId: owner },
+            });
+
+            const res = await runEvidenceRetentionNotifications({ tenantId, days: 30 });
+
+            expect(res).toMatchObject({ scanned: 2, tasksCreated: 2, failed: 0 });
+            const link = await prisma.taskLink.findFirstOrThrow({ where: { tenantId, entityType: 'EVIDENCE', entityId: orphaned.id } });
+            const task = await prisma.task.findUniqueOrThrow({ where: { id: link.taskId } });
+            expect(task.assigneeUserId).toBeNull();
+
+            const outbox = await prisma.notificationOutbox.findMany({ where: { tenantId, type: 'EVIDENCE_EXPIRING' } });
+            const recipients = new Set(outbox.map((o) => o.toEmail));
+            const [ownerUser, departedUser] = await Promise.all([
+                prisma.user.findUniqueOrThrow({ where: { id: owner } }),
+                prisma.user.findUniqueOrThrow({ where: { id: departed } }),
+            ]);
+            expect(recipients.has(ownerUser.email!)).toBe(true);
+            expect(recipients.has(departedUser.email!)).toBe(false);
         } finally {
             await cleanup(tenantId);
         }

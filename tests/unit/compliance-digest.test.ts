@@ -113,8 +113,9 @@ describe('Compliance Digest — Recipient Targeting', () => {
         expect(content).toContain('tenantMembership.findMany');
     });
 
-    test('targets ADMIN role only', () => {
-        expect(content).toContain("role: 'ADMIN'");
+    // #5203 — OWNERs too: a sign-up workspace has only its OWNER.
+    test('targets OWNER and ADMIN roles', () => {
+        expect(content).toContain("role: { in: ['OWNER', 'ADMIN'] }");
     });
 
     test('filters by ACTIVE status', () => {
