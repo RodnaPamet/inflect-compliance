@@ -4386,7 +4386,8 @@
       "impactAtAria": "Hours after the disruption, point {row}",
       "impactCellAria": "{dimension} impact, point {row}",
       "impactRemoveAria": "Remove point {row}",
-      "impactInvalid": "Each value must be a number, zero or more, and every point needs its hours. Fix the highlighted cells, then save."
+      "impactInvalid": "Each value must be a number, zero or more, and every point needs its hours. Fix the highlighted cells, then save.",
+      "hoursInvalid": "Enter whole hours, zero or more."
     },
     "nis2Gap": {
       "runStatus": {
@@ -14641,6 +14642,10 @@
       "renewBodySuffix": "state with the same justification + compensating control as this one. The original record is preserved as part of the audit trail. An admin will need to approve the renewal before it takes effect.",
       "renewing": "Renewing…",
       "expiryRequired": "Expiry date is required for approval.",
+      "requestFailed": "The exception could not be requested.",
+      "approveFailed": "The exception could not be approved.",
+      "rejectFailed": "The exception could not be rejected.",
+      "renewFailed": "The exception could not be renewed.",
       "exceptionLabel": "Exception",
       "exceptedUntil": "Excepted until {date}",
       "pickRiskAcceptor": "Select who accepts this risk",
