@@ -21,10 +21,14 @@ const mockRunInTenantContext = jest.fn();
 jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (...args: unknown[]) => mockGetTenantCtx(...args),
 }));
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntryOrQueue: (...args: unknown[]) => mockAppendAuditEntry(...args),
-    appendAuditEntry: (...args: unknown[]) => mockAppendAuditEntry(...args),
-}));
+jest.mock('@/lib/audit', () =>
+    // strictMock, not a subset: an export this factory leaves out names itself
+    // when a route reaches for it.
+    strictMock('@/lib/audit', jest.requireActual('@/lib/audit'), {
+        appendAuditEntryOrQueue: (...args: unknown[]) => mockAppendAuditEntry(...args),
+        appendAuditEntry: (...args: unknown[]) => mockAppendAuditEntry(...args),
+    }),
+);
 jest.mock('@/app-layer/usecases/risk', () => ({
     updateRisk: (...a: unknown[]) => mockUpdateRisk(...a),
     updateRiskFair: (...a: unknown[]) => mockUpdateRiskFair(...a),
@@ -44,6 +48,7 @@ jest.mock('@/lib/db-context', () => ({
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
 
 import type { NextRequest } from 'next/server';
+import { strictMock } from '../../helpers/strict-mock';
 import { makeRequestContext } from '../../helpers/make-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { PATCH as riskStatus } from '@/app/api/t/[tenantSlug]/risks/[id]/status/route';
