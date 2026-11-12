@@ -4,7 +4,7 @@ import { Prisma, RiskStatus, TreatmentDecision } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
-import { parseEnumListFilter } from '../domain/list-filter';
+import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 import { withDeleted } from '@/lib/soft-delete';
 
 export interface RiskKpiCounts {
@@ -262,8 +262,19 @@ export class RiskRepository {
                 where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), { OR: pairs }];
             }
         }
-        if (filters.category) where.category = filters.category;
-        if (filters.ownerUserId) where.ownerUserId = filters.ownerUserId;
+        // Both facets are multi-select, so the value arrives comma-joined; an
+        // equality on the joined string matched nothing once two were picked
+        // (#5104). Category is free text and may itself hold a comma, so the
+        // raw value is matched as well as its members, as Policies does.
+        const categories = parseIdListFilter(filters.category);
+        if (categories) {
+            where.category =
+                typeof categories === 'string'
+                    ? categories
+                    : { in: [...new Set([filters.category!.trim(), ...categories.in])] };
+        }
+        const owners = parseIdListFilter(filters.ownerUserId);
+        if (owners) where.ownerUserId = owners;
         if (filters.residualScoreMin !== undefined || filters.residualScoreMax !== undefined) {
             where.residualScore = {};
             if (filters.residualScoreMin !== undefined) where.residualScore.gte = filters.residualScoreMin;

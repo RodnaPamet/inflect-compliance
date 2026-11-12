@@ -144,7 +144,7 @@ describe('Deadline Monitor — TRIAGED tasks', () => {
             runJob: jest.fn(async (_name: string, fn: () => Promise<unknown>) => fn()),
         }));
         jest.mock('@/lib/prisma', () => ({
-            prisma: {
+            prisma: jest.requireActual('../helpers/due-range-double').withDueRanges({
                 control: { findMany: jest.fn().mockResolvedValue([]) },
                 policy: { findMany: jest.fn().mockResolvedValue([]) },
                 task: { findMany: (...args: unknown[]) => mockTaskFindMany(...args) },
@@ -156,7 +156,7 @@ describe('Deadline Monitor — TRIAGED tasks', () => {
                     updateMany: jest.fn().mockResolvedValue({ count: 0 }),
                 },
                 treatmentMilestone: { findMany: jest.fn().mockResolvedValue([]) },
-            },
+            }),
         }));
     });
 

@@ -39,7 +39,7 @@ import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
 import { riskCanCreate } from '../_shared/bulk-permissions';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { formatTailAwareAle } from '@/lib/tail-language';
-import type { DashboardPayload } from '@/app-layer/usecases/risk-dashboard';
+import type { DashboardPayload, DashboardSlot } from '@/app-layer/usecases/risk-dashboard';
 import { buildTailByRisk } from '@/lib/risk/per-risk-results';
 
 interface BestValueRow {
@@ -101,6 +101,19 @@ export default function RiskBoardPage() {
 
     const { risks, analytics, staleness, appetite, simulation } = data;
     const simRun = simulation;
+    // #5168 — the slots the server could not compute. A failed slot arrives
+    // as null, exactly like an empty one, so the board used to say "every
+    // assessment is current", "not quantified yet" or "no appetite set" when
+    // the read had simply failed. A server that predates the field reads as
+    // "none failed".
+    const failed: DashboardSlot[] = data.failed ?? [];
+    const slotFailed = (slot: DashboardSlot) => failed.includes(slot);
+    const slotLabel = (slot: DashboardSlot) => t(`dash.slot_${slot}` as Parameters<typeof t>[0]);
+    const unavailable = (testId: string) => (
+        <p className="text-sm text-content-warning" data-testid={testId}>
+            {t('board.sectionUnavailable')}
+        </p>
+    );
 
     // ── Position ────────────────────────────────────────────────────
     // The headline exists only with a simulation, so its label is always P80.
@@ -157,10 +170,23 @@ export default function RiskBoardPage() {
                 ),
             }}
         >
+            {/* #5168 — name the sections that could not be computed, with a
+                retry, as the operational dashboard does. */}
+            {failed.length > 0 && (
+                <Card className="space-y-tight border-border-warning" data-testid="board-partial">
+                    <p className="text-sm text-content-warning" role="alert">
+                        {t('dash.partialFailure', { sections: failed.map(slotLabel).join(', ') })}
+                    </p>
+                    <Button size="sm" variant="secondary" onClick={() => void mutate()} id="board-partial-retry">
+                        {t('board.retry')}
+                    </Button>
+                </Card>
+            )}
+
             {/* ── 1. Position headline ──────────────────────────────── */}
             <Card data-testid="board-position-card">
                 <Heading level={2} className="mb-2">{t('board.position')}</Heading>
-                {headlineAle !== null ? (
+                {slotFailed('simulation') ? unavailable('board-position-unavailable') : headlineAle !== null ? (
                     <>
                         <KPIStat
                             value={money(headlineAle)}
@@ -184,6 +210,7 @@ export default function RiskBoardPage() {
             {/* ── 2. Appetite chip ─────────────────────────────────── */}
             <Card data-testid="board-appetite-card">
                 <Heading level={2} className="mb-2">{t('board.appetite')}</Heading>
+                {slotFailed('appetite') ? unavailable('board-appetite-unavailable') : (<>
                 <div className="flex items-baseline gap-default">
                     <StatusBadge variant={appetiteVariant} data-testid="board-appetite-chip">
                         {appetiteCopy}
@@ -217,12 +244,13 @@ export default function RiskBoardPage() {
                         )}
                     </div>
                 )}
+                </>)}
             </Card>
 
             {/* ── 3. Top 5 contributors ─────────────────────────────── */}
             <Card data-testid="board-top-risks-card">
                 <Heading level={2} className="mb-2">{t('board.topContributors')}</Heading>
-                {topRisks.length === 0 ? (
+                {slotFailed('analytics') ? unavailable('board-top-risks-unavailable') : topRisks.length === 0 ? (
                     <p
                         className="text-sm text-content-subtle"
                         data-testid="board-top-risks-empty"
@@ -305,7 +333,7 @@ export default function RiskBoardPage() {
             {/* ── 5. Hygiene ─────────────────────────────────────────── */}
             <Card data-testid="board-hygiene-card">
                 <Heading level={2} className="mb-2">{t('board.hygiene')}</Heading>
-                {totalCount === 0 ? (
+                {slotFailed('staleness') ? unavailable('board-hygiene-unavailable') : totalCount === 0 ? (
                     <div data-testid="board-hygiene-empty">
                         <RiskFirstRunEmpty size="sm" canCreate={riskCanCreate(tenant)} />
                     </div>
@@ -320,7 +348,7 @@ export default function RiskBoardPage() {
                         })}
                     </p>
                 )}
-                {staleCount === 0 && totalCount > 0 && (
+                {!slotFailed('staleness') && staleCount === 0 && totalCount > 0 && (
                     <p className="mt-tight text-sm text-content-success" data-testid="board-hygiene-all-fresh">
                         {t('board.hygieneAllFresh')}
                     </p>

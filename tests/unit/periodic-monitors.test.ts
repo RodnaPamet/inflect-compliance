@@ -48,7 +48,7 @@ const mockPrisma = {
 };
 
 jest.mock('@/lib/prisma', () => ({
-    prisma: mockPrisma,
+    prisma: jest.requireActual('../helpers/due-range-double').withDueRanges(mockPrisma),
 }));
 
 // ─── Imports (after mocks) ──────────────────────────────────────────
@@ -633,3 +633,53 @@ describe('Monitor executor registrations', () => {
         expect(executorRegistry.size).toBeGreaterThanOrEqual(10);
     });
 });
+
+// #5202 — one fleet-wide ORDER BY due ASC LIMIT read put the OLDEST overdue
+// rows first, so an abandoned backlog filled the cap and every approaching or
+// newly overdue deadline fell past it, unrecorded.
+describe('Deadline Monitor — the cap cannot starve upcoming deadlines (#5202)', () => {
+    const now = new Date('2026-04-17T08:00:00Z');
+
+    beforeEach(() => {
+        for (const model of Object.values(mockPrisma)) model.findMany.mockReset().mockResolvedValue([]);
+    });
+
+    test('reads the coming-due and the overdue rows in separate passes, overdue newest first', async () => {
+        const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
+        await runDeadlineMonitor({ now });
+
+        const calls = mockPrisma.control.findMany.mock.calls.map((c) => c[0]);
+        expect(calls).toHaveLength(2);
+        const upcoming = calls.find((a) => 'gte' in a.where.nextDueAt);
+        const overdue = calls.find((a) => 'lt' in a.where.nextDueAt);
+        expect(upcoming.orderBy).toEqual({ nextDueAt: 'asc' });
+        expect(overdue.orderBy).toEqual({ nextDueAt: 'desc' });
+        expect(overdue.where.nextDueAt).toEqual({ lt: now });
+    });
+
+    test('a backlog of overdue rows past the cap still leaves an upcoming deadline in, and records the cap', async () => {
+        const backlog = Array.from({ length: 1001 }, (_, i) => ({
+            id: `old-${i}`,
+            tenantId: 'tenant-abandoned',
+            name: `Abandoned ${i}`,
+            nextDueAt: new Date('2025-01-01T00:00:00Z'),
+            ownerUserId: null,
+        }));
+        const upcoming = {
+            id: 'ctrl-soon',
+            tenantId: 'tenant-active',
+            name: 'Due in three days',
+            nextDueAt: new Date('2026-04-20T08:00:00Z'),
+            ownerUserId: 'user-1',
+        };
+        mockPrisma.control.findMany.mockResolvedValue([...backlog, upcoming]);
+
+        const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
+        const { items, result } = await runDeadlineMonitor({ now });
+
+        expect(items.some((i) => i.entityId === 'ctrl-soon')).toBe(true);
+        expect(items.filter((i) => i.tenantId === 'tenant-abandoned')).toHaveLength(1000);
+        expect((result.details as { cappedSources: string[] }).cappedSources).toEqual(['CONTROL']);
+    });
+});
+

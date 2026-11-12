@@ -9,6 +9,7 @@ jest.mock('@/app-layer/notifications/settings', () => ({
     isNotificationsEnabled: jest.fn().mockResolvedValue(true),
 }));
 
+import { withSkipDuplicates } from '../helpers/outbox-double';
 import { buildTaskAssignedDigestEmail } from '@/app-layer/notifications/templates';
 import { enqueueEmail } from '@/app-layer/notifications/enqueue';
 
@@ -51,7 +52,7 @@ describe('buildTaskAssignedDigestEmail', () => {
 describe('enqueueEmail — TASK_ASSIGNED builds the body the payload asks for', () => {
     function fakeDb() {
         const create = jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'out-1', ...data }));
-        return { db: { notificationOutbox: { create } } as never, create };
+        return { db: { notificationOutbox: withSkipDuplicates(create) } as never, create };
     }
 
     it('a payload with `tasks` gets the digest body', async () => {

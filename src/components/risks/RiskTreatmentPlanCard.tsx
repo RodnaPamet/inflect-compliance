@@ -134,8 +134,8 @@ export function RiskTreatmentPlanCard({
     /// Active plan = first non-COMPLETED. There can be multiple plans
     /// over time (e.g. expired then renewed); the card focuses on
     /// the live one.
-    const activeSummary =
-        summaries.find((p) => p.status !== 'COMPLETED') ?? summaries[0];
+    const openSummary = summaries.find((p) => p.status !== 'COMPLETED');
+    const activeSummary = openSummary ?? summaries[0];
 
     const [createOpen, setCreateOpen] = useState(false);
     const [addMilestoneOpen, setAddMilestoneOpen] = useState(false);
@@ -155,7 +155,11 @@ export function RiskTreatmentPlanCard({
                 <Heading level={2} className="inline-flex items-center gap-tight">
                     {t('title')}
                 </Heading>
-                {canWrite && !activeSummary ? (
+                {/* Offered whenever no plan is OPEN (#5279). A risk whose only
+                    plan is completed may need a new one, and the server takes
+                    it; keying this on "any plan" hid the button for good. The
+                    completed plan stays shown below as history. */}
+                {canWrite && !openSummary ? (
                     <Button
                         onClick={() => setCreateOpen(true)}
                         data-testid="treatment-plan-create-button"

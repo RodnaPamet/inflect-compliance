@@ -422,6 +422,28 @@ export async function currentSessionIdOf(req: NextRequest): Promise<string | nul
 }
 
 /**
+ * The same as `currentSessionIdOf`, for a server component that has no
+ * request object: the session JWT is read from the request's own cookies.
+ */
+export async function currentSessionIdFromCookies(): Promise<string | null> {
+    try {
+        const { cookies, headers } = await import('next/headers');
+        const { getToken } = await import('next-auth/jwt');
+        const jar = await cookies();
+        const hdrs = await headers();
+        const req = {
+            cookies: Object.fromEntries(jar.getAll().map((c) => [c.name, c.value])),
+            headers: Object.fromEntries(hdrs.entries()),
+        };
+        const token = await getToken({ req: req as unknown as NextRequest, secret: env.AUTH_SECRET });
+        const id = token?.userSessionId;
+        return typeof id === 'string' && id !== '' ? id : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Tenant-scoped lookup of a session by its `sessionId`. Returns the
  * row only when its `tenantId` matches the calling tenant — the
  * admin sessions DELETE handler uses this to recheck the

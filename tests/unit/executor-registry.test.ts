@@ -166,7 +166,7 @@ jest.mock('@/app-layer/jobs/sync-pull', () => ({
 }));
 jest.mock('@/app-layer/jobs/key-rotation', () => ({
     runKeyRotation: jest.fn(async () => ({
-        totalScanned: 0, totalRewritten: 0, tenantId: 't', dekRewrapped: false,
+        totalScanned: 0, totalRewritten: 0, tenantId: 't', dekRewrapped: true,
         dekRewrapError: null, perField: {}, totalErrors: 0, jobRunId: 'j',
     })),
 }));
@@ -507,6 +507,20 @@ describe('executorRegistry.execute — result-passthrough executors (mocked deps
         });
         expect(result.success).toBe(true);
         expect(result.jobName).toBe(name);
+    });
+
+    // #5299 — a sweep that hit errors used to report success, so the job
+    // history read green while a tenant still depended on the old key.
+    it.each([
+        ['key-rotation', '@/app-layer/jobs/key-rotation', 'runKeyRotation'],
+        ['tenant-dek-rotation', '@/app-layer/jobs/tenant-dek-rotation', 'runTenantDekRotation'],
+    ])('%s fails the job when the sweep reports errors', async (name, mod, fn) => {
+        const runner = jest.requireMock(mod)[fn] as jest.Mock;
+        const clean = await runner();
+        runner.mockResolvedValueOnce({ ...clean, totalErrors: 3 });
+        const result = await reg.execute(name, { tenantId: 't1', initiatedByUserId: 'u1' });
+        expect(result.success).toBe(false);
+        expect(result.errorMessage).toMatch(/3/);
     });
 });
 

@@ -203,3 +203,30 @@ describe('a tenant with notifications disabled is skipped before any claim', () 
         expect(res.skipped).toBe(1);
     });
 });
+
+// #5237 — a tenant that turned notifications off after enqueue. Its rows used
+// to be skipped and left PENDING, so they were selected again by every pass:
+// 200 of them at the head of the queue filled each batch and stopped every
+// other tenant's email, and each counted as overdue for ever.
+describe('a tenant with notifications disabled', () => {
+    beforeEach(() => {
+        getTenantNotificationSettings.mockResolvedValueOnce({
+            enabled: false,
+            defaultFromName: 'Inflect',
+            defaultFromEmail: 'no-reply@inflect.test',
+            complianceMailbox: null as unknown as string,
+        });
+    });
+
+    it('settles the row as FAILED, conditional on PENDING, and sends nothing', async () => {
+        const res = await processOutbox();
+        expect(sendEmail).not.toHaveBeenCalled();
+        expect(claimCalls()).toHaveLength(0);
+        expect(prisma.notificationOutbox.updateMany).toHaveBeenCalledWith({
+            where: { id: 'o1', status: 'PENDING' },
+            data: { status: 'FAILED', lastError: 'notifications disabled for tenant' },
+        });
+        expect(res.skipped).toBe(1);
+    });
+});
+

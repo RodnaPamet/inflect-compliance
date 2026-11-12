@@ -183,9 +183,6 @@ export async function processIncidentNotificationDeadlines(
         });
     }
 
-    result.becameDue = toDue.length;
-    result.becameOverdue = toOverdue.length;
-
     if (transitions.length === 0) {
         logger.info('incident-deadline scan — no transitions', {
             component: 'incident-notification-deadlines',
@@ -194,23 +191,37 @@ export async function processIncidentNotificationDeadlines(
         return result;
     }
 
-    // 3. Status writes — two bounded updateMany calls.
+    // 3. Status writes — two bounded updates, each CONDITIONAL on the status
+    //    the row was read in (#5102). Between the read and the write a
+    //    person can file the report (SUBMITTED) or mark the incident not
+    //    reportable (NOT_REQUIRED); an unconditional write turned a filed
+    //    Article 23 report into OVERDUE and told every admin the deadline
+    //    was missed. Only rows the write actually moved are announced.
+    const moved = new Set<string>();
     if (toDue.length > 0) {
-        await db.incidentNotification.updateMany({
-            where: { id: { in: toDue } },
+        const rows = await db.incidentNotification.updateManyAndReturn({
+            where: { id: { in: toDue }, status: 'PENDING' },
             data: { status: 'DUE' },
+            select: { id: true },
         });
+        for (const r of rows) moved.add(r.id);
+        result.becameDue = rows.length;
     }
     if (toOverdue.length > 0) {
-        await db.incidentNotification.updateMany({
-            where: { id: { in: toOverdue } },
+        const rows = await db.incidentNotification.updateManyAndReturn({
+            where: { id: { in: toOverdue }, status: { in: ['PENDING', 'DUE'] } },
             data: { status: 'OVERDUE' },
+            select: { id: true },
         });
+        for (const r of rows) moved.add(r.id);
+        result.becameOverdue = rows.length;
     }
+    const announced = transitions.filter((t) => moved.has(t.notificationId));
+    if (announced.length === 0) return result;
 
     // 4. Resolve recipients — one membership fetch for all tenants in
     //    play, then build the notification rows.
-    const tenantIds = Array.from(new Set(transitions.map((t) => t.tenantId)));
+    const tenantIds = Array.from(new Set(announced.map((t) => t.tenantId)));
     const admins = await db.tenantMembership.findMany({
         where: {
             tenantId: { in: tenantIds },
@@ -228,7 +239,7 @@ export async function processIncidentNotificationDeadlines(
 
     const stamp = dayStamp(now);
     const rows: Prisma.NotificationCreateManyInput[] = [];
-    for (const t of transitions) {
+    for (const t of announced) {
         const recipients = new Set<string>(adminsByTenant.get(t.tenantId) ?? []);
         if (t.ownerUserId) recipients.add(t.ownerUserId);
 

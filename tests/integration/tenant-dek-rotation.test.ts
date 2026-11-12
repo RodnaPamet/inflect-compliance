@@ -29,6 +29,7 @@
 
 import {
     rotateTenantDek,
+    getTenantDek,
     _resetTenantDekCache,
 } from '@/lib/security/tenant-key-manager';
 import { generateDek, wrapDek, unwrapDek } from '@/lib/security/tenant-keys';
@@ -384,5 +385,83 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         await prisma.user
             .delete({ where: { id: lifecycleUser.id } })
             .catch(() => undefined);
+    }, 30_000);
+
+    // ─── Audit 2026-11 (#5057): the sweep must not trust its process cache ──
+    //
+    // The rotation is primed in the WEB process; the sweep runs in the
+    // WORKER, whose DEK cache may still hold the tenant's OLD key as the
+    // current one. These cases set up exactly that: the old DEK cached in
+    // this process, the swap written to the row behind the cache's back.
+
+    async function sweepFixture(label: string) {
+        const slug = `rot-${label}-${Date.now()}`;
+        slugs.push(slug);
+        const email = `${slug}@test.local`;
+        const { hashForLookup } = await import('@/lib/security/encryption');
+        const user = await prisma.user.create({
+            data: { email, emailHash: hashForLookup(email), name: label },
+        });
+        const oldDek = generateDek();
+        const tenant = await prisma.tenant.create({
+            data: { name: slug, slug, encryptedDek: wrapDek(oldDek) },
+        });
+        return { user, tenant, oldDek };
+    }
+
+    async function swapBehindTheCache(tenantId: string, oldDek: Buffer) {
+        const newDek = generateDek();
+        await prisma.tenant.update({
+            where: { id: tenantId },
+            data: { encryptedDek: wrapDek(newDek), previousEncryptedDek: wrapDek(oldDek) },
+        });
+        return newDek;
+    }
+
+    test('a worker that cached the OLD DEK still rewrites every row under the NEW one (#5057)', async () => {
+        const { user, tenant, oldDek } = await sweepFixture('stale-cache');
+        const risk = await prisma.risk.create({
+            data: { tenantId: tenant.id, title: 'stale-cache', threat: encryptWithKey(oldDek, 'secret threat') },
+        });
+        // This process — the "worker" — has used the tenant's key.
+        expect((await getTenantDek(tenant.id)).equals(oldDek)).toBe(true);
+        const newDek = await swapBehindTheCache(tenant.id, oldDek);
+
+        const swept = await runTenantDekRotation({ tenantId: tenant.id, initiatedByUserId: user.id });
+
+        expect(swept.totalErrors).toBe(0);
+        expect(swept.previousEncryptedDekCleared).toBe(true);
+        const [row] = await prisma.$queryRawUnsafe<Array<{ threat: string }>>(
+            `SELECT "threat" FROM "Risk" WHERE id = $1`, risk.id,
+        );
+        expect(decryptWithKey(newDek, row.threat)).toBe('secret threat');
+        // And the process no longer hands out the old key for new writes.
+        expect((await getTenantDek(tenant.id)).equals(newDek)).toBe(true);
+
+        await deleteAuditRowsForTenants(prisma, [tenant.id]).catch(() => undefined);
+        await prisma.risk.deleteMany({ where: { tenantId: tenant.id } });
+        await prisma.user.delete({ where: { id: user.id } }).catch(() => undefined);
+    }, 30_000);
+
+    test('a row that reads under neither key keeps the previous DEK (#5057)', async () => {
+        const { user, tenant, oldDek } = await sweepFixture('unreadable');
+        await prisma.risk.create({
+            data: { tenantId: tenant.id, title: 'unreadable', threat: encryptWithKey(generateDek(), 'lost') },
+        });
+        await swapBehindTheCache(tenant.id, oldDek);
+
+        const swept = await runTenantDekRotation({ tenantId: tenant.id, initiatedByUserId: user.id });
+
+        expect(swept.totalErrors).toBeGreaterThan(0);
+        expect(swept.previousEncryptedDekCleared).toBe(false);
+        const after = await prisma.tenant.findUnique({
+            where: { id: tenant.id },
+            select: { previousEncryptedDek: true },
+        });
+        expect(after?.previousEncryptedDek).not.toBeNull();
+
+        await deleteAuditRowsForTenants(prisma, [tenant.id]).catch(() => undefined);
+        await prisma.risk.deleteMany({ where: { tenantId: tenant.id } });
+        await prisma.user.delete({ where: { id: user.id } }).catch(() => undefined);
     }, 30_000);
 });

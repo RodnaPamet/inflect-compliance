@@ -31,7 +31,9 @@ import {
     BaseSyncOrchestrator,
     type SyncMappingStore,
     type SyncEventLogger,
+    syncPullJobId,
 } from '@/app-layer/integrations/sync-orchestrator';
+import { isValidBullMqJobId } from '@/app-layer/jobs/fan-out';
 import type { RequestContext } from '@/app-layer/types';
 import type {
     SyncMapping,
@@ -861,8 +863,11 @@ describe('concurrency — duplicate webhook events for same mapping', () => {
         const firstCallJobId = (enqueue as jest.Mock).mock.calls[0][2].jobId;
         const secondCallJobId = (enqueue as jest.Mock).mock.calls[1][2].jobId;
         
-        expect(firstCallJobId).toBe('sync-pull:tenant-1:stub:issue:ISSUE-1');
-        expect(secondCallJobId).toBe('sync-pull:tenant-1:stub:issue:ISSUE-1');
+        expect(firstCallJobId).toBe(syncPullJobId('tenant-1', 'stub', 'issue', 'ISSUE-1'));
+        expect(secondCallJobId).toBe(firstCallJobId);
+        // #5060 — the id must be one `enqueue` accepts; the colon-joined id
+        // this used to be was refused, so no webhook pull ever ran.
+        expect(isValidBullMqJobId(firstCallJobId)).toBe(true);
     });
 
     test('webhook event queues pull job with correct payload structure', async () => {

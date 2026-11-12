@@ -160,6 +160,10 @@ describe('REGRESSION: policy-review-reminder tenant isolation', () => {
         // policy with an owner mints one task + link.
         taskLink: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({}) },
         task: { create: jest.fn().mockResolvedValue({ id: 'task-x' }) },
+        // #5059 — the batched ACTIVE-membership check on owners.
+        tenantMembership: {
+            findMany: jest.fn(async (args: { where: { OR: Array<{ tenantId: string; userId: string }> } }) => args.where.OR),
+        },
     } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
     test('tenant-scoped: query includes tenantId', async () => {

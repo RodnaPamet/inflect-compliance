@@ -90,7 +90,7 @@ describe('dispatchAssignments', () => {
                 findUnique: jest.fn().mockResolvedValue(null),
                 upsert: jest.fn().mockResolvedValue({ id: 'asg-1' }),
             },
-            notification: { create: jest.fn().mockResolvedValue({}) },
+            notification: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
             // The context below carries no `tenantSlug` (a job-style context),
             // so the notification link's slug is looked up.
             tenant: { findUnique: jest.fn().mockResolvedValue({ slug: 'acme' }) },
@@ -127,8 +127,8 @@ describe('dispatchAssignments', () => {
         const d = db();
         withDb(d);
         await dispatchAssignments(ctx(), 'a1', { CEO: 'user-ceo' });
-        expect(d.notification.create).toHaveBeenCalledTimes(1);
-        expect(d.notification.create.mock.calls[0][0].data.linkUrl).toBe('/t/acme/audits/nis2-gap/respond/asg-1');
+        expect(d.notification.createMany).toHaveBeenCalledTimes(1);
+        expect(d.notification.createMany.mock.calls[0][0].data[0].linkUrl).toBe('/t/acme/audits/nis2-gap/respond/asg-1');
         // Looked up once for the dispatch, not once per role.
         expect(d.tenant.findUnique).toHaveBeenCalledTimes(1);
     });
@@ -148,12 +148,16 @@ describe('dispatchAssignments', () => {
         expect(res.tasksCreated).toBe(0);
     });
 
-    it('a notification failure does not fail dispatch', async () => {
-        const d = db({
-            notification: { create: jest.fn().mockRejectedValue(new Error('dedupe')) },
-        });
+    // #5257 — a re-dispatch back to an earlier assignee meets the first
+    // dispatch's dedupe key. The insert skips the duplicate instead of
+    // throwing, because a caught unique violation inside this transaction
+    // aborted it and rolled back every assignment in the dispatch.
+    it('inserts the notification with skipDuplicates, so a repeat assignee cannot abort the dispatch', async () => {
+        const createMany = jest.fn().mockResolvedValue({ count: 0 }); // duplicate: nothing inserted
+        const d = db({ notification: { createMany } });
         withDb(d);
         await expect(dispatchAssignments(ctx(), 'a1', { CEO: 'user-ceo' })).resolves.toMatchObject({ assignmentsCreated: 3 });
+        expect(createMany).toHaveBeenCalledWith(expect.objectContaining({ skipDuplicates: true }));
     });
 });
 

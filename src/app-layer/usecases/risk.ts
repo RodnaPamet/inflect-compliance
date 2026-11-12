@@ -494,8 +494,13 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
                 data.ownerUserId === undefined
                     ? undefined
                     : data.ownerUserId || null,
-            targetDate: data.targetDate ? new Date(data.targetDate) : undefined,
-            nextReviewAt: data.nextReviewAt ? new Date(data.nextReviewAt) : undefined,
+            // Three states (#5212): undefined leaves the date alone, and an
+            // explicit null or '' CLEARS it. Collapsing both to undefined
+            // made clearing a review date a silent no-op behind a "saved" toast.
+            targetDate:
+                data.targetDate === undefined ? undefined : data.targetDate ? new Date(data.targetDate) : null,
+            nextReviewAt:
+                data.nextReviewAt === undefined ? undefined : data.nextReviewAt ? new Date(data.nextReviewAt) : null,
             // P2 — undefined leaves the LINDDUN classification untouched; an
             // array (incl. empty) replaces it with the normalized valid codes.
             linddunCategories:

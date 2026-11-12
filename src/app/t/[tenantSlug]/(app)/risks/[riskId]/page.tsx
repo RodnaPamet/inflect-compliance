@@ -640,6 +640,7 @@ export default function RiskDetailPage() {
                 <FairAnalysisPanel
                     riskId={riskId}
                     category={risk.category}
+                    onSaved={() => riskQuery.mutate()}
                     initial={{
                         threatEventFrequency: risk.threatEventFrequency,
                         contactFrequency: risk.contactFrequency,

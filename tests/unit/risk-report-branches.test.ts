@@ -96,6 +96,7 @@ import {
     FORMAT_META,
 } from '@/app-layer/usecases/risk-report';
 import { makeRequestContext } from '../helpers/make-context';
+import { hashForLookup } from '@/lib/security/encryption';
 
 const ctx = makeRequestContext('ADMIN');
 
@@ -118,9 +119,10 @@ function freshDb() {
         // resolveScheduleRecipients resolves each recipient against ACTIVE
         // membership, then the tenant's external allowlist.
         tenantMembership: {
+            // Matched on the lookup hash (#5185).
             findMany: jest.fn().mockResolvedValue([
-                { user: { email: 'a@b.com' } },
-                { user: { email: 'c@d.com' } },
+                { user: { emailHash: hashForLookup('a@b.com') } },
+                { user: { emailHash: hashForLookup('c@d.com') } },
             ]),
         },
         tenantSecuritySettings: {

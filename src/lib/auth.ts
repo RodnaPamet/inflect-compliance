@@ -49,6 +49,15 @@ export interface JwtPayload {
      * DB-backed tenant gate refuses them — see `src/lib/auth/entra-gate-scope.ts`.
      */
     entraGateDeniedTenantIds?: string[];
+    /**
+     * The workspaces the session's membership claim names (capped at
+     * `MAX_JWT_MEMBERSHIPS`), and those of them still waiting for this
+     * session's MFA code. A workspace outside the claim was never asked at
+     * sign-in; the tenant gate asks it (`workspaceStillAsksThisSession`).
+     * Absent only on a payload no real session produces.
+     */
+    membershipTenantIds?: string[];
+    mfaPendingTenantIds?: string[];
 }
 
 // Legacy JWT secret — used only for reading old cookies during migration
@@ -72,6 +81,8 @@ export async function getSession(): Promise<JwtPayload | null> {
             ssoTenantId: session.user.ssoTenantId ?? null,
             signInMethod: session.user.signInMethod ?? null,
             entraGateDeniedTenantIds: session.user.entraGateDeniedTenantIds ?? [],
+            membershipTenantIds: (session.user.memberships ?? []).map((m) => m.tenantId),
+            mfaPendingTenantIds: session.user.mfaPendingTenantIds ?? [],
         };
     }
 

@@ -174,7 +174,10 @@ export default function RiskHierarchyPage() {
      * error, which each caller shows where the write happened.
      */
     const nodeMutation = useTenantMutation<unknown, { path: string; method: string; body?: unknown }, unknown>({
-        key: '/risks/hierarchy',
+        // The key DISPLAYED, type included (#5166). Revalidating the bare
+        // '/risks/hierarchy' key refreshed nothing on screen, so an added node
+        // did not appear, a rename kept the old name and a deleted node stayed.
+        key: `/risks/hierarchy?type=${type}`,
         mutationFn: async ({ path, method, body }) => {
             const res = await fetch(apiUrl(path), {
                 method,
