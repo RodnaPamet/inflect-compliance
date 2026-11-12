@@ -103,6 +103,28 @@ logs are public, so the checks print names, states and counts
 only. A check that is missing is a PR to `deploy/vm-check/remote.sh`,
 never a free-text input — the identity it holds is root on the VM.
 
+**Changing the VM has two ways in** (owner decision 2026-11-12).
+Option 1: the owner signs the session in to `gcloud` (below), for that
+container's life. Option 2, the durable one: the **`VM apply`**
+workflow (`.github/workflows/vm-apply.yml`), the write-side sibling
+of `VM check` — dispatch it from `main` with one action from its fixed
+list (`deploy/vm-apply/vm.sh`: `apply.sh`'s preflight / apply, the
+Caddy-only and host-config-only modes, the OrangeHRM lab's vhost and
+container retirement, the proving server's recreation, a rollback to
+the newest compose backup that differs from the live file), the owner
+approves the run in `production`, and the job uses the same identity.
+The in-file `main`-only `if` and the action list bind only an
+unmodified branch: a dispatch runs the files of the ref it names, so
+the boundary is the `production` environment (deployment branches:
+protected only, i.e. `main`; the owner, its sole reviewer, reads the
+run's branch before approving) —
+see `docs/deployment.md`, "Named changes without a key". Every write runs its
+preflight first in the same run. Its logs are public too, so
+`apply.sh` runs with `APPLY_PUBLIC_LOG=1`, which reduces everything a
+tool on the VM prints to shape. A missing action is a PR to
+`deploy/vm-apply/vm.sh`, never an input; the lab teardown is
+`compose rm --stop`, never `down`.
+
 When the owner signs a session in to `gcloud` with their own Google
 account, direct access works too, for that container's lifetime.
 Run `gcloud` with `CLOUDSDK_AUTH_ACCESS_TOKEN` unset (the
@@ -1004,6 +1026,15 @@ The challenge verifies the code against the workspace in its URL, so a pending p
 sent to the primary's own challenge page. Sign-in used to ask only the primary, so a
 workspace that required MFA but was joined later let its members in on a password alone.
 Do not narrow it back to the primary.
+
+**A challenge pass belongs to the session that answered it** (`verifyMfaChallenge`). The pass
+is recorded on that session's own `UserSession.mfaPassedTenantIds`, and the jwt callback clears
+`mfaPending` or a pending workspace only when the token's `userSessionId` row lists it
+(`workspacesPassedBySession`). It used to compare `UserMfaEnrollment.lastChallengeAt` with the
+token's `iat`, so the real person passing the challenge also cleared an older password-only
+session. A code is accepted once: `lastAcceptedTotpStep` records the step of the last accepted
+code (enrolment included), and the claim is a conditional `updateMany` on a LATER step. Do not go
+back to a time comparison, and do not accept a pass for a request that names no live session.
 
 **An OAuth email counts only when its provider vouches for it** (`src/lib/auth/oauth-email-trust.ts`,
 owner decisions 2026-11-12). The `signIn` callback links a Google or Microsoft sign-in to an
@@ -3017,6 +3048,12 @@ awaits the run binding's `beforeModelCall` once per model operation, keyed on
 the operation object, because the runtime intercepts every streamed chunk of
 one call with the same object. Do not move the check to the tool boundary or
 the agent render: the tool boundary is too late, and the render cannot await.
+On the Tool Runner the check runs after every model call and after every tool
+call (`execute.ts`, `tools.ts`), so a kill engaged DURING a model call lets that
+call finish and settles the run ABORTED at the check that follows it, with
+nothing sent after it. Observed in production on 2026-11-11: the stop landed
+during a run's last model call, every step reads Done, and the run is Aborted.
+That shape is the check working, not a missed kill.
 
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
@@ -3030,6 +3067,33 @@ a run RECORDS — `WorkflowRun.driver` and the run metrics' `driver` label — i
 `recordedModeOf(driver)`, a `Record<AgentDriver, AgentDriverMode>`, never a
 `'flue' ? 'FLUE' : 'STATIC'` ternary: with a third engine that ternary records
 every run it walks as STATIC (#4270).
+
+**Every hosted engine asks the external-AI transfer gate before its first model
+call** (#5364). `externalResidencyRefusal` (`src/lib/agentic/external-residency-gate.ts`)
+judges the OFFERED set against the tenant's business-data acknowledgement
+(#3872). A refusal fails the whole run with
+`<engine>_external_ai_business_data_unacknowledged`. The Tool Runner did not ask
+until #5364, so it sent an ERP's rows to Anthropic unacknowledged. Two rules
+that are easy to undo:
+
+  - **Inside is NAMED; every other route is outside.** The gate lets only
+    `FLUE_PROVIDER_IDS.local` through without an acknowledgement. It used to
+    let through anything that was not Flue's `inflect-external`, so the Tool
+    Runner's route passed whatever id it was given. The Tool Runner's own id is
+    `TOOL_RUNNER_PROVIDER_ID` (`tool-runner/client.ts`), returned by
+    `clientForRun`.
+  - **The driver reads the acknowledgement with the residency, in one read, and
+    hands it down** (`posturesFor` in both drivers). The engine never re-reads
+    it. The conformance suite holds every engine to it
+    (`business-data-transfer-*` in `tests/helpers/driver-conformance.ts`), so a
+    new engine fails its suite until it asks.
+
+**A reasoning run's specification is the definition's WHOLE step list**
+(#5372). `runMessage` takes no `fromSeq`: on a reasoning engine that number is
+a LEDGER position (committed model and tool calls), not a declared step, so
+slicing by it gave a resumed run a partial or empty specification. Do not add a
+resume offset back: nothing records which declared steps a reasoning run has
+covered.
 
 **The scanner finds Agent SDK agents customers run, and code only ever counts
 against them** (Step 3b, #4156). The `code` source recognises `query` /

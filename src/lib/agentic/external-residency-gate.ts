@@ -98,10 +98,21 @@ export function acknowledgementFrom(
 }
 
 export interface ResidencyGateInput {
-    /** The provider id this run's model calls will go to. */
+    /**
+     * The provider id this run's model calls will go to: a Flue specifier's
+     * provider (`providerIdOf`), or the Tool Runner's `TOOL_RUNNER_PROVIDER_ID`.
+     * Only `FLUE_PROVIDER_IDS.local` stays inside the deployment; every other
+     * id, one this module has never heard of included, is outside.
+     */
     readonly providerId: string;
     readonly offered: readonly OfferedExternalTool[];
     readonly acknowledgement: ExternalAiAcknowledgement;
+    /**
+     * The engine's name at the head of the refusal, so a run's error names the
+     * engine that walked it (#5364). Flue's when absent, so its message is
+     * unchanged.
+     */
+    readonly enginePrefix?: 'flue' | 'tool_runner';
 }
 
 export interface ResidencyRefusal {
@@ -148,23 +159,40 @@ export function externalResidencyRefusal(input: ResidencyGateInput): ResidencyRe
     // rather than a residency enum because the id IS the routing decision —
     // `model-selection.ts` owns that mapping and this module must not form a
     // second opinion about which residency means "outside".
-    if (input.providerId !== FLUE_PROVIDER_IDS.external) return null;
+    //
+    // INSIDE IS NAMED; everything else is outside (#5364). This read
+    // `providerId !== FLUE_PROVIDER_IDS.external`, which made any id other than
+    // Flue's external one — the Tool Runner's Anthropic route, or a third
+    // engine's — read as "stays inside" and pass with no acknowledgement. The
+    // one route that stays inside is the local gateway, so that is the one id
+    // this compares against, and an engine nobody taught this module about is
+    // treated as the transfer it most likely is.
+    if (input.providerId === FLUE_PROVIDER_IDS.local) return null;
 
     const connectionNames = businessSystemConnections(input.offered);
     if (connectionNames.length === 0) return null;
 
     if (isAcknowledged(input.acknowledgement)) return null;
 
+    const enginePrefix = input.enginePrefix ?? 'flue';
+    // The second remedy differs by engine. LOCAL_ONLY keeps a Flue run on the
+    // tenant's own gateway; the Tool Runner speaks only Anthropic's API, so a
+    // LOCAL_ONLY workspace refuses it outright, and saying "set LOCAL_ONLY"
+    // would send the admin to a setting that stops the run rather than serves it.
+    const localRemedy =
+        enginePrefix === 'tool_runner'
+            ? 'or run this workflow on the Flue engine with AI residency set to LOCAL_ONLY; '
+              + 'the Tool Runner engine only calls Anthropic\'s API.'
+            : 'or set AI residency to LOCAL_ONLY so inference stays on your own gateway.';
     return {
         reason: 'EXTERNAL_AI_BUSINESS_DATA_UNACKNOWLEDGED',
         connectionNames,
         message:
-            'flue_external_ai_business_data_unacknowledged: this run would read '
+            `${enginePrefix}_external_ai_business_data_unacknowledged: this run would read `
             + `${connectionNames.length === 1 ? 'a connection' : 'connections'} marked as `
             + `carrying third-party business or personal data (${connectionNames.join(', ')}) `
             + 'and send what it reads to an external model provider. Nobody has '
             + 'acknowledged that transfer for this workspace. Either record the '
-            + 'acknowledgement on Admin → Security settings, or set AI residency to '
-            + 'LOCAL_ONLY so inference stays on your own gateway.',
+            + `acknowledgement on Admin → Security settings, ${localRemedy}`,
     };
 }

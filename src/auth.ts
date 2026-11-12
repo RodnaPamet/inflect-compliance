@@ -52,6 +52,7 @@ import type { SignInMethod } from '@/lib/auth/sso-enforcement';
 import {
     pendingAfterMembershipRefresh,
     workspacesAskingForCode,
+    workspacesPassedBySession,
     workspacesStillAskingForCode,
 } from '@/lib/auth/workspace-mfa';
 import { SessionRevokedError } from '@/lib/auth/session-revoked';
@@ -113,6 +114,8 @@ declare module 'next-auth' {
             tenantId?: string | null;
             role: Role;
             mfaPending?: boolean;
+            /** Workspaces other than the primary whose MFA challenge this session has not passed. */
+            mfaPendingTenantIds?: string[];
             /** R-1: all active memberships, for the tenant picker and middleware gate. */
             memberships?: MembershipEntry[];
             /** Org-layer memberships, for the org-route middleware gate. */
@@ -1083,26 +1086,14 @@ export const authOptions: NextAuthOptions = {
             // needs the live provider token, refresh it on-demand from the
             // stored Account.refresh_token at the point of use (not per request).
 
-            // MFA challenge completion check.
+            // MFA challenge completion check. The pass must be THIS session's:
+            // the challenge records it on the session's own UserSession row,
+            // so another session passing the challenge clears nothing here.
             if (token.mfaPending === true && token.userId && token.tenantId) {
                 try {
-                    const enrollment = await prisma.userMfaEnrollment.findUnique({
-                        where: {
-                            userId_tenantId_type: {
-                                userId: token.userId,
-                                tenantId: token.tenantId,
-                                type: 'TOTP',
-                            },
-                        },
-                        select: { lastChallengeAt: true, isVerified: true },
-                    });
-
-                    if (enrollment?.lastChallengeAt) {
-                        const tokenIat = (token.iat as number | undefined) ?? 0;
-                        const challengeTime = Math.floor(enrollment.lastChallengeAt.getTime() / 1000);
-                        if (challengeTime >= tokenIat) {
-                            token.mfaPending = false;
-                        }
+                    const passed = await workspacesPassedBySession(token.userId, token.userSessionId);
+                    if (passed.has(token.tenantId)) {
+                        token.mfaPending = false;
                     }
                 } catch {
                     if (token.mfaFailClosed) {
@@ -1114,15 +1105,15 @@ export const authOptions: NextAuthOptions = {
             }
 
             // The same check for the session's other pending workspaces: each
-            // leaves the set once its own challenge was passed since this token
-            // was issued. A read failure leaves them pending; the person can
+            // leaves the set once THIS session passed its challenge. A read
+            // failure leaves them pending; the person can
             // still pass the challenge.
             if (token.mfaPendingTenantIds?.length && token.userId) {
                 try {
                     token.mfaPendingTenantIds = await workspacesStillAskingForCode(
                         token.userId,
                         token.mfaPendingTenantIds,
-                        (token.iat as number | undefined) ?? 0,
+                        token.userSessionId,
                     );
                 } catch {
                     // Stays pending.
@@ -1206,6 +1197,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.tenantId = token.tenantId ?? null;
                 session.user.role = token.role ?? 'READER';
                 session.user.mfaPending = token.mfaPending ?? false;
+                session.user.mfaPendingTenantIds = token.mfaPendingTenantIds ?? [];
                 session.user.memberships = token.memberships ?? [];
                 session.user.orgMemberships = token.orgMemberships ?? [];
                 session.user.ssoTenantId = token.ssoTenantId ?? null;

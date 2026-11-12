@@ -20,7 +20,7 @@ import {
     generateTotpUri,
     encryptTotpSecret,
     decryptTotpSecret,
-    verifyTotpCode,
+    matchTotpStep,
 } from '@/lib/security/totp-crypto';
 import { badRequest, forbidden, internal } from '@/lib/errors/types';
 import { sendEmail } from '@/lib/mailer';
@@ -31,6 +31,7 @@ import {
 } from '@/lib/roles';
 import { env } from '@/env';
 import { recordMfaEnrolled } from '@/lib/observability/business-metrics';
+import { assertActingAsPerson } from '../policies/person-only.policies';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -58,6 +59,7 @@ export interface MfaEnrollmentVerifyResult {
 export async function startMfaEnrollment(
     ctx: RequestContext,
 ): Promise<MfaEnrollmentStartResult> {
+    assertActingAsPerson(ctx, 'Enrolling a second factor');
     const authSecret = getAuthSecret();
 
     // Generate new TOTP secret
@@ -124,6 +126,7 @@ export async function verifyMfaEnrollment(
     ctx: RequestContext,
     input: VerifyMfaInputType,
 ): Promise<MfaEnrollmentVerifyResult> {
+    assertActingAsPerson(ctx, 'Enrolling a second factor');
     const authSecret = getAuthSecret();
 
     const enrollment = await prisma.userMfaEnrollment.findUnique({
@@ -146,18 +149,20 @@ export async function verifyMfaEnrollment(
 
     // Decrypt secret and verify code
     const secret = decryptTotpSecret(enrollment.secretEncrypted, authSecret);
-    const isValid = verifyTotpCode(secret, input.code);
+    const step = matchTotpStep(secret, input.code);
 
-    if (!isValid) {
+    if (step === null) {
         return { success: false, enrollmentId: enrollment.id };
     }
 
-    // Mark as verified
+    // Mark as verified, and record the step: the code that proved the
+    // enrolment is spent and cannot also pass the sign-in challenge.
     await prisma.userMfaEnrollment.update({
         where: { id: enrollment.id },
         data: {
             isVerified: true,
             verifiedAt: new Date(),
+            lastAcceptedTotpStep: step,
         },
     });
 
@@ -228,8 +233,25 @@ export async function removeMfaEnrollment(
     // has not completed their own challenge should not be removing anybody's
     // second factor. That is the same principle #2223 applies to every other
     // privileged surface.
+    //
+    // "Not pending" is asked of THIS workspace, not only the primary one: a
+    // workspace that wants a code and is not the primary is in
+    // `mfaPendingTenantIds`, and `mfaPending` alone says nothing about it.
+    // And it is asked of a SESSION: an API key or an agent has none, and
+    // `auth()` returning null must not read as "not pending".
+    if (ctx.apiKeyId || ctx.agentId) {
+        await auditMfaRemovalDenied(ctx, effectiveUserId);
+        assertActingAsPerson(ctx, 'Removing a second factor');
+    }
     const session = await auth();
-    if (session?.user?.mfaPending === true) {
+    if (!session?.user || session.user.id !== ctx.userId) {
+        await auditMfaRemovalDenied(ctx, effectiveUserId);
+        throw forbidden('Removing a second factor needs your own signed-in session.');
+    }
+    if (
+        session.user.mfaPending === true ||
+        (session.user.mfaPendingTenantIds ?? []).includes(ctx.tenantId)
+    ) {
         await auditMfaRemovalDenied(ctx, effectiveUserId);
         throw forbidden(
             'Complete the MFA challenge before changing enrollment. Removing a '

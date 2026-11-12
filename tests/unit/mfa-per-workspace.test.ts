@@ -17,8 +17,8 @@
 const db = {
     /** Each workspace's policy. */
     policies: {} as Record<string, string>,
-    /** Workspaces whose challenge was passed, and when. */
-    challengedAt: {} as Record<string, Date>,
+    /** Each session's row: which workspaces that session passed the challenge of. */
+    sessionPasses: {} as Record<string, string[]>,
 };
 
 jest.mock('@/lib/prisma', () => {
@@ -50,14 +50,13 @@ jest.mock('@/lib/prisma', () => {
         },
         userMfaEnrollment: {
             findUnique: jest.fn(async () => null),
-            findMany: jest.fn(async ({ where }: any) =>
-                (where.tenantId.in as string[])
-                    .filter((id) => {
-                        if (where.lastChallengeAt === undefined) return false;
-                        const at = db.challengedAt[id];
-                        return at !== undefined && at >= where.lastChallengeAt.gte;
-                    })
-                    .map((tenantId) => ({ tenantId, isVerified: true })),
+            findMany: jest.fn(async () => []),
+        },
+        userSession: {
+            findUnique: jest.fn(async ({ where }: any) =>
+                db.sessionPasses[where.sessionId]
+                    ? { userId: 'user-1', mfaPassedTenantIds: db.sessionPasses[where.sessionId] }
+                    : null,
             ),
         },
     };
@@ -102,7 +101,7 @@ const MEMBERSHIPS = [
 
 beforeEach(() => {
     db.policies = {};
-    db.challengedAt = {};
+    db.sessionPasses = { 'sess-this': [], 'sess-other': [] };
 });
 
 /** A password sign-in through the real `jwt` callback. */
@@ -129,6 +128,7 @@ async function cookieFor(claims: Record<string, unknown>): Promise<string> {
             sessionVersion: 1,
             sessionVersionCheckedAt: Math.floor(Date.now() / 1000),
             mfaPending: false,
+            userSessionId: 'sess-this',
             ...claims,
         } as any,
     });
@@ -199,15 +199,21 @@ describe("passing a workspace's challenge clears that workspace", () => {
         return (await decode({ token: set.split(';')[0].split('=').slice(1).join('='), secret: SECRET })) as any;
     }
 
-    it('a challenge passed after the token was issued clears the workspace', async () => {
+    it('a challenge this session passed clears the workspace', async () => {
         const cookie = await cookieFor({ mfaPendingTenantIds: ['t-beta'] });
-        db.challengedAt['t-beta'] = new Date(Date.now() + 1000);
+        db.sessionPasses['sess-this'].push('t-beta');
         expect((await refreshed(cookie)).mfaPendingTenantIds).toEqual([]);
     });
 
-    it('a challenge passed before the token was issued does not', async () => {
+    it('a challenge another session passed does not', async () => {
         const cookie = await cookieFor({ mfaPendingTenantIds: ['t-beta'] });
-        db.challengedAt['t-beta'] = new Date(Date.now() - 60 * 60_000);
+        db.sessionPasses['sess-other'].push('t-beta');
+        expect((await refreshed(cookie)).mfaPendingTenantIds).toEqual(['t-beta']);
+    });
+
+    it('a session with no row clears nothing', async () => {
+        const cookie = await cookieFor({ mfaPendingTenantIds: ['t-beta'], userSessionId: 'sess-gone' });
+        db.sessionPasses['sess-this'].push('t-beta');
         expect((await refreshed(cookie)).mfaPendingTenantIds).toEqual(['t-beta']);
     });
 });

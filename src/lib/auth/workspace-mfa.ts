@@ -15,8 +15,11 @@
  * Enrolment is per workspace (`UserMfaEnrollment` is keyed on user AND
  * tenant), so each workspace's code is its own.
  *
- * A challenge counts for this session when it was passed after the session's
- * token was issued, the rule the primary workspace already uses.
+ * A challenge counts for this session only when THIS session passed it: the
+ * pass is recorded on the session's own `UserSession` row
+ * (`mfaPassedTenantIds`). Comparing the enrolment's `lastChallengeAt` with the
+ * token's issue time, as this used to, let any session's pass clear every older
+ * session of the same person.
  */
 import type { MfaPolicy } from '@prisma/client';
 import prisma from '@/lib/prisma';
@@ -53,28 +56,32 @@ export async function workspacesAskingForCode(
 }
 
 /**
- * `pending`, minus each workspace whose challenge this person passed at or
- * after `issuedAt` (the token's `iat`, in seconds).
+ * `pending`, minus each workspace whose challenge THIS session passed:
+ * the ones its own `UserSession` row lists. No session row, or a row that is
+ * not this person's, clears nothing.
  */
 export async function workspacesStillAskingForCode(
     userId: string,
     pending: readonly string[],
-    issuedAt: number,
+    userSessionId: string | null | undefined,
 ): Promise<string[]> {
     if (pending.length === 0) return [];
-    const ids = [...pending];
-    const passed = await prisma.userMfaEnrollment.findMany({
-        where: {
-            userId,
-            tenantId: { in: ids },
-            type: 'TOTP',
-            lastChallengeAt: { gte: new Date(issuedAt * 1000) },
-        },
-        select: { tenantId: true },
-        take: ids.length,
+    const passed = await workspacesPassedBySession(userId, userSessionId);
+    return pending.filter((id) => !passed.has(id));
+}
+
+/** The workspaces whose MFA challenge the session named by `userSessionId` passed. */
+export async function workspacesPassedBySession(
+    userId: string,
+    userSessionId: string | null | undefined,
+): Promise<Set<string>> {
+    if (!userSessionId) return new Set();
+    const row = await prisma.userSession.findUnique({
+        where: { sessionId: userSessionId },
+        select: { userId: true, mfaPassedTenantIds: true },
     });
-    const cleared = new Set(passed.map((p) => p.tenantId));
-    return ids.filter((id) => !cleared.has(id));
+    if (!row || row.userId !== userId) return new Set();
+    return new Set(row.mfaPassedTenantIds);
 }
 
 /**
