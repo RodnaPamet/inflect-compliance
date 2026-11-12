@@ -37,6 +37,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-inflect_production}
     volumes:
       - prod-pgdata:/var/lib/postgresql/data
+      # Creates `app_user` and the placeholder `postgres` role the RLS-setup
+      # migration grants to (#5302). Without it a fresh volume has no
+      # `postgres` role, `prisma migrate deploy` fails and the app crash-loops.
+      # Runs only when the volume is initialised.
+      - ./prisma/init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
     tmpfs:
       - /tmp:size=256M        # Temp files never hit persistent disk
       - /run/postgresql:size=16M
