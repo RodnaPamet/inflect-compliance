@@ -86,7 +86,13 @@ export function readJavaScript(fileName: string, src: string): FileFacts {
         } else if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
             const args = (node.arguments ?? []).map((a) => (ts.isSpreadElement(a) ? lower(a.expression, depth + 1) : lower(a, depth + 1)));
             const spread = (node.arguments ?? []).some((a) => ts.isSpreadElement(a));
-            e = { k: 'call', fn: lower(node.expression, depth + 1), args, kwargs: new Map(), spread, line };
+            // A dynamic `import(…)` is named `import`, a reserved word no
+            // identifier can spell, so a reader can tell it from any other
+            // call it cannot resolve (Agent Pay Phase 2.1, `code/payment.ts`).
+            const fn: Expr = node.expression.kind === ts.SyntaxKind.ImportKeyword
+                ? { k: 'ref', name: 'import', line }
+                : lower(node.expression, depth + 1);
+            e = { k: 'call', fn, args, kwargs: new Map(), spread, line };
         } else if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
             e = { k: 'str', value: node.text, template: false, line };
         } else if (ts.isTemplateExpression(node)) {

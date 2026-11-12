@@ -73,8 +73,11 @@ import {
     HARNESS_CONTRACT_V1,
     HARNESS_CONTRACT_V2,
     HARNESS_CONTRACT_V3,
+    HARNESS_CONTRACT_V4,
     isScanComplete,
     looksLikeSecret,
+    PAYMENT_CLIENT_LIBRARIES,
+    PAYMENT_PROTOCOLS,
     SOURCE_KINDS,
     SOURCE_KINDS_V2,
     SOURCE_KINDS_V3,
@@ -93,12 +96,17 @@ export {
     HARNESS_CONTRACT_V1,
     HARNESS_CONTRACT_V2,
     HARNESS_CONTRACT_V3,
+    HARNESS_CONTRACT_V4,
     isScanComplete,
     looksLikeSecret,
+    PAYMENT_CLIENT_LIBRARIES,
+    PAYMENT_PROTOCOLS,
     SOURCE_KINDS,
     SOURCE_KINDS_V2,
     SOURCE_KINDS_V3,
     type HarnessContractId,
+    type PaymentClientLibrary,
+    type PaymentProtocol,
 } from './harness-contract-rules';
 
 // ─── Bounds. Stated here and enforced at the ingest's transport too. ───
@@ -117,6 +125,8 @@ export const MAX_UNBOUND_CREDENTIALS = 10_000;
 export const MAX_MODELS_PER_AGENT = 50;
 /** `/2`: a tool's call count, and the window it is counted over. */
 export const MAX_TOOL_CALLS = 1_000_000_000;
+/** `/4`: payment capabilities per agent — one per (library, call site), so a handful in practice. */
+export const MAX_PAYMENT_CAPABILITIES_PER_AGENT = 50;
 export const MAX_WINDOW_DAYS = 366;
 /** Identifiers, names and references. */
 export const MAX_ID_CHARS = 256;
@@ -268,6 +278,24 @@ const ModelEndpointSchema = z
     })
     .strict();
 
+/**
+ * `/4`: one place an agent's code calls a recognised payment client library
+ * (Agent Pay Phase 2). Closed lists for the protocol and the library, and the
+ * `code://` locator of the call — never an amount, an address, a key or a
+ * token: what the call would pay, and with what, is out of the contract's
+ * sight, and a value there would be refused as secret-shaped anyway.
+ *
+ * NOT MET ONLY, like every fact code yields: it shows the agent CAN pay, never
+ * that a control over the payment works.
+ */
+const PaymentCapabilitySchema = z
+    .object({
+        protocol: z.enum(PAYMENT_PROTOCOLS),
+        library: z.enum(PAYMENT_CLIENT_LIBRARIES),
+        at: credentialRef.refine((v) => v.startsWith('code://'), 'a payment capability is located by a code:// locator'),
+    })
+    .strict();
+
 const SkillSchema = z
     .object({
         name: id,
@@ -316,6 +344,38 @@ const AgentSchemaV3 = z
         models: z.array(ModelEndpointSchema).max(MAX_MODELS_PER_AGENT).optional(),
     })
     .strict();
+
+/**
+ * `/4`'s agent: `/3`'s, and the optional `paymentCapabilities[]`. THREE STATES,
+ * as `models[]` has: absent is NOT REPORTED (no source read this agent's code);
+ * `[]` is a code read that saw no payment client called; entries are what it
+ * saw. Each (library, locator) once.
+ */
+const AgentSchemaV4 = z
+    .object({
+        ...agentMembersOver(SOURCE_KINDS_V3, ToolSchemaV2),
+        models: z.array(ModelEndpointSchema).max(MAX_MODELS_PER_AGENT).optional(),
+        paymentCapabilities: z
+            .array(PaymentCapabilitySchema)
+            .max(MAX_PAYMENT_CAPABILITIES_PER_AGENT)
+            .optional()
+            .refine(
+                (caps) => caps === undefined || new Set(caps.map((c) => `${c.library}\u0000${c.at}`)).size === caps.length,
+                'each payment capability appears once',
+            ),
+    })
+    .strict()
+    .superRefine((a, ctx) => {
+        // Only a code read can state the fact, so only an agent a code read
+        // reported may carry the member at all, even empty.
+        if (a.paymentCapabilities !== undefined && !a.discoveredVia.includes('code')) {
+            ctx.addIssue({
+                code: 'custom',
+                message: 'payment capabilities are reported only for an agent discovered via code',
+                path: ['paymentCapabilities'],
+            });
+        }
+    });
 
 const FindingSchema = z
     .object({
@@ -464,6 +524,18 @@ export const HarnessReportBodyV3Schema = z
         checkUnboundCredentials(r, ctx);
     });
 
+/** `inflect-agent-harness/4`: `/3`'s members and rules, and `/4`'s agent. */
+export const HarnessReportBodyV4Schema = z
+    .object({
+        ...bodyMembersOver(HARNESS_CONTRACT_V4, SOURCE_KINDS_V3, INCOMPLETE_REASONS_V2, AgentSchemaV4),
+        unboundCredentials: z.array(unboundCredentialSchemaOver(SOURCE_KINDS_V3)).max(MAX_UNBOUND_CREDENTIALS),
+    })
+    .strict()
+    .superRefine((r, ctx) => {
+        checkReportInvariants(r, ctx);
+        checkUnboundCredentials(r, ctx);
+    });
+
 export const HarnessSignatureSchema = z
     .object({
         alg: z.literal('ed25519'),
@@ -476,11 +548,15 @@ export const HarnessSignatureSchema = z
 
 export type HarnessReportBodyV2 = z.infer<typeof HarnessReportBodyV2Schema>;
 export type HarnessReportBodyV3 = z.infer<typeof HarnessReportBodyV3Schema>;
-/** A verified report, of either id the verifier accepts. */
-export type HarnessReportBody = HarnessReportBodyV2 | HarnessReportBodyV3;
+export type HarnessReportBodyV4 = z.infer<typeof HarnessReportBodyV4Schema>;
+/** A verified report, of any id the verifier accepts. */
+export type HarnessReportBody = HarnessReportBodyV2 | HarnessReportBodyV3 | HarnessReportBodyV4;
 export type HarnessReportAgentV2 = HarnessReportBodyV2['agents'][number];
 export type HarnessReportAgentV3 = HarnessReportBodyV3['agents'][number];
-export type HarnessReportAgent = HarnessReportAgentV2 | HarnessReportAgentV3;
+export type HarnessReportAgentV4 = HarnessReportBodyV4['agents'][number];
+export type HarnessReportAgent = HarnessReportAgentV2 | HarnessReportAgentV3 | HarnessReportAgentV4;
+/** One `/4` payment capability, as reported. */
+export type HarnessPaymentCapability = NonNullable<HarnessReportAgentV4['paymentCapabilities']>[number];
 export type HarnessUnboundCredential = HarnessReportBody['unboundCredentials'][number];
 export type HarnessModelEndpoint = NonNullable<HarnessReportAgentV3['models']>[number];
 export type HarnessSignature = z.infer<typeof HarnessSignatureSchema>;
@@ -492,6 +568,7 @@ const BODY_SCHEMA_BY_ID: ReadonlyMap<HarnessContractId, z.ZodType<HarnessReportB
 >([
     [HARNESS_CONTRACT_V2, HarnessReportBodyV2Schema],
     [HARNESS_CONTRACT_V3, HarnessReportBodyV3Schema],
+    [HARNESS_CONTRACT_V4, HarnessReportBodyV4Schema],
 ]);
 
 /** The schema for the id a body names, or null when it names none this verifier accepts. */
@@ -723,7 +800,7 @@ export function verifyAndParseHarnessReport(
     const bodySchema = bodySchemaFor(body);
     if (bodySchema === null) {
         const issue = body.contract === HARNESS_CONTRACT_V1
-            ? `contract: ${HARNESS_CONTRACT_V1} is retired; the scanner must speak ${HARNESS_CONTRACT_V3}`
+            ? `contract: ${HARNESS_CONTRACT_V1} is retired; the scanner must speak ${HARNESS_CONTRACT_V4}`
             : 'contract: not a contract id this verifier accepts';
         return { ok: false, reason: 'SCHEMA', issues: [issue] };
     }

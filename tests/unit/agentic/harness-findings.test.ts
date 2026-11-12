@@ -52,6 +52,7 @@ function prior(over: Partial<PriorHarnessState> = {}): PriorHarnessState {
         acceptedShortfalls: new Set<string>(),
         intakeClaims: new Map<string, IntakeClaim>(),
         openOrphanCredentials: new Set<string>(),
+        spendingAuthority: new Map(),
         ...over,
     };
 }

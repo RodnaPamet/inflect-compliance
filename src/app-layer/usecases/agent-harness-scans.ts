@@ -31,7 +31,7 @@
  * `tests/guards/agent-harness-single-write-seam.test.ts` refuses a write to the
  * three tables from any other file.
  */
-import { Prisma } from '@prisma/client';
+import { AgentSpendingRail, Prisma } from '@prisma/client';
 import type { PrismaTx } from '@/lib/db-context';
 
 import type { RequestContext } from '../types';
@@ -57,6 +57,8 @@ import {
     intakeClaimsByDiscoveredId,
     orphanCredentialRefPrefix,
     planHarnessScan,
+    spendingAuthorityStandingOf,
+    type SpendingAuthorityStanding,
     type PlannedFinding,
 } from '@/lib/agentic/harness-findings';
 import type { HarnessLevel } from '@/lib/agentic/harness-ladder';
@@ -71,6 +73,9 @@ const MAX_SCANNER_KEYS = 200;
  * nobody read.
  */
 const MAX_OPEN_ORPHANS_READ = 2 * MAX_UNBOUND_CREDENTIALS;
+
+/** One spending-authority row per agent per rail (Agent Pay Phase 1), so at most this many per agent. */
+const SPENDING_RAILS_PER_AGENT = Object.keys(AgentSpendingRail).length;
 
 export interface HarnessIngestResult {
     scanId: string;
@@ -225,6 +230,23 @@ async function record(
         take: MAX_OPEN_ORPHANS_READ,
     });
     const knownById = new Map(known.map((k) => [k.id, k]));
+    // The spending authority each register row this scan can link holds
+    // (Agent Pay Phase 2.3). Read, never written: the spending-authority
+    // usecase is that table's only writer. A row with several rails has one
+    // envelope per rail, so the read is bounded by rows × rails.
+    const linkable = [...new Set([...registered.map((r) => r.id), ...intake.map((r) => r.id)])];
+    const envelopes = linkable.length === 0
+        ? []
+        : await db.agentSpendingAuthority.findMany({
+            where: { tenantId: ctx.tenantId, agentId: { in: linkable } },
+            select: { agentId: true, status: true, reviewedAt: true },
+            take: linkable.length * SPENDING_RAILS_PER_AGENT,
+        });
+    const spendingAuthority = new Map<string, SpendingAuthorityStanding>();
+    for (const agentId of linkable) {
+        const standing = spendingAuthorityStandingOf(envelopes.filter((e) => e.agentId === agentId));
+        if (standing !== null) spendingAuthority.set(agentId, standing);
+    }
 
     const plan = planHarnessScan(body, {
         previousLevels: new Map(known.map((k) => [k.discoveredId, k.lastLevel as HarnessLevel])),
@@ -234,6 +256,7 @@ async function record(
         ),
         intakeClaims: intakeClaimsByDiscoveredId(known, intake),
         openOrphanCredentials: new Set(openOrphans.map((f) => f.sourceRef).filter((r): r is string => r !== null)),
+        spendingAuthority,
     });
 
     // The signed body, without its signature, is what the signature covers.
