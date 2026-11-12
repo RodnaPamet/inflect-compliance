@@ -37,6 +37,32 @@
  * The `embedding` column is the untyped `vector`, so one table holds every
  * revision; a search casts to `vector(<dimensions>)`, which is the expression
  * the follow-up migration's partial HNSW index per revision is built on.
+ *
+ * ── Filtered search over a shared index ────────────────────────────
+ *
+ * That index is shared by every tenant holding the revision, and pgvector
+ * applies a WHERE clause AFTER the approximate scan: with the defaults it
+ * returns `hnsw.ef_search` (40) candidates across ALL tenants and then
+ * filters, so a tenant holding 2% of a revision would get about one hit. So
+ * every search turns on iterative index scans for its own transaction
+ * (`hnsw.iterative_scan = strict_order`, pgvector 0.8.0+), which keeps
+ * scanning until `k` rows survive the tenant filter or
+ * `hnsw.max_scan_tuples` is reached; the probe refuses an older extension.
+ * The residual limit — a tenant whose share of a revision is so small that
+ * `max_scan_tuples` candidates hold fewer than `k` of its rows — is the
+ * measured floor the implementation note names.
+ *
+ * ── A rebuild never erases a concurrent write ──────────────────────
+ *
+ * A rebuild runs over many transactions and ends by deleting the revision's
+ * rows it did not stamp. Every write stamps `writeSeq` from the table's
+ * sequence after taking a SHARED advisory lock on (tenant, revision); the
+ * rebuild draws its own `startSeq` under the EXCLUSIVE lock, which waits for
+ * every write in flight to commit. So `writeSeq > startSeq` means "written
+ * after the rebuild began", and the final DELETE spares those rows: a chunk
+ * ingested mid-rebuild, a re-upsert of a row the rebuild had stamped, and a
+ * second rebuild's rows all survive. What survives may be a superset, which
+ * hydration under RLS already tolerates.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -58,6 +84,25 @@ import {
 
 /** The table the follow-up migration creates. Named here and nowhere else in `src/`. */
 const TABLE = Prisma.raw('"KnowledgeVector"');
+/** The sequence behind `"writeSeq"` (the follow-up migration's `bigserial`). */
+const WRITE_SEQ = Prisma.raw(`'"KnowledgeVector_writeSeq_seq"'`);
+
+/** Iterative index scans arrived in pgvector 0.8.0; without them a filtered search starves. */
+export const MIN_PGVECTOR_VERSION: readonly [number, number, number] = [0, 8, 0];
+
+function versionAtLeast(version: string, min: readonly [number, number, number]): boolean {
+    const parts = version.split('.').map((p) => Number.parseInt(p, 10));
+    for (let i = 0; i < 3; i++) {
+        const v = Number.isFinite(parts[i]) ? parts[i] : 0;
+        if (v !== min[i]) return v > min[i];
+    }
+    return true;
+}
+
+/** The (tenant, revision) advisory-lock key pair; its two halves keep it apart from one-key locks. */
+function lockKey(ctx: RequestContext, embeddingRevision: string): Prisma.Sql {
+    return Prisma.sql`hashtext(${`knowledge-vector:${ctx.tenantId}`}), hashtext(${embeddingRevision})`;
+}
 
 function dimensionSql(dimensions: number): Prisma.Sql {
     if (!Number.isInteger(dimensions) || dimensions < 1 || dimensions > MAX_DIMENSIONS) {
@@ -76,17 +121,24 @@ export function createPgvectorStore(): VectorStoreBackend {
 
     async function assertInstalled(tx: PrismaTx): Promise<void> {
         if (installed) return;
-        const rows = await tx.$queryRaw<Array<{ ext: boolean; tbl: boolean }>>(Prisma.sql`
+        const rows = await tx.$queryRaw<Array<{ ver: string | null; tbl: boolean }>>(Prisma.sql`
             SELECT
-                EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS ext,
+                (SELECT extversion FROM pg_extension WHERE extname = 'vector') AS ver,
                 to_regclass('public."KnowledgeVector"') IS NOT NULL AS tbl`);
         const probe = rows[0];
-        if (!probe?.ext || !probe?.tbl) {
+        if (!probe?.ver) {
+            throw new VectorStoreError('PGVECTOR_NOT_INSTALLED', 'the vector extension is not installed in this database');
+        }
+        if (!versionAtLeast(probe.ver, MIN_PGVECTOR_VERSION)) {
             throw new VectorStoreError(
                 'PGVECTOR_NOT_INSTALLED',
-                !probe?.ext
-                    ? 'the vector extension is not installed in this database'
-                    : 'the KnowledgeVector table does not exist; its migration has not run',
+                `the vector extension is ${probe.ver}; filtered search needs ${MIN_PGVECTOR_VERSION.join('.')}+ (iterative index scans)`,
+            );
+        }
+        if (!probe.tbl) {
+            throw new VectorStoreError(
+                'PGVECTOR_NOT_INSTALLED',
+                'the KnowledgeVector table does not exist; its migration has not run',
             );
         }
         installed = true;
@@ -128,6 +180,10 @@ export function createPgvectorStore(): VectorStoreBackend {
         if (records.length === 0) return;
         // The repository admits one revision and one dimension count per call.
         const { embeddingRevision, embedding } = records[0];
+        // Shared with every other write; a rebuild's start takes it exclusively,
+        // so no write's writeSeq can fall below a startSeq drawn while it is in flight.
+        // `void` cannot be deserialised by $queryRaw, hence $executeRaw.
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock_shared(${lockKey(ctx, embeddingRevision)})`);
         const stored = await revisionDimensions(tx, ctx, embeddingRevision);
         if (stored !== null && stored !== embedding.length) {
             throw new VectorStoreError(
@@ -171,7 +227,8 @@ export function createPgvectorStore(): VectorStoreBackend {
                                    THEN ${TABLE}."embedding" ELSE EXCLUDED."embedding" END,
                 "dimensions" = EXCLUDED."dimensions",
                 "contentHash" = EXCLUDED."contentHash",
-                "rebuildGeneration" = EXCLUDED."rebuildGeneration",
+                "rebuildGeneration" = COALESCE(EXCLUDED."rebuildGeneration", ${TABLE}."rebuildGeneration"),
+                "writeSeq" = EXCLUDED."writeSeq",
                 "updatedAt" = CASE WHEN ${TABLE}."contentHash" = EXCLUDED."contentHash"
                                    THEN ${TABLE}."updatedAt" ELSE now() END`);
     }
@@ -197,6 +254,11 @@ export function createPgvectorStore(): VectorStoreBackend {
                 }
                 const d = dimensionSql(stored);
                 const q = vectorLiteral(query.embedding);
+                // Transaction-local: keep scanning the shared index until k of
+                // THIS tenant's rows survive the filter (see the header).
+                await tx.$queryRaw(Prisma.sql`
+                    SELECT set_config('hnsw.iterative_scan', 'strict_order', true),
+                           set_config('hnsw.ef_search', ${String(Math.max(40, query.k))}, true)`);
                 const models = query.sourceModels
                     ? Prisma.sql`AND "sourceModel" = ANY(${[...query.sourceModels]}::text[])`
                     : Prisma.empty;
@@ -262,10 +324,21 @@ export function createPgvectorStore(): VectorStoreBackend {
             // One transaction per batch, so a large tenant never holds one
             // long transaction. Rows are stamped with this rebuild's
             // generation; only after the LAST batch are the revision's rows
-            // with any other generation deleted. A source that throws first
+            // with any other generation, written before this rebuild began,
+            // deleted. A source that throws first
             // leaves a superset, which the query path's hydration under RLS
             // already tolerates (a stale reference hydrates to nothing).
             const generation = randomUUID();
+            // Drawn under the exclusive lock BEFORE the source is read: every
+            // write committed earlier has writeSeq < startSeq, every later one
+            // has more, and only the former can be judged by this source.
+            const startSeq = await withTenant(ctx, async (tx) => {
+                await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(${lockKey(ctx, embeddingRevision)})`);
+                const rows = await tx.$queryRaw<Array<{ seq: bigint | number | string }>>(
+                    Prisma.sql`SELECT nextval(${WRITE_SEQ}::regclass) AS seq`,
+                );
+                return BigInt(rows[0].seq);
+            });
             const outcome: RebuildOutcome = { inserted: 0, updated: 0, unchanged: 0, deleted: 0 };
             let seen = 0;
             for await (const batch of batches) {
@@ -277,7 +350,8 @@ export function createPgvectorStore(): VectorStoreBackend {
                     DELETE FROM ${TABLE}
                     WHERE "tenantId" = ${ctx.tenantId}
                       AND "embeddingRevision" = ${embeddingRevision}
-                      AND "rebuildGeneration" IS DISTINCT FROM ${generation}`),
+                      AND "rebuildGeneration" IS DISTINCT FROM ${generation}
+                      AND "writeSeq" < ${startSeq}`),
             );
             return { ...outcome, seen };
         },

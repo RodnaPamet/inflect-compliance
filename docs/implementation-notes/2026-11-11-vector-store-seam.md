@@ -65,7 +65,21 @@ another generation deleted. Consequences, each a test:
   same, and only one of them should erase the index (invariant 5 of the
   recertification section, applied here). The refusal is thrown INSIDE the
   iteration, before it completes, so the backend's delete step is unreachable;
-- a rebuild touches one revision and one tenant only.
+- a rebuild touches one revision and one tenant only;
+- a rebuild never erases a write that landed while it ran. A rebuild spans
+  many transactions, so an ingestion upsert, a re-upsert of a row it already
+  stamped, or a second rebuild can commit between its batches. Every write
+  therefore stamps a store-wide write sequence (`writeSeq`), and the final
+  delete spares every row written after the rebuild began — it removes only
+  rows it did not stamp AND whose `writeSeq` is below the `startSeq` it drew
+  before reading the source. On pgvector the sequence is drawn under an
+  exclusive `(tenant, revision)` advisory lock that every write takes shared,
+  so no write in flight can draw a number below `startSeq` and commit after
+  it. A plain upsert also keeps the generation a rebuild stamped
+  (`COALESCE`) instead of resetting it. The cost is a possible superset, which
+  hydration under RLS already tolerates. This needs the source to be read
+  lazily, after `rebuildRevision` is called — a source read up front could be
+  older than `startSeq`.
 
 ## Files
 
@@ -80,7 +94,8 @@ another generation deleted. Consequences, each a test:
 | `eslint-rules/__tests__/vector-store-single-seam.test.ts` | RuleTester cases, plus planted files linted with the real config |
 | `tests/guards/eslint-local-rules-wired.test.ts` | Lists the new rule |
 | `tests/unit/vector-repository.test.ts` | Two-tenant isolation, vectors-only, revision spaces, bounds, rebuild semantics, the env switch |
-| `tests/unit/vector-pgvector-backend.test.ts` | pgvector backend: fail-closed probe; every statement inside `runInTenantContext(ctx)` and binding `ctx.tenantId` as a parameter |
+| `tests/unit/vector-pgvector-backend.test.ts` | pgvector backend: fail-closed probe (extension, version ≥ 0.8.0, table); every statement inside `runInTenantContext(ctx)` and binding `ctx.tenantId` as a parameter; iterative scan set before the search; the rebuild's lock-and-sequence protocol |
+| `tests/guardrails/sub-processor-coverage.test.ts` | Allowlists `VECTOR_STORE_BACKEND`: an in-database extension, not an external endpoint |
 
 ## Decisions
 
@@ -112,6 +127,26 @@ another generation deleted. Consequences, each a test:
   schema-driven guardrails (RLS coverage, index coverage, retention
   classification) have nothing to classify in this change; the follow-up brings
   the model and they bind there.
+- **A filtered search must not starve on the shared index.** The follow-up's
+  HNSW index is one per embedding revision, shared by every tenant holding it,
+  and pgvector applies a WHERE clause AFTER the approximate scan. With the
+  defaults the scan yields `hnsw.ef_search` (40) candidates across all tenants
+  and the `"tenantId"` filter (and RLS, and any `sourceModels` filter) then
+  discards most of them: a tenant holding 2% of a revision gets about one hit
+  for `k = 10`. So the backend turns on iterative index scans for each
+  search's own transaction (`set_config('hnsw.iterative_scan', 'strict_order',
+  true)`, and `hnsw.ef_search = max(40, k)`), which keeps scanning until `k`
+  rows survive the filter or `hnsw.max_scan_tuples` (default 20,000) is
+  reached; `strict_order` keeps the results in exact distance order. That
+  needs pgvector **0.8.0 or later**, so the probe refuses an older extension
+  `PGVECTOR_NOT_INSTALLED` and the image choice below must carry ≥ 0.8.0.
+  The residual limit is a tenant whose share of a revision is so small that
+  20,000 candidates hold fewer than `k` of its rows (below roughly 0.05% at
+  `k = 10`). That is the measured floor D-L4-1 names: the follow-up's
+  integration test measures recall@k for a small tenant beside large ones,
+  and the answer, if it falls short, is a per-tenant partial index or table
+  partitioning for the largest tenants, or a raised `max_scan_tuples` — or,
+  past that, Weaviate's native multi-tenancy.
 - **`readyz` does not gate on the store** (nothing calls it yet); the outcome
   metric `vector_index.requests` is the alerting surface.
 
@@ -125,6 +160,10 @@ The migration below runs `CREATE EXTENSION`, so every Postgres that runs
 `load-test.yml`, the four root Compose files and
 `deploy/docker-compose.prod.yml`. Two candidates, each pinned by digest per the
 runtime-image pillar of `docs/dependency-governance.md`:
+
+Either way the extension must be **pgvector 0.8.0 or later** (iterative
+index scans; see the filtered-search decision above) — the backend's probe
+refuses an older one.
 
 - **(a) `pgvector/pgvector:pg16` by digest.** Published by the pgvector
   project, Debian-based. **This is a libc change** (musl → glibc) on the
@@ -173,6 +212,9 @@ CREATE TABLE "KnowledgeVector" (
     "dimensions"        INTEGER     NOT NULL CHECK ("dimensions" BETWEEN 1 AND 4096),
     "embedding"         vector      NOT NULL,
     "rebuildGeneration" TEXT,
+    -- Every write draws a fresh value (INSERT default; ON CONFLICT sets it from
+    -- EXCLUDED); a rebuild deletes only rows below the value it drew first.
+    "writeSeq"          BIGSERIAL   NOT NULL,
     "createdAt"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "KnowledgeVector_dims_match" CHECK (vector_dims("embedding") = "dimensions")
@@ -191,6 +233,8 @@ CREATE POLICY tenant_isolation_insert ON "KnowledgeVector"
 CREATE POLICY superuser_bypass ON "KnowledgeVector"
     USING (current_setting('role') != 'app_user');
 GRANT SELECT, INSERT, UPDATE, DELETE ON "KnowledgeVector" TO app_user;
+-- The INSERT default and the rebuild's start both call nextval on it.
+GRANT USAGE ON SEQUENCE "KnowledgeVector_writeSeq_seq" TO app_user;
 
 -- Per adopted embedding revision, a partial HNSW index on the typed cast the
 -- search uses (one table holds every revision; the column is untyped):

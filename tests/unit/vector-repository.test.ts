@@ -225,6 +225,55 @@ describe('the store is rebuildable from Postgres', () => {
     });
 });
 
+describe('a rebuild never erases a write that landed while it ran', () => {
+    it('a chunk ingested between two of its batches survives the final delete', async () => {
+        const ingested = rec('pv-new', 0, [0, 0, 1, 0]);
+        async function* source(): AsyncGenerator<VectorRecord[]> {
+            yield [DOC1[0]];
+            // A user saves a new document while the rebuild is paging.
+            await repo.upsert(A, [ingested]);
+            yield [DOC1[1]];
+        }
+        const outcome = await repo.rebuildRevision(A, REV, source());
+        expect(outcome.deleted).toBe(0);
+        expect((await repo.listKeys(A, REV)).map((k) => k.sourceId)).toEqual(['pv-new', 'pv1', 'pv1']);
+    });
+
+    it('re-upserting a row the rebuild already stamped does not hand it to the delete', async () => {
+        async function* source(): AsyncGenerator<VectorRecord[]> {
+            yield [DOC1[0]];
+            await repo.upsert(A, [DOC1[0]]);
+            yield [DOC1[1]];
+        }
+        await repo.rebuildRevision(A, REV, source());
+        expect(await repo.listKeys(A, REV)).toHaveLength(2);
+    });
+
+    it('two overlapping rebuilds of one tenant and revision do not erase each other’s rows', async () => {
+        const later = rec('pv-later', 0, [0, 0, 0, 1]);
+        async function* outer(): AsyncGenerator<VectorRecord[]> {
+            yield [DOC1[0]];
+            // A second rebuild, from a newer read of the source, runs to completion.
+            await repo.rebuildRevision(A, REV, [[DOC1[0], later]]);
+            yield [DOC1[1]];
+        }
+        await repo.rebuildRevision(A, REV, outer());
+        expect((await repo.listKeys(A, REV)).map((k) => k.sourceId)).toEqual(['pv-later', 'pv1', 'pv1']);
+    });
+
+    it('a row written before the rebuild began and absent from its source is still deleted', async () => {
+        await repo.upsert(A, [...DOC1, ...DOC2]);
+        async function* source(): AsyncGenerator<VectorRecord[]> {
+            yield [DOC1[0]];
+            await repo.upsert(A, [rec('pv-new', 0, [0, 0, 1, 0])]);
+            yield [DOC1[1]];
+        }
+        const outcome = await repo.rebuildRevision(A, REV, source());
+        expect(outcome.deleted).toBe(1);
+        expect((await repo.listKeys(A, REV)).map((k) => k.sourceId)).not.toContain('pv2');
+    });
+});
+
 describe('the deployment’s vector store is off unless the operator names pgvector', () => {
     const mutableEnv = env as { VECTOR_STORE_BACKEND?: string };
 

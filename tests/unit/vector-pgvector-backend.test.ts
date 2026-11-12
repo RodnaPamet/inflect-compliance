@@ -13,22 +13,25 @@
 
 import type { Prisma } from '@prisma/client';
 
-type Statement = { sql: string; values: unknown[] };
+type Statement = { sql: string; values: unknown[]; txn: number };
 const statements: Statement[] = [];
 const tenantsBound: string[] = [];
-let probe = { ext: true, tbl: true };
+let probe: { ver: string | null; tbl: boolean } = { ver: '0.8.0', tbl: true };
+const START_SEQ = BigInt(41);
 
 jest.mock('@/lib/db/rls-middleware', () => ({
     runInTenantContext: jest.fn(async (ctx: { tenantId: string }, fn: (tx: unknown) => Promise<unknown>) => {
         tenantsBound.push(ctx.tenantId);
+        const txn = tenantsBound.length;
         const record = (q: Prisma.Sql) => {
-            statements.push({ sql: q.sql, values: q.values });
+            statements.push({ sql: q.sql, values: q.values, txn });
             return q.sql;
         };
         const tx = {
             $queryRaw: jest.fn(async (q: Prisma.Sql) => {
                 const sql = record(q);
                 if (sql.includes('pg_extension')) return [probe];
+                if (sql.includes('nextval')) return [{ seq: START_SEQ }];
                 return [];
             }),
             $executeRaw: jest.fn(async (q: Prisma.Sql) => {
@@ -58,13 +61,14 @@ const RECORD: VectorRecord = {
 beforeEach(() => {
     statements.length = 0;
     tenantsBound.length = 0;
-    probe = { ext: true, tbl: true };
+    probe = { ver: '0.8.0', tbl: true };
 });
 
 describe('the pgvector backend fails closed until the extension and its table exist', () => {
     it.each([
-        ['the extension is absent', { ext: false, tbl: false }],
-        ['the table is absent', { ext: true, tbl: false }],
+        ['the extension is absent', { ver: null, tbl: false }],
+        ['the extension predates iterative index scans (0.7.4)', { ver: '0.7.4', tbl: true }],
+        ['the table is absent', { ver: '0.8.1', tbl: false }],
     ])('refuses PGVECTOR_NOT_INSTALLED when %s, and sends nothing after the probe', async (_label, state) => {
         probe = state;
         const store = createPgvectorStore();
@@ -76,10 +80,10 @@ describe('the pgvector backend fails closed until the extension and its table ex
     });
 
     it('asks again after a negative probe, so installing the extension needs no restart', async () => {
-        probe = { ext: false, tbl: false };
+        probe = { ver: null, tbl: false };
         const store = createPgvectorStore();
         await store.listKeys(CTX, 'test-embed@3', 10).catch(() => undefined);
-        probe = { ext: true, tbl: true };
+        probe = { ver: '0.10.2', tbl: true };
         await expect(store.listKeys(CTX, 'test-embed@3', 10)).resolves.toEqual([]);
     });
 });
@@ -125,5 +129,72 @@ describe('every pgvector statement is the caller’s tenant’s', () => {
         }
         await expect(store.rebuildRevision(CTX, 'test-embed@3', failing())).rejects.toThrow('source read failed');
         expect(statements.some((s) => /^\s*DELETE/m.test(s.sql))).toBe(false);
+    });
+});
+
+describe('a filtered search over the shared per-revision index still finds the tenant’s rows', () => {
+    it('turns on strict-order iterative index scans in the search’s own transaction, before the ORDER BY', async () => {
+        // A search returns nothing until a revision has rows; give it one.
+        const store = createPgvectorStore();
+        const original = jest.requireMock('@/lib/db/rls-middleware').runInTenantContext;
+        original.mockImplementationOnce(async (ctx: { tenantId: string }, fn: (tx: unknown) => Promise<unknown>) => {
+            tenantsBound.push(ctx.tenantId);
+            const txn = tenantsBound.length;
+            const tx = {
+                $queryRaw: jest.fn(async (q: Prisma.Sql) => {
+                    statements.push({ sql: q.sql, values: q.values, txn });
+                    if (q.sql.includes('pg_extension')) return [probe];
+                    if (q.sql.includes('DISTINCT "dimensions"')) return [{ dimensions: 3 }];
+                    return [];
+                }),
+                $executeRaw: jest.fn(async () => 0),
+            };
+            return fn(tx);
+        });
+        await store.search(CTX, { embeddingRevision: 'test-embed@3', embedding: [1, 0, 0], k: 50 });
+        const setIdx = statements.findIndex((s) => s.sql.includes("set_config('hnsw.iterative_scan', 'strict_order', true)"));
+        const searchIdx = statements.findIndex((s) => s.sql.includes('ORDER BY'));
+        expect([setIdx >= 0, searchIdx > setIdx]).toEqual([true, true]);
+        expect(statements[setIdx].txn).toBe(statements[searchIdx].txn);
+        expect(statements[setIdx].values).toContain('50');
+    });
+});
+
+describe('a rebuild never erases a write that landed while it ran', () => {
+    it('every write takes the shared (tenant, revision) lock before it touches the table', async () => {
+        const store = createPgvectorStore();
+        await store.upsert(CTX, [RECORD]);
+        const lockIdx = statements.findIndex((s) => s.sql.includes('pg_advisory_xact_lock_shared('));
+        const firstOnTable = statements.findIndex((s) => s.sql.includes('FROM "KnowledgeVector"') || s.sql.includes('INTO "KnowledgeVector"'));
+        expect([lockIdx >= 0, lockIdx < firstOnTable]).toEqual([true, true]);
+        expect(statements[lockIdx].values).toEqual([`knowledge-vector:${CTX.tenantId}`, 'test-embed@3']);
+    });
+
+    it('draws its start sequence under the exclusive lock before the first batch, and deletes only rows written before it', async () => {
+        const store = createPgvectorStore();
+        await store.rebuildRevision(
+            CTX,
+            'test-embed@3',
+            (async function* () {
+                yield [RECORD];
+            })(),
+        );
+        const exclusive = statements.findIndex((s) => /pg_advisory_xact_lock\(/.test(s.sql));
+        const nextval = statements.findIndex((s) => s.sql.includes('nextval'));
+        const firstInsert = statements.findIndex((s) => s.sql.includes('INSERT INTO'));
+        expect([exclusive >= 0, exclusive < nextval, nextval < firstInsert]).toEqual([true, true, true]);
+        expect(statements[exclusive].txn).toBe(statements[nextval].txn);
+
+        const del = statements.find((s) => /^\s*DELETE/m.test(s.sql));
+        expect(del?.sql).toMatch(/"writeSeq" < \?/);
+        expect(del?.values).toContain(START_SEQ);
+    });
+
+    it('a plain upsert keeps the generation a rebuild stamped rather than resetting it', async () => {
+        const store = createPgvectorStore();
+        await store.upsert(CTX, [RECORD]);
+        const insert = statements.find((s) => s.sql.includes('INSERT INTO'));
+        expect(insert?.sql).toMatch(/"rebuildGeneration" = COALESCE\(EXCLUDED\."rebuildGeneration", "KnowledgeVector"\."rebuildGeneration"\)/);
+        expect(insert?.sql).toMatch(/"writeSeq" = EXCLUDED\."writeSeq"/);
     });
 });

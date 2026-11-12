@@ -10,6 +10,12 @@
  * Isolation here is by construction: rows are filed under `ctx.tenantId`,
  * and every method reads only that tenant's map. There is no method that
  * accepts a tenant id, so there is no argument to get wrong.
+ *
+ * Every write stamps the row with the next value of a store-wide write
+ * sequence (the pgvector backend's `writeSeq`). A rebuild notes the sequence
+ * when it starts and, at the end, deletes only rows it did not stamp that
+ * were last written BEFORE it started — so an upsert or another rebuild
+ * landing between its batches is never erased by it.
  */
 
 import type { RequestContext } from '@/app-layer/types';
@@ -34,13 +40,16 @@ interface Row {
     embeddingRevision: string;
     contentHash: string;
     embedding: readonly number[];
-    /** The rebuild that last wrote or confirmed the row. */
+    /** The rebuild that last wrote or confirmed the row; 0 for a plain upsert's new row. */
     generation: number;
+    /** When the row was last written or confirmed, on the store's write sequence. */
+    writeSeq: number;
 }
 
 export function createInProcessVectorStore(): VectorStoreBackend {
     const tenants = new Map<string, Map<string, Row>>();
     let generationCounter = 0;
+    let writeSeq = 0;
 
     function rowsOf(ctx: RequestContext): Map<string, Row> {
         let rows = tenants.get(ctx.tenantId);
@@ -68,7 +77,7 @@ export function createInProcessVectorStore(): VectorStoreBackend {
     function write(
         rows: Map<string, Row>,
         records: readonly VectorRecord[],
-        generation: number,
+        generation: number | null,
         outcome: UpsertOutcome,
     ): void {
         for (const record of records) assertRevisionDimensions(rows, record);
@@ -76,7 +85,8 @@ export function createInProcessVectorStore(): VectorStoreBackend {
             const key = keyOf(record);
             const existing = rows.get(key);
             if (existing && existing.contentHash === record.contentHash) {
-                existing.generation = generation;
+                if (generation !== null) existing.generation = generation;
+                existing.writeSeq = ++writeSeq;
                 outcome.unchanged++;
                 continue;
             }
@@ -87,7 +97,8 @@ export function createInProcessVectorStore(): VectorStoreBackend {
                 embeddingRevision: record.embeddingRevision,
                 contentHash: record.contentHash,
                 embedding: [...record.embedding],
-                generation,
+                generation: generation ?? existing?.generation ?? 0,
+                writeSeq: ++writeSeq,
             });
             if (existing) outcome.updated++;
             else outcome.inserted++;
@@ -99,7 +110,7 @@ export function createInProcessVectorStore(): VectorStoreBackend {
 
         async upsert(ctx, records) {
             const outcome: UpsertOutcome = { inserted: 0, updated: 0, unchanged: 0 };
-            write(rowsOf(ctx), records, 0, outcome);
+            write(rowsOf(ctx), records, null, outcome);
             return outcome;
         },
 
@@ -168,6 +179,7 @@ export function createInProcessVectorStore(): VectorStoreBackend {
 
         async rebuildRevision(ctx, embeddingRevision, batches): Promise<RebuildOutcome & { seen: number }> {
             const generation = ++generationCounter;
+            const startSeq = writeSeq;
             const rows = rowsOf(ctx);
             const outcome: RebuildOutcome = { inserted: 0, updated: 0, unchanged: 0, deleted: 0 };
             let seen = 0;
@@ -176,7 +188,11 @@ export function createInProcessVectorStore(): VectorStoreBackend {
                 seen += batch.length;
             }
             for (const [key, row] of rows) {
-                if (row.embeddingRevision === embeddingRevision && row.generation !== generation) {
+                if (
+                    row.embeddingRevision === embeddingRevision &&
+                    row.generation !== generation &&
+                    row.writeSeq <= startSeq
+                ) {
                     rows.delete(key);
                     outcome.deleted++;
                 }

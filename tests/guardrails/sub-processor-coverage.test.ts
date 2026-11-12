@@ -176,6 +176,7 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // read as covering them.
     AGENT_DRIVER_FLUE: 'operator feature flag selecting the in-process agent execution engine — an imported library, not an external endpoint, and not a sub-processor',
     AGENT_DRIVER_TOOL_RUNNER: 'operator feature flag selecting the Tool Runner engine — an in-process loop over the existing Anthropic sub-processor, not an endpoint of its own; its data category ("tenant-authored agent instructions") is recorded on the Anthropic row since Step 2c',
+    VECTOR_STORE_BACKEND: 'operator switch for the vector store (D-L4-1): `pgvector` keeps vectors in the deployment\'s own Postgres through an in-database extension, so no data leaves the database — not an external endpoint, and not a sub-processor',
     // Agent INTERACTIVE-RUN seam (#3868 step 2) — admits a new STARTER for a
     // run, a signed-in person in a browser, beside the job, credential and
     // automation-rule starters that already exist. It names no host, opens no
