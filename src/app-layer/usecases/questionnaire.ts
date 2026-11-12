@@ -27,6 +27,7 @@ import { checkRateLimit, recordGeneration } from '@/app-layer/ai/risk-assessment
 import { recordAiGeneration } from '@/lib/observability/integration-metrics';
 import { guardUntrustedInput, guardEgress, assertGuardAllowed, assertNoReviewRequired } from '@/app-layer/ai/guard';
 import { getQuestionnaireProvider, type GroundingSnippet } from '@/app-layer/ai/questionnaire';
+import { RESIDENCY_SELECT, residencyTermsFrom } from '@/lib/agentic/flue/model-selection';
 import { relevance } from '@/app-layer/ai/questionnaire/types';
 
 const CONFIDENCE_FLOOR = 0.4;
@@ -106,7 +107,22 @@ export async function autofillQuestionnaire(ctx: RequestContext, questionnaireId
     await enforceFeatureGate(ctx, 'questionnaire');
     if (!ctx.permissions?.canWrite) throw forbidden('You do not have permission to autofill questionnaires.');
     await checkRateLimit(ctx.tenantId, ctx.userId);
-    const provider = getQuestionnaireProvider();
+    /*
+        The gate above is about ENABLEMENT; this is about LOCATION (#5445).
+
+        `enforceFeatureGate` reads `AI_RISK_ENABLED` and the per-tenant AI
+        columns and never looks at `aiResidency`, so passing it says nothing
+        about whether this tenant's question text and grounding snippets may
+        leave the deployment. Read the posture and let the factory decide, the
+        way `risk-suggestions.ts` does.
+    */
+    const secSettings = await runInTenantContext(ctx, (db) =>
+        db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: RESIDENCY_SELECT,
+        }),
+    );
+    const provider = getQuestionnaireProvider(residencyTermsFrom(secSettings));
 
     const result = await runInTenantContext(ctx, async (db) => {
         const q = await db.inboundQuestionnaire.findFirst({ where: { id: questionnaireId, tenantId: ctx.tenantId }, select: { id: true } });

@@ -20,6 +20,7 @@ import { assertCanRead } from '../policies/common';
 import { getExecutiveDashboard } from './dashboard';
 import { listFrameworks } from './framework';
 import { getCompliancePostureProvider } from '../ai/compliance-posture/provider';
+import { RESIDENCY_SELECT, residencyTermsFrom } from '@/lib/agentic/flue/model-selection';
 import { applyPostureOutputGuard } from '../ai/compliance-posture/output-guard';
 import { describePayload } from '../ai/compliance-posture/privacy';
 import type {
@@ -245,7 +246,16 @@ export async function generateCompliancePostureSummary(
 ): Promise<PostureSummaryResult> {
     const signals = await gatherPostureSignals(ctx);
 
-    const provider = getCompliancePostureProvider();
+    // The tenant's AI-residency posture decides whether the snapshot may leave
+    // (#5192). Read through the RLS-bound context like every other consumer of
+    // these three columns; only the mapping is shared (#3384).
+    const secSettings = await runInTenantContext(ctx, (db) =>
+        db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: RESIDENCY_SELECT,
+        }),
+    );
+    const provider = getCompliancePostureProvider(residencyTermsFrom(secSettings));
     const raw = await provider.generate(signals);
     const result = applyPostureOutputGuard(raw);
 
