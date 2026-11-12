@@ -263,9 +263,8 @@ export function isReasoningEngine(driver: AgentDriver): boolean {
 const RECORDED_MODE: Readonly<Record<AgentDriver, StoredDriverMode>> = {
     static: 'STATIC',
     flue: 'FLUE',
-    // READ_ONLY, which the rollout test allows only while
-    // `DRIVER_IMPLEMENTED['tool-runner']` is false: the driver is never chosen,
-    // so no run records it.
+    // WRITTEN since Step 2c (#4512): the driver is implemented and chosen, so
+    // its runs record it. The rollout test holds the stage to that.
     'tool-runner': 'TOOL_RUNNER',
 };
 
