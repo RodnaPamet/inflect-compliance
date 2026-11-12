@@ -365,6 +365,16 @@ export const COVERAGE_GAP_ROWS = 10;
  * as an empty list whose query is not run, and `withheld` says so, so the page
  * never reads an omitted list as "nothing is uncovered".
  */
+/**
+ * A risk↔control link counts toward coverage only while both ends are out of
+ * the trash (#5442, owner decision 2026-11-12: a link to an item in the trash
+ * is not shown, and a trashed control mitigates nothing — the residual
+ * suggestion ignores it too). Without it a risk whose only control is in the
+ * trash read as mapped, and `hotControls` could rank a trashed control, which
+ * then came back with a count and no name.
+ */
+const LIVE_RISK_CONTROL = { control: { deletedAt: null }, risk: { deletedAt: null } } as const;
+
 export async function coverageSummary(ctx: RequestContext) {
     assertCanRead(ctx);
     const withheld = { risks: !canReadRisks(ctx), assets: !canReadAssets(ctx), controls: !canReadControls(ctx) };
@@ -382,12 +392,12 @@ export async function coverageSummary(ctx: RequestContext) {
 
         // Mapped counts (distinct)
         const [risksWithControls, controlsWithRisks, assetsWithControls, policiesWithControls] = await Promise.all([
-            db.riskControl.findMany({ where: { tenantId: t }, select: { riskId: true }, distinct: ['riskId'] }),
-            db.riskControl.findMany({ where: { tenantId: t }, select: { controlId: true }, distinct: ['controlId'] }),
-            db.controlAsset.findMany({ where: { tenantId: t }, select: { assetId: true }, distinct: ['assetId'] }),
+            db.riskControl.findMany({ where: { tenantId: t, ...LIVE_RISK_CONTROL }, select: { riskId: true }, distinct: ['riskId'] }),
+            db.riskControl.findMany({ where: { tenantId: t, ...LIVE_RISK_CONTROL }, select: { controlId: true }, distinct: ['controlId'] }),
+            db.controlAsset.findMany({ where: { tenantId: t, control: { deletedAt: null }, asset: { deletedAt: null } }, select: { assetId: true }, distinct: ['assetId'] }),
             // Counting policies is gated by the same predicate, applied to the
             // linked policy so an unpublished policy's links don't inflate coverage.
-            db.policyControlLink.findMany({ where: { tenantId: t, policy: policyCountsWhere(t) }, select: { policyId: true }, distinct: ['policyId'] }),
+            db.policyControlLink.findMany({ where: { tenantId: t, policy: policyCountsWhere(t), control: { deletedAt: null } }, select: { policyId: true }, distinct: ['policyId'] }),
         ]);
 
         const risksWithControlsCount = risksWithControls.length;
@@ -431,7 +441,7 @@ export async function coverageSummary(ctx: RequestContext) {
         // from a caller who may not view controls.
         const hotControls = withheld.controls ? [] : await db.riskControl.groupBy({
             by: ['controlId'],
-            where: { tenantId: t },
+            where: { tenantId: t, ...LIVE_RISK_CONTROL },
             _count: { riskId: true },
             orderBy: { _count: { riskId: 'desc' } },
             take: 5,

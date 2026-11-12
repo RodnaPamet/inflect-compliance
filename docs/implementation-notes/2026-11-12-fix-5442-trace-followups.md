@@ -77,8 +77,12 @@ Controls column were part C.
   asset list's Controls column and the risk list's "+N assets" would otherwise
   disagree with the lists beside them; part C did the same for the risk list's
   Controls column.
-- **Left alone:** `coverageSummary`'s totals still count links whose other side
-  is in the trash (`risksWithControls` and friends read the join tables, and
-  `hotControls` can rank a trashed control, whose entry then has no name). The
-  owner's decision kept the totals unchanged; changing what they count is a
-  separate decision.
+- **Coverage counts no link to an item in the trash.** `coverageSummary`'s
+  mapping reads (`risksWithControls`, `controlsWithRisks`, `assetsWithControls`,
+  `policiesWithControls`) and `hotControls` take a link only while both ends are
+  out of the trash (`LIVE_RISK_CONTROL`). "Keep the totals" was the answer to
+  the view-key question (counts reveal nothing a role may not see); the trash
+  rule is the other decision, and with it a trashed control mitigates nothing,
+  as in the residual suggestion. Before, a risk whose only control was in the
+  trash read as mapped, and `hotControls` could rank a trashed control whose
+  entry then came back with a count and no name.

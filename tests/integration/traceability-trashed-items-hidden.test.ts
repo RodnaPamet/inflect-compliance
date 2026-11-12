@@ -37,6 +37,7 @@ import {
     getRiskTraceability,
     getAssetTraceability,
     getPolicyTraceability,
+    coverageSummary,
 } from '@/app-layer/usecases/traceability';
 import { getAsset, listAssets, listAssetsPaginated } from '@/app-layer/usecases/asset';
 import { listRisks, listRisksPaginated } from '@/app-layer/usecases/risk';
@@ -160,5 +161,17 @@ describeFn('traceability lists hide items in the trash (real DB)', () => {
             .find((r) => r.id === id.risk);
         expect(paged?.assetLinks.map((l) => l.asset.id)).toEqual([id.liveAsset]);
         expect(paged?._count.assetLinks).toBe(1);
+    });
+
+    // A trashed control mitigates nothing: a risk whose only control is in the
+    // trash is UNMAPPED on the coverage dashboard, and the trashed control is
+    // never ranked among the hot controls (where it came back with a count and
+    // no name).
+    it('the coverage dashboard counts no link to an item in the trash', async () => {
+        const summary = await coverageSummary(ctx);
+        expect(summary.unmappedRisks.map((r) => r.id)).toContain(id.onlyViaTrashed);
+        const hotIds = summary.hotControls.map((h) => (h as { id?: string }).id);
+        expect(hotIds).not.toContain(id.trashedControl);
+        expect(summary.hotControls.every((h) => typeof (h as { name?: string }).name === 'string')).toBe(true);
     });
 });
