@@ -27,6 +27,7 @@ import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
+import { apiErrorMessage } from '@/lib/api-error';
 
 type Status = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
 
@@ -369,12 +370,15 @@ function RequestExceptionDialog({
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || 'Failed to request exception');
+                // The refusal is the `{ error: { code, message } }` envelope;
+                // show its sentence, never the serialised JSON (#5228).
+                setError(apiErrorMessage(await res.json().catch(() => null), t('requestFailed')));
+                return;
             }
             onSuccess();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+        } catch {
+            // The request never reached the server (network, offline).
+            setError(t('requestFailed'));
         } finally {
             setSubmitting(false);
         }
@@ -482,7 +486,8 @@ function ApproveDialog({
         try {
             setError(null);
             if (!expiresAt) {
-                throw new Error(t('expiryRequired'));
+                setError(t('expiryRequired'));
+                return;
             }
             const res = await fetch(`${apiBase}/${exceptionId}/approve`, {
                 method: 'POST',
@@ -493,12 +498,15 @@ function ApproveDialog({
                 }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || 'Failed to approve exception');
+                // The refusal is the `{ error: { code, message } }` envelope;
+                // show its sentence, never the serialised JSON (#5228).
+                setError(apiErrorMessage(await res.json().catch(() => null), t('approveFailed')));
+                return;
             }
             onSuccess();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+        } catch {
+            // The request never reached the server (network, offline).
+            setError(t('approveFailed'));
         } finally {
             setSubmitting(false);
         }
@@ -574,12 +582,15 @@ function RejectDialog({
                 body: JSON.stringify({ reason }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || 'Failed to reject exception');
+                // The refusal is the `{ error: { code, message } }` envelope;
+                // show its sentence, never the serialised JSON (#5228).
+                setError(apiErrorMessage(await res.json().catch(() => null), t('rejectFailed')));
+                return;
             }
             onSuccess();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+        } catch {
+            // The request never reached the server (network, offline).
+            setError(t('rejectFailed'));
         } finally {
             setSubmitting(false);
         }
@@ -650,12 +661,15 @@ function RenewDialog({
                 body: JSON.stringify({}),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || 'Failed to renew exception');
+                // The refusal is the `{ error: { code, message } }` envelope;
+                // show its sentence, never the serialised JSON (#5228).
+                setError(apiErrorMessage(await res.json().catch(() => null), t('renewFailed')));
+                return;
             }
             onSuccess();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+        } catch {
+            // The request never reached the server (network, offline).
+            setError(t('renewFailed'));
         } finally {
             setSubmitting(false);
         }

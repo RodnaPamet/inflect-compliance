@@ -70,10 +70,16 @@ export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) 
             return { cycles: Array.isArray(body?.cycles) ? body.cycles : [], scoresByCycleId: body?.scoresByCycleId ?? {} };
         }).then((s) => { if (live) setCoverage(s); });
         void read('/tests/readiness', (b) => (Array.isArray(b) ? (b as TestReadiness[]) : [])).then((s) => { if (live) setTests(s); });
-        // No NIS2 assessment yet is a 200 with no latest run: no card. A
-        // failed read is a failure, not an absence.
+        // No NIS2 assessment yet: no card. The route always returns a
+        // `latest` readiness, and with nothing answered its score is the
+        // number 0, so the card showed 0% maturity to every tenant that had
+        // never started (#5163). Nothing answered is an absence. A failed
+        // read is a failure, not an absence.
         void read('/audits/nis2-gap', (b) => {
-            const overall = (b as { latest?: { score?: { overall?: unknown } } } | null)?.latest?.score?.overall;
+            const latest = (b as { latest?: { answeredTotal?: unknown; score?: { overall?: unknown } } } | null)?.latest;
+            const answered = latest?.answeredTotal;
+            if (typeof answered !== 'number' || answered <= 0) return null;
+            const overall = latest?.score?.overall;
             return typeof overall === 'number' ? overall : null;
         }).then((s) => { if (live) setMaturity(s); });
         return () => { live = false; };
