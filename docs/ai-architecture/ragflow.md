@@ -40,7 +40,7 @@ measured alternative, taken only on a failed evaluation.
 flowchart LR
   D0(["D-L4-4 decided 2026-11-11<br/>Docling-class default<br/>RAGFlow measured only"]):::done
   P0{{"Phase 0 · fidelity set and floors<br/>floors written before any run<br/>measure Docling-class and RAGFlow<br/>footprint on one VM"}}:::gate
-  P1["Phase 1 · DocumentParser seam<br/>Docling-class backend<br/>single-use results, tmpfs scratch<br/>safeFetch, byte cap, deadline<br/>holds-nothing test"]:::todo
+  P1["Phase 1 · DocumentParser seam<br/>Docling-class backend<br/>single-use results, tmpfs scratch<br/>operator-set URL, byte cap, deadline<br/>holds-nothing test"]:::todo
   P2["Phase 2 · into the index<br/>sections bound the chunks<br/>tables become table chunks<br/>page and section citations"]:::todo
   P3["Phase 3 · nightly parse-eval<br/>dated marker a guard parses<br/>then blocking"]:::todo
   RF["RAGFlow backend<br/>only if Docling-class<br/>fails a floor"]:::optional
@@ -212,10 +212,27 @@ runs on the VM, reachable only from `worker`, and keeps nothing.
       backend (`docling-provider.ts`; `ragflow-provider.ts` only if Phase 0
       selected RAGFlow), `stub-provider.ts`.
 - [ ] 1.2 The Docling-class backend: one synchronous convert call per document,
-      the result read once, via `safeFetch`, with a byte-capped streaming read
-      (the MCP client's rule: never `res.json()` then measure), bounded by a
-      deadline. (Were RAGFlow selected: create dataset → upload → parse → read
-      chunks → **delete dataset**, the delete attempted on every failure path.)
+      the result read once, with a byte-capped streaming read (the MCP
+      client's rule: never `res.json()` then measure), bounded by a deadline.
+      **Not through `safeFetch`.** The parser is an in-deployment service at
+      an address like `http://docling:5001`, which resolves to the Compose
+      bridge (a private address) over plain http, and `assertPublicAddress`
+      refuses both the scheme and the address
+      (`src/app-layer/automation/webhook-safety.ts`); the self-hosted
+      private-range allowlist does not apply on hosted Inflect
+      (`src/lib/security/egress-allowlist.ts`). `src/lib/ai/local-gateway.ts`
+      records the same finding for the local AI gateway: putting an
+      in-deployment endpoint behind the public-address check "would delete"
+      it. The house pattern for this case is the defence upstream of the dial:
+      the URL is the operator's `DOC_PARSER_BASE_URL` and nothing else, no
+      tenant value reaches it, and one module reads it (a guard fails on a
+      second reader, as `local-gateway.ts`'s does for `AI_LOCAL_BASE_URL`).
+      The request still carries a deadline (`AbortSignal`) and the capped
+      stream above; only the public-address check is left out. This departs from the master's G6 wording ("egress
+      is `safeFetch`"), which is written for hosts outside the deployment; the
+      coordinator is asked to carve the in-deployment case out of G6. (Were
+      RAGFlow selected: create dataset → upload → parse → read chunks →
+      **delete dataset**, the delete attempted on every failure path.)
 - [ ] 1.3 A Compose service for the backend, digest-pinned, on the worker's
       network only, no published port, an API key from the operator's
       secrets, single-use results, the shortest removal delay the server
@@ -223,7 +240,12 @@ runs on the VM, reachable only from `worker`, and keeps nothing.
       off, and a memory limit and CPU cap set from Phase 0's measured peak
       (master § Capacity: a batch-shaped service is capped at 1.0 CPU).
 - [ ] 1.4 `src/env.ts`: `DOC_PARSER_BASE_URL`, `DOC_PARSER_API_KEY` (optional;
-      absent = stub, i.e. the plain chunker keeps working).
+      absent = stub, i.e. the plain chunker keeps working). **Absent and
+      broken are different outcomes.** With the URL unset the stub is the
+      design; with the URL set, every parse that falls back to the stub is a
+      counted `doc_parser.requests{outcome="FALLBACK_<reason>"}` (checklist
+      §4), so a parser that is configured but never answers shows up as a
+      rate, not only as WARN lines, and the alert keys on that rate.
 - [ ] 1.5 Inventory row in `docs/sub-processors.md` in the "not a sub-processor
       — runs inside the deployment" style the `legacy-mcp` row uses, so the
       register is complete.
@@ -232,34 +254,45 @@ runs on the VM, reachable only from `worker`, and keeps nothing.
 
 **Prompt.**
 ```text
-Context (main 3.365.0): outbound calls go through safeFetch and every new sink joins the SSRF
-egress guard's population; the MCP client (src/lib/mcp/client/) is the house pattern for a
+Context (main 3.365.0): tenant-controlled outbound URLs go through safeFetch, which refuses
+http and every private address, so it cannot reach an in-deployment service; the house pattern
+for an in-deployment endpoint is an operator-set URL read by one module
+(src/lib/ai/local-gateway.ts says why); the MCP client (src/lib/mcp/client/) is the house pattern for a
 byte-capped, deadline-bounded HTTP read of an untrusted service; the Compose file is
 repo-canonical and images are digest-pinned; docs/sub-processors.md is the register of every
 external connection, including in-deployment services. Phase 0 selected the backend (expected:
 docling-serve-cpu).
 
 Task: add the DocumentParser seam. (1) src/lib/ai/parsing/{types,docling-provider,
-stub-provider}.ts. (2) One synchronous convert per document, the result read once, via
-safeFetch, streamed and byte-capped, under one deadline. (3) A Compose service, digest-pinned,
+stub-provider}.ts. (2) One synchronous convert per document, the result read once, streamed
+and byte-capped, under one deadline, dialling the operator's DOC_PARSER_BASE_URL (an http URL
+on the Compose network) directly, NOT through safeFetch; one module reads that variable and a
+guard fails on a second reader. (3) A Compose service, digest-pinned,
 worker network only, no published port, API key, single-use results, minimal removal delay,
 tmpfs scratch, no artifact storage, UI and remote services off, memory limit and CPU cap from
-the measured peak. (4) DOC_PARSER_BASE_URL / _API_KEY in src/env.ts, optional; absent = stub.
-(5) A register row in docs/sub-processors.md in the "not a sub-processor — in-deployment"
+the measured peak. (4) DOC_PARSER_BASE_URL / _API_KEY in src/env.ts, optional; absent = stub; set but
+failing = stub plus a counted doc_parser.requests outcome. (5) A register row in docs/sub-processors.md in the "not a sub-processor — in-deployment"
 style. (6) Tests: "a parse leaves no result behind", "a parser response over the byte cap is
-refused, not truncated", "a parser outage returns the stub chunking with a WARN".
+refused, not truncated", "a parser outage returns the stub chunking and counts a fallback
+outcome", and "an http URL on a private address is dialled, not refused" (it fails if the call
+is moved behind safeFetch).
 
 Constraints: the parser is only ever called from the worker (knowledge-index job). No
 tenant-writable URL. Parser output is untrusted and is never logged row by row.
 
-Done when: lint/typecheck green, the SSRF guard sees the sink, the three tests pass in the
-integration project against the real service, and check-drift reports clean.
+Done when: lint/typecheck green, the single-reader guard holds DOC_PARSER_BASE_URL to one
+module, the tests pass in the integration project against the real service on its Compose
+address, and check-drift reports clean.
 ```
 
-**Hardening.** G6 (`safeFetch`, egress population, byte cap, deadline), G8
+**Hardening.** G6's operator-config half (the URL is the operator's, never
+tenant-writable, read by one module; byte cap; deadline) without its
+`safeFetch` half, which cannot reach an in-deployment address (1.2), G8
 (worker only), G9 (absent = stub), G5 (digests), G2's register (complete even
 for in-deployment services). The keep-nothing configuration is the isolation
-property; the test for it is the one that must never be weakened.
+property; the test for it is the one that must never be weakened. The
+fallback counter (1.4) is what keeps "configured but unreachable" from looking
+healthy.
 
 **Done when.** `knowledge-index` can call `parse()` for a `FileRecord`, and the
 "holds nothing" test is green.
