@@ -23,6 +23,7 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_ctx: unknown, fn: (d: unknown) => unknown) => fn(db),
 }));
 jest.mock('@/lib/audit', () => ({
+    ...jest.requireActual('@/lib/audit'),
     appendAuditEntry: (...a: unknown[]) => appendAuditEntry(a[0] as Record<string, unknown>),
 }));
 jest.mock('@/lib/observability/logger', () => ({
