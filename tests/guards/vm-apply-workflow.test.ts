@@ -438,7 +438,7 @@ describe('apply.sh on a runner with no ssh key', () => {
         const run = () => {
             try {
                 const out = execFileSync('bash', [path.join(REPO_ROOT, APPLY_SH)], {
-                    env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, REMOTE_DIR: vm, ...ROLLBACK_ENV },
+                    env: { NODE_ENV: 'test', PATH: `${bin}:/usr/bin:/bin`, HOME: home, REMOTE_DIR: vm, ...ROLLBACK_ENV },
                     encoding: 'utf8',
                     stdio: ['ignore', 'pipe', 'pipe'],
                 });
