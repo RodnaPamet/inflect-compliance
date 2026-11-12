@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { createKri, recordReading, batchRecordReadings, getReadings, getRiskKriBreaches } from '@/app-layer/usecases/key-risk-indicator';
+import { createKri, updateKri, recordReading, batchRecordReadings, getReadings, getRiskKriBreaches } from '@/app-layer/usecases/key-risk-indicator';
 import { getRiskStaleness } from '@/app-layer/usecases/risk-staleness';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
@@ -141,5 +141,25 @@ describeFn('RQ-6 — KRI readings (integration)', () => {
         expect(row).toBeDefined();
         expect(row!.reasons).toContain('SIGNAL_MOVED');
         expect(row!.description).toMatch(/key risk indicator breached/);
+    });
+
+    it('refuses a KRI owner who is not an active member of this tenant, on create and update', async () => {
+        const outsiderEmail = `${TAG}-outsider@example.test`;
+        const outsider = await globalPrisma.user.create({ data: { email: outsiderEmail, emailHash: hashForLookup(outsiderEmail) } });
+        const leaverEmail = `${TAG}-leaver@example.test`;
+        const leaver = await globalPrisma.user.create({ data: { email: leaverEmail, emailHash: hashForLookup(leaverEmail) } });
+        await globalPrisma.tenantMembership.create({ data: { tenantId: TENANT_ID, userId: leaver.id, role: Role.EDITOR, status: MembershipStatus.DEACTIVATED } });
+        try {
+            await expect(createKri(ctx, { name: 'Owned by a stranger', ownerUserId: outsider.id })).rejects.toThrow(/INVALID_OWNER/);
+            const kri = await createKri(ctx, { name: 'Owned by the admin', ownerUserId: adminId });
+            await expect(updateKri(ctx, kri.id, { ownerUserId: leaver.id })).rejects.toThrow(/INVALID_OWNER/);
+            await expect(updateKri(ctx, kri.id, { ownerUserId: outsider.id })).rejects.toThrow(/INVALID_OWNER/);
+            const stored = await globalPrisma.keyRiskIndicator.findUniqueOrThrow({ where: { id: kri.id }, select: { ownerUserId: true } });
+            expect(stored.ownerUserId).toBe(adminId);
+            await updateKri(ctx, kri.id, { ownerUserId: null });
+        } finally {
+            await globalPrisma.tenantMembership.deleteMany({ where: { tenantId: TENANT_ID, userId: leaver.id } });
+            await globalPrisma.user.deleteMany({ where: { id: { in: [outsider.id, leaver.id] } } });
+        }
     });
 });

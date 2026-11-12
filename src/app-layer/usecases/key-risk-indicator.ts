@@ -16,6 +16,7 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { createTask, addTaskLink } from './task';
 import { logger } from '@/lib/observability';
+import { assertActiveTenantMember } from '@/app-layer/domain/tenant-member-reference';
 
 export type Rag = 'GREEN' | 'AMBER' | 'RED';
 export type KriDirection = 'HIGHER_IS_WORSE' | 'LOWER_IS_WORSE';
@@ -49,25 +50,35 @@ export interface CreateKriInput {
     frequency?: string; ownerUserId?: string | null; targetValue?: number | null; automationRuleId?: string | null;
 }
 
+/** A KRI's owner must be an active member of the tenant; see tenant-member-reference. */
+const KRI_OWNER_REFUSAL = {
+    code: 'INVALID_OWNER',
+    message: 'The KRI owner must be an active member of this tenant.',
+};
+
 export async function createKri(ctx: RequestContext, input: CreateKriInput) {
     assertCanWrite(ctx);
-    return runInTenantContext(ctx, (db) =>
-        db.keyRiskIndicator.create({
+    return runInTenantContext(ctx, async (db) => {
+        await assertActiveTenantMember(db, ctx.tenantId, input.ownerUserId, KRI_OWNER_REFUSAL);
+        return db.keyRiskIndicator.create({
             data: {
                 tenantId: ctx.tenantId, name: input.name, riskId: input.riskId ?? null, description: input.description ?? null,
                 unit: input.unit ?? null, direction: input.direction ?? 'HIGHER_IS_WORSE', greenMax: input.greenMax ?? null,
                 amberMax: input.amberMax ?? null, frequency: input.frequency ?? 'MONTHLY', ownerUserId: input.ownerUserId ?? null,
                 targetValue: input.targetValue ?? null, automationRuleId: input.automationRuleId ?? null,
             },
-        }),
-    );
+        });
+    });
 }
 
 export interface UpdateKriInput { name?: string; description?: string | null; unit?: string | null; direction?: KriDirection; greenMax?: number | null; amberMax?: number | null; frequency?: string; ownerUserId?: string | null; targetValue?: number | null; isActive?: boolean }
 
 export async function updateKri(ctx: RequestContext, kriId: string, patch: UpdateKriInput) {
     assertCanWrite(ctx);
-    await runInTenantContext(ctx, (db) => db.keyRiskIndicator.updateMany({ where: { id: kriId, tenantId: ctx.tenantId }, data: patch }));
+    await runInTenantContext(ctx, async (db) => {
+        await assertActiveTenantMember(db, ctx.tenantId, patch.ownerUserId, KRI_OWNER_REFUSAL);
+        await db.keyRiskIndicator.updateMany({ where: { id: kriId, tenantId: ctx.tenantId }, data: patch });
+    });
 }
 
 export async function deleteKri(ctx: RequestContext, kriId: string) {

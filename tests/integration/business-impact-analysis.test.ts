@@ -127,4 +127,30 @@ describeFn('business impact analysis (integration)', () => {
         const surface = await getControlBiaSurface(ctx, plainControlId);
         expect(surface.kind).toBe('none');
     });
+
+    it('refuses a BIA owner who is not an active member of this tenant, on create and update', async () => {
+        const suffix = `bia-own-${Date.now()}`;
+        const member = await prisma.user.create({ data: { email: `m-${suffix}@example.com` } });
+        const outsider = await prisma.user.create({ data: { email: `o-${suffix}@example.com` } });
+        const leaver = await prisma.user.create({ data: { email: `l-${suffix}@example.com` } });
+        await prisma.tenantMembership.createMany({
+            data: [
+                { tenantId, userId: member.id, role: 'EDITOR', status: 'ACTIVE' },
+                { tenantId, userId: leaver.id, role: 'EDITOR', status: 'DEACTIVATED' },
+            ],
+        });
+        try {
+            await expect(
+                createBia(ctx, { name: 'Owned by a stranger', criticality: 'LOW', mtpdHours: 24, ownerUserId: outsider.id }),
+            ).rejects.toThrow(/INVALID_OWNER/);
+            const bia = await createBia(ctx, { name: 'Owned by a member', criticality: 'LOW', mtpdHours: 24, ownerUserId: member.id });
+            await expect(updateBia(ctx, bia.id, { ownerUserId: leaver.id })).rejects.toThrow(/INVALID_OWNER/);
+            const stored = await prisma.businessImpactAnalysis.findUniqueOrThrow({ where: { id: bia.id }, select: { ownerUserId: true } });
+            expect(stored.ownerUserId).toBe(member.id);
+        } finally {
+            await prisma.businessImpactAnalysis.deleteMany({ where: { tenantId, ownerUserId: member.id } });
+            await prisma.tenantMembership.deleteMany({ where: { tenantId, userId: { in: [member.id, leaver.id] } } });
+            await prisma.user.deleteMany({ where: { id: { in: [member.id, outsider.id, leaver.id] } } });
+        }
+    });
 });
