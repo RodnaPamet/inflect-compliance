@@ -9,6 +9,8 @@
  * Every test drives an injected fake writer. There is no module-level default
  * that reaches a real directory, so no test can acquire one by forgetting.
  */
+import { withSkipDuplicates } from '../helpers/outbox-double';
+
 const db = {
     tenantSecuritySettings: { findUnique: jest.fn() },
     identityWriteJournal: { create: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
@@ -20,7 +22,7 @@ const db = {
     tenantNotificationSettings: { findUnique: jest.fn() },
     tenantMembership: { findMany: jest.fn() },
     tenant: { findUnique: jest.fn() },
-    notificationOutbox: { create: jest.fn() },
+    notificationOutbox: withSkipDuplicates(jest.fn()),
 };
 
 jest.mock('@/lib/db-context', () => ({

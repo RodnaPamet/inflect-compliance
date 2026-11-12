@@ -518,7 +518,7 @@ describe('handleWebhookEvent declines what it cannot map', () => {
             expect.objectContaining({
                 mappingKey: expect.objectContaining({ connectionId: 'conn-from-webhook' }),
             }),
-            expect.objectContaining({ jobId: expect.stringContaining('sync-pull:tenant-1:stub:') }),
+            expect.objectContaining({ jobId: expect.stringMatching(/^sync-pull-[0-9a-f]{32}$/) }),
         );
     });
 
