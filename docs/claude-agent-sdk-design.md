@@ -878,8 +878,8 @@ Each phase's hardening step fills its row.
 | Phase | Has it run in production? | Evidence |
 | --- | --- | --- |
 | 0 — Foundations | yes, 2026-10-26 | Deployed at 19:04:37 UTC on 2026-10-25, when Watchtower rolled the `ced48e0` publish. Before that, every image publish after 04:28 had been cancelled by the next push (#4280). **`/api/mcp` limiting**, about 19:25 UTC: a probe of 610 unauthenticated requests drew 600 `401` and 10 `429`, and exactly 10 `rate-limit.blocked` lines, all `mcp-ip`, none `api-mutation`. **A Flue run:** the first start after the deploy answered 500, because the image did not carry the skill corpus (#4301, fixed by #4302). After the fix, `access-posture` run `cmvp38v9d000001o5526qt04h` completed on 2026-10-26: recorded `FLUE`, 1 `MODEL_CALL` and 2 `TOOL_CALL` steps, all `DONE`, in 16 s. The baseline, `cmujpuc84000001pgl3rdy9ud` (2026-09-27), had 1 `MODEL_CALL` and 5 `TOOL_CALL` steps. |
-| 1 — Agent builder | no | — |
-| 2 — Tool Runner engine | no | — |
+| 1 — Agent builder | yes, 2026-11-11 | In the proving tenant, agent "Proving Agent" (`cmwc7djln000o01o5l8c2ay4c`): profile `cmwc7sgtz002301o5nkwb5prt`, version 1, written by one member at 14:28 UTC and approved by a different member at 14:29 UTC; instructions hash `e4221e1c4669532b50cebf95754f553af154a6d00a79ae5eb86461d5911b0f97`. Read off the Behaviour tab's version history. The `AGENT_PROFILE_SUBMITTED` / `AGENT_PROFILE_APPROVED` audit rows were not read from the audit log: the evidence was gathered from a phone, and the page shows the two people and times those rows record. |
+| 2 — Tool Runner engine | yes, 2026-11-11 | Profile `cmwc7sgtz002301o5nkwb5prt` v1 by Test run, on the Tool Runner engine. **Completed**: run `cmwc8pgt2000301o5927h6ozw` (14:54 UTC), 3 `MODEL_CALL` and 2 `TOOL_CALL` steps (`list_risks`, `list_controls`, guard clean), 3 Art 12 decision rows, 25,119 tokens, last stop reason `end_turn`. **Kill switch**: run `cmwclvwva001301o5iycngfi0` (21:03 UTC), the same five steps, 49,465 tokens, settled Aborted with "The run was stopped because a kill switch was engaged for this agent". The stop was pressed during the last model call (44,107 tokens), which the engine does not interrupt; the check after it settled the run, and nothing was sent after it. **`LOCAL_ONLY`**: with the tenant's residency set to local only, a Test run failed at once with `tool_runner_local_only_unserved` and 0 steps. **No conversation stored at Anthropic**: every `MODEL_CALL` step of both runs records `wire` `POST /v1/messages` with body keys `fallbacks, max_tokens, messages, model, output_config, stream, system, thinking, tool_choice, tools` and `threadMember: absent`, read on the run page (the shape `messagesOnlyFor` logs for every attempt, retries included, #4537). |
 | 3 — Connect agents customers run | no | — |
 | 4 — Agent SDK engine | no | — |
 | 5 — Managed Agents, customer workspace | no | — |
@@ -1217,7 +1217,8 @@ to be deployed first. The first carries the per-tenant allowlist (decision 8),
 the adversarial read and its tests, the corpus and purge tests, and the
 invariants. The answers are in
 `docs/implementation-notes/2026-10-26-phase-1-hardening.md`. The second records
-the production profile in the evidence table.
+the production profile in the evidence table, from the proving tenant on
+2026-11-11 (`docs/implementation-notes/2026-11-12-agents-production-evidence.md`).
 
 **Goal.** Prove the builder holds its invariants across both steps, and record that
 a real tenant has authored and approved a profile.

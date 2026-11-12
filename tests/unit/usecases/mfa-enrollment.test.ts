@@ -116,6 +116,9 @@ beforeEach(() => {
 
 const userCtx = makeRequestContext('EDITOR', { userId: 'u1', tenantId: 't1' });
 const adminCtx = makeRequestContext('ADMIN', { userId: 'admin-u', tenantId: 't1' });
+/** The signed-in session that is making the request: the caller's own. */
+const signedIn = (ctx: { userId: string }, extra: Record<string, unknown> = {}) =>
+    mockAuth.mockResolvedValue({ user: { id: ctx.userId, mfaPending: false, ...extra } });
 
 describe('startMfaEnrollment', () => {
     it('returns plaintext secret + otpauth URI exactly once and persists encrypted blob', async () => {
@@ -247,7 +250,7 @@ describe('removeMfaEnrollment', () => {
     it('REFUSES an ADMIN who is themselves mid-challenge, removing someone else', async () => {
         // Deliberately not exempted. An administrator who has not completed
         // their own challenge should not be removing anybody's second factor.
-        mockAuth.mockResolvedValue({ user: { id: 'admin', mfaPending: true } });
+        mockAuth.mockResolvedValue({ user: { id: 'admin-u', mfaPending: true } });
 
         await expect(removeMfaEnrollment(adminCtx, 'u2')).rejects.toThrow(
             /Complete the MFA challenge/i,
@@ -321,6 +324,7 @@ describe('removeMfaEnrollment', () => {
     });
 
     it('writes NO denial row when an admin is allowed through', async () => {
+        signedIn(adminCtx);
         // Without this, a helper that recorded unconditionally would satisfy
         // every assertion above while filling the trail with denials that never
         // happened — the failure direction that misleads an auditor rather than
@@ -333,6 +337,7 @@ describe('removeMfaEnrollment', () => {
     });
 
     it('lets ADMIN force-remove another user in the same tenant', async () => {
+        signedIn(adminCtx);
         await removeMfaEnrollment(adminCtx, 'victim-id');
         expect(mockEnrollDelete).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -342,6 +347,7 @@ describe('removeMfaEnrollment', () => {
     });
 
     it('scopes the deleteMany to ctx.tenantId — never cross-tenant', async () => {
+        signedIn(adminCtx);
         await removeMfaEnrollment(adminCtx, 'victim-id');
         const args = mockEnrollDelete.mock.calls[0][0];
         // The tenantId in the WHERE comes from ctx, not the target's.
@@ -361,7 +367,7 @@ describe('removeMfaEnrollment', () => {
 // ─── #4646: the enrolment changes are recorded ─────────────────────────
 
 describe('resetting an Owner-managed member’s MFA takes an Owner (#4926)', () => {
-    beforeEach(() => mockAuth.mockResolvedValue({ user: { id: 'admin-u', mfaPending: false } }));
+    beforeEach(() => signedIn(adminCtx));
     const ownerCtx = makeRequestContext('OWNER', { userId: 'owner-u', tenantId: 't1' });
 
     it.each(['OWNER', 'AI_ADMIN'])('refuses an ADMIN resetting an %s, writing nothing and recording the refusal', async (role) => {
@@ -376,6 +382,7 @@ describe('resetting an Owner-managed member’s MFA takes an Owner (#4926)', () 
     });
 
     it('lets an OWNER reset another Owner’s MFA', async () => {
+        signedIn(ownerCtx);
         (prisma.tenantMembership.findUnique as jest.Mock).mockResolvedValue({ role: 'OWNER' });
         await expect(removeMfaEnrollment(ownerCtx, 'victim-id')).resolves.toEqual({ removed: true });
         expect(mockEnrollDelete).toHaveBeenCalled();
@@ -435,7 +442,9 @@ describe('MFA enrolment changes are in the audit trail (#4646)', () => {
     });
 
     it('records a removal, naming whose factor it was and whether an admin did it', async () => {
+        signedIn(userCtx);
         await removeMfaEnrollment(userCtx);
+        signedIn(adminCtx);
         await removeMfaEnrollment(adminCtx, 'victim-id');
         expect(rows()).toEqual([
             expect.objectContaining({
@@ -452,8 +461,51 @@ describe('MFA enrolment changes are in the audit trail (#4646)', () => {
     });
 
     it('records nothing when there was nothing to remove', async () => {
+        signedIn(userCtx);
         mockEnrollDelete.mockResolvedValue({ count: 0 } as never);
         await removeMfaEnrollment(userCtx);
         expect(rows()).toEqual([]);
+    });
+});
+
+// ─── Acts on a person's own second factor take that person ───────────────
+
+describe('only the signed-in person changes their second factor', () => {
+    const keyCtx = makeRequestContext('ADMIN', { userId: 'admin-u', tenantId: 't1', apiKeyId: 'key-1' });
+    const agentCtx = makeRequestContext('ADMIN', { userId: 'admin-u', tenantId: 't1', agentId: 'agent-1' });
+
+    it.each([['an API key', keyCtx], ['an agent', agentCtx]])('refuses %s removing a factor, and records it', async (_l, ctx) => {
+        mockAuth.mockResolvedValue(null);
+        await expect(removeMfaEnrollment(ctx)).rejects.toMatchObject({ status: 403, details: { reason: 'NOT_A_PERSON' } });
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+        expect(mockAppendAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: 'AUTHZ_DENIED' }));
+    });
+
+    it.each([['an API key', keyCtx], ['an agent', agentCtx]])('refuses %s starting or verifying an enrolment', async (_l, ctx) => {
+        await expect(startMfaEnrollment(ctx)).rejects.toMatchObject({ details: { reason: 'NOT_A_PERSON' } });
+        await expect(verifyMfaEnrollment(ctx, { code: '123456' })).rejects.toMatchObject({ details: { reason: 'NOT_A_PERSON' } });
+    });
+
+    it('refuses a removal with no signed-in session', async () => {
+        mockAuth.mockResolvedValue(null);
+        await expect(removeMfaEnrollment(userCtx)).rejects.toThrow(/signed-in session/);
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a removal when the session is somebody else\'s', async () => {
+        mockAuth.mockResolvedValue({ user: { id: 'someone-else', mfaPending: false } });
+        await expect(removeMfaEnrollment(userCtx)).rejects.toThrow(/signed-in session/);
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a removal while THIS workspace\'s challenge is pending, though the primary\'s is passed', async () => {
+        signedIn(userCtx, { mfaPendingTenantIds: ['t1'] });
+        await expect(removeMfaEnrollment(userCtx)).rejects.toThrow(/Complete the MFA challenge/i);
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('allows the removal when only ANOTHER workspace is pending', async () => {
+        signedIn(userCtx, { mfaPendingTenantIds: ['t-other'] });
+        await expect(removeMfaEnrollment(userCtx)).resolves.toEqual({ removed: true });
     });
 });

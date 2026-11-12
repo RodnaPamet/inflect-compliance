@@ -3026,6 +3026,12 @@ awaits the run binding's `beforeModelCall` once per model operation, keyed on
 the operation object, because the runtime intercepts every streamed chunk of
 one call with the same object. Do not move the check to the tool boundary or
 the agent render: the tool boundary is too late, and the render cannot await.
+On the Tool Runner the check runs after every model call and after every tool
+call (`execute.ts`, `tools.ts`), so a kill engaged DURING a model call lets that
+call finish and settles the run ABORTED at the check that follows it, with
+nothing sent after it. Observed in production on 2026-11-11: the stop landed
+during a run's last model call, every step reads Done, and the run is Aborted.
+That shape is the check working, not a missed kill.
 
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is

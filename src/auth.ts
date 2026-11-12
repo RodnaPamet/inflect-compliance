@@ -114,6 +114,8 @@ declare module 'next-auth' {
             tenantId?: string | null;
             role: Role;
             mfaPending?: boolean;
+            /** Workspaces other than the primary whose MFA challenge this session has not passed. */
+            mfaPendingTenantIds?: string[];
             /** R-1: all active memberships, for the tenant picker and middleware gate. */
             memberships?: MembershipEntry[];
             /** Org-layer memberships, for the org-route middleware gate. */
@@ -1195,6 +1197,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.tenantId = token.tenantId ?? null;
                 session.user.role = token.role ?? 'READER';
                 session.user.mfaPending = token.mfaPending ?? false;
+                session.user.mfaPendingTenantIds = token.mfaPendingTenantIds ?? [];
                 session.user.memberships = token.memberships ?? [];
                 session.user.orgMemberships = token.orgMemberships ?? [];
                 session.user.ssoTenantId = token.ssoTenantId ?? null;
