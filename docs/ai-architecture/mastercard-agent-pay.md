@@ -22,7 +22,7 @@ inflect · ai architecture · mastercard agent pay · roadmap v1 · 2026-10-30
 | Wave | 2 for Phases 0–1 (data only, no Mastercard call); 3 for Phases 2–3; 4 for Phase 4, conditional on API access |
 | Depends on | nothing for Phases 0–1; Phase 2's key-directory check reuses [`web-bot-auth.md`](./web-bot-auth.md) Phase 3's verifier; Phase 4 needs Mastercard API access, which is gated |
 | Unblocks | a register that knows which agents can spend money; recertification and kill switch that reach spending authority; evidence for agent payments against the library's controls |
-| Owner decisions | **D-L1-8** (Inflect never holds a payment credential and its own agents never pay), **D-L1-9** (spending authority is a declared, reviewed privilege on the register), **D-L1-10** (reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once access exists) — all three **adopted, initialled 2026-11-11** ([decision note](../implementation-notes/2026-11-11-agent-pay-decisions.md)) |
+| Owner decisions | **D-L1-8** (Inflect never holds a payment credential and its own agents never pay), **D-L1-9** (spending authority is a declared, reviewed privilege on the register), **D-L1-10** (reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once access exists) — all three recorded as **adopted 2026-11-11**, as relayed to the Phase 0 workflow by its coordinating session; not yet initialled in the master roadmap's decision table, which is where the owner's act is recorded ([decision note](../implementation-notes/2026-11-11-agent-pay-decisions.md)) |
 | Complete at | Phase 3. Phase 4 follows when Mastercard grants API access; it is not Layer 5 and completeness does not wait for it |
 
 ## At a glance
@@ -207,26 +207,32 @@ through the same walk.
       confirmed Web Bot Auth tag values and the key directory location. Open
       until the pages are read directly and the questions are put to
       Mastercard.
-- [x] 0.2 D-L1-8 initialled: no payment credential in Inflect's custody, no
+- [ ] 0.2 D-L1-8 initialled: no payment credential in Inflect's custody, no
       payment initiated by its agents. Add the card-number shape (13–19
       digits passing Luhn) to `firstSecretShapedMember` and to every writer
-      Phase 1 adds, with a test per writer. *Done 2026-11-11 for the harness
-      contract; each Phase 1 writer refuses through `firstSecretShapedPath`
-      and carries its own test.*
-- [x] 0.3 D-L1-9 initialled (2026-11-11), with the envelope's fields: rail (`AGENT_PAY_TOKEN`,
+      Phase 1 adds, with a test per writer. *The code half is done
+      2026-11-11 for the harness contract; each Phase 1 writer refuses
+      through `firstSecretShapedPath` and carries its own test. The decision
+      is recorded as adopted (relayed, 2026-11-11); this box is ticked when
+      the master roadmap's D-L1-8 row carries the owner's initials.*
+- [ ] 0.3 D-L1-9 initialled, with the envelope's fields: rail (`AGENT_PAY_TOKEN`,
       `AP4M`, `OTHER`), per-transaction limit and currency, period budget and
       period, merchant scope (domains, merchant category codes), expiry, the
       consenting person (a member of the tenant), the token requestor (agent
       platform) and its token reference. No field may carry a credential.
+      *Recorded as adopted (relayed, 2026-11-11), with these fields; ticked
+      when the master roadmap's D-L1-9 row carries the owner's initials.*
 - [x] 0.4 Framework mapping: which requirements in the existing library the
       Phase 3 evidence is filed against (candidates: OWASP agentic ASI03 and
       ASI02, EU AI Act Article 14, SOC 2 CC6, DORA, AIUC-1), and whether a
       PCI DSS library is wanted at all (default: no). *Recorded 2026-11-11:
       `ASI03`, `ASI02`, `Art.14`, `CC6.1`–`CC6.3`, `DORA.Art.9`, AIUC-1
       `B006`; no PCI DSS library.*
-- [x] 0.5 D-L1-10 initialled (2026-11-11), with the trigger for Phase 4:
+- [ ] 0.5 D-L1-10 initialled, with the trigger for Phase 4:
       written API access for at least one tenant's token requestor, plus a
-      sandbox.
+      sandbox. *Recorded as adopted (relayed, 2026-11-11), with this
+      trigger; ticked when the master roadmap's D-L1-10 row carries the
+      owner's initials.*
 
 **Prompt.**
 ```text

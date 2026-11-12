@@ -33,8 +33,28 @@ a copy, so the shapes stay one list.
 A card number is a run of 13 to 19 digits that passes Luhn and whose first
 digit is a payment-card major industry identifier (ISO/IEC 7812-1: 2 to 6),
 written contiguously or grouped as cards are printed, with one separator kind
-throughout (4-4-4-4, 4-4-4-1..4, 4-4-4-4-1..3, and the 4-6-5 / 4-6-4 groupings
-of American Express and Diners Club).
+throughout (4-4-4-1..4, 4-4-4-1..4-1..3, and the 4-6-5 / 4-6-4 groupings of
+American Express and Diners Club).
+
+The value is read as tokens, maximal runs of ASCII letters and digits, and only
+an all-digit token is a candidate or a group. Review found two defects in the
+first cut, which bounded a run only by digits, `+` and `.`:
+
+- **A hex digest was refused.** A decimal run between two hex letters was a
+  candidate, and every report carries a `sha256:` manifest hash per tool; the
+  review measured about 0.22% of random `sha256:` digests, 0.10% of SHA-1s and
+  0.011% of UUIDs refused. A tool's hash is stable, so an unlucky one would have
+  refused every scan of its estate. As tokens, a digest is one token with
+  letters in it, and a population of 60,000 digests, SHA-1s and UUIDs (some of
+  which hold exactly such a run) is refused nowhere. The cost: a PAN glued to a
+  word (`card5555…`) is not found; one after `_`, `-`, `/`, `=` or a space is.
+- **A printed card beside other numbers was missed.** The first cut refused a
+  grouped candidate followed by a separator and a digit, so a card followed by
+  its expiry or CVV, a second card, or an order number in front of it passed.
+  Now each start and each grouping in a run of groups is tried. The cost: four
+  space-separated 4-digit numbers that pass Luhn and start 2–6 are refused,
+  and so may be an IBAN printed in groups, which is personal data (D-L1-1)
+  with no place in a report either.
 
 ## Files
 
@@ -44,11 +64,21 @@ of American Express and Diners Club).
 | `src/lib/agentic/harness-contract.ts` | re-exports `containsCardNumber` beside the other rules |
 | `src/lib/agentic/harness-findings.ts` | `firstSecretShapedPath`, the generic walk, numbers included; `firstSecretShapedMember` calls it |
 | `tests/unit/agentic/card-numbers-are-refused-as-secrets.test.ts` | both directions, the report refusal, the generic walk |
-| `docs/ai-architecture/mastercard-agent-pay.md` | Phase 0 sub-phases, decisions initialled, current state |
+| `docs/ai-architecture/mastercard-agent-pay.md` | Phase 0 sub-phases, decisions recorded as adopted, current state |
 
 ## Decisions
 
-### The owner's decisions, initialled 2026-11-11
+### The owner's decisions, recorded as adopted 2026-11-11
+
+**Provenance.** These three were given to this workflow run as owner decisions
+taken 2026-11-11, relayed by the coordinating session; no owner act is
+recorded in this repository by this change. The master roadmap's decision
+table (`docs/ai-architecture-roadmap.md`, "Decisions for the owner", rows
+D-L1-8 to D-L1-10) is where the owner initials, and the coordinator owns that
+file, so this change does not touch it. Until those rows read decided, the
+child roadmap's boxes 0.2, 0.3 and 0.5 stay open and Phase 1 should not start
+on the strength of this note alone. The code that holds D-L1-8 (below) is
+right under the default too: the default for D-L1-8 is "adopt".
 
 - **D-L1-8 — adopted.** Inflect never holds a payment credential, and its own
   agents never pay. No PAN, Agentic Token value, wallet key or payment

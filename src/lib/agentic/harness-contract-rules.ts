@@ -105,7 +105,7 @@ export function looksLikeSecret(value: string): boolean {
     return SECRET_SHAPES.some((re) => re.test(value)) || containsCardNumber(value);
 }
 
-// ─── The PCI line (D-L1-8, initialled 2026-11-11) ───────────────────────────
+// ─── The PCI line (D-L1-8, adopted 2026-11-11) ──────────────────────────────
 //
 // Inflect never stores, processes or transmits a card number (a PAN, or a
 // network token such as a Mastercard Agentic Token, which has a PAN's shape).
@@ -123,22 +123,40 @@ export function looksLikeSecret(value: string): boolean {
 //
 //   • CONTIGUOUS: `5555555555554444`.
 //   • GROUPED as cards are printed, with ONE separator kind (a space or a
-//     hyphen) used throughout: 4-4-4-4, 4-4-4-1..4 and 4-4-4-4-1..3, and the
+//     hyphen) used throughout: 4-4-4-1..4 and 4-4-4-1..4-1..3, and the
 //     4-6-5 / 4-6-4 groupings of American Express and Diners Club.
 //
-// What keeps ordinary numbers out, each a measured choice:
+// The value is read as TOKENS, maximal runs of ASCII letters and digits, and
+// only an all-digit token is a candidate or a group. So:
+//
+//   • A digit run joined to a letter is never a card. A hex digest
+//     (`sha256:…`, a commit SHA, a UUID's groups) holds decimal runs between
+//     its letters; read as bare digit runs, about one `sha256:` digest in 460
+//     and one UUID in 9,000 carried a 13-digit Luhn-valid run starting 2–6, and
+//     every report carries a manifest hash per tool. As tokens, a digest is one
+//     token with letters in it. The cost is a PAN glued to a word
+//     (`card5555…`); a PAN after `_`, `-`, `/`, `=` or a space is still found.
+//   • A grouped card may sit anywhere in a longer run of groups, and is found
+//     there: followed by its expiry or CVV (`5555 5555 5555 4444 12/30`),
+//     beside a second card, after an order number. Each start and each grouping
+//     is tried, so a printed card is never hidden by what is printed next to
+//     it. The cost: four space-separated 4-digit numbers that happen to pass
+//     Luhn and start 2–6 are refused, and so may be an IBAN printed in groups,
+//     which is personal data (D-L1-1) with no place in a report either.
+//
+// What else keeps ordinary numbers out, each a measured choice:
 //
 //   • The first digit. A millisecond timestamp, a Snowflake id and a
 //     microsecond clock all start with 1 today, and 10% of any digit run passes
 //     Luhn, so without it one id in ten in a report would be refused. The cost
 //     is MII 7, 8 and 9 (fleet cards, RuPay's 81/82 range, national schemes),
 //     which are outside every network Agent Pay and AP4M use.
-//   • The boundary. A run inside a longer digit run (a 21-digit GCP unique id),
-//     after a `+` (an E.164 phone number), or beside a decimal point (an amount
-//     or a float) is not a candidate. Neither is a group that continues past
-//     the card grouping (`2026-11-11 2026-12-11`, a GUID's groups).
-//   • The grouping. A phone number or a date range written with spaces or
-//     hyphens does not fall into 4-4-4 groups.
+//   • The length. A token outside 13 to 19 digits (a 21-digit GCP unique id)
+//     is not a card, and no card is looked for inside it.
+//   • The neighbours. A candidate after a `+` (an E.164 phone number), or
+//     beside a decimal point (an amount or a float), is not a card.
+//   • The grouping. A phone number, a date range or a GUID written with
+//     spaces or hyphens does not fall into card groups.
 //
 // A false refusal names the member and costs a scanner fix; a false acceptance
 // puts cardholder data in a tenant's database and Inflect inside PCI scope.
@@ -158,34 +176,86 @@ export function passesLuhn(digits: string): boolean {
     return sum % 10 === 0;
 }
 
-// A run is not a candidate inside a longer digit run, after a `+`, or beside a
-// decimal point.
-const RUN_LEAD = String.raw`(?<![\d+])(?<!\d\.)`;
-const RUN_TAIL = String.raw`(?!\d)(?!\.\d)`;
-// A grouped candidate also never starts or ends mid-group: no digit and
-// separator before its first group, no separator and digit after its last.
-const GROUP_LEAD = String.raw`${RUN_LEAD}(?<!\d[ -])`;
-const GROUP_TAIL = String.raw`${RUN_TAIL}(?![ -]\d)`;
+interface CardToken {
+    readonly text: string;
+    readonly start: number;
+    readonly end: number;
+    readonly allDigits: boolean;
+}
 
-const CARD_CANDIDATES: readonly RegExp[] = [
-    new RegExp(`${RUN_LEAD}[2-6]\\d{12,18}${RUN_TAIL}`, 'g'),
-    // 4-4-4 then up to two shorter-or-equal groups: 13 to 19 digits.
-    new RegExp(`${GROUP_LEAD}[2-6]\\d{3}([ -])\\d{4}\\1\\d{4}(?:\\1\\d{1,4}(?:\\1\\d{1,3})?)?${GROUP_TAIL}`, 'g'),
+/** Maximal runs of ASCII letters and digits, in order. */
+function cardTokens(value: string): CardToken[] {
+    const out: CardToken[] = [];
+    const re = /[A-Za-z0-9]+/g;
+    for (let m = re.exec(value); m !== null; m = re.exec(value)) {
+        out.push({ text: m[0], start: m.index, end: m.index + m[0].length, allDigits: /^\d+$/.test(m[0]) });
+    }
+    return out;
+}
+
+/** Group lengths, as [min, max] per group, of each printed card grouping. */
+const CARD_GROUPINGS: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
+    // 4-4-4 then one or two shorter-or-equal groups: 13 to 19 digits.
+    [[4, 4], [4, 4], [4, 4], [1, 4]],
+    [[4, 4], [4, 4], [4, 4], [1, 4], [1, 3]],
     // American Express 4-6-5, Diners Club 4-6-4.
-    new RegExp(`${GROUP_LEAD}[2-6]\\d{3}([ -])\\d{6}\\1\\d{4,5}${GROUP_TAIL}`, 'g'),
+    [[4, 4], [6, 6], [4, 5]],
 ];
+
+const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
+
+/** Not after a `+` (a phone number), nor after a digit and a decimal point. */
+function leadIsClear(value: string, at: number): boolean {
+    const before = value[at - 1];
+    if (before === '+') return false;
+    return !(before === '.' && isDigit(value[at - 2]));
+}
+
+/** Not before a decimal point and a digit (an amount or a float). */
+function tailIsClear(value: string, at: number): boolean {
+    return !(value[at] === '.' && isDigit(value[at + 1]));
+}
+
+function isCard(digits: string): boolean {
+    return digits.length >= 13 && digits.length <= 19 && passesLuhn(digits);
+}
+
+/** Does a printed grouping of a card start at token `i`? */
+function groupedCardAt(value: string, tokens: readonly CardToken[], i: number): boolean {
+    for (const grouping of CARD_GROUPINGS) {
+        if (i + grouping.length > tokens.length) continue;
+        let separator: string | undefined;
+        let digits = '';
+        let fits = true;
+        for (let g = 0; g < grouping.length && fits; g++) {
+            const token = tokens[i + g];
+            const [min, max] = grouping[g];
+            fits = token.allDigits && token.text.length >= min && token.text.length <= max;
+            if (fits && g > 0) {
+                const prev = tokens[i + g - 1];
+                const gap = value.slice(prev.end, token.start);
+                fits = (gap === ' ' || gap === '-') && (separator === undefined || gap === separator);
+                separator = gap;
+            }
+            digits += token.text;
+        }
+        if (fits && tailIsClear(value, tokens[i + grouping.length - 1].end) && isCard(digits)) return true;
+    }
+    return false;
+}
 
 /**
  * Does the value contain a card number (D-L1-8)? Pure and linear; reports
  * only yes or no, so no caller can echo the number it found.
  */
 export function containsCardNumber(value: string): boolean {
-    for (const re of CARD_CANDIDATES) {
-        re.lastIndex = 0;
-        for (let m = re.exec(value); m !== null; m = re.exec(value)) {
-            const digits = m[0].replace(/[ -]/g, '');
-            if (digits.length >= 13 && digits.length <= 19 && passesLuhn(digits)) return true;
-        }
+    const tokens = cardTokens(value);
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        if (!token.allDigits || token.text[0] < '2' || token.text[0] > '6') continue;
+        if (!leadIsClear(value, token.start)) continue;
+        if (tailIsClear(value, token.end) && isCard(token.text)) return true;
+        if (groupedCardAt(value, tokens, i)) return true;
     }
     return false;
 }

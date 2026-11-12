@@ -1,5 +1,5 @@
 /**
- * The PCI line (D-L1-8, initialled 2026-11-11): Inflect never stores a card
+ * The PCI line (D-L1-8, adopted 2026-11-11): Inflect never stores a card
  * number, so a harness report carrying one is refused like any other secret,
  * and an ordinary number is not.
  *
@@ -166,6 +166,76 @@ describe('an ordinary number is not, even when its digits pass Luhn', () => {
 
     it('an all-digit GUID, whose groups never fall into card groups', () => {
         expect(containsCardNumber('55555555-5555-5555-5555-444455556666')).toBe(false);
+    });
+});
+
+describe('a card printed beside other numbers is still a card', () => {
+    it('followed by its expiry, its CVV, a second card or a trailing group', () => {
+        for (const printed of [
+            '5555 5555 5555 4444 12/30',
+            '5555-5555-5555-4444-12/30',
+            '4111 1111 1111 1111 123',
+            '3782 822463 10005 1234',
+            'card: 4111-1111-1111-1111 exp 12-30 cvv 123',
+        ]) {
+            expect(containsCardNumber(printed)).toBe(true);
+        }
+    });
+
+    it('two cards in one list, each found on its own', () => {
+        expect(containsCardNumber('5555 5555 5555 4444 4111 1111 1111 1111')).toBe(true);
+        // The first card's check digit broken: the second is still found.
+        expect(containsCardNumber(`${breakCheckDigit('5555555555554444').replace(/(\d{4})(?=\d)/g, '$1 ')} 4111 1111 1111 1111`)).toBe(true);
+    });
+
+    it('after an order number', () => {
+        expect(containsCardNumber('Order 7 5555 5555 5555 4444')).toBe(true);
+    });
+});
+
+/** Every 13-19 digit run, bounded only by digits, that starts 2-6 and passes Luhn. */
+function hasBareCardShapedRun(value: string): boolean {
+    for (const run of value.match(/\d+/g) ?? []) {
+        for (let len = 13; len <= 19; len++) {
+            for (let at = 0; at + len <= run.length; at++) {
+                const digits = run.slice(at, at + len);
+                if (digits[0] >= '2' && digits[0] <= '6' && passesLuhn(digits)) return true;
+            }
+        }
+    }
+    return false;
+}
+
+describe('a hex digest or a UUID is never a card, whatever decimal runs it holds', () => {
+    const { createHash } = jest.requireActual<typeof import('node:crypto')>('node:crypto');
+    const hex = (algo: 'sha256' | 'sha1', i: number) => createHash(algo).update(`value-${i}`).digest('hex');
+    const uuid = (i: number) => hex('sha256', i).slice(0, 32).replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+
+    it('the digests the review found refused, each holding a Luhn-valid run between letters', () => {
+        for (const digest of [
+            'sha256:3acafb459d5b4f52e80f1f1b69a9fc3793089196403e06500038ae9f7f0afcaa',
+            'sha256:d7d0ffd90e4efceb742e060e35922d753e0d4e3235874276578c723ddd537220',
+        ]) {
+            expect(hasBareCardShapedRun(digest)).toBe(true);
+            expect(containsCardNumber(digest)).toBe(false);
+            expect(looksLikeSecret(digest)).toBe(false);
+        }
+    });
+
+    it('a tool manifest hash in a report is not secret-shaped', () => {
+        const manifestHash = 'sha256:d7d0ffd90e4efceb742e060e35922d753e0d4e3235874276578c723ddd537220';
+        expect(firstSecretShapedPath({ agents: [{ tools: [{ manifestHash }] }] })).toBeNull();
+    });
+
+    it('none of 20,000 sha256 digests, SHA-1s or UUIDs is refused, though some hold card-shaped runs', () => {
+        const population: string[] = [];
+        for (let i = 0; i < 20_000; i++) {
+            population.push(`sha256:${hex('sha256', i)}`, hex('sha1', i), uuid(i));
+        }
+        // The population is not vacuous: read as bare digit runs, some of it
+        // holds exactly the run a card number is.
+        expect(population.filter(hasBareCardShapedRun).length).toBeGreaterThan(10);
+        expect(population.filter((v) => containsCardNumber(v))).toEqual([]);
     });
 });
 
